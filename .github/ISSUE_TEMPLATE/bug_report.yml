@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible defect in AtlasOps.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include credentials, tokens, kubeconfigs, or sensitive logs."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python version, commit SHA, configuration, and relevant dependency versions.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add sanitized logs, stack traces, or test output.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and scope
+      description: Which workflows are affected, and is there a safe workaround?

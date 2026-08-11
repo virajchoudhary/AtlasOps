@@ -1,0 +1,67 @@
+name: Experiment
+description: Define a reproducible AtlasOps research experiment.
+title: "[Experiment]: "
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question
+      description: State the falsifiable question or hypothesis.
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Baseline
+      description: Identify the comparison system, commit, model, and prior evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Method
+      description: Describe the experimental method and controls.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Dataset or scenarios
+      description: Record versions, provenance, inclusion rules, and splits where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration
+      description: Include model/checkpoint, code SHA, environment, and hyperparameters.
+    validations:
+      required: true
+  - type: input
+    id: seeds
+    attributes:
+      label: Seeds
+      description: List all random seeds or explain why seeds do not apply.
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics
+      description: Define primary, secondary, safety, and failure metrics before running.
+    validations:
+      required: true
+  - type: textarea
+    id: outputs
+    attributes:
+      label: Expected outputs
+      description: Identify raw outputs, summaries, plots, checkpoints, and their storage policy.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Define pass/fail or decision thresholds without forcing a positive result.
+    validations:
+      required: true

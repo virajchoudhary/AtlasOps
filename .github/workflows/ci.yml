@@ -6,47 +6,50 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+permissions:
+  contents: read
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pytest pytest-asyncio pyyaml requests jinja2 pydantic fastapi httpx aiofiles
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" build
 
-      - name: Check all Python files compile
+      - name: Compile Python sources
         run: |
-          python -m py_compile app.py
-          python -m py_compile agents/coordinator.py
-          python -m py_compile agents/stream.py
-          python -m py_compile agents/judge.py
-          python -m py_compile agents/adversarial_designer.py
-          python -m py_compile agents/approval.py
-          python -m py_compile agents/circuit_breaker.py
-          python -m py_compile agents/correlator.py
-          python -m py_compile agents/audit.py
-          python -m py_compile config/runtime.py
-          python -m py_compile bench/runner.py
-          python -m py_compile scripts/release_gate.py
-          python -m py_compile inference.py
-          echo "All files compile OK"
+          python -m compileall -q \
+            agents bench config training scripts \
+            app.py dashboard.py eval.py inference.py leaderboard.py
 
-      - name: Run chaos manifest validation tests
-        run: pytest tests/test_chaos_manifests.py -v
+      - name: Ruff correctness checks
+        run: python -m ruff check . --select E9,F63,F7
 
-      - name: Run safety guardrail unit tests
-        run: pytest tests/test_approval.py tests/test_circuit_breaker.py tests/test_correlator.py tests/test_audit.py -v
+      - name: Run full unit test suite
+        run: python -m pytest tests/
 
-      - name: Run tool + coordinator unit tests (mocked)
-        run: pytest tests/test_tools.py tests/test_coordinator.py -v
-
-      - name: Run app endpoint smoke tests (mocked)
-        run: pytest tests/test_app_endpoints.py tests/test_bench_runner.py -v
+      - name: Build package
+        if: matrix.python-version == '3.12'
+        run: python -m build

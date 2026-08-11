@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -13,6 +13,8 @@ dependencies = [
     "anthropic>=0.28.0",
     "httpx>=0.27.0",
     "pydantic>=2.7.0",
+    "fastapi",
+    "uvicorn",
     # GCP clients
     "google-cloud-monitoring>=2.20.0",
     "google-cloud-logging>=3.10.0",
@@ -22,6 +24,7 @@ dependencies = [
     "kubernetes>=30.1.0",
     # Observability clients
     "requests>=2.32.0",
+    "urllib3",
     # Dashboard
     "gradio>=4.36.0",
     # Utils
@@ -46,6 +49,8 @@ dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
+    "PyYAML",
+    "matplotlib",
 ]
 
 [tool.hatch.build.targets.wheel]

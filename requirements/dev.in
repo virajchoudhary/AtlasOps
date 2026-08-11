@@ -1,0 +1,5 @@
+# Human-maintained input for the canonical Windows/Python 3.12 development lock.
+# Training and model dependencies are intentionally excluded.
+-e .[dev]
+build
+hatchling

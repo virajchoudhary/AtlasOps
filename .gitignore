@@ -10,6 +10,12 @@ docs/postmortems/generated/
 bench/chaos_manifests/adversarial/*.json
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
+/.coverage
+/coverage.xml
+/htmlcov/
+/build/
 *.egg-info/
 dist/
 .DS_Store

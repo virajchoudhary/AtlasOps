@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a scoped AtlasOps capability or improvement.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user, research, or engineering need should be addressed?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the observable result without prescribing unnecessary implementation detail.
+    validations:
+      required: true
+  - type: dropdown
+    id: workstream
+    attributes:
+      label: Primary workstream
+      options:
+        - Generative AI
+        - Recommender Systems
+        - Reinforcement Learning
+        - Safety / evaluation
+        - Infrastructure / developer experience
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What evidence would demonstrate completion?
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Out of scope and risks
+      description: Identify exclusions, dependencies, security concerns, or infrastructure impact.

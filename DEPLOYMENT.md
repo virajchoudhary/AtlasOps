@@ -1,5 +1,11 @@
 # AtlasOps — Real-World Deployment Guide
 
+> **Current project status:** this document records intended/historical runtime
+> architecture; it is not a reproduced production procedure. Stage 1D-A repairs
+> only the static provisioning contract. Real GKE provisioning and observability
+> wiring remain unverified. **DO NOT RUN LIVE GKE UNTIL STAGE 1D-B IS COMPLETE.**
+> See [`docs/project/INFRASTRUCTURE_CONTRACT.md`](docs/project/INFRASTRUCTURE_CONTRACT.md).
+
 > This is not a demo toy. This is how you put AtlasOps on-call for a real production cluster.
 
 ---
@@ -28,6 +34,15 @@
 - Argo CD (optional — enables `argocd_rollback` remediation)
 - AMD MI300X or compatible GPU (for self-hosted inference)
   - OR: Fireworks AI API key (managed AMD GPU inference)
+
+## Guarded development infrastructure entry point
+
+The infrastructure scripts no longer provision or delete resources on ordinary
+invocation. Use `--check` for read-only preflight. `--apply` remains prohibited
+until Stage 1D-B is complete and requires the explicit acknowledgements and
+operator-prepared identity/network inputs documented in the infrastructure
+contract. Grafana and Argo CD use ClusterIP and are intended for port-forwarded
+operator access; Jaeger is pinned but blocked pending Stage 1D-B reconciliation.
 
 ---
 

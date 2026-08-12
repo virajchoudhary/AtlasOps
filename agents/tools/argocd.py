@@ -1,74 +1,140 @@
-"""Argo CD tool wrappers — REST API over HTTP (no CLI required).
+"""Argo CD REST API tool wrappers."""
 
-Falls back to CLI subprocess when ARGOCD_USE_CLI=true is set.
-"""
-
-import json
+import hashlib
 import os
-import subprocess
+from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
-import urllib3
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-_ARGOCD_URL   = os.getenv("ARGOCD_URL", "https://34.122.132.237")
-_ARGOCD_USER  = os.getenv("ARGOCD_USER", "admin")
-_ARGOCD_PASS  = os.getenv("ARGOCD_PASS", "sNl2MpIydyZWa7aC")
-_USE_HTTP     = _ARGOCD_URL.startswith("http")
+class _ArgoCDConfigurationError(RuntimeError):
+    """Raised when required Argo CD runtime configuration is unavailable."""
 
-# Try HTTP first (avoids TLS issues with self-signed certs)
-_HTTP_BASE = _ARGOCD_URL.replace("https://", "http://") if _ARGOCD_URL.startswith("https://") else _ARGOCD_URL
+
+class _ArgoCDAuthenticationError(RuntimeError):
+    """Raised when Argo CD authentication fails without exposing request data."""
+
+
+@dataclass(frozen=True)
+class _ArgoCDConfig:
+    base_url: str
+    username: str
+    password: str = field(repr=False)
+    verify_tls: bool
+
+
+def _get_argocd_config() -> _ArgoCDConfig:
+    base_url = os.getenv("ARGOCD_URL", "").strip()
+    if not base_url:
+        raise _ArgoCDConfigurationError(
+            "argocd_configuration_error: missing required environment variable ARGOCD_URL"
+        )
+    try:
+        parsed_url = urlsplit(base_url)
+        valid_host = bool(parsed_url.hostname)
+    except ValueError:
+        valid_host = False
+        parsed_url = None
+    if (
+        parsed_url is None
+        or parsed_url.scheme.lower() not in {"http", "https"}
+        or not valid_host
+        or parsed_url.username is not None
+        or parsed_url.password is not None
+    ):
+        raise _ArgoCDConfigurationError(
+            "argocd_configuration_error: ARGOCD_URL must use http or https with a host"
+        )
+    username = os.getenv("ARGOCD_USER", "").strip()
+    if not username:
+        raise _ArgoCDConfigurationError(
+            "argocd_configuration_error: missing required environment variable ARGOCD_USER"
+        )
+    password = os.getenv("ARGOCD_PASS", "")
+    if not password.strip():
+        raise _ArgoCDConfigurationError(
+            "argocd_configuration_error: missing required environment variable ARGOCD_PASS"
+        )
+    verify_setting = os.getenv("ARGOCD_VERIFY_TLS", "true").strip().lower()
+    if verify_setting in {"1", "true", "yes", "on"}:
+        verify_tls = True
+    elif verify_setting in {"0", "false", "no", "off"}:
+        verify_tls = False
+    else:
+        raise _ArgoCDConfigurationError(
+            "argocd_configuration_error: ARGOCD_VERIFY_TLS must be true or false"
+        )
+    return _ArgoCDConfig(
+        base_url=base_url.rstrip("/"),
+        username=username,
+        password=password,
+        verify_tls=verify_tls,
+    )
+
 
 _cached_token: str | None = None
+_cached_token_identity: tuple[str, str, bytes] | None = None
 
 
-def _get_token() -> str:
-    global _cached_token
-    if _cached_token:
+def _get_token(config: _ArgoCDConfig) -> str:
+    global _cached_token, _cached_token_identity
+    identity = (
+        config.base_url,
+        config.username,
+        hashlib.sha256(config.password.encode("utf-8")).digest(),
+    )
+    if _cached_token and _cached_token_identity == identity:
         return _cached_token
     try:
-        r = requests.post(
-            f"{_HTTP_BASE}/api/v1/session",
-            json={"username": _ARGOCD_USER, "password": _ARGOCD_PASS},
+        response = requests.post(
+            f"{config.base_url}/api/v1/session",
+            json={"username": config.username, "password": config.password},
             timeout=10,
-            verify=False,
+            verify=config.verify_tls,
         )
-        r.raise_for_status()
-        _cached_token = r.json()["token"]
+        response.raise_for_status()
+        _cached_token = response.json()["token"]
+        _cached_token_identity = identity
         return _cached_token
-    except Exception as e:
-        raise RuntimeError(f"ArgoCD auth failed: {e}") from e
+    except Exception:
+        raise _ArgoCDAuthenticationError(
+            "argocd_authentication_error: authentication request failed"
+        ) from None
 
 
 def _api(method: str, path: str, **kwargs) -> dict[str, Any]:
     try:
-        token = _get_token()
-        r = requests.request(
+        config = _get_argocd_config()
+        token = _get_token(config)
+        response = requests.request(
             method,
-            f"{_HTTP_BASE}/api/v1{path}",
+            f"{config.base_url}/api/v1{path}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
-            verify=False,
+            verify=config.verify_tls,
             **kwargs,
         )
-        if r.status_code == 401:
-            global _cached_token
+        if response.status_code == 401:
+            global _cached_token, _cached_token_identity
             _cached_token = None
-            token = _get_token()
-            r = requests.request(
+            _cached_token_identity = None
+            token = _get_token(config)
+            response = requests.request(
                 method,
-                f"{_HTTP_BASE}/api/v1{path}",
+                f"{config.base_url}/api/v1{path}",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
-                verify=False,
+                verify=config.verify_tls,
                 **kwargs,
             )
-        r.raise_for_status()
-        return {"success": True, "data": r.json()}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        response.raise_for_status()
+        return {"success": True, "data": response.json()}
+    except (_ArgoCDConfigurationError, _ArgoCDAuthenticationError) as exc:
+        return {"success": False, "error": str(exc)}
+    except Exception:
+        return {"success": False, "error": "argocd_request_error: request failed"}
 
 
 def argocd_list_apps() -> dict[str, Any]:
@@ -78,12 +144,12 @@ def argocd_list_apps() -> dict[str, Any]:
         items = result["data"].get("items") or []
         result["apps"] = [
             {
-                "name": a["metadata"]["name"],
-                "health": a.get("status", {}).get("health", {}).get("status", "Unknown"),
-                "sync": a.get("status", {}).get("sync", {}).get("status", "Unknown"),
-                "revision": (a.get("status", {}).get("history") or [{}])[-1].get("id"),
+                "name": app["metadata"]["name"],
+                "health": app.get("status", {}).get("health", {}).get("status", "Unknown"),
+                "sync": app.get("status", {}).get("sync", {}).get("status", "Unknown"),
+                "revision": (app.get("status", {}).get("history") or [{}])[-1].get("id"),
             }
-            for a in items
+            for app in items
         ]
         result["count"] = len(items)
     return result
@@ -95,16 +161,16 @@ def argocd_app_history(app: str) -> dict[str, Any]:
     if result.get("success"):
         history = result["data"].get("status", {}).get("history") or []
         result["history"] = [
-            {"id": h.get("id"), "revision": h.get("revision"), "deployedAt": h.get("deployedAt")}
-            for h in history[-10:]
+            {"id": item.get("id"), "revision": item.get("revision"), "deployedAt": item.get("deployedAt")}
+            for item in history[-10:]
         ]
     return result
 
 
 def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     """Roll back an Argo CD application to a previous revision."""
-    rev_id = int(revision) if str(revision).isdigit() else 0
-    result = _api("POST", f"/applications/{app}/rollback", json={"id": rev_id})
+    revision_id = int(revision) if str(revision).isdigit() else 0
+    result = _api("POST", f"/applications/{app}/rollback", json={"id": revision_id})
     if result.get("success"):
         result["message"] = f"Rollback of {app} to revision {revision} initiated."
     return result

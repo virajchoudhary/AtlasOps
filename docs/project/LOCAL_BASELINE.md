@@ -97,19 +97,20 @@ values from the host environment.
 
 | Variable | Purpose | Required for local unit tests | Safe default | Secret | Required for real integration |
 |---|---|---:|---|---:|---:|
-| `ATLASOPS_AUDIT_SECRET` | Audit-record integrity | No | Insecure development fallback with warning | Yes | Yes for production-grade audit integrity |
+| `ATLASOPS_AUDIT_SECRET` | Audit-record integrity | No; tests inject a placeholder | None; imports are safe and real execution fails closed | Yes | Yes for agent execution |
 | `ATLASOPS_AUDIT_LOG` | Audit log path | No | Repository-local data path | No | No |
 | `ATLASOPS_API_KEY` | Mutating API authentication | No | Unset development mode | Yes | Yes for protected deployment |
 | `ALERTMANAGER_WEBHOOK_SECRET` | Webhook signature verification | No | Unset | Yes | Yes for signed webhooks |
 | `LLM_API_KEY`, `JUDGE_API_KEY` | Agent and judge API authentication | No | Unset | Yes | Yes for authenticated remote models |
 | `OPENAI_API_KEY`, `FIREWORKS_API_KEY` | Provider authentication | No | Unset | Yes | Only for those providers |
 | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` | Hugging Face authentication | No | Unset | Yes | Only for authenticated HF use |
-| `ARGOCD_PASS` | Argo CD authentication | No | No safe embedded default; see security finding | Yes | Yes for Argo CD |
-| `ARGOCD_USER` | Argo CD user | No | Code default | No | Yes for Argo CD |
+| `ARGOCD_PASS` | Argo CD authentication | No | None; explicit configuration required | Yes | Yes for Argo CD |
+| `ARGOCD_USER` | Argo CD user | No | None; explicit configuration required | No | Yes for Argo CD |
 | `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL` | Incident communications | No | Unset/disabled | Yes | Only for those integrations |
 | `GCP_PROJECT` | Google Cloud project selection | No | Unset | No | Yes for GCP tools |
 | `PROMETHEUS_URL`, `JAEGER_URL`, `ALERTMANAGER_URL` | Observability endpoints | No | Code defaults or unset | No | Yes for those integrations |
-| `ARGOCD_URL`, `GRAFANA_URL`, `BOUTIQUE_URL`, `COORDINATOR_URL` | Service endpoints | No | Code defaults or unset | No | Yes for those integrations |
+| `ARGOCD_URL` | Argo CD endpoint | No | None; explicit HTTP or HTTPS URL required | No | Yes for Argo CD |
+| `GRAFANA_URL`, `BOUTIQUE_URL`, `COORDINATOR_URL` | Service endpoints | No | Code defaults or unset | No | Yes for those integrations |
 | `VLLM_BASE`, `JUDGE_URL`, `HF_INFERENCE_BASE` | Model/judge endpoints | No | Local/code defaults | No | Yes for model execution |
 | `AGENT_MODEL`, `JUDGE_MODEL`, `BACKEND` | Model/backend selection | No | Code defaults | No | Yes for model execution |
 | `ATLASOPS_USE_HF_INFERENCE`, `ATLASOPS_AUTO_HF_INFERENCE`, `ATLASOPS_LIVE_JUDGE` | Inference-routing feature flags | No | Code defaults | No | Only for those modes |
@@ -141,12 +142,11 @@ recorded; the existing project `.venv` is retained.
 
 ## Warnings and pre-existing findings
 
-- The two measured test warnings are the Starlette `TestClient`/`httpx` deprecation
-  warning and the expected unset audit-secret development warning.
-- `agents/tools/argocd.py:18` contains a pre-existing non-empty default for the
-  `ARGOCD_PASS` integration variable. The value is intentionally omitted here. This is
-  security-sensitive upstream debt requiring a separately authorized application
-  repair and credential-rotation assessment; Stage 0D does not alter it.
+- The two warnings measured during Stage 0D were the Starlette `TestClient`/`httpx`
+  deprecation warning and the former unset-audit-secret fallback warning. Stage 1A
+  removes the insecure fallback and its warning.
+- Stage 1A removes the inherited active Argo CD credential/configuration defaults and
+  records the required owner rotation assessment in `SECURITY_REMEDIATION.md`.
 - Optional training dependencies (`optimum`, `optuna`, and `flash_attn`) are not part of
   the canonical development lock and were not resolved or validated on Windows.
 - Package build isolation downloads the pinned Hatchling backend; that network access

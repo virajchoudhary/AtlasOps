@@ -112,11 +112,40 @@ class TestBackendConfig:
         assert coord.API_KEY == ""
 
 
+def test_call_agent_requires_audit_secret_before_model_or_tool(monkeypatch):
+    monkeypatch.delenv("ATLASOPS_AUDIT_SECRET", raising=False)
+
+    import agents.coordinator as coord
+    from agents.audit import AuditConfigurationError
+
+    model_request = AsyncMock()
+    tool_call = MagicMock()
+    monkeypatch.setattr(coord, "post_with_retry", model_request)
+    monkeypatch.setitem(coord.TOOL_REGISTRY, "kubectl_get", tool_call)
+
+    with pytest.raises(
+        AuditConfigurationError,
+        match="audit_configuration_error: ATLASOPS_AUDIT_SECRET is required for audit integrity",
+    ):
+        asyncio.run(
+            coord.call_agent(
+                "triage",
+                {"incident_id": "inc-test", "alert": {}},
+                max_turns=1,
+            )
+        )
+
+    model_request.assert_not_awaited()
+    tool_call.assert_not_called()
+
+
 class TestApprovalFlow:
     @pytest.fixture(autouse=True)
-    def _disable_live_judge(self, monkeypatch):
+    def _configure_safe_test_runtime(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
         monkeypatch.setenv("ATLASOPS_USE_HF_INFERENCE", "0")
+        monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
+        monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
 
     def test_manual_mode_skips_remediation_agent(self, monkeypatch):
         import agents.coordinator as coord

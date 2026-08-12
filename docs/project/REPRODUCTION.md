@@ -52,6 +52,20 @@ python -m pip --isolated install --index-url https://pypi.org/simple -r requirem
 
 Training extras are deliberately excluded. Do not add `.[train]` to this command.
 
+## Runtime security configuration
+
+The local unit/static baseline requires no real integration secrets. Tests inject
+obvious placeholders only at mocked boundaries.
+
+Real Argo CD operations require explicit `ARGOCD_URL`, `ARGOCD_USER`, and
+`ARGOCD_PASS`. `ARGOCD_VERIFY_TLS` is optional and defaults to `true`; setting it to
+`false` is an explicit operator opt-out and does not trigger global warning
+suppression. Missing or invalid Argo configuration fails before HTTP.
+
+Real coordinator or agent execution requires a private `ATLASOPS_AUDIT_SECRET`.
+Imports remain safe without it, but execution fails before model or tool activity.
+`ATLASOPS_AUDIT_LOG` may optionally select the append-only log path.
+
 ## Validate
 
 Run these commands from the repository root:
@@ -81,10 +95,10 @@ Python 3.12.5 is:
 - build: sdist and wheel built successfully
 - safe imports: passed
 
-The warnings are a Starlette `TestClient`/`httpx` deprecation warning and the expected
-development warning when `ATLASOPS_AUDIT_SECRET` is unset. The test count and warning
-text may change after intentional project changes; record actual results rather than
-copying this baseline blindly.
+The two historical Stage 0D warnings were a Starlette `TestClient`/`httpx` deprecation
+warning and the former insecure audit-fallback warning. Stage 1A removes that fallback
+and its warning. The test count and warning text may change after intentional project
+changes; record actual results rather than copying this baseline blindly.
 
 For diagnostic evidence only, this command is expected to fail at the frozen baseline:
 

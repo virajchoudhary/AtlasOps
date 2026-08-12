@@ -130,7 +130,9 @@ def test_incidents_active_endpoint_returns_list():
     assert isinstance(body["incidents"], list)
 
 
-def test_audit_log_and_verify_endpoints():
+def test_audit_log_and_verify_endpoints(monkeypatch, tmp_path):
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
     client = _client()
     l = client.get("/audit/log?limit=5")
     assert l.status_code == 200

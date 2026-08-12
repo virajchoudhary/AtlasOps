@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from agents._http_retry import post_with_retry
 from agents.approval import approval_gate, approval_mode_for_severity
-from agents.audit import audit_log
+from agents.audit import audit_log, require_audit_log
 from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
 from agents.prometheus_metrics import build_dashboard_metrics_payload
@@ -171,6 +171,7 @@ async def _force_json_conclusion(role: str, messages: list[dict], client: httpx.
 
 async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10) -> dict[str, Any]:
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
+    require_audit_log()
     system_prompt = load_prompt(role)
     incident_id = str(user_input.get("incident_id", "unknown"))
     messages = [

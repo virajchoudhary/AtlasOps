@@ -16,6 +16,23 @@ readonly COST_ACK_VALUE="I_UNDERSTAND_GCP_COSTS"
 readonly BOUTIQUE_RELEASE="v0.10.0"
 readonly BOUTIQUE_COMMIT="98e60f5ee0b643cc00bceb71e6efb89617740432"
 readonly BOUTIQUE_MANIFEST="https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/${BOUTIQUE_COMMIT}/release/kubernetes-manifests.yaml"
+readonly BOUTIQUE_ROLLOUT_TIMEOUT="10m"
+# Exact Deployment names reviewed from release/kubernetes-manifests.yaml at
+# BOUTIQUE_COMMIT. Keep this list tied to that immutable manifest revision.
+readonly BOUTIQUE_DEPLOYMENTS=(
+  "currencyservice"
+  "loadgenerator"
+  "productcatalogservice"
+  "checkoutservice"
+  "shippingservice"
+  "cartservice"
+  "redis-cart"
+  "emailservice"
+  "paymentservice"
+  "frontend"
+  "recommendationservice"
+  "adservice"
+)
 
 readonly PROMETHEUS_CHART_VERSION="88.3.0"
 # Provenance pin only: Stage 1D-A does not install Jaeger because the inherited
@@ -318,8 +335,13 @@ apply_foundation() {
   ensure_cluster
   gcloud container clusters get-credentials "$CLUSTER" --zone="$ZONE" --project="$PROJECT"
   kubectl apply -f "$BOUTIQUE_MANIFEST"
-  kubectl wait --for=condition=ready pod -l app=frontend --timeout=600s
-  echo "ONLINE BOUTIQUE: $BOUTIQUE_RELEASE at immutable commit $BOUTIQUE_COMMIT applied."
+  local deployment
+  for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do
+    echo "ONLINE BOUTIQUE: waiting for deployment/$deployment to become Available."
+    kubectl rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
+  done
+  echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} required Deployments are Available."
+  echo "ONLINE BOUTIQUE: $BOUTIQUE_RELEASE at immutable commit $BOUTIQUE_COMMIT applied and ready."
 
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
   helm repo add argo https://argoproj.github.io/argo-helm --force-update

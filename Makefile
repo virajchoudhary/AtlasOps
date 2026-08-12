@@ -1,26 +1,28 @@
-PROJECT     ?= cloudsre-v3-amd
 REGION      ?= us-central1
 CLUSTER     ?= atlasops
 ZONE        ?= $(REGION)-a
 
 # ── Cluster lifecycle ──────────────────────────────────────────────────────────
-.PHONY: infra-check teardown-check up down status
+.PHONY: require-project infra-check teardown-check up down status
 
-infra-check:
+require-project:
+	@if [ -z "$(strip $(PROJECT))" ]; then echo "ERROR: PROJECT is required. Pass PROJECT=<gcp-project-id>."; exit 2; fi
+
+infra-check: require-project
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER) --check
 
-teardown-check:
+teardown-check: require-project
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER) --check
 
-up:
+up: require-project
 	@if [ "$(APPLY)" != "true" ]; then echo "Refusing: use make up APPLY=true plus the required setup environment gates."; exit 2; fi
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER) --apply
 
-down:
+down: require-project
 	@if [ "$(APPLY)" != "true" ]; then echo "Refusing: use make down APPLY=true plus ATLASOPS_TEARDOWN_ACK."; exit 2; fi
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER) --apply
 
-status:
+status: require-project
 	kubectl get pods -A --context=gke_$(PROJECT)_$(ZONE)_$(CLUSTER)
 
 # ── Chaos injection ────────────────────────────────────────────────────────────

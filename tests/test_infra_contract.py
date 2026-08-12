@@ -24,6 +24,7 @@ TEARDOWN_ENTRY = read("infra/teardown.sh")
 TEARDOWN_IMPL = read("infra/teardown_impl.sh")
 TEARDOWN = TEARDOWN_ENTRY + "\n" + TEARDOWN_IMPL
 SHELL = SETUP + "\n" + TEARDOWN
+MAKEFILE = read("Makefile")
 
 
 def shell_commands(source: str) -> list[str]:
@@ -41,6 +42,16 @@ def shell_commands(source: str) -> list[str]:
     if current:
         commands.append(current)
     return commands
+
+
+def shell_function_body(source: str, name: str) -> str:
+    match = re.search(
+        rf"^{re.escape(name)}\(\) \{{\n(?P<body>.*?)^\}}",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, f"shell function {name!r} was not found"
+    return match.group("body")
 
 
 def test_entry_points_delegate_only_to_reviewed_implementations() -> None:
@@ -126,6 +137,60 @@ def test_online_boutique_manifest_uses_immutable_commit() -> None:
     assert 'BOUTIQUE_RELEASE="v0.10.0"' in SETUP_IMPL
     assert "raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/${BOUTIQUE_COMMIT}/" in SETUP_IMPL
     assert "refs/tags" not in SETUP_IMPL
+
+
+def test_make_lifecycle_targets_require_an_explicit_project() -> None:
+    active_entry_points = MAKEFILE + "\n" + SHELL
+    assert "PROJECT ?= cloudsre-v3-amd" not in active_entry_points
+    assert "cloudsre-v3-amd" not in active_entry_points
+    assert re.search(r'^require-project:\s*$', MAKEFILE, re.MULTILINE)
+    assert 'ERROR: PROJECT is required. Pass PROJECT=<gcp-project-id>.' in MAKEFILE
+    assert '$(strip $(PROJECT))' in MAKEFILE
+    for target in ("infra-check", "teardown-check", "up", "down", "status"):
+        assert re.search(rf"^{re.escape(target)}:\s+require-project\s*$", MAKEFILE, re.MULTILINE)
+
+
+def test_online_boutique_waits_for_every_pinned_deployment() -> None:
+    expected = (
+        "currencyservice",
+        "loadgenerator",
+        "productcatalogservice",
+        "checkoutservice",
+        "shippingservice",
+        "cartservice",
+        "redis-cart",
+        "emailservice",
+        "paymentservice",
+        "frontend",
+        "recommendationservice",
+        "adservice",
+    )
+    declaration = re.search(
+        r"readonly BOUTIQUE_DEPLOYMENTS=\((?P<deployments>.*?)\n\)",
+        SETUP_IMPL,
+        re.DOTALL,
+    )
+    assert declaration
+    declared = tuple(re.findall(r'^\s+"([a-z0-9-]+)"\s*$', declaration.group("deployments"), re.MULTILINE))
+    assert declared == expected
+    foundation = shell_function_body(SETUP_IMPL, "apply_foundation")
+    assert 'for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do' in foundation
+    rollout = 'kubectl rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"'
+    assert rollout in foundation
+    assert "kubectl wait --for=condition=ready pod -l app=frontend" not in foundation
+    assert "|| true" not in foundation
+    assert foundation.index(rollout) < foundation.index("helm upgrade --install prometheus")
+
+
+def test_foundation_success_requires_boutique_and_subsequent_core_setup() -> None:
+    assert "set -euo pipefail" in SETUP_IMPL
+    foundation = shell_function_body(SETUP_IMPL, "apply_foundation")
+    rollout = 'kubectl rollout status "deployment/$deployment"'
+    assert foundation.index(rollout) < foundation.index("helm upgrade --install prometheus")
+    assert foundation.index(rollout) < foundation.index("helm upgrade --install argocd")
+    assert foundation.index(rollout) < foundation.index("helm upgrade --install chaos-mesh")
+    main = shell_function_body(SETUP_IMPL, "main")
+    assert main.index("apply_foundation") < main.index("FOUNDATION PROVISIONED")
 
 
 def test_optional_components_default_disabled_and_apis_are_gated() -> None:

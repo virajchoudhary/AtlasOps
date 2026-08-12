@@ -45,7 +45,7 @@ jobs:
             app.py dashboard.py eval.py inference.py leaderboard.py
 
       - name: Ruff correctness checks
-        run: python -m ruff check . --select E9,F63,F7
+        run: python -m ruff check . --select E9,F63,F7,F821
 
       - name: Run full unit test suite
         run: python -m pytest tests/

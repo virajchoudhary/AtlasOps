@@ -4,6 +4,80 @@ import json
 import math
 import pytest
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
+
+
+class TestRunScenario:
+    @pytest.mark.asyncio
+    async def test_passes_cascade_tier_to_judge(self, monkeypatch):
+        from bench import runner
+
+        incident = {
+            "triage": {"trajectory": [], "final": {"severity": "P1"}},
+            "diagnosis": {"trajectory": [], "final": {}},
+            "remediation": {
+                "trajectory": [],
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 10},
+            },
+            "comms": {"trajectory": [], "final": {"postmortem_path": "test.md"}},
+        }
+        judge_score = {
+            "reasoning": 0.8,
+            "correctness": 0.9,
+            "efficiency": 0.85,
+            "overall": 0.85,
+        }
+        handle_incident = AsyncMock(return_value=incident)
+        judge_trajectory = AsyncMock(return_value=judge_score)
+        reset_cluster = Mock()
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(
+            runner,
+            "wait_for_alert",
+            Mock(return_value={"commonLabels": {"alertname": "TestAlert"}, "alerts": []}),
+        )
+        monkeypatch.setattr(runner, "handle_incident", handle_incident)
+        monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory)
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
+
+        episode = await runner.run_scenario("cascade/test-tier-regression")
+
+        judge_trajectory.assert_awaited_once_with(incident, tier="cascade")
+        reset_cluster.assert_called_once_with()
+        assert episode["status"] == "ok"
+        assert episode["tier"] == "cascade"
+
+    @pytest.mark.asyncio
+    async def test_uses_unknown_tier_for_legacy_scenario_id(self, monkeypatch):
+        from bench import runner
+
+        incident = {
+            "triage": {"trajectory": [], "final": {"severity": "P1"}},
+            "diagnosis": {"trajectory": [], "final": {}},
+            "remediation": {
+                "trajectory": [],
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 10},
+            },
+            "comms": {"trajectory": [], "final": {"postmortem_path": "test.md"}},
+        }
+        judge_trajectory = AsyncMock(return_value={"overall": 0.85})
+        reset_cluster = Mock()
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(
+            runner,
+            "wait_for_alert",
+            Mock(return_value={"commonLabels": {"alertname": "TestAlert"}, "alerts": []}),
+        )
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory)
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
+
+        episode = await runner.run_scenario("legacy-scenario")
+
+        judge_trajectory.assert_awaited_once_with(incident, tier="unknown")
+        reset_cluster.assert_called_once_with()
+        assert episode["status"] == "ok"
+        assert episode["tier"] == "unknown"
 
 
 # ── Reward contract ────────────────────────────────────────────────────────────

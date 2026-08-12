@@ -7,7 +7,7 @@ This is a concise starting classification, not a complete implementation audit.
 | Coordinator / four-agent flow | IMPLEMENTED | Preserve + validate |
 | SRE tools | IMPLEMENTED | Validate |
 | Safety/approval controls | IMPLEMENTED | Preserve + validate |
-| Benchmark runner | IMPLEMENTED WITH KNOWN DEFECT | Repair later |
+| Benchmark runner | REPAIRED | Stage 1B moved tier derivation before judge invocation, added mocked regression coverage, and enforced F821 in CI. Real GKE/Chaos benchmark execution remains UNVERIFIED; published benchmark results remain UNREPRODUCED. |
 | SFT pipeline | IMPLEMENTED IN CODE | Reproduce later |
 | GRPO | PARTIAL / REVIEW-SENSITIVE | Correct + validate |
 | Environment ground-truth verifier | INSUFFICIENT / MISSING | Implement later |

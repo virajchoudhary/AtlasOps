@@ -80,6 +80,7 @@ def wait_for_alert(timeout_s: int = 300) -> dict | None:
 
 async def run_scenario(scenario_id: str) -> dict:
     t0 = time.time()
+    tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
     ok = apply_chaos(scenario_id)
     if not ok:
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
@@ -104,7 +105,6 @@ async def run_scenario(scenario_id: str) -> dict:
         for role in ("triage", "diagnosis", "remediation", "comms")
     )
 
-    tier = scenario_id.split("/")[0] if "/" in scenario_id else "unknown"
     episode = {
         "scenario_id": scenario_id,
         "tier": tier,

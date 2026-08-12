@@ -20,6 +20,15 @@ research. Claims present in upstream code or documentation are historical inputs
 results automatically reproduced by this team. A result becomes reproduced only after
 an independent rerun with saved supporting evidence.
 
+## Planned standalone GitHub status
+
+The repository may be detached from GitHub's fork network for independent project
+development and presentation. Detachment does not change the fact that its Git history
+derives from `Harikishanth/AtlasOps`, and it must not be interpreted as original
+authorship of inherited code. The original history, MIT license, and attribution remain
+in force, and the `upstream` remote is intended to remain configured as a normal Git
+remote after detachment.
+
 ## Project terminology
 
 | Category | Meaning |

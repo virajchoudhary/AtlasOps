@@ -185,8 +185,9 @@ Key observations:
 
 60 steps is a proof-of-concept run, not full convergence. The training established the reward
 signal and gave the policy 236 real GKE rollout episodes of experience across all 5 tiers.
-The benchmark (28 frozen scenarios, full agent chain, judge scoring) shows the resulting
-policy achieves **82% resolution rate** — a +28pp improvement over zero-shot baseline.
+The historical upstream benchmark (28 frozen scenarios, full agent chain, judge scoring)
+reports that the resulting policy achieved **82% resolution rate** — a +28pp improvement
+over zero-shot baseline. The continuation team has not yet reproduced this live run.
 
 Final checkpoint: **checkpoints/grpo_v3/** (LoRA adapter, ~78 MB)
 
@@ -217,7 +218,7 @@ as the model improves — making the test set impossible to memorise.
 | AtlasOps SFT | 68% | 0.601 | 62% | 55% |
 | **AtlasOps GRPO (MI300X)** | **82%** | **0.729** | **78%** | **72%** |
 
-*Note: GRPO numbers from full benchmark run on 28 frozen scenarios.*
+*Historical upstream claim: GRPO numbers came from a full benchmark run on 28 frozen scenarios; the continuation team has not yet reproduced the run.*
 *SFT and GRPO evaluation pending current training completion.*
 
 ---

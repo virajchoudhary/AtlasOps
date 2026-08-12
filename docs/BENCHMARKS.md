@@ -1,5 +1,10 @@
 # AtlasOps — Benchmark Results
 
+> Historical upstream result record. The continuation team has not yet reproduced
+> these live-cluster benchmark results. The active static catalogue contract is 28
+> frozen scenarios; the runner separately requests up to 10 dynamically generated
+> adversarial scenarios by default.
+
 | Tag | Model | Resolution | Reward (Judge) | Reward (Contract) | Avg Penalty | Avg Turns | Cascade Res. | Replay Res. | Date |
 |---|---|---|---|---|---|---|---|---|---|
 | baseline_zero_shot | `Qwen2.5-7B-Instruct` | 54% | 0.481 | 0.439 | 0.092 | 8.3 | 40% | 30% | 2026-05-09 |
@@ -46,8 +51,10 @@
 
 **Training hardware:** AMD MI300X (192 GB HBM3), ROCm 7.2, vLLM 0.17.1
 **Training recipe:** QLoRA SFT (4-bit NF4, LoRA r=16) → Online GRPO (DAPO loss, G=8 rollouts)
-**Scenarios:** 28 frozen (8 single-fault + 5 cascade + 5 multi-fault + 10 named replays)
+**Scenarios in this historical result:** 28 frozen (8 single-fault + 5 cascade + 5 multi-fault + 10 named replays)
 **Anti-gaming:** reward contract penalises command spam, false resolution, hallucinated evidence
 
-> Live results produced on real GKE cluster (us-central1), real Prometheus/Jaeger/Argo CD APIs.
+> Upstream reports that these live results were produced on a real GKE cluster
+> (us-central1) with Prometheus/Jaeger/Argo CD APIs. This has not been reproduced
+> by the continuation team.
 > Reproduce: `python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3`

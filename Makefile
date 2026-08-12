@@ -1,12 +1,16 @@
 REGION      ?= us-central1
 CLUSTER     ?= atlasops
 ZONE        ?= $(REGION)-a
+KUBE_CONTEXT ?= gke_$(PROJECT)_$(ZONE)_$(CLUSTER)
 
 # ── Cluster lifecycle ──────────────────────────────────────────────────────────
-.PHONY: require-project infra-check teardown-check up down status
+.PHONY: require-project require-kube-context infra-check teardown-check up down status
 
 require-project:
 	@if [ -z "$(strip $(PROJECT))" ]; then echo "ERROR: PROJECT is required. Pass PROJECT=<gcp-project-id>."; exit 2; fi
+
+require-kube-context: require-project
+	@if [ -z "$(strip $(KUBE_CONTEXT))" ]; then echo "ERROR: KUBE_CONTEXT is required."; exit 2; fi
 
 infra-check: require-project
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER) --check
@@ -22,25 +26,25 @@ down: require-project
 	@if [ "$(APPLY)" != "true" ]; then echo "Refusing: use make down APPLY=true plus ATLASOPS_TEARDOWN_ACK."; exit 2; fi
 	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER) --apply
 
-status: require-project
-	kubectl get pods -A --context=gke_$(PROJECT)_$(ZONE)_$(CLUSTER)
+status: require-kube-context
+	kubectl --context="$(KUBE_CONTEXT)" get pods -A
 
 # ── Chaos injection ────────────────────────────────────────────────────────────
 .PHONY: chaos chaos-reset
 
-chaos:
+chaos: require-kube-context
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make chaos SCENARIO=sf-001"; exit 1; fi
 	@MANIFEST=$$(find bench/chaos_manifests -name "$(SCENARIO).yaml" | head -1); \
 	if [ -z "$$MANIFEST" ]; then echo "Scenario $(SCENARIO) not found"; exit 1; fi; \
 	echo "Applying chaos: $$MANIFEST"; \
-	kubectl apply -f $$MANIFEST
+	kubectl --context="$(KUBE_CONTEXT)" apply -f "$$MANIFEST"
 
-chaos-reset:
-	kubectl delete podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos --all -A 2>/dev/null || true
+chaos-reset: require-kube-context
+	kubectl --context="$(KUBE_CONTEXT)" delete podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos --all -A --ignore-not-found=true
 
 # ── Historical replays ─────────────────────────────────────────────────────────
-replay-%:
-	kubectl apply -f bench/chaos_manifests/named_replays/$*.yaml
+replay-%: require-kube-context
+	kubectl --context="$(KUBE_CONTEXT)" apply -f bench/chaos_manifests/named_replays/$*.yaml
 	@echo "Replay $* triggered. Watch: make status"
 
 # ── Agent runtime ──────────────────────────────────────────────────────────────

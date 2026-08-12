@@ -21,10 +21,37 @@ prometheus:
             requests:
               storage: 20Gi
 alertmanager:
-  # Stage 1D-B will add a coordinator route only after the matching lowercase
-  # Deployment and Service exist. The chart's valid base config is used now.
   service:
     type: ClusterIP
+  alertmanagerSpec:
+    # Kubernetes Secrets are namespace-scoped. The operator must create this
+    # webhook-only Secret in monitoring; its value must match the coordinator
+    # Secret in default. Setup validates key presence without reading values.
+    secrets:
+      - atlasops-alertmanager-webhook
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: discard
+      group_by: [alertname, namespace, deployment]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: atlasops-coordinator
+          matchers:
+            - atlasops_route="coordinator"
+    receivers:
+      - name: discard
+      - name: atlasops-coordinator
+        webhook_configs:
+          - url: http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook
+            send_resolved: true
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/atlasops-alertmanager-webhook/alertmanager-webhook-secret
 
 # Disable components that require hostPID/hostPath or managed control-plane access.
 # nodeExporter needs hostPath; kube{Proxy,Etcd,ControllerManager,Scheduler} target

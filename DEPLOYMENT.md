@@ -1,9 +1,10 @@
 # AtlasOps — Real-World Deployment Guide
 
 > **Current project status:** this document records intended/historical runtime
-> architecture; it is not a reproduced production procedure. Stage 1D-A repairs
-> only the static provisioning contract. Real GKE provisioning and observability
-> wiring remain unverified. **DO NOT RUN LIVE GKE UNTIL STAGE 1D-B IS COMPLETE.**
+> architecture; it is not a reproduced production procedure. Stage 1D-B adds a
+> statically validated coordinator and minimum observability contract, but real
+> GKE provisioning, alert delivery, model/tool execution, and tracing remain
+> unverified. Review the unmerged Stage 1D-B change before any live apply.
 > See [`docs/project/INFRASTRUCTURE_CONTRACT.md`](docs/project/INFRASTRUCTURE_CONTRACT.md).
 
 > This is not a demo toy. This is how you put AtlasOps on-call for a real production cluster.
@@ -39,103 +40,65 @@
 
 The infrastructure scripts no longer provision or delete resources on ordinary
 invocation. Use `--check` for read-only preflight. `--apply` remains prohibited
-until Stage 1D-B is complete and requires the explicit acknowledgements and
-operator-prepared identity/network inputs documented in the infrastructure
-contract. Grafana and Argo CD use ClusterIP and are intended for port-forwarded
-operator access; Jaeger is pinned but blocked pending Stage 1D-B reconciliation.
+until this contract has been reviewed and requires the explicit acknowledgements,
+immutable coordinator image, model endpoint, identity/network inputs, and
+namespaced Secret objects documented in the infrastructure contract. Grafana and
+the coordinator use ClusterIP. Jaeger and Argo CD Applications remain deferred.
 
 ---
 
-## Quick Deployment (5 minutes)
+## Reviewed coordinator and observability contract
 
-### 1. Deploy the coordinator
+The coordinator image is built deliberately from `Dockerfile.coordinator` and
+starts `agents.coordinator` on port `9099`. The repository does not build or push
+an image during setup. An operator must supply an owned immutable image reference:
 
-```bash
-# Create the coordinator deployment
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: atlasops-coordinator
-  namespace: default
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: atlasops-coordinator
-  template:
-    metadata:
-      labels:
-        app: atlasops-coordinator
-    spec:
-      containers:
-      - name: coordinator
-        image: ghcr.io/harikishanth/atlasops:latest
-        ports:
-        - containerPort: 9099
-        env:
-        - name: BACKEND
-          value: "fireworks"          # or "vllm" for self-hosted
-        - name: LLM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: atlasops-secrets
-              key: llm-api-key
-        - name: GCP_PROJECT
-          value: "your-gcp-project"   # optional, for Cloud Logging
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: atlasops-coordinator-svc
-  namespace: default
-spec:
-  selector:
-    app: atlasops-coordinator
-  ports:
-  - port: 9099
-    targetPort: 9099
-EOF
+```text
+ATLASOPS_COORDINATOR_IMAGE=<registry>/<repository>/<image>@sha256:<64-lowercase-hex>
+ATLASOPS_BACKEND=vllm
+ATLASOPS_VLLM_BASE=http://<reviewed-model-service>:8000/v1
+ATLASOPS_AGENT_MODEL=<reviewed-model-id>
 ```
 
-### 2. Create the API key secret
+`infra/kubernetes/coordinator.yaml.tmpl` is rendered only by the guarded setup
+path. It creates `atlasops-coordinator`, the private ClusterIP Service
+`atlasops-coordinator-svc`, least-privilege read/remediation RBAC, resource
+requests/limits, and liveness/readiness probes against the side-effect-free
+`/healthz` route. It does not deploy an operator UI or expose a LoadBalancer.
+Privileged approval routes (`/approve` and `/approval/pending`) fail closed and
+require `X-AtlasOps-Key`; the approval capability token alone is insufficient.
 
-```bash
-kubectl create secret generic atlasops-secrets \
-  --from-literal=llm-api-key=fw_your_fireworks_key
+Secret values are provisioned out of Git. Kubernetes Secrets are namespace
+scoped, so the authenticated webhook requires two pre-existing Secret objects:
+
+- `default/atlasops-coordinator-secrets` with `atlasops-audit-secret`,
+  `alertmanager-webhook-secret`, and `atlasops-api-key`; add `llm-api-key` for
+  `fireworks` or `openai` backends.
+- `monitoring/atlasops-alertmanager-webhook` with
+  `alertmanager-webhook-secret` containing the same credential.
+
+Setup checks key presence without printing or storing value contents. Alertmanager
+mounts the monitoring Secret and reads the bearer credential through
+`credentials_file`; tracked Helm values contain no credential. The route is:
+
+```text
+http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook
 ```
 
-### 3. Wire Alertmanager
+For a newly created cluster, the guarded setup intentionally stops immediately
+after cluster/context initialization when these Secrets are absent, before
+applying Online Boutique or AtlasOps workloads. Provision both Secrets through
+the approved secret-delivery process, then rerun the same guarded apply. The
+setup script never accepts secret values as arguments or creates them.
 
-Add to your `alertmanager.yaml`:
+The first supported alert uses kube-state-metrics to detect unavailable replicas
+across the 12 pinned Online Boutique Deployments. The pinned release does not
+prove application request/error/latency Prometheus metrics, so no invented 5xx
+or latency PromQL is included.
 
-```yaml
-receivers:
-- name: atlasops
-  webhook_configs:
-  - url: 'http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook'
-    send_resolved: true
-
-route:
-  receiver: atlasops
-  routes:
-  - match:
-      severity: critical
-    receiver: atlasops
-  - match:
-      severity: warning
-    receiver: atlasops
-```
-
-### 4. Verify it works
-
-```bash
-# Check coordinator health
-kubectl exec -it deploy/atlasops-coordinator -- curl localhost:9099/health
-
-# Trigger a test incident
-kubectl exec -it deploy/atlasops-coordinator -- python inference.py
-```
+No live verification was performed. A later controlled run must independently
+prove coordinator rollout, authenticated alert delivery, input metric presence,
+model/tool execution, and recovery behavior.
 
 ---
 
@@ -150,10 +113,14 @@ kubectl exec -it deploy/atlasops-coordinator -- python inference.py
 | `VLLM_BASE` | `http://localhost:8000/v1` | vLLM endpoint (set to MI300X IP for self-hosted) |
 | `AGENT_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | Model name (or path to fine-tuned checkpoint) |
 | `GCP_PROJECT` | `""` | GCP project for Cloud Logging tool |
-| `PROMETHEUS_URL` | `http://prometheus:9090` | Prometheus endpoint |
-| `JAEGER_URL` | `http://jaeger:16686` | Jaeger query endpoint |
-| `ALERTMANAGER_URL` | `http://alertmanager:9093` | Alertmanager endpoint |
+| `PROMETHEUS_URL` | in-cluster Prometheus Service | Prometheus endpoint |
+| `JAEGER_URL` | none | Explicitly required to enable the otherwise fail-closed Jaeger tools |
+| `ALERTMANAGER_URL` | in-cluster Alertmanager Service | Alertmanager endpoint |
 | `SLACK_WEBHOOK_URL` | `""` | Slack webhook (optional; logs locally if not set) |
+| `ATLASOPS_AUDIT_SECRET` | none | Required before incident/model/tool execution; Secret reference only |
+| `ATLASOPS_API_KEY` | none | Required by the reviewed GKE Secret contract |
+| `ALERTMANAGER_WEBHOOK_SECRET` | none | Required by the reviewed GKE webhook contract |
+| `ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS` | none | Intentionally absent while Argo Application ownership is deferred |
 
 ### Using Your Fine-Tuned Checkpoints
 

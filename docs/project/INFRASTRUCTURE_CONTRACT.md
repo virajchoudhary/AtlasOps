@@ -7,10 +7,13 @@ they could provision on ordinary invocation, misreported regional node topology,
 used invalid identifiers, floated external dependencies, enabled unwired paid
 components, exposed operator UIs, and hid failures.
 
-Stage 1D-A repairs the static provisioning and teardown contract. It does not
-prove that a real GKE deployment works or that AtlasOps observability is wired.
+Stage 1D-A repaired the static provisioning and teardown contract. Stage 1D-B
+adds a reviewable coordinator workload, authenticated Alertmanager route, and a
+minimum kube-state-metrics alert. Neither stage proves that a real GKE deployment
+or end-to-end incident flow works.
 
-> **DO NOT RUN LIVE GKE UNTIL STAGE 1D-B IS COMPLETE.**
+> **Stage 1D-B is STATICALLY WIRED / LIVE UNVERIFIED. Review its unmerged PR
+> before any controlled live GKE reproduction.**
 
 ## Development GKE topology
 
@@ -81,10 +84,11 @@ claim.
 
 ## Component classification
 
-| Classification | Components | Stage 1D-A behavior |
+| Classification | Components | Current static behavior |
 |---|---|---|
 | Core foundation | GKE, Online Boutique | Statically contracted; live apply unverified |
-| Core but not yet wired | Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, AtlasOps coordinator | Base Prometheus, Argo CD, and Chaos Mesh installs are pinned; Jaeger is blocked; coordinator and integrations are Stage 1D-B |
+| Statically wired core | AtlasOps coordinator, Prometheus/Alertmanager, Chaos Mesh | Private coordinator, authenticated alert route, and one availability rule; no live proof |
+| Deferred observability/ownership | Jaeger, Online Boutique application metrics, Argo CD Application | No trace ingestion, invented application PromQL, or dual resource ownership |
 | Optional/deferred | Cloud SQL, Pub/Sub, Linkerd, Artifact Registry, Cloud Build | All default off; only Pub/Sub has a reviewed opt-in lifecycle |
 
 The deferred Cloud SQL canonical identifier is reserved as `atlasops-cart-db`,
@@ -109,17 +113,20 @@ consumes Pub/Sub.
 | Dependency | Human version | Immutable/reviewed pin | Stage 1D-A status |
 |---|---|---|---|
 | Online Boutique | `v0.10.0` | commit `98e60f5ee0b643cc00bceb71e6efb89617740432` | Manifest URL uses commit |
-| kube-prometheus-stack | chart `88.3.0` | explicit Helm `--version 88.3.0` | Base install only |
-| Jaeger | chart `4.12.0`, app `2.20.0` | provenance constant `4.12.0` | **Blocked for Stage 1D-B; not installed** |
-| Argo CD | chart `10.3.2`, app `v3.5.0` | explicit Helm `--version 10.3.2` | Base controller only |
+| kube-prometheus-stack | chart `88.3.0` | explicit Helm `--version 88.3.0` | Availability rule + authenticated route |
+| Jaeger | chart `4.12.0`, app `2.20.0` | provenance constant `4.12.0` | **Blocked/deferred; not installed** |
+| Argo CD | chart `10.3.2`, app `v3.5.0` | explicit Helm `--version 10.3.2` | Optional controller, default off; no Application |
 | Chaos Mesh | chart/app `2.8.3` | explicit Helm `--version 2.8.3` | Base controller only |
 | Linkerd | None | None | Deferred; no remote installer |
 
 Pins were resolved from the projects' official GitHub tag/chart metadata and
 official Helm repositories. The values-key structure used here was checked
 against the pinned Prometheus, Argo CD, and Chaos Mesh chart sources. Jaeger is
-deliberately not treated as deployable: the inherited values target an older
-values and trace-export contract.
+deliberately not treated as deployable. Chart `4.12.0` can receive OTLP, but the
+pinned stock Online Boutique manifest does not enable exporters; only seven
+services have source-supported tracing patches. Enabling partial ephemeral
+tracing is a separate, reviewable design decision rather than an implied part of
+the stock manifest.
 
 The GKE Kubernetes patch version remains managed by the `stable` release
 channel rather than an immutable version constant. This is a disclosed platform
@@ -128,7 +135,8 @@ must record the resolved control-plane and node versions as experiment evidence.
 
 ## Exposure and storage defaults
 
-Grafana, Argo CD server, the future Jaeger query UI, and Chaos Mesh dashboard use
+Grafana, the optional Argo CD server, the future Jaeger query UI, the coordinator,
+and Chaos Mesh dashboard use
 `ClusterIP`. Operator access is by `kubectl port-forward` after the intended
 cluster context is independently confirmed. Project-managed observability/admin
 UIs therefore expect zero public `LoadBalancer` Services by default.
@@ -136,6 +144,75 @@ UIs therefore expect zero public `LoadBalancer` Services by default.
 The pinned Online Boutique manifest separately defines one public
 `frontend-external` LoadBalancer. The pre-apply summary reports it separately.
 The reviewed project-managed persistent-storage request is Prometheus `20Gi`.
+
+## Stage 1D-B coordinator and observability contract
+
+The tracked coordinator template creates these canonical identities in
+`default`:
+
+| Resource | Identity / contract |
+|---|---|
+| Deployment | `atlasops-coordinator`, one CPU-oriented replica |
+| Service | `atlasops-coordinator-svc`, ClusterIP, port `9099` |
+| Container | operator-supplied image pinned by `@sha256:<digest>` |
+| Probe | `GET /healthz`, no model/tool/cloud/audit action |
+| Runtime config | ConfigMap for non-secret endpoints/model identifiers |
+| Runtime secrets | `default/atlasops-coordinator-secrets` Secret references |
+
+The dedicated `Dockerfile.coordinator` starts the coordinator directly on 9099;
+it is separate from the HF/operator UI container on 7860. The container runs as
+non-root with dropped capabilities, a read-only root filesystem, explicit
+resources, writable `emptyDir` volumes only for runtime data, and no public
+Service. Its Kubernetes service account has read-only cluster inspection plus a
+namespace-scoped deployment patch/scale role; it is not cluster-admin and cannot
+read Secrets.
+
+The P1 approval callback and pending-approval inventory are privileged operator
+surfaces. Both require the `X-AtlasOps-Key` value sourced from the coordinator
+Secret. This prevents an ordinary in-cluster workload from harvesting an
+approval token and using it to authorize remediation.
+
+Setup requires an explicit `ATLASOPS_COORDINATOR_IMAGE` immutable digest,
+`ATLASOPS_VLLM_BASE`, and `ATLASOPS_AGENT_MODEL`. It neither invents a registry
+nor builds/pushes an image. The manifest template is deterministically rendered
+before apply and unresolved placeholders fail closed.
+
+Kubernetes Secrets cannot be mounted across namespaces. The contract therefore
+uses `default/atlasops-coordinator-secrets` for coordinator runtime values and a
+webhook-only `monitoring/atlasops-alertmanager-webhook` for Alertmanager. Both are
+pre-existing operator-managed Secrets. Setup checks required key presence without
+printing or storing value contents. The bearer credential is read with
+`credentials_file`; no tracked Helm value contains it.
+
+On a new cluster, this is an explicit two-pass bootstrap boundary: the first
+guarded apply may create the exact reviewed cluster, then stops before any
+workload apply because the required Secrets do not yet exist. After the operator
+uses the approved secret-delivery process to create both Secret objects, rerun
+the guarded apply. This preserves the rule that setup neither receives nor
+creates secret values.
+
+Alertmanager routes only alerts labeled `atlasops_route="coordinator"` to:
+
+```text
+http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook
+```
+
+The first rule, `AtlasOpsOnlineBoutiqueDeploymentUnavailable`, compares desired
+and available Deployment replicas for the exact 12 pinned workloads using
+kube-state-metrics. The pinned application source does not expose a proven
+Prometheus error-rate or latency contract. Those signals remain explicitly
+deferred rather than represented by speculative metrics or queries.
+
+Jaeger is deferred. `JAEGER_URL` now fails closed when absent, so diagnosis does
+not pretend a trace backend is available. Argo CD is optional and default-off;
+no Application resource claims Online Boutique or observability objects, leaving
+the bootstrap path as their sole owner. Argo tools remain registered but fail
+closed until an explicit URL and credentials are configured after a later
+single-owner migration.
+
+Setup uses an isolated temporary kubeconfig for the exact GKE context. Direct
+Make targets that mutate Kubernetes require `PROJECT` and use the derived or
+explicit `KUBE_CONTEXT`; they never rely on the user's selected current context.
 
 ## What Stage 1D-A proves
 
@@ -148,18 +225,19 @@ The reviewed project-managed persistent-storage request is Prometheus `20Gi`.
 - Premature coordinator Alertmanager routing is absent.
 - Static regression tests and shell parsing require no cloud or cluster contact.
 
-## What Stage 1D-A does not prove
+## What Stage 1D-A/1D-B do not prove
 
 - Real GKE provisioning, quotas, IAM sufficiency, or teardown behavior
-- Coordinator Deployment/Service or Alertmanager-to-coordinator routing
-- Online Boutique Prometheus scrape configuration or alert rules
+- Real coordinator rollout or Alertmanager-to-coordinator delivery
+- Presence/firing of the kube-state-metrics rule inputs on a live cluster
+- Online Boutique application error-rate or latency metrics
 - Jaeger values compatibility, OTel ingestion, or trace-query behavior
 - Argo CD Application ownership/wiring
 - Observability integration, Chaos Mesh experiments, or full AtlasOps operation
 - A GCP Budget, absence of all billable resources, or production hardening
 
-Stage 1D-B must resolve these core runtime and observability contracts before a
-live GKE run is permitted.
+A controlled live reproduction must validate these contracts before any broader
+infrastructure, benchmark, or training claim.
 
 ## Primary references
 
@@ -169,6 +247,8 @@ live GKE run is permitted.
 - [Google Cloud billing project inspection](https://cloud.google.com/sdk/gcloud/reference/billing/projects/describe)
 - [Online Boutique release repository](https://github.com/GoogleCloudPlatform/microservices-demo/tree/v0.10.0)
 - [Prometheus Community charts](https://github.com/prometheus-community/helm-charts)
+- [Prometheus Alertmanager configuration](https://prometheus.io/docs/alerting/latest/configuration/)
 - [Jaeger charts](https://github.com/jaegertracing/helm-charts)
+- [Pinned Online Boutique Cloud Operations component](https://github.com/GoogleCloudPlatform/microservices-demo/tree/98e60f5ee0b643cc00bceb71e6efb89617740432/kustomize/components/google-cloud-operations)
 - [Argo Helm charts](https://github.com/argoproj/argo-helm)
 - [Chaos Mesh charts](https://charts.chaos-mesh.org/)

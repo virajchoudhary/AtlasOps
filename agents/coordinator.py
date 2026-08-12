@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -37,6 +38,20 @@ from config.runtime import StepRewardTracker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("coordinator")
+
+
+_RUNTIME_API_KEY = os.getenv("ATLASOPS_API_KEY", "")
+_runtime_api_key_header = APIKeyHeader(name="X-AtlasOps-Key", auto_error=False)
+
+
+def _require_runtime_api_key(key: str | None = Security(_runtime_api_key_header)) -> None:
+    """Fail closed on privileged coordinator operator endpoints."""
+    if not _RUNTIME_API_KEY:
+        raise HTTPException(status_code=503, detail="Coordinator operator API is not configured")
+    import hmac
+
+    if not key or not hmac.compare_digest(key.encode(), _RUNTIME_API_KEY.encode()):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-AtlasOps-Key header")
 
 
 # Backend selection:
@@ -63,6 +78,13 @@ class AlertWebhookPayload(BaseModel):
     alerts: list[dict[str, Any]] = Field(default_factory=list)
     commonLabels: dict[str, Any] = Field(default_factory=dict)
     status: str | None = None
+
+
+class ApprovalCallbackPayload(BaseModel):
+    token: str = Field(min_length=1)
+    decision: str = Field(min_length=1)
+    approved_by: str = ""
+    reason: str = ""
 
 
 def load_prompt(role: str) -> str:
@@ -667,8 +689,8 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
                         f"Token: {req.token}"
                     ),
                     action_items=[
-                        f"Approve: POST {approve_url} with {{\"token\":\"{req.token}\",\"decision\":\"approved\",\"approved_by\":\"<name>\"}}",
-                        f"Reject: POST {reject_url} with {{\"token\":\"{req.token}\",\"decision\":\"rejected\",\"approved_by\":\"<name>\",\"reason\":\"...\"}}",
+                        f"Approve: POST {approve_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"approved\",\"approved_by\":\"<name>\"}}",
+                        f"Reject: POST {reject_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"rejected\",\"approved_by\":\"<name>\",\"reason\":\"...\"}}",
                         "If no response, auto-timeout policy may proceed per config.",
                     ],
                 )
@@ -880,6 +902,25 @@ async def webhook(request: Request):
         correlator.mark_processing(incident_id, False)
 
 
+@app.post("/approve", dependencies=[Security(_require_runtime_api_key)])
+async def approve(request: Request):
+    """Token-scoped approval callback used by the dedicated coordinator runtime."""
+    payload = ApprovalCallbackPayload.model_validate(await request.json())
+    result = approval_gate.callback(
+        token=payload.token,
+        decision=payload.decision,
+        approved_by=payload.approved_by or "human-operator",
+        reason=payload.reason,
+    )
+    return JSONResponse(result, status_code=200 if result.get("ok") else 400)
+
+
+@app.get("/approval/pending", dependencies=[Security(_require_runtime_api_key)])
+async def approval_pending():
+    """Expose non-secret pending approval metadata to in-cluster operators."""
+    return JSONResponse({"pending": approval_gate.pending()})
+
+
 @app.get("/stream")
 async def stream_thoughts():
     """SSE endpoint — dashboard subscribes here for live agent thoughts."""
@@ -910,6 +951,12 @@ async def health():
         "live_judge": _live_judge_requested(),
         "hf_inference_pack": os.getenv("ATLASOPS_USE_HF_INFERENCE", ""),
     }
+
+
+@app.get("/healthz")
+async def healthz():
+    """Side-effect-free Kubernetes liveness/readiness probe."""
+    return {"status": "ok"}
 
 
 @app.get("/metrics")

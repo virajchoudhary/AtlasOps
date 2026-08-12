@@ -1,7 +1,7 @@
 grafana:
   enabled: true
   service:
-    type: LoadBalancer
+    type: ClusterIP  # use kubectl port-forward for operator access
   # Do not commit static admin passwords. Set via one of:
   # - grafana.admin.existingSecret
   # - helm --set-file for secure CI/CD injection
@@ -20,23 +20,9 @@ prometheus:
           resources:
             requests:
               storage: 20Gi
-    additionalScrapeConfigs:
-      - job_name: 'online-boutique'
-        kubernetes_sd_configs:
-          - role: pod
-            namespaces:
-              names: [default]
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-            action: keep
-            regex: "true"
-
 alertmanager:
-  alertmanagerSpec:
-    # Keep this name aligned with infra/setup.sh where the Secret is created.
-    # A mismatch here makes Alertmanager start with the chart default config,
-    # which silently bypasses the coordinator webhook route.
-    configSecret: alertmanager-AtlasOps-config
+  # Stage 1D-B will add a coordinator route only after the matching lowercase
+  # Deployment and Service exist. The chart's valid base config is used now.
   service:
     type: ClusterIP
 

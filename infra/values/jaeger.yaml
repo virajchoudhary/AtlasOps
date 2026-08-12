@@ -1,3 +1,6 @@
+# BLOCKED FOR STAGE 1D-B: pinned chart 4.12.0 uses the Jaeger v2 contract.
+# These inherited values are retained only as migration input and setup.sh does
+# not install this chart until values and trace ingestion are reconciled.
 provisionDataStore:
   cassandra: false
   elasticsearch: false
@@ -14,7 +17,7 @@ collector:
 query:
   replicaCount: 1
   service:
-    type: LoadBalancer
+    type: ClusterIP
 
 agent:
   enabled: false  # Use OTel collector sidecar instead

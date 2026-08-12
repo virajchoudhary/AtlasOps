@@ -1,6 +1,6 @@
 server:
   service:
-    type: LoadBalancer
+    type: ClusterIP  # use kubectl port-forward for operator access
 
 # Keep secure defaults in versioned config. For demo-only environments,
 # pass --set server.extraArgs[0]=--insecure at deploy time instead.
@@ -14,7 +14,7 @@ applicationSet:
 notifications:
   enabled: false  # we use Alertmanager + Slack instead
 
-# Reduce resource requests for demo-sized cluster (3× e2-standard-4)
+# Reduce resource requests for the development cluster (1-3 e2-standard-4 nodes)
 controller:
   resources:
     requests:

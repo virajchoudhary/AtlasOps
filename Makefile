@@ -1,18 +1,27 @@
 PROJECT     ?= cloudsre-v3-amd
 REGION      ?= us-central1
 CLUSTER     ?= atlasops
+ZONE        ?= $(REGION)-a
 
 # ── Cluster lifecycle ──────────────────────────────────────────────────────────
-.PHONY: up down status
+.PHONY: infra-check teardown-check up down status
+
+infra-check:
+	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER) --check
+
+teardown-check:
+	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER) --check
 
 up:
-	bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER)
+	@if [ "$(APPLY)" != "true" ]; then echo "Refusing: use make up APPLY=true plus the required setup environment gates."; exit 2; fi
+	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/setup.sh $(PROJECT) $(REGION) $(CLUSTER) --apply
 
 down:
-	bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER)
+	@if [ "$(APPLY)" != "true" ]; then echo "Refusing: use make down APPLY=true plus ATLASOPS_TEARDOWN_ACK."; exit 2; fi
+	ATLASOPS_GKE_ZONE=$(ZONE) bash infra/teardown.sh $(PROJECT) $(REGION) $(CLUSTER) --apply
 
 status:
-	kubectl get pods -A --context=gke_$(PROJECT)_$(REGION)_$(CLUSTER)
+	kubectl get pods -A --context=gke_$(PROJECT)_$(ZONE)_$(CLUSTER)
 
 # ── Chaos injection ────────────────────────────────────────────────────────────
 .PHONY: chaos chaos-reset

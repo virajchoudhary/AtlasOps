@@ -83,7 +83,7 @@ Based on: DAPO paper (2025), kube-sre-gym results, and online GRPO gains in tool
 | Dimension | kube-sre-gym | AtlasOps |
 |---|---|---|
 | Infrastructure | GKE | **GKE + Cloud SQL + Cloud Monitoring + Alertmanager** |
-| Tool surface | 7 kubectl commands | **20 real SRE tools** |
+| Tool surface | 7 kubectl commands | **22 registered wrappers; 19 agent-exposed** |
 | Observability | None | **Prometheus + Grafana + Jaeger + OTel** |
 | Agent count | 1 | **4 specialized + coordinator** |
 | Chaos types | kubectl patches | **6 Chaos Mesh types** |

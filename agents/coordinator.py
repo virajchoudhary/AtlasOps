@@ -25,6 +25,11 @@ from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import emit as thought_emit
+from agents.tool_policy import (
+    AGENT_EXPOSED_TOOLS,
+    CLUSTER_MUTATING_TOOLS,
+    ROLE_ALLOWED_TOOLS,
+)
 from agents.tools import TOOL_REGISTRY
 from agents.tools.alertmanager import alertmanager_list_alerts
 from config.runtime import StepRewardTracker
@@ -53,44 +58,6 @@ API_KEY    = os.getenv("LLM_API_KEY",  "")  # required for fireworks/openai, emp
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
 TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-
-# Backend-enforced safety policy. Prompt guidance is useful, but runtime must
-# still guard high-impact tools in case a model issues unsafe calls.
-MUTATING_TOOLS = {
-    "argocd_rollback",
-    "kubectl_rollout",
-    "kubectl_scale",
-    "alertmanager_silence",
-}
-ROLE_ALLOWED_TOOLS = {
-    "triage": {"kubectl_get", "kubectl_top_pods", "alertmanager_list_alerts", "promql_query"},
-    "diagnosis": {
-        "promql_query",
-        "promql_query_range",
-        "jaeger_search",
-        "jaeger_get_trace",
-        "kubectl_logs",
-        "kubectl_describe",
-        "kubectl_get",
-        "kubectl_top_pods",
-        "argocd_list_apps",
-        "argocd_app_history",
-        "gcloud_logs_read",
-        "cloud_monitoring_query",
-    },
-    "remediation": {
-        "argocd_rollback",
-        "kubectl_rollout",
-        "kubectl_scale",
-        "alertmanager_silence",
-        "promql_query",
-        "kubectl_get",
-        "kubectl_describe",
-        "slack_post_update",
-    },
-    "comms": {"slack_post_update", "postmortem_draft"},
-}
-
 
 class AlertWebhookPayload(BaseModel):
     alerts: list[dict[str, Any]] = Field(default_factory=list)
@@ -281,7 +248,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     circuit_breaker.check_before_tool_call(
                         incident_id=incident_id,
                         tool_name=fn_name,
-                        is_mutating=fn_name in MUTATING_TOOLS,
+                        is_cluster_mutating=fn_name in CLUSTER_MUTATING_TOOLS,
                     )
                 except CircuitBreakerTripped as e:
                     tool_output = {"success": False, "error": str(e), "blocked_by_circuit_breaker": True}
@@ -463,38 +430,40 @@ def _summarise_conclusion(role: str, content: str) -> str:
 
 
 def _tool_schemas_for_role(role: str) -> list[dict[str, Any]]:
-    return [_tool_schema(name) for name in ROLE_ALLOWED_TOOLS.get(role, set())]
+    return [_tool_schema(name) for name in sorted(ROLE_ALLOWED_TOOLS.get(role, frozenset()))]
+
+
+_TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
+    "kubectl_get": {"type": "object", "properties": {"resource": {"type": "string"}, "namespace": {"type": "string"}, "output": {"type": "string"}}, "required": ["resource"], "additionalProperties": False},
+    "kubectl_describe": {"type": "object", "properties": {"resource": {"type": "string"}, "name": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["resource", "name"], "additionalProperties": False},
+    "kubectl_logs": {"type": "object", "properties": {"pod": {"type": "string"}, "namespace": {"type": "string"}, "tail": {"type": "integer"}, "container": {"type": "string"}}, "required": ["pod"], "additionalProperties": False},
+    "kubectl_top_pods": {"type": "object", "properties": {"namespace": {"type": "string"}}, "additionalProperties": False},
+    "kubectl_rollout": {"type": "object", "properties": {"action": {"type": "string"}, "resource": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["action", "resource"], "additionalProperties": False},
+    "kubectl_scale": {"type": "object", "properties": {"deployment": {"type": "string"}, "replicas": {"type": "integer"}, "namespace": {"type": "string"}}, "required": ["deployment", "replicas"], "additionalProperties": False},
+    "promql_query": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
+    "promql_query_range": {"type": "object", "properties": {"query": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}, "step": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
+    "jaeger_search": {"type": "object", "properties": {"service": {"type": "string"}, "lookback": {"type": "string"}, "limit": {"type": "integer"}, "min_duration": {"type": "string"}}, "required": ["service"], "additionalProperties": False},
+    "jaeger_get_trace": {"type": "object", "properties": {"trace_id": {"type": "string"}}, "required": ["trace_id"], "additionalProperties": False},
+    "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
+    "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
+    "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
+    "gcloud_logs_read": {"type": "object", "properties": {"filter_query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["filter_query"], "additionalProperties": False},
+    "cloud_monitoring_query": {"type": "object", "properties": {"metric_type": {"type": "string"}, "lookback_seconds": {"type": "integer"}}, "required": ["metric_type"], "additionalProperties": False},
+    "alertmanager_list_alerts": {"type": "object", "properties": {"active_only": {"type": "boolean"}}, "additionalProperties": False},
+    "alertmanager_silence": {"type": "object", "properties": {"matchers": {"type": "array"}, "duration_minutes": {"type": "integer"}, "comment": {"type": "string"}}, "required": ["matchers"], "additionalProperties": False},
+    "slack_post_update": {"type": "object", "properties": {"channel": {"type": "string"}, "severity": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"}, "action_items": {"type": "array"}}, "required": ["channel", "severity", "title", "summary"], "additionalProperties": False},
+    "postmortem_draft": {"type": "object", "properties": {"incident": {"type": "object"}, "output_path": {"type": "string"}}, "required": ["incident"], "additionalProperties": False},
+}
 
 
 def _tool_schema(name: str) -> dict[str, Any]:
     """Generate OpenAI-format tool schema with strict known arguments."""
-    schema_map: dict[str, dict[str, Any]] = {
-        "kubectl_get": {"type": "object", "properties": {"resource": {"type": "string"}, "namespace": {"type": "string"}, "output": {"type": "string"}}, "required": ["resource"], "additionalProperties": False},
-        "kubectl_describe": {"type": "object", "properties": {"resource": {"type": "string"}, "name": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["resource", "name"], "additionalProperties": False},
-        "kubectl_logs": {"type": "object", "properties": {"pod": {"type": "string"}, "namespace": {"type": "string"}, "tail": {"type": "integer"}, "container": {"type": "string"}}, "required": ["pod"], "additionalProperties": False},
-        "kubectl_top_pods": {"type": "object", "properties": {"namespace": {"type": "string"}}, "additionalProperties": False},
-        "kubectl_rollout": {"type": "object", "properties": {"action": {"type": "string"}, "resource": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["action", "resource"], "additionalProperties": False},
-        "kubectl_scale": {"type": "object", "properties": {"deployment": {"type": "string"}, "replicas": {"type": "integer"}, "namespace": {"type": "string"}}, "required": ["deployment", "replicas"], "additionalProperties": False},
-        "promql_query": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
-        "promql_query_range": {"type": "object", "properties": {"query": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}, "step": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
-        "jaeger_search": {"type": "object", "properties": {"service": {"type": "string"}, "lookback": {"type": "string"}, "limit": {"type": "integer"}, "min_duration": {"type": "string"}}, "required": ["service"], "additionalProperties": False},
-        "jaeger_get_trace": {"type": "object", "properties": {"trace_id": {"type": "string"}}, "required": ["trace_id"], "additionalProperties": False},
-        "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
-        "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
-        "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
-        "gcloud_logs_read": {"type": "object", "properties": {"filter_query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["filter_query"], "additionalProperties": False},
-        "cloud_monitoring_query": {"type": "object", "properties": {"metric_type": {"type": "string"}, "lookback_seconds": {"type": "integer"}}, "required": ["metric_type"], "additionalProperties": False},
-        "alertmanager_list_alerts": {"type": "object", "properties": {"active_only": {"type": "boolean"}}, "additionalProperties": False},
-        "alertmanager_silence": {"type": "object", "properties": {"matchers": {"type": "array"}, "duration_minutes": {"type": "integer"}, "comment": {"type": "string"}}, "required": ["matchers"], "additionalProperties": False},
-        "slack_post_update": {"type": "object", "properties": {"channel": {"type": "string"}, "severity": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"}, "action_items": {"type": "array"}}, "required": ["channel", "severity", "title", "summary"], "additionalProperties": False},
-        "postmortem_draft": {"type": "object", "properties": {"incident": {"type": "object"}, "output_path": {"type": "string"}}, "required": ["incident"], "additionalProperties": False},
-    }
     return {
         "type": "function",
         "function": {
             "name": name,
             "description": f"Real SRE tool: {name}",
-            "parameters": schema_map.get(name, {"type": "object", "additionalProperties": False}),
+            "parameters": _TOOL_PARAMETER_SCHEMAS[name],
         },
     }
 
@@ -522,8 +491,8 @@ def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: d
     if tool not in ROLE_ALLOWED_TOOLS.get(role, set()):
         return f"tool `{tool}` not allowed for role `{role}`"
 
-    if role != "remediation" and tool in MUTATING_TOOLS:
-        return f"mutating tool `{tool}` blocked outside remediation role"
+    if role != "remediation" and tool in CLUSTER_MUTATING_TOOLS:
+        return f"cluster-mutating tool `{tool}` blocked outside remediation role"
 
     # Guard high-impact operations to avoid accidental destructive actions.
     if role == "remediation":
@@ -541,14 +510,7 @@ def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: d
     return None
 
 
-_TOOL_NAMES_SET = {
-    "kubectl_get", "kubectl_logs", "kubectl_describe", "kubectl_top_pods",
-    "kubectl_rollout", "kubectl_scale", "promql_query", "promql_query_range",
-    "jaeger_search", "jaeger_get_trace", "argocd_list_apps", "argocd_app_history",
-    "argocd_rollback", "gcloud_logs_read", "cloud_monitoring_query",
-    "alertmanager_list_alerts", "alertmanager_silence",
-    "slack_post_update", "postmortem_draft",
-}
+_TOOL_NAMES_SET = AGENT_EXPOSED_TOOLS
 
 
 def _try_parse_json(content: str) -> dict[str, Any]:

@@ -24,12 +24,12 @@ class CircuitBreakerTripped(RuntimeError):
 @dataclass
 class CircuitBreaker:
     max_tool_calls_per_incident: int = 50
-    max_mutating_actions_per_hour: int = 10
+    max_cluster_mutating_actions_per_hour: int = 10
     max_concurrent_incidents: int = 5
     consecutive_failure_threshold: int = 3
 
     _tool_call_count: dict[str, int] = field(default_factory=dict)
-    _mutating_actions_this_hour: int = 0
+    _cluster_mutating_actions_this_hour: int = 0
     _active_incidents: int = 0
     _consecutive_failures: int = 0
     _tripped: bool = False
@@ -54,7 +54,18 @@ class CircuitBreaker:
         if self._consecutive_failures >= self.consecutive_failure_threshold:
             self._tripped = True
 
-    def check_before_tool_call(self, incident_id: str, tool_name: str, is_mutating: bool) -> None:
+    def check_before_tool_call(
+        self,
+        incident_id: str,
+        tool_name: str,
+        is_cluster_mutating: bool,
+    ) -> None:
+        """Account for a tool call and enforce the cluster-remediation quota.
+
+        Communication and local-file side effects still count toward the general
+        per-incident tool-call limit, but only cluster-mutating tools consume the
+        hourly cluster-remediation allowance.
+        """
         self._roll_hour_window_if_needed()
         if self._tripped:
             raise CircuitBreakerTripped("Circuit breaker is OPEN — all tool calls blocked")
@@ -66,10 +77,13 @@ class CircuitBreaker:
             )
         self._tool_call_count[incident_id] = count + 1
 
-        if is_mutating:
-            if self._mutating_actions_this_hour >= self.max_mutating_actions_per_hour:
-                raise CircuitBreakerTripped("Hourly mutating action limit reached")
-            self._mutating_actions_this_hour += 1
+        if is_cluster_mutating:
+            if (
+                self._cluster_mutating_actions_this_hour
+                >= self.max_cluster_mutating_actions_per_hour
+            ):
+                raise CircuitBreakerTripped("Hourly cluster-mutating action limit reached")
+            self._cluster_mutating_actions_this_hour += 1
 
     def status(self) -> dict:
         self._roll_hour_window_if_needed()
@@ -77,16 +91,16 @@ class CircuitBreaker:
             "tripped": self._tripped,
             "active_incidents": self._active_incidents,
             "consecutive_failures": self._consecutive_failures,
-            "mutating_actions_this_hour": self._mutating_actions_this_hour,
+            "cluster_mutating_actions_this_hour": self._cluster_mutating_actions_this_hour,
             "max_tool_calls_per_incident": self.max_tool_calls_per_incident,
-            "max_mutating_actions_per_hour": self.max_mutating_actions_per_hour,
+            "max_cluster_mutating_actions_per_hour": self.max_cluster_mutating_actions_per_hour,
             "max_concurrent_incidents": self.max_concurrent_incidents,
         }
 
     def reset(self) -> dict:
         self._tripped = False
         self._consecutive_failures = 0
-        self._mutating_actions_this_hour = 0
+        self._cluster_mutating_actions_this_hour = 0
         self._hour_window_start = time.time()
         self._tool_call_count.clear()
         self._active_incidents = 0
@@ -95,7 +109,7 @@ class CircuitBreaker:
     def _roll_hour_window_if_needed(self) -> None:
         if time.time() - self._hour_window_start >= 3600:
             self._hour_window_start = time.time()
-            self._mutating_actions_this_hour = 0
+            self._cluster_mutating_actions_this_hour = 0
 
 
 circuit_breaker = CircuitBreaker()

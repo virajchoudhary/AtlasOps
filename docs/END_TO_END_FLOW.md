@@ -92,7 +92,7 @@ sequenceDiagram
 
 **Correlator bypass for UI injects** — Each `/inject` carries a `correlation_id` starting with `inj-`. The correlator always dispatches these as new incidents instead of merging with existing Alertmanager fingerprints. This prevents the second scenario from being silently swallowed when another run is still active.
 
-**Circuit breaker semantics** — Only `system_error` and `agent_error` outcomes count toward the consecutive failure threshold. Designed outcomes like `approval_rejected`, `manual_runbook`, and `approval_timeout` do not trip the breaker, so judges can reject remediation freely without locking the system.
+**Circuit breaker semantics** — Only `system_error` and `agent_error` outcomes count toward the consecutive failure threshold. Designed outcomes like `approval_rejected`, `manual_runbook`, and `approval_timeout` do not trip the breaker, so judges can reject remediation freely without locking the system. The hourly action quota applies only to cluster-mutating remediation tools; external communications and local postmortem writes remain subject to the general per-incident call limit but do not consume cluster-mutation capacity.
 
 **HTTP retry on LLM calls** — The coordinator retries `chat/completions` on HTTP 429 (HF Router rate limit) and 5xx with exponential backoff, preventing transient inference hiccups from failing entire scenarios.
 

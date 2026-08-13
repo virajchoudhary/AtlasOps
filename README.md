@@ -31,7 +31,7 @@ tags:
 
 ---
 
-We gave 4 specialized AI agents a PagerDuty alert, a live GKE cluster running 11 microservices, and 20 real SRE tools. No simulated responses. No fake metrics. No Docker Compose pretending to be cloud.
+The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 22 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
 
 **Triage** acked the alert and mapped the blast radius in 47 seconds.  
 **Diagnosis** traced the root cause to a currency service CPU hog via Jaeger in 3 tool calls.  
@@ -147,11 +147,17 @@ Full training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Ra
 
 ---
 
-## 20 Real SRE Tools
+## Tool Registry and Agent Access
 
-`kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `kubectl_exec` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `gcloud_logs_read` · `cloud_monitoring_query` · `alertmanager_list_alerts` · `alertmanager_silence` · `slack_post_update` · **`postmortem_draft`**
+AtlasOps registers **22 SRE tool wrappers**. Role ACLs expose **19** to autonomous agents:
 
-Every tool hits a real API or real cluster. No mocks in production.
+`kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `gcloud_logs_read` · `cloud_monitoring_query` · `alertmanager_list_alerts` · `alertmanager_silence` · `slack_post_update` · **`postmortem_draft`**
+
+Three registered wrappers are intentionally not agent-exposed: `argocd_app_get`, `kubectl_top_nodes`, and high-risk `kubectl_exec`. Registration does not grant an agent permission to call a tool.
+
+The cluster-mutation quota covers `alertmanager_silence`, `argocd_rollback`, `kubectl_rollout`, and `kubectl_scale`. External communication (`slack_post_update`), local filesystem output (`slack_post_update` and `postmortem_draft`), and high-risk unexposed execution (`kubectl_exec`) are separately classified side effects.
+
+Tool exposure is separate from deployment availability. In particular, the Argo CD wrappers remain registered and role-authorized where applicable, but calls fail closed unless an Argo CD endpoint and credentials are deliberately configured; the first controlled reproduction does not yet guarantee Argo Application ownership.
 
 ---
 
@@ -180,7 +186,7 @@ The static catalogue contains exactly 28 YAML-backed frozen scenarios. The bench
 ### Circuit Breaker
 Hard stops runaway automation:
 - 50 tool calls per incident max
-- 10 mutating actions per hour
+- 10 cluster-mutating remediation actions per hour
 - 5 concurrent incidents max
 - Trips after 3 consecutive unresolved incidents
 - `GET /circuit-breaker/status` · `POST /circuit-breaker/reset`
@@ -340,7 +346,7 @@ atlasops/
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
 │   ├── prompts/                # triage / diagnosis / remediation / comms
-│   └── tools/                  # 20 real SRE tool wrappers
+│   └── tools/                  # 22 registered wrappers; 19 agent-exposed
 ├── bench/
 │   ├── runner.py               # Benchmark harness (28 frozen + optional generated scenarios)
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/

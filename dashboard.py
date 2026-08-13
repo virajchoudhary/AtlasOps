@@ -302,11 +302,11 @@ def build_about_tab():
 | **App** | Google Online Boutique v0.10.0 — 11 microservices, gRPC/protobuf |
 | **Chaos** | Chaos Mesh v2: PodChaos, NetworkChaos, StressChaos, DNSChaos, IOChaos, TimeChaos |
 | **Observability** | Prometheus + Grafana + Jaeger + OTel Collector + Alertmanager |
-| **GitOps** | Argo CD — agents execute real `argocd rollback` |
+| **GitOps** | Argo CD wrappers are configuration-dependent; Application ownership and live execution remain deferred |
 | **GCP Services** | Cloud SQL (Postgres 15), Cloud PubSub, Cloud Monitoring API, Cloud Logging |
 | **GPU** | AMD MI300X (192 GB HBM3) — 5 models co-hosted via vLLM |
 | **Models** | Qwen2.5-7B×4 (LoRA agents) + Qwen2.5-72B (judge) |
-| **Tools** | 20 real SRE tools vs kube-sre-gym's 7 |
+| **Tools** | 22 registered wrappers / 19 agent-exposed vs kube-sre-gym's 7 |
 
 ### Agent Chain
 ```

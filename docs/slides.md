@@ -214,18 +214,18 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 <div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Online Boutique</strong> — 11 real microservices (Go, Python, Node, Java, C#, gRPC)</span></div>
 <div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Chaos Mesh</strong> — PodChaos · NetworkChaos · StressChaos · DNSChaos · IOChaos · TimeChaos</span></div>
 <div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Prometheus + Grafana + Jaeger + OTel</strong> — full observability stack</span></div>
-<div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Argo CD</strong> — GitOps rollbacks, real execution</span></div>
+<div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Argo CD wrappers</strong> — configuration-dependent; Application ownership and live execution remain deferred</span></div>
 <div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Cloud SQL</strong> (Postgres 15) + Cloud PubSub + Cloud Monitoring</span></div>
 <div style="display:flex;align-items:baseline;gap:10px"><span style="color:#00E396;font-weight:700">▸</span><span><strong style="color:#E8EDF5">Alertmanager</strong> — webhook fires agents on real alerts</span></div>
 </div>
 </div>
 
 <div>
-<h3>🛠 20 Real SRE Tools</h3>
+<h3>🛠 22 Registered · 19 Agent-Exposed</h3>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.7em">
-<div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">kubectl (7 cmds)</div>
+<div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">kubectl (8 registered / 6 exposed)</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">promql_query</div>
-<div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">promql_range</div>
+<div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">promql_query_range</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">jaeger_search</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">jaeger_get_trace</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">argocd_rollback</div>
@@ -234,7 +234,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">alertmanager_silence</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">postmortem_draft</div>
 </div>
-<div style="margin-top:12px;font-size:0.7em;color:#5A6478;font-style:italic">Every tool hits a real API. No mocks in production.</div>
+<div style="margin-top:12px;font-size:0.7em;color:#5A6478;font-style:italic">Wrappers include API clients, external communications, and local-file output; live integrations remain unverified.</div>
 </div>
 
 </div>
@@ -438,7 +438,7 @@ Token-based callbacks via REST API
 <div style="font-weight:700;color:#FFB703;margin-bottom:8px;letter-spacing:1px">CIRCUIT BREAKER</div>
 <div style="font-size:0.78em;color:#9BA3B8;line-height:1.8">
 50 tool calls per incident max<br>
-10 mutating actions per hour<br>
+10 cluster-mutating remediation actions per hour<br>
 3 consecutive failures → OPEN state<br>
 Tripped 1× during GRPO training (working as designed)
 </div>

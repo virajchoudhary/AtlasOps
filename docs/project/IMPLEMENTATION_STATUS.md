@@ -1,6 +1,7 @@
 # AtlasOps implementation status
 
-This is a concise current classification, not a complete implementation audit.
+This is a concise current classification, not a complete implementation audit. For canonical Stage 0-15 sequence, governance rules, and formal gate closure evidence, see [MASTER_PIPELINE_STATUS.md](MASTER_PIPELINE_STATUS.md).
+
 
 | Area | Baseline status | Project treatment |
 |---|---|---|

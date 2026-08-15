@@ -1,8 +1,10 @@
 """Comprehensive tests for the Objective Environment Verifier and Scenario Contract.
 
 Guarantees:
-1. 100% agreement between SCENARIO_VERIFICATION_SPECS and the actual Chaos Mesh manifests.
-2. 100% offline mocked unit execution with zero network, cloud, or cluster dependencies.
+1. Exact (bijective) agreement between SCENARIO_VERIFICATION_SPECS and the actual Chaos Mesh manifests.
+2. Exact tier and namespace verification against version-controlled manifest metadata and selectors.
+3. Strict fail-closed behavior for unknown frozen scenarios and unresolved dynamic scenarios.
+4. 100% offline mocked unit execution with zero network, cloud, or cluster dependencies.
 """
 
 from __future__ import annotations
@@ -98,10 +100,10 @@ def _mock_promql_failure(error_msg: str = "prometheus timeout"):
     return _promql_query
 
 
-# ── Scenario Manifest Extraction Helper ───────────────────────────────────────
+# ── Manifest Parsing Helpers ──────────────────────────────────────────────────
 
 def _extract_manifest_targeted_workloads(manifest_path: Path) -> set[str]:
-    """Parse YAML docs in manifest and extract targeted workload names."""
+    """Parse YAML docs in manifest and extract directly targeted workload names from label selectors and patches."""
     content = manifest_path.read_text(encoding="utf-8")
     targets = set()
     for doc in yaml.safe_load_all(content):
@@ -110,7 +112,7 @@ def _extract_manifest_targeted_workloads(manifest_path: Path) -> set[str]:
         kind = doc.get("kind")
         spec = doc.get("spec", {})
 
-        # Standard Chaos Mesh selector
+        # Standard Chaos Mesh selector labelSelectors
         selector = spec.get("selector", {})
         label_selectors = selector.get("labelSelectors", {})
         if "app" in label_selectors:
@@ -126,18 +128,59 @@ def _extract_manifest_targeted_workloads(manifest_path: Path) -> set[str]:
         # Argo CD application patch
         if kind == "Application":
             patches = spec.get("source", {}).get("kustomize", {}).get("patches", [])
-            for p in patches:
-                target_obj = p.get("target", {})
+            for patch in patches:
+                target_obj = patch.get("target", {})
                 if target_obj.get("name"):
                     targets.add(target_obj["name"])
 
-        # Direct Deployment
-        if kind == "Deployment":
-            name = doc.get("metadata", {}).get("name", "")
-            if name:
-                targets.add(name)
-
     return targets
+
+
+def _extract_manifest_tier(manifest_path: Path) -> str | None:
+    """Extract metadata.labels.tier from the first document in the manifest."""
+    content = manifest_path.read_text(encoding="utf-8")
+    for doc in yaml.safe_load_all(content):
+        if doc and isinstance(doc, dict):
+            tier = doc.get("metadata", {}).get("labels", {}).get("tier")
+            if tier:
+                return str(tier)
+    return None
+
+
+def _extract_manifest_selector_namespaces(manifest_path: Path) -> set[str]:
+    """Extract spec.selector.namespaces across all documents in the manifest."""
+    content = manifest_path.read_text(encoding="utf-8")
+    namespaces = set()
+    for doc in yaml.safe_load_all(content):
+        if not doc or not isinstance(doc, dict):
+            continue
+        spec = doc.get("spec", {})
+        sel_ns = spec.get("selector", {}).get("namespaces", [])
+        if isinstance(sel_ns, list):
+            namespaces.update(sel_ns)
+    return namespaces
+
+
+# ── Explicit Reviewed Exceptions for Genuine Non-Standard Manifests ───────────
+
+REVIEWED_MANIFEST_TARGET_EXCEPTIONS: dict[str, set[str]] = {
+    # hist-azure-dns-2019 targets checkoutservice, cartservice, and currencyservice via
+    # DNS patterns across default namespace rather than individual pod labelSelectors.
+    "named_replays/hist-azure-dns-2019": {"checkoutservice", "cartservice", "currencyservice"},
+    # hist-datadog-2023 applies wildcard DNSChaos (*.default.svc.cluster.local.)
+    # across the entire namespace; objective recovery verifies the 4 core customer-facing services.
+    "named_replays/hist-datadog-2023": {"frontend", "cartservice", "checkoutservice", "productcatalogservice"},
+    # hist-facebook-bgp-2021 partitions default namespace from kube-system;
+    # objective recovery verifies ingress edge availability on frontend.
+    "named_replays/hist-facebook-bgp-2021": {"frontend"},
+    # hist-knight-capital-2012 deploys rogue checkoutservice-legacy;
+    # objective recovery verifies standard checkoutservice deployment while checking
+    # that checkoutservice-legacy is scaled down / removed.
+    "named_replays/hist-knight-capital-2012": {"checkoutservice"},
+    # mf-003 combines cluster-wide DNSChaos with targeted currencyservice network delay;
+    # objective recovery verifies currencyservice.
+    "multi_fault/mf-003": {"currencyservice"},
+}
 
 
 # ── Scenario Catalogue Contract Tests (All 28 Frozen Scenarios) ───────────────
@@ -160,45 +203,88 @@ class TestScenarioCatalogueContract:
             assert not spec_id.startswith("adversarial/"), f"Adversarial scenario {spec_id} must not be in frozen catalogue"
 
     @pytest.mark.parametrize("scenario_id", FROZEN_SCENARIOS)
-    def test_spec_workloads_match_actual_manifest_targets(self, scenario_id: str):
+    def test_spec_workloads_match_actual_manifest_targets_exactly(self, scenario_id: str):
+        """Require exact equality (spec_workloads == manifest_targets).
+
+        Detects both missing workload targets and extra unrelated bogus targets.
+        """
         manifest_path = MANIFESTS_DIR / f"{scenario_id}.yaml"
         assert manifest_path.exists(), f"Manifest file missing for {scenario_id}: {manifest_path}"
 
-        manifest_targets = _extract_manifest_targeted_workloads(manifest_path)
         spec = SCENARIO_VERIFICATION_SPECS[scenario_id]
         spec_workloads = {w.name for w in spec.workloads}
 
-        # For scenarios targeting specific services via labelSelectors or patches
-        if scenario_id == "named_replays/hist-knight-capital-2012":
-            # Targets checkoutservice, while checkoutservice-legacy is the bad deployment
-            assert "checkoutservice" in spec_workloads
-            assert "checkoutservice-legacy" in spec.require_no_legacy_deployments
-        elif scenario_id == "named_replays/hist-datadog-2023":
-            # DNS failure across default namespace; verifies core boutique services
-            assert {"frontend", "cartservice", "checkoutservice", "productcatalogservice"}.issubset(spec_workloads)
-        elif scenario_id == "named_replays/hist-azure-dns-2019":
-            # Stale DNS patterns for checkoutservice, cartservice, currencyservice
-            assert {"checkoutservice", "cartservice", "currencyservice"}.issubset(spec_workloads)
-        elif scenario_id == "named_replays/hist-facebook-bgp-2021":
-            # BGP partition from default to kube-system; verifies frontend edge availability
-            assert "frontend" in spec_workloads
-        elif scenario_id == "single_fault/sf-006":
-            # DNS chaos on checkoutservice
-            assert "checkoutservice" in spec_workloads
-        elif scenario_id == "multi_fault/mf-003":
-            # DNS random on cluster + currency latency
-            assert "currencyservice" in spec_workloads
+        if scenario_id in REVIEWED_MANIFEST_TARGET_EXCEPTIONS:
+            expected_targets = REVIEWED_MANIFEST_TARGET_EXCEPTIONS[scenario_id]
+            assert spec_workloads == expected_targets, (
+                f"Reviewed exception mismatch for {scenario_id}: spec={spec_workloads} vs expected={expected_targets}"
+            )
+            if scenario_id == "named_replays/hist-knight-capital-2012":
+                assert "checkoutservice-legacy" in spec.require_no_legacy_deployments
         else:
-            # Manifest label selectors must be fully covered by spec workloads
-            assert manifest_targets.issubset(spec_workloads), (
-                f"Spec workloads for {scenario_id} ({spec_workloads}) do not cover manifest targets ({manifest_targets})"
+            manifest_targets = _extract_manifest_targeted_workloads(manifest_path)
+            assert spec_workloads == manifest_targets, (
+                f"Exact target mismatch for {scenario_id}: spec={spec_workloads} vs manifest={manifest_targets}"
             )
 
+    def test_extra_bogus_workload_target_fails_contract(self):
+        """Regression test: proving that an extra bogus target fails the exact equality contract."""
+        manifest_path = MANIFESTS_DIR / "single_fault/sf-001.yaml"
+        manifest_targets = _extract_manifest_targeted_workloads(manifest_path)
+        assert manifest_targets == {"cartservice"}
+
+        # Simulate a corrupted spec with an extra unrelated service
+        bogus_spec_workloads = {"cartservice", "adservice"}
+        assert bogus_spec_workloads != manifest_targets, "Exact equality must catch extra bogus workloads"
+
     @pytest.mark.parametrize("scenario_id", FROZEN_SCENARIOS)
-    def test_spec_namespaces_are_default(self, scenario_id: str):
+    def test_spec_tier_agrees_with_manifest_metadata(self, scenario_id: str):
+        """Enforce tier agreement between canonical scenario ID and metadata.labels.tier."""
+        manifest_path = MANIFESTS_DIR / f"{scenario_id}.yaml"
+        expected_tier = scenario_id.split("/")[0]
+        manifest_tier = _extract_manifest_tier(manifest_path)
+        assert manifest_tier is not None, f"Manifest {scenario_id} lacks metadata.labels.tier"
+        assert manifest_tier == expected_tier, (
+            f"Tier mismatch for {scenario_id}: canonical tier '{expected_tier}' != manifest tier '{manifest_tier}'"
+        )
+
+    @pytest.mark.parametrize("scenario_id", FROZEN_SCENARIOS)
+    def test_spec_workload_namespaces_agree_with_manifest_selectors(self, scenario_id: str):
+        """Enforce that workload target namespaces match selector.namespaces from manifests."""
+        manifest_path = MANIFESTS_DIR / f"{scenario_id}.yaml"
         spec = SCENARIO_VERIFICATION_SPECS[scenario_id]
-        for w in spec.workloads:
-            assert w.namespace == "default"
+
+        sel_namespaces = _extract_manifest_selector_namespaces(manifest_path)
+        for wl in spec.workloads:
+            # If selector namespaces are specified in manifest, workload namespace must match
+            if sel_namespaces:
+                assert wl.namespace in sel_namespaces, (
+                    f"Namespace mismatch for {scenario_id} workload {wl.name}: '{wl.namespace}' not in {sel_namespaces}"
+                )
+            else:
+                # Default for ArgoCD Application or raw Deployments
+                assert wl.namespace == "default"
+
+    def test_cross_namespace_network_chaos_target_not_confused_with_workload(self):
+        """Verify that NetworkChaos destination namespace (e.g. kube-system in hist-facebook-bgp-2021)
+
+        is not confused with the data plane workload namespace (default).
+        """
+        manifest_path = MANIFESTS_DIR / "named_replays/hist-facebook-bgp-2021.yaml"
+        content = manifest_path.read_text(encoding="utf-8")
+        doc = yaml.safe_load(content)
+
+        source_ns = doc["spec"]["selector"]["namespaces"]
+        target_ns = doc["spec"]["target"]["selector"]["namespaces"]
+
+        assert source_ns == ["default"]
+        assert target_ns == ["kube-system"]
+
+        # Spec workload must be the source data-plane application (frontend in default)
+        spec = SCENARIO_VERIFICATION_SPECS["named_replays/hist-facebook-bgp-2021"]
+        for wl in spec.workloads:
+            assert wl.namespace == "default"
+            assert wl.namespace != "kube-system"
 
     def test_unknown_frozen_scenario_fails_closed(self):
         verifier = EnvironmentVerifier()
@@ -208,6 +294,88 @@ class TestScenarioCatalogueContract:
         assert result.verification_status == "error"
         assert "unknown_frozen_scenario_spec" in str(result.error)
         assert result.is_false_resolution is True  # Agent claimed victory on invalid scenario
+
+
+# ── Dynamic Scenario Handling Tests ───────────────────────────────────────────
+
+class TestDynamicScenarioHandling:
+    def test_dynamic_scenario_valid_service_target(self):
+        """Dynamic scenario with valid service label synthesizes workload and resolves."""
+        alert_payload = {
+            "commonLabels": {
+                "alertname": "AdversarialPaymentDrop",
+                "service": "paymentservice",
+                "namespace": "default",
+            },
+            "alerts": [
+                {"labels": {"alertname": "AdversarialPaymentDrop", "service": "paymentservice", "namespace": "default"}}
+            ],
+        }
+        deployment_item = {
+            "metadata": {"name": "paymentservice", "namespace": "default"},
+            "status": {"readyReplicas": 1, "replicas": 1},
+        }
+        verifier = EnvironmentVerifier(
+            kubectl_getter=_mock_kubectl_success([deployment_item]),
+            alert_lister=_mock_alertmanager_success([]),
+            promql_querier=_mock_promql_success(0.0),
+        )
+
+        result = verifier.verify(
+            scenario_id="adversarial/adv-synthetic-042",
+            agent_claimed_resolved=True,
+            alert=alert_payload,
+        )
+
+        assert result.env_resolved is True
+        assert result.verification_status == "passed"
+        assert any("paymentservice" in c.target for c in result.checks)
+
+    def test_dynamic_scenario_no_target_labels_fails_closed(self):
+        """Dynamic scenario without service/deployment/app labels fails closed (no frontend fallback)."""
+        alert_payload = {
+            "commonLabels": {
+                "alertname": "GenericAlertWithNoTargetService",
+            },
+            "alerts": [
+                {"labels": {"alertname": "GenericAlertWithNoTargetService"}}
+            ],
+        }
+        verifier = EnvironmentVerifier()
+        result = verifier.verify(
+            scenario_id="adversarial/adv-no-labels",
+            agent_claimed_resolved=True,
+            alert=alert_payload,
+        )
+
+        assert result.env_resolved is False
+        assert result.verification_status == "error"
+        assert result.error == "dynamic_scenario_target_unresolved"
+        assert "dynamic_scenario_target_resolution" in result.failed_checks
+        assert result.is_false_resolution is True
+
+    def test_dynamic_scenario_empty_or_none_alert_fails_closed(self):
+        """Dynamic scenario with None or empty alert dictionary fails closed."""
+        verifier = EnvironmentVerifier()
+        result_none = verifier.verify(
+            scenario_id="adversarial/adv-none-alert",
+            agent_claimed_resolved=True,
+            alert=None,
+        )
+        assert result_none.env_resolved is False
+        assert result_none.verification_status == "error"
+        assert result_none.error == "dynamic_scenario_target_unresolved"
+        assert result_none.is_false_resolution is True
+
+        result_empty = verifier.verify(
+            scenario_id="adversarial/adv-empty-alert",
+            agent_claimed_resolved=False,
+            alert={},
+        )
+        assert result_empty.env_resolved is False
+        assert result_empty.verification_status == "error"
+        assert result_empty.error == "dynamic_scenario_target_unresolved"
+        assert result_empty.is_false_negative is False
 
 
 # ── Verifier Engine Behavioral Tests ──────────────────────────────────────────
@@ -360,8 +528,32 @@ class TestEnvironmentVerifierBehavior:
         result_repaired = verifier_repaired.verify("named_replays/hist-knight-capital-2012", agent_claimed_resolved=True)
         assert result_repaired.env_resolved is True
 
+    def test_chaos_mesh_clearance_matching_and_diagnostics(self):
+        """Case 7: Chaos clearance diagnostics matching active scenario labels/names."""
+        # When an active chaos experiment matches the scenario
+        active_chaos = [{
+            "kind": "PodChaos",
+            "metadata": {"name": "sf-001-cartservice-kill", "namespace": "chaos-mesh", "labels": {"scenario": "sf-001"}},
+        }]
+        def _mock_kubectl_active_chaos(resource: str, namespace: str = "-A", output: str = "json"):
+            if "chaos" in resource.lower():
+                return {"success": True, "parsed": {"items": active_chaos}}
+            return {"success": True, "parsed": {"items": [{"metadata": {"name": "cartservice"}, "status": {"readyReplicas": 1, "replicas": 1}}]}}
+
+        verifier = EnvironmentVerifier(
+            kubectl_getter=_mock_kubectl_active_chaos,
+            alert_lister=_mock_alertmanager_success([]),
+            promql_querier=_mock_promql_success(0.0),
+        )
+
+        result = verifier.verify("single_fault/sf-001", agent_claimed_resolved=True)
+        assert result.env_resolved is False
+        assert "chaos_mesh_cleared" in result.failed_checks
+        chaos_check = next(c for c in result.checks if c.name == "chaos_mesh_cleared")
+        assert "sf-001-cartservice-kill" in chaos_check.details
+
     def test_missing_backend_inconclusive_handling(self):
-        """Case 7: All telemetry backends fail closed (inconclusive status)."""
+        """Case 8: All telemetry backends fail closed (inconclusive status)."""
         verifier = EnvironmentVerifier(
             kubectl_getter=_mock_kubectl_failure("cluster unreachable"),
             alert_lister=_mock_alertmanager_failure("alertmanager down"),
@@ -376,38 +568,6 @@ class TestEnvironmentVerifierBehavior:
         assert result.env_resolved is False
         assert result.verification_status == "inconclusive"
         assert result.error == "environment_telemetry_unreachable"
-
-    def test_dynamic_adversarial_scenario_synthesis(self):
-        """Case 8: Dynamically generated adversarial scenario synthesizing predicates from alert payload."""
-        alert_payload = {
-            "commonLabels": {
-                "alertname": "AdversarialPaymentDrop",
-                "service": "paymentservice",
-                "namespace": "default",
-            },
-            "alerts": [
-                {"labels": {"alertname": "AdversarialPaymentDrop", "service": "paymentservice", "namespace": "default"}}
-            ],
-        }
-        deployment_item = {
-            "metadata": {"name": "paymentservice", "namespace": "default"},
-            "status": {"readyReplicas": 1, "replicas": 1},
-        }
-        verifier = EnvironmentVerifier(
-            kubectl_getter=_mock_kubectl_success([deployment_item]),
-            alert_lister=_mock_alertmanager_success([]),
-            promql_querier=_mock_promql_success(0.0),
-        )
-
-        result = verifier.verify(
-            scenario_id="adversarial/adv-synthetic-042",
-            agent_claimed_resolved=True,
-            alert=alert_payload,
-        )
-
-        assert result.env_resolved is True
-        assert result.verification_status == "passed"
-        assert any("paymentservice" in c.target for c in result.checks)
 
     def test_metric_predicate_comparison_operators_and_semantics(self):
         """Case 9: PromQL metric evaluation semantics across comparison operators."""

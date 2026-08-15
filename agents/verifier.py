@@ -395,8 +395,11 @@ class EnvironmentVerifier:
                         alerts_must_clear.append(an)
 
         if not workloads:
-            # If no workload can be synthesized for an unfrozen scenario, fail closed
-            workloads.append(_make_workload("frontend", namespace="default"))
+            # If no workload can be synthesized for an unfrozen scenario, fail closed:
+            # do not invent frontend or guess a service.
+            raise ValueError(
+                f"dynamic_scenario_target_unresolved: unable to synthesize target workload from alert context for scenario '{normalized_id}'"
+            )
 
         return ScenarioVerificationSpec(
             scenario_id=normalized_id,
@@ -429,6 +432,23 @@ class EnvironmentVerifier:
                     details=str(err),
                 )],
                 error=f"unknown_frozen_scenario_spec: {scenario_id}",
+                is_false_resolution=bool(agent_claimed_resolved),
+                is_false_negative=False,
+            )
+        except ValueError as err:
+            return EnvironmentVerificationResult(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                env_resolved=False,
+                verification_status="error",
+                failed_checks=["dynamic_scenario_target_resolution"],
+                checks=[CheckResult(
+                    name="dynamic_scenario_target_resolution",
+                    target=scenario_id,
+                    passed=False,
+                    details=str(err),
+                )],
+                error="dynamic_scenario_target_unresolved",
                 is_false_resolution=bool(agent_claimed_resolved),
                 is_false_negative=False,
             )
@@ -778,7 +798,18 @@ class EnvironmentVerifier:
         ), val
 
     def _verify_chaos_clearance(self, scenario_id: str) -> CheckResult:
-        """Verify that Chaos Mesh resources applied for the scenario are removed/inactive."""
+        """Verify that Chaos Mesh resources applied for the scenario are removed/inactive.
+
+        AtlasOps Benchmark Execution Invariant:
+        In the canonical benchmark evaluation pipeline (`bench/runner.py`), scenarios
+        are executed strictly serially on a dedicated cluster and reset between episodes
+        (`reset_cluster()`). Therefore, under this serialized single-scenario model,
+        zero active Chaos Mesh experiment resources must remain in the cluster after
+        recovery.
+
+        This check verifies cluster-wide CRD clearance while also inspecting scenario-specific
+        labels and resource names for detailed diagnostic reporting.
+        """
         res = self._kubectl_get("podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos", namespace="-A", output="json")
         if not res.get("success", False):
             err_msg = str(res.get("error") or res.get("stderr") or "chaos_query_failed")
@@ -804,16 +835,34 @@ class EnvironmentVerifier:
                 details="Zero active Chaos Mesh experiment resources present in cluster",
             )
 
+        scenario_short = scenario_id.split("/")[-1]
+        matching_chaos = [
+            f"{item.get('kind', 'Chaos')}/{item.get('metadata', {}).get('name', 'unknown')}"
+            for item in active_chaos
+            if item.get("metadata", {}).get("labels", {}).get("scenario") == scenario_short
+            or str(item.get("metadata", {}).get("name", "")).startswith(scenario_short)
+        ]
         active_chaos_names = [
             f"{item.get('kind', 'Chaos')}/{item.get('metadata', {}).get('name', 'unknown')}"
             for item in active_chaos
         ]
+
+        if matching_chaos:
+            details = f"Active scenario chaos experiments remain: {', '.join(matching_chaos)}"
+        else:
+            details = f"Active chaos experiment resources remain in cluster: {', '.join(active_chaos_names[:5])}"
+
         return CheckResult(
             name="chaos_mesh_cleared",
             target="chaos-mesh",
             passed=False,
-            details=f"Active chaos experiment resources remain: {', '.join(active_chaos_names[:5])}",
-            observed={"active_chaos_count": len(active_chaos), "active_experiments": active_chaos_names},
+            details=details,
+            observed={
+                "active_chaos_count": len(active_chaos),
+                "scenario_matching_count": len(matching_chaos),
+                "active_experiments": active_chaos_names,
+                "matching_experiments": matching_chaos,
+            },
         )
 
 

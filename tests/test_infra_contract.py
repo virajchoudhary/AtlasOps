@@ -288,4 +288,4 @@ def test_static_status_documents_keep_live_state_unverified() -> None:
     assert "REPAIRED / STATICALLY VALIDATED" in status
     assert "Real GKE provisioning | UNVERIFIED" in status
     assert "Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED" in status
-    assert "Environment verifier | NOT YET IMPLEMENTED" in status
+    assert "Environment verifier | IMPLEMENTED / MOCKED/TESTED" in status

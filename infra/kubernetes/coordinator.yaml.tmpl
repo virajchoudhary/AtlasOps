@@ -71,7 +71,7 @@ data:
   ALERTMANAGER_URL: "http://prometheus-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093"
   JAEGER_URL: "http://jaeger.jaeger.svc.cluster.local:16686"
   ARGOCD_URL: "http://argocd-server.argocd.svc.cluster.local:80"
-  ARGOCD_VERIFY_TLS: "true"
+  ARGOCD_VERIFY_TLS: "false"
   ATLASOPS_AUDIT_LOG: "/var/lib/atlasops/audit/audit_log.jsonl"
   ATLASOPS_RUNTIME_DATA_DIR: "/var/lib/atlasops/comms"
   POSTMORTEM_DIR: "/var/lib/atlasops/postmortems"
@@ -142,13 +142,11 @@ spec:
                 secretKeyRef:
                   name: atlasops-coordinator-secrets
                   key: argocd-user
-                  optional: true
             - name: ARGOCD_PASS
               valueFrom:
                 secretKeyRef:
                   name: atlasops-coordinator-secrets
                   key: argocd-pass
-                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz

@@ -29,11 +29,11 @@ This document defines the non-destructive backend acceptance contracts, exact to
 | Component | Pinned Version / Commit | AtlasOps Tool Wrapper | Endpoint & Secret Contract | Mutation Profile | Non-Destructive Live Acceptance Test | Success Condition |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Kubernetes & Boutique** | Microservices Demo `98e60f5` (v0.10.0) | `agents.tools.k8s` (`kubectl_get`, `pod_logs`, `deployment_restart`, `deployment_scale`, `cluster_events`) | In-cluster ServiceAccount token / `KUBECONFIG`; RBAC bounded to `default` namespace | Read-Only (diagnosis/triage) & Mutating (remediation) | `kubectl get deployments -n default` and `kubectl rollout status` on all 12 services | All 12 Boutique deployments report `Available`; pod logs and events fetchable |
-| **Prometheus** | `kube-prometheus-stack:88.3.0` | `agents.tools.prometheus` (`promql_query`) | `PROMETHEUS_URL=http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090` | Read-Only | Run PromQL query: `kube_deployment_status_replicas_available{namespace="default"}` | HTTP 200 with vector results matching all 12 Boutique deployments |
-| **Alertmanager** | `kube-prometheus-stack:88.3.0` | `agents.coordinator` (`/webhook` route) | `ALERTMANAGER_URL=http://prometheus-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093`, route `atlasops_route: coordinator` with `ALERTMANAGER_WEBHOOK_SECRET` | Read-Only (webhook ingestion / dispatch) | Prometheus rule `AtlasOpsOnlineBoutiqueDeploymentUnavailable` triggers webhook POST | Webhook receives firing payload with valid Bearer token, dispatching incident |
-| **Jaeger Tracing** | `jaegertracing/jaeger:4.12.0` | `agents.tools.jaeger` (`jaeger_trace_get`, `jaeger_traces_search`, `jaeger_services_list`) | `JAEGER_URL=http://jaeger.jaeger.svc.cluster.local:16686` | Read-Only | `jaeger_services_list()` calling `GET /api/services` | HTTP 200 with valid JSON response payload `{"data": [...]}`; reachability confirmed |
-| **Argo CD** | `argo/argo-cd:10.3.2` | `agents.tools.argocd` (`argocd_list_apps`, `argocd_app_get`, `argocd_app_sync`, `argocd_app_rollback`) | `ARGOCD_URL=http://argocd-server.argocd.svc.cluster.local:80`, `ARGOCD_USER`, `ARGOCD_PASS` from `atlasops-coordinator-secrets` | Read-Only (`list`/`get`) & Mutating (`sync`/`rollback`) | `argocd_list_apps()` calling `POST /api/v1/session` followed by `GET /api/v1/applications` | HTTP 200 with application list; authentication succeeded, 0 apps valid |
-| **Chaos Mesh** | `chaos-mesh/chaos-mesh:2.8.3` | `bench.runner` / `bench.chaos` (`apply_chaos`, `reset_cluster`, `clear_chaos_experiments`) | In-cluster CRDs (`chaos-mesh.org/v1alpha1`); container runtime `containerd` | Controlled Fault Injection & Clean-up | Dry-run apply and validation of 28 frozen chaos manifests against CRD schemas | All CRDs registered, chaos daemon pods Running, manifests pass admission |
+| **Prometheus** | `kube-prometheus-stack:88.3.0` | `agents.tools.prometheus` (`promql_query`) | `PROMETHEUS_URL=http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090` | Read-Only | Run PromQL query: `kube_deployment_status_replicas_available{namespace="default"}` vs `kube_deployment_spec_replicas{namespace="default"}` | HTTP 200; available replicas match desired replicas (`available == desired`) for all 12 deployments |
+| **Alertmanager** | `kube-prometheus-stack:88.3.0` | `agents.coordinator` (`/webhook` route) | `ALERTMANAGER_URL=http://prometheus-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093`, route `atlasops_route: coordinator` with `ALERTMANAGER_WEBHOOK_SECRET` | Read-Only (webhook ingestion / dispatch) | Prometheus rule `AtlasOpsOnlineBoutiqueDeploymentUnavailable` triggers webhook POST | Webhook receives firing payload with valid Bearer token, responds HTTP 200 `{"ok": true, ...}` |
+| **Jaeger Tracing** | `jaegertracing/jaeger:4.12.0` | `agents.tools.jaeger` (`jaeger_trace_get`, `jaeger_traces_search`, `jaeger_services_list`) | `JAEGER_URL=http://jaeger.jaeger.svc.cluster.local:16686` | Read-Only | `jaeger_services_list()` calling `GET /api/services` | HTTP 200 with valid JSON response payload `{"data": [...]}`; query backend reachability confirmed |
+| **Argo CD** | `argo/argo-cd:10.3.2` | `agents.tools.argocd` (`argocd_list_apps`, `argocd_app_get`, `argocd_app_sync`, `argocd_app_rollback`) | `ARGOCD_URL=http://argocd-server.argocd.svc.cluster.local:80`, `ARGOCD_VERIFY_TLS=false` (in-cluster dev transport), required `ARGOCD_USER`, `ARGOCD_PASS` from `atlasops-coordinator-secrets` | Read-Only (`list`/`get`) & Mutating (`sync`/`rollback`) | `argocd_list_apps()` calling `POST /api/v1/session` followed by `GET /api/v1/applications` | HTTP 200 with application list; authentication succeeded, 0 apps valid |
+| **Chaos Mesh** | `chaos-mesh/chaos-mesh:2.8.3` | `bench.runner` / `bench.chaos` (`apply_chaos`, `reset_cluster`, `clear_chaos_experiments`) | In-cluster CRDs (`chaos-mesh.org/v1alpha1`); container runtime `containerd` | Controlled Fault Injection & Clean-up | `kubectl apply --dry-run=server` validation of all 28 frozen chaos manifests against live CRD schemas | All CRDs registered, chaos daemon pods Running, 28 manifests pass admission |
 
 ---
 
@@ -44,7 +44,7 @@ This document defines the non-destructive backend acceptance contracts, exact to
 - **Required Deployments (12)**: `adservice`, `cartservice`, `checkoutservice`, `currencyservice`, `emailservice`, `frontend`, `loadgenerator`, `paymentservice`, `productcatalogservice`, `recommendationservice`, `redis-cart`, `shippingservice`.
 - **Live Acceptance Procedure**:
   1. Inspect all 12 Deployments: `kubectl get deployments -n default -o json`.
-  2. Verify replica availability: `availableReplicas == replicas` for all 12 workloads.
+  2. Verify replica availability: `availableReplicas == replicas` (desired replicas) for all 12 workloads.
   3. Execute `kubectl_get("pods", namespace="default")` via `agents.tools.k8s` to confirm tool execution through coordinator RBAC.
 
 ### 3.2 Prometheus Monitoring & Availability Alerts
@@ -52,8 +52,8 @@ This document defines the non-destructive backend acceptance contracts, exact to
 - **Rule Manifest**: `infra/kubernetes/atlasops-prometheus-rules.yaml` (`AtlasOpsOnlineBoutiqueDeploymentUnavailable`)
 - **Metric Vector**: `kube_deployment_status_replicas_available / kube_deployment_spec_replicas < 1`
 - **Live Acceptance Procedure**:
-  1. Execute `promql_query('kube_deployment_status_replicas_available{namespace="default"}')` via `agents.tools.prometheus`.
-  2. Confirm 12 active series returned with metric value `1.0`.
+  1. Execute `promql_query('kube_deployment_status_replicas_available{namespace="default"}')` and `promql_query('kube_deployment_spec_replicas{namespace="default"}')` via `agents.tools.prometheus`.
+  2. Confirm 12 active series returned where `available == desired` for each workload.
   3. Verify Prometheus targets health via Prometheus API `GET /api/v1/targets`.
 
 ### 3.3 Alertmanager Webhook Ingestion
@@ -62,7 +62,7 @@ This document defines the non-destructive backend acceptance contracts, exact to
 - **Live Acceptance Procedure**:
   1. Verify Alertmanager configuration contains receiver `atlasops-coordinator` pointing to `http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook`.
   2. Dispatch synthetic test alert with valid Bearer token: `POST /webhook`.
-  3. Verify coordinator responds HTTP 200 with `{"status": "ok", "dispatched": true}`.
+  3. Verify coordinator responds HTTP 200 with `{"ok": true, "incident_id": "<uuid>", "correlated": true, "dispatched": true}` (or `dispatched: false` if deduplicated).
 
 ### 3.4 Jaeger Distributed Tracing Backend
 - **Target Namespace**: `jaeger`
@@ -74,28 +74,36 @@ This document defines the non-destructive backend acceptance contracts, exact to
   1. Call `jaeger_services_list()` via `agents.tools.jaeger`.
   2. Verify HTTP 200 response with structure `{"data": [...], "total": N, "limit": 0, "offset": 0, "errors": null}`.
 
-### 3.5 Argo CD REST API & Credential Contract
+### 3.5 Argo CD REST API & Transport Contract
 - **Target Namespace**: `argocd`
 - **Service Name & Port**: `argocd-server.argocd.svc.cluster.local:80` (ClusterIP)
+- **Transport Contract**:
+  - `ARGOCD_URL: "http://argocd-server.argocd.svc.cluster.local:80"`
+  - `ARGOCD_VERIFY_TLS: "false"`
+  - Argo CD chart configured with `server.extraArgs: ["--insecure"]` and `configs.params."server.insecure": true`.
+  - Development-cluster exception: credentials traverse only the private in-cluster ClusterIP path between coordinator and `argocd-server` pods. This is explicitly classified as a development-only contract, not production security.
 - **Credential Architecture**:
-  - Secrets are provisioned out-of-band by the operator in `atlasops-coordinator-secrets` (`argocd-user`, `argocd-pass`).
-  - AtlasOps does **not** automatically scrape or extract `argocd-initial-admin-secret`.
-  - Prefer least-privilege dedicated service accounts/accounts with read-only RBAC for G3 inspection.
+  - Required secrets `argocd-user` and `argocd-pass` are provisioned by the operator in `atlasops-coordinator-secrets` (namespace `default`).
+  - AtlasOps does **not** automatically scrape, print, or extract `argocd-initial-admin-secret`.
 - **Application Ownership Policy**:
   - G3 reachability is fully satisfied by querying `argocd_list_apps()` returning `[]` (0 applications).
   - Argo CD will **not** take intrusive ownership over resources managed by `infra/setup.sh` without explicit architecture justification.
 - **Live Acceptance Procedure**:
   1. Call `argocd_list_apps()` via `agents.tools.argocd`.
-  2. Confirm token exchange via `POST /api/v1/session` succeeds and `GET /api/v1/applications` returns HTTP 200.
+  2. Confirm token exchange via `POST /api/v1/session` succeeds and `GET /api/v1/applications` returns HTTP 200 with an empty list `[]`.
 
 ### 3.6 Chaos Mesh Fault Engine
 - **Target Namespace**: `chaos-mesh`
 - **Runtime**: `containerd`
-- **Scenarios**: 28 frozen scenarios (SF-001–010, CS-001–005, MF-001–005, HIST-001–008).
+- **Canonical Frozen Scenario Catalogue (28 derived from `config.runtime.FROZEN_SCENARIOS`)**:
+  - `single_fault` (8): `single_fault/sf-001`, `single_fault/sf-002`, `single_fault/sf-003`, `single_fault/sf-004`, `single_fault/sf-005`, `single_fault/sf-006`, `single_fault/sf-007`, `single_fault/sf-008`
+  - `cascade` (5): `cascade/cs-001`, `cascade/cs-002`, `cascade/cs-003`, `cascade/cs-004`, `cascade/cs-005`
+  - `multi_fault` (5): `multi_fault/mf-001`, `multi_fault/mf-002`, `multi_fault/mf-003`, `multi_fault/mf-004`, `multi_fault/mf-005`
+  - `named_replays` (10): `named_replays/hist-cloudflare-2019`, `named_replays/hist-aws-s3-2017`, `named_replays/hist-github-2018`, `named_replays/hist-datadog-2023`, `named_replays/hist-discord-2022`, `named_replays/hist-fastly-2021`, `named_replays/hist-facebook-bgp-2021`, `named_replays/hist-slack-2022`, `named_replays/hist-azure-dns-2019`, `named_replays/hist-knight-capital-2012`
 - **Live Acceptance Procedure**:
   1. Verify CRDs: `kubectl get crd -l app.kubernetes.io/part-of=chaos-mesh`.
-  2. Validate all 28 frozen scenario manifests against live cluster OpenAPI schemas using `kubectl apply --dry-run=server -f <manifest>`.
-  3. Verify clean state with 0 active chaos experiments.
+  2. Validate all 28 frozen scenario manifests in `bench/chaos_manifests/` against live cluster OpenAPI schemas using `kubectl apply --dry-run=server -f <manifest>`.
+  3. Verify clean initial state with 0 active chaos experiments.
 
 ---
 

@@ -312,6 +312,18 @@ def test_jaeger_and_argocd_helm_values_render_statically() -> None:
     argocd_val = yaml.safe_load(argocd_raw)
     assert isinstance(argocd_val, dict)
     assert argocd_val["server"]["service"]["type"] == "ClusterIP"
+    assert argocd_val["server"]["extraArgs"] == ["--insecure"]
+    assert argocd_val["configs"]["params"]["server.insecure"] is True
     assert argocd_val["notifications"]["enabled"] is False
     assert argocd_val["controller"]["resources"]["requests"]["cpu"] == "250m"
     assert argocd_val["redis"]["resources"]["requests"]["cpu"] == "100m"
+
+
+def test_g3_acceptance_plan_truth_and_scenarios() -> None:
+    from config.runtime import FROZEN_SCENARIOS
+    plan = read("docs/project/G3_ACCEPTANCE_PLAN.md")
+    assert "SF-001" not in plan
+    assert "HIST-001" not in plan
+    assert "28" in plan
+    for scenario_id in FROZEN_SCENARIOS:
+        assert scenario_id in plan

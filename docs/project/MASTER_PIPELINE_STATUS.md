@@ -92,7 +92,7 @@ This governance document records the repository's alignment with the canonical e
 - **Manifests Validated**:
   - Kubernetes RBAC, coordinator templates, Prometheus rules, and values files validated via static contract tests (`test_runtime_infra_contract.py`, `test_infra_contract.py`).
   - Infrastructure shell scripts pass static syntax validation (`bash -n`).
-- **Regression Suite**: 408 tests passing green.
+- **Regression Suite**: 410 tests passing green.
 
 ### Gate G3: Controlled SRE Environment — [PENDING / STATIC READINESS ESTABLISHED]
 - **Prerequisites Prepared (Stage 3A)**: Local CLI toolchain verified (Git Bash, `gcloud` 580.0.0, `helm` v4.2.4, `kubectl` v1.34.1, `docker` 29.4.0).
@@ -106,9 +106,9 @@ This governance document records the repository's alignment with the canonical e
     - `CHAOS_MESH_CHART_VERSION="2.8.3"` (`chaos-mesh/chaos-mesh`)
 - **Static Observability & Tooling Readiness**:
   - **Jaeger**: Configured with private ClusterIP and bounded development resources (`requests: cpu 100m, memory 256Mi`; `limits: cpu 500m, memory 512Mi`); wired into `infra/setup_impl.sh` and coordinator `JAEGER_URL`.
-  - **Argo CD**: Enabled as canonical G3 component with ClusterIP; configured with SecretKeyRef credentials (`argocd-user`/`argocd-pass`) and non-destructive `argocd_list_apps` contract (0 Applications valid proof of API reachability).
+  - **Argo CD**: Enabled as canonical G3 component with ClusterIP; configured with coherent in-cluster development HTTP transport (`ARGOCD_VERIFY_TLS: "false"`, `server.extraArgs: ["--insecure"]`), required SecretKeyRef credentials (`argocd-user`/`argocd-pass`), and non-destructive `argocd_list_apps` contract (0 Applications valid proof of API reachability).
   - **Canonical Install Order**: Online Boutique $\rightarrow$ Coordinator $\rightarrow$ Prometheus/Alertmanager $\rightarrow$ Jaeger $\rightarrow$ Argo CD $\rightarrow$ Chaos Mesh.
-  - **Acceptance Plan**: Non-destructive acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md`.
+  - **Acceptance Plan**: Non-destructive acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md` referencing all 28 canonical frozen scenarios.
 - **Zero-Cost Boundary**: 0 cloud resources created, $0.00 billing incurred.
 
 ---
@@ -117,7 +117,8 @@ This governance document records the repository's alignment with the canonical e
 
 ### 1. Argo CD Security & Credential Boundary [STATICALLY RESOLVED]
 - Do **not** automatically extract or copy `argocd-initial-admin-secret` into coordinator application configuration.
-- Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) backed by `atlasops-coordinator-secrets` SecretKeyRefs with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`).
+- Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) backed by `atlasops-coordinator-secrets` SecretKeyRefs with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`). Secret presence is validated fail-closed before deployment.
+- Transport contract: In-cluster HTTP over ClusterIP with `--insecure` and `ARGOCD_VERIFY_TLS: "false"`. Classified explicitly as a development-cluster exception with credentials traversing only the private in-cluster network path.
 - Mutating operations (`argocd_rollback`) remain gated behind the remediation approval gate.
 
 ### 2. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [STATICALLY RESOLVED]

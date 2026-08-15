@@ -117,9 +117,9 @@ def test_runtime_configuration_uses_secret_references_without_secret_values() ->
     assert refs["ATLASOPS_API_KEY"]["key"] == "atlasops-api-key"
     assert refs["LLM_API_KEY"]["optional"] is True
     assert refs["ARGOCD_USER"]["key"] == "argocd-user"
-    assert refs["ARGOCD_USER"]["optional"] is True
+    assert refs["ARGOCD_USER"].get("optional") is not True
     assert refs["ARGOCD_PASS"]["key"] == "argocd-pass"
-    assert refs["ARGOCD_PASS"]["optional"] is True
+    assert refs["ARGOCD_PASS"].get("optional") is not True
     assert "stringData:" not in TEMPLATE
     config = document("ConfigMap", "atlasops-coordinator-config")["data"]
     assert config["ATLASOPS_RUNTIME_DATA_DIR"].startswith("/var/lib/atlasops/")
@@ -127,6 +127,7 @@ def test_runtime_configuration_uses_secret_references_without_secret_values() ->
     assert config["TRAJECTORIES_DIR"].startswith("/var/lib/atlasops/")
     assert config["JAEGER_URL"] == "http://jaeger.jaeger.svc.cluster.local:16686"
     assert config["ARGOCD_URL"] == "http://argocd-server.argocd.svc.cluster.local:80"
+    assert config["ARGOCD_VERIFY_TLS"] == "false"
 
 
 def test_rbac_is_bounded_and_never_grants_secret_or_cluster_admin_access() -> None:
@@ -297,3 +298,13 @@ def test_comms_runtime_paths_can_live_on_writable_volume(monkeypatch, tmp_path) 
     result = comms.postmortem_draft({"title": "Runtime test"})
     assert Path(result["path"]).is_file()
     assert (runtime / "comms" / "slack_posts.jsonl").is_file()
+
+
+def test_argo_credential_validation_and_transport_contract_in_setup() -> None:
+    assert 'for key in argocd-user argocd-pass; do' in SETUP
+    assert 'missing required Argo CD credential key' in SETUP
+    assert 'argocd-initial-admin-secret' not in SETUP
+    assert 'argocd-initial-admin-secret' not in TEMPLATE
+    assert 'argocd-initial-admin-secret' not in read("infra/values/argocd.yaml")
+    # Verify setup summary states failure if Argo disabled
+    assert "DEVIATION: canonical Gate G3 cannot PASS without Argo CD" in SETUP

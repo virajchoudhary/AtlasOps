@@ -251,7 +251,7 @@ Coordinator Service:               atlasops-coordinator-svc.default:9099 (Cluste
 Coordinator secrets:               pre-existing namespaced Secret contracts
 Prometheus/Alertmanager:            coordinator route statically configured
 Application metrics/traces:         DEFERRED (not present in pinned Boutique manifest)
-Argo CD:                            $([[ "$ATLASOPS_ENABLE_ARGOCD" == true ]] && echo "ENABLED (ClusterIP; chart $ARGOCD_CHART_VERSION)" || echo "SKIPPED / DEFERRED")
+Argo CD:                            $([[ "$ATLASOPS_ENABLE_ARGOCD" == true ]] && echo "ENABLED (ClusterIP; chart $ARGOCD_CHART_VERSION; required credentials enforced)" || echo "SKIPPED / DEFERRED (DEVIATION: canonical Gate G3 cannot PASS without Argo CD)")
 Linkerd:                           SKIPPED / DEFERRED
 Artifact Registry:                 SKIPPED / DEFERRED
 Cloud Build:                       SKIPPED / DEFERRED
@@ -402,6 +402,12 @@ validate_runtime_secret_contract() {
     secret_key_present default "$COORDINATOR_SECRET" llm-api-key || \
       fail "Secret '$COORDINATOR_SECRET' requires llm-api-key for backend '$ATLASOPS_BACKEND'."
   fi
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    for key in argocd-user argocd-pass; do
+      secret_key_present default "$COORDINATOR_SECRET" "$key" || \
+        fail "Secret '$COORDINATOR_SECRET' in namespace default is missing required Argo CD credential key '$key'."
+    done
+  fi
   secret_key_present monitoring "$ALERTMANAGER_SECRET" alertmanager-webhook-secret || \
     fail "Secret '$ALERTMANAGER_SECRET' in namespace monitoring is missing alertmanager-webhook-secret."
   echo "SECRETS: required key presence validated without printing or storing value contents."
@@ -470,7 +476,7 @@ apply_foundation() {
       --namespace argocd --values infra/values/argocd.yaml --wait --timeout=10m
     echo "ARGO CD: canonical base controller installed; no Application or workload ownership configured."
   else
-    echo "ARGO CD: SKIPPED / DEFERRED; Kubernetes-native workload ownership retained."
+    echo "ARGO CD: SKIPPED / DEFERRED (operator deviation; canonical Gate G3 cannot PASS with Argo CD disabled)."
   fi
   kubectl_target create namespace chaos-mesh --dry-run=client -o yaml | kubectl_target apply -f -
   helm_target upgrade --install chaos-mesh chaos-mesh/chaos-mesh --version "$CHAOS_MESH_CHART_VERSION" \

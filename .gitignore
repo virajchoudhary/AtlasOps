@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 *.pyo
 .env
@@ -23,3 +23,11 @@ dist/
 docs/*.pdf
 docs/*.png
 docs/AtlasOps_slides.pdf
+
+# Secrets and local credentials
+*.secret
+*.secrets
+*.key
+*.token
+secrets/
+.secrets/

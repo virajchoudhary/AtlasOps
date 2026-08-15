@@ -327,3 +327,15 @@ def test_g3_acceptance_plan_truth_and_scenarios() -> None:
     assert "28" in plan
     for scenario_id in FROZEN_SCENARIOS:
         assert scenario_id in plan
+
+
+def test_stage_3_operator_guide_and_secret_helper() -> None:
+    guide = read("docs/project/STAGE_3_OPERATOR_GUIDE.md")
+    assert "Gate 3A" in guide
+    assert "Gate 3K" in guide
+    assert "gcloud auth login" in guide
+    assert "scripts/generate_runtime_secrets.py" in guide
+
+    gitignore = read(".gitignore")
+    assert "*.secret" in gitignore
+    assert "secrets/" in gitignore

@@ -2,7 +2,7 @@
 
 Distinguishes between agent-claimed resolution and objective ground-truth
 resolution across Kubernetes workloads, Alertmanager alerts, Prometheus
-metrics, and chaos experiment clearance.
+metrics, and Chaos Mesh clearance.
 
 An agent outputting `outcome="resolved"` is a hypothesis; this verifier
 determines whether the environment has actually recovered.
@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 import operator
-import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
@@ -66,6 +65,7 @@ class ScenarioVerificationSpec:
     alerts_must_clear: tuple[str, ...] = ()
     metrics: tuple[MetricPredicate, ...] = ()
     require_chaos_cleared: bool = True
+    require_no_legacy_deployments: tuple[str, ...] = ()
 
 
 # ── Standard Online Boutique Services Catalog ────────────────────────────────
@@ -85,166 +85,201 @@ ONLINE_BOUTIQUE_SERVICES = frozenset({
     "shippingservice",
 })
 
+FROZEN_TIER_PREFIXES = (
+    "single_fault/",
+    "cascade/",
+    "multi_fault/",
+    "named_replays/",
+)
 
-# ── Predefined Verification Specs for Frozen Scenario Catalogue ──────────────
+
+# ── Predefined Verification Specs Derived Directly from Frozen Manifests ──────
 
 def _make_workload(name: str, namespace: str = "default") -> WorkloadPredicate:
     return WorkloadPredicate(name=name, kind="deployment", namespace=namespace, min_ready_replicas=1)
 
 
 SCENARIO_VERIFICATION_SPECS: dict[str, ScenarioVerificationSpec] = {
-    # Single-fault scenarios
+    # ── Single-Fault (8 scenarios) ────────────────────────────────────────────
+    # sf-001: PodChaos targeting cartservice (sf-001-cartservice-kill)
     "single_fault/sf-001": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-001",
-        workloads=(_make_workload("frontend"),),
-        alerts_must_clear=("FrontendCrashLooping", "High5xxRate", "sf-001-pod-failure"),
-        metrics=(MetricPredicate(
-            query='sum(rate(http_requests_total{status=~"5.."}[2m])) or vector(0)',
-            operator="<=",
-            threshold=0.05,
-            description="5xx error rate below 5%",
-        ),),
+        workloads=(_make_workload("cartservice"),),
+        require_chaos_cleared=True,
     ),
+    # sf-002: StressChaos CPU targeting paymentservice (sf-002-paymentservice-cpu)
     "single_fault/sf-002": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-002",
-        workloads=(_make_workload("productcatalogservice"),),
-        alerts_must_clear=("ProductCatalogLatencyHigh", "sf-002-network-delay"),
+        workloads=(_make_workload("paymentservice"),),
+        require_chaos_cleared=True,
     ),
+    # sf-003: StressChaos memory targeting checkoutservice (sf-003-checkoutservice-memory)
     "single_fault/sf-003": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-003",
-        workloads=(_make_workload("recommendationservice"),),
-        alerts_must_clear=("HighCpuSaturation", "sf-003-cpu-stress"),
+        workloads=(_make_workload("checkoutservice"),),
+        require_chaos_cleared=True,
     ),
+    # sf-004: NetworkChaos loss targeting frontend (sf-004-frontend-network-loss)
     "single_fault/sf-004": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-004",
-        workloads=(_make_workload("cartservice"),),
-        alerts_must_clear=("HighMemoryUsage", "sf-004-memory-stress"),
+        workloads=(_make_workload("frontend"),),
+        require_chaos_cleared=True,
     ),
+    # sf-005: NetworkChaos partition between redis-cart and cartservice
     "single_fault/sf-005": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-005",
-        workloads=(_make_workload("paymentservice"),),
-        alerts_must_clear=("PaymentServiceDNSError", "sf-005-dns-chaos"),
+        workloads=(_make_workload("redis-cart"), _make_workload("cartservice")),
+        require_chaos_cleared=True,
     ),
+    # sf-006: DNSChaos random targeting checkoutservice
     "single_fault/sf-006": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-006",
-        workloads=(_make_workload("shippingservice"),),
-        alerts_must_clear=("ShippingIODelay", "sf-006-io-delay"),
+        workloads=(_make_workload("checkoutservice"),),
+        require_chaos_cleared=True,
     ),
+    # sf-007: IOChaos disk-fill targeting emailservice
     "single_fault/sf-007": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-007",
-        workloads=(_make_workload("currencyservice"),),
-        alerts_must_clear=("ClockSkewAlert", "sf-007-time-skew"),
+        workloads=(_make_workload("emailservice"),),
+        require_chaos_cleared=True,
     ),
+    # sf-008: TimeChaos clock-skew targeting paymentservice
     "single_fault/sf-008": ScenarioVerificationSpec(
         scenario_id="single_fault/sf-008",
-        workloads=(_make_workload("checkoutservice"),),
-        alerts_must_clear=("CheckoutPodFailure", "sf-008-pod-failure"),
+        workloads=(_make_workload("paymentservice"),),
+        require_chaos_cleared=True,
     ),
 
-    # Cascade scenarios
+    # ── Cascade (5 scenarios) ─────────────────────────────────────────────────
+    # cs-001: NetworkChaos latency on currencyservice
     "cascade/cs-001": ScenarioVerificationSpec(
         scenario_id="cascade/cs-001",
-        workloads=(_make_workload("redis-cart"), _make_workload("cartservice"), _make_workload("frontend")),
-        alerts_must_clear=("RedisCartUnavailable", "CartServiceDown", "Frontend5xxSpike"),
+        workloads=(_make_workload("currencyservice"),),
+        require_chaos_cleared=True,
     ),
+    # cs-002: NetworkChaos partition on redis-cart
     "cascade/cs-002": ScenarioVerificationSpec(
         scenario_id="cascade/cs-002",
-        workloads=(_make_workload("paymentservice"), _make_workload("checkoutservice")),
-        alerts_must_clear=("PaymentNetworkLoss", "CheckoutFailureCascade"),
+        workloads=(_make_workload("redis-cart"),),
+        require_chaos_cleared=True,
     ),
+    # cs-003: StressChaos CPU on recommendationservice
     "cascade/cs-003": ScenarioVerificationSpec(
         scenario_id="cascade/cs-003",
-        workloads=(_make_workload("shippingservice"), _make_workload("checkoutservice")),
-        alerts_must_clear=("ShippingLatencyHigh", "CheckoutTimeoutCascade"),
+        workloads=(_make_workload("recommendationservice"),),
+        require_chaos_cleared=True,
     ),
+    # cs-004: IOChaos disk-full on emailservice
     "cascade/cs-004": ScenarioVerificationSpec(
         scenario_id="cascade/cs-004",
-        workloads=(_make_workload("productcatalogservice"), _make_workload("frontend")),
-        alerts_must_clear=("ProductCatalogCPUSaturation", "FrontendSlowdown"),
+        workloads=(_make_workload("emailservice"),),
+        require_chaos_cleared=True,
     ),
+    # cs-005: NetworkChaos latency + StressChaos memory on cartservice
     "cascade/cs-005": ScenarioVerificationSpec(
         scenario_id="cascade/cs-005",
-        workloads=(_make_workload("adservice"), _make_workload("frontend")),
-        alerts_must_clear=("AdServiceCrashLoop", "FrontendAdTimeout"),
+        workloads=(_make_workload("cartservice"),),
+        require_chaos_cleared=True,
     ),
 
-    # Multi-fault scenarios
+    # ── Multi-Fault (5 scenarios) ─────────────────────────────────────────────
+    # mf-001: NetworkChaos loss on frontend + StressChaos CPU on checkoutservice
     "multi_fault/mf-001": ScenarioVerificationSpec(
         scenario_id="multi_fault/mf-001",
         workloads=(_make_workload("frontend"), _make_workload("checkoutservice")),
-        alerts_must_clear=("FrontendCPUStress", "CheckoutPacketLoss"),
+        require_chaos_cleared=True,
     ),
+    # mf-002: NetworkChaos partition on redis-cart/cartservice + StressChaos memory on recommendationservice
     "multi_fault/mf-002": ScenarioVerificationSpec(
         scenario_id="multi_fault/mf-002",
-        workloads=(_make_workload("cartservice"), _make_workload("currencyservice")),
-        alerts_must_clear=("CartMemorySaturation", "CurrencyDNSDelay"),
+        workloads=(_make_workload("redis-cart"), _make_workload("cartservice"), _make_workload("recommendationservice")),
+        require_chaos_cleared=True,
     ),
+    # mf-003: DNSChaos random on cluster + NetworkChaos delay on currencyservice
     "multi_fault/mf-003": ScenarioVerificationSpec(
         scenario_id="multi_fault/mf-003",
-        workloads=(_make_workload("recommendationservice"), _make_workload("productcatalogservice")),
-        alerts_must_clear=("RecommendationPodKill", "ProductCatalogLatency"),
+        workloads=(_make_workload("currencyservice"),),
+        require_chaos_cleared=True,
     ),
+    # mf-004: TimeChaos clockskew on paymentservice + NetworkChaos corrupt on cartservice
     "multi_fault/mf-004": ScenarioVerificationSpec(
         scenario_id="multi_fault/mf-004",
-        workloads=(_make_workload("shippingservice"), _make_workload("emailservice")),
-        alerts_must_clear=("ShippingIODelay", "EmailServiceCrash"),
+        workloads=(_make_workload("paymentservice"), _make_workload("cartservice")),
+        require_chaos_cleared=True,
     ),
+    # mf-005: IOChaos disk fault on emailservice + NetworkChaos delay on checkoutservice
     "multi_fault/mf-005": ScenarioVerificationSpec(
         scenario_id="multi_fault/mf-005",
-        workloads=(_make_workload("paymentservice"), _make_workload("redis-cart")),
-        alerts_must_clear=("PaymentNetworkCorruption", "RedisMemoryStress"),
+        workloads=(_make_workload("emailservice"), _make_workload("checkoutservice")),
+        require_chaos_cleared=True,
     ),
 
-    # Named historical replays
-    "named_replays/hist-cloudflare-2019": ScenarioVerificationSpec(
-        scenario_id="named_replays/hist-cloudflare-2019",
-        workloads=(_make_workload("frontend"),),
-        alerts_must_clear=("FrontendHighCPUSaturation", "GlobalWAFCPULoop"),
-    ),
+    # ── Named Historical Replays (10 scenarios) ──────────────────────────────
+    # hist-aws-s3-2017: Argo CD application patch scaling productcatalogservice to 0
     "named_replays/hist-aws-s3-2017": ScenarioVerificationSpec(
         scenario_id="named_replays/hist-aws-s3-2017",
         workloads=(_make_workload("productcatalogservice"),),
-        alerts_must_clear=("SubsystemUnreachable", "StorageIndexTimeout"),
+        require_chaos_cleared=True,
     ),
-    "named_replays/hist-github-2018": ScenarioVerificationSpec(
-        scenario_id="named_replays/hist-github-2018",
-        workloads=(_make_workload("redis-cart"),),
-        alerts_must_clear=("DatabaseFailoverLoop", "ReplicaDesyncAlert"),
+    # hist-azure-dns-2019: DNSChaos random on checkoutservice, cartservice, currencyservice
+    "named_replays/hist-azure-dns-2019": ScenarioVerificationSpec(
+        scenario_id="named_replays/hist-azure-dns-2019",
+        workloads=(_make_workload("checkoutservice"), _make_workload("cartservice"), _make_workload("currencyservice")),
+        require_chaos_cleared=True,
     ),
+    # hist-cloudflare-2019: StressChaos 100% CPU on frontend
+    "named_replays/hist-cloudflare-2019": ScenarioVerificationSpec(
+        scenario_id="named_replays/hist-cloudflare-2019",
+        workloads=(_make_workload("frontend"),),
+        require_chaos_cleared=True,
+    ),
+    # hist-datadog-2023: DNSChaos error on default namespace services
     "named_replays/hist-datadog-2023": ScenarioVerificationSpec(
         scenario_id="named_replays/hist-datadog-2023",
-        workloads=(_make_workload("cartservice"), _make_workload("frontend")),
-        alerts_must_clear=("NetworkPartitionAlert", "StateSyncTimeout"),
+        workloads=(
+            _make_workload("frontend"),
+            _make_workload("cartservice"),
+            _make_workload("checkoutservice"),
+            _make_workload("productcatalogservice"),
+        ),
+        require_chaos_cleared=True,
     ),
+    # hist-discord-2022: PodChaos kill on redis-cart + NetworkChaos latency on cartservice
     "named_replays/hist-discord-2022": ScenarioVerificationSpec(
         scenario_id="named_replays/hist-discord-2022",
-        workloads=(_make_workload("checkoutservice"),),
-        alerts_must_clear=("QueueSaturation", "MessageTimeoutCascade"),
+        workloads=(_make_workload("redis-cart"), _make_workload("cartservice")),
+        require_chaos_cleared=True,
     ),
-    "named_replays/hist-fastly-2021": ScenarioVerificationSpec(
-        scenario_id="named_replays/hist-fastly-2021",
-        workloads=(_make_workload("frontend"),),
-        alerts_must_clear=("VCLConfigurationError", "Edge503Spike"),
-    ),
+    # hist-facebook-bgp-2021: NetworkChaos partition default -> kube-system
     "named_replays/hist-facebook-bgp-2021": ScenarioVerificationSpec(
         scenario_id="named_replays/hist-facebook-bgp-2021",
         workloads=(_make_workload("frontend"),),
-        alerts_must_clear=("DNSResolutionFailure", "BackboneUnreachable"),
+        require_chaos_cleared=True,
     ),
-    "named_replays/hist-slack-2022": ScenarioVerificationSpec(
-        scenario_id="named_replays/hist-slack-2022",
-        workloads=(_make_workload("cartservice"),),
-        alerts_must_clear=("DatabaseThreadStarvation", "ConnectionPoolExhausted"),
+    # hist-fastly-2021: NetworkChaos corrupt 60% on frontend
+    "named_replays/hist-fastly-2021": ScenarioVerificationSpec(
+        scenario_id="named_replays/hist-fastly-2021",
+        workloads=(_make_workload("frontend"),),
+        require_chaos_cleared=True,
     ),
-    "named_replays/hist-azure-dns-2019": ScenarioVerificationSpec(
-        scenario_id="named_replays/hist-azure-dns-2019",
-        workloads=(_make_workload("currencyservice"),),
-        alerts_must_clear=("DNSLookupsFailing", "NameResolutionTimeout"),
+    # hist-github-2018: PodChaos kill on redis-cart
+    "named_replays/hist-github-2018": ScenarioVerificationSpec(
+        scenario_id="named_replays/hist-github-2018",
+        workloads=(_make_workload("redis-cart"),),
+        require_chaos_cleared=True,
     ),
+    # hist-knight-capital-2012: Deployment of checkoutservice-legacy (must be removed/scaled down)
     "named_replays/hist-knight-capital-2012": ScenarioVerificationSpec(
         scenario_id="named_replays/hist-knight-capital-2012",
         workloads=(_make_workload("checkoutservice"),),
-        alerts_must_clear=("BadDeploymentRollbackRequired", "OrderExecutionLoop"),
+        require_chaos_cleared=True,
+        require_no_legacy_deployments=("checkoutservice-legacy",),
+    ),
+    # hist-slack-2022: NetworkChaos duplicate on frontend + delay on checkoutservice
+    "named_replays/hist-slack-2022": ScenarioVerificationSpec(
+        scenario_id="named_replays/hist-slack-2022",
+        workloads=(_make_workload("frontend"), _make_workload("checkoutservice")),
+        require_chaos_cleared=True,
     ),
 }
 
@@ -326,6 +361,10 @@ class EnvironmentVerifier:
         if normalized_id in SCENARIO_VERIFICATION_SPECS:
             return SCENARIO_VERIFICATION_SPECS[normalized_id]
 
+        # Fail closed on unknown frozen scenario prefixes: never silently fall back
+        if any(normalized_id.startswith(prefix) for prefix in FROZEN_TIER_PREFIXES):
+            raise KeyError(f"Unknown frozen scenario ID in catalog: {normalized_id}")
+
         # Dynamic / adversarial scenario synthesis
         workloads = []
         alerts_must_clear = []
@@ -356,8 +395,11 @@ class EnvironmentVerifier:
                         alerts_must_clear.append(an)
 
         if not workloads:
-            # Default fallback: check frontend service health in default namespace
-            workloads.append(_make_workload("frontend", namespace="default"))
+            # If no workload can be synthesized for an unfrozen scenario, fail closed:
+            # do not invent frontend or guess a service.
+            raise ValueError(
+                f"dynamic_scenario_target_unresolved: unable to synthesize target workload from alert context for scenario '{normalized_id}'"
+            )
 
         return ScenarioVerificationSpec(
             scenario_id=normalized_id,
@@ -374,12 +416,47 @@ class EnvironmentVerifier:
         incident_context: dict[str, Any] | None = None,
     ) -> EnvironmentVerificationResult:
         """Execute objective verification against the environment."""
-        spec = self.resolve_spec(scenario_id, alert=alert)
+        try:
+            spec = self.resolve_spec(scenario_id, alert=alert)
+        except KeyError as err:
+            return EnvironmentVerificationResult(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                env_resolved=False,
+                verification_status="error",
+                failed_checks=["scenario_spec_resolution"],
+                checks=[CheckResult(
+                    name="scenario_spec_resolution",
+                    target=scenario_id,
+                    passed=False,
+                    details=str(err),
+                )],
+                error=f"unknown_frozen_scenario_spec: {scenario_id}",
+                is_false_resolution=bool(agent_claimed_resolved),
+                is_false_negative=False,
+            )
+        except ValueError as err:
+            return EnvironmentVerificationResult(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                env_resolved=False,
+                verification_status="error",
+                failed_checks=["dynamic_scenario_target_resolution"],
+                checks=[CheckResult(
+                    name="dynamic_scenario_target_resolution",
+                    target=scenario_id,
+                    passed=False,
+                    details=str(err),
+                )],
+                error="dynamic_scenario_target_unresolved",
+                is_false_resolution=bool(agent_claimed_resolved),
+                is_false_negative=False,
+            )
+
         checks: list[CheckResult] = []
         observed_metrics: dict[str, Any] = {}
         evidence: list[str] = []
         verification_error: str | None = None
-        has_communication_error = False
 
         # 1. Check Workload Health & Readiness
         for wl in spec.workloads:
@@ -389,20 +466,26 @@ class EnvironmentVerifier:
                 evidence.append(f"Workload {wl.namespace}/{wl.name} ({wl.kind}): {check.details}")
             else:
                 evidence.append(f"FAILED Workload {wl.namespace}/{wl.name}: {check.details}")
-                if "error" in check.details.lower() or "unreachable" in check.details.lower():
-                    has_communication_error = True
 
-        # 2. Check Alertmanager Cleared Alerts
-        alert_check = self._verify_alerts(spec.alerts_must_clear)
-        checks.append(alert_check)
-        if alert_check.passed:
-            evidence.append(f"Alerts cleared: {alert_check.details}")
-        else:
-            evidence.append(f"FAILED Alerts: {alert_check.details}")
-            if "error" in alert_check.details.lower() or "unreachable" in alert_check.details.lower():
-                has_communication_error = True
+        # 2. Check Legacy Deployment Removal (e.g. hist-knight-capital-2012)
+        for legacy_name in spec.require_no_legacy_deployments:
+            legacy_check = self._verify_no_legacy_deployment(legacy_name, namespace="default")
+            checks.append(legacy_check)
+            if legacy_check.passed:
+                evidence.append(f"Legacy deployment {legacy_name} removed: {legacy_check.details}")
+            else:
+                evidence.append(f"FAILED Legacy deployment {legacy_name}: {legacy_check.details}")
 
-        # 3. Check PromQL Metric Predicates
+        # 3. Check Alertmanager Cleared Alerts
+        if spec.alerts_must_clear:
+            alert_check = self._verify_alerts(spec.alerts_must_clear)
+            checks.append(alert_check)
+            if alert_check.passed:
+                evidence.append(f"Alerts cleared: {alert_check.details}")
+            else:
+                evidence.append(f"FAILED Alerts: {alert_check.details}")
+
+        # 4. Check PromQL Metric Predicates
         for metric_pred in spec.metrics:
             m_check, val = self._verify_metric(metric_pred)
             checks.append(m_check)
@@ -412,10 +495,8 @@ class EnvironmentVerifier:
                 evidence.append(f"Metric [{metric_pred.query}]: {m_check.details}")
             else:
                 evidence.append(f"FAILED Metric [{metric_pred.query}]: {m_check.details}")
-                if "error" in m_check.details.lower() or "unreachable" in m_check.details.lower():
-                    has_communication_error = True
 
-        # 4. Check Chaos Mesh Clearance
+        # 5. Check Chaos Mesh Clearance
         if spec.require_chaos_cleared:
             chaos_check = self._verify_chaos_clearance(spec.scenario_id)
             checks.append(chaos_check)
@@ -487,7 +568,6 @@ class EnvironmentVerifier:
 
         parsed = res.get("parsed")
         if not parsed:
-            # Parse from stdout if parsed dict not present
             stdout = str(res.get("stdout", "")).strip()
             if stdout:
                 try:
@@ -496,7 +576,6 @@ class EnvironmentVerifier:
                     pass
 
         if not parsed or not isinstance(parsed, dict):
-            # Non-json or empty response
             stdout_text = str(res.get("stdout", ""))
             if wl.name in stdout_text and ("1/1" in stdout_text or "Running" in stdout_text):
                 return CheckResult(
@@ -521,7 +600,6 @@ class EnvironmentVerifier:
                 break
 
         if not target_item:
-            # Check if any item contains the name prefix (for pods)
             for item in items:
                 metadata = item.get("metadata", {})
                 if str(metadata.get("name", "")).startswith(wl.name):
@@ -536,7 +614,6 @@ class EnvironmentVerifier:
                 details=f"Workload {wl.name} not found in namespace {wl.namespace}",
             )
 
-        # Evaluate deployment readyReplicas
         status = target_item.get("status", {})
         if resource_kind in ("deployment", "deployments"):
             desired = int(status.get("replicas", 0) or target_item.get("spec", {}).get("replicas", 1))
@@ -558,7 +635,6 @@ class EnvironmentVerifier:
                 observed={"ready_replicas": ready, "desired_replicas": desired},
             )
 
-        # Evaluate pod status
         phase = str(status.get("phase", ""))
         container_statuses = status.get("containerStatuses", [])
         all_containers_ready = bool(
@@ -578,6 +654,51 @@ class EnvironmentVerifier:
             passed=False,
             details=f"Pod not ready (phase: {phase}, containers_ready: {all_containers_ready})",
             observed={"phase": phase, "containers_ready": all_containers_ready},
+        )
+
+    def _verify_no_legacy_deployment(self, deployment_name: str, namespace: str = "default") -> CheckResult:
+        """Verify that a rogue/legacy deployment is scaled to 0 or completely removed."""
+        res = self._kubectl_get("deployment", namespace=namespace, output="json")
+        if not res.get("success", False):
+            err_msg = str(res.get("error") or res.get("stderr") or "kubectl_query_failed")
+            return CheckResult(
+                name=f"legacy_deployment_{deployment_name}_removed",
+                target=f"{namespace}/{deployment_name}",
+                passed=False,
+                details=f"Failed to query deployments from cluster: {err_msg}",
+            )
+
+        parsed = res.get("parsed") or {}
+        items = parsed.get("items", []) if isinstance(parsed, dict) else []
+        legacy_item = None
+        for item in items:
+            if item.get("metadata", {}).get("name") == deployment_name:
+                legacy_item = item
+                break
+
+        if not legacy_item:
+            return CheckResult(
+                name=f"legacy_deployment_{deployment_name}_removed",
+                target=f"{namespace}/{deployment_name}",
+                passed=True,
+                details=f"Legacy deployment {deployment_name} not present in cluster",
+            )
+
+        ready = int(legacy_item.get("status", {}).get("readyReplicas", 0))
+        if ready == 0:
+            return CheckResult(
+                name=f"legacy_deployment_{deployment_name}_removed",
+                target=f"{namespace}/{deployment_name}",
+                passed=True,
+                details=f"Legacy deployment {deployment_name} scaled to 0 ready replicas",
+            )
+
+        return CheckResult(
+            name=f"legacy_deployment_{deployment_name}_removed",
+            target=f"{namespace}/{deployment_name}",
+            passed=False,
+            details=f"Legacy deployment {deployment_name} still active with {ready} ready replicas",
+            observed={"ready_replicas": ready},
         )
 
     def _verify_alerts(self, alerts_must_clear: tuple[str, ...]) -> CheckResult:
@@ -648,11 +769,9 @@ class EnvironmentVerifier:
 
         result_data = res.get("result", [])
         if not result_data:
-            # Query returned empty vector — if checking error rate < threshold, 0 is often passed
             val = 0.0
         else:
             try:
-                # Prometheus vector format: [{'metric': {...}, 'value': [1786542619, '0.02']}]
                 first_item = result_data[0]
                 if isinstance(first_item, dict) and "value" in first_item:
                     val = float(first_item["value"][1])
@@ -679,10 +798,20 @@ class EnvironmentVerifier:
         ), val
 
     def _verify_chaos_clearance(self, scenario_id: str) -> CheckResult:
-        """Verify that Chaos Mesh resources applied for the scenario are removed/inactive."""
+        """Verify that Chaos Mesh resources applied for the scenario are removed/inactive.
+
+        AtlasOps Benchmark Execution Invariant:
+        In the canonical benchmark evaluation pipeline (`bench/runner.py`), scenarios
+        are executed strictly serially on a dedicated cluster and reset between episodes
+        (`reset_cluster()`). Therefore, under this serialized single-scenario model,
+        zero active Chaos Mesh experiment resources must remain in the cluster after
+        recovery.
+
+        This check verifies cluster-wide CRD clearance while also inspecting scenario-specific
+        labels and resource names for detailed diagnostic reporting.
+        """
         res = self._kubectl_get("podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos", namespace="-A", output="json")
         if not res.get("success", False):
-            # If kubectl query fails with error, report communication error
             err_msg = str(res.get("error") or res.get("stderr") or "chaos_query_failed")
             return CheckResult(
                 name="chaos_mesh_cleared",
@@ -706,17 +835,34 @@ class EnvironmentVerifier:
                 details="Zero active Chaos Mesh experiment resources present in cluster",
             )
 
-        # Check if active experiments remain
+        scenario_short = scenario_id.split("/")[-1]
+        matching_chaos = [
+            f"{item.get('kind', 'Chaos')}/{item.get('metadata', {}).get('name', 'unknown')}"
+            for item in active_chaos
+            if item.get("metadata", {}).get("labels", {}).get("scenario") == scenario_short
+            or str(item.get("metadata", {}).get("name", "")).startswith(scenario_short)
+        ]
         active_chaos_names = [
             f"{item.get('kind', 'Chaos')}/{item.get('metadata', {}).get('name', 'unknown')}"
             for item in active_chaos
         ]
+
+        if matching_chaos:
+            details = f"Active scenario chaos experiments remain: {', '.join(matching_chaos)}"
+        else:
+            details = f"Active chaos experiment resources remain in cluster: {', '.join(active_chaos_names[:5])}"
+
         return CheckResult(
             name="chaos_mesh_cleared",
             target="chaos-mesh",
             passed=False,
-            details=f"Active chaos experiment resources remain: {', '.join(active_chaos_names[:5])}",
-            observed={"active_chaos_count": len(active_chaos), "active_experiments": active_chaos_names},
+            details=details,
+            observed={
+                "active_chaos_count": len(active_chaos),
+                "scenario_matching_count": len(matching_chaos),
+                "active_experiments": active_chaos_names,
+                "matching_experiments": matching_chaos,
+            },
         )
 
 

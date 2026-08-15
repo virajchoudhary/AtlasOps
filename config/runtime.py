@@ -133,7 +133,8 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
         gathering on hard tiers (likely guessed, not diagnosed)
     """
     tier      = str(episode.get("tier", "unknown"))
-    env_resolved = bool(episode.get("env_resolved", episode.get("resolved", False)))
+    # Fail-closed resolution: env_resolved must be explicitly True from objective verifier evidence
+    env_resolved = bool(episode.get("env_resolved") is True)
     agent_claimed_resolved = bool(
         episode.get("agent_claimed_resolved", episode.get("outcome") == "resolved")
     )

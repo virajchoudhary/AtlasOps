@@ -179,3 +179,154 @@ class TestApprovalFlow:
         assert result["remediation"]["final"]["status"] == "approval_rejected"
         roles = [c.args[0] for c in mock_call.call_args_list]
         assert roles == ["triage", "diagnosis", "comms"]
+
+
+class TestCoordinatorExecutionAndVerificationTruth:
+    @pytest.fixture(autouse=True)
+    def _configure_safe_test_runtime(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
+        monkeypatch.setenv("ATLASOPS_USE_HF_INFERENCE", "0")
+        monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
+        monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+
+        import agents.coordinator as coord
+        async def fake_wait(_incident_id):
+            return {"status": "approved", "approved_by": "auto-test"}
+        monkeypatch.setattr(coord.approval_gate, "wait_for_decision", fake_wait)
+
+    def test_canonical_execution_ordering_and_verifier_passed_to_comms(self, monkeypatch, tmp_path):
+        import agents.coordinator as coord
+        from agents.verifier import EnvironmentVerificationResult
+
+        traj_dir = tmp_path / "trajectories"
+        monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
+
+        call_order = []
+
+        triage = {"role": "triage", "trajectory": [{"action": "ack"}], "final": {"severity": "P1", "title": "CartService Crash"}}
+        diagnosis = {"role": "diagnosis", "trajectory": [{"action": "logs"}], "final": {"root_cause": "OOMKill", "target": "cartservice"}}
+        remediation = {"role": "remediation", "trajectory": [{"action": "restart"}], "final": {"outcome": "resolved", "status": "resolved"}}
+        comms = {"role": "comms", "trajectory": [{"action": "slack"}], "final": {"summary": "Resolved cartservice crash."}}
+
+        async def fake_call_agent(role, input_data):
+            call_order.append((role, input_data))
+            if role == "triage":
+                return triage
+            elif role == "diagnosis":
+                return diagnosis
+            elif role == "remediation":
+                return remediation
+            elif role == "comms":
+                return comms
+            return {"role": role, "trajectory": [], "final": {}}
+
+        def fake_verify_environment(scenario_id, agent_claimed_resolved, alert, incident_context):
+            call_order.append(("verify_environment", {
+                "scenario_id": scenario_id,
+                "agent_claimed_resolved": agent_claimed_resolved,
+                "incident_context_has_remediation": "remediation" in incident_context,
+            }))
+            return EnvironmentVerificationResult(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                env_resolved=True,
+                verification_status="passed",
+                evidence=["Environment fully healthy."],
+            )
+
+        monkeypatch.setattr(coord, "call_agent", fake_call_agent)
+        import agents.verifier as verifier_mod
+        monkeypatch.setattr(verifier_mod, "verify_environment", fake_verify_environment)
+
+        alert = {
+            "scenario_id": "single_fault/sf-001",
+            "commonLabels": {"alertname": "OnlineBoutiqueCartServiceDown", "service": "cartservice"},
+            "alerts": [{"labels": {"alertname": "OnlineBoutiqueCartServiceDown"}}],
+        }
+
+        result = asyncio.run(coord.handle_incident(alert))
+
+        # 1. Verify execution order: triage -> diagnosis -> remediation -> verify_environment -> comms
+        roles_in_order = [item[0] for item in call_order]
+        assert roles_in_order == ["triage", "diagnosis", "remediation", "verify_environment", "comms"]
+
+        # 2. Verify Comms input received objective verification results
+        comms_input = next(item[1] for item in call_order if item[0] == "comms")
+        assert comms_input["env_resolved"] is True
+        assert comms_input["agent_claimed_resolved"] is True
+        assert comms_input["verification"]["verification_status"] == "passed"
+        assert comms_input["verification"]["env_resolved"] is True
+
+        # 3. Verify returned record has verification truth
+        assert result["env_resolved"] is True
+        assert result["agent_claimed_resolved"] is True
+        assert result["verification"]["verification_status"] == "passed"
+
+        # 4. Verify persisted trajectory on disk matches in-memory record and contains verification
+        incident_id = result["incident_id"]
+        persisted_file = traj_dir / f"{incident_id}.json"
+        assert persisted_file.exists()
+        persisted_data = json.loads(persisted_file.read_text(encoding="utf-8"))
+        assert persisted_data["incident_id"] == incident_id
+        assert persisted_data["env_resolved"] is True
+        assert persisted_data["agent_claimed_resolved"] is True
+        assert persisted_data["verification"]["verification_status"] == "passed"
+        assert persisted_data["comms"] == comms
+
+    def test_agent_claims_resolved_but_verifier_fails(self, monkeypatch, tmp_path):
+        import agents.coordinator as coord
+        from agents.verifier import EnvironmentVerificationResult
+
+        traj_dir = tmp_path / "trajectories"
+        monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
+
+        triage = {"role": "triage", "trajectory": [], "final": {"severity": "P1"}}
+        diagnosis = {"role": "diagnosis", "trajectory": [], "final": {"root_cause": "Crash"}}
+        remediation = {"role": "remediation", "trajectory": [], "final": {"outcome": "resolved", "status": "resolved"}}
+        comms = {"role": "comms", "trajectory": [], "final": {"summary": "Attempted remediation."}}
+
+        comms_received_input = {}
+
+        async def fake_call_agent(role, input_data):
+            if role == "triage":
+                return triage
+            elif role == "diagnosis":
+                return diagnosis
+            elif role == "remediation":
+                return remediation
+            elif role == "comms":
+                nonlocal comms_received_input
+                comms_received_input = input_data
+                return comms
+            return {"role": role, "trajectory": [], "final": {}}
+
+        def fake_verify_environment(scenario_id, agent_claimed_resolved, alert, incident_context):
+            return EnvironmentVerificationResult(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                env_resolved=False,
+                verification_status="failed",
+                evidence=["Pod still in CrashLoopBackOff."],
+            )
+
+        monkeypatch.setattr(coord, "call_agent", fake_call_agent)
+        import agents.verifier as verifier_mod
+        monkeypatch.setattr(verifier_mod, "verify_environment", fake_verify_environment)
+
+        alert = {"scenario_id": "single_fault/sf-001", "commonLabels": {"alertname": "TestAlert"}}
+        result = asyncio.run(coord.handle_incident(alert))
+
+        # Comms sees env_resolved=False even though agent claimed resolved
+        assert comms_received_input["agent_claimed_resolved"] is True
+        assert comms_received_input["env_resolved"] is False
+        assert comms_received_input["verification"]["verification_status"] == "failed"
+
+        # Coordinator return and persisted file
+        assert result["env_resolved"] is False
+        assert result["agent_claimed_resolved"] is True
+
+        incident_id = result["incident_id"]
+        persisted_data = json.loads((traj_dir / f"{incident_id}.json").read_text(encoding="utf-8"))
+        assert persisted_data["env_resolved"] is False
+        assert persisted_data["agent_claimed_resolved"] is True
+        assert persisted_data["verification"]["verification_status"] == "failed"

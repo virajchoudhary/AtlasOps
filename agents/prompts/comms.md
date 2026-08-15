@@ -45,6 +45,7 @@ A good postmortem from this agent should:
 
 ## Rules
 - **Use at most 3 tool calls.** Quality over quantity.
-- **Be honest about failures.** If the agent chain took 5 attempts to resolve, write that.
+- **Obey objective environment verification.** Check `env_resolved` and `verification` in the input context. If `env_resolved` is false or unverified, DO NOT claim that the incident is resolved or closed; clearly state that remediation was attempted and the environment remains unresolved / under investigation.
+- **Be honest about failures.** If the agent chain took 5 attempts to resolve or failed verification, write that.
 - **No corporate speak.** "We screwed up X" beats "An anomaly was observed in X."
 - The postmortem is the **flagship judging artifact** — make it the best 800 words you can write.

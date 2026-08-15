@@ -58,6 +58,7 @@ This governance document records the repository's alignment with the canonical e
 | **[PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10)** | `feat: implement objective environment verifier and reward integration` | `feat/objective-environment-verifier` | Dedicated `agents/verifier.py` engine, separate `env_resolved` from agent claim | **G2** |
 | **[PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)** | `fix: align objective verifier with frozen chaos manifests and add contract tests` | `fix/verifier-scenario-contract` | All 28 frozen scenarios covered (24 exact manifest targets + 4 reviewed exceptions), dynamic frontend guessing removed, namespace & tier validation | **G2** |
 | **[PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)** | `docs(governance): reconcile stage truth against Pipeline v1.0 and record Gate G2 closure` | `docs/g2-g3-pipeline-reconciliation` | Pipeline v1.0 reconciliation, G2 closure audit, pre-G3 readiness audit | **G2 / G3** |
+| **[PR #13](https://github.com/virajchoudhary/AtlasOps/pull/13)** | `fix: make environment verification authoritative before communications` | `fix/runtime-verification-truth` | Reorder coordinator execution (Remediation -> Verifier -> Comms), verification-aware Comms, trajectory persistence after verifier, fail-closed benchmark & reward truth | **Pre-G4 / G2** |
 
 ---
 
@@ -81,12 +82,17 @@ This governance document records the repository's alignment with the canonical e
   - Scenario catalogue contract formalized (28 static, 10 dynamic default) ([PR #8](https://github.com/virajchoudhary/AtlasOps/pull/8)).
   - SRE Tool inventory and deterministic role-based ACL frozen (19 exposed, 3 unexposed) ([PR #9](https://github.com/virajchoudhary/AtlasOps/pull/9)).
   - Objective Environment Verifier (`agents/verifier.py`): all 28 frozen scenarios covered, 24 standard manifests use exact manifest-target equality, 4 non-standard manifests use explicit reviewed exception contracts, tier and namespace agreement are validated, and dynamic frontend fallback is removed ([PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10), [PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)).
+- **Runtime Environment-Truth Contract [IMPLEMENTED / MOCKED-TESTED / LIVE UNVERIFIED] ([PR #13](https://github.com/virajchoudhary/AtlasOps/pull/13))**:
+  - Coordinator execution reordered to canonical pipeline: $\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Verifier} \rightarrow \mathbf{Comms}$.
+  - Comms agent input context and closure messages receive objective verification evidence (`env_resolved`, `agent_claimed_resolved`, `verification`).
+  - Trajectory JSON files are persisted to disk only after objective verification metadata is attached.
+  - Fail-closed evaluation truth enforced: missing or inconclusive telemetry strictly results in `env_resolved = False`, with zero positive resolution reward.
 - **Offline Benchmark Path to Judge Proven**:
   - `test_benchmark_single_scenario_reaches_judge_offline` in `tests/test_bench_runner.py` proves `run_scenario` orchestrates chaos injection, enriches alert with `scenario_id`, invokes multi-agent handling, passes full trajectory to `judge_trajectory(incident, tier="single_fault")`, computes centralized reward contract, and triggers cluster reset without real Kubernetes or cloud dependencies ([PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)).
 - **Manifests Validated**:
   - Kubernetes RBAC, coordinator templates, Prometheus rules, and values files validated via static contract tests (`test_runtime_infra_contract.py`, `test_infra_contract.py`).
   - Infrastructure shell scripts pass static syntax validation (`bash -n`).
-- **Regression Suite**: 402 tests passing green.
+- **Regression Suite**: 407 tests passing green.
 
 ### Gate G3: Controlled SRE Environment — [PENDING]
 - **Prerequisites Prepared (Stage 3A)**: Local CLI toolchain verified (Git Bash, `gcloud` 580.0.0, `helm` v4.2.4, `kubectl` v1.34.1, `docker` 29.4.0).
@@ -102,36 +108,14 @@ This governance document records the repository's alignment with the canonical e
 
 ---
 
-## Known Architecture & Runtime Truth Gaps (Pre-G4 Tracking)
+## Pre-G3 / Pre-G4 Architecture & Security Tracking
 
-> [!WARNING]
-> The following items do NOT block Gate G2 (which covers offline upstream stabilization), but are **MANDATORY PRE-G4 REPAIRS** that must be resolved before executing the Stage 4 golden live incident.
-
-### 1. Pre-G4 Coordinator / Verifier Execution Ordering Gap [MUST FIX BEFORE G4]
-- **Current Code Behavior**: [`agents/coordinator.py`](../../agents/coordinator.py) executes:
-  $$\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Comms} \rightarrow \mathbf{Verifier}$$
-- **Canonical Pipeline v1.0 Requirement**:
-  $$\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Verifier} \rightarrow \mathbf{Comms}$$
-- **Implications**:
-  1. *Comms runs before objective truth*: The communications agent drafts postmortems and Slack notifications before environment verifier results exist, preventing Comms from guaranteeing that it never claims resolution when the environment is unresolved.
-  2. *Trajectory persistence race*: `full_record` is currently written to `TRAJECTORIES_DIR` before `verification` is appended, causing saved trajectory files on disk to omit verification metadata even if the in-memory return value includes it.
-  3. *Repair Scope*: Reorder coordinator execution so `verify_environment` runs immediately after Remediation, pass verification results into Comms input context, and persist `full_record` after verification is attached.
-
-### 2. Fail-Closed Benchmark and Reward Resolution Truth [MUST FIX BEFORE G4/G9]
-- **Current Fallback Behavior**:
-  - `bench/runner.py` currently falls back to `remediation.get("outcome") == "resolved"` when verification is missing.
-  - `config/runtime.py` (`evaluate_reward_contract`) allows `env_resolved` to fall back to `episode["resolved"]`.
-  - `agents/coordinator.py` falls back to `agent_claimed_resolved` when `verification_status == "inconclusive"`.
-- **Follow-up Requirement**:
-  - Benchmark and RL rewards must strictly fail closed: missing or inconclusive telemetry must result in `env_resolved = False` and positive resolution reward must not be awarded.
-  - `agent_claimed_resolved` must remain strictly separated from ground-truth `env_resolved`.
-
-### 3. Argo CD Security & Credential Boundary [PRE-G3 PLANNING]
+### 1. Argo CD Security & Credential Boundary [PRE-G3 PLANNING]
 - For future Stage 3 deployment, do **not** automatically extract or copy `argocd-initial-admin-secret` into coordinator application configuration.
 - Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`).
 - Mutating operations (`argocd_rollback`) remain gated behind the remediation approval gate.
 
-### 4. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [PRE-G3 PLANNING]
+### 2. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [PRE-G3 PLANNING]
 - Distinguish:
   - **A. Jaeger Backend Installation & API Reachability**: Verified when the Jaeger query endpoint is deployed and responds HTTP 200 to `jaeger_search(service="...")` (satisfies Stage 3 non-destructive tool contract).
   - **B. Microservice Trace Ingestion**: Requires OpenTelemetry Collector and application trace exporters in Online Boutique; until trace exporters are instrumented, trace query returns empty traces with `{"success": true, "count": 0}`.

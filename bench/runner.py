@@ -103,11 +103,13 @@ async def run_scenario(scenario_id: str) -> dict:
     triage = incident.get("triage", {}).get("final", {})
     verification = incident.get("verification", {})
     agent_claimed_resolved = bool(
-        verification.get("agent_claimed_resolved", remediation.get("outcome") == "resolved")
+        verification.get(
+            "agent_claimed_resolved",
+            remediation.get("outcome") == "resolved" or remediation.get("status") == "resolved",
+        )
     )
-    env_resolved = bool(
-        verification.get("env_resolved", remediation.get("outcome") == "resolved")
-    )
+    # Fail-closed benchmark truth: env_resolved must come strictly from objective verifier evidence
+    env_resolved = bool(verification.get("env_resolved", False))
     total_turns = sum(
         len(incident.get(role, {}).get("trajectory", []))
         for role in ("triage", "diagnosis", "remediation", "comms")

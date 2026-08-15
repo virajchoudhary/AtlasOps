@@ -79,6 +79,92 @@ class TestRunScenario:
         assert episode["status"] == "ok"
         assert episode["tier"] == "unknown"
 
+    @pytest.mark.asyncio
+    async def test_benchmark_single_scenario_reaches_judge_offline(self, monkeypatch):
+        """Pipeline G2 validation: single scenario offline dry run reaches judge and calculates reward."""
+        from bench import runner
+
+        scenario_id = "single_fault/sf-001"
+        incident = {
+            "triage": {
+                "trajectory": [{"turn": 1, "action": "triage_classify", "result": {"severity": "P2"}}],
+                "final": {"severity": "P2", "blast_radius": "service_isolated"},
+            },
+            "diagnosis": {
+                "trajectory": [{"turn": 2, "action": "logs_get", "result": "CrashLoopBackOff"}],
+                "final": {"root_cause": "OOMKill", "target": "cartservice"},
+            },
+            "remediation": {
+                "trajectory": [{"turn": 3, "action": "deployment_restart", "result": "restarted"}],
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 45},
+            },
+            "comms": {
+                "trajectory": [{"turn": 4, "action": "postmortem_draft", "result": {"path": "docs/postmortems/sf-001.md"}}],
+                "final": {"postmortem_path": "docs/postmortems/sf-001.md"},
+            },
+            "verification": {
+                "agent_claimed_resolved": True,
+                "env_resolved": True,
+                "verification_status": "passed",
+            },
+        }
+        judge_score = {
+            "reasoning": 0.90,
+            "correctness": 0.95,
+            "efficiency": 0.88,
+            "overall": 0.91,
+        }
+
+        apply_chaos_mock = Mock(return_value=True)
+        wait_for_alert_mock = Mock(return_value={
+            "commonLabels": {"alertname": "AtlasOpsOnlineBoutiqueDeploymentUnavailable", "service": "cartservice"},
+            "alerts": [{"labels": {"alertname": "AtlasOpsOnlineBoutiqueDeploymentUnavailable", "service": "cartservice"}}],
+        })
+        handle_incident_mock = AsyncMock(return_value=incident)
+        judge_trajectory_mock = AsyncMock(return_value=judge_score)
+        reset_cluster_mock = Mock()
+
+        monkeypatch.setattr(runner, "apply_chaos", apply_chaos_mock)
+        monkeypatch.setattr(runner, "wait_for_alert", wait_for_alert_mock)
+        monkeypatch.setattr(runner, "handle_incident", handle_incident_mock)
+        monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory_mock)
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster_mock)
+
+        episode = await runner.run_scenario(scenario_id)
+
+        # 1. Chaos applied for scenario
+        apply_chaos_mock.assert_called_once_with(scenario_id)
+        # 2. Alert ingested and enriched with scenario_id
+        wait_for_alert_mock.assert_called_once_with()
+        # 3. Incident handled by multi-agent coordinator flow with enriched alert
+        handle_incident_mock.assert_awaited_once()
+        passed_alert = handle_incident_mock.call_args[0][0]
+        assert passed_alert["scenario_id"] == scenario_id
+        assert passed_alert["commonLabels"]["alertname"] == "AtlasOpsOnlineBoutiqueDeploymentUnavailable"
+        assert passed_alert["commonLabels"]["service"] == "cartservice"
+        assert len(passed_alert["alerts"]) == 1
+        # 4. Trajectory and tier passed to judge
+        judge_trajectory_mock.assert_awaited_once_with(incident, tier="single_fault")
+        # 5. Judge score incorporated into episode
+        assert episode["judge"] == judge_score
+        assert episode["judge"]["overall"] == 0.91
+        # 6. Verification and resolution tracked
+        assert episode["agent_claimed_resolved"] is True
+        assert episode["env_resolved"] is True
+        assert episode["resolved"] is True
+        assert episode["tier"] == "single_fault"
+        assert episode["scenario_id"] == scenario_id
+        assert episode["total_turns"] == 4
+        assert episode["time_to_resolve_s"] == 45
+        # 7. Centralized reward contract computed
+        assert "reward_contract" in episode
+        assert 0.0 <= episode["reward_contract"]["total"] <= 1.0
+        assert episode["reward_contract"]["total"] > 0.8
+        # 8. Cluster reset executed after episode
+        reset_cluster_mock.assert_called_once_with()
+        assert episode["status"] == "ok"
+
+
 
 # ── Reward contract ────────────────────────────────────────────────────────────
 

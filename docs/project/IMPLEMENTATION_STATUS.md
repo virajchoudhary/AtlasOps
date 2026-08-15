@@ -17,8 +17,9 @@ This is a concise current classification, not a complete implementation audit. F
 | Real GKE provisioning | UNVERIFIED | No setup/teardown apply was run; review Stage 1D-B before a controlled reproduction |
 | Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED | kube-state-metrics availability rule plus authenticated private coordinator route; no live alert proof |
 | Application metrics | BLOCKED / DEFERRED | Pinned Boutique source does not prove request/error/latency Prometheus metrics |
-| Jaeger / tracing | BLOCKED / DEFERRED | No trace backend installed; `JAEGER_URL` fails closed when absent |
-| Argo CD ownership | OPTIONAL / DEFERRED | Controller default-off; no Application objects or dual ownership; tools remain configuration-gated |
+| Jaeger / tracing | STATICALLY READY / LIVE UNVERIFIED | Jaeger 4.12.0 Helm configuration defined with ClusterIP and bounded development resources; `JAEGER_URL` wired into coordinator; live Query API reachability and Online Boutique trace ingestion pending Stage 3 live execution |
+| Argo CD | STATICALLY READY / LIVE UNVERIFIED | Argo CD 10.3.2 controller enabled as canonical G3 component with ClusterIP; Secret-backed credential contract (`argocd-user`/`argocd-pass`); non-destructive `argocd_list_apps` contract with 0 Application ownership |
+| Gate G3 Readiness | STATICALLY VALIDATED / LIVE PENDING | Static Helm template validation passed, acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md`; zero cloud resources provisioned |
 | Published benchmark/result claims | UNVERIFIED BY OUR TEAM | Reproduce |
 
 ## Development orchestration note

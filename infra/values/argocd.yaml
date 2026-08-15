@@ -1,9 +1,12 @@
 server:
   service:
-    type: ClusterIP  # use kubectl port-forward for operator access
+    type: ClusterIP  # Private in-cluster access only; use kubectl port-forward for operator access
+  extraArgs:
+    - --insecure  # Development cluster exception: serve plain HTTP on private in-cluster ClusterIP (not production security)
 
-# Keep secure defaults in versioned config. For demo-only environments,
-# pass --set server.extraArgs[0]=--insecure at deploy time instead.
+configs:
+  params:
+    server.insecure: true
 
 repoServer:
   replicaCount: 1

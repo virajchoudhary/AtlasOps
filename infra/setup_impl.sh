@@ -40,8 +40,6 @@ readonly BOUTIQUE_DEPLOYMENTS=(
 )
 
 readonly PROMETHEUS_CHART_VERSION="88.3.0"
-# Provenance pin only: Stage 1D-A does not install Jaeger because the inherited
-# values target an older contract that must be reconciled in Stage 1D-B.
 readonly JAEGER_CHART_VERSION="4.12.0"
 readonly ARGOCD_CHART_VERSION="10.3.2"
 readonly CHAOS_MESH_CHART_VERSION="2.8.3"
@@ -53,7 +51,7 @@ ATLASOPS_ENABLE_CLOUD_SQL="${ATLASOPS_ENABLE_CLOUD_SQL:-false}"
 ATLASOPS_ENABLE_PUBSUB="${ATLASOPS_ENABLE_PUBSUB:-false}"
 ATLASOPS_ENABLE_ARTIFACT_REGISTRY="${ATLASOPS_ENABLE_ARTIFACT_REGISTRY:-false}"
 ATLASOPS_ENABLE_CLOUD_BUILD="${ATLASOPS_ENABLE_CLOUD_BUILD:-false}"
-ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-false}"
+ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"
 ATLASOPS_BACKEND="${ATLASOPS_BACKEND:-vllm}"
 
 usage() {
@@ -79,7 +77,7 @@ Optional:
   ATLASOPS_ENABLE_PUBSUB=false             reviewed opt-in lifecycle
   ATLASOPS_ENABLE_ARTIFACT_REGISTRY=false  deferred; true fails closed
   ATLASOPS_ENABLE_CLOUD_BUILD=false        deferred; true fails closed
-  ATLASOPS_ENABLE_ARGOCD=false             controller only; no Application ownership
+  ATLASOPS_ENABLE_ARGOCD=true              canonical G3 controller (ClusterIP; no Application ownership)
   ATLASOPS_BACKEND=vllm                    vllm, fireworks, or openai
 
 Apply-only acknowledgement:
@@ -253,14 +251,14 @@ Coordinator Service:               atlasops-coordinator-svc.default:9099 (Cluste
 Coordinator secrets:               pre-existing namespaced Secret contracts
 Prometheus/Alertmanager:            coordinator route statically configured
 Application metrics/traces:         DEFERRED (not present in pinned Boutique manifest)
-Argo CD:                            $([[ "$ATLASOPS_ENABLE_ARGOCD" == true ]] && echo CONTROLLER ONLY || echo SKIPPED / DEFERRED)
+Argo CD:                            $([[ "$ATLASOPS_ENABLE_ARGOCD" == true ]] && echo "ENABLED (ClusterIP; chart $ARGOCD_CHART_VERSION; required credentials enforced)" || echo "SKIPPED / DEFERRED (DEVIATION: canonical Gate G3 cannot PASS without Argo CD)")
 Linkerd:                           SKIPPED / DEFERRED
 Artifact Registry:                 SKIPPED / DEFERRED
 Cloud Build:                       SKIPPED / DEFERRED
 Persistent-storage requests:       Prometheus 20Gi
 Project-managed public admin UIs:  0 LoadBalancer Services
 Online Boutique exposure:          pinned manifest has 1 frontend LoadBalancer
-Jaeger:                            BLOCKED / DEFERRED (not installed)
+Jaeger:                            in-cluster Query backend (ClusterIP; chart $JAEGER_CHART_VERSION)
 Existing target cluster:           $CLUSTER_STATE
 ===============================================
 EOF
@@ -404,6 +402,12 @@ validate_runtime_secret_contract() {
     secret_key_present default "$COORDINATOR_SECRET" llm-api-key || \
       fail "Secret '$COORDINATOR_SECRET' requires llm-api-key for backend '$ATLASOPS_BACKEND'."
   fi
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    for key in argocd-user argocd-pass; do
+      secret_key_present default "$COORDINATOR_SECRET" "$key" || \
+        fail "Secret '$COORDINATOR_SECRET' in namespace default is missing required Argo CD credential key '$key'."
+    done
+  fi
   secret_key_present monitoring "$ALERTMANAGER_SECRET" alertmanager-webhook-secret || \
     fail "Secret '$ALERTMANAGER_SECRET' in namespace monitoring is missing alertmanager-webhook-secret."
   echo "SECRETS: required key presence validated without printing or storing value contents."
@@ -448,24 +452,31 @@ apply_foundation() {
   echo "COORDINATOR: private Service and authenticated runtime deployed from immutable image digest."
 
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
-  helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
+  helm repo add jaegertracing https://jaegertracing.github.io/helm-charts --force-update
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
     helm repo add argo https://argoproj.github.io/argo-helm --force-update
   fi
+  helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
   helm repo update
   helm_target upgrade --install prometheus prometheus-community/kube-prometheus-stack --version "$PROMETHEUS_CHART_VERSION" \
     --namespace monitoring --values infra/values/kube-prometheus-stack.yaml --wait --timeout=10m
   kubectl_target apply -f "$ATLASOPS_PROMETHEUS_RULES"
   echo "PROMETHEUS: kube-state-metrics availability alert and authenticated coordinator route configured."
   echo "PROMETHEUS: application error-rate and latency signals remain DEFERRED / UNPROVEN."
-  echo "JAEGER: BLOCKED / DEFERRED at pinned chart $JAEGER_CHART_VERSION; no trace ingestion installed."
+
+  kubectl_target create namespace jaeger --dry-run=client -o yaml | kubectl_target apply -f -
+  helm_target upgrade --install jaeger jaegertracing/jaeger --version "$JAEGER_CHART_VERSION" \
+    --namespace jaeger --values infra/values/jaeger.yaml --wait --timeout=10m
+  echo "JAEGER: in-cluster Query backend and collector installed at pinned chart $JAEGER_CHART_VERSION."
+  echo "JAEGER: Online Boutique trace ingestion remains LIVE UNVERIFIED (instrumentation follow-up required)."
+
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
     kubectl_target create namespace argocd --dry-run=client -o yaml | kubectl_target apply -f -
     helm_target upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" \
       --namespace argocd --values infra/values/argocd.yaml --wait --timeout=10m
-    echo "ARGO CD: optional base controller installed; no Application or workload ownership configured."
+    echo "ARGO CD: canonical base controller installed; no Application or workload ownership configured."
   else
-    echo "ARGO CD: SKIPPED / DEFERRED; Kubernetes-native workload ownership retained."
+    echo "ARGO CD: SKIPPED / DEFERRED (operator deviation; canonical Gate G3 cannot PASS with Argo CD disabled)."
   fi
   kubectl_target create namespace chaos-mesh --dry-run=client -o yaml | kubectl_target apply -f -
   helm_target upgrade --install chaos-mesh chaos-mesh/chaos-mesh --version "$CHAOS_MESH_CHART_VERSION" \
@@ -495,12 +506,15 @@ model/tool execution, application metrics, tracing, or full AtlasOps readiness.
 
 Safe operator access:
   kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
-  # only when ATLASOPS_ENABLE_ARGOCD=true:
+  kubectl port-forward -n jaeger svc/jaeger 16686:16686
+  # when ATLASOPS_ENABLE_ARGOCD=true:
   kubectl port-forward -n argocd svc/argocd-server 8080:443
 
-Jaeger has no endpoint because trace ingestion remains blocked/deferred. Argo CD
-has no Application ownership contract. Online Boutique separately creates a
-public frontend LoadBalancer; AtlasOps admin/runtime Services remain ClusterIP.
+Jaeger query API is reachable in-cluster (http://jaeger.jaeger.svc.cluster.local:16686);
+application trace ingestion remains unproven until workload instrumentation is added.
+Argo CD provides the API backend without claiming intrusive Application ownership.
+Online Boutique separately creates a public frontend LoadBalancer; AtlasOps admin/runtime
+Services remain ClusterIP.
 EOF
 }
 

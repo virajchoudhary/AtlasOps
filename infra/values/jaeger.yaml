@@ -1,5 +1,19 @@
-# Jaeger is explicitly deferred for the first controlled AtlasOps reproduction.
-# The pinned Online Boutique release manifest does not deploy an OpenTelemetry
-# Collector or configure application exporters, and the inherited values used
-# invalid keys for Jaeger chart 4.12.0. Setup does not install this file.
-{}
+# AtlasOps Jaeger deployment configuration for G3 observability readiness.
+# Chart: jaegertracing/jaeger (pinned: 4.12.0)
+#
+# Provides private, in-cluster query and collector services for distributed tracing.
+# Query API endpoint: http://jaeger.jaeger.svc.cluster.local:16686
+#
+# Note: Installing this chart establishes backend reachability for G3.
+# Real trace ingestion from Online Boutique remains an independent follow-up.
+
+jaeger:
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

@@ -116,11 +116,17 @@ def test_runtime_configuration_uses_secret_references_without_secret_values() ->
     assert refs["ALERTMANAGER_WEBHOOK_SECRET"]["key"] == "alertmanager-webhook-secret"
     assert refs["ATLASOPS_API_KEY"]["key"] == "atlasops-api-key"
     assert refs["LLM_API_KEY"]["optional"] is True
+    assert refs["ARGOCD_USER"]["key"] == "argocd-user"
+    assert refs["ARGOCD_USER"]["optional"] is True
+    assert refs["ARGOCD_PASS"]["key"] == "argocd-pass"
+    assert refs["ARGOCD_PASS"]["optional"] is True
     assert "stringData:" not in TEMPLATE
     config = document("ConfigMap", "atlasops-coordinator-config")["data"]
     assert config["ATLASOPS_RUNTIME_DATA_DIR"].startswith("/var/lib/atlasops/")
     assert config["POSTMORTEM_DIR"].startswith("/var/lib/atlasops/")
     assert config["TRAJECTORIES_DIR"].startswith("/var/lib/atlasops/")
+    assert config["JAEGER_URL"] == "http://jaeger.jaeger.svc.cluster.local:16686"
+    assert config["ARGOCD_URL"] == "http://argocd-server.argocd.svc.cluster.local:80"
 
 
 def test_rbac_is_bounded_and_never_grants_secret_or_cluster_admin_access() -> None:
@@ -191,9 +197,10 @@ def test_prometheus_rule_uses_only_kube_state_metrics_availability() -> None:
 
 
 def test_jaeger_and_argocd_states_are_fail_closed_and_honest() -> None:
-    assert read("infra/values/jaeger.yaml").strip().endswith("{}")
-    assert "JAEGER: BLOCKED / DEFERRED" in SETUP
-    assert 'ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-false}"' in SETUP
+    jaeger_vals = yaml.safe_load(read("infra/values/jaeger.yaml"))
+    assert jaeger_vals["jaeger"]["service"]["type"] == "ClusterIP"
+    assert "JAEGER: in-cluster Query backend" in SETUP
+    assert 'ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"' in SETUP
     assert "kind: Application" not in "\n".join(
         read(path) for path in ("infra/values/argocd.yaml", "infra/setup_impl.sh")
     )

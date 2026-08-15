@@ -92,9 +92,9 @@ This governance document records the repository's alignment with the canonical e
 - **Manifests Validated**:
   - Kubernetes RBAC, coordinator templates, Prometheus rules, and values files validated via static contract tests (`test_runtime_infra_contract.py`, `test_infra_contract.py`).
   - Infrastructure shell scripts pass static syntax validation (`bash -n`).
-- **Regression Suite**: 407 tests passing green.
+- **Regression Suite**: 408 tests passing green.
 
-### Gate G3: Controlled SRE Environment — [PENDING]
+### Gate G3: Controlled SRE Environment — [PENDING / STATIC READINESS ESTABLISHED]
 - **Prerequisites Prepared (Stage 3A)**: Local CLI toolchain verified (Git Bash, `gcloud` 580.0.0, `helm` v4.2.4, `kubectl` v1.34.1, `docker` 29.4.0).
 - **Exact Pinned Infrastructure Baseline**:
   - **Online Boutique**: v0.10.0 pinned to immutable commit `98e60f5ee0b643cc00bceb71e6efb89617740432`.
@@ -104,22 +104,27 @@ This governance document records the repository's alignment with the canonical e
     - `JAEGER_CHART_VERSION="4.12.0"` (`jaegertracing/jaeger`)
     - `ARGOCD_CHART_VERSION="10.3.2"` (`argo/argo-cd`)
     - `CHAOS_MESH_CHART_VERSION="2.8.3"` (`chaos-mesh/chaos-mesh`)
+- **Static Observability & Tooling Readiness**:
+  - **Jaeger**: Configured with private ClusterIP and bounded development resources (`requests: cpu 100m, memory 256Mi`; `limits: cpu 500m, memory 512Mi`); wired into `infra/setup_impl.sh` and coordinator `JAEGER_URL`.
+  - **Argo CD**: Enabled as canonical G3 component with ClusterIP; configured with SecretKeyRef credentials (`argocd-user`/`argocd-pass`) and non-destructive `argocd_list_apps` contract (0 Applications valid proof of API reachability).
+  - **Canonical Install Order**: Online Boutique $\rightarrow$ Coordinator $\rightarrow$ Prometheus/Alertmanager $\rightarrow$ Jaeger $\rightarrow$ Argo CD $\rightarrow$ Chaos Mesh.
+  - **Acceptance Plan**: Non-destructive acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md`.
 - **Zero-Cost Boundary**: 0 cloud resources created, $0.00 billing incurred.
 
 ---
 
 ## Pre-G3 / Pre-G4 Architecture & Security Tracking
 
-### 1. Argo CD Security & Credential Boundary [PRE-G3 PLANNING]
-- For future Stage 3 deployment, do **not** automatically extract or copy `argocd-initial-admin-secret` into coordinator application configuration.
-- Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`).
+### 1. Argo CD Security & Credential Boundary [STATICALLY RESOLVED]
+- Do **not** automatically extract or copy `argocd-initial-admin-secret` into coordinator application configuration.
+- Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) backed by `atlasops-coordinator-secrets` SecretKeyRefs with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`).
 - Mutating operations (`argocd_rollback`) remain gated behind the remediation approval gate.
 
-### 2. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [PRE-G3 PLANNING]
+### 2. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [STATICALLY RESOLVED]
 - Distinguish:
-  - **A. Jaeger Backend Installation & API Reachability**: Verified when the Jaeger query endpoint is deployed and responds HTTP 200 to `jaeger_search(service="...")` (satisfies Stage 3 non-destructive tool contract).
+  - **A. Jaeger Backend Installation & API Reachability**: Verified when the Jaeger query endpoint is deployed and responds HTTP 200 to `jaeger_services_list()` / `GET /api/services` (satisfies Stage 3 non-destructive tool contract).
   - **B. Microservice Trace Ingestion**: Requires OpenTelemetry Collector and application trace exporters in Online Boutique; until trace exporters are instrumented, trace query returns empty traces with `{"success": true, "count": 0}`.
-- For the pre-G3 infrastructure PR, derive chart values directly from pinned chart `4.12.0` (`helm show values jaegertracing/jaeger --version 4.12.0`) rather than guessing configuration keys.
+- Chart values derived directly from pinned chart `4.12.0` (`helm show values jaegertracing/jaeger --version 4.12.0`).
 
 ---
 

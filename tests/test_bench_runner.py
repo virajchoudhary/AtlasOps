@@ -1,5 +1,6 @@
 """Tests for the benchmark runner — reward contract, scoring, comparison table."""
 
+import asyncio
 import json
 import math
 import pytest
@@ -8,8 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 
 class TestRunScenario:
-    @pytest.mark.asyncio
-    async def test_passes_cascade_tier_to_judge(self, monkeypatch):
+    def test_passes_cascade_tier_to_judge(self, monkeypatch):
         from bench import runner
 
         incident = {
@@ -40,15 +40,14 @@ class TestRunScenario:
         monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory)
         monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
 
-        episode = await runner.run_scenario("cascade/test-tier-regression")
+        episode = asyncio.run(runner.run_scenario("cascade/test-tier-regression"))
 
         judge_trajectory.assert_awaited_once_with(incident, tier="cascade")
         reset_cluster.assert_called_once_with()
         assert episode["status"] == "ok"
         assert episode["tier"] == "cascade"
 
-    @pytest.mark.asyncio
-    async def test_uses_unknown_tier_for_legacy_scenario_id(self, monkeypatch):
+    def test_uses_unknown_tier_for_legacy_scenario_id(self, monkeypatch):
         from bench import runner
 
         incident = {
@@ -72,15 +71,14 @@ class TestRunScenario:
         monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory)
         monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
 
-        episode = await runner.run_scenario("legacy-scenario")
+        episode = asyncio.run(runner.run_scenario("legacy-scenario"))
 
         judge_trajectory.assert_awaited_once_with(incident, tier="unknown")
         reset_cluster.assert_called_once_with()
         assert episode["status"] == "ok"
         assert episode["tier"] == "unknown"
 
-    @pytest.mark.asyncio
-    async def test_benchmark_single_scenario_reaches_judge_offline(self, monkeypatch):
+    def test_benchmark_single_scenario_reaches_judge_offline(self, monkeypatch):
         """Pipeline G2 validation: single scenario offline dry run reaches judge and calculates reward."""
         from bench import runner
 
@@ -130,7 +128,7 @@ class TestRunScenario:
         monkeypatch.setattr(runner, "judge_trajectory", judge_trajectory_mock)
         monkeypatch.setattr(runner, "reset_cluster", reset_cluster_mock)
 
-        episode = await runner.run_scenario(scenario_id)
+        episode = asyncio.run(runner.run_scenario(scenario_id))
 
         # 1. Chaos applied for scenario
         apply_chaos_mock.assert_called_once_with(scenario_id)
@@ -164,8 +162,7 @@ class TestRunScenario:
         reset_cluster_mock.assert_called_once_with()
         assert episode["status"] == "ok"
 
-    @pytest.mark.asyncio
-    async def test_run_scenario_missing_verification_fails_closed(self, monkeypatch):
+    def test_run_scenario_missing_verification_fails_closed(self, monkeypatch):
         from bench import runner
 
         scenario_id = "single_fault/sf-001"
@@ -179,15 +176,14 @@ class TestRunScenario:
         monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={"overall": 0.8}))
         monkeypatch.setattr(runner, "reset_cluster", Mock())
 
-        episode = await runner.run_scenario(scenario_id)
+        episode = asyncio.run(runner.run_scenario(scenario_id))
         # Missing verifier MUST fail closed
         assert episode["env_resolved"] is False
         assert episode["resolved"] is False
         assert episode["agent_claimed_resolved"] is True
         assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
 
-    @pytest.mark.asyncio
-    async def test_run_scenario_agent_claims_true_verifier_false(self, monkeypatch):
+    def test_run_scenario_agent_claims_true_verifier_false(self, monkeypatch):
         from bench import runner
 
         scenario_id = "single_fault/sf-001"
@@ -202,7 +198,7 @@ class TestRunScenario:
         monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={"overall": 0.8}))
         monkeypatch.setattr(runner, "reset_cluster", Mock())
 
-        episode = await runner.run_scenario(scenario_id)
+        episode = asyncio.run(runner.run_scenario(scenario_id))
         assert episode["env_resolved"] is False
         assert episode["resolved"] is False
         assert episode["agent_claimed_resolved"] is True

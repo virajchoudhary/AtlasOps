@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,13 +126,13 @@ def test_prometheus_values_use_authenticated_coordinator_routing() -> None:
 
 def test_every_installed_helm_chart_has_an_explicit_version() -> None:
     installs = [command for command in shell_commands(SETUP_IMPL) if "helm_target upgrade --install" in command]
-    assert len(installs) == 3
+    assert len(installs) == 4
     assert all(re.search(r"\s--version\s+\"?\$[A-Z_]+_CHART_VERSION\"?", command) for command in installs)
     assert 'PROMETHEUS_CHART_VERSION="88.3.0"' in SETUP_IMPL
     assert 'JAEGER_CHART_VERSION="4.12.0"' in SETUP_IMPL
     assert 'ARGOCD_CHART_VERSION="10.3.2"' in SETUP_IMPL
     assert 'CHAOS_MESH_CHART_VERSION="2.8.3"' in SETUP_IMPL
-    assert not any("jaegertracing/jaeger" in command for command in installs)
+    assert any("jaegertracing/jaeger" in command for command in installs)
 
 
 def test_online_boutique_manifest_uses_immutable_commit() -> None:
@@ -189,9 +191,14 @@ def test_foundation_success_requires_boutique_and_subsequent_core_setup() -> Non
     assert "set -euo pipefail" in SETUP_IMPL
     foundation = shell_function_body(SETUP_IMPL, "apply_foundation")
     rollout = 'kubectl_target rollout status "deployment/$deployment"'
-    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install prometheus")
-    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install argocd")
-    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install chaos-mesh")
+    prom = "helm_target upgrade --install prometheus"
+    jaeger = "helm_target upgrade --install jaeger"
+    argo = "helm_target upgrade --install argocd"
+    chaos = "helm_target upgrade --install chaos-mesh"
+    assert foundation.index(rollout) < foundation.index(prom)
+    assert foundation.index(prom) < foundation.index(jaeger)
+    assert foundation.index(jaeger) < foundation.index(argo)
+    assert foundation.index(argo) < foundation.index(chaos)
     main = shell_function_body(SETUP_IMPL, "main")
     assert main.index("apply_foundation") < main.index("CORE RUNTIME WIRED")
 
@@ -206,7 +213,7 @@ def test_optional_components_default_disabled_and_apis_are_gated() -> None:
     for flag in flags:
         assert f'{flag}="${{{flag}:-false}}"' in SETUP_IMPL
         assert f'{flag}="${{{flag}:-false}}"' in TEARDOWN_IMPL
-    assert 'ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-false}"' in SETUP_IMPL
+    assert 'ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"' in SETUP_IMPL
     assert "sqladmin.googleapis.com" not in SETUP_IMPL
     assert "artifactregistry.googleapis.com" not in SETUP_IMPL
     assert "cloudbuild.googleapis.com" not in SETUP_IMPL
@@ -224,13 +231,13 @@ def test_pubsub_idempotency_does_not_hide_failures() -> None:
 def test_project_admin_uis_are_cluster_ip() -> None:
     for path in (
         "infra/values/kube-prometheus-stack.yaml",
+        "infra/values/jaeger.yaml",
         "infra/values/argocd.yaml",
         "infra/values/chaos-mesh.yaml",
     ):
         values = read(path)
         assert "type: LoadBalancer" not in values
         assert "type: ClusterIP" in values
-    assert read("infra/values/jaeger.yaml").strip().endswith("{}")
 
 
 def test_setup_and_teardown_share_zonal_location_contract() -> None:
@@ -289,3 +296,22 @@ def test_static_status_documents_keep_live_state_unverified() -> None:
     assert "Real GKE provisioning | UNVERIFIED" in status
     assert "Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED" in status
     assert "Environment verifier | IMPLEMENTED / CONTRACT VALIDATED / MOCKED/TESTED" in status
+
+
+def test_jaeger_and_argocd_helm_values_render_statically() -> None:
+    jaeger_raw = read("infra/values/jaeger.yaml")
+    jaeger_val = yaml.safe_load(jaeger_raw)
+    assert isinstance(jaeger_val, dict)
+    assert jaeger_val["jaeger"]["service"]["type"] == "ClusterIP"
+    assert jaeger_val["jaeger"]["resources"]["requests"]["cpu"] == "100m"
+    assert jaeger_val["jaeger"]["resources"]["requests"]["memory"] == "256Mi"
+    assert jaeger_val["jaeger"]["resources"]["limits"]["cpu"] == "500m"
+    assert jaeger_val["jaeger"]["resources"]["limits"]["memory"] == "512Mi"
+
+    argocd_raw = read("infra/values/argocd.yaml")
+    argocd_val = yaml.safe_load(argocd_raw)
+    assert isinstance(argocd_val, dict)
+    assert argocd_val["server"]["service"]["type"] == "ClusterIP"
+    assert argocd_val["notifications"]["enabled"] is False
+    assert argocd_val["controller"]["resources"]["requests"]["cpu"] == "250m"
+    assert argocd_val["redis"]["resources"]["requests"]["cpu"] == "100m"

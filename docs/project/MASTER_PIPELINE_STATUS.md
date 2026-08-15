@@ -25,7 +25,7 @@ This governance document records the repository's alignment with the canonical e
 |---|---|---|---|---|
 | **Stage 0** | Freeze provenance and working scope | **G0** | Freeze upstream baseline SHA `bf9bd19`, preserve MIT license, establish repository boundaries. | **PASS** |
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
-| **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract 1:1 with 28 manifests, offline benchmark reaches judge. | **PASS** |
+| **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
 | **Stage 3** | Provision controlled SRE environment | **G3** | Standard GKE, Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. | **PENDING** (Stage 3A local prep complete; cloud provisioning blocked on pre-G3 repairs) |
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **BLOCKED (on G3)** |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **BLOCKED (on G4)** |
@@ -48,15 +48,15 @@ This governance document records the repository's alignment with the canonical e
 |---|---|---|---|---|
 | **[PR #1](https://github.com/virajchoudhary/AtlasOps/pull/1)** | `chore: establish project governance and CI foundation` | `chore/project-bootstrap` | Operating rules, Git history preservation, GitHub Actions CI workflow | **G0** |
 | **[PR #2](https://github.com/virajchoudhary/AtlasOps/pull/2)** | `chore: establish reproducible development baseline` | `chore/reproducible-dev-baseline` | Python 3.11/3.12 lock, pyproject dependencies, pytest baseline | **G1** |
-| **[PR #3](https://github.com/virajchoudhary/AtlasOps/pull/3)** | `fix: harden runtime security configuration` | `fix/security-config-baseline` | Remove hardcoded secrets, add API key & webhook token verification | **G1** |
+| **[PR #3](https://github.com/virajchoudhary/AtlasOps/pull/3)** | `fix: harden runtime security configuration` | `fix/security-config-baseline` | Remove unsafe Argo CD defaults, fail-closed TLS config, remove fixed audit HMAC fallback, require private `ATLASOPS_AUDIT_SECRET` | **G1** |
 | **[PR #4](https://github.com/virajchoudhary/AtlasOps/pull/4)** | `docs: archive GitHub history before fork detachment` | `docs/repository-detachment-record` | Detachment documentation, upstream attribution freeze | **G0** |
 | **[PR #5](https://github.com/virajchoudhary/AtlasOps/pull/5)** | `fix: repair benchmark scenario tier ordering` | `fix/benchmark-tier-ordering` | Benchmark runner tier derivation before judge invocation | **G2** |
 | **[PR #6](https://github.com/virajchoudhary/AtlasOps/pull/6)** | `fix: harden infrastructure provisioning contract` | `fix/infra-static-correctness` | Static check/apply guardrails, zonal topology, DNS names | **G2 / G3** |
-| **[PR #7](https://github.com/virajchoudhary/AtlasOps/pull/7)** | `fix: wire core runtime observability contracts` | `fix/core-runtime-observability` | Prometheus rule naming, Alertmanager webhook route, coordinator Service | **G2** |
+| **[PR #7](https://github.com/virajchoudhary/AtlasOps/pull/7)** | `fix: wire core runtime observability contracts` | `fix/core-runtime-observability` | Dedicated coordinator runtime, private Service, RBAC, authenticated Alertmanager webhook route, `ATLASOPS_API_KEY` approval gate | **G2** |
 | **[PR #8](https://github.com/virajchoudhary/AtlasOps/pull/8)** | `fix: formalize scenario catalogue contract` | `fix/scenario-catalog-contract` | 28 static scenarios, 10 dynamic default, centralized catalogue | **G2** |
 | **[PR #9](https://github.com/virajchoudhary/AtlasOps/pull/9)** | `fix: formalize tool access and side-effect policy` | `fix/tool-policy-contract` | SRE tool ACL: 19 role-exposed tools, 3 unexposed tools | **G2** |
 | **[PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10)** | `feat: implement objective environment verifier and reward integration` | `feat/objective-environment-verifier` | Dedicated `agents/verifier.py` engine, separate `env_resolved` from agent claim | **G2** |
-| **[PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)** | `fix: align objective verifier with frozen chaos manifests and add contract tests` | `fix/verifier-scenario-contract` | 1:1 manifest alignment, remove frontend fallback, namespace & tier validation | **G2** |
+| **[PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)** | `fix: align objective verifier with frozen chaos manifests and add contract tests` | `fix/verifier-scenario-contract` | All 28 frozen scenarios covered (24 exact manifest targets + 4 reviewed exceptions), dynamic frontend guessing removed, namespace & tier validation | **G2** |
 | **[PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)** | `docs(governance): reconcile stage truth against Pipeline v1.0 and record Gate G2 closure` | `docs/g2-g3-pipeline-reconciliation` | Pipeline v1.0 reconciliation, G2 closure audit, pre-G3 readiness audit | **G2 / G3** |
 
 ---
@@ -80,7 +80,7 @@ This governance document records the repository's alignment with the canonical e
   - Coordinator service naming reconciled to `atlasops-coordinator-svc.default:9099` ([PR #6](https://github.com/virajchoudhary/AtlasOps/pull/6), [PR #7](https://github.com/virajchoudhary/AtlasOps/pull/7)).
   - Scenario catalogue contract formalized (28 static, 10 dynamic default) ([PR #8](https://github.com/virajchoudhary/AtlasOps/pull/8)).
   - SRE Tool inventory and deterministic role-based ACL frozen (19 exposed, 3 unexposed) ([PR #9](https://github.com/virajchoudhary/AtlasOps/pull/9)).
-  - Objective Environment Verifier (`agents/verifier.py`) 1:1 aligned with all 28 frozen Chaos Mesh manifests, dynamic guessing removed, and selector namespace/tier validation enforced ([PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10), [PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)).
+  - Objective Environment Verifier (`agents/verifier.py`): all 28 frozen scenarios covered, 24 standard manifests use exact manifest-target equality, 4 non-standard manifests use explicit reviewed exception contracts, tier and namespace agreement are validated, and dynamic frontend fallback is removed ([PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10), [PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)).
 - **Offline Benchmark Path to Judge Proven**:
   - `test_benchmark_single_scenario_reaches_judge_offline` in `tests/test_bench_runner.py` proves `run_scenario` orchestrates chaos injection, enriches alert with `scenario_id`, invokes multi-agent handling, passes full trajectory to `judge_trajectory(incident, tier="single_fault")`, computes centralized reward contract, and triggers cluster reset without real Kubernetes or cloud dependencies ([PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)).
 - **Manifests Validated**:
@@ -108,7 +108,7 @@ This governance document records the repository's alignment with the canonical e
 > The following items do NOT block Gate G2 (which covers offline upstream stabilization), but are **MANDATORY PRE-G4 REPAIRS** that must be resolved before executing the Stage 4 golden live incident.
 
 ### 1. Pre-G4 Coordinator / Verifier Execution Ordering Gap [MUST FIX BEFORE G4]
-- **Current Code Behavior**: [`agents/coordinator.py`](file:///c:/AtlasOps/agents/coordinator.py#L746-L836) executes:
+- **Current Code Behavior**: [`agents/coordinator.py`](../../agents/coordinator.py) executes:
   $$\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Comms} \rightarrow \mathbf{Verifier}$$
 - **Canonical Pipeline v1.0 Requirement**:
   $$\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Verifier} \rightarrow \mathbf{Comms}$$

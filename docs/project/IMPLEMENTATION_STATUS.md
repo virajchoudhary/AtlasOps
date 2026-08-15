@@ -10,7 +10,7 @@ This is a concise current classification, not a complete implementation audit.
 | Benchmark runner | REPAIRED | Stage 1B moved tier derivation before judge invocation, added mocked regression coverage, and enforced F821 in CI. Real GKE/Chaos benchmark execution remains UNVERIFIED; published benchmark results remain UNREPRODUCED. |
 | SFT pipeline | IMPLEMENTED IN CODE | Reproduce later |
 | GRPO | PARTIAL / REVIEW-SENSITIVE | Correct + validate |
-| Environment verifier | NOT YET IMPLEMENTED | Implement later; static infra tests are not an environment verifier |
+| Environment verifier | IMPLEMENTED / MOCKED/TESTED | Dedicated deterministic `agents/verifier.py` engine with workload readiness, Alertmanager alert clearance, PromQL metric threshold, and Chaos Mesh clearance predicates; distinguishes `agent_claimed_resolved` from `env_resolved` and penalizes false resolutions in benchmark reward evaluation. Live GKE cluster execution remains unverified until Stage 3. |
 | Recommender Systems | ABSENT | Original extension |
 | Infrastructure static provisioning | REPAIRED / STATICALLY VALIDATED | Explicit check/apply gates, zonal 1→3 topology, identity/network requirements, immutable pins, and static tests; see `INFRASTRUCTURE_CONTRACT.md` |
 | Real GKE provisioning | UNVERIFIED | No setup/teardown apply was run; review Stage 1D-B before a controlled reproduction |

@@ -821,10 +821,28 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
                 )
 
         remediation_final = remediation.get("final", {})
-        resolved = (
+        agent_claimed_resolved = bool(
             remediation_final.get("outcome") == "resolved"
             or remediation_final.get("status") == "resolved"
         )
+        scenario_id = str(alert.get("scenario_id") or "")
+        from agents.verifier import verify_environment
+        verification_result = verify_environment(
+            scenario_id=scenario_id,
+            agent_claimed_resolved=agent_claimed_resolved,
+            alert=alert,
+            incident_context=full_record,
+        )
+        full_record["verification"] = verification_result.to_dict()
+        full_record["agent_claimed_resolved"] = agent_claimed_resolved
+        full_record["env_resolved"] = verification_result.env_resolved
+
+        # Ground-truth environment verification determines actual resolution.
+        # Fall back to agent claim only when telemetry is wholly inconclusive/offline.
+        if verification_result.verification_status == "inconclusive":
+            resolved = agent_claimed_resolved
+        else:
+            resolved = verification_result.env_resolved
         # Classify the outcome so the circuit breaker can distinguish
         # designed human decisions from real system failures.
         rem_status = str(remediation_final.get("status", ""))

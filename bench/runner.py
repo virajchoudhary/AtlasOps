@@ -101,6 +101,13 @@ async def run_scenario(scenario_id: str) -> dict:
 
     remediation = incident.get("remediation", {}).get("final", {})
     triage = incident.get("triage", {}).get("final", {})
+    verification = incident.get("verification", {})
+    agent_claimed_resolved = bool(
+        verification.get("agent_claimed_resolved", remediation.get("outcome") == "resolved")
+    )
+    env_resolved = bool(
+        verification.get("env_resolved", remediation.get("outcome") == "resolved")
+    )
     total_turns = sum(
         len(incident.get(role, {}).get("trajectory", []))
         for role in ("triage", "diagnosis", "remediation", "comms")
@@ -111,7 +118,10 @@ async def run_scenario(scenario_id: str) -> dict:
         "tier": tier,
         "status": "ok",
         "outcome": remediation.get("outcome", "unknown"),
-        "resolved": remediation.get("outcome") == "resolved",
+        "agent_claimed_resolved": agent_claimed_resolved,
+        "env_resolved": env_resolved,
+        "resolved": env_resolved,
+        "verification": verification,
         "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
         "severity": triage.get("severity", "unknown"),
         "total_turns": total_turns,

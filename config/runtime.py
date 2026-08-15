@@ -133,7 +133,11 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
         gathering on hard tiers (likely guessed, not diagnosed)
     """
     tier      = str(episode.get("tier", "unknown"))
-    resolved  = bool(episode.get("resolved", False))
+    env_resolved = bool(episode.get("env_resolved", episode.get("resolved", False)))
+    agent_claimed_resolved = bool(
+        episode.get("agent_claimed_resolved", episode.get("outcome") == "resolved")
+    )
+    resolved  = env_resolved
     outcome   = str(episode.get("outcome", "unknown"))
     turns     = int(episode.get("total_turns", 0))
     ttr       = float(episode.get("time_to_resolve_s", 9999))
@@ -159,7 +163,7 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
     # ── Penalties ─────────────────────────────────────────────────────────────
     penalties = {
         "command_spam":          0.10 if turns > 40 else 0.0,
-        "false_resolution":      0.25 if (not resolved and outcome == "resolved") else 0.0,
+        "false_resolution":      0.25 if (agent_claimed_resolved and not env_resolved) else 0.0,
         "unsafe_shortcut":       0.20 if efficiency < 0.3 else 0.0,
         "hallucinated_evidence": 0.20 if (reasoning < 0.25 and correctness < 0.5) else 0.0,
         "over_silence":          0.10 if ("silence" in json.dumps(episode).lower() and not resolved) else 0.0,

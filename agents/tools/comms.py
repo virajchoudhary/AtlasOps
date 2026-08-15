@@ -304,12 +304,17 @@ def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[st
     triage = incident.get("triage", {}) or {}
     diagnosis = incident.get("diagnosis", {}) or {}
     remediation = incident.get("remediation", {}) or {}
+    verification = incident.get("verification", {}) or {}
+    env_resolved = bool(incident.get("env_resolved", verification.get("env_resolved", False)))
 
     title    = _get("title") or triage.get("title") or "Incident"
     severity = _get("severity") or triage.get("severity") or "Unknown"
     root_cause_raw = _get("root_cause") or diagnosis.get("root_cause") or diagnosis.get("specific") or "Under investigation"
     root_cause = root_cause_raw if isinstance(root_cause_raw, str) else json.dumps(root_cause_raw)
-    resolution_raw = _get("resolution") or remediation.get("outcome") or "Resolved by on-call team"
+    resolution_raw = _get("resolution") or (
+        "Resolved and verified by Prometheus metrics" if env_resolved
+        else ("Remediation attempted; environment resolution unverified" if remediation else "Under active investigation")
+    )
     resolution = resolution_raw if isinstance(resolution_raw, str) else json.dumps(resolution_raw)
     actions_taken = remediation.get("actions_taken", [])
 
@@ -318,6 +323,7 @@ def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[st
         {"time": now.strftime("%H:%M UTC"), "event": "Triage agent acknowledged"},
         {"time": now.strftime("%H:%M UTC"), "event": f"Root cause identified: {root_cause[:80]}"},
         {"time": now.strftime("%H:%M UTC"), "event": "Remediation applied"},
+        {"time": now.strftime("%H:%M UTC"), "event": "Environment resolution verified by Prometheus" if env_resolved else "Environment verification: unverified/unresolved"},
     ]
     went_well  = incident.get("went_well") or ["Automated detection by Prometheus/Alertmanager", "AtlasOps multi-agent response < 5 min"]
     went_wrong = incident.get("went_wrong") or ["Alert was not suppressed during maintenance window"]

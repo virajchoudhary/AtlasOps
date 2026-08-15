@@ -743,14 +743,41 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
                 remediation = await call_agent("remediation", remediation_input)
         else:
             remediation = await call_agent("remediation", remediation_input)
+        # Remediation execution is complete. Now execute objective environment verification.
+        remediation_final = remediation.get("final", {})
+        agent_claimed_resolved = bool(
+            remediation_final.get("outcome") == "resolved"
+            or remediation_final.get("status") == "resolved"
+        )
+        scenario_id = str(alert.get("scenario_id") or "")
+        from agents.verifier import verify_environment
+        verification_result = verify_environment(
+            scenario_id=scenario_id,
+            agent_claimed_resolved=agent_claimed_resolved,
+            alert=alert,
+            incident_context={
+                "incident_id": incident_id,
+                "alert": alert,
+                "triage": triage,
+                "diagnosis": diagnosis,
+                "remediation": remediation,
+            },
+        )
+        env_resolved = bool(verification_result.env_resolved)
+        verification_dict = verification_result.to_dict()
+
+        # Comms agent runs after environment verification and receives objective truth
         comms = await call_agent("comms", {
             "incident_id": incident_id,
-            "triage": triage["final"],
-            "diagnosis": diagnosis["final"],
-            "remediation": remediation["final"],
+            "triage": triage.get("final", {}),
+            "diagnosis": diagnosis.get("final", {}),
+            "remediation": remediation_final,
+            "verification": verification_dict,
+            "env_resolved": env_resolved,
+            "agent_claimed_resolved": agent_claimed_resolved,
         })
 
-        # If the LLM skipped webhooks, still deliver a closure message (judges expect Discord/Slack pings).
+        # If the LLM skipped webhooks, still deliver a closure/status message (judges expect Discord/Slack pings).
         _webhook_out = bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip() or os.getenv("SLACK_WEBHOOK_URL", "").strip())
         if _webhook_out and not _comms_trajectory_delivered_externally(comms):
             try:
@@ -758,14 +785,17 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
                 if sev not in {"P0", "P1", "P2", "P3"}:
                     sev = "P1"
                 fin = comms.get("final") or {}
-                summ = fin.get("summary") or fin.get("postmortem_path") or "Comms agent finished — see UI for timeline."
+                summ = fin.get("summary") or fin.get("postmortem_path") or (
+                    "Incident resolved and verified." if env_resolved else "Remediation attempted — incident remains unverified / unresolved."
+                )
                 if not isinstance(summ, str):
                     summ = json.dumps(summ)
                 title = (triage.get("final") or {}).get("title") or incident_id
+                status_label = "Resolved" if env_resolved else "Unresolved"
                 out = TOOL_REGISTRY["slack_post_update"](
                     channel="#incident-response",
                     severity=sev,
-                    title=f"[{sev}] Closed: {title}"[:220],
+                    title=f"[{sev}] {status_label}: {title}"[:220],
                     summary=summ[:3500],
                     action_items=["AtlasOps — full tool trace in live UI"],
                 )
@@ -790,8 +820,12 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
             "triage": triage,
             "diagnosis": diagnosis,
             "remediation": remediation,
+            "verification": verification_dict,
+            "agent_claimed_resolved": agent_claimed_resolved,
+            "env_resolved": env_resolved,
             "comms": comms,
         }
+        TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
         (TRAJECTORIES_DIR / f"{incident_id}.json").write_text(
             json.dumps(full_record, indent=2), encoding="utf-8",
         )
@@ -820,29 +854,8 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
                     tool="judge_trajectory",
                 )
 
-        remediation_final = remediation.get("final", {})
-        agent_claimed_resolved = bool(
-            remediation_final.get("outcome") == "resolved"
-            or remediation_final.get("status") == "resolved"
-        )
-        scenario_id = str(alert.get("scenario_id") or "")
-        from agents.verifier import verify_environment
-        verification_result = verify_environment(
-            scenario_id=scenario_id,
-            agent_claimed_resolved=agent_claimed_resolved,
-            alert=alert,
-            incident_context=full_record,
-        )
-        full_record["verification"] = verification_result.to_dict()
-        full_record["agent_claimed_resolved"] = agent_claimed_resolved
-        full_record["env_resolved"] = verification_result.env_resolved
-
-        # Ground-truth environment verification determines actual resolution.
-        # Fall back to agent claim only when telemetry is wholly inconclusive/offline.
-        if verification_result.verification_status == "inconclusive":
-            resolved = agent_claimed_resolved
-        else:
-            resolved = verification_result.env_resolved
+        # Fail-closed operational resolution: environment verifier is authoritative
+        resolved = env_resolved
         # Classify the outcome so the circuit breaker can distinguish
         # designed human decisions from real system failures.
         rem_status = str(remediation_final.get("status", ""))
@@ -853,6 +866,8 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
             finish_reason = "approval_timeout"
         elif rem_mode == "manual":
             finish_reason = "manual_runbook"
+        elif verification_result.verification_status == "inconclusive":
+            finish_reason = "verification_inconclusive"
         elif not resolved:
             finish_reason = "unresolved"
         else:

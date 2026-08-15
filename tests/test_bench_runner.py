@@ -164,6 +164,49 @@ class TestRunScenario:
         reset_cluster_mock.assert_called_once_with()
         assert episode["status"] == "ok"
 
+    @pytest.mark.asyncio
+    async def test_run_scenario_missing_verification_fails_closed(self, monkeypatch):
+        from bench import runner
+
+        scenario_id = "single_fault/sf-001"
+        incident = {
+            "remediation": {"final": {"outcome": "resolved"}},
+            "triage": {"final": {"severity": "P1"}},
+        }
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(runner, "wait_for_alert", Mock(return_value={"commonLabels": {"alertname": "Test"}}))
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={"overall": 0.8}))
+        monkeypatch.setattr(runner, "reset_cluster", Mock())
+
+        episode = await runner.run_scenario(scenario_id)
+        # Missing verifier MUST fail closed
+        assert episode["env_resolved"] is False
+        assert episode["resolved"] is False
+        assert episode["agent_claimed_resolved"] is True
+        assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
+
+    @pytest.mark.asyncio
+    async def test_run_scenario_agent_claims_true_verifier_false(self, monkeypatch):
+        from bench import runner
+
+        scenario_id = "single_fault/sf-001"
+        incident = {
+            "remediation": {"final": {"outcome": "resolved"}},
+            "verification": {"agent_claimed_resolved": True, "env_resolved": False, "verification_status": "failed"},
+            "triage": {"final": {"severity": "P1"}},
+        }
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(runner, "wait_for_alert", Mock(return_value={"commonLabels": {"alertname": "Test"}}))
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={"overall": 0.8}))
+        monkeypatch.setattr(runner, "reset_cluster", Mock())
+
+        episode = await runner.run_scenario(scenario_id)
+        assert episode["env_resolved"] is False
+        assert episode["resolved"] is False
+        assert episode["agent_claimed_resolved"] is True
+        assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
 
 
 # ── Reward contract ────────────────────────────────────────────────────────────
@@ -171,7 +214,8 @@ class TestRunScenario:
 class TestRewardContract:
     def _episode(self, **kwargs):
         base = {
-            "tier": "single_fault", "resolved": True, "outcome": "resolved",
+            "tier": "single_fault", "env_resolved": True, "resolved": True, "agent_claimed_resolved": True,
+            "outcome": "resolved",
             "total_turns": 10, "time_to_resolve_s": 120,
             "judge": {"reasoning": 0.8, "correctness": 0.9, "efficiency": 0.85},
             "postmortem_path": "docs/postmortems/test.md",
@@ -187,7 +231,7 @@ class TestRewardContract:
 
     def test_unresolved_episode_lower(self):
         from bench.runner import _evaluate_episode_reward
-        ep = self._episode(resolved=False, outcome="unknown",
+        ep = self._episode(env_resolved=False, resolved=False, agent_claimed_resolved=False, outcome="unknown",
                            judge={"reasoning": 0.3, "correctness": 0.4, "efficiency": 0.5})
         r = _evaluate_episode_reward(ep)
         assert r["total"] < 0.5
@@ -203,8 +247,26 @@ class TestRewardContract:
 
     def test_false_resolution_penalty(self):
         from bench.runner import _evaluate_episode_reward
-        ep = self._episode(resolved=False, outcome="resolved")
+        ep = self._episode(env_resolved=False, resolved=False, agent_claimed_resolved=True, outcome="resolved")
         r  = _evaluate_episode_reward(ep)
+        assert r["penalties"]["false_resolution"] == pytest.approx(0.25)
+
+    def test_reward_missing_env_resolved_fails_closed(self):
+        from bench.runner import _evaluate_episode_reward
+        # Omit env_resolved entirely (legacy format without explicit env_resolved)
+        ep = {
+            "tier": "single_fault",
+            "resolved": True,  # legacy flag
+            "outcome": "resolved",
+            "agent_claimed_resolved": True,
+            "total_turns": 5,
+            "time_to_resolve_s": 60,
+            "judge": {"reasoning": 0.8, "correctness": 0.9, "efficiency": 0.85},
+            "postmortem_path": "docs/postmortems/test.md",
+        }
+        r = _evaluate_episode_reward(ep)
+        # Without explicit env_resolved True, resolve component receives 0.0 and false_resolution penalty applies
+        assert r["components"]["resolve"] == 0.0
         assert r["penalties"]["false_resolution"] == pytest.approx(0.25)
 
     def test_unsafe_shortcut_penalty(self):

@@ -41,7 +41,7 @@ We gave 4 specialized AI agents a PagerDuty alert, a live GKE cluster running 11
 Total time to resolve a Cloudflare 2019 cascade replay: **4 minutes 12 seconds.**  
 A senior SRE on a good day: ~25 minutes.
 
-This is **AtlasOps** — a self-improving multi-agent SRE platform where a 72B adversarial judge generates infinite novel chaos scenarios targeting the agents' specific weaknesses, trained via SFT → Online GRPO on an AMD MI300X (192 GB HBM3).
+This is **AtlasOps** — a self-improving multi-agent SRE platform where a 72B adversarial judge can generate novel chaos scenarios targeting the agents' specific weaknesses, trained via SFT → Online GRPO on an AMD MI300X (192 GB HBM3). The default benchmark requests up to 10 generated scenarios per run.
 
 ---
 
@@ -137,7 +137,7 @@ Full fine-tuning pipeline on AMD hardware:
 
 ![GRPO Mean Reward per Step](assets/training/grpo_reward.png)
 
-**Benchmark** — 28 chaos scenarios. Resolution rate: 54% (zero-shot) → 68% (SFT) → **82% (GRPO)**. Judge reward: 0.481 → 0.601 → **0.729**.
+**Historical upstream benchmark claim** — 28 frozen chaos scenarios. Resolution rate: 54% (zero-shot) → 68% (SFT) → **82% (GRPO)**. Judge reward: 0.481 → 0.601 → **0.729**. The continuation team has not yet reproduced these live-cluster results.
 
 ![Benchmark Resolution Rate](assets/training/benchmark_resolution.png)
 
@@ -155,7 +155,7 @@ Every tool hits a real API or real cluster. No mocks in production.
 
 ---
 
-## 38 Chaos Scenarios + Infinite Adversarial Generation
+## 28 Frozen Scenarios + Dynamic Adversarial Generation
 
 | Tier | Count | Examples |
 |---|---|---|
@@ -163,7 +163,9 @@ Every tool hits a real API or real cluster. No mocks in production.
 | Cascade | 5 | currency latency → checkout timeout → frontend 5xx surge |
 | Multi-fault | 5 | 3 simultaneous faults + red herrings across namespaces |
 | Named Replays | 10 | Cloudflare 2019, AWS S3 2017, GitHub 2018, Discord 2022, Knight Capital 2012… |
-| **Dynamic adversarial** | ∞ | Qwen2.5-72B judge designs new Chaos Mesh YAML targeting agent weaknesses in real time |
+| **Dynamic adversarial** | up to 10 requested by a default benchmark run | Qwen2.5-72B judge designs new Chaos Mesh YAML targeting agent weaknesses in real time |
+
+The static catalogue contains exactly 28 YAML-backed frozen scenarios. The benchmark runner separately requests up to 10 newly generated adversarial scenarios by default, so a successful default generation can produce a run of up to 38 scenarios. Those generated scenarios are not frozen catalogue members.
 
 ---
 
@@ -202,7 +204,7 @@ Every tool call, approval decision, and incident boundary is written to an appen
         ↓
   Online GRPO  (G=8 live GKE rollouts per step, DAPO loss)
         ↓
-  Benchmark  (38 frozen scenarios, anti-gaming reward contract)
+  Benchmark  (28 frozen + up to 10 generated scenarios by default, anti-gaming reward contract)
 ```
 
 **This is true online RL.** Each GRPO training step:
@@ -219,7 +221,7 @@ Every tool call, approval decision, and incident boundary is written to an appen
 | Loss | Standard GRPO | **DAPO** (distributional advantage — more stable on skewed rewards) |
 | Reward | Episode-level only | **Dense per-step** (progress delta per tool call) + episode contract |
 | Curriculum | Random / fixed | **Spaced repetition** (mastery tracking, [3→6→12→24→48] resurface intervals) |
-| Scenario generation | Static | **Infinite adversarial** (72B judge generates new Chaos YAML live) |
+| Scenario generation | Static | **Dynamic adversarial** (default benchmark requests up to 10 newly generated Chaos YAML scenarios) |
 
 ### Reward Contract (Anti-Gaming)
 
@@ -239,13 +241,16 @@ Tier weights shift: cascade/adversarial penalise 1.25× harder. Named replays re
 
 ## Benchmark Results
 
+The table below preserves historical upstream claims. The continuation team has
+not yet reproduced these live-cluster benchmark results.
+
 | Model | Resolution | Avg Reward | Cascade | Named Replays |
 |---|---|---|---|---|
 | Qwen2.5-7B zero-shot | 54% | 0.481 | 40% | 30% |
 | AtlasOps SFT | 68% | 0.601 | 62% | 55% |
 | **AtlasOps GRPO (MI300X)** | **82%** | **0.729** | **78%** | **72%** |
 
-**+28 pp improvement** from zero-shot baseline → GRPO. Reward includes anti-gaming penalties (command spam, false resolution, hallucinated evidence).
+**Historical upstream claim:** +28 pp improvement from zero-shot baseline → GRPO. Reward includes anti-gaming penalties (command spam, false resolution, hallucinated evidence).
 
 *Run `python scripts/release_gate.py` to verify artifact presence. Results auto-update in the dashboard Benchmark tab.*
 
@@ -331,13 +336,13 @@ atlasops/
 │   ├── circuit_breaker.py      # Hard limits on tool calls + mutations
 │   ├── correlator.py           # Alert storm deduplication
 │   ├── audit.py                # HMAC hash-chained audit trail
-│   ├── adversarial_designer.py # 72B judge → infinite Chaos YAML
+│   ├── adversarial_designer.py # 72B judge → dynamic Chaos YAML
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
 │   ├── prompts/                # triage / diagnosis / remediation / comms
 │   └── tools/                  # 20 real SRE tool wrappers
 ├── bench/
-│   ├── runner.py               # Benchmark harness (38 frozen scenarios)
+│   ├── runner.py               # Benchmark harness (28 frozen + optional generated scenarios)
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/
 ├── config/
 │   └── runtime.py              # Frozen scenarios · reward contract · CurriculumManager · StepRewardTracker

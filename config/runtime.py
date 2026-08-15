@@ -11,22 +11,40 @@ import math
 import random
 from typing import Any
 
+FROZEN_SCENARIOS_BY_TIER = {
+    "single_fault": [f"single_fault/sf-{i:03d}" for i in range(1, 9)],
+    "cascade": [f"cascade/cs-{i:03d}" for i in range(1, 6)],
+    "multi_fault": [f"multi_fault/mf-{i:03d}" for i in range(1, 6)],
+    "named_replays": [
+        "named_replays/hist-cloudflare-2019",
+        "named_replays/hist-aws-s3-2017",
+        "named_replays/hist-github-2018",
+        "named_replays/hist-datadog-2023",
+        "named_replays/hist-discord-2022",
+        "named_replays/hist-fastly-2021",
+        "named_replays/hist-facebook-bgp-2021",
+        "named_replays/hist-slack-2022",
+        "named_replays/hist-azure-dns-2019",
+        "named_replays/hist-knight-capital-2012",
+    ],
+}
+FROZEN_SCENARIO_TIER_COUNTS = {
+    tier: len(scenarios) for tier, scenarios in FROZEN_SCENARIOS_BY_TIER.items()
+}
 FROZEN_SCENARIOS = [
-    # single-fault
-    "single_fault/sf-001", "single_fault/sf-002", "single_fault/sf-003", "single_fault/sf-004",
-    "single_fault/sf-005", "single_fault/sf-006", "single_fault/sf-007", "single_fault/sf-008",
-    # cascade
-    "cascade/cs-001", "cascade/cs-002", "cascade/cs-003", "cascade/cs-004", "cascade/cs-005",
-    # multi-fault
-    "multi_fault/mf-001", "multi_fault/mf-002", "multi_fault/mf-003", "multi_fault/mf-004",
-    "multi_fault/mf-005",
-    # named replays
-    "named_replays/hist-cloudflare-2019", "named_replays/hist-aws-s3-2017",
-    "named_replays/hist-github-2018", "named_replays/hist-datadog-2023",
-    "named_replays/hist-discord-2022", "named_replays/hist-fastly-2021",
-    "named_replays/hist-facebook-bgp-2021", "named_replays/hist-slack-2022",
-    "named_replays/hist-azure-dns-2019", "named_replays/hist-knight-capital-2012",
+    scenario
+    for tier_scenarios in FROZEN_SCENARIOS_BY_TIER.values()
+    for scenario in tier_scenarios
 ]
+FROZEN_STATIC_SCENARIO_COUNT = len(FROZEN_SCENARIOS)
+
+# The runner may request this many newly generated manifests in addition to the
+# frozen catalogue. Generation can return fewer, so this is a maximum request,
+# not part of the frozen count.
+DEFAULT_DYNAMIC_ADVERSARIAL_COUNT = 10
+DEFAULT_BENCHMARK_MAX_SCENARIO_COUNT = (
+    FROZEN_STATIC_SCENARIO_COUNT + DEFAULT_DYNAMIC_ADVERSARIAL_COUNT
+)
 
 EVAL_SCENARIOS_BY_TIER = {
     "single_fault": [
@@ -40,6 +58,7 @@ EVAL_SCENARIOS_BY_TIER = {
         "named_replays/hist-discord-2022",
     ],
 }
+EVALUATION_SUBSET_COUNT = sum(len(items) for items in EVAL_SCENARIOS_BY_TIER.values())
 
 LEADERBOARD_SCENARIOS = [
     ("single_fault/sf-001", "single_fault"),
@@ -50,7 +69,10 @@ LEADERBOARD_SCENARIOS = [
     ("named_replays/hist-cloudflare-2019", "named_replays"),
     ("named_replays/hist-github-2018", "named_replays"),
 ]
+LEADERBOARD_SUBSET_COUNT = len(LEADERBOARD_SCENARIOS)
 
+# GRPO curriculum pool. This is deliberately distinct from the complete frozen
+# benchmark catalogue; in particular, it currently uses five named replays.
 SCENARIOS_BY_TIER = {
     "single_fault": [f"single_fault/sf-{i:03d}" for i in range(1, 9)],
     "cascade": [f"cascade/cs-{i:03d}" for i in range(1, 6)],
@@ -63,6 +85,7 @@ SCENARIOS_BY_TIER = {
         "named_replays/hist-aws-s3-2017",
     ],
 }
+TRAINING_CURRICULUM_SUBSET_COUNT = sum(len(items) for items in SCENARIOS_BY_TIER.values())
 
 TIER_SAMPLING_WEIGHTS = {
     "single_fault": 0.20,

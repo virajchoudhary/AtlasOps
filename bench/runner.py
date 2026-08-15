@@ -27,6 +27,7 @@ from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from config.runtime import (
+    DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
     FROZEN_SCENARIOS,
     evaluate_reward_contract,
     bounded_speed_score as _bounded_speed_score,
@@ -246,7 +247,7 @@ async def main() -> None:
     parser.add_argument("--tag", default="", help="Run label (e.g. grpo_v3, baseline_v2)")
     parser.add_argument("--scenarios", nargs="*", help="Override scenario list")
     parser.add_argument("--output", default="", help="Override output dir")
-    parser.add_argument("--adversarial", type=int, default=10,
+    parser.add_argument("--adversarial", type=int, default=DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
                         help="Number of dynamic adversarial scenarios to generate (0 to skip)")
     args = parser.parse_args()
 

@@ -137,7 +137,7 @@ Full delivery scorecard:
 | Observability | None / stubbed | **Prometheus + Grafana + Jaeger + OTel** |
 | Agents | 1 generic agent | **4 specialized + coordinator** |
 | Tools | `kubectl` only (7 cmds) | **20 real SRE tools** |
-| Scenarios | Static list | **38 frozen + ∞ adversarial (72B judge)** |
+| Scenarios | Static list | **28 frozen + up to 10 generated in a default benchmark run** |
 | Training RL | Offline / pre-collected | **Online GRPO — live GKE rollouts** |
 | Reward | Simple success/fail | **Anti-gaming contract: 5 components, 5 penalties, tier-weighted** |
 | Safety | None | **Approval gate + circuit breaker + audit log** |

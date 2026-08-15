@@ -178,8 +178,9 @@ class TestRewardContract:
 
 class TestFrozenScenarioList:
     def test_frozen_scenarios_count(self):
-        from bench.runner import FROZEN_SCENARIOS
-        assert len(FROZEN_SCENARIOS) >= 28
+        from config.runtime import FROZEN_SCENARIOS, FROZEN_STATIC_SCENARIO_COUNT
+        assert FROZEN_STATIC_SCENARIO_COUNT == 28
+        assert len(FROZEN_SCENARIOS) == FROZEN_STATIC_SCENARIO_COUNT
 
     def test_all_tiers_represented(self):
         from bench.runner import FROZEN_SCENARIOS
@@ -197,6 +198,19 @@ class TestFrozenScenarioList:
     def test_no_duplicate_scenarios(self):
         from bench.runner import FROZEN_SCENARIOS
         assert len(FROZEN_SCENARIOS) == len(set(FROZEN_SCENARIOS))
+
+    def test_dynamic_default_is_separate_from_frozen_catalogue(self):
+        from config.runtime import (
+            DEFAULT_BENCHMARK_MAX_SCENARIO_COUNT,
+            DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
+            FROZEN_STATIC_SCENARIO_COUNT,
+        )
+
+        assert DEFAULT_DYNAMIC_ADVERSARIAL_COUNT == 10
+        assert DEFAULT_BENCHMARK_MAX_SCENARIO_COUNT == 38
+        assert DEFAULT_BENCHMARK_MAX_SCENARIO_COUNT == (
+            FROZEN_STATIC_SCENARIO_COUNT + DEFAULT_DYNAMIC_ADVERSARIAL_COUNT
+        )
 
 
 class TestComparisonTable:

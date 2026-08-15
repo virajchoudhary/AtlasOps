@@ -241,7 +241,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 
 ---
 
-## 38 Chaos Scenarios + Infinite Adversarial Generation
+## 28 Frozen Scenarios + Dynamic Adversarial Generation
 
 <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:24px;margin-top:8px">
 
@@ -253,7 +253,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 <tr><td>Cascade</td><td><strong>5</strong></td><td style="color:#FFB703">Hard</td></tr>
 <tr><td>Multi-fault</td><td><strong>5</strong></td><td style="color:#FF4560">Expert</td></tr>
 <tr><td>Named Replays</td><td><strong>10</strong></td><td style="color:#FF4560">Expert</td></tr>
-<tr><td style="color:#00D4FF">Dynamic Adversarial</td><td style="color:#00D4FF"><strong>∞</strong></td><td style="color:#00D4FF">72B-designed</td></tr>
+<tr><td style="color:#00D4FF">Dynamic Adversarial</td><td style="color:#00D4FF"><strong>up to 10/run</strong></td><td style="color:#00D4FF">default 72B generation request</td></tr>
 </tbody>
 </table>
 </div>
@@ -359,7 +359,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 | Loss function | GRPO | **DAPO** — stable on sparse rewards |
 | Reward signal | Episode-level only | **Dense per-step** + episode contract |
 | Curriculum | Random / fixed | **Spaced repetition** — mastery tracking |
-| Scenario generation | Static | **∞ adversarial** — 72B judge writes new Chaos YAML |
+| Scenario generation | Static | **Dynamic adversarial** — default benchmark requests up to 10 generated Chaos YAML scenarios |
 | Judge | Single rubric | **3 personas** — Junior / Senior / Principal |
 
 <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px">
@@ -385,7 +385,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 
 ## Benchmark Results
 
-<div style="font-size:0.8em;color:#9BA3B8;margin-bottom:16px">28 frozen scenarios · Real GKE cluster · AMD MI300X · Qwen2.5-7B</div>
+<div style="font-size:0.8em;color:#9BA3B8;margin-bottom:16px">Historical upstream claim · 28 frozen scenarios · Real GKE cluster · AMD MI300X · Qwen2.5-7B · not yet reproduced by the continuation team</div>
 
 <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px">
 <div style="background:rgba(0,227,150,0.05);border:1px solid rgba(0,227,150,0.3);border-radius:10px;padding:18px;text-align:center">
@@ -555,8 +555,8 @@ Cryptographic proof of what happened
 <h1 style="font-size:3em;color:#00D4FF;text-shadow:0 0 40px rgba(0,212,255,0.4);margin-bottom:16px">AtlasOps</h1>
 
 <div style="font-size:1em;color:#9BA3B8;margin-bottom:32px;line-height:1.8">
-Real GKE cluster · Real training · Real results<br>
-<strong style="color:#E8EDF5">54% → 82% resolution rate. Zero simulations.</strong>
+Historical upstream GKE/training/result claims · not yet reproduced by the continuation team<br>
+<strong style="color:#E8EDF5">Upstream-reported 54% → 82% resolution rate.</strong>
 </div>
 
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;max-width:600px;margin:0 auto 32px">

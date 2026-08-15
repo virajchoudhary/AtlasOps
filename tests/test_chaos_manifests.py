@@ -7,6 +7,7 @@ import yaml
 
 
 MANIFESTS_DIR = Path(__file__).parent.parent / "bench" / "chaos_manifests"
+FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
 
 REQUIRED_KINDS = {
     "PodChaos", "NetworkChaos", "StressChaos", "DNSChaos",
@@ -87,3 +88,77 @@ def test_named_replays_count():
 def test_multi_fault_count():
     mf = list((MANIFESTS_DIR / "multi_fault").glob("*.yaml"))
     assert len(mf) == 5, f"Expected 5 multi-fault scenarios, got {len(mf)}"
+
+
+def test_frozen_catalogue_matches_filesystem_bijectively():
+    from config.runtime import FROZEN_SCENARIOS
+
+    catalogue = set(FROZEN_SCENARIOS)
+    files = {
+        path.relative_to(MANIFESTS_DIR).with_suffix("").as_posix()
+        for tier in FROZEN_TIERS
+        for path in (MANIFESTS_DIR / tier).glob("*.yaml")
+    }
+
+    assert len(FROZEN_SCENARIOS) == 28
+    assert len(catalogue) == len(FROZEN_SCENARIOS)
+    assert files == catalogue
+
+
+def test_adversarial_template_is_not_frozen():
+    from config.runtime import FROZEN_SCENARIOS
+
+    assert (MANIFESTS_DIR / "adversarial" / "adv-001.yaml").is_file()
+    assert all(not scenario.startswith("adversarial/") for scenario in FROZEN_SCENARIOS)
+
+
+@pytest.mark.parametrize(
+    "scenario_id",
+    [
+        path.relative_to(MANIFESTS_DIR).with_suffix("").as_posix()
+        for tier in FROZEN_TIERS
+        for path in (MANIFESTS_DIR / tier).glob("*.yaml")
+    ],
+)
+def test_frozen_manifest_labels_match_catalogue_path(scenario_id):
+    tier, scenario_name = scenario_id.split("/", 1)
+    path = MANIFESTS_DIR / f"{scenario_id}.yaml"
+    labelled_documents = []
+
+    for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+        if not document:
+            continue
+        labels = document.get("metadata", {}).get("labels", {})
+        if "scenario" in labels or "tier" in labels:
+            labelled_documents.append(labels)
+            assert labels.get("scenario") == scenario_name
+            assert labels.get("tier") == tier
+
+    assert labelled_documents, f"{path} has no scenario/tier labels"
+
+
+def test_named_subsets_are_explicit_frozen_catalogue_subsets():
+    from config.runtime import (
+        EVAL_SCENARIOS_BY_TIER,
+        EVALUATION_SUBSET_COUNT,
+        FROZEN_SCENARIOS,
+        LEADERBOARD_SCENARIOS,
+        LEADERBOARD_SUBSET_COUNT,
+        SCENARIOS_BY_TIER,
+        TRAINING_CURRICULUM_SUBSET_COUNT,
+    )
+
+    frozen = set(FROZEN_SCENARIOS)
+    evaluation = {
+        scenario for scenarios in EVAL_SCENARIOS_BY_TIER.values() for scenario in scenarios
+    }
+    leaderboard = {scenario for scenario, _tier in LEADERBOARD_SCENARIOS}
+    curriculum = {scenario for scenarios in SCENARIOS_BY_TIER.values() for scenario in scenarios}
+
+    assert evaluation <= frozen
+    assert leaderboard <= frozen
+    assert curriculum <= frozen
+    assert EVALUATION_SUBSET_COUNT == len(evaluation) == 11
+    assert LEADERBOARD_SUBSET_COUNT == len(leaderboard) == 7
+    assert TRAINING_CURRICULUM_SUBSET_COUNT == len(curriculum) == 23
+    assert len(SCENARIOS_BY_TIER["named_replays"]) == 5

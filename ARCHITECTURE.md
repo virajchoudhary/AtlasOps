@@ -37,7 +37,7 @@ graph TB
     PROM -->|alert fires| AM
     AM -->|webhook| COORD
     COORD --> T --> D --> R --> C
-    T & D & R & C <-->|"20 real SRE tools<br/>(kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager)"| GKE
+    T & D & R & C <-->|"19 role-authorized tools<br/>(22 registered wrappers)<br/>kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager"| GKE
     T & D & R & C <-->|Cloud APIs| CSQL & PS & CMON & CLOG
     JUDGE -->|generates scenarios| CM
     JUDGE -->|scores actions| COORD
@@ -129,27 +129,32 @@ flowchart LR
 
 ---
 
-## 20 Real SRE Tools
+## 22 Registered Tool Wrappers, 19 Agent-Exposed
 
 ```
-kubectl (7)          promql (2)          jaeger (2)
+kubectl (8)          promql (2)          jaeger (2)
 ─────────────        ──────────          ──────────
 kubectl_get          promql_query        jaeger_search
 kubectl_describe     promql_query_range  jaeger_get_trace
 kubectl_logs
-kubectl_top_pods     argocd (3)          gcloud (2)
+kubectl_top_pods     argocd (4)          gcloud (2)
 kubectl_top_nodes    ─────────           ──────────
 kubectl_rollout      argocd_list_apps    gcloud_logs_read
 kubectl_scale        argocd_app_history  cloud_monitoring_query
 kubectl_exec         argocd_rollback
+                     argocd_app_get
 
 alertmanager (2)     comms (2)
 ────────────────     ──────────
 alertmanager_silence slack_post_update
-alertmanager_list    postmortem_draft
+alertmanager_list_alerts
+                     postmortem_draft
 ```
 
-AtlasOps exposes 20 production-relevant SRE tools across Kubernetes, tracing, metrics, GitOps, and comms workflows.
+AtlasOps registers 22 wrappers across Kubernetes, tracing, metrics, GitOps, and
+communications. Role ACLs expose 19 wrappers to autonomous agents.
+`argocd_app_get`, `kubectl_top_nodes`, and high-risk `kubectl_exec` remain
+registered for explicit administrative/library use but are not agent-exposed.
 
 ---
 

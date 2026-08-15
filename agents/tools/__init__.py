@@ -1,4 +1,8 @@
-"""AtlasOps — 20 real SRE tools for the agent runtime."""
+"""AtlasOps SRE tool registry.
+
+The registry contains callable wrappers; agent exposure is controlled separately
+by :mod:`agents.tool_policy`.
+"""
 
 from agents.tools.kubectl import (
     kubectl_get, kubectl_describe, kubectl_logs, kubectl_top_pods,
@@ -51,3 +55,5 @@ TOOL_REGISTRY = {
     "slack_post_update": slack_post_update,
     "postmortem_draft": postmortem_draft,
 }
+
+REGISTERED_TOOLS = frozenset(TOOL_REGISTRY)

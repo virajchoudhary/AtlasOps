@@ -89,7 +89,7 @@ python -m pytest tests/test_app_endpoints.py -q
 # Human approval gate — shows pending P1 approvals
 curl http://localhost:7860/approval/pending
 
-# Circuit breaker — shows tool call counts, mutating action rate, tripped state
+# Circuit breaker — shows tool-call counts, cluster-mutation rate, tripped state
 curl http://localhost:7860/circuit-breaker/status
 
 # Correlated incidents — deduped active incident list
@@ -136,7 +136,7 @@ Full delivery scorecard:
 | Fault injection | Scripted mock | **Chaos Mesh CRDs — 6 fault types** |
 | Observability | None / stubbed | **Prometheus + Grafana + Jaeger + OTel** |
 | Agents | 1 generic agent | **4 specialized + coordinator** |
-| Tools | `kubectl` only (7 cmds) | **20 real SRE tools** |
+| Tools | `kubectl` only (7 cmds) | **22 registered wrappers; 19 agent-exposed** |
 | Scenarios | Static list | **28 frozen + up to 10 generated in a default benchmark run** |
 | Training RL | Offline / pre-collected | **Online GRPO — live GKE rollouts** |
 | Reward | Simple success/fail | **Anti-gaming contract: 5 components, 5 penalties, tier-weighted** |

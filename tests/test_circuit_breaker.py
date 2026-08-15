@@ -8,22 +8,36 @@ def test_tool_call_limit_trips_for_incident():
 
     cb = CircuitBreaker(max_tool_calls_per_incident=2)
     cb.start_incident()
-    cb.check_before_tool_call("inc-1", "kubectl_get", is_mutating=False)
-    cb.check_before_tool_call("inc-1", "kubectl_get", is_mutating=False)
+    cb.check_before_tool_call("inc-1", "kubectl_get", is_cluster_mutating=False)
+    cb.check_before_tool_call("inc-1", "kubectl_get", is_cluster_mutating=False)
     with pytest.raises(CircuitBreakerTripped):
-        cb.check_before_tool_call("inc-1", "kubectl_get", is_mutating=False)
+        cb.check_before_tool_call("inc-1", "kubectl_get", is_cluster_mutating=False)
     cb.finish_incident("inc-1", resolved=True)
 
 
-def test_mutating_action_hourly_limit():
+def test_cluster_mutating_action_hourly_limit():
     from agents.circuit_breaker import CircuitBreaker, CircuitBreakerTripped
 
-    cb = CircuitBreaker(max_mutating_actions_per_hour=1)
+    cb = CircuitBreaker(max_cluster_mutating_actions_per_hour=1)
     cb.start_incident()
-    cb.check_before_tool_call("inc-2", "kubectl_scale", is_mutating=True)
+    cb.check_before_tool_call("inc-2", "kubectl_scale", is_cluster_mutating=True)
     with pytest.raises(CircuitBreakerTripped):
-        cb.check_before_tool_call("inc-2", "kubectl_scale", is_mutating=True)
+        cb.check_before_tool_call("inc-2", "kubectl_scale", is_cluster_mutating=True)
     cb.finish_incident("inc-2", resolved=True)
+
+
+def test_non_cluster_side_effect_does_not_consume_cluster_quota():
+    from agents.circuit_breaker import CircuitBreaker
+
+    cb = CircuitBreaker(max_cluster_mutating_actions_per_hour=1)
+    cb.start_incident()
+    cb.check_before_tool_call("inc-comms", "slack_post_update", is_cluster_mutating=False)
+    cb.check_before_tool_call("inc-comms", "postmortem_draft", is_cluster_mutating=False)
+
+    status = cb.status()
+    assert status["cluster_mutating_actions_this_hour"] == 0
+    assert status["max_cluster_mutating_actions_per_hour"] == 1
+    cb.finish_incident("inc-comms", resolved=True)
 
 
 def test_consecutive_system_errors_trip_breaker():

@@ -1095,7 +1095,7 @@
     <h1 style="font-size:32px;font-weight:900;letter-spacing:3px;color:var(--accent);text-shadow:0 0 40px rgba(0,212,255,0.4);margin-bottom:12px">ATLASOPS</h1>
     <p style="font-size:14px;color:var(--textdim);max-width:600px;margin:0 auto;line-height:1.8">
       The first multi-agent SRE platform trained end-to-end on real cloud failures.<br>
-      <span style="color:var(--text)">4 specialized AI agents. 20 real SRE tools. 1 AMD MI300X.</span>
+      <span style="color:var(--text)">4 specialized AI agents. 22 registered tools, 19 agent-exposed. 1 AMD MI300X.</span>
     </p>
   </div>
 
@@ -1166,7 +1166,7 @@
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Prometheus + Grafana</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Real scraping, 2M+ time series</span></span></div>
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Jaeger + OTel</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Distributed trace collection</span></span></div>
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Chaos Mesh</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">PodChaos · NetworkChaos · IOChaos · DNSChaos · TimeChaos · StressChaos</span></span></div>
-        <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Argo CD</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">GitOps rollbacks — real execution</span></span></div>
+        <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Argo CD wrappers</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Configuration-dependent; live Application ownership deferred</span></span></div>
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Cloud SQL</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Postgres 15 — replaces SQLite in cartservice</span></span></div>
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--green);flex-shrink:0;margin-top:2px">▸</span><span><span style="color:var(--text);font-size:13px;font-weight:600">Alertmanager</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Webhook → AtlasOps coordinator</span></span></div>
       </div>
@@ -1191,9 +1191,9 @@
       </div>
     </div>
 
-    <!-- 20 Tools -->
+    <!-- Tool registry and role exposure -->
     <div style="background:rgba(11,17,32,0.8);border:1px solid var(--border);border-radius:12px;padding:22px">
-      <div style="font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;font-weight:700">🛠 20 Real SRE Tools</div>
+      <div style="font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;font-weight:700">🛠 22 Registered · 19 Agent-Exposed</div>
       <div style="display:flex;flex-direction:column;gap:9px">
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--accent);flex-shrink:0;margin-top:2px">⬡</span><span><span style="color:var(--accent);font-size:13px;font-weight:600">kubectl</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">get · describe · logs · top · rollout · scale · exec</span></span></div>
         <div style="display:flex;gap:10px;align-items:flex-start"><span style="color:var(--accent);flex-shrink:0;margin-top:2px">⬡</span><span><span style="color:var(--accent);font-size:13px;font-weight:600">promql_query</span><span style="color:var(--textdim);font-size:11px;display:block;margin-top:1px">Live Prometheus HTTP API</span></span></div>
@@ -1223,7 +1223,7 @@
       <div style="background:rgba(255,183,3,0.05);border:1px solid rgba(255,183,3,0.2);border-radius:8px;padding:14px">
         <div style="font-size:13px;margin-bottom:8px">⚡</div>
         <div style="font-size:11px;font-weight:700;color:var(--yellow);margin-bottom:6px">Circuit Breaker</div>
-        <div style="font-size:10px;color:var(--textdim);line-height:1.7">50 tool calls/incident<br>10 mutations/hour<br>3 consecutive failures → OPEN<br>Auto-reset on recovery</div>
+        <div style="font-size:10px;color:var(--textdim);line-height:1.7">50 tool calls/incident<br>10 cluster mutations/hour<br>3 consecutive failures → OPEN<br>Auto-reset on recovery</div>
       </div>
       <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:14px">
         <div style="font-size:13px;margin-bottom:8px">🔗</div>

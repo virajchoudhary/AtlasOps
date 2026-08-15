@@ -47,7 +47,7 @@ $helm    = "C:\Users\NSEIT\AppData\Local\Microsoft\WinGet\Packages\Helm.Helm_Mic
 - `agents/stream.py` — real-time thought streaming (SSE + 3s poll in dashboard)
 - `agents/adversarial_designer.py` — 72B judge generates dynamic chaos scenarios
 - `agents/judge.py` — scores agent trajectories
-- `agents/tools/` — 20 real SRE tool wrappers
+- `agents/tools/` — 22 registered SRE tool wrappers; 19 agent-exposed
 - `agents/prompts/` — triage / diagnosis / remediation / comms system prompts
 - `bench/runner.py` — benchmark harness, generates adversarial scenarios before run
 - `bench/chaos_manifests/` — sf-001..008, cs-001..005, mf-001..005, named_replays/

@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: atlasops-online-boutique
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops
+    app.kubernetes.io/part-of: atlasops
+    release: prometheus
+spec:
+  groups:
+    - name: atlasops.online-boutique.availability
+      rules:
+        - alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+          expr: >-
+            kube_deployment_status_replicas_available{
+              namespace="default",
+              deployment=~"adservice|cartservice|checkoutservice|currencyservice|emailservice|frontend|loadgenerator|paymentservice|productcatalogservice|recommendationservice|redis-cart|shippingservice"
+            }
+            <
+            kube_deployment_spec_replicas{
+              namespace="default",
+              deployment=~"adservice|cartservice|checkoutservice|currencyservice|emailservice|frontend|loadgenerator|paymentservice|productcatalogservice|recommendationservice|redis-cart|shippingservice"
+            }
+          for: 2m
+          labels:
+            severity: warning
+            atlasops_route: coordinator
+          annotations:
+            summary: Online Boutique deployment has unavailable replicas
+            description: >-
+              Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }}
+              has fewer available replicas than its desired replica count.

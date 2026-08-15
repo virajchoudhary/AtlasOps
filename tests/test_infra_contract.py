@@ -1,4 +1,4 @@
-"""Static Stage 1D-A infrastructure safety-contract regression tests.
+"""Static Stage 1D-A/B infrastructure safety-contract regression tests.
 
 These tests read tracked text only. They must never execute setup, teardown,
 gcloud, kubectl, Helm, or any network operation.
@@ -112,16 +112,18 @@ def test_premature_uppercase_kubernetes_identifiers_are_absent() -> None:
     assert not re.search(r"metadata:\s*\n\s+name:\s*[^\n]*[A-Z]", SHELL)
 
 
-def test_base_prometheus_values_do_not_require_premature_routing() -> None:
+def test_prometheus_values_use_authenticated_coordinator_routing() -> None:
     values = read("infra/values/kube-prometheus-stack.yaml")
     assert "configSecret:" not in values
-    assert "webhook_configs:" not in values
     assert "additionalScrapeConfigs:" not in values
-    assert "Stage 1D-B" in values
+    assert "atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook" in values
+    assert "credentials_file:" in values
+    assert "atlasops-alertmanager-webhook" in values
+    assert "credentials:" not in values
 
 
 def test_every_installed_helm_chart_has_an_explicit_version() -> None:
-    installs = [command for command in shell_commands(SETUP_IMPL) if "helm upgrade --install" in command]
+    installs = [command for command in shell_commands(SETUP_IMPL) if "helm_target upgrade --install" in command]
     assert len(installs) == 3
     assert all(re.search(r"\s--version\s+\"?\$[A-Z_]+_CHART_VERSION\"?", command) for command in installs)
     assert 'PROMETHEUS_CHART_VERSION="88.3.0"' in SETUP_IMPL
@@ -146,8 +148,9 @@ def test_make_lifecycle_targets_require_an_explicit_project() -> None:
     assert re.search(r'^require-project:\s*$', MAKEFILE, re.MULTILINE)
     assert 'ERROR: PROJECT is required. Pass PROJECT=<gcp-project-id>.' in MAKEFILE
     assert '$(strip $(PROJECT))' in MAKEFILE
-    for target in ("infra-check", "teardown-check", "up", "down", "status"):
+    for target in ("infra-check", "teardown-check", "up", "down"):
         assert re.search(rf"^{re.escape(target)}:\s+require-project\s*$", MAKEFILE, re.MULTILINE)
+    assert re.search(r"^status:\s+require-kube-context\s*$", MAKEFILE, re.MULTILINE)
 
 
 def test_online_boutique_waits_for_every_pinned_deployment() -> None:
@@ -175,22 +178,22 @@ def test_online_boutique_waits_for_every_pinned_deployment() -> None:
     assert declared == expected
     foundation = shell_function_body(SETUP_IMPL, "apply_foundation")
     assert 'for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do' in foundation
-    rollout = 'kubectl rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"'
+    rollout = 'kubectl_target rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"'
     assert rollout in foundation
     assert "kubectl wait --for=condition=ready pod -l app=frontend" not in foundation
     assert "|| true" not in foundation
-    assert foundation.index(rollout) < foundation.index("helm upgrade --install prometheus")
+    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install prometheus")
 
 
 def test_foundation_success_requires_boutique_and_subsequent_core_setup() -> None:
     assert "set -euo pipefail" in SETUP_IMPL
     foundation = shell_function_body(SETUP_IMPL, "apply_foundation")
-    rollout = 'kubectl rollout status "deployment/$deployment"'
-    assert foundation.index(rollout) < foundation.index("helm upgrade --install prometheus")
-    assert foundation.index(rollout) < foundation.index("helm upgrade --install argocd")
-    assert foundation.index(rollout) < foundation.index("helm upgrade --install chaos-mesh")
+    rollout = 'kubectl_target rollout status "deployment/$deployment"'
+    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install prometheus")
+    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install argocd")
+    assert foundation.index(rollout) < foundation.index("helm_target upgrade --install chaos-mesh")
     main = shell_function_body(SETUP_IMPL, "main")
-    assert main.index("apply_foundation") < main.index("FOUNDATION PROVISIONED")
+    assert main.index("apply_foundation") < main.index("CORE RUNTIME WIRED")
 
 
 def test_optional_components_default_disabled_and_apis_are_gated() -> None:
@@ -203,6 +206,7 @@ def test_optional_components_default_disabled_and_apis_are_gated() -> None:
     for flag in flags:
         assert f'{flag}="${{{flag}:-false}}"' in SETUP_IMPL
         assert f'{flag}="${{{flag}:-false}}"' in TEARDOWN_IMPL
+    assert 'ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-false}"' in SETUP_IMPL
     assert "sqladmin.googleapis.com" not in SETUP_IMPL
     assert "artifactregistry.googleapis.com" not in SETUP_IMPL
     assert "cloudbuild.googleapis.com" not in SETUP_IMPL
@@ -220,13 +224,13 @@ def test_pubsub_idempotency_does_not_hide_failures() -> None:
 def test_project_admin_uis_are_cluster_ip() -> None:
     for path in (
         "infra/values/kube-prometheus-stack.yaml",
-        "infra/values/jaeger.yaml",
         "infra/values/argocd.yaml",
         "infra/values/chaos-mesh.yaml",
     ):
         values = read(path)
         assert "type: LoadBalancer" not in values
         assert "type: ClusterIP" in values
+    assert read("infra/values/jaeger.yaml").strip().endswith("{}")
 
 
 def test_setup_and_teardown_share_zonal_location_contract() -> None:
@@ -273,15 +277,15 @@ def test_topology_command_and_summary_agree() -> None:
 def test_stage_output_does_not_claim_full_atlasops_ready() -> None:
     assert "AtlasOps Infrastructure Ready" not in SHELL
     assert "FULL ATLASOPS READY" not in SHELL
-    assert "FOUNDATION PROVISIONED" in SETUP_IMPL
-    assert "FULL ATLASOPS NOT READY" in SETUP_IMPL
+    assert "CORE RUNTIME WIRED" in SETUP_IMPL
+    assert "LIVE VALIDATION STILL REQUIRED" in SETUP_IMPL
 
 
 def test_static_status_documents_keep_live_state_unverified() -> None:
     contract = read("docs/project/INFRASTRUCTURE_CONTRACT.md")
     status = read("docs/project/IMPLEMENTATION_STATUS.md")
-    assert "DO NOT RUN LIVE GKE UNTIL STAGE 1D-B IS COMPLETE" in contract
+    assert "STATICALLY WIRED / LIVE UNVERIFIED" in contract
     assert "REPAIRED / STATICALLY VALIDATED" in status
     assert "Real GKE provisioning | UNVERIFIED" in status
-    assert "Observability wiring | INCOMPLETE" in status
+    assert "Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED" in status
     assert "Environment verifier | NOT YET IMPLEMENTED" in status

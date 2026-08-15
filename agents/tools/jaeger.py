@@ -6,15 +6,23 @@ from typing import Any
 
 import requests
 
-JAEGER_URL = os.getenv(
-    "JAEGER_URL",
-    "http://jaeger-query.tracing.svc.cluster.local:16686",
-)
+JAEGER_URL = os.getenv("JAEGER_URL", "").strip()
+
+
+def _configuration_error() -> dict[str, Any] | None:
+    if JAEGER_URL:
+        return None
+    return {
+        "success": False,
+        "error": "jaeger_unavailable: JAEGER_URL is not configured; tracing is deferred",
+    }
 
 
 def jaeger_search(service: str, lookback: str = "15m", limit: int = 20,
                   min_duration: str = "", tag_filters: dict | None = None) -> dict[str, Any]:
     """Search for traces by service. min_duration example: '1s', '500ms'."""
+    if error := _configuration_error():
+        return error
     end_us = int(time.time() * 1_000_000)
     lookback_us = _parse_lookback_to_us(lookback)
     start_us = end_us - lookback_us
@@ -49,6 +57,8 @@ def jaeger_search(service: str, lookback: str = "15m", limit: int = 20,
 
 def jaeger_get_trace(trace_id: str) -> dict[str, Any]:
     """Fetch a single trace by ID."""
+    if error := _configuration_error():
+        return error
     try:
         r = requests.get(f"{JAEGER_URL}/api/traces/{trace_id}", timeout=10)
         r.raise_for_status()

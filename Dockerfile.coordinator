@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+
+ARG KUBECTL_VERSION=v1.31.10
+ARG KUBECTL_SHA256=f7e806b676bea3b4995e9c236445a5f24ae61ed3d5245c39d7b816d209b06a78
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSLo /usr/local/bin/kubectl \
+       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - \
+    && chmod 0755 /usr/local/bin/kubectl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY agents ./agents
+COPY config ./config
+COPY bench ./bench
+COPY training ./training
+RUN pip install --no-cache-dir .
+
+RUN addgroup --system --gid 10001 atlasops \
+    && adduser --system --uid 10001 --ingroup atlasops --home /app atlasops \
+    && mkdir -p /var/lib/atlasops/audit /var/lib/atlasops/trajectories \
+    && chown -R atlasops:atlasops /app /var/lib/atlasops
+
+USER 10001:10001
+EXPOSE 9099
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9099/healthz', timeout=2)"]
+
+CMD ["python", "-m", "agents.coordinator"]

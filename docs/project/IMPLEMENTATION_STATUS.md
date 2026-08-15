@@ -4,7 +4,7 @@ This is a concise current classification, not a complete implementation audit.
 
 | Area | Baseline status | Project treatment |
 |---|---|---|
-| Coordinator / four-agent flow | IMPLEMENTED | Preserve + validate |
+| Coordinator / four-agent flow | IMPLEMENTED / STATICALLY PACKAGED | Dedicated non-root 9099 container, private Service, safe probe, ConfigMap/Secret references, and bounded RBAC; live rollout/model/tool execution unverified |
 | SRE tool policy | STATICALLY VALIDATED | 22 wrappers are registered, 19 are exposed through deterministic role ACLs, and 3 are intentionally unexposed. Cluster mutations, external communications, filesystem writes, and high-risk execution have separate side-effect classifications. Registration/exposure does not guarantee operational availability; Argo and other live integrations remain configuration-dependent and unverified. |
 | Safety/approval controls | IMPLEMENTED | Preserve + validate |
 | Benchmark runner | REPAIRED | Stage 1B moved tier derivation before judge invocation, added mocked regression coverage, and enforced F821 in CI. Real GKE/Chaos benchmark execution remains UNVERIFIED; published benchmark results remain UNREPRODUCED. |
@@ -13,8 +13,11 @@ This is a concise current classification, not a complete implementation audit.
 | Environment verifier | NOT YET IMPLEMENTED | Implement later; static infra tests are not an environment verifier |
 | Recommender Systems | ABSENT | Original extension |
 | Infrastructure static provisioning | REPAIRED / STATICALLY VALIDATED | Explicit check/apply gates, zonal 1→3 topology, identity/network requirements, immutable pins, and static tests; see `INFRASTRUCTURE_CONTRACT.md` |
-| Real GKE provisioning | UNVERIFIED | Do not run live until Stage 1D-B is complete |
-| Observability wiring | INCOMPLETE | Coordinator route, Boutique metrics/rules, trace ingestion, and Argo Application decision remain Stage 1D-B |
+| Real GKE provisioning | UNVERIFIED | No setup/teardown apply was run; review Stage 1D-B before a controlled reproduction |
+| Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED | kube-state-metrics availability rule plus authenticated private coordinator route; no live alert proof |
+| Application metrics | BLOCKED / DEFERRED | Pinned Boutique source does not prove request/error/latency Prometheus metrics |
+| Jaeger / tracing | BLOCKED / DEFERRED | No trace backend installed; `JAEGER_URL` fails closed when absent |
+| Argo CD ownership | OPTIONAL / DEFERRED | Controller default-off; no Application objects or dual ownership; tools remain configuration-gated |
 | Published benchmark/result claims | UNVERIFIED BY OUR TEAM | Reproduce |
 
 ## Development orchestration note

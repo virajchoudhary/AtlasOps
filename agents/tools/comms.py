@@ -17,9 +17,10 @@ log = logging.getLogger("atlasops.comms")
 SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK_URL", "")
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL", "")
 POSTMORTEM_DIR = Path(os.getenv("POSTMORTEM_DIR", "docs/postmortems"))
+RUNTIME_DATA_DIR = Path(os.getenv("ATLASOPS_RUNTIME_DATA_DIR", "data"))
 
 _SEV_COLOR_HEX = {"P0": "ff0000", "P1": "ff8800", "P2": "ffcc00"}
-_LOG_PATH = Path("data/slack_posts.jsonl")
+_LOG_PATH = RUNTIME_DATA_DIR / "slack_posts.jsonl"
 
 
 def _discord_webhook_post_with_retry(url: str, json_body: dict[str, Any], *, context: str) -> tuple[bool, str | None]:

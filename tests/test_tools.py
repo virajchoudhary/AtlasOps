@@ -204,8 +204,9 @@ class TestSlackPost:
 # ── Jaeger tools ───────────────────────────────────────────────────────────────
 
 class TestJaeger:
-    def test_search_returns_traces(self):
-        from agents.tools.jaeger import jaeger_search
+    def test_search_returns_traces(self, monkeypatch):
+        import agents.tools.jaeger as jaeger
+        monkeypatch.setattr(jaeger, "JAEGER_URL", "http://jaeger.test")
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
@@ -214,19 +215,29 @@ class TestJaeger:
             ]
         }
         with patch("requests.get", return_value=mock_response):
-            result = jaeger_search("cartservice")
+            result = jaeger.jaeger_search("cartservice")
         assert result["success"] is True
         assert result["count"] == 1
         assert result["traces"][0]["traceID"] == "abc123"
 
-    def test_get_trace_by_id(self):
-        from agents.tools.jaeger import jaeger_get_trace
+    def test_get_trace_by_id(self, monkeypatch):
+        import agents.tools.jaeger as jaeger
+        monkeypatch.setattr(jaeger, "JAEGER_URL", "http://jaeger.test")
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"data": [{"traceID": "abc123", "spans": []}]}
         with patch("requests.get", return_value=mock_response):
-            result = jaeger_get_trace("abc123")
+            result = jaeger.jaeger_get_trace("abc123")
         assert result["success"] is True
+
+    def test_missing_url_fails_before_http(self, monkeypatch):
+        import agents.tools.jaeger as jaeger
+        monkeypatch.setattr(jaeger, "JAEGER_URL", "")
+        with patch("requests.get") as request:
+            result = jaeger.jaeger_search("cartservice")
+        assert result["success"] is False
+        assert result["error"].startswith("jaeger_unavailable:")
+        request.assert_not_called()
 
     def test_lookback_parser(self):
         from agents.tools.jaeger import _parse_lookback_to_us

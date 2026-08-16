@@ -1,0 +1,23 @@
+# AtlasOps Local Kind Cluster Configuration
+# Pipeline v1.1 Free-First — zero external-service cost
+# Cluster name: atlasops-local
+# Context: kind-atlasops-local
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Online Boutique frontend (NodePort access)
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+      # Prometheus (port-forward preferred, but available)
+      - containerPort: 30090
+        hostPort: 30090
+        protocol: TCP

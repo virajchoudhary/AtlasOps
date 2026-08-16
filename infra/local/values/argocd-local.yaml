@@ -1,0 +1,68 @@
+# AtlasOps Local Argo CD — minimal Kind profile
+# Pipeline v1.1 Free-First
+#
+# Dedicated 'atlasops' account with read-only least-privilege
+# ClusterIP only — access via port-forward
+
+server:
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  extraArgs:
+    - --insecure
+
+configs:
+  params:
+    server.insecure: true
+  rbac:
+    policy.csv: |
+      p, role:atlasops-readonly, applications, get, */*, allow
+      p, role:atlasops-readonly, applications, list, */*, allow
+      p, role:atlasops-readonly, projects, get, *, allow
+      g, atlasops, role:atlasops-readonly
+    policy.default: role:readonly
+  cm:
+    accounts.atlasops: apiKey,login
+    accounts.atlasops.enabled: "true"
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
+
+applicationSet:
+  enabled: false

@@ -504,6 +504,13 @@ class TestExecutableBootstrapLifecycle:
         if not helm_bin:
             pytest.skip("helm binary not installed locally")
 
+        # Check if argo repo is available or add it
+        repo_list = subprocess.run([helm_bin, "repo", "list"], capture_output=True, text=True)
+        if "argo" not in repo_list.stdout:
+            add_repo = subprocess.run([helm_bin, "repo", "add", "argo", "https://argoproj.github.io/argo-helm"], capture_output=True, text=True)
+            if add_repo.returncode != 0:
+                pytest.skip(f"Argo Helm repository not accessible: {add_repo.stderr.strip()}")
+
         pwd = "TestArgoPassword987!"
         hashed = hash_bcrypt(pwd, cost=4)
         mtime = format_iso_timestamp()
@@ -532,6 +539,8 @@ class TestExecutableBootstrapLifecycle:
             text=True,
             cwd=str(Path.cwd()),
         )
+        if res.returncode != 0 and "repo argo not found" in res.stderr:
+            pytest.skip(f"Helm argo repo not resolved: {res.stderr.strip()}")
         assert res.returncode == 0, f"helm template failed: {res.stderr}"
 
         # Parse rendered manifests and find argocd-secret Secret

@@ -7,6 +7,13 @@ server:
 configs:
   params:
     server.insecure: true
+  cm:
+    accounts.atlasops: login
+  rbac:
+    policy.csv: |
+      p, role:atlasops-readonly, applications, get, */*, allow
+      p, role:atlasops-readonly, applications, list, */*, allow
+      g, atlasops, role:atlasops-readonly
 
 repoServer:
   replicaCount: 1

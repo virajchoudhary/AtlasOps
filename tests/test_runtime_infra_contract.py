@@ -159,7 +159,7 @@ def test_immutable_operator_image_is_required_and_rendered_before_apply() -> Non
     assert not re.search(r"image:\s*[^\n]*:latest(?:\s|$)", TEMPLATE)
 
 
-def test_runtime_secrets_fail_before_boutique_or_runtime_mutation() -> None:
+def test_runtime_secrets_fail_before_coordinator_runtime_mutation() -> None:
     foundation = re.search(
         r"apply_foundation\(\) \{(?P<body>.*?)\n\}",
         SETUP,
@@ -167,9 +167,11 @@ def test_runtime_secrets_fail_before_boutique_or_runtime_mutation() -> None:
     )
     assert foundation
     body = foundation.group("body")
-    assert body.index("initialize_cluster_access") < body.index("validate_runtime_secret_contract")
-    assert body.index("validate_runtime_secret_contract") < body.index(
-        'kubectl_target apply -f "$BOUTIQUE_MANIFEST"'
+    assert body.index("initialize_cluster_access") < body.index("ensure_namespaces")
+    assert body.index("ensure_namespaces") < body.index("validate_runtime_secret_contract")
+    assert body.index("validate_runtime_secret_contract") < body.index("render_coordinator_manifest")
+    assert body.index("render_coordinator_manifest") < body.index(
+        'kubectl_target apply -f "$RENDERED_COORDINATOR_MANIFEST"'
     )
 
 

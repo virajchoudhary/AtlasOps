@@ -104,7 +104,7 @@ def check_runtime_tiers() -> list[CheckResult]:
 
     # Advisory: warmup/adversarial scenario pools are often omitted accidentally.
     advisory_missing = [
-        t for t in ("warmup", "adversarial") if f'SCENARIOS_BY_TIER = {{' in runtime_text and f'"{t}":' not in runtime_text
+        t for t in ("warmup", "adversarial") if "SCENARIOS_BY_TIER = {" in runtime_text and f'"{t}":' not in runtime_text
     ]
     if advisory_missing:
         base.append(

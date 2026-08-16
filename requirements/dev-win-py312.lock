@@ -29,6 +29,8 @@ anyio==4.14.2
     #   starlette
 attrs==26.1.0
     # via aiohttp
+bcrypt==5.0.0
+    # via atlasops
 brotli==1.2.0
     # via gradio
 build==1.5.0

@@ -1,6 +1,6 @@
 # AtlasOps Stage 3 / Gate G3 Operator Guide & Preflight Package
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Specification Reference:** Master Implementation Pipeline v1.0 (Stage 3 / Gate G3)  
 **Status:** READY FOR OPERATOR ACTIVATION (Cloud Mutation Blocked Pending Operator Authorization)
 
@@ -12,13 +12,13 @@ This document provides the exact contract, input parameters, secret architecture
 
 > [!IMPORTANT]
 > **Zero-Cost & No-Cloud Safety Rule**:
-> No cloud resources will be provisioned, no GCP APIs enabled, and no gcloud logins performed until the operator explicitly runs the Stage 3 sequence. All previous stages (G0, G1, G2, Runtime Truth, G3 Static Readiness) are 100% validated offline with $0.00 cloud billing.
+> No cloud resources will be provisioned, no GCP APIs enabled, and no gcloud logins performed until the operator explicitly runs the Stage 3 sequence. All previous stages (Stage 0, Stage 1, Stage 2, Runtime Truth, Stage 3 Static Readiness) are 100% validated offline with $0.00 cloud billing.
 
 ---
 
 ## 2. Operator Input Contract
 
-Before executing `infra/setup.sh --apply`, the operator must supply the following environment variables.
+Before executing `infra/setup.sh --apply`, the operator must supply the following environment variables and prepare local secret files.
 
 ### 2.1 GCP Infrastructure Parameters
 
@@ -40,26 +40,26 @@ Before executing `infra/setup.sh --apply`, the operator must supply the followin
 | `ATLASOPS_VLLM_BASE` | HTTP(S) URL without metacharacters | Local/Remote | Endpoint for agent inference |
 | `ATLASOPS_AGENT_MODEL` | Valid model identifier | Operator choice | Model name (e.g. `Qwen/Qwen2.5-7B-Instruct`) |
 
-### 2.3 Required Secret Contracts
+### 2.3 Local Secret Files vs. Kubernetes Secret Objects
 
-All secrets are provisioned out-of-band in the cluster before runtime deployment:
+> [!NOTE]
+> **Distinction Between Local Files and Cluster Objects**:
+> - **Local Secret Files** (`secrets/*.secret` on your workstation): Prepared locally before cloud mutation using `scripts/generate_runtime_secrets.py`. These files are `.gitignored` and strictly protected.
+> - **Kubernetes Secret Objects** (`atlasops-coordinator-secrets`, `atlasops-alertmanager-webhook` on GKE): Automatically provisioned into the cluster by `infra/setup.sh --apply` during the single-pass bootstrap.
 
-#### `default/atlasops-coordinator-secrets`
-- `atlasops-audit-secret`: HMAC key for signing audit log entries (generate with `scripts/generate_runtime_secrets.py`).
-- `alertmanager-webhook-secret`: Bearer token for authenticating Alertmanager webhook posts.
-- `atlasops-api-key`: Header secret (`X-AtlasOps-Key`) for operator approval endpoints.
-- `argocd-user`: Dedicated read-only Argo CD username (`atlasops` matching `infra/values/argocd.yaml`).
-- `argocd-pass`: Password for the Argo CD read-only user.
-- `llm-api-key` (*Optional*): Required only if `ATLASOPS_BACKEND` is `fireworks` or `openai`.
-
-#### `monitoring/atlasops-alertmanager-webhook`
-- `alertmanager-webhook-secret`: Must match the value in `default/atlasops-coordinator-secrets`.
+#### Required Local Files in `ATLASOPS_SECRET_DIR` (default: `secrets/`):
+- `atlasops-audit-secret.secret`: HMAC key for signing audit log entries.
+- `alertmanager-webhook-secret.secret`: Bearer token for authenticating Alertmanager webhook posts.
+- `atlasops-api-key.secret`: Header secret (`X-AtlasOps-Key`) for operator approval endpoints.
+- `argocd-user.secret`: Dedicated read-only Argo CD username (`atlasops`).
+- `argocd-pass.secret`: Plaintext password for the `atlasops` local account.
+- `llm-api-key.secret` (*Optional*): Required only if `ATLASOPS_BACKEND` is `fireworks` or `openai`.
 
 > [!CAUTION]
 > **Secret Hygiene Rules**:
 > 1. Never paste real secret values into documentation, Git commits, or pull requests.
 > 2. Never echo or print secret values in shell history or CI logs.
-> 3. Use `scripts/generate_runtime_secrets.py` to generate cryptographically strong local secret files (`secrets/` is `.gitignored`).
+> 3. Use `scripts/generate_runtime_secrets.py` to generate cryptographically strong local secret files.
 
 ---
 
@@ -72,8 +72,8 @@ flowchart TD
     G3C --> G3D["Gate 3D: Verify Billing, IAM, Quotas & CIDRs"]
     G3D --> G3E["Gate 3E: Create Artifact Registry & Publish Immutable Image"]
     G3E --> G3F["Gate 3F: Run infra/setup.sh --check (Preflight)"]
-    G3F --> G3G["Gate 3G: Explicit Cost Acknowledgement"]
-    G3G --> G3H["Gate 3H: Run infra/setup.sh --apply"]
+    G3F --> G3G["Gate 3G: Prepare Local Secrets & Cost Acknowledgement"]
+    G3G --> G3H["Gate 3H: Run infra/setup.sh --apply (Single Pass)"]
     G3H --> G3I["Gate 3I: Run G3 Non-Destructive Acceptance Plan"]
     G3I --> G3J["Gate 3J: Record Evidence in MASTER_PIPELINE_STATUS.md"]
     G3J --> G3K["Gate 3K: Run infra/teardown.sh --apply"]
@@ -158,7 +158,7 @@ Run read-only preflight validation to verify compatibility without cloud mutatio
 bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --check
 ```
 
-### Gate 3G: Explicit Cost Authorization & Secret Preparation
+### Gate 3G: Explicit Cost Authorization & Local Secret Preparation
 1. Set the required cost acknowledgement environment variable:
 ```bash
 export ATLASOPS_COST_ACK="I_UNDERSTAND_GCP_COSTS"
@@ -167,28 +167,29 @@ export ATLASOPS_COST_ACK="I_UNDERSTAND_GCP_COSTS"
 2. Generate local runtime secret material:
 ```bash
 python scripts/generate_runtime_secrets.py --output-dir secrets --argocd-user atlasops
-# Write your dedicated operator password to secrets/argocd-pass.secret (gitignored)
 ```
 
-### Gate 3H: Apply Infrastructure Foundation (`--apply`)
-Execute the single-command idempotent bootstrap:
+### Gate 3H: Apply Infrastructure Foundation (`--apply`) — Single Pass
+Execute the single-pass idempotent bootstrap:
 ```bash
 bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 ```
 
-**Internal Bootstrap Order Executed by `setup.sh`:**
-1. Enables required GCP APIs (`compute`, `container`, `monitoring`, `logging`).
-2. Creates or reuses the Standard zonal GKE cluster (`ensure_cluster`).
-3. Initializes isolated kubeconfig credentials (`initialize_cluster_access`).
-4. Creates all target namespaces (`default`, `monitoring`, `jaeger`, `argocd`, `chaos-mesh`).
-5. Deploys Online Boutique (12 Available Deployments in `default`).
-6. Installs monitoring & backends via Helm:
+**Single-Pass Bootstrap Execution Flow:**
+1. **Local Secret Preflight**: Validates that all required local secret files in `secrets/` exist and are non-empty before ANY cloud mutation.
+2. **API Enablement**: Enables required GCP APIs (`compute`, `container`, `monitoring`, `logging`).
+3. **Cluster Creation / Reuse**: Creates or verifies the Standard zonal GKE cluster (`ensure_cluster`).
+4. **Cluster Access**: Initializes isolated temporary kubeconfig credentials (`initialize_cluster_access`).
+5. **Namespace Pre-Creation**: Creates all target namespaces (`default`, `monitoring`, `jaeger`, `argocd`, `chaos-mesh`).
+6. **Automatic Kubernetes Secret Provisioning**: Provisions `default/atlasops-coordinator-secrets` and `monitoring/atlasops-alertmanager-webhook` directly from validated local files using the exact cluster context.
+7. **Online Boutique Deployment**: Deploys Online Boutique microservices and waits for 12 Deployments to become Available.
+8. **Observability & Backends Deployment**:
    - Prometheus / Alertmanager in `monitoring` (`kube-prometheus-stack:88.3.0`) + Prometheus rules
    - Jaeger in `jaeger` (`jaeger:4.12.0`)
-   - Argo CD in `argocd` (`argo-cd:10.3.2`) with dedicated least-privilege `atlasops` account
+   - Argo CD in `argocd` (`argo-cd:10.3.2`) with dedicated least-privilege `atlasops` account and declarative bcrypt password verifier derived from `secrets/argocd-pass.secret`
    - Chaos Mesh in `chaos-mesh` (`chaos-mesh:2.8.3`)
-7. Validates runtime secrets (`validate_runtime_secret_contract`). *Note: If secrets were not pre-applied, apply them with `bash secrets/apply_secrets.sh` and re-run `setup.sh --apply` (re-uses existing cluster without recreation).*
-8. Renders and deploys coordinator (`deployment/atlasops-coordinator`) in `default` connecting to running backends.
+9. **Fail-Closed Secret Contract Validation**: Validates all required Secret keys are present in cluster objects before workload rollout.
+10. **Coordinator Workload Rollout**: Renders and deploys coordinator Deployment and private ClusterIP Service in `default`.
 
 ### Gate 3I: Non-Destructive G3 Backend Acceptance
 Follow the formal procedures in [`docs/project/G3_ACCEPTANCE_PLAN.md`](G3_ACCEPTANCE_PLAN.md):

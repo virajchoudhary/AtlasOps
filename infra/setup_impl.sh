@@ -47,12 +47,22 @@ readonly CHAOS_MESH_CHART_VERSION="2.8.3"
 readonly PUBSUB_TOPICS=("AtlasOps-checkout-events" "AtlasOps-alerts")
 readonly PUBSUB_SUBSCRIPTIONS=("AtlasOps-checkout-sub" "AtlasOps-alerts-sub")
 
+readonly ATLASOPS_SECRET_DIR="${ATLASOPS_SECRET_DIR:-secrets}"
+
 ATLASOPS_ENABLE_CLOUD_SQL="${ATLASOPS_ENABLE_CLOUD_SQL:-false}"
 ATLASOPS_ENABLE_PUBSUB="${ATLASOPS_ENABLE_PUBSUB:-false}"
 ATLASOPS_ENABLE_ARTIFACT_REGISTRY="${ATLASOPS_ENABLE_ARTIFACT_REGISTRY:-false}"
 ATLASOPS_ENABLE_CLOUD_BUILD="${ATLASOPS_ENABLE_CLOUD_BUILD:-false}"
 ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"
 ATLASOPS_BACKEND="${ATLASOPS_BACKEND:-vllm}"
+
+if command -v python3 >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python"
+else
+  readonly PYTHON_BIN="python3"
+fi
 
 usage() {
   cat <<'EOF'
@@ -72,6 +82,7 @@ Required for check/apply:
   ATLASOPS_AGENT_MODEL=<explicit model identifier>
 
 Optional:
+  ATLASOPS_SECRET_DIR=secrets              directory containing local secret material
   ATLASOPS_GKE_ZONE=<zone in REGION>       default: <REGION>-a
   ATLASOPS_ENABLE_CLOUD_SQL=false          deferred; true fails closed
   ATLASOPS_ENABLE_PUBSUB=false             reviewed opt-in lifecycle
@@ -84,13 +95,10 @@ Apply-only acknowledgement:
   ATLASOPS_COST_ACK=I_UNDERSTAND_GCP_COSTS
 
 The acknowledgement is not a billing budget. Linkerd is unconditionally
-deferred and no remote installer is executed. Before apply reaches runtime
-wiring, create Secret atlasops-coordinator-secrets in namespace default with
-keys atlasops-audit-secret, alertmanager-webhook-secret, and atlasops-api-key.
-For fireworks/openai also add llm-api-key. Create Secret
-atlasops-alertmanager-webhook in namespace monitoring with key
-alertmanager-webhook-secret containing the same webhook credential. Secret
-values are never accepted on the command line or printed by this script.
+deferred and no remote installer is executed. Before apply proceeds to cloud
+mutation, local secret files in ATLASOPS_SECRET_DIR are validated. The setup
+implementation automatically creates Kubernetes Secrets in the target context.
+Secret values are never accepted on the command line or printed by this script.
 EOF
 }
 
@@ -110,22 +118,52 @@ require_command() {
 }
 
 validate_ipv4_cidrs() {
-  local value="$1" cidr ip prefix octet
-  local -a cidrs octets
-  [[ -n "$value" ]] || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS is required."
-  [[ "$value" != *[[:space:]]* ]] || fail "Authorized CIDRs must not contain whitespace."
-  IFS=',' read -r -a cidrs <<< "$value"
-  ((${#cidrs[@]} > 0)) || fail "At least one authorized CIDR is required."
+  local raw="$1" cidr ip prefix IFS=','
+  [[ -n "$raw" ]] || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS is required."
+  read -ra cidrs <<< "$raw"
+  ((${#cidrs[@]} > 0)) || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS cannot be empty."
   for cidr in "${cidrs[@]}"; do
-    [[ "$cidr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]] || fail "Invalid IPv4 CIDR: '$cidr'."
+    [[ "$cidr" != "0.0.0.0/0" ]] || fail "0.0.0.0/0 is forbidden in authorized networks."
+    [[ "$cidr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]] || \
+      fail "Invalid IPv4 CIDR block: '$cidr'."
     ip="${cidr%/*}"; prefix="${cidr#*/}"
-    IFS='.' read -r -a octets <<< "$ip"
-    for octet in "${octets[@]}"; do
-      ((10#$octet <= 255)) || fail "Invalid IPv4 CIDR: '$cidr'."
+    IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
+    for octet in "$o1" "$o2" "$o3" "$o4"; do
+      ((octet >= 0 && octet <= 255)) || fail "Invalid IPv4 octet in '$cidr'."
     done
-    ((10#$prefix <= 32)) || fail "Invalid IPv4 CIDR: '$cidr'."
-    [[ "$cidr" != "0.0.0.0/0" ]] || fail "The unrestricted CIDR 0.0.0.0/0 is forbidden."
+    ((prefix >= 0 && prefix <= 32)) || fail "Invalid prefix length in '$cidr'."
   done
+}
+
+validate_local_secret_prerequisites() {
+  local secret_dir="$ATLASOPS_SECRET_DIR"
+  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Run 'python scripts/generate_runtime_secrets.py' to prepare local secret files before --apply."
+
+  local -a req_files=("atlasops-audit-secret.secret" "alertmanager-webhook-secret.secret" "atlasops-api-key.secret")
+  if [[ "$ATLASOPS_BACKEND" != vllm ]]; then
+    req_files+=("llm-api-key.secret")
+  fi
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    req_files+=("argocd-user.secret" "argocd-pass.secret")
+  fi
+
+  local f full_path content
+  for f in "${req_files[@]}"; do
+    full_path="$secret_dir/$f"
+    [[ -f "$full_path" ]] || fail "Missing required local secret file: '$full_path'."
+    [[ -s "$full_path" ]] || fail "Local secret file is empty: '$full_path'."
+    content="$(<"$full_path")"
+    if [[ "$content" =~ \<ARGOCD_ || "$content" =~ \<YOUR_ || "$content" =~ \<REPLACE_ ]]; then
+      fail "Local secret file '$full_path' contains unresolved placeholder text."
+    fi
+  done
+
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    local argo_user
+    argo_user="$(tr -d '[:space:]' < "$secret_dir/argocd-user.secret")"
+    [[ "$argo_user" == "atlasops" ]] || fail "argocd-user.secret must match dedicated account 'atlasops' (found: '$argo_user')."
+  fi
+  echo "LOCAL SECRETS: verified required local secret files in '$secret_dir' before cloud mutation."
 }
 
 parse_arguments() {
@@ -154,6 +192,7 @@ validate_static_inputs() {
   ((BASH_VERSINFO[0] >= 4)) || fail "Bash 4 or newer is required."
   require_command gcloud; require_command kubectl; require_command helm
   require_command grep; require_command mktemp; require_command sed; require_command sort; require_command tr
+  require_command "$PYTHON_BIN"
   [[ "$PROJECT" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || fail "Invalid GCP project ID: '$PROJECT'."
   [[ "$REGION" =~ ^[a-z]+-[a-z]+[0-9]+$ ]] || fail "Invalid GCP region: '$REGION'."
   [[ "$ZONE" =~ ^${REGION}-[a-z]$ ]] || fail "Zone '$ZONE' is not in region '$REGION'."
@@ -191,12 +230,13 @@ validate_static_inputs() {
   if [[ "$MODE" == "--apply" ]]; then
     [[ "${ATLASOPS_COST_ACK:-}" == "$COST_ACK_VALUE" ]] || \
       fail "--apply requires ATLASOPS_COST_ACK=$COST_ACK_VALUE."
+    validate_local_secret_prerequisites
   fi
 }
 
 validate_location_and_quota() {
   gcloud compute regions describe "$REGION" --project="$PROJECT" --format='value(name)' >/dev/null || return 1
-  gcloud compute zones describe "$ZONE" --project="$PROJECT" --format='value(name,region)' >/dev/null || return 1
+  gcloud compute zones describe "$ZONE" --project="$PROJECT" --format='value(name)' >/dev/null || return 1
   gcloud compute project-info describe --project="$PROJECT" --format='value(name)' >/dev/null || return 1
 }
 
@@ -299,29 +339,49 @@ inspect_existing_cluster() {
   rows="$(gcloud container clusters list --project="$PROJECT" --filter="name=$CLUSTER" --format='csv[no-heading](name,location)')" || fail "Clusters are uninspectable."
   while IFS=',' read -r name location; do
     [[ -n "$name" ]] || continue
-    [[ "$name" == "$CLUSTER" ]] || continue
-    [[ "$location" == "$ZONE" ]] || fail "Cluster '$CLUSTER' exists in '$location', not '$ZONE'."
-    found=true
+    if [[ "$name" == "$CLUSTER" ]]; then
+      found=true
+      if [[ "$location" == "$ZONE" ]]; then
+        CLUSTER_STATE="PRESENT / COMPATIBLE"
+        validate_existing_cluster
+      else
+        fail "Cluster '$CLUSTER' exists in '$location', expected '$ZONE'."
+      fi
+      break
+    fi
   done <<< "$rows"
-  if [[ "$found" == true ]]; then
-    validate_existing_cluster
-    CLUSTER_STATE="PRESENT / COMPATIBLE"
-  else
-    CLUSTER_STATE="ABSENT"
+  if [[ "$found" == false ]]; then
+    CLUSTER_STATE="ABSENT (apply will create exactly 1 standard zonal cluster in $ZONE)"
   fi
+}
+
+owned_labels() {
+  grep -Fq "managed-by=atlasops" <<< "$1" && grep -Fq "environment=development" <<< "$1"
 }
 
 ensure_cluster() {
   inspect_existing_cluster
   if [[ "$CLUSTER_STATE" == "PRESENT / COMPATIBLE" ]]; then
-    echo "CLUSTER: compatible cluster reused without mutation."
+    echo "CLUSTER: reusing existing verified cluster '$CLUSTER'."
     return
   fi
+  echo "CLUSTER: creating standard zonal cluster '$CLUSTER' in '$ZONE'."
   gcloud container clusters create "$CLUSTER" \
-    --zone="$ZONE" --project="$PROJECT" --machine-type="$MACHINE_TYPE" \
-    --num-nodes="$INITIAL_NODES" --enable-autoscaling --min-nodes="$MIN_NODES" --max-nodes="$MAX_NODES" \
-    --release-channel=stable --workload-pool="${PROJECT}.svc.id.goog" --service-account="$NODE_SERVICE_ACCOUNT" \
-    --enable-master-authorized-networks --master-authorized-networks="$AUTHORIZED_NETWORKS" --labels="$RESOURCE_LABELS"
+    --zone="$ZONE" \
+    --project="$PROJECT" \
+    --num-nodes="$INITIAL_NODES" \
+    --enable-autoscaling \
+    --min-nodes="$MIN_NODES" \
+    --max-nodes="$MAX_NODES" \
+    --machine-type="$MACHINE_TYPE" \
+    --service-account="$NODE_SERVICE_ACCOUNT" \
+    --enable-master-authorized-networks \
+    --master-authorized-networks="$AUTHORIZED_NETWORKS" \
+    --workload-pool="${PROJECT}.svc.id.goog" \
+    --labels="$RESOURCE_LABELS" \
+    --no-enable-basic-auth \
+    --no-issue-client-certificate \
+    --metadata=disable-legacy-endpoints=true
   echo "CLUSTER: created Standard zonal cluster (1 initial node, autoscaling 1-3)."
 }
 
@@ -364,10 +424,12 @@ provision_pubsub() {
 
 RUNTIME_KUBECONFIG=""
 RENDERED_COORDINATOR_MANIFEST=""
+ARGO_SECRET_OVERLAY=""
 
 cleanup_runtime_files() {
   [[ -z "$RENDERED_COORDINATOR_MANIFEST" || ! -f "$RENDERED_COORDINATOR_MANIFEST" ]] || \
     rm -f -- "$RENDERED_COORDINATOR_MANIFEST"
+  [[ -z "$ARGO_SECRET_OVERLAY" || ! -f "$ARGO_SECRET_OVERLAY" ]] || rm -f -- "$ARGO_SECRET_OVERLAY"
   [[ -z "$RUNTIME_KUBECONFIG" || ! -f "$RUNTIME_KUBECONFIG" ]] || rm -f -- "$RUNTIME_KUBECONFIG"
 }
 
@@ -390,6 +452,47 @@ secret_key_present() {
   local namespace="$1" secret="$2" key="$3"
   kubectl_target get secret "$secret" --namespace="$namespace" \
     -o "go-template={{if index .data \"$key\"}}present{{end}}" | grep -Fxq present
+}
+
+ensure_namespaces() {
+  local ns
+  local -a namespaces=("default" "monitoring" "jaeger" "chaos-mesh")
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    namespaces+=("argocd")
+  fi
+  for ns in "${namespaces[@]}"; do
+    kubectl_target create namespace "$ns" --dry-run=client -o yaml | kubectl_target apply -f -
+  done
+  echo "NAMESPACES: required namespaces verified and created."
+}
+
+apply_runtime_secrets() {
+  local secret_dir="$ATLASOPS_SECRET_DIR"
+  local -a coord_args=(
+    --namespace=default
+    --from-file="atlasops-audit-secret=$secret_dir/atlasops-audit-secret.secret"
+    --from-file="alertmanager-webhook-secret=$secret_dir/alertmanager-webhook-secret.secret"
+    --from-file="atlasops-api-key=$secret_dir/atlasops-api-key.secret"
+  )
+  if [[ "$ATLASOPS_BACKEND" != vllm ]]; then
+    coord_args+=(--from-file="llm-api-key=$secret_dir/llm-api-key.secret")
+  fi
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    coord_args+=(
+      --from-file="argocd-user=$secret_dir/argocd-user.secret"
+      --from-file="argocd-pass=$secret_dir/argocd-pass.secret"
+    )
+  fi
+
+  kubectl_target create secret generic "$COORDINATOR_SECRET" "${coord_args[@]}" \
+    --dry-run=client -o yaml | kubectl_target apply -f -
+
+  kubectl_target create secret generic "$ALERTMANAGER_SECRET" \
+    --namespace=monitoring \
+    --from-file="alertmanager-webhook-secret=$secret_dir/alertmanager-webhook-secret.secret" \
+    --dry-run=client -o yaml | kubectl_target apply -f -
+
+  echo "KUBERNETES SECRETS: applied namespaced secrets from validated local material via exact target context."
 }
 
 validate_runtime_secret_contract() {
@@ -426,18 +529,6 @@ render_coordinator_manifest() {
     fail "Coordinator manifest rendering left unresolved placeholders."
 }
 
-ensure_namespaces() {
-  local ns
-  local -a namespaces=("default" "monitoring" "jaeger" "chaos-mesh")
-  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
-    namespaces+=("argocd")
-  fi
-  for ns in "${namespaces[@]}"; do
-    kubectl_target create namespace "$ns" --dry-run=client -o yaml | kubectl_target apply -f -
-  done
-  echo "NAMESPACES: required namespaces verified and created."
-}
-
 apply_foundation() {
   local -a services=(compute.googleapis.com container.googleapis.com monitoring.googleapis.com logging.googleapis.com)
   if [[ "$ATLASOPS_ENABLE_PUBSUB" == true ]]; then
@@ -449,6 +540,7 @@ apply_foundation() {
   ensure_cluster
   initialize_cluster_access
   ensure_namespaces
+  apply_runtime_secrets
 
   kubectl_target apply -f "$BOUTIQUE_MANIFEST"
   local deployment
@@ -479,9 +571,28 @@ apply_foundation() {
   echo "JAEGER: Online Boutique trace ingestion remains LIVE UNVERIFIED (instrumentation follow-up required)."
 
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    ARGO_SECRET_OVERLAY="$(mktemp)"
+    chmod 600 "$ARGO_SECRET_OVERLAY"
+    "$PYTHON_BIN" -c '
+import sys, os, yaml
+from scripts.bcrypt_util import hash_bcrypt, format_iso_timestamp
+
+pass_path = os.path.join(sys.argv[1], "argocd-pass.secret")
+with open(pass_path, "r", encoding="utf-8") as f:
+    pwd = f.read().strip()
+hashed = hash_bcrypt(pwd)
+mtime = format_iso_timestamp()
+
+doc = {"configs": {"secret": {"extra": {"accounts.atlasops.password": hashed, "accounts.atlasops.passwordMtime": mtime}}}}
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    yaml.dump(doc, f)
+' "$ATLASOPS_SECRET_DIR" "$ARGO_SECRET_OVERLAY"
+
     helm_target upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" \
-      --namespace argocd --values infra/values/argocd.yaml --wait --timeout=10m
-    echo "ARGO CD: canonical base controller installed with dedicated least-privilege atlasops account; no Application ownership configured."
+      --namespace argocd --values infra/values/argocd.yaml --values "$ARGO_SECRET_OVERLAY" --wait --timeout=10m
+    rm -f -- "$ARGO_SECRET_OVERLAY"
+    ARGO_SECRET_OVERLAY=""
+    echo "ARGO CD: canonical base controller installed with dedicated least-privilege atlasops account and declarative password verifier."
   else
     echo "ARGO CD: SKIPPED / DEFERRED (DEVIATION: canonical Gate G3 cannot PASS without Argo CD)."
   fi

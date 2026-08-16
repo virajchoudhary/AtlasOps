@@ -3,11 +3,18 @@
 This governance document records the repository's alignment with the canonical external project specification:
 
 > **Canonical External Document:**
-> *AtlasOps Intelligence | Master Implementation Pipeline v1.0* (dated 11 August 2026).
+> *AtlasOps Intelligence | Master Implementation Pipeline v1.1 Free-First* (dated 16 August 2026).
+> Pipeline v1.1 supersedes v1.0 for execution decisions. v1.0 remains the historical record.
 > **Upstream Baseline:**
 > `Harikishanth/AtlasOps` frozen at commit [`bf9bd197c9f4a05ae55ade254802a9eef1a74356`](https://github.com/Harikishanth/AtlasOps/commit/bf9bd197c9f4a05ae55ade254802a9eef1a74356).
 > **Fork:**
 > `virajchoudhary/AtlasOps`.
+
+> [!IMPORTANT]
+> **Pipeline v1.1 Free-First Execution Change:**
+> The canonical Stage 3 environment is now a local Kind Kubernetes cluster on Windows/Docker Desktop/WSL2.
+> GKE/GCP is no longer required for canonical project execution. GKE remains as OPTIONAL portability code.
+> External service spend target: **$0**.
 
 > [!IMPORTANT]
 > **Repository Governance Rules:**
@@ -19,14 +26,14 @@ This governance document records the repository's alignment with the canonical e
 
 ---
 
-## Canonical Stage & Gate Sequence (Pipeline v1.0)
+## Canonical Stage & Gate Sequence (Pipeline v1.1 Free-First)
 
 | Stage | Name | Gate | Target / Deliverable | Current Status |
 |---|---|---|---|---|
 | **Stage 0** | Freeze provenance and working scope | **G0** | Freeze upstream baseline SHA `bf9bd19`, preserve MIT license, establish repository boundaries. | **PASS** |
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
 | **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
-| **Stage 3** | Provision controlled SRE environment | **G3** | Standard GKE, Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. | **PENDING** (Stage 3A local prep complete; cloud provisioning blocked on pre-G3 repairs) |
+| **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PENDING** (v1.1 local Kind path implemented; live deployment in progress) |
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **BLOCKED (on G3)** |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **BLOCKED (on G4)** |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **BLOCKED (on G5)** |
@@ -110,6 +117,7 @@ This governance document records the repository's alignment with the canonical e
   - **Canonical Install Order**: Online Boutique $\rightarrow$ Coordinator $\rightarrow$ Prometheus/Alertmanager $\rightarrow$ Jaeger $\rightarrow$ Argo CD $\rightarrow$ Chaos Mesh.
   - **Acceptance Plan**: Non-destructive acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md` referencing all 28 canonical frozen scenarios.
 - **Zero-Cost Boundary**: 0 cloud resources created, $0.00 billing incurred.
+- **Pipeline v1.1 Free-First Local Path**: `infra/local/` provides complete local Kind-based deployment with zero gcloud dependency. GKE path preserved in `infra/setup_impl.sh` as optional portability code.
 
 ---
 
@@ -130,4 +138,7 @@ This governance document records the repository's alignment with the canonical e
 ---
 
 > [!NOTE]
-> This status document reflects the live repository state as of August 2026. For the complete academic specification and methodology, refer to the external Master Implementation Pipeline v1.0 document.
+> This status document reflects the live repository state as of August 2026.
+> **Pipeline v1.1 Free-First** (16 August 2026) is the current canonical execution specification.
+> **Pipeline v1.0** (11 August 2026) remains the historical record of the original execution specification.
+> For the complete academic specification and methodology, refer to the external Master Implementation Pipeline documents.

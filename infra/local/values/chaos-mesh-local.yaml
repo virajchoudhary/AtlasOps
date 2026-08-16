@@ -1,0 +1,31 @@
+# AtlasOps Local Chaos Mesh — Kind-compatible profile
+# Pipeline v1.1 Free-First
+#
+# Docker runtime for Kind containers
+# No experiments injected — Stage 3 requires controllers+CRDs only
+
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+controllerManager:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+dashboard:
+  enabled: false
+
+dnsServer:
+  create: false

@@ -1,0 +1,76 @@
+# AtlasOps Local Prometheus Stack — low-resource Kind profile
+# Pipeline v1.1 Free-First
+#
+# Preserves: Prometheus, Alertmanager, kube-state-metrics
+# Disables: Grafana (not required for Stage 3 gate)
+# Reduces: resource requests for Kind single-node
+
+grafana:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storageSpec: {}
+    # Disable PVC — use emptyDir for local ephemeral
+    replicas: 1
+    serviceMonitorSelectorNilUsesHelmValue: false
+    podMonitorSelectorNilUsesHelmValue: false
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    retention: 6h
+    storage: {}
+    replicas: 1
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Disable node-exporter to reduce resource usage on Kind
+nodeExporter:
+  enabled: false
+
+# Disable kubeProxy metrics (not meaningful on Kind)
+kubeProxy:
+  enabled: false
+
+# Disable etcd metrics (not accessible on Kind easily)
+kubeEtcd:
+  enabled: false
+
+# Disable scheduler metrics
+kubeScheduler:
+  enabled: false
+
+# Disable controller-manager metrics
+kubeControllerManager:
+  enabled: false

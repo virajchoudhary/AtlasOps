@@ -56,7 +56,9 @@ ATLASOPS_ENABLE_CLOUD_BUILD="${ATLASOPS_ENABLE_CLOUD_BUILD:-false}"
 ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"
 ATLASOPS_BACKEND="${ATLASOPS_BACKEND:-vllm}"
 
-if command -v python3 >/dev/null 2>&1; then
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  readonly PYTHON_BIN
+elif command -v python3 >/dev/null 2>&1; then
   readonly PYTHON_BIN="python3"
 elif command -v python >/dev/null 2>&1; then
   readonly PYTHON_BIN="python"
@@ -118,20 +120,20 @@ require_command() {
 }
 
 validate_ipv4_cidrs() {
-  local raw="$1" cidr ip prefix IFS=','
-  [[ -n "$raw" ]] || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS is required."
-  read -ra cidrs <<< "$raw"
-  ((${#cidrs[@]} > 0)) || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS cannot be empty."
+  local value="$1"
+  [[ -n "$value" ]] || fail "ATLASOPS_GKE_AUTHORIZED_NETWORKS is required."
+  [[ "$value" != *[[:space:]]* ]] || fail "Authorized CIDRs must not contain whitespace."
+  IFS=',' read -r -a cidrs <<< "$value"
+  ((${#cidrs[@]} > 0)) || fail "At least one authorized CIDR is required."
   for cidr in "${cidrs[@]}"; do
-    [[ "$cidr" != "0.0.0.0/0" ]] || fail "0.0.0.0/0 is forbidden in authorized networks."
-    [[ "$cidr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]] || \
-      fail "Invalid IPv4 CIDR block: '$cidr'."
+    [[ "$cidr" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]] || fail "Invalid IPv4 CIDR: '$cidr'."
     ip="${cidr%/*}"; prefix="${cidr#*/}"
-    IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
-    for octet in "$o1" "$o2" "$o3" "$o4"; do
-      ((octet >= 0 && octet <= 255)) || fail "Invalid IPv4 octet in '$cidr'."
+    IFS='.' read -r -a octets <<< "$ip"
+    for octet in "${octets[@]}"; do
+      ((10#$octet <= 255)) || fail "Invalid IPv4 CIDR: '$cidr'."
     done
-    ((prefix >= 0 && prefix <= 32)) || fail "Invalid prefix length in '$cidr'."
+    ((10#$prefix <= 32)) || fail "Invalid IPv4 CIDR: '$cidr'."
+    [[ "$cidr" != "0.0.0.0/0" ]] || fail "The unrestricted CIDR 0.0.0.0/0 is forbidden."
   done
 }
 
@@ -230,6 +232,10 @@ validate_static_inputs() {
   if [[ "$MODE" == "--apply" ]]; then
     [[ "${ATLASOPS_COST_ACK:-}" == "$COST_ACK_VALUE" ]] || \
       fail "--apply requires ATLASOPS_COST_ACK=$COST_ACK_VALUE."
+    if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+      "$PYTHON_BIN" -c "import bcrypt" >/dev/null 2>&1 || \
+        fail "Python package 'bcrypt' is required for Argo CD credential derivation before cloud mutation. Install via 'pip install -r requirements/dev-win-py312.lock'."
+    fi
     validate_local_secret_prerequisites
   fi
 }
@@ -304,6 +310,8 @@ Existing target cluster:           $CLUSTER_STATE
 EOF
 }
 
+owned_labels() { [[ "$1" == *"managed-by=atlasops"* && "$1" == *"environment=development"* ]]; }
+
 normalize_cidrs() { tr ',' '\n' <<< "$1" | sort | tr '\n' ',' | sed 's/,$//'; }
 
 validate_existing_cluster() {
@@ -355,10 +363,6 @@ inspect_existing_cluster() {
   fi
 }
 
-owned_labels() {
-  grep -Fq "managed-by=atlasops" <<< "$1" && grep -Fq "environment=development" <<< "$1"
-}
-
 ensure_cluster() {
   inspect_existing_cluster
   if [[ "$CLUSTER_STATE" == "PRESENT / COMPATIBLE" ]]; then
@@ -369,23 +373,22 @@ ensure_cluster() {
   gcloud container clusters create "$CLUSTER" \
     --zone="$ZONE" \
     --project="$PROJECT" \
+    --machine-type="$MACHINE_TYPE" \
     --num-nodes="$INITIAL_NODES" \
     --enable-autoscaling \
     --min-nodes="$MIN_NODES" \
     --max-nodes="$MAX_NODES" \
-    --machine-type="$MACHINE_TYPE" \
+    --release-channel=stable \
+    --workload-pool="${PROJECT}.svc.id.goog" \
     --service-account="$NODE_SERVICE_ACCOUNT" \
     --enable-master-authorized-networks \
     --master-authorized-networks="$AUTHORIZED_NETWORKS" \
-    --workload-pool="${PROJECT}.svc.id.goog" \
     --labels="$RESOURCE_LABELS" \
     --no-enable-basic-auth \
     --no-issue-client-certificate \
     --metadata=disable-legacy-endpoints=true
   echo "CLUSTER: created Standard zonal cluster (1 initial node, autoscaling 1-3)."
 }
-
-owned_labels() { [[ "$1" == *"managed-by=atlasops"* && "$1" == *"environment=development"* ]]; }
 
 ensure_topic() {
   local topic="$1" names labels
@@ -571,21 +574,19 @@ apply_foundation() {
   echo "JAEGER: Online Boutique trace ingestion remains LIVE UNVERIFIED (instrumentation follow-up required)."
 
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
-    ARGO_SECRET_OVERLAY="$(mktemp)"
+    ARGO_SECRET_OVERLAY="$(mktemp "${TMPDIR:-/tmp}/atlasops-argo-XXXXXX.json")"
     chmod 600 "$ARGO_SECRET_OVERLAY"
     "$PYTHON_BIN" -c '
-import sys, os, yaml
+import sys, os, json
 from scripts.bcrypt_util import hash_bcrypt, format_iso_timestamp
-
 pass_path = os.path.join(sys.argv[1], "argocd-pass.secret")
 with open(pass_path, "r", encoding="utf-8") as f:
     pwd = f.read().strip()
 hashed = hash_bcrypt(pwd)
 mtime = format_iso_timestamp()
-
 doc = {"configs": {"secret": {"extra": {"accounts.atlasops.password": hashed, "accounts.atlasops.passwordMtime": mtime}}}}
 with open(sys.argv[2], "w", encoding="utf-8") as f:
-    yaml.dump(doc, f)
+    json.dump(doc, f)
 ' "$ATLASOPS_SECRET_DIR" "$ARGO_SECRET_OVERLAY"
 
     helm_target upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" \

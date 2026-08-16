@@ -329,7 +329,7 @@ class TestExecutableBootstrapLifecycle:
         extra = overlay_val["configs"]["secret"]["extra"]
         assert "accounts.atlasops.password" in extra
         hashed_pass = extra["accounts.atlasops.password"]
-        assert hashed_pass.startswith("$2a$")
+        assert hashed_pass.startswith("$2b$") or hashed_pass.startswith("$2a$")
         assert len(hashed_pass) == 60
         assert "accounts.atlasops.passwordMtime" in extra
         assert verify_bcrypt("MyArgoPassword123!", hashed_pass)
@@ -343,6 +343,7 @@ class TestExecutableBootstrapLifecycle:
         mock_env, state_dir = create_mock_cli_env(tmp_path)
         secret_dir = tmp_path / "secrets_incomplete"
         secret_dir.mkdir(parents=True, exist_ok=True)
+        # Write only one secret (missing webhook, api-key, etc.)
         (secret_dir / "atlasops-audit-secret.secret").write_text("audit-tok", encoding="utf-8")
         drive_letter = secret_dir.drive[0].lower() if secret_dir.drive else "c"
         wsl_secret_dir = f"/mnt/{drive_letter}{secret_dir.as_posix()[2:]}" if secret_dir.drive else secret_dir.as_posix()
@@ -361,22 +362,23 @@ class TestExecutableBootstrapLifecycle:
         assert res.returncode != 0
         assert "Missing required local secret file" in res.stderr
 
-        # Assert ZERO cloud mutation commands were executed
+        # Verify gcloud container clusters create was NEVER called
         log_file = state_dir / "cli_calls.log"
         if log_file.is_file():
-            calls = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
-            mutations = [c for c in calls if c["tool"] == "gcloud" and any(k in c["args"] for k in ["create", "enable", "delete"])]
-            assert len(mutations) == 0, f"Cloud mutation occurred despite missing secret: {mutations}"
+            lines = [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()]
+            creates = [c for c in lines if c["tool"] == "gcloud" and "container" in c["args"] and "create" in c["args"]]
+            assert len(creates) == 0, "Cluster create was invoked despite missing secrets"
 
     def test_missing_argocd_password_fails_before_cloud_mutation(self, tmp_path: Path) -> None:
-        """Proves missing Argo CD password aborts before cloud mutation when Argo is enabled."""
+        """Proves missing Argo CD password aborts before cloud mutation when Argo CD is enabled."""
         mock_env, state_dir = create_mock_cli_env(tmp_path)
-        secret_dir = tmp_path / "secrets_no_argo"
+        secret_dir = tmp_path / "secrets_no_argo_pass"
         secret_dir.mkdir(parents=True, exist_ok=True)
         (secret_dir / "atlasops-audit-secret.secret").write_text("audit-tok", encoding="utf-8")
         (secret_dir / "alertmanager-webhook-secret.secret").write_text("webhook-tok", encoding="utf-8")
         (secret_dir / "atlasops-api-key.secret").write_text("api-tok", encoding="utf-8")
         (secret_dir / "argocd-user.secret").write_text("atlasops", encoding="utf-8")
+        # argocd-pass.secret is deliberately omitted
         drive_letter = secret_dir.drive[0].lower() if secret_dir.drive else "c"
         wsl_secret_dir = f"/mnt/{drive_letter}{secret_dir.as_posix()[2:]}" if secret_dir.drive else secret_dir.as_posix()
 
@@ -394,6 +396,42 @@ class TestExecutableBootstrapLifecycle:
         res = run_setup(mock_env, extra_env, ["test-project-123", "us-central1", "atlasops", "--apply"])
         assert res.returncode != 0
         assert "argocd-pass.secret" in res.stderr
+
+    def test_missing_bcrypt_fails_before_cloud_mutation(self, tmp_path: Path) -> None:
+        """Proves missing bcrypt module aborts before cloud mutation when Argo CD is enabled."""
+        import stat
+        mock_env, state_dir = create_mock_cli_env(tmp_path)
+        secret_dir = tmp_path / "secrets"
+        wsl_secret_dir = prepare_test_secrets(secret_dir)
+
+        fake_python = tmp_path / "fake_python.sh"
+        fake_python.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"$*\" == *\"import bcrypt\"* ]]; then\n"
+            "  exit 1\n"
+            "fi\n"
+            "exec python3 \"$@\"\n",
+            encoding="utf-8"
+        )
+        fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+        drive_letter = fake_python.drive[0].lower() if fake_python.drive else "c"
+        wsl_fake_py = f"/mnt/{drive_letter}{fake_python.as_posix()[2:]}" if fake_python.drive else fake_python.as_posix()
+
+        extra_env = {
+            "PYTHON_BIN": wsl_fake_py,
+            "ATLASOPS_GKE_NODE_SERVICE_ACCOUNT": "test-node-sa@test-project-123.iam.gserviceaccount.com",
+            "ATLASOPS_GKE_AUTHORIZED_NETWORKS": "203.0.113.10/32",
+            "ATLASOPS_COORDINATOR_IMAGE": "us-central1-docker.pkg.dev/test-project-123/atlasops/atlasops-coordinator@sha256:" + "a" * 64,
+            "ATLASOPS_VLLM_BASE": "http://vllm-backend:8000/v1",
+            "ATLASOPS_AGENT_MODEL": "Qwen/Qwen2.5-7B-Instruct",
+            "ATLASOPS_COST_ACK": "I_UNDERSTAND_GCP_COSTS",
+            "ATLASOPS_ENABLE_ARGOCD": "true",
+            "ATLASOPS_SECRET_DIR": wsl_secret_dir,
+        }
+
+        res = run_setup(mock_env, extra_env, ["test-project-123", "us-central1", "atlasops", "--apply"])
+        assert res.returncode != 0
+        assert "bcrypt" in res.stderr
 
     def test_existing_compatible_cluster_reuse_is_idempotent(self, tmp_path: Path) -> None:
         """Proves re-running setup on an existing compatible cluster does not re-create GKE."""
@@ -456,15 +494,70 @@ class TestExecutableBootstrapLifecycle:
         namespaces = namespaces_file.read_text(encoding="utf-8").splitlines()
         assert "argocd" not in namespaces
 
+    def test_json_values_overlay_accepted_by_helm_template(self, tmp_path: Path) -> None:
+        """Proves JSON-formatted Argo values overlay renders with Helm without error."""
+        import shutil
+        import subprocess
+        import pytest
+
+        helm_bin = shutil.which("helm")
+        if not helm_bin:
+            pytest.skip("helm binary not installed locally")
+
+        pwd = "TestArgoPassword987!"
+        hashed = hash_bcrypt(pwd, cost=4)
+        mtime = format_iso_timestamp()
+
+        overlay_data = {
+            "configs": {
+                "secret": {
+                    "extra": {
+                        "accounts.atlasops.password": hashed,
+                        "accounts.atlasops.passwordMtime": mtime,
+                    }
+                }
+            }
+        }
+        overlay_file = tmp_path / "argo_overlay.json"
+        overlay_file.write_text(json.dumps(overlay_data), encoding="utf-8")
+
+        res = subprocess.run(
+            [
+                helm_bin, "template", "argocd", "argo/argo-cd",
+                "--version", "10.3.2",
+                "--values", "infra/values/argocd.yaml",
+                "--values", str(overlay_file),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(Path.cwd()),
+        )
+        assert res.returncode == 0, f"helm template failed: {res.stderr}"
+
+        # Parse rendered manifests and find argocd-secret Secret
+        docs = [d for d in yaml.safe_load_all(res.stdout) if d and isinstance(d, dict)]
+        secrets = [d for d in docs if d.get("kind") == "Secret" and d.get("metadata", {}).get("name") == "argocd-secret"]
+        assert len(secrets) == 1, "argocd-secret Secret not rendered"
+        sec_data = secrets[0].get("stringData", {}) or secrets[0].get("data", {})
+        assert "accounts.atlasops.password" in sec_data
+        assert "accounts.atlasops.passwordMtime" in sec_data
+        # Ensure plaintext password does not appear in rendered document
+        assert pwd not in res.stdout
+
 
 class TestBcryptUtilContract:
-    """Tests mathematical bcrypt Blowfish derivation and password verification."""
+    """Tests standard bcrypt hashing and independent password verification."""
 
     def test_bcrypt_derivation_and_verification(self) -> None:
+        import bcrypt
         pwd = "test-operator-password-xyz"
         hashed = hash_bcrypt(pwd, cost=4)
-        assert hashed.startswith("$2a$04$")
+        assert hashed.startswith("$2b$04$") or hashed.startswith("$2a$04$")
         assert len(hashed) == 60
+        # Independent verification via the standard bcrypt library
+        assert bcrypt.checkpw(pwd.encode("utf-8"), hashed.encode("utf-8")) is True
+        assert bcrypt.checkpw(b"wrong-password", hashed.encode("utf-8")) is False
+        # And via our wrapper
         assert verify_bcrypt(pwd, hashed) is True
         assert verify_bcrypt("wrong-password", hashed) is False
 

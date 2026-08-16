@@ -31,7 +31,11 @@ def generate_secure_password(length: int = 24) -> str:
 
 
 def set_restricted_permissions(file_path: Path) -> None:
-    """Set file permissions to 0600 (owner read/write only) on POSIX systems."""
+    """Set file permissions to 0600 (owner read/write only) on POSIX systems.
+
+    On Windows, the secrets/ directory is .gitignored and protected by standard
+    NTFS user-profile ACL inheritance.
+    """
     if os.name == "posix":
         file_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 

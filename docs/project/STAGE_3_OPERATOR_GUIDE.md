@@ -79,7 +79,12 @@ flowchart TD
     G3J --> G3K["Gate 3K: Run infra/teardown.sh --apply"]
 ```
 
-### Gate 3A: Local Toolchain Verification
+### Gate 3A: Local Toolchain & Environment Verification
+Ensure the canonical local Python environment is active and installed from the reproducible development lock (`requirements/dev-win-py312.lock`) before running Stage 3:
+```bash
+pip install -r requirements/dev-win-py312.lock
+python -c "import bcrypt; print('bcrypt available')"
+```
 Verify local CLI tool versions:
 ```bash
 git --version

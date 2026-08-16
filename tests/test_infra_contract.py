@@ -314,6 +314,8 @@ def test_jaeger_and_argocd_helm_values_render_statically() -> None:
     assert argocd_val["server"]["service"]["type"] == "ClusterIP"
     assert argocd_val["server"]["extraArgs"] == ["--insecure"]
     assert argocd_val["configs"]["params"]["server.insecure"] is True
+    assert argocd_val["configs"]["cm"]["accounts.atlasops"] == "login"
+    assert "role:atlasops-readonly" in argocd_val["configs"]["rbac"]["policy.csv"]
     assert argocd_val["notifications"]["enabled"] is False
     assert argocd_val["controller"]["resources"]["requests"]["cpu"] == "250m"
     assert argocd_val["redis"]["resources"]["requests"]["cpu"] == "100m"
@@ -335,6 +337,10 @@ def test_stage_3_operator_guide_and_secret_helper() -> None:
     assert "Gate 3K" in guide
     assert "gcloud auth login" in guide
     assert "scripts/generate_runtime_secrets.py" in guide
+    assert "artifactregistry.googleapis.com" in guide
+    assert "docker.pkg.dev" in guide
+    assert "LoadBalancer" in guide
+    assert "ClusterIP" in guide
 
     gitignore = read(".gitignore")
     assert "*.secret" in gitignore

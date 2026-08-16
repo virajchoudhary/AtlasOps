@@ -426,6 +426,18 @@ render_coordinator_manifest() {
     fail "Coordinator manifest rendering left unresolved placeholders."
 }
 
+ensure_namespaces() {
+  local ns
+  local -a namespaces=("default" "monitoring" "jaeger" "chaos-mesh")
+  if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
+    namespaces+=("argocd")
+  fi
+  for ns in "${namespaces[@]}"; do
+    kubectl_target create namespace "$ns" --dry-run=client -o yaml | kubectl_target apply -f -
+  done
+  echo "NAMESPACES: required namespaces verified and created."
+}
+
 apply_foundation() {
   local -a services=(compute.googleapis.com container.googleapis.com monitoring.googleapis.com logging.googleapis.com)
   if [[ "$ATLASOPS_ENABLE_PUBSUB" == true ]]; then
@@ -436,7 +448,8 @@ apply_foundation() {
   validate_location_and_quota || fail "Location/quota metadata remained unverifiable before cluster mutation."
   ensure_cluster
   initialize_cluster_access
-  validate_runtime_secret_contract
+  ensure_namespaces
+
   kubectl_target apply -f "$BOUTIQUE_MANIFEST"
   local deployment
   for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do
@@ -446,11 +459,6 @@ apply_foundation() {
   echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} required Deployments are Available."
   echo "ONLINE BOUTIQUE: $BOUTIQUE_RELEASE at immutable commit $BOUTIQUE_COMMIT applied and ready."
 
-  render_coordinator_manifest
-  kubectl_target apply -f "$RENDERED_COORDINATOR_MANIFEST"
-  kubectl_target rollout status deployment/atlasops-coordinator --namespace=default --timeout="$COORDINATOR_ROLLOUT_TIMEOUT"
-  echo "COORDINATOR: private Service and authenticated runtime deployed from immutable image digest."
-
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
   helm repo add jaegertracing https://jaegertracing.github.io/helm-charts --force-update
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
@@ -458,27 +466,25 @@ apply_foundation() {
   fi
   helm repo add chaos-mesh https://charts.chaos-mesh.org --force-update
   helm repo update
+
   helm_target upgrade --install prometheus prometheus-community/kube-prometheus-stack --version "$PROMETHEUS_CHART_VERSION" \
     --namespace monitoring --values infra/values/kube-prometheus-stack.yaml --wait --timeout=10m
   kubectl_target apply -f "$ATLASOPS_PROMETHEUS_RULES"
   echo "PROMETHEUS: kube-state-metrics availability alert and authenticated coordinator route configured."
   echo "PROMETHEUS: application error-rate and latency signals remain DEFERRED / UNPROVEN."
 
-  kubectl_target create namespace jaeger --dry-run=client -o yaml | kubectl_target apply -f -
   helm_target upgrade --install jaeger jaegertracing/jaeger --version "$JAEGER_CHART_VERSION" \
     --namespace jaeger --values infra/values/jaeger.yaml --wait --timeout=10m
   echo "JAEGER: in-cluster Query backend and collector installed at pinned chart $JAEGER_CHART_VERSION."
   echo "JAEGER: Online Boutique trace ingestion remains LIVE UNVERIFIED (instrumentation follow-up required)."
 
   if [[ "$ATLASOPS_ENABLE_ARGOCD" == true ]]; then
-    kubectl_target create namespace argocd --dry-run=client -o yaml | kubectl_target apply -f -
     helm_target upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" \
       --namespace argocd --values infra/values/argocd.yaml --wait --timeout=10m
-    echo "ARGO CD: canonical base controller installed; no Application or workload ownership configured."
+    echo "ARGO CD: canonical base controller installed with dedicated least-privilege atlasops account; no Application ownership configured."
   else
-    echo "ARGO CD: SKIPPED / DEFERRED (operator deviation; canonical Gate G3 cannot PASS with Argo CD disabled)."
+    echo "ARGO CD: SKIPPED / DEFERRED (DEVIATION: canonical Gate G3 cannot PASS without Argo CD)."
   fi
-  kubectl_target create namespace chaos-mesh --dry-run=client -o yaml | kubectl_target apply -f -
   helm_target upgrade --install chaos-mesh chaos-mesh/chaos-mesh --version "$CHAOS_MESH_CHART_VERSION" \
     --namespace chaos-mesh --values infra/values/chaos-mesh.yaml --set chaosDaemon.runtime=containerd --wait --timeout=10m
   echo "CHAOS MESH: base controller installed; no experiment executed."
@@ -487,6 +493,12 @@ apply_foundation() {
   echo "LINKERD: SKIPPED / DEFERRED; no remote installer executed."
   echo "ARTIFACT REGISTRY: SKIPPED / DEFERRED."
   echo "CLOUD BUILD: SKIPPED / DEFERRED."
+
+  validate_runtime_secret_contract
+  render_coordinator_manifest
+  kubectl_target apply -f "$RENDERED_COORDINATOR_MANIFEST"
+  kubectl_target rollout status deployment/atlasops-coordinator --namespace=default --timeout="$COORDINATOR_ROLLOUT_TIMEOUT"
+  echo "COORDINATOR: private Service and authenticated runtime deployed from immutable image digest."
 }
 
 main() {

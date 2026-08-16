@@ -35,7 +35,7 @@ Before executing `infra/setup.sh --apply`, the operator must supply the followin
 
 | Variable | Requirement / Format | Origin | Notes |
 | :--- | :--- | :--- | :--- |
-| `ATLASOPS_COORDINATOR_IMAGE` | Pinned digest `registry/image@sha256:<64-hex>` | Registry build | Built from `Dockerfile.coordinator` |
+| `ATLASOPS_COORDINATOR_IMAGE` | Pinned digest `${REGION}-docker.pkg.dev/${PROJECT_ID}/atlasops/atlasops-coordinator@sha256:<64-hex>` | Artifact Registry build | Built from `Dockerfile.coordinator` |
 | `ATLASOPS_BACKEND` | `vllm`, `fireworks`, or `openai` | Operator choice | Default: `vllm` |
 | `ATLASOPS_VLLM_BASE` | HTTP(S) URL without metacharacters | Local/Remote | Endpoint for agent inference |
 | `ATLASOPS_AGENT_MODEL` | Valid model identifier | Operator choice | Model name (e.g. `Qwen/Qwen2.5-7B-Instruct`) |
@@ -48,7 +48,7 @@ All secrets are provisioned out-of-band in the cluster before runtime deployment
 - `atlasops-audit-secret`: HMAC key for signing audit log entries (generate with `scripts/generate_runtime_secrets.py`).
 - `alertmanager-webhook-secret`: Bearer token for authenticating Alertmanager webhook posts.
 - `atlasops-api-key`: Header secret (`X-AtlasOps-Key`) for operator approval endpoints.
-- `argocd-user`: Dedicated read-only Argo CD username (e.g. `atlasops-readonly`).
+- `argocd-user`: Dedicated read-only Argo CD username (`atlasops` matching `infra/values/argocd.yaml`).
 - `argocd-pass`: Password for the Argo CD read-only user.
 - `llm-api-key` (*Optional*): Required only if `ATLASOPS_BACKEND` is `fireworks` or `openai`.
 
@@ -70,7 +70,7 @@ flowchart TD
     G3A["Gate 3A: Local CLI Tools Verified"] --> G3B["Gate 3B: gcloud auth login"]
     G3B --> G3C["Gate 3C: Select Existing GCP Project"]
     G3C --> G3D["Gate 3D: Verify Billing, IAM, Quotas & CIDRs"]
-    G3D --> G3E["Gate 3E: Build & Publish Immutable Coordinator Image"]
+    G3D --> G3E["Gate 3E: Create Artifact Registry & Publish Immutable Image"]
     G3E --> G3F["Gate 3F: Run infra/setup.sh --check (Preflight)"]
     G3F --> G3G["Gate 3G: Explicit Cost Acknowledgement"]
     G3G --> G3H["Gate 3H: Run infra/setup.sh --apply"]
@@ -100,6 +100,9 @@ gcloud auth login
 Set and confirm the target project ID:
 ```bash
 export PROJECT_ID="<your-project-id>"
+export REGION="us-central1"
+export ZONE="us-central1-a"
+export CLUSTER_NAME="atlasops-cluster"
 gcloud config set project "$PROJECT_ID"
 ```
 
@@ -110,47 +113,86 @@ gcloud billing projects describe "$PROJECT_ID"
 gcloud iam service-accounts describe "<node-sa>@$PROJECT_ID.iam.gserviceaccount.com"
 ```
 
-### Gate 3E: Build and Publish Coordinator Image
-Build and push the coordinator image to a private container registry, then capture its exact sha256 digest:
+### Gate 3E: Create Artifact Registry & Publish Coordinator Image
+Google Container Registry (`gcr.io`) is deprecated; use **Google Artifact Registry**:
+
 ```bash
-# Build container locally
-docker build -f Dockerfile.coordinator -t "gcr.io/$PROJECT_ID/atlasops-coordinator:g3-rc" .
+# 1. Enable Artifact Registry API
+gcloud services enable artifactregistry.googleapis.com --project="$PROJECT_ID"
 
-# Authenticate docker and push
-gcloud auth configure-docker
-docker push "gcr.io/$PROJECT_ID/atlasops-coordinator:g3-rc"
+# 2. Create Docker repository if not present
+gcloud artifacts repositories create atlasops \
+  --repository-format=docker \
+  --location="$REGION" \
+  --description="AtlasOps coordinator container repository" \
+  --project="$PROJECT_ID"
 
-# Extract immutable SHA256 digest
-export ATLASOPS_COORDINATOR_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "gcr.io/$PROJECT_ID/atlasops-coordinator:g3-rc")
+# 3. Grant node service account read access
+gcloud artifacts repositories add-iam-policy-binding atlasops \
+  --location="$REGION" \
+  --member="serviceAccount:<node-sa>@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.reader" \
+  --project="$PROJECT_ID"
+
+# 4. Authenticate Docker to Artifact Registry
+gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+
+# 5. Build container locally
+docker build -f Dockerfile.coordinator -t "${REGION}-docker.pkg.dev/$PROJECT_ID/atlasops/atlasops-coordinator:g3-rc" .
+
+# 6. Push to Artifact Registry
+docker push "${REGION}-docker.pkg.dev/$PROJECT_ID/atlasops/atlasops-coordinator:g3-rc"
+
+# 7. Extract immutable SHA256 digest
+export ATLASOPS_COORDINATOR_IMAGE=$(docker inspect --format='{{index .RepoDigests 0}}' "${REGION}-docker.pkg.dev/$PROJECT_ID/atlasops/atlasops-coordinator:g3-rc")
 echo "Pinned Image Digest: $ATLASOPS_COORDINATOR_IMAGE"
 ```
+
+> [!NOTE]
+> **Registry Persistence & Billing**:
+> Artifact Registry repositories and images persist independently of GKE cluster lifecycles and may incur small monthly storage charges until explicitly deleted.
 
 ### Gate 3F: Read-Only Preflight (`--check`)
 Run read-only preflight validation to verify compatibility without cloud mutations:
 ```bash
-bash infra/setup.sh "$PROJECT_ID" us-central1 atlasops-cluster --check
+bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --check
 ```
 
-### Gate 3G: Explicit Cost Authorization
-Set the required cost acknowledgement environment variable:
+### Gate 3G: Explicit Cost Authorization & Secret Preparation
+1. Set the required cost acknowledgement environment variable:
 ```bash
-export ATLASOPS_COST_ACK="ACKNOWLEDGE_STAGE_1D_BILLING"
+export ATLASOPS_COST_ACK="I_UNDERSTAND_GCP_COSTS"
+```
+
+2. Generate local runtime secret material:
+```bash
+python scripts/generate_runtime_secrets.py --output-dir secrets --argocd-user atlasops
+# Write your dedicated operator password to secrets/argocd-pass.secret (gitignored)
 ```
 
 ### Gate 3H: Apply Infrastructure Foundation (`--apply`)
-Create cluster, deploy Online Boutique, coordinator, Prometheus/Alertmanager, Jaeger, Argo CD, and Chaos Mesh:
+Execute the single-command idempotent bootstrap:
 ```bash
-# 1. Provision cluster and core foundation
-bash infra/setup.sh "$PROJECT_ID" us-central1 atlasops-cluster --apply
-
-# 2. Provision runtime secrets before coordinator pod start
-python scripts/generate_runtime_secrets.py
-bash secrets/apply_secrets.sh
+bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 ```
+
+**Internal Bootstrap Order Executed by `setup.sh`:**
+1. Enables required GCP APIs (`compute`, `container`, `monitoring`, `logging`).
+2. Creates or reuses the Standard zonal GKE cluster (`ensure_cluster`).
+3. Initializes isolated kubeconfig credentials (`initialize_cluster_access`).
+4. Creates all target namespaces (`default`, `monitoring`, `jaeger`, `argocd`, `chaos-mesh`).
+5. Deploys Online Boutique (12 Available Deployments in `default`).
+6. Installs monitoring & backends via Helm:
+   - Prometheus / Alertmanager in `monitoring` (`kube-prometheus-stack:88.3.0`) + Prometheus rules
+   - Jaeger in `jaeger` (`jaeger:4.12.0`)
+   - Argo CD in `argocd` (`argo-cd:10.3.2`) with dedicated least-privilege `atlasops` account
+   - Chaos Mesh in `chaos-mesh` (`chaos-mesh:2.8.3`)
+7. Validates runtime secrets (`validate_runtime_secret_contract`). *Note: If secrets were not pre-applied, apply them with `bash secrets/apply_secrets.sh` and re-run `setup.sh --apply` (re-uses existing cluster without recreation).*
+8. Renders and deploys coordinator (`deployment/atlasops-coordinator`) in `default` connecting to running backends.
 
 ### Gate 3I: Non-Destructive G3 Backend Acceptance
 Follow the formal procedures in [`docs/project/G3_ACCEPTANCE_PLAN.md`](G3_ACCEPTANCE_PLAN.md):
-1. **Kubernetes & Boutique**: 12 deployments Available in `default` namespace.
+1. **Kubernetes & Boutique**: 12 deployments Available in `default` namespace (frontend Service is upstream `LoadBalancer`; AtlasOps internal services are private `ClusterIP`).
 2. **Prometheus**: Vector queries verify `availableReplicas == replicas` for all 12 services.
 3. **Alertmanager**: Firing alert dispatched to coordinator `/webhook` responds HTTP 200 `{"ok": true, ...}`.
 4. **Jaeger**: `jaeger_services_list()` responds HTTP 200 with query backend active.
@@ -158,17 +200,19 @@ Follow the formal procedures in [`docs/project/G3_ACCEPTANCE_PLAN.md`](G3_ACCEPT
 6. **Chaos Mesh**: All 28 frozen manifests in `bench/chaos_manifests/` pass `kubectl apply --dry-run=server`.
 
 ### Gate 3J: Record Gate G3 PASS Evidence
-Update `docs/project/MASTER_PIPELINE_STATUS.md` with:
+Update [`docs/project/MASTER_PIPELINE_STATUS.md`](MASTER_PIPELINE_STATUS.md) with:
 - GKE Cluster name, zone, and node topology.
 - Immutable coordinator image digest.
 - Timestamps and raw response outputs from each acceptance check.
-- Mark Gate G3 as **PASS**.
+- Mark Stage 3 / Gate G3 as **PASS**.
 
 ### Gate 3K: Teardown & Cost Guardrails
-When testing is complete, destroy all cloud resources to prevent ongoing charges:
+When testing is complete, destroy all GKE cluster resources to stop ongoing compute charges:
 ```bash
 ATLASOPS_TEARDOWN_ACK=DELETE_ATLASOPS_DEVELOPMENT_RESOURCES \
-bash infra/teardown.sh "$PROJECT_ID" us-central1 atlasops-cluster --apply
+bash infra/teardown.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 ```
 - Verify 0 remaining GKE clusters: `gcloud container clusters list`
+- If you wish to delete the container image repository to avoid storage charges:
+  `gcloud artifacts repositories delete atlasops --location="$REGION" --project="$PROJECT_ID" --quiet`
 - Confirm $0 ongoing compute billing.

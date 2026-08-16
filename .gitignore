@@ -31,3 +31,4 @@ docs/AtlasOps_slides.pdf
 *.token
 secrets/
 .secrets/
+scratch/

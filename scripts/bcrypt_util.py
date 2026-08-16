@@ -10,9 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import os
 import secrets
-import shutil
 import struct
-import subprocess
 
 # ----------------------------------------------------------------------
 # Blowfish Standard Pi Tables
@@ -350,26 +348,6 @@ def hash_bcrypt(password: str | bytes, cost: int | None = None, salt: bytes | No
         cost = int(os.environ.get("ATLASOPS_BCRYPT_COST", "10"))
     if cost < 4 or cost > 31:
         raise ValueError(f"Bcrypt cost must be between 4 and 31 (got {cost})")
-
-    # Fast path: check for external htpasswd / bcrypt CLI if available
-    htpasswd_path = shutil.which("htpasswd")
-    if htpasswd_path and salt is None:
-        try:
-            pwd_str = password if isinstance(password, str) else password.decode("utf-8")
-            res = subprocess.run(
-                [htpasswd_path, "-nbBC", str(cost), "", pwd_str],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            line = res.stdout.strip()
-            if ":" in line:
-                hash_part = line.split(":", 1)[1].strip()
-                if hash_part.startswith("$2y$") or hash_part.startswith("$2b$"):
-                    hash_part = "$2a$" + hash_part[4:]
-                return hash_part
-        except Exception:
-            pass
 
     # Pure Python implementation
     if isinstance(password, str):

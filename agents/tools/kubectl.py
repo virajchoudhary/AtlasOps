@@ -1,11 +1,15 @@
 """kubectl tool wrappers — real subprocess calls to kubectl."""
 
 import json
+import os
 import subprocess
 from typing import Any
 
 
 def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
+    ctx = os.getenv("KUBECONFIG_CONTEXT", "").strip()
+    if ctx and len(cmd) > 1 and cmd[0] == "kubectl" and "--context" not in cmd:
+        cmd = [cmd[0], "--context", ctx] + cmd[1:]
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout

@@ -32,3 +32,6 @@ docs/AtlasOps_slides.pdf
 secrets/
 .secrets/
 scratch/
+
+# Runtime trajectory artifacts
+artifacts/trajectories/

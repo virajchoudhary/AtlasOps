@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-08-17T05:19:37Z",
+  "context": "kind-atlasops-local",
+  "stages": {
+    "cluster_nodes": {
+      "success": true,
+      "stdout": "NAME                           STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION                       CONTAINER-RUNTIME\natlasops-local-control-plane   Ready    control-plane   9h    v1.31.0   172.20.0.4    <none>        Debian GNU/Linux 12 (bookworm)   5.15.167.4-microsoft-standard-WSL2   containerd://1.7.18",
+      "stderr": "",
+      "returncode": 0
+    },
+    "all_pods": {
+      "success": true,
+      "stdout": "NAMESPACE            NAME                                                     READY   STATUS    RESTARTS      AGE   IP            NODE                           NOMINATED NODE   READINESS GATES\nargocd               argocd-application-controller-0                          1/1     Running   1 (26m ago)   9h    10.244.0.22   atlasops-local-control-plane   <none>           <none>\nargocd               argocd-applicationset-controller-65c5f6564d-l6g2h        1/1     Running   1 (26m ago)   9h    10.244.0.13   atlasops-local-control-plane   <none>           <none>\nargocd               argocd-redis-6fc549c7f6-8d8jq                            1/1     Running   1 (26m ago)   9h    10.244.0.9    atlasops-local-control-plane   <none>           <none>\nargocd               argocd-repo-server-6d76db9cd7-m452z                      1/1     Running   1 (26m ago)   9h    10.244.0.27   atlasops-local-control-plane   <none>           <none>\nargocd               argocd-server-676448f6d6-94dbg                           1/1     Running   1 (26m ago)   9h    10.244.0.29   atlasops-local-control-plane   <none>           <none>\nchaos-mesh           chaos-controller-manager-58f9887f8c-2zzbk                1/1     Running   1 (26m ago)   8h    10.244.0.32   atlasops-local-control-plane   <none>           <none>\nchaos-mesh           chaos-controller-manager-58f9887f8c-rxddr                1/1     Running   1 (26m ago)   8h    10.244.0.31   atlasops-local-control-plane   <none>           <none>\nchaos-mesh           chaos-controller-manager-58f9887f8c-sn9lj                1/1     Running   2 (26m ago)   8h    10.244.0.26   atlasops-local-control-plane   <none>           <none>\nchaos-mesh           chaos-daemon-qmjbb                                       1/1     Running   1 (26m ago)   8h    10.244.0.23   atlasops-local-control-plane   <none>           <none>\nchaos-mesh           chaos-dashboard-6c4cf4685f-jck5f                         1/1     Running   1 (26m ago)   8h    10.244.0.25   atlasops-local-control-plane   <none>           <none>\ndefault              adservice-5df696df54-fbbrv                               1/1     Running   1 (26m ago)   9h    10.244.0.14   atlasops-local-control-plane   <none>           <none>\ndefault              atlasops-coordinator-58ddc6b7bb-4d299                    1/1     Running   1 (26m ago)   8h    10.244.0.21   atlasops-local-control-plane   <none>           <none>\ndefault              cartservice-c856dc69c-vczdk                              1/1     Running   1 (26m ago)   9h    10.244.0.15   atlasops-local-control-plane   <none>           <none>\ndefault              checkoutservice-b688bdbb8-xb9xl                          1/1     Running   1 (26m ago)   9h    10.244.0.8    atlasops-local-control-plane   <none>           <none>\ndefault              currencyservice-7ff84bf664-frk9q                         1/1     Running   1 (26m ago)   9h    10.244.0.11   atlasops-local-control-plane   <none>           <none>\ndefault              emailservice-699cf6bd4d-kvqzb                            1/1     Running   1 (26m ago)   9h    10.244.0.12   atlasops-local-control-plane   <none>           <none>\ndefault              frontend-5965d68f6f-dzwrd                                1/1     Running   1 (26m ago)   9h    10.244.0.17   atlasops-local-control-plane   <none>           <none>\ndefault              loadgenerator-778b74d968-hw5vh                           1/1     Running   1 (26m ago)   9h    10.244.0.16   atlasops-local-control-plane   <none>           <none>\ndefault              paymentservice-657564d676-pvgfv                          1/1     Running   1 (26m ago)   9h    10.244.0.10   atlasops-local-control-plane   <none>           <none>\ndefault              productcatalogservice-5477df86fd-bdggn                   1/1     Running   1 (26m ago)   9h    10.244.0.4    atlasops-local-control-plane   <none>           <none>\ndefault              recommendationservice-f666f74-ndcm5                      1/1     Running   1 (26m ago)   9h    10.244.0.5    atlasops-local-control-plane   <none>           <none>\ndefault              redis-cart-558f8d8d44-d4mcg                              1/1     Running   1 (26m ago)   9h    10.244.0.6    atlasops-local-control-plane   <none>           <none>\ndefault              shippingservice-77c794d5fd-dk9n6                         1/1     Running   1 (26m ago)   9h    10.244.0.7    atlasops-local-control-plane   <none>           <none>\njaeger               jaeger-5fd7cd5f9-kprjl                                   1/1     Running   1 (26m ago)   9h    10.244.0.19   atlasops-local-control-plane   <none>           <none>\nkube-system          coredns-6f6b679f8f-cbhn9                                 1/1     Running   1 (26m ago)   9h    10.244.0.2    atlasops-local-control-plane   <none>           <none>\nkube-system          coredns-6f6b679f8f-khtzs                                 1/1     Running   1 (26m ago)   9h    10.244.0.30   atlasops-local-control-plane   <none>           <none>\nkube-system          etcd-atlasops-local-control-plane                        1/1     Running   1 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nkube-system          kindnet-dxtvv                                            1/1     Running   1 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nkube-system          kube-apiserver-atlasops-local-control-plane              1/1     Running   1 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nkube-system          kube-controller-manager-atlasops-local-control-plane     1/1     Running   5 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nkube-system          kube-proxy-gn8pm                                         1/1     Running   1 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nkube-system          kube-scheduler-atlasops-local-control-plane              1/1     Running   4 (26m ago)   9h    172.20.0.4    atlasops-local-control-plane   <none>           <none>\nlocal-path-storage   local-path-provisioner-ccc7bf7fc-gpwlz                   1/1     Running   1 (26m ago)   9h    10.244.0.18   atlasops-local-control-plane   <none>           <none>\nmonitoring           alertmanager-prometheus-kube-prometheus-alertmanager-0   2/2     Running   2 (26m ago)   9h    10.244.0.24   atlasops-local-control-plane   <none>           <none>\nmonitoring           prometheus-kube-prometheus-operator-8d77b476-ghqz6       1/1     Running   1 (26m ago)   9h    10.244.0.20   atlasops-local-control-plane   <none>           <none>\nmonitoring           prometheus-kube-state-metrics-78bddfc747-hmspg           1/1     Running   1 (26m ago)   9h    10.244.0.3    atlasops-local-control-plane   <none>           <none>\nmonitoring           prometheus-prometheus-kube-prometheus-prometheus-0       2/2     Running   2 (26m ago)   9h    10.244.0.28   atlasops-local-control-plane   <none>           <none>",
+      "stderr": "",
+      "returncode": 0
+    },
+    "online_boutique": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 10499,
+      "preview": "\n\n\n<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, shrink-to-fit=no\">\n    <meta http-equiv=\"X-UA-Compatibl"
+    },
+    "coordinator_healthz": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 15,
+      "preview": "{\"status\":\"ok\"}"
+    },
+    "prometheus_api": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 3469,
+      "preview": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{\"__name__\":\"up\",\"container\":\"config-reloader\",\"endpoint\":\"reloader-web\",\"instance\":\"10.244.0.24:8080\",\"job\":\"prometheus-kube-prom"
+    },
+    "alertmanager_api": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 1763,
+      "preview": "{\"cluster\":{\"peers\":[],\"status\":\"disabled\"},\"config\":{\"original\":\"global:\\n  resolve_timeout: 5m\\n  http_config:\\n    follow_redirects: true\\n    enable_http2: true\\n  smtp_hello: localhost\\n  smtp_re"
+    },
+    "jaeger_api": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 56,
+      "preview": "{\"data\":[],\"total\":0,\"limit\":0,\"offset\":0,\"errors\":null}"
+    },
+    "argocd_api": {
+      "success": true,
+      "status_code": 200,
+      "bytes_read": 20,
+      "preview": "{\"Version\":\"v3.5.0\"}"
+    },
+    "chaos_mesh_crds": {
+      "success": true,
+      "stdout": "",
+      "stderr": "No resources found",
+      "returncode": 0
+    },
+    "tool_wrappers": {
+      "kubectl_get": {
+        "success": true,
+        "count": 0
+      },
+      "kubectl_describe": {
+        "success": false
+      },
+      "kubectl_logs": {
+        "success": false
+      },
+      "promql_query": {
+        "success": true,
+        "metrics": 12
+      },
+      "alertmanager_list_alerts": {
+        "success": true,
+        "count": 1
+      },
+      "jaeger_search": {
+        "success": true,
+        "count": 0
+      },
+      "argocd_list_apps": {
+        "success": true,
+        "apps": 0
+      }
+    }
+  },
+  "verdict": "PASS"
+}

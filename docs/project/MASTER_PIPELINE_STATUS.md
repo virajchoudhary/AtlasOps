@@ -33,8 +33,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 0** | Freeze provenance and working scope | **G0** | Freeze upstream baseline SHA `bf9bd19`, preserve MIT license, establish repository boundaries. | **PASS** |
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
 | **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
-| **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PENDING** (v1.1 local Kind path implemented; live deployment in progress) |
-| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **BLOCKED (on G3)** |
+| **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** ([PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17) merged; 100% free-local Kind cluster verified) |
+| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **IN PROGRESS / NEXT** |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **BLOCKED (on G4)** |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **BLOCKED (on G5)** |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **BLOCKED (on G6)** |
@@ -66,6 +66,10 @@ This governance document records the repository's alignment with the canonical e
 | **[PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)** | `fix: align objective verifier with frozen chaos manifests and add contract tests` | `fix/verifier-scenario-contract` | All 28 frozen scenarios covered (24 exact manifest targets + 4 reviewed exceptions), dynamic frontend guessing removed, namespace & tier validation | **G2** |
 | **[PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)** | `docs(governance): reconcile stage truth against Pipeline v1.0 and record Gate G2 closure` | `docs/g2-g3-pipeline-reconciliation` | Pipeline v1.0 reconciliation, G2 closure audit, pre-G3 readiness audit | **G2 / G3** |
 | **[PR #13](https://github.com/virajchoudhary/AtlasOps/pull/13)** | `fix: make environment verification authoritative before communications` | `fix/runtime-verification-truth` | Reorder coordinator execution (Remediation -> Verifier -> Comms), verification-aware Comms, trajectory persistence after verifier, fail-closed benchmark & reward truth | **Pre-G4 / G2** |
+| **[PR #14](https://github.com/virajchoudhary/AtlasOps/pull/14)** | `feat: establish static G3 readiness for Jaeger and Argo CD with non-destructive acceptance plan` | `feat/g3-observability-readiness` | Static G3 readiness, low-resource Jaeger & Argo CD configs, non-destructive acceptance matrix | **G3** |
+| **[PR #15](https://github.com/virajchoudhary/AtlasOps/pull/15)** | `docs: establish Stage 3 operator guide, preflight sequence, and local secret helper` | `docs/stage-3-operator-preflight-guide` | Stage 3 operator guide, preflight checklist, and runtime secret generator | **G3** |
+| **[PR #16](https://github.com/virajchoudhary/AtlasOps/pull/16)** | `fix(infra): resolve fresh-cluster bootstrap ordering and Argo CD account activation contract` | `fix/infra-bootstrap-lifecycle` | Fresh-cluster bootstrap ordering, declarative Argo password verifier, single-pass bootstrap lifecycle | **G3** |
+| **[PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17)** | `feat(infra): establish free local Kind Stage 3 environment` | `feat/stage3-free-local-kind` | 100% free-local Kind cluster deployment (Pipeline v1.1), low-resource profiles, live 7-stage workload validation, and non-destructive tool acceptance | **G3** |
 
 ---
 
@@ -89,7 +93,7 @@ This governance document records the repository's alignment with the canonical e
   - Scenario catalogue contract formalized (28 static, 10 dynamic default) ([PR #8](https://github.com/virajchoudhary/AtlasOps/pull/8)).
   - SRE Tool inventory and deterministic role-based ACL frozen (19 exposed, 3 unexposed) ([PR #9](https://github.com/virajchoudhary/AtlasOps/pull/9)).
   - Objective Environment Verifier (`agents/verifier.py`): all 28 frozen scenarios covered, 24 standard manifests use exact manifest-target equality, 4 non-standard manifests use explicit reviewed exception contracts, tier and namespace agreement are validated, and dynamic frontend fallback is removed ([PR #10](https://github.com/virajchoudhary/AtlasOps/pull/10), [PR #11](https://github.com/virajchoudhary/AtlasOps/pull/11)).
-- **Runtime Environment-Truth Contract [IMPLEMENTED / MOCKED-TESTED / LIVE UNVERIFIED] ([PR #13](https://github.com/virajchoudhary/AtlasOps/pull/13))**:
+- **Runtime Environment-Truth Contract [IMPLEMENTED / MOCKED-TESTED / LIVE VERIFIED] ([PR #13](https://github.com/virajchoudhary/AtlasOps/pull/13), [PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17))**:
   - Coordinator execution reordered to canonical pipeline: $\text{Triage} \rightarrow \text{Diagnosis} \rightarrow \text{Remediation} \rightarrow \mathbf{Verifier} \rightarrow \mathbf{Comms}$.
   - Comms agent input context and closure messages receive objective verification evidence (`env_resolved`, `agent_claimed_resolved`, `verification`).
   - Trajectory JSON files are persisted to disk only after objective verification metadata is attached.
@@ -97,27 +101,20 @@ This governance document records the repository's alignment with the canonical e
 - **Offline Benchmark Path to Judge Proven**:
   - `test_benchmark_single_scenario_reaches_judge_offline` in `tests/test_bench_runner.py` proves `run_scenario` orchestrates chaos injection, enriches alert with `scenario_id`, invokes multi-agent handling, passes full trajectory to `judge_trajectory(incident, tier="single_fault")`, computes centralized reward contract, and triggers cluster reset without real Kubernetes or cloud dependencies ([PR #12](https://github.com/virajchoudhary/AtlasOps/pull/12)).
 - **Manifests Validated**:
-  - Kubernetes RBAC, coordinator templates, Prometheus rules, and values files validated via static contract tests (`test_runtime_infra_contract.py`, `test_infra_contract.py`).
+  - Kubernetes RBAC, coordinator templates, Prometheus rules, and values files validated via static contract tests (`test_runtime_infra_contract.py`, `test_infra_contract.py`, `test_local_infra_contract.py`).
   - Infrastructure shell scripts pass static syntax validation (`bash -n`).
-- **Regression Suite**: 410 tests passing green.
+- **Regression Suite**: 463 tests passing green.
 
-### Gate G3: Controlled SRE Environment — [PENDING / STATIC READINESS ESTABLISHED]
-- **Prerequisites Prepared (Stage 3A)**: Local CLI toolchain verified (Git Bash, `gcloud` 580.0.0, `helm` v4.2.4, `kubectl` v1.34.1, `docker` 29.4.0).
-- **Exact Pinned Infrastructure Baseline**:
-  - **Online Boutique**: v0.10.0 pinned to immutable commit `98e60f5ee0b643cc00bceb71e6efb89617740432`.
-  - **Required Boutique Deployments (12)**: `currencyservice`, `loadgenerator`, `productcatalogservice`, `checkoutservice`, `shippingservice`, `cartservice`, `redis-cart`, `emailservice`, `paymentservice`, `frontend`, `recommendationservice`, `adservice`.
-  - **Pinned Helm Chart Versions**:
-    - `PROMETHEUS_CHART_VERSION="88.3.0"` (`prometheus-community/kube-prometheus-stack`)
-    - `JAEGER_CHART_VERSION="4.12.0"` (`jaegertracing/jaeger`)
-    - `ARGOCD_CHART_VERSION="10.3.2"` (`argo/argo-cd`)
-    - `CHAOS_MESH_CHART_VERSION="2.8.3"` (`chaos-mesh/chaos-mesh`)
-- **Static Observability & Tooling Readiness**:
-  - **Jaeger**: Configured with private ClusterIP and bounded development resources (`requests: cpu 100m, memory 256Mi`; `limits: cpu 500m, memory 512Mi`); wired into `infra/setup_impl.sh` and coordinator `JAEGER_URL`.
-  - **Argo CD**: Enabled as canonical G3 component with ClusterIP; configured with coherent in-cluster development HTTP transport (`ARGOCD_VERIFY_TLS: "false"`, `server.extraArgs: ["--insecure"]`), required SecretKeyRef credentials (`argocd-user`/`argocd-pass`), and non-destructive `argocd_list_apps` contract (0 Applications valid proof of API reachability).
-  - **Canonical Install Order**: Online Boutique $\rightarrow$ Coordinator $\rightarrow$ Prometheus/Alertmanager $\rightarrow$ Jaeger $\rightarrow$ Argo CD $\rightarrow$ Chaos Mesh.
-  - **Acceptance Plan**: Non-destructive acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md` referencing all 28 canonical frozen scenarios.
-- **Zero-Cost Boundary**: 0 cloud resources created, $0.00 billing incurred.
-- **Pipeline v1.1 Free-First Local Path**: `infra/local/` provides complete local Kind-based deployment with zero gcloud dependency. GKE path preserved in `infra/setup_impl.sh` as optional portability code.
+### Gate G3: Controlled SRE Environment — [PASS]
+- **Cluster Topology**: Single-node local Kind cluster `atlasops-local` (`kindest/node:v1.31.0` on containerd `1.7.18`, Kind `v0.32.0`, context `kind-atlasops-local`) on Docker Desktop 29.7.2 ([PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17)).
+- **Online Boutique**: v0.10.0 pinned to immutable commit `98e60f5ee0b643cc00bceb71e6efb89617740432`. All 12 deployments healthy and available (`1/1 Running`). NodePort `30080` verified live (`HTTP 200 OK`, Title `Online Boutique`).
+- **Prometheus & Alertmanager**: Chart `kube-prometheus-stack` v88.3.0 in `monitoring` namespace. Low-resource profile, custom `PrometheusRule: atlasops-online-boutique` active, query API returning HTTP 200 with 12 active scrape targets.
+- **Jaeger**: Chart `jaegertracing/jaeger` v4.12.0 in `jaeger` namespace. In-memory all-in-one backend responding HTTP 200 to `/api/services`.
+- **Argo CD**: Chart `argo/argo-cd` v10.3.2 in `argocd` namespace. Dedicated `atlasops` read-only user provisioned via bcrypt hash overlay; REST API responding HTTP 200.
+- **Chaos Mesh**: Chart `chaos-mesh/chaos-mesh` v2.8.3 in `chaos-mesh` namespace. Controllers and CRDs active.
+- **AtlasOps Coordinator**: Image `atlasops-coordinator:g3-local` built locally with non-root UID 10001, loaded directly into Kind node, deployed with ServiceAccount/RBAC, `/healthz` returning HTTP 200 `{"status": "ok"}`.
+- **Real Non-Destructive Tool Acceptance**: Full suite of agent tool wrappers (`agents.tools.kubectl`, `prometheus`, `alertmanager`, `jaeger`, `argocd`) executed live and verified.
+- **Zero Cloud Cost**: 0 cloud resources provisioned, **$0.00** billing incurred.
 
 ---
 

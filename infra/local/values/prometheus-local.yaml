@@ -2,7 +2,7 @@
 # Pipeline v1.1 Free-First
 #
 # Preserves: Prometheus, Alertmanager, kube-state-metrics
-# Disables: Grafana (not required for Stage 3 gate)
+# Disables: Grafana (not required for Stage 3/4 gate), admissionWebhooks (avoids webhook patch timeout)
 # Reduces: resource requests for Kind single-node
 
 grafana:
@@ -19,12 +19,13 @@ prometheus:
         cpu: 500m
         memory: 512Mi
     storageSpec: {}
-    # Disable PVC — use emptyDir for local ephemeral
     replicas: 1
     serviceMonitorSelectorNilUsesHelmValue: false
     podMonitorSelectorNilUsesHelmValue: false
 
 alertmanager:
+  service:
+    type: ClusterIP
   alertmanagerSpec:
     resources:
       requests:
@@ -36,6 +37,31 @@ alertmanager:
     retention: 6h
     storage: {}
     replicas: 1
+    secrets:
+      - atlasops-alertmanager-webhook
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: discard
+      group_by: [alertname, namespace, deployment]
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 1h
+      routes:
+        - receiver: atlasops-coordinator
+          matchers:
+            - atlasops_route="coordinator"
+    receivers:
+      - name: discard
+      - name: atlasops-coordinator
+        webhook_configs:
+          - url: http://atlasops-coordinator-svc.default.svc.cluster.local:9099/webhook
+            send_resolved: true
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/atlasops-alertmanager-webhook/alertmanager-webhook-secret
 
 kube-state-metrics:
   resources:
@@ -47,6 +73,8 @@ kube-state-metrics:
       memory: 128Mi
 
 prometheusOperator:
+  admissionWebhooks:
+    enabled: false
   resources:
     requests:
       cpu: 50m
@@ -55,22 +83,20 @@ prometheusOperator:
       cpu: 200m
       memory: 256Mi
 
-# Disable node-exporter to reduce resource usage on Kind
 nodeExporter:
   enabled: false
 
-# Disable kubeProxy metrics (not meaningful on Kind)
 kubeProxy:
   enabled: false
 
-# Disable etcd metrics (not accessible on Kind easily)
 kubeEtcd:
   enabled: false
 
-# Disable scheduler metrics
 kubeScheduler:
   enabled: false
 
-# Disable controller-manager metrics
 kubeControllerManager:
+  enabled: false
+
+coreDns:
   enabled: false

@@ -409,6 +409,7 @@ def _narrate_tool_call(role: str, tool: str, args: dict) -> str:
         "argocd_list_apps":      lambda a: "Checking Argo CD for recent deployments...",
         "argocd_app_history":    lambda a: f"Checking deploy history for {a.get('app','')}...",
         "argocd_rollback":       lambda a: f"Rolling back {a.get('app','')} to revision {a.get('revision','')}...",
+        "chaos_stop_experiment": lambda a: f"Stopping Chaos Mesh experiment {a.get('kind','')} {a.get('name','')} in {a.get('namespace','chaos-mesh')}...",
         "gcloud_logs_read":      lambda a: f"Reading Cloud Logging: `{str(a.get('filter_query',''))[:80]}`",
         "cloud_monitoring_query":lambda a: f"Querying GCP metric: {a.get('metric_type','')}",
         "alertmanager_silence":  lambda a: f"Silencing alert for {a.get('duration_minutes',30)} min — suppressing noise...",
@@ -427,13 +428,14 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
     if tool == "slack_post_update":
         return _narrate_slack_post_tool_result(output)
     result_narrations = {
-        "kubectl_get":       "Got cluster state.",
-        "kubectl_logs":      "Got pod logs — scanning for stack traces and errors.",
-        "promql_query":      f"Got metric data — analysing values.",
-        "jaeger_search":     f"Found traces — checking for slow spans.",
-        "argocd_rollback":   "✅ Rollback executed.",
-        "kubectl_scale":     "✅ Scale applied.",
-        "postmortem_draft":  "✅ Postmortem saved.",
+        "kubectl_get":            "Got cluster state.",
+        "kubectl_logs":           "Got pod logs — scanning for stack traces and errors.",
+        "promql_query":           f"Got metric data — analysing values.",
+        "jaeger_search":          f"Found traces — checking for slow spans.",
+        "argocd_rollback":        "✅ Rollback executed.",
+        "chaos_stop_experiment":  "✅ Chaos experiment stopped and cleared.",
+        "kubectl_scale":          "✅ Scale applied.",
+        "postmortem_draft":       "✅ Postmortem saved.",
     }
     return result_narrations.get(tool, f"{tool} completed.")
 
@@ -469,6 +471,16 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
     "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
     "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
+    "chaos_stop_experiment": {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["PodChaos", "StressChaos", "NetworkChaos", "DNSChaos", "IOChaos", "TimeChaos"]},
+            "name": {"type": "string", "description": "The exact name of the active Chaos Mesh experiment resource."},
+            "namespace": {"type": "string", "default": "chaos-mesh", "description": "Namespace of the chaos resource (default: chaos-mesh)."},
+        },
+        "required": ["kind", "name"],
+        "additionalProperties": False,
+    },
     "gcloud_logs_read": {"type": "object", "properties": {"filter_query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["filter_query"], "additionalProperties": False},
     "cloud_monitoring_query": {"type": "object", "properties": {"metric_type": {"type": "string"}, "lookback_seconds": {"type": "integer"}}, "required": ["metric_type"], "additionalProperties": False},
     "alertmanager_list_alerts": {"type": "object", "properties": {"active_only": {"type": "boolean"}}, "additionalProperties": False},
@@ -529,6 +541,11 @@ def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: d
                 return "replicas must stay within 0..20"
         if tool == "argocd_rollback" and severity in {"UNKNOWN", "P3"}:
             return "rollback requires confirmed incident severity P0/P1/P2"
+        if tool == "chaos_stop_experiment":
+            kind = str(args.get("kind", "")).strip().lower()
+            allowed = {"podchaos", "stresschaos", "networkchaos", "dnschaos", "iochaos", "timechaos"}
+            if kind not in allowed:
+                return f"chaos kind '{args.get('kind')}' not allowed; must be one of {sorted(allowed)}"
     return None
 
 

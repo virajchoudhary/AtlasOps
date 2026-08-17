@@ -27,6 +27,7 @@ EXPECTED_ROLE_TOOLS = {
     "remediation": {
         "alertmanager_silence",
         "argocd_rollback",
+        "chaos_stop_experiment",
         "kubectl_describe",
         "kubectl_get",
         "kubectl_rollout",
@@ -43,8 +44,8 @@ def test_registry_and_agent_exposure_counts_are_exact():
     from agents.tools import REGISTERED_TOOLS, TOOL_REGISTRY
 
     assert REGISTERED_TOOLS == frozenset(TOOL_REGISTRY)
-    assert len(REGISTERED_TOOLS) == 22
-    assert len(AGENT_EXPOSED_TOOLS) == 19
+    assert len(REGISTERED_TOOLS) == 23
+    assert len(AGENT_EXPOSED_TOOLS) == 20
 
 
 def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
@@ -52,7 +53,7 @@ def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
     from agents.tools import REGISTERED_TOOLS
 
     assert set(ROLE_ALLOWED_TOOLS) == {"triage", "diagnosis", "remediation", "comms"}
-    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 12, "remediation": 8, "comms": 2}
+    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 12, "remediation": 9, "comms": 2}
     assert {role: set(tools) for role, tools in ROLE_ALLOWED_TOOLS.items()} == EXPECTED_ROLE_TOOLS
     assert all(tools <= REGISTERED_TOOLS for tools in ROLE_ALLOWED_TOOLS.values())
 
@@ -88,6 +89,7 @@ def test_side_effect_categories_are_explicit_and_complete():
     assert CLUSTER_MUTATING_TOOLS == {
         "alertmanager_silence",
         "argocd_rollback",
+        "chaos_stop_experiment",
         "kubectl_rollout",
         "kubectl_scale",
     }

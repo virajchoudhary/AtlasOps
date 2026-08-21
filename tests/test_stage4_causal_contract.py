@@ -429,6 +429,127 @@ class TestCoordinatorRemediationContract:
         assert len(calls) == 1
         assert calls[0]["function"]["name"] == "get_test_value"
 
+    def test_native_tool_call_with_empty_arguments_executes_not_crashes(self) -> None:
+        """Providers emit `arguments: ""` for no-argument calls; the loop must
+        treat that as no arguments instead of raising JSONDecodeError."""
+        import asyncio
+        from agents.coordinator import call_agent
+
+        mock_response_turn0 = MagicMock()
+        mock_response_turn0.json.return_value = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call_empty_args",
+                        "type": "function",
+                        "function": {"name": "promql_query", "arguments": ""},
+                    }],
+                }
+            }]
+        }
+        mock_response_turn0.raise_for_status = MagicMock()
+
+        mock_response_turn1 = MagicMock()
+        mock_response_turn1.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": '{"outcome": "unresolved"}'}}]
+        }
+        mock_response_turn1.raise_for_status = MagicMock()
+        mock_response_turn2 = MagicMock()
+        mock_response_turn2.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": '{"outcome": "unresolved"}'}}]
+        }
+        mock_response_turn2.raise_for_status = MagicMock()
+
+        with patch(
+            "agents.coordinator.post_with_retry",
+            side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
+        ) as mock_post:
+            with patch("agents.coordinator.require_audit_log"):
+                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-empty-args"}))
+
+        # The loop survived, the observation was fed back, and the conclusion ran
+        # (turn 1's tool-free conclusion triggers the single remediation retry,
+        # so the final conclusion lands on turn 2).
+        assert mock_post.call_count == 3
+        roles = [m.get("role") for m in mock_post.call_args_list[2][0][2]["messages"]]
+        assert "tool" in roles
+        final = result["final"]
+        assert final["outcome"] == "unresolved"
+        # promql_query(**{}) fails inside the executor (missing required arg) and is
+        # reported as a failed tool result rather than an incident abort.
+        assert len(final["executed_actions"]) == 1
+        assert final["executed_actions"][0]["tool"] == "promql_query"
+        assert final["executed_actions"][0]["success"] is False
+
+    def test_native_tool_call_with_malformed_arguments_returns_tool_error_not_crash(self) -> None:
+        """Truncated/malformed arguments JSON must become a tool-level error the
+        model can correct, not an uncaught JSONDecodeError that aborts the incident."""
+        import asyncio
+        from agents.coordinator import call_agent
+
+        mock_response_turn0 = MagicMock()
+        mock_response_turn0.json.return_value = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call_bad_args",
+                        "type": "function",
+                        "function": {
+                            "name": "chaos_stop_experiment",
+                            "arguments": '{"kind": "StressChaos", "name": "sf-002-pay',
+                        },
+                    }],
+                }
+            }]
+        }
+        mock_response_turn0.raise_for_status = MagicMock()
+
+        mock_response_turn1 = MagicMock()
+        mock_response_turn1.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": '{"outcome": "unresolved"}'}}]
+        }
+        mock_response_turn1.raise_for_status = MagicMock()
+        mock_response_turn2 = MagicMock()
+        mock_response_turn2.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": '{"outcome": "unresolved"}'}}]
+        }
+        mock_response_turn2.raise_for_status = MagicMock()
+
+        with patch(
+            "agents.coordinator.post_with_retry",
+            side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
+        ) as mock_post:
+            with patch("agents.coordinator.require_audit_log"):
+                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-bad-args"}))
+
+        assert mock_post.call_count == 3
+        # Blocked before the executor: nothing executed, error fed back as a tool message.
+        final = result["final"]
+        assert final["executed_actions"] == []
+        assert final["actions_taken"] == []
+        assert result["trajectory"][0]["invalid_arguments"] is True
+        tool_messages = [
+            m for m in mock_post.call_args_list[2][0][2]["messages"] if m.get("role") == "tool"
+        ]
+        assert tool_messages and "not valid JSON" in tool_messages[0]["content"]
+
+    def test_parse_tool_arguments_direct_cases(self) -> None:
+        from agents.coordinator import _parse_tool_arguments
+
+        assert _parse_tool_arguments("fn", None) == ({}, None)
+        assert _parse_tool_arguments("fn", "") == ({}, None)
+        assert _parse_tool_arguments("fn", "   ") == ({}, None)
+        assert _parse_tool_arguments("fn", {"a": 1}) == ({"a": 1}, None)
+        assert _parse_tool_arguments("fn", '{"a": 1}') == ({"a": 1}, None)
+        args, err = _parse_tool_arguments("fn", '["a", "b"]')
+        assert args is None and "JSON object" in err
+        args, err = _parse_tool_arguments("fn", '{"broken": ')
+        assert args is None and "not valid JSON" in err
+
     def test_remediation_retry_tool_call_still_enforces_namespace_policy(self) -> None:
         import asyncio
         from agents.circuit_breaker import circuit_breaker

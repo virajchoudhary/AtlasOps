@@ -166,6 +166,31 @@ def _normalize_assistant_tool_calls(msg: dict[str, Any]) -> list[dict[str, Any]]
     return _extract_tool_calls_from_content(msg.get("content") or "")
 
 
+def _parse_tool_arguments(fn_name: str, raw: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse native tool-call arguments without crashing the incident loop.
+
+    OpenAI-compatible providers emit ``arguments`` as a JSON string, but the
+    empty string (no-argument calls) and truncated/malformed JSON both occur in
+    practice. Empty input parses to no arguments; anything unparseable becomes
+    a tool-level error the model can correct on its next turn instead of an
+    uncaught JSONDecodeError aborting the whole incident.
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return {}, None
+    if isinstance(raw, dict):
+        return raw, None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None, (
+            f"tool `{fn_name}` arguments are not valid JSON: {str(raw)[:120]!r}. "
+            "Re-issue the tool call with a valid JSON object of arguments."
+        )
+    if not isinstance(parsed, dict):
+        return None, f"tool `{fn_name}` arguments must be a JSON object, got {type(parsed).__name__}."
+    return parsed, None
+
+
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis":   "Based on the tool results above, output ONLY a JSON object with keys: root_cause, confidence, evidence, recommended_fix. No prose.",
@@ -308,7 +333,36 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
 
             for tc in msg["tool_calls"]:
                 fn_name = tc["function"]["name"]
-                fn_args = json.loads(tc["function"]["arguments"])
+                fn_args, args_error = _parse_tool_arguments(fn_name, tc["function"].get("arguments"))
+                if args_error is not None:
+                    tool_output = {"success": False, "error": args_error}
+                    audit_log.record(
+                        incident_id=incident_id,
+                        agent_role=role,
+                        action_type="tool_result",
+                        tool_name=fn_name,
+                        result_summary=args_error,
+                        policy_check="invalid_tool_arguments",
+                    )
+                    thought_emit(role, "tool_result", f"⚠️ invalid tool arguments: {args_error}", tool=fn_name)
+                    trajectory.append(
+                        {
+                            "role": role,
+                            "turn": turn,
+                            "tool": fn_name,
+                            "raw_arguments": tc["function"].get("arguments"),
+                            "output": tool_output,
+                            "invalid_arguments": True,
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": json.dumps(tool_output),
+                        }
+                    )
+                    continue
                 policy_error = _check_tool_policy(role, fn_name, fn_args, user_input)
                 if policy_error:
                     tool_output = {"success": False, "error": policy_error}

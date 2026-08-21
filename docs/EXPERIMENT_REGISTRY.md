@@ -11,10 +11,65 @@ This registry tracks all material empirical runs, benchmarks, and multi-agent ev
 | `EXP-STAGE4-SF002-001` | 2026-08-17T05:45:27Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **True** (Harness Forced) | **INVALID** | **$0.00** |
 | `EXP-STAGE4-SF002-002` | 2026-08-17T15:23:07Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
 | `EXP-STAGE4-SF002-003` | 2026-08-17T16:50:28Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
+| `EXP-STAGE4-SF002-004` | 2026-08-21T16:54:21Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
 
 ---
 
 ## Detailed Experiment Logs
+
+### Run `EXP-STAGE4-SF002-004` (Stage 4 Causal Golden Incident — Post-PR #19 Merge) — [FAIL (Valid Baseline)]
+
+> [!NOTE]
+> **Scientific Significance**:
+> First Stage 4 run executed against the merged PR #19 harness (`main` at `a099417643834923a4c122d66f7ca1cf3edb5192`) with the complete anti-leakage and evidence-immutability contract active:
+> 1. Model-visible alert contained no scenario identity or chaos experiment name (leakage tripwires enforced).
+> 2. Objective verifier resolved the **frozen `single_fault/sf-002` spec** via the explicit evaluation-only `scenario_id` channel (`verification_report.scenario_id` is populated; no dynamic synthesis).
+> 3. The unfinetuned `qwen2.5:1.5b` remediation agent proposed only a read-only inspection action (`kubectl_describe`) in prose, never emitted a mutating tool call even after the single forced `tool_choice="required"` retry, and honestly concluded `unresolved` with empty `executed_actions`.
+> 4. No fabricated success was recorded; `agent_claimed_resolved=False`; comms summary did not claim resolution.
+> 5. Harness cleanup ran strictly after verdict persistence and is recorded in the immutable sidecar `EXP-STAGE4-SF002-004.cleanup.json`.
+>
+> Primary failure classification: **MODEL CAPABILITY** (baseline model cannot yet drive the mutating tool loop). This is the honest pre-training baseline motivating Stage 6/7.
+
+- **Timestamp**: `2026-08-21T16:54:21Z` to `2026-08-21T16:58:50Z` (Duration: 268.82s)
+- **Pipeline Stage / Gate**: Stage 4 / Gate G4
+- **Branch / Main SHA**: run executed from merged `main` @ `a099417643834923a4c122d66f7ca1cf3edb5192`
+- **Scenario ID**: `single_fault/sf-002` (`sf-002-paymentservice-cpu`)
+- **Tier**: `single_fault`
+- **Fault Type**: Chaos Mesh `StressChaos` CPU stress on `paymentservice` in `default` namespace (4 workers, 90% load, 10m duration)
+- **Environment**: Local Kind `atlasops-local` (`kindest/node:v1.31.0`, Kind v0.32.0, Docker Desktop 29.7.2); Ollama local container serving `qwen2.5:1.5b`
+- **Chaos Inventory**: pre-injection zero CRDs cluster-wide; exactly one (`StressChaos/sf-002-paymentservice-cpu`) between injection and verification; zero after post-verdict cleanup
+- **Multi-Agent Execution**:
+  - **Incident ID**: `inc-1787331276-80f915`
+  - **Triage Agent**: Severity `P1`, paymentservice blast radius.
+  - **Diagnosis Agent**: category `resource`; latency-based hypothesis with one `promql_query` evidence item.
+  - **Approval Gate**: mode `approve`, severity `P1`, decision `timeout` (auto-approve policy), recorded in incident record.
+  - **Remediation Agent**: proposed read-only `kubectl_describe` only; `executed_actions=[]`; outcome honestly normalized to `unresolved`.
+  - **Objective Environment Verifier** (frozen spec): `workload_paymentservice_ready` passed; `chaos_mesh_cleared` FAILED (`StressChaos/sf-002-paymentservice-cpu` still active); `env_resolved=False`.
+  - **Comms Agent**: executed post-verification; summary consistent with unresolved state.
+- **15-Point Causal Predicate Evaluation**:
+  - `[PASS] 1_baseline_healthy`
+  - `[PASS] 2_injection_success`
+  - `[PASS] 3_fault_observed_pre_trigger`
+  - `[PASS] 4_trigger_delivered`
+  - `[PASS] 5_triage_valid`
+  - `[PASS] 6_diagnosis_valid`
+  - `[PASS] 7_diagnosis_truth_match`
+  - `[PASS] 8_approval_satisfied`
+  - `[FAIL] 9_remediation_mutating_tool_executed`
+  - `[FAIL] 10_remediation_tool_success`
+  - `[FAIL] 11_remediation_target_match`
+  - `[PASS] 12_no_harness_repair_pre_verification`
+  - `[FAIL] 13_objective_env_resolved`
+  - `[PASS] 14_comms_executed`
+  - `[PASS] 15_evidence_persisted`
+- **Evidence Artifacts**:
+  - Primary record: `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.json` (SHA256 `7a8b25aa8601a880…`)
+  - Cleanup sidecar: `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.cleanup.json` (SHA256 `3efc65bd84398007…`)
+  - Console transcript: `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.runlog.txt`
+- **Outcome**: **FAIL (Causally Valid Baseline)** — Gate G4 remains IN PROGRESS / BLOCKED
+- **Cost**: **$0.00**
+
+---
 
 ### Run `EXP-STAGE4-SF002-003` (Stage 4 Causal Golden Incident Rerun with Retry & Allowlist) — [FAIL (Valid Baseline)]
 

@@ -539,7 +539,7 @@ class TestExecutableBootstrapLifecycle:
             text=True,
             cwd=str(Path.cwd()),
         )
-        if res.returncode != 0 and "repo argo not found" in res.stderr:
+        if res.returncode != 0 and ("repo argo not found" in res.stderr or "no cached repo found" in res.stderr):
             pytest.skip(f"Helm argo repo not resolved: {res.stderr.strip()}")
         assert res.returncode == 0, f"helm template failed: {res.stderr}"
 

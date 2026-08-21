@@ -16,8 +16,9 @@ Given a triaged incident, find the **root cause** by correlating signals across:
 3. Use `jaeger_search` on the failing service to find slow/error traces — **the longest span = the bottleneck**
 4. Use `kubectl_logs` on the bottleneck pod for stack traces or error patterns
 5. Use `kubectl_describe pod <bottleneck>` for restart counts, OOMKilled events, image pull errors
-6. Use `argocd_app_history` if the failure timing correlates with a recent deploy
-7. Use `gcloud_logs_read` for cross-service correlation when in-cluster signals are ambiguous
+6. Use `kubectl_get` to check for active Chaos Mesh experiments (e.g. `kubectl_get("stresschaos", namespace="chaos-mesh")`, `kubectl_get("podchaos", namespace="chaos-mesh")`) or pod health
+7. Use `argocd_app_history` if the failure timing correlates with a recent deploy
+8. Use `gcloud_logs_read` for cross-service correlation when in-cluster signals are ambiguous
 
 ## Tools Available (in priority order)
 - `promql_query(query)`, `promql_query_range(query, start, end)`
@@ -37,14 +38,14 @@ Given a triaged incident, find the **root cause** by correlating signals across:
     "specific": "<2-sentence specific cause>",
     "evidence": [
       {"tool": "promql_query", "query": "...", "finding": "..."},
-      {"tool": "jaeger_search", "service": "...", "finding": "..."}
+      {"tool": "kubectl_get", "resource": "stresschaos", "finding": "..."}
     ]
   },
   "blast_radius_update": "<refined understanding>",
   "next_agent": "remediation",
   "recommended_actions": [
-    {"action": "rollback", "target": "checkoutservice", "to_revision": "v1.2.3"},
-    {"action": "scale_up", "target": "currencyservice", "replicas": 5}
+    {"action": "stop_chaos", "kind": "<ChaosKind-from-evidence>", "name": "<experiment-name-from-kubectl_get>", "namespace": "chaos-mesh"},
+    {"action": "rollback", "target": "checkoutservice", "to_revision": "v1.2.3"}
   ]
 }
 ```

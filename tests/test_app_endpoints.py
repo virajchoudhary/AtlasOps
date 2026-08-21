@@ -4,6 +4,7 @@ These tests mock external side effects so they can run in CI without a cluster.
 """
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,8 +12,15 @@ from fastapi.testclient import TestClient
 
 
 def _client():
+    import app as app_module
     from app import app
-    return TestClient(app)
+
+    headers: dict[str, str] = {}
+    key = app_module._API_KEY or os.environ.get("ATLASOPS_API_KEY")
+    if key:
+        headers["X-AtlasOps-Key"] = key
+        headers["X-API-Key"] = key
+    return TestClient(app, headers=headers)
 
 
 def test_health_endpoint_ok():

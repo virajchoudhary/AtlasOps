@@ -6,7 +6,7 @@ This is a concise current classification, not a complete implementation audit. F
 | Area | Baseline status | Project treatment |
 |---|---|---|
 | Coordinator / four-agent flow | IMPLEMENTED / STATICALLY PACKAGED | Dedicated non-root 9099 container, private Service, safe probe, ConfigMap/Secret references, and bounded RBAC; live rollout/model/tool execution unverified |
-| SRE tool policy | STATICALLY VALIDATED | 22 wrappers are registered, 19 are exposed through deterministic role ACLs, and 3 are intentionally unexposed. Cluster mutations, external communications, filesystem writes, and high-risk execution have separate side-effect classifications. Registration/exposure does not guarantee operational availability; Argo and other live integrations remain configuration-dependent and unverified. |
+| SRE tool policy | STATICALLY VALIDATED | 23 wrappers are registered, 20 are exposed through deterministic role ACLs, and 3 are intentionally unexposed. Cluster mutations, external communications, filesystem writes, and high-risk execution have separate side-effect classifications. Registration/exposure does not guarantee operational availability; Argo and other live integrations remain configuration-dependent and unverified. Chaos deletion (`chaos_stop_experiment`) is remediation-only and namespace-allowlisted to `chaos-mesh`. |
 | Safety/approval controls | IMPLEMENTED | Preserve + validate |
 | Benchmark runner | REPAIRED | Stage 1B moved tier derivation before judge invocation, added mocked regression coverage, and enforced F821 in CI. Real GKE/Chaos benchmark execution remains UNVERIFIED; published benchmark results remain UNREPRODUCED. |
 | SFT pipeline | IMPLEMENTED IN CODE | Reproduce later |

@@ -35,3 +35,6 @@ scratch/
 
 # Runtime trajectory artifacts
 artifacts/trajectories/
+
+.codex/
+.agents/

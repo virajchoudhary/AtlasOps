@@ -36,6 +36,7 @@ ROLE_ALLOWED_TOOLS: dict[str, frozenset[str]] = {
         "kubectl_rollout",
         "kubectl_scale",
         "alertmanager_silence",
+        "chaos_stop_experiment",
         "promql_query",
         "kubectl_get",
         "kubectl_describe",
@@ -56,10 +57,11 @@ ADMIN_OR_UNEXPOSED_TOOLS = frozenset({
 })
 HIGH_RISK_UNEXPOSED_TOOLS = frozenset({"kubectl_exec"})
 
-# These four operations consume the circuit breaker's cluster-remediation quota.
+# These operations consume the circuit breaker's cluster-remediation quota.
 CLUSTER_MUTATING_TOOLS = frozenset({
     "alertmanager_silence",
     "argocd_rollback",
+    "chaos_stop_experiment",
     "kubectl_rollout",
     "kubectl_scale",
 })

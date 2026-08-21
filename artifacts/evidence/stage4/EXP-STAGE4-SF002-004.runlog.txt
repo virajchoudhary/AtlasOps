@@ -1,0 +1,60 @@
+2026-08-21 22:24:36,424 [INFO] coordinator: [inc-1787331276-80f915] handling alert: HighCpuUsage
+2026-08-21 22:25:10,027 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:25:23,989 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:25:45,445 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:26:14,131 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:26:33,094 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:26:53,741 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:27:39,458 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:27:45,494 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:28:12,966 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-21 22:28:50,051 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+================================================================================
+ ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION (EXP-STAGE4-SF002-004) 
+ Scenario: single_fault/sf-002 | Model: qwen2.5:1.5b (Ollama Local) 
+================================================================================
+
+>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...
+
+>>> Phase 1: Pre-Incident Baseline Check...
+  Baseline paymentservice status: Healthy
+
+>>> Phase 2: Injecting Fault (single_fault/sf-002)...
+  Chaos Mesh injection: stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created
+
+>>> Phase 3: Verifying Observable Fault in Cluster...
+  Observable in cluster: True
+
+>>> Phase 4: Triggering Coordinator Multi-Agent Pipeline...
+  Incident ID: inc-1787331276-80f915
+  Triage Final: {'incident_id': 'inc-1787331276-80f915', 'severity': 'P1', 'title': 'Alert: High CPU Usage on paymentservice', 'blast_radius': {'services': ['paymentservice'], 'namespaces': ['default'], 'user_impact_pct': 0, 'revenue_path_affected': False}}
+  Diagnosis Final: {'root_cause': {'category': 'resource', 'specific': 'High latency on paymentservice service is consistently above 1, indicating potential resource contention or performance degradation.', 'evidence': [{'tool': 'promql_query', 'query': 'sum(rate(pods_paymentservice_seconds_total{job="paymentservice"}[5m])) by (job) > 1', 'finding': 'The latency metric for paymentservice is consistently above 1, indicating potential resource contention or performance degradation.'}]}, 'confidence': 90, 'recommended_fix': 'Check the resource utilization and performance of the paymentservice service. Investigate if there are any resource constraints or if the service is underperforming.'}
+  Remediation Final: {'outcome': 'unresolved', 'proposed_actions': ['kubectl_describe(resource="pods", name="paymentservice", namespace="default")'], 'executed_actions': [], 'verified_by': 'kubectl_describe', 'actions_taken': []}
+  Coordinator Verifier Env Resolved: False
+
+================================================================================
+ STAGE 4 GOLDEN INCIDENT RESULT: FAIL 
+ Objective Env Resolved: False | Total Duration: 268.82s 
+   [PASS] 1_baseline_healthy
+   [PASS] 2_injection_success
+   [PASS] 3_fault_observed_pre_trigger
+   [PASS] 4_trigger_delivered
+   [PASS] 5_triage_valid
+   [PASS] 6_diagnosis_valid
+   [PASS] 7_diagnosis_truth_match
+   [PASS] 8_approval_satisfied
+   [FAIL] 9_remediation_mutating_tool_executed
+   [FAIL] 10_remediation_tool_success
+   [FAIL] 11_remediation_target_match
+   [PASS] 12_no_harness_repair_pre_verification
+   [FAIL] 13_objective_env_resolved
+   [PASS] 14_comms_executed
+   [PASS] 15_evidence_persisted
+================================================================================
+
+Saved golden incident evidence: C:\AtlasOps\artifacts\evidence\stage4\EXP-STAGE4-SF002-004.json
+Updated latest pointer: C:\AtlasOps\artifacts\evidence\stage4\golden_incident_sf002_manifest.json
+
+>>> Phase 6: Post-Verdict Cluster Safety Cleanup...
+  Safety cleanup: stresschaos.chaos-mesh.org "sf-002-paymentservice-cpu" deleted from chaos-mesh namespace
+  Cleanup record (sidecar): C:\AtlasOps\artifacts\evidence\stage4\EXP-STAGE4-SF002-004.cleanup.json

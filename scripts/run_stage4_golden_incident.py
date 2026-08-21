@@ -10,7 +10,7 @@ strict causal validity:
 3. Independent cluster fault observation before incident trigger.
 4. Multi-agent coordinator execution (Triage → Diagnosis → Approval Gate → Remediation → Objective Verifier → Comms).
 5. Strict causal 15-point verification predicate (NO harness fault clearance before verifier, NO forced resolution).
-6. Evidence persistence (EXP-STAGE4-SF002-002 manifest and audit capture).
+6. Evidence persistence (immutable per-experiment manifest plus latest pointer).
 7. Post-verdict safety cleanup.
 
 Zero paid APIs. Local Ollama Qwen2.5 1.5B model ($0 external spend).
@@ -71,7 +71,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 log = logging.getLogger("stage4.golden")
 
 KIND_CONTEXT = "kind-atlasops-local"
-EXPERIMENT_ID = "EXP-STAGE4-SF002-002"
+# Experiment identity is operator-controlled and must never collide with a
+# preserved evidence file. Override via STAGE4_EXPERIMENT_ID for each new run;
+# the runner refuses to overwrite an existing per-experiment evidence file.
+EXPERIMENT_ID = os.environ.get("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-004")
 SCENARIO_ID = "single_fault/sf-002"
 TARGET_SERVICE = "paymentservice"
 TARGET_NAMESPACE = "default"
@@ -143,10 +146,19 @@ def evaluate_causal_g4_predicate(
     c8 = incident_result.get("approval") is not None or triage_final.get("severity") in {"P0", "P1", "P2", "P3"}
 
     # 9. One real permitted remediation mutation executed
+    # Policy/circuit-breaker/dedup blocks are not executions.
     executed_tool_calls: list[dict[str, Any]] = []
     for step in remediation_traj:
-        if isinstance(step, dict) and step.get("tool") in CLUSTER_MUTATING_TOOLS:
-            executed_tool_calls.append(step)
+        if not isinstance(step, dict) or step.get("tool") not in CLUSTER_MUTATING_TOOLS:
+            continue
+        if (
+            step.get("blocked_by_policy")
+            or step.get("blocked_by_circuit_breaker")
+            or step.get("dedup_blocked")
+            or step.get("cap_blocked")
+        ):
+            continue
+        executed_tool_calls.append(step)
     c9 = len(executed_tool_calls) >= 1
 
     # 10. Actual tool result reports success
@@ -266,6 +278,13 @@ async def main() -> dict[str, Any]:
     }
 
     try:
+        # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
+        print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
+        run_kubectl(["delete", "stresschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "podchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "networkchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        time.sleep(2)
+
         # Phase 1: Pre-incident Baseline Check
         print("\n>>> Phase 1: Pre-Incident Baseline Check...")
         base_pods = run_kubectl(["get", "pods", "-n", TARGET_NAMESPACE, "-l", f"app={TARGET_SERVICE}", "-o", "json"])
@@ -302,6 +321,10 @@ async def main() -> dict[str, Any]:
         print(f"  Observable in cluster: {fault_observable}")
 
         # Phase 4: Construct Alert & Trigger Multi-Agent Coordinator Pipeline
+        # NOTE: The model-visible alert must contain ONLY realistic operational
+        # signals. Scenario identity (SCENARIO_ID) is passed to the verifier via
+        # the dedicated evaluation-only channel and MUST stay out of labels,
+        # annotations, and commonLabels — otherwise the golden answer leaks.
         print("\n>>> Phase 4: Triggering Coordinator Multi-Agent Pipeline...")
         alert_payload = {
             "receiver": "atlasops-webhook",
@@ -314,11 +337,10 @@ async def main() -> dict[str, Any]:
                         "severity": "critical",
                         "service": TARGET_SERVICE,
                         "namespace": TARGET_NAMESPACE,
-                        "scenario_id": SCENARIO_ID,
                     },
                     "annotations": {
                         "summary": f"High CPU usage on {TARGET_SERVICE}",
-                        "description": f"{TARGET_SERVICE} CPU utilization is at 90% load across 4 workers (Chaos Mesh experiment {TARGET_CHAOS_NAME}).",
+                        "description": f"{TARGET_SERVICE} CPU utilization is at 90% load across 4 workers.",
                     },
                     "startsAt": datetime.now(timezone.utc).isoformat(),
                 }
@@ -327,13 +349,12 @@ async def main() -> dict[str, Any]:
                 "alertname": "HighCpuUsage",
                 "service": TARGET_SERVICE,
                 "severity": "critical",
-                "scenario_id": SCENARIO_ID,
             },
         }
 
         from agents.coordinator import handle_incident
 
-        incident_result = await handle_incident(alert_payload)
+        incident_result = await handle_incident(alert_payload, scenario_id=SCENARIO_ID)
         triage_res = incident_result.get("triage", {})
         diagnosis_res = incident_result.get("diagnosis", {})
         remediation_res = incident_result.get("remediation", {})
@@ -403,18 +424,42 @@ async def main() -> dict[str, Any]:
             print(f"   [{'PASS' if crit_val else 'FAIL'}] {crit_name}")
         print("=" * 80)
 
-        # Save manifest
+        # Save immutable per-experiment evidence; also refresh the latest pointer.
+        # Experiment-ID immutability: refuse to overwrite preserved evidence.
         evidence_dir = os.path.join(REPO_ROOT, "artifacts", "evidence", "stage4")
         os.makedirs(evidence_dir, exist_ok=True)
-        manifest_file = os.path.join(evidence_dir, "golden_incident_sf002_manifest.json")
-        with open(manifest_file, "w", encoding="utf-8") as f:
+        per_run_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.json")
+        latest_file = os.path.join(evidence_dir, "golden_incident_sf002_manifest.json")
+        if os.path.exists(per_run_file):
+            raise SystemExit(
+                f"Refusing to overwrite existing Stage 4 evidence '{per_run_file}'. "
+                "Historical experiment records are immutable. Re-run with a new "
+                "STAGE4_EXPERIMENT_ID (e.g. EXP-STAGE4-SF002-005)."
+            )
+        with open(per_run_file, "w", encoding="utf-8") as f:
             json.dump(evidence, f, indent=2)
-        print(f"\nSaved golden incident evidence manifest: {manifest_file}")
+        with open(latest_file, "w", encoding="utf-8") as f:
+            json.dump(evidence, f, indent=2)
+        print(f"\nSaved golden incident evidence: {per_run_file}")
+        print(f"Updated latest pointer: {latest_file}")
 
-        # Post-verdict safety cleanup (AFTER verdict is frozen and saved)
+        # Post-verdict safety cleanup (AFTER verdict is frozen and saved).
+        # Recorded in a separate sidecar so the measured evidence file above
+        # stays byte-immutable after the verdict.
         print("\n>>> Phase 6: Post-Verdict Cluster Safety Cleanup...")
         clean_res = run_kubectl(["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        cleanup_record = {
+            "experiment_id": EXPERIMENT_ID,
+            "timing": "after_verdict_persisted",
+            "affects_env_resolved": False,
+            "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
+            "result": clean_res,
+        }
+        cleanup_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.cleanup.json")
+        with open(cleanup_file, "w", encoding="utf-8") as f:
+            json.dump(cleanup_record, f, indent=2)
         print(f"  Safety cleanup: {clean_res.get('stdout', 'clean')}")
+        print(f"  Cleanup record (sidecar): {cleanup_file}")
 
         return evidence
 

@@ -44,7 +44,7 @@ Given a triaged incident, find the **root cause** by correlating signals across:
   "blast_radius_update": "<refined understanding>",
   "next_agent": "remediation",
   "recommended_actions": [
-    {"action": "stop_chaos", "kind": "StressChaos", "name": "sf-002-paymentservice-cpu", "namespace": "chaos-mesh"},
+    {"action": "stop_chaos", "kind": "<ChaosKind-from-evidence>", "name": "<experiment-name-from-kubectl_get>", "namespace": "chaos-mesh"},
     {"action": "rollback", "target": "checkoutservice", "to_revision": "v1.2.3"}
   ]
 }

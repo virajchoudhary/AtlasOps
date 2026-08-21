@@ -26,6 +26,12 @@ _CANONICAL_KINDS = {
     "timechaos": "TimeChaos",
 }
 
+ALLOWED_CHAOS_NAMESPACES = frozenset({
+    "chaos-mesh",
+})
+# No environment-variable or caller override. Additional namespaces require an
+# explicit reviewed configuration change to this allowlist.
+
 _SAFE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
 
@@ -57,11 +63,14 @@ def chaos_stop_experiment(
             "error": f"Invalid chaos resource name '{name}'. Must be a valid DNS-1123 resource name without wildcards or special characters.",
         }
 
-    clean_namespace = str(namespace or "chaos-mesh").strip()
-    if not clean_namespace or not _SAFE_NAME_RE.match(clean_namespace):
+    clean_namespace = str(namespace or "chaos-mesh").strip().lower()
+    if clean_namespace not in ALLOWED_CHAOS_NAMESPACES:
         return {
             "success": False,
-            "error": f"Invalid namespace '{namespace}'. Must be a valid DNS-1123 namespace.",
+            "error": (
+                f"Unauthorized chaos namespace '{namespace}'. Allowed chaos namespaces: "
+                f"{sorted(ALLOWED_CHAOS_NAMESPACES)}"
+            ),
         }
 
     cmd = [

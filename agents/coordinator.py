@@ -33,6 +33,7 @@ from agents.tool_policy import (
 )
 from agents.tools import TOOL_REGISTRY
 from agents.tools.alertmanager import alertmanager_list_alerts
+from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES
 from config.runtime import StepRewardTracker
 
 
@@ -91,12 +92,26 @@ def load_prompt(role: str) -> str:
     return (PROMPTS_DIR / f"{role}.md").read_text(encoding="utf-8")
 
 
-def _extract_tool_calls_from_content(content: str) -> list[dict[str, Any]]:
-    """Fallback: parse tool calls from content for providers that don't use tool_calls array.
+_ROLE_CONCLUSION_KEYS = frozenset({
+    "outcome",
+    "severity",
+    "root_cause",
+    "slack_posted",
+    "proposed_actions",
+    "executed_actions",
+    "actions_taken",
+})
 
-    Handles two formats:
+
+def _extract_tool_calls_from_content(content: str) -> list[dict[str, Any]]:
+    """Fallback: parse structured JSON tool calls from content.
+
+    Handles two provider formats:
     1. {"type":"function","name":"fn","parameters":{...}}
     2. {"name":"fn","arguments":{...}}
+
+    Prose such as ``chaos_stop_experiment(...)`` is NOT a tool call and must
+    not be executed. Role-conclusion JSON is also ignored.
     """
     if not content or "{" not in content:
         return []
@@ -104,6 +119,10 @@ def _extract_tool_calls_from_content(content: str) -> list[dict[str, Any]]:
         start = content.index("{")
         end = content.rindex("}") + 1
         obj = json.loads(content[start:end])
+        if not isinstance(obj, dict):
+            return []
+        if _ROLE_CONCLUSION_KEYS.intersection(obj.keys()):
+            return []
         fn_name = obj.get("name") or obj.get("function", {}).get("name")
         if not fn_name:
             return []
@@ -122,10 +141,40 @@ def _extract_tool_calls_from_content(content: str) -> list[dict[str, Any]]:
         return []
 
 
+def _normalize_assistant_tool_calls(msg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return structured tool calls from an OpenAI-compatible assistant message.
+
+    Accepts ``message.tool_calls``, legacy ``message.function_call``, and
+    structured JSON-in-content. Does not parse prose function names.
+    """
+    existing = msg.get("tool_calls") or []
+    if existing:
+        return existing
+    function_call = msg.get("function_call")
+    if isinstance(function_call, dict) and function_call.get("name"):
+        arguments = function_call.get("arguments") or "{}"
+        if not isinstance(arguments, str):
+            arguments = json.dumps(arguments)
+        return [{
+            "id": str(function_call.get("id") or f"call_{function_call['name']}"),
+            "type": "function",
+            "function": {
+                "name": function_call["name"],
+                "arguments": arguments,
+            },
+        }]
+    return _extract_tool_calls_from_content(msg.get("content") or "")
+
+
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis":   "Based on the tool results above, output ONLY a JSON object with keys: root_cause, confidence, evidence, recommended_fix. No prose.",
-    "remediation": "Based on the actions taken above, output ONLY a JSON object with keys: outcome (resolved/unresolved), actions_taken (list), verified_by. No prose.",
+    "remediation": (
+        "Based on the actions taken above, output ONLY a JSON object with keys: "
+        "outcome (resolved/unresolved/escalated), proposed_actions (list of intended tools), "
+        "executed_actions (only tools that actually returned a runtime result), verified_by. "
+        "Never claim resolved unless a mutating tool returned success. No prose."
+    ),
     "comms":       "Based on the incident above, output ONLY a JSON object with keys: incident_id, slack_posted, postmortem_path, summary. No prose.",
 }
 
@@ -171,10 +220,18 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     step_tracker = StepRewardTracker()
     _seen_calls: dict[str, int] = {}   # (tool+args hash) → call count (exact-args dedup)
     _tool_counts: dict[str, int] = {}  # tool_name → total calls this run (per-tool cap)
+    _mutating_tool_executed: bool = False
+    _executed_actions: list[dict[str, Any]] = []
+    _remediation_retry_given: bool = False
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         for turn in range(max_turns):
+            tool_choice = (
+                "required"
+                if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
+                else "auto"
+            )
             r = await post_with_retry(
                 client,
                 f"{VLLM_BASE}/chat/completions",
@@ -183,7 +240,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     "messages": messages,
                     "temperature": 0.2,
                     "tools": _tool_schemas_for_role(role),
-                    "tool_choice": "auto",
+                    "tool_choice": tool_choice,
                 },
                 context=f"{role}/turn-{turn}",
             )
@@ -192,12 +249,27 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
             msg = choice["message"]
             messages.append(msg)
 
-            # Normalise tool calls — some providers (Fireworks/Llama) return
-            # function calls as JSON in content instead of the tool_calls array.
-            if not msg.get("tool_calls"):
-                msg["tool_calls"] = _extract_tool_calls_from_content(msg.get("content") or "")
+            # Normalise tool calls — some providers return function calls as
+            # JSON in content or as legacy message.function_call.
+            msg["tool_calls"] = _normalize_assistant_tool_calls(msg)
 
             if not msg.get("tool_calls"):
+                # Generic Remediation Tool Execution Retry:
+                # If remediation model returned conclusion text with NO actual tool calls
+                # and no mutating tool has executed yet, grant one structured retry.
+                if role == "remediation" and not _mutating_tool_executed and not _remediation_retry_given:
+                    _remediation_retry_given = True
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "You have proposed a remediation but no remediation tool has actually executed. "
+                            "If you intend to perform the action, invoke the provided function/tool now. "
+                            "Do not report success until a real tool result is returned. If no safe action "
+                            "can be executed, conclude unresolved/escalated."
+                        ),
+                    })
+                    continue
+
                 conclusion = msg["content"] or ""
                 parsed = _try_parse_json(conclusion)
                 # If raw, or if conclusion looks like tool args instead of a role conclusion,
@@ -211,6 +283,20 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 _required = _ROLE_REQUIRED_KEYS.get(role, set())
                 if "raw" in parsed or (_required and not _required.intersection(parsed.keys())):
                     parsed = await _force_json_conclusion(role, messages, client)
+
+                if role == "remediation":
+                    # Strictly distinguish proposals from proven executions.
+                    # Never allow hallucinated or unexecuted actions in executed_actions/actions_taken.
+                    proposed = parsed.get("proposed_actions") or parsed.get("actions_taken") or []
+                    parsed["proposed_actions"] = proposed if isinstance(proposed, list) else [proposed]
+                    parsed["executed_actions"] = list(_executed_actions)
+                    parsed["actions_taken"] = list(_executed_actions)
+                    if not _mutating_tool_executed:
+                        if parsed.get("outcome") == "resolved":
+                            parsed["outcome"] = "unresolved"
+                        if parsed.get("status") == "resolved":
+                            parsed["status"] = "unresolved"
+
                 thought_emit(role, "conclusion", _summarise_conclusion(role, conclusion))
                 trajectory.append({"role": role, "turn": turn, "content": conclusion})
                 return {
@@ -328,6 +414,15 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = fn(**fn_args)
                     except Exception as e:
                         tool_output = {"error": f"Tool execution failed: {e}"}
+                if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
+                    _mutating_tool_executed = True
+                _executed_actions.append({
+                    "step": len(_executed_actions) + 1,
+                    "tool": fn_name,
+                    "args": fn_args,
+                    "output": tool_output,
+                    "success": bool(tool_output.get("success", False)),
+                })
                 # Dense per-step reward signal
                 step_reward = step_tracker.record(fn_name, fn_args, tool_output)
                 # Narrate the result
@@ -358,6 +453,16 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     log.warning("%s exceeded %d turns", role, max_turns)
     # Ask the model to summarise whatever it found rather than returning an error
     forced = await _force_json_conclusion(role, messages, client)
+    if role == "remediation":
+        proposed = forced.get("proposed_actions") or forced.get("actions_taken") or []
+        forced["proposed_actions"] = proposed if isinstance(proposed, list) else [proposed]
+        forced["executed_actions"] = list(_executed_actions)
+        forced["actions_taken"] = list(_executed_actions)
+        if not _mutating_tool_executed:
+            if forced.get("outcome") == "resolved":
+                forced["outcome"] = "unresolved"
+            if forced.get("status") == "resolved":
+                forced["status"] = "unresolved"
     thought_emit(role, "conclusion", _summarise_conclusion(role, ""))
     return {"role": role, "trajectory": trajectory, "final": forced, "step_reward_summary": step_tracker.summary()}
 
@@ -476,7 +581,12 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "kind": {"type": "string", "enum": ["PodChaos", "StressChaos", "NetworkChaos", "DNSChaos", "IOChaos", "TimeChaos"]},
             "name": {"type": "string", "description": "The exact name of the active Chaos Mesh experiment resource."},
-            "namespace": {"type": "string", "default": "chaos-mesh", "description": "Namespace of the chaos resource (default: chaos-mesh)."},
+            "namespace": {
+                "type": "string",
+                "enum": sorted(ALLOWED_CHAOS_NAMESPACES),
+                "default": "chaos-mesh",
+                "description": "Namespace of the chaos resource (allowed: chaos-mesh only; no generic override).",
+            },
         },
         "required": ["kind", "name"],
         "additionalProperties": False,
@@ -543,9 +653,17 @@ def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: d
             return "rollback requires confirmed incident severity P0/P1/P2"
         if tool == "chaos_stop_experiment":
             kind = str(args.get("kind", "")).strip().lower()
-            allowed = {"podchaos", "stresschaos", "networkchaos", "dnschaos", "iochaos", "timechaos"}
-            if kind not in allowed:
-                return f"chaos kind '{args.get('kind')}' not allowed; must be one of {sorted(allowed)}"
+            if kind not in ALLOWED_CHAOS_KINDS:
+                return (
+                    f"chaos kind '{args.get('kind')}' not allowed; "
+                    f"must be one of {sorted(ALLOWED_CHAOS_KINDS)}"
+                )
+            namespace = str(args.get("namespace", "chaos-mesh")).strip().lower()
+            if namespace not in ALLOWED_CHAOS_NAMESPACES:
+                return (
+                    f"chaos namespace '{args.get('namespace')}' unauthorized; "
+                    f"allowed={sorted(ALLOWED_CHAOS_NAMESPACES)}"
+                )
     return None
 
 
@@ -642,8 +760,16 @@ def _live_judge_requested() -> bool:
     return os.getenv("ATLASOPS_USE_HF_INFERENCE", "").strip().lower() in ("1", "true", "yes")
 
 
-async def handle_incident(alert: dict[str, Any], incident_id: str | None = None) -> dict[str, Any]:
-    """Run the full agent chain for one incident."""
+async def handle_incident(
+    alert: dict[str, Any],
+    incident_id: str | None = None,
+    scenario_id: str | None = None,
+) -> dict[str, Any]:
+    """Run the full agent chain for one incident.
+
+    ``scenario_id`` is an evaluation-only channel: it selects the frozen
+    verifier spec without ever being placed inside the model-visible alert.
+    """
     incident_id = incident_id or f"inc-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
@@ -658,12 +784,14 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
     tri_snap: dict[str, Any] = {}
     run_error: str | None = None
     finish_reason = ""
+    approval_record: dict[str, Any] | None = None
     try:
         triage = await call_agent("triage", {"incident_id": incident_id, "alert": alert})
         tri_snap = triage.get("final") or {}
         diagnosis = await call_agent("diagnosis", {"incident_id": incident_id, "triage": triage["final"]})
         severity = _extract_severity({"triage": triage.get("final", {})})
         approval_mode = approval_mode_for_severity(severity)
+        approval_record = {"mode": approval_mode, "severity": severity}
         remediation_input = {
             "incident_id": incident_id,
             "triage": triage["final"],
@@ -720,6 +848,9 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
             except Exception as e:
                 log.warning("failed to send approval notification: %s", e)
             approval_result = await approval_gate.wait_for_decision(incident_id)
+            approval_record["decision"] = approval_result.get("status")
+            if approval_result.get("approved_by"):
+                approval_record["approved_by"] = approval_result.get("approved_by")
             status = approval_result["status"]
             # "timeout" auto-approves so demos/unattended runs still complete.
             # Only an explicit "rejected" decision skips remediation.
@@ -766,7 +897,9 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
             remediation_final.get("outcome") == "resolved"
             or remediation_final.get("status") == "resolved"
         )
-        scenario_id = str(alert.get("scenario_id") or "")
+        # Evaluation-only scenario identity: explicit argument first, then the
+        # legacy top-level alert key. Never sourced from model-visible labels.
+        scenario_id = str(scenario_id or alert.get("scenario_id") or "")
         from agents.verifier import verify_environment
         verification_result = verify_environment(
             scenario_id=scenario_id,
@@ -834,6 +967,8 @@ async def handle_incident(alert: dict[str, Any], incident_id: str | None = None)
         full_record = {
             "incident_id": incident_id,
             "alert": alert,
+            "scenario_id": scenario_id,
+            "approval": approval_record,
             "triage": triage,
             "diagnosis": diagnosis,
             "remediation": remediation,

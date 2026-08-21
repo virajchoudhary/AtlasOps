@@ -10,7 +10,7 @@ strict causal validity:
 3. Independent cluster fault observation before incident trigger.
 4. Multi-agent coordinator execution (Triage → Diagnosis → Approval Gate → Remediation → Objective Verifier → Comms).
 5. Strict causal 15-point verification predicate (NO harness fault clearance before verifier, NO forced resolution).
-6. Evidence persistence (EXP-STAGE4-SF002-002 manifest and audit capture).
+6. Evidence persistence (immutable per-experiment manifest plus latest pointer).
 7. Post-verdict safety cleanup.
 
 Zero paid APIs. Local Ollama Qwen2.5 1.5B model ($0 external spend).
@@ -71,7 +71,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 log = logging.getLogger("stage4.golden")
 
 KIND_CONTEXT = "kind-atlasops-local"
-EXPERIMENT_ID = "EXP-STAGE4-SF002-002"
+EXPERIMENT_ID = "EXP-STAGE4-SF002-003"
 SCENARIO_ID = "single_fault/sf-002"
 TARGET_SERVICE = "paymentservice"
 TARGET_NAMESPACE = "default"
@@ -143,10 +143,19 @@ def evaluate_causal_g4_predicate(
     c8 = incident_result.get("approval") is not None or triage_final.get("severity") in {"P0", "P1", "P2", "P3"}
 
     # 9. One real permitted remediation mutation executed
+    # Policy/circuit-breaker/dedup blocks are not executions.
     executed_tool_calls: list[dict[str, Any]] = []
     for step in remediation_traj:
-        if isinstance(step, dict) and step.get("tool") in CLUSTER_MUTATING_TOOLS:
-            executed_tool_calls.append(step)
+        if not isinstance(step, dict) or step.get("tool") not in CLUSTER_MUTATING_TOOLS:
+            continue
+        if (
+            step.get("blocked_by_policy")
+            or step.get("blocked_by_circuit_breaker")
+            or step.get("dedup_blocked")
+            or step.get("cap_blocked")
+        ):
+            continue
+        executed_tool_calls.append(step)
     c9 = len(executed_tool_calls) >= 1
 
     # 10. Actual tool result reports success
@@ -266,6 +275,13 @@ async def main() -> dict[str, Any]:
     }
 
     try:
+        # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
+        print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
+        run_kubectl(["delete", "stresschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "podchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "networkchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        time.sleep(2)
+
         # Phase 1: Pre-incident Baseline Check
         print("\n>>> Phase 1: Pre-Incident Baseline Check...")
         base_pods = run_kubectl(["get", "pods", "-n", TARGET_NAMESPACE, "-l", f"app={TARGET_SERVICE}", "-o", "json"])
@@ -403,13 +419,17 @@ async def main() -> dict[str, Any]:
             print(f"   [{'PASS' if crit_val else 'FAIL'}] {crit_name}")
         print("=" * 80)
 
-        # Save manifest
+        # Save immutable per-experiment evidence; also refresh the latest pointer.
         evidence_dir = os.path.join(REPO_ROOT, "artifacts", "evidence", "stage4")
         os.makedirs(evidence_dir, exist_ok=True)
-        manifest_file = os.path.join(evidence_dir, "golden_incident_sf002_manifest.json")
-        with open(manifest_file, "w", encoding="utf-8") as f:
+        per_run_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.json")
+        latest_file = os.path.join(evidence_dir, "golden_incident_sf002_manifest.json")
+        with open(per_run_file, "w", encoding="utf-8") as f:
             json.dump(evidence, f, indent=2)
-        print(f"\nSaved golden incident evidence manifest: {manifest_file}")
+        with open(latest_file, "w", encoding="utf-8") as f:
+            json.dump(evidence, f, indent=2)
+        print(f"\nSaved golden incident evidence: {per_run_file}")
+        print(f"Updated latest pointer: {latest_file}")
 
         # Post-verdict safety cleanup (AFTER verdict is frozen and saved)
         print("\n>>> Phase 6: Post-Verdict Cluster Safety Cleanup...")

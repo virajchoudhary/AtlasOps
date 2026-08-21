@@ -34,8 +34,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
 | **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
 | **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** ([PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17) merged; 100% free-local Kind cluster verified) |
-| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **PASS** ([PR #18](https://github.com/virajchoudhary/AtlasOps/pull/18) merged; causally valid rerun `EXP-STAGE4-SF002-002` completed and baseline truthfully recorded) |
-| **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **READY / NEXT** |
+| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **IN PROGRESS / BLOCKED** (EXP-STAGE4-SF002-001 = INVALID; EXP-STAGE4-SF002-002/003 = VALID FAIL; Gate G4 requires real tool remediation causing verified environment recovery) |
+| **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **BLOCKED ON G4** |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **BLOCKED (on G5)** |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **BLOCKED (on G6)** |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **BLOCKED (on G7)** |
@@ -117,19 +117,16 @@ This governance document records the repository's alignment with the canonical e
 - **Real Non-Destructive Tool Acceptance**: Full suite of agent tool wrappers (`agents.tools.kubectl`, `prometheus`, `alertmanager`, `jaeger`, `argocd`) executed live and verified.
 - **Zero Cloud Cost**: 0 cloud resources provisioned, **$0.00** billing incurred.
 
-### Gate G4: Real End-to-End Golden Incident — [PASS (Causally Valid Baseline Established)]
+### Gate G4: Real End-to-End Golden Incident — [IN PROGRESS / BLOCKED]
 - **Audit Invalidation Record**: Initial empirical run `EXP-STAGE4-SF002-001` was audited and found invalid because the test harness deleted the `StressChaos` CRD resource out-of-band prior to objective verification, and the remediation agent proposed an unrelated `argocd_rollback(checkoutservice)`.
-- **Causal Correction Implementation**:
-  - Gated remediation tool `chaos_stop_experiment` implemented to allow legitimate, safety-controlled termination of active chaos experiments by the remediation agent.
-  - Test runner out-of-band pre-verifier deletion removed; verifier evaluates strictly post-remediation cluster state without harness intervention.
-  - Forced resolution (`or True`) removed; `agent_claimed_resolved` strictly derived from agent output.
-  - Causal 15-point verification predicate enforced for Gate G4.
-- **Corrective Empirical Run `EXP-STAGE4-SF002-002`**:
+- **Causal Baseline Failure Records (`EXP-STAGE4-SF002-002`, `EXP-STAGE4-SF002-003`)**:
   - Executed on 2026-08-17 against live Kind cluster `atlasops-local` with local Ollama `qwen2.5:1.5b`.
-  - Proves the full end-to-end multi-agent pipeline: Alert $\rightarrow$ Triage $\rightarrow$ Diagnosis $\rightarrow$ Approval Gate $\rightarrow$ Remediation $\rightarrow$ Objective Verifier $\rightarrow$ Comms.
-  - Truthfully recorded `gate_g4_pass: False` as the unfinetuned baseline model proposed remediation in raw text without emitting tool-call steps in the loop.
-  - Evidence manifest frozen at `artifacts/evidence/stage4/golden_incident_sf002_manifest.json` with zero fabricated passes.
-  - Successfully satisfies Gate G4 requirement for executing and recording a real end-to-end golden incident.
+  - Proved pipeline orchestration: Alert $\rightarrow$ Triage $\rightarrow$ Diagnosis $\rightarrow$ Approval Gate $\rightarrow$ Remediation (with generic execution retry & namespace security allowlist) $\rightarrow$ Objective Verifier $\rightarrow$ Comms.
+  - Truthfully recorded `gate_g4_pass: False` / `env_resolved: False` because the unfinetuned baseline model proposed invalid remediation arguments without emitting valid mutating tool execution in the loop.
+  - While scientifically valuable as empirical development baselines, failed runs **do not close Gate G4**.
+- **Gate G4 Pass Requirement**:
+  - Gate G4 remains **BLOCKED** until AtlasOps multi-agent execution causes real mutating remediation resulting in verified objective environment recovery (`env_resolved == True`) under the strict 15-point causal predicate.
+  - Stage 5 remains **BLOCKED ON G4**.
 
 ---
 

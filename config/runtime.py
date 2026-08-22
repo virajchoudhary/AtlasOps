@@ -8,8 +8,19 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 from typing import Any
+
+DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:1.5b"
+
+
+def resolve_stage4_agent_model() -> str:
+    """Return the single explicit Stage 4 model-selection contract."""
+    return os.environ.get(
+        "ATLASOPS_STAGE4_AGENT_MODEL",
+        DEFAULT_STAGE4_AGENT_MODEL,
+    )
 
 FROZEN_SCENARIOS_BY_TIER = {
     "single_fault": [f"single_fault/sf-{i:03d}" for i in range(1, 9)],

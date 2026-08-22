@@ -13,7 +13,7 @@ strict causal validity:
 6. Evidence persistence (immutable per-experiment manifest plus latest pointer).
 7. Post-verdict safety cleanup.
 
-Zero paid APIs. Local Ollama Qwen2.5 1.5B model ($0 external spend).
+Zero paid APIs. Local Ollama model selected through ATLASOPS_STAGE4_AGENT_MODEL.
 """
 
 import asyncio
@@ -26,15 +26,17 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from config.runtime import resolve_stage4_agent_model
+
 # Reconfigure standard UTF-8 stream handling on Windows
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 
 def _load_secret_or_default(filename: str, default: str) -> str:
@@ -50,7 +52,6 @@ def _load_secret_or_default(filename: str, default: str) -> str:
 # Configure environment for local agent execution
 os.environ["BACKEND"] = "openai"
 os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
-os.environ["AGENT_MODEL"] = "qwen2.5:1.5b"
 os.environ["LLM_API_KEY"] = "ollama"
 os.environ["KUBECONFIG_CONTEXT"] = "kind-atlasops-local"
 os.environ["APPROVAL_TIMEOUT_SECONDS"] = "2"
@@ -71,6 +72,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 log = logging.getLogger("stage4.golden")
 
 KIND_CONTEXT = "kind-atlasops-local"
+SELECTED_STAGE4_AGENT_MODEL = resolve_stage4_agent_model()
+os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
 # Experiment identity is operator-controlled and must never collide with a
 # preserved evidence file. Override via STAGE4_EXPERIMENT_ID for each new run;
 # the runner refuses to overwrite an existing per-experiment evidence file.
@@ -95,6 +98,15 @@ def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "returncode": -1}
+
+
+def stage4_evidence_metadata() -> dict[str, Any]:
+    """Build the model-identity fields shared by output and evidence."""
+    return {
+        "model": SELECTED_STAGE4_AGENT_MODEL,
+        "inference_provider": "ollama-local",
+        "trigger_type": "manual coordinator trigger over a real independently observed cluster fault",
+    }
 
 
 def evaluate_causal_g4_predicate(
@@ -226,7 +238,7 @@ def evaluate_causal_g4_predicate(
 async def main() -> dict[str, Any]:
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
-    print(f" Scenario: {SCENARIO_ID} | Model: qwen2.5:1.5b (Ollama Local) ")
+    print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
     print("=" * 80)
 
     # Ensure context is kind-atlasops-local
@@ -235,7 +247,7 @@ async def main() -> dict[str, Any]:
     os.environ["KUBECONFIG_CONTEXT"] = KIND_CONTEXT
     os.environ["BACKEND"] = "vllm"
     os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
-    os.environ["AGENT_MODEL"] = "qwen2.5:1.5b"
+    os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
     os.environ["PROMETHEUS_URL"] = "http://localhost:19090"
     os.environ["ALERTMANAGER_URL"] = "http://localhost:19093"
     os.environ["JAEGER_URL"] = "http://localhost:16686"
@@ -270,9 +282,7 @@ async def main() -> dict[str, Any]:
         "experiment_id": EXPERIMENT_ID,
         "scenario_id": SCENARIO_ID,
         "tier": "single_fault",
-        "model": "qwen2.5:1.5b",
-        "inference_provider": "ollama-local",
-        "trigger_type": "manual coordinator trigger over a real independently observed cluster fault",
+        **stage4_evidence_metadata(),
         "started_at": start_time,
         "phases": {},
     }

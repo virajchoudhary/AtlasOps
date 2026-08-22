@@ -168,3 +168,27 @@ def test_n_tool_turns_is_derived_from_messages_and_cannot_disagree():
             assert e["n_tool_turns"] == derived
             if expected is not None and e["role"] in expected:
                 assert e["n_tool_turns"] == expected[e["role"]]
+
+
+def test_observability_model_turn_records_never_become_teacher_content():
+    """Forensic model-turn records (retry/termination evidence) must be ignored
+    by the SFT serializer — they are neither tool actions nor conclusions."""
+    incident = _synthetic_incident()
+    incident["remediation"]["trajectory"].insert(1, {
+        "role": "remediation",
+        "turn": 1,
+        "kind": "model_turn",
+        "assistant_text": "I will now stop the experiment.",
+        "native_tool_calls": [],
+        "finish_reason": "stop",
+        "retry": {"triggered": True, "reason": "remediation_no_tool_call_retry"},
+    })
+    baseline = trajectory_to_sft_examples(
+        "unit/t-10", "single_fault", _synthetic_incident(), JUDGE, REWARD)
+    with_record = trajectory_to_sft_examples("unit/t-10", "single_fault", incident, JUDGE, REWARD)
+
+    base_rem = next(e for e in baseline if e["role"] == "remediation")
+    rec_rem = next(e for e in with_record if e["role"] == "remediation")
+    assert base_rem["messages"] == rec_rem["messages"]
+    assert all("I will now stop" not in json.dumps(m) for m in rec_rem["messages"])
+    assert rec_rem["n_tool_turns"] == base_rem["n_tool_turns"]

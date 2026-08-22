@@ -191,6 +191,63 @@ def _parse_tool_arguments(fn_name: str, raw: Any) -> tuple[dict[str, Any] | None
     return parsed, None
 
 
+# Maximum persisted characters of raw assistant text per model-turn record.
+# Deterministic cap; truncation is always flagged explicitly on the record.
+_MODEL_TURN_TEXT_CAP = 2000
+
+_RETRY_REASON_NO_TOOL_CALL = "remediation_no_tool_call_retry"
+_TERMINATION_MAX_TURNS = "max_turns_exhausted"
+
+
+def _model_turn_record(
+    role: str,
+    turn: int,
+    choice: dict[str, Any],
+    raw_msg: dict[str, Any],
+    *,
+    parsed_count: int,
+    executed_names: list[str] | None = None,
+    retry_triggered: bool = False,
+    retry_reason: str | None = None,
+    termination_reason: str | None = None,
+    conclusion_present: bool = False,
+) -> dict[str, Any]:
+    """Canonical forensic record for one raw model response.
+
+    Observability-only: appended to the trajectory before any control path
+    (retry/continue/termination) could discard the turn. Raw provider payloads
+    (assistant text, native tool-call id/name/arguments) are preserved as
+    returned; parsed/executed outcomes are recorded separately so malformed
+    calls are never misrepresented.
+    """
+    text = raw_msg.get("content") or ""
+    native_calls = []
+    for tc in raw_msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        native_calls.append({
+            "id": tc.get("id"),
+            "name": fn.get("name"),
+            "arguments": fn.get("arguments"),
+        })
+    return {
+        "role": role,
+        "turn": turn,
+        "kind": "model_turn",
+        "assistant_text": text[:_MODEL_TURN_TEXT_CAP],
+        "assistant_text_truncated": len(text) > _MODEL_TURN_TEXT_CAP,
+        # Raw provider payloads exactly as returned (never normalized here).
+        "native_tool_calls": native_calls,
+        # Derived: how many calls survived adapter normalization for this turn.
+        "parsed_tool_calls": parsed_count,
+        "finish_reason": choice.get("finish_reason"),
+        # Derived: tools whose executor was actually invoked during this turn.
+        "executed_tool_calls": list(executed_names or []),
+        "conclusion_present": conclusion_present,
+        "retry": {"triggered": retry_triggered, "reason": retry_reason},
+        "termination_reason": termination_reason,
+    }
+
+
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis":   "Based on the tool results above, output ONLY a JSON object with keys: root_cause, confidence, evidence, recommended_fix. No prose.",
@@ -248,10 +305,13 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     _mutating_tool_executed: bool = False
     _executed_actions: list[dict[str, Any]] = []
     _remediation_retry_given: bool = False
+    _last_choice: dict[str, Any] | None = None
+    _last_raw_msg: dict[str, Any] | None = None
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         for turn in range(max_turns):
+            turn_executed_names: list[str] = []
             tool_choice = (
                 "required"
                 if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
@@ -272,11 +332,17 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
             r.raise_for_status()
             choice = r.json()["choices"][0]
             msg = choice["message"]
+            # Snapshot the RAW provider payload before adapter normalization so
+            # the forensic record preserves exactly what the model returned.
+            raw_msg_snapshot = json.loads(json.dumps(msg)) if isinstance(msg, dict) else {}
             messages.append(msg)
 
             # Normalise tool calls — some providers return function calls as
             # JSON in content or as legacy message.function_call.
             msg["tool_calls"] = _normalize_assistant_tool_calls(msg)
+            _parsed_call_count = len(msg.get("tool_calls") or [])
+            _last_choice = choice
+            _last_raw_msg = raw_msg_snapshot
 
             if not msg.get("tool_calls"):
                 # Generic Remediation Tool Execution Retry:
@@ -284,6 +350,25 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 # and no mutating tool has executed yet, grant one structured retry.
                 if role == "remediation" and not _mutating_tool_executed and not _remediation_retry_given:
                     _remediation_retry_given = True
+                    # Persist the discarded model turn BEFORE continuing (Run-004
+                    # observability gap): prose/empty responses must survive.
+                    trajectory.append(_model_turn_record(
+                        role, turn, choice, raw_msg_snapshot,
+                        parsed_count=_parsed_call_count,
+                        executed_names=turn_executed_names,
+                        retry_triggered=True,
+                        retry_reason=_RETRY_REASON_NO_TOOL_CALL,
+                        conclusion_present=False,
+                    ))
+                    audit_log.record(
+                        incident_id=incident_id,
+                        agent_role=role,
+                        action_type="remediation_retry",
+                        result_summary=(
+                            f"turn {turn}: no executable tool call; "
+                            f"retry {_RETRY_REASON_NO_TOOL_CALL}"
+                        )[:300],
+                    )
                     messages.append({
                         "role": "user",
                         "content": (
@@ -470,6 +555,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = {"error": f"Tool execution failed: {e}"}
                 if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
                     _mutating_tool_executed = True
+                turn_executed_names.append(fn_name)
                 _executed_actions.append({
                     "step": len(_executed_actions) + 1,
                     "tool": fn_name,
@@ -505,6 +591,17 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 })
 
     log.warning("%s exceeded %d turns", role, max_turns)
+    # Persist the final (turn-limit) model response before the forced
+    # conclusion replaces it — otherwise its raw shape is lost.
+    if _last_raw_msg is not None:
+        trajectory.append(_model_turn_record(
+            role, max_turns - 1, _last_choice or {}, _last_raw_msg,
+            parsed_count=len(_normalize_assistant_tool_calls(_last_raw_msg)),
+            retry_triggered=False,
+            retry_reason=None,
+            termination_reason=_TERMINATION_MAX_TURNS,
+            conclusion_present=False,
+        ))
     # Ask the model to summarise whatever it found rather than returning an error
     forced = await _force_json_conclusion(role, messages, client)
     if role == "remediation":

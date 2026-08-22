@@ -157,6 +157,10 @@ def trajectory_to_sft_examples(
         if user_context is not None:
             messages.append({"role": "user", "content": json.dumps(user_context, sort_keys=True)})
         for entry in trajectory:
+            # Observability-only forensic records are not teacher turns: they
+            # must never become (empty) assistant training content.
+            if entry.get("kind") == "model_turn":
+                continue
             messages.extend(_tool_call_messages(entry))
         final = agent_data.get("final")
         if isinstance(final, dict):

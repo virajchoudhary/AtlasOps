@@ -1,0 +1,77 @@
+{
+  "model": "qwen2.5:3b-instruct",
+  "verdict": "QUALIFIED",
+  "results": {
+    "probe1_simple_native_call": {
+      "purpose": "single-tool native emission",
+      "latency_s": 389.09,
+      "finish_reason": "tool_calls",
+      "assistant_content_head": "",
+      "tool_calls": [
+        {
+          "name": "inspect_widget",
+          "arguments_raw": "{\"widget_id\":\"widget-alpha-7\"}",
+          "args_object": {
+            "widget_id": "widget-alpha-7"
+          },
+          "valid_json_object": true
+        }
+      ],
+      "pass": true
+    },
+    "probe2_multi_tool_selection": {
+      "purpose": "semantic selection among 9 synthetic tools",
+      "tool_count": 9,
+      "latency_s": 31.41,
+      "finish_reason": "tool_calls",
+      "assistant_content_head": "",
+      "tool_calls": [
+        {
+          "name": "restart_widget",
+          "arguments_raw": "{\"widget_id\":\"beta-42\"}",
+          "args_object": {
+            "widget_id": "beta-42"
+          },
+          "valid_json_object": true
+        }
+      ],
+      "pass": true
+    },
+    "probe3_investigate_then_act": {
+      "purpose": "observe consumption + native follow-up action",
+      "turn1_latency_s": 10.13,
+      "turn1_finish_reason": "tool_calls",
+      "turn1_tool_calls": [
+        {
+          "name": "inspect_widget",
+          "arguments_raw": "{\"widget_id\":\"gamma-9\"}",
+          "args_object": {
+            "widget_id": "gamma-9"
+          },
+          "valid_json_object": true
+        }
+      ],
+      "turn1_pass": true,
+      "observation_fed_back": {
+        "widget_id": "gamma-9",
+        "status": "degraded",
+        "restarts": 7
+      },
+      "turn2_latency_s": 27.15,
+      "turn2_finish_reason": "tool_calls",
+      "turn2_assistant_content_head": "Based on the current status of widget \"gamma-9\", it is currently in a degraded state. I will now attempt to restart it to see if it can be restored to normal op",
+      "turn2_tool_calls": [
+        {
+          "name": "restart_widget",
+          "arguments_raw": "{\"widget_id\":\"gamma-9\"}",
+          "args_object": {
+            "widget_id": "gamma-9"
+          },
+          "valid_json_object": true
+        }
+      ],
+      "turn2_pass": true,
+      "pass": true
+    }
+  }
+}

@@ -71,41 +71,111 @@ def reset_cluster() -> None:
     time.sleep(60)  # wait for pods to recover
 
 
+SFT_EXAMPLE_FORMAT = "openai-tool-messages-v1"
+
+
+def _tool_call_arguments(entry: dict) -> str:
+    """Return the wire-format arguments JSON string for one recorded tool step.
+
+    Dict args are serialized deterministically. Pre-stringified args must parse
+    to a JSON object — malformed strings are rejected instead of entering the
+    corpus, because the runtime parser treats them as invalid tool calls and
+    training on them would teach malformed emission.
+    """
+    args = entry.get("args")
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"trajectory entry turn={entry.get('turn')!r} tool={entry['tool']!r}: "
+                f"stringified arguments are not valid JSON: {args[:120]!r}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                f"trajectory entry turn={entry.get('turn')!r} tool={entry['tool']!r}: "
+                f"arguments must be a JSON object, got {type(parsed).__name__}"
+            )
+        return args
+    return json.dumps(args or {}, sort_keys=True)
+
+
+def _tool_call_messages(entry: dict) -> list[dict]:
+    """Serialize one recorded trajectory step into provider-native message shapes.
+
+    Tool steps become an assistant ``tool_calls`` message (arguments encoded as a
+    JSON string, matching the OpenAI-compatible wire format the runtime parses at
+    inference) followed by the recorded ``role: "tool"`` observation. Text-only
+    steps (conclusions/prose) become plain assistant content. Nothing is
+    fabricated: only actions and observations actually recorded in the
+    trajectory are emitted.
+    """
+    if "tool" not in entry:
+        return [{"role": "assistant", "content": entry.get("content", "")}]
+    arguments = _tool_call_arguments(entry)
+    assistant_msg = {
+        "role": "assistant",
+        "content": entry.get("content") or "",
+        "tool_calls": [{
+            "id": f"call_{entry.get('turn', 0)}_{entry['tool']}",
+            "type": "function",
+            "function": {"name": entry["tool"], "arguments": arguments},
+        }],
+    }
+    tool_msg = {
+        "role": "tool",
+        "tool_call_id": assistant_msg["tool_calls"][0]["id"],
+        "tool_name": entry["tool"],
+        "content": json.dumps(entry.get("output"), sort_keys=True),
+    }
+    return [assistant_msg, tool_msg]
+
+
 def trajectory_to_sft_examples(
     scenario_id: str, tier: str, incident: dict, judge_score: dict, reward_contract: dict
 ) -> list[dict]:
-    """Convert one full incident chain into ChatML training examples (one per agent turn)."""
+    """Convert one full incident chain into SFT examples in native tool-message format.
+
+    One example per agent role preserves the full multi-turn loop — every
+    executable tool call in its native ``tool_calls`` structure plus the exact
+    environment observation returned for it — so training teaches the SAME
+    structured tool-call representation the runtime adapter parses, instead of
+    flattening calls to prose (which trained prose-instead-of-native-call
+    behaviour). Provenance (scenario, tier, judge, reward contract) is retained;
+    no outcome labels are invented.
+    """
     examples = []
     for role in ("triage", "diagnosis", "remediation", "comms"):
         agent_data = incident.get(role, {})
-        for entry in agent_data.get("trajectory", []):
-            if "tool" in entry:
-                examples.append({
-                    "scenario_id": scenario_id,
-                    "role": role,
-                    "messages": [
-                        {"role": "system", "content": f"You are the {role} agent."},
-                        {"role": "user", "content": json.dumps({"step": entry["turn"]})},
-                        {"role": "assistant", "content": json.dumps({"tool": entry["tool"], "args": entry["args"]})},
-                    ],
-                    "tier": tier,
-                    "reward": reward_contract.get("total", judge_score.get("overall", 0.0)),
-                    "reward_contract": reward_contract,
-                    "judge": judge_score,
-                })
-            else:
-                examples.append({
-                    "scenario_id": scenario_id,
-                    "role": role,
-                    "messages": [
-                        {"role": "system", "content": f"You are the {role} agent."},
-                        {"role": "assistant", "content": entry.get("content", "")},
-                    ],
-                    "tier": tier,
-                    "reward": reward_contract.get("total", judge_score.get("overall", 0.0)),
-                    "reward_contract": reward_contract,
-                    "judge": judge_score,
-                })
+        trajectory = [e for e in agent_data.get("trajectory", []) if isinstance(e, dict)]
+        if not trajectory:
+            continue
+        messages: list[dict] = [
+            {"role": "system", "content": f"You are the {role} agent."},
+        ]
+        user_context = agent_data.get("input")
+        if user_context is not None:
+            messages.append({"role": "user", "content": json.dumps(user_context, sort_keys=True)})
+        for entry in trajectory:
+            messages.extend(_tool_call_messages(entry))
+        final = agent_data.get("final")
+        if isinstance(final, dict):
+            # The recorded structured conclusion is a legitimate assistant turn.
+            messages.append({"role": "assistant", "content": json.dumps(final, sort_keys=True)})
+        # Derived from the built structure, never stored metadata, so the count
+        # cannot silently disagree with the serialized messages.
+        n_tool_turns = sum(1 for m in messages if m.get("tool_calls"))
+        examples.append({
+            "format": SFT_EXAMPLE_FORMAT,
+            "scenario_id": scenario_id,
+            "role": role,
+            "messages": messages,
+            "n_tool_turns": n_tool_turns,
+            "tier": tier,
+            "reward": reward_contract.get("total", judge_score.get("overall", 0.0)),
+            "reward_contract": reward_contract,
+            "judge": judge_score,
+        })
     return examples
 
 

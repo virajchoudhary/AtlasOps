@@ -59,16 +59,49 @@ def test_coordinator_request_model_matches_selected_model():
     qualified_model = "qwen2.5:3b-instruct"
     completed = _run_probe(
         "import os\n"
+        "import pathlib\n"
         "import config.runtime as runtime\n"
         "import scripts.run_stage4_golden_incident as runner\n"
-        "import agents.coordinator as coordinator\n"
-        "print(os.environ['AGENT_MODEL'])\n"
-        "print(runner.SELECTED_STAGE4_AGENT_MODEL)\n"
-        "print(coordinator.MODEL_NAME)\n",
+        "import tempfile\n"
+        "with tempfile.TemporaryDirectory() as trajectories_dir:\n"
+        "    os.environ['TRAJECTORIES_DIR'] = trajectories_dir\n"
+        "    import agents.coordinator as coordinator\n"
+        "    isolated_dir = pathlib.Path(trajectories_dir).resolve()\n"
+        "    default_dir = (pathlib.Path(runner.REPO_ROOT) / 'artifacts' / 'trajectories').resolve()\n"
+        "    print(os.environ['AGENT_MODEL'])\n"
+        "    print(runner.SELECTED_STAGE4_AGENT_MODEL)\n"
+        "    print(coordinator.MODEL_NAME)\n"
+        "    print(pathlib.Path(coordinator.TRAJECTORIES_DIR).resolve() == isolated_dir)\n"
+        "    print(isolated_dir != default_dir)\n",
         model=qualified_model,
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.splitlines() == [qualified_model] * 3
+    lines = completed.stdout.splitlines()
+    assert lines[:3] == [qualified_model] * 3
+    assert lines[3:] == ["True", "True"]
+
+
+def test_blank_override_preserves_deterministic_default():
+    completed = _run_probe(
+        "import scripts.run_stage4_golden_incident as runner\n"
+        "print(runner.SELECTED_STAGE4_AGENT_MODEL)\n",
+        model=" \t\r\n ",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "qwen2.5:1.5b"
+
+
+def test_whitespace_around_explicit_override_is_normalized():
+    qualified_model = "qwen2.5:3b-instruct"
+    completed = _run_probe(
+        "import config.runtime as runtime\n"
+        "import scripts.run_stage4_golden_incident as runner\n"
+        "print(runtime.resolve_stage4_agent_model())\n"
+        "print(runner.SELECTED_STAGE4_AGENT_MODEL)\n",
+        model=f"  {qualified_model}  ",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == [qualified_model] * 2
 
 
 def test_evidence_metadata_matches_selected_execution_model():

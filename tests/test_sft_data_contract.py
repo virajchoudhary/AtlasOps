@@ -137,3 +137,34 @@ def test_recorded_final_conclusion_is_plain_assistant_text_not_a_call():
     assert last["role"] == "assistant"
     assert not last.get("tool_calls")
     assert json.loads(last["content"])["outcome"] == "resolved"
+
+
+def test_malformed_stringified_arguments_are_rejected_not_serialized():
+    import pytest
+
+    incident = _synthetic_incident()
+    incident["remediation"]["trajectory"][1]["args"] = '{"target_name": "synthetic-res'
+    with pytest.raises(ValueError, match="not valid JSON"):
+        trajectory_to_sft_examples("unit/t-7", "single_fault", incident, JUDGE, REWARD)
+
+
+def test_non_object_stringified_arguments_are_rejected():
+    import pytest
+
+    incident = _synthetic_incident()
+    incident["remediation"]["trajectory"][1]["args"] = '["not", "an", "object"]'
+    with pytest.raises(ValueError, match="JSON object"):
+        trajectory_to_sft_examples("unit/t-8", "single_fault", incident, JUDGE, REWARD)
+
+
+def test_n_tool_turns_is_derived_from_messages_and_cannot_disagree():
+    for incident, expected in (
+        (_synthetic_incident(), {"triage": 1, "remediation": 2, "comms": 0}),
+        (_synthetic_incident(), None),  # second pass guards deterministic derivation
+    ):
+        examples = trajectory_to_sft_examples("unit/t-9", "single_fault", incident, JUDGE, REWARD)
+        for e in examples:
+            derived = sum(1 for m in e["messages"] if m.get("tool_calls"))
+            assert e["n_tool_turns"] == derived
+            if expected is not None and e["role"] in expected:
+                assert e["n_tool_turns"] == expected[e["role"]]

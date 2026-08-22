@@ -74,6 +74,32 @@ def reset_cluster() -> None:
 SFT_EXAMPLE_FORMAT = "openai-tool-messages-v1"
 
 
+def _tool_call_arguments(entry: dict) -> str:
+    """Return the wire-format arguments JSON string for one recorded tool step.
+
+    Dict args are serialized deterministically. Pre-stringified args must parse
+    to a JSON object — malformed strings are rejected instead of entering the
+    corpus, because the runtime parser treats them as invalid tool calls and
+    training on them would teach malformed emission.
+    """
+    args = entry.get("args")
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"trajectory entry turn={entry.get('turn')!r} tool={entry['tool']!r}: "
+                f"stringified arguments are not valid JSON: {args[:120]!r}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                f"trajectory entry turn={entry.get('turn')!r} tool={entry['tool']!r}: "
+                f"arguments must be a JSON object, got {type(parsed).__name__}"
+            )
+        return args
+    return json.dumps(args or {}, sort_keys=True)
+
+
 def _tool_call_messages(entry: dict) -> list[dict]:
     """Serialize one recorded trajectory step into provider-native message shapes.
 
@@ -86,8 +112,7 @@ def _tool_call_messages(entry: dict) -> list[dict]:
     """
     if "tool" not in entry:
         return [{"role": "assistant", "content": entry.get("content", "")}]
-    args = entry.get("args")
-    arguments = args if isinstance(args, str) else json.dumps(args or {}, sort_keys=True)
+    arguments = _tool_call_arguments(entry)
     assistant_msg = {
         "role": "assistant",
         "content": entry.get("content") or "",
@@ -131,16 +156,15 @@ def trajectory_to_sft_examples(
         user_context = agent_data.get("input")
         if user_context is not None:
             messages.append({"role": "user", "content": json.dumps(user_context, sort_keys=True)})
-        n_tool_turns = 0
         for entry in trajectory:
-            step_msgs = _tool_call_messages(entry)
-            if step_msgs[0].get("tool_calls"):
-                n_tool_turns += 1
-            messages.extend(step_msgs)
+            messages.extend(_tool_call_messages(entry))
         final = agent_data.get("final")
         if isinstance(final, dict):
             # The recorded structured conclusion is a legitimate assistant turn.
             messages.append({"role": "assistant", "content": json.dumps(final, sort_keys=True)})
+        # Derived from the built structure, never stored metadata, so the count
+        # cannot silently disagree with the serialized messages.
+        n_tool_turns = sum(1 for m in messages if m.get("tool_calls"))
         examples.append({
             "format": SFT_EXAMPLE_FORMAT,
             "scenario_id": scenario_id,

@@ -1,0 +1,70 @@
+{#-
+Project-owned SFT chat template for Qwen2.5-Instruct tool-calling.
+Derived verbatim from Hugging Face "Qwen/Qwen2.5-7B-Instruct"
+tokenizer_config.json -> chat_template (Apache-2.0, Copyright Alibaba Cloud),
+with ONE deliberate change: assistant-generated regions are wrapped in
+{% generation %}...{% endgeneration %} markers so TRL SFTTrainer
+(assistant_only_loss=True) can compute assistant-token masks.
+Semantics: system/user/tool-definition/tool-response content is CONTEXT;
+assistant text, assistant native tool_calls, and the closing <|im_end|>
+are GENERATION TARGETS.
+Source retrieved 2026-08; upstream template revision tracked in
+tests/fixtures/qwen2_5_chat_template.jinja provenance note.
+-#}
+{%- if tools %}
+    {{- '<|im_start|>system\n' }}
+    {%- if messages[0]['role'] == 'system' %}
+        {{- messages[0]['content'] }}
+    {%- else %}
+        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}
+    {%- endif %}
+    {{- "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+    {%- for tool in tools %}
+        {{- "\n" }}
+        {{- tool | tojson }}
+    {%- endfor %}
+    {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
+{%- else %}
+    {%- if messages[0]['role'] == 'system' %}
+        {{- '<|im_start|>system\n' + messages[0]['content'] + '<|im_end|>\n' }}
+    {%- else %}
+        {{- '<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n' }}
+    {%- endif %}
+{%- endif %}
+{%- for message in messages %}
+    {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}
+        {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}
+    {%- elif message.role == "assistant" %}
+        {{- '<|im_start|>assistant' }}
+        {%- generation %}
+            {%- if message.content %}
+                {{- '\n' + message.content }}
+            {%- endif %}
+            {%- for tool_call in message.tool_calls %}
+                {%- if tool_call.function is defined %}
+                    {%- set tool_call = tool_call.function %}
+                {%- endif %}
+                {{- '\n<tool_call>\n{"name": "' }}
+                {{- tool_call.name }}
+                {{- '", "arguments": ' }}
+                {{- tool_call.arguments | tojson }}
+                {{- '}\n</tool_call>' }}
+            {%- endfor %}
+            {{- '<|im_end|>' }}
+        {%- endgeneration %}
+        {{- '\n' }}
+    {%- elif message.role == "tool" %}
+        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != "tool") %}
+            {{- '<|im_start|>user' }}
+        {%- endif %}
+        {{- '\n<tool_response>\n' }}
+        {{- message.content }}
+        {{- '\n</tool_response>' }}
+        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}
+            {{- '<|im_end|>\n' }}
+        {%- endif %}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}

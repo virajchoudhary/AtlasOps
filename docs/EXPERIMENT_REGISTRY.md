@@ -12,10 +12,44 @@ This registry tracks all material empirical runs, benchmarks, and multi-agent ev
 | `EXP-STAGE4-SF002-002` | 2026-08-17T15:23:07Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
 | `EXP-STAGE4-SF002-003` | 2026-08-17T16:50:28Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
 | `EXP-STAGE4-SF002-004` | 2026-08-21T16:54:21Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:1.5b` (ID: `65ec06548149`) | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop / GTX 1650 | **False** (Unfinetuned Baseline) | **FAIL (Valid Baseline)** | **$0.00** |
+| `EXP-STAGE4-SF002-005` | 2026-08-23T16:25:01Z–16:26:28Z | **Gate G4** | `single_fault/sf-002` | `qwen2.5:3b-instruct` | Ollama Local Container (`http://localhost:11434/v1`) | Local Kind `atlasops-local` / Windows 11 / Docker Desktop | n/a — terminated at `measured_degradation`; agents never ran | **INVALID (Instrumentation)** per [G4 amendment](project/G4_PROTOCOL_AMENDMENT_SF002_TELEMETRY.md) | **$0.00** |
+| `EXP-STAGE4-SF002-006` | 2026-08-23 | **Gate G4** | `single_fault/sf-002` (never injected) | none — aborted before reservation | n/a | Local Kind `atlasops-local` / Windows 11 / Docker Desktop | n/a | **ABORTED PRE-RESERVATION**; runlog workstation-local/untracked, disposition PENDING | **$0.00** |
 
 ---
 
 ## Detailed Experiment Logs
+
+### Run `EXP-STAGE4-SF002-005` (Stage 4 SF002 Telemetry-Contract Trial) — [INVALID (Instrumentation)]
+
+> [!NOTE]
+> **Disposition summary** (authoritative record:
+> [`docs/project/G4_PROTOCOL_AMENDMENT_SF002_TELEMETRY.md`](project/G4_PROTOCOL_AMENDMENT_SF002_TELEMETRY.md),
+> adopted 2026-08-23 via PR #29):
+> Immutable instrumentation failure. T0 was crossed and the attempt is permanently
+> spent (`RESERVED -> CONSUMED -> COMPLETED`); it must never be rerun. The run
+> terminated at `measured_degradation`, so Triage/Diagnosis/Remediation/Verification/
+> Comms never executed and the qualified model was never invoked for remediation.
+> Root cause: the frozen F1 selector `container="paymentservice"` names no container in
+> the pinned deployed workload (the application container is `server`) and therefore
+> matched zero Prometheus series even with healthy transport. This is a
+> measurement-contract defect of the harness, not an observed model result.
+> Evidence preserved unchanged under `artifacts/evidence/stage4/EXP-STAGE4-SF002-005.*`.
+
+- **Timestamps**: started `2026-08-23T16:25:01Z`, completed `2026-08-23T16:26:28Z`.
+- **Outcome recorded by harness**: `outcome=INVALID`, `failure_phase=measured_degradation`, attempt state `CONSUMED`.
+- **Replacement policy**: a future uniquely identified experiment may serve as the replacement model-capability trial only after BOTH pre-reservation readiness gates pass (telemetry readiness per the amendment's 7-point gate; paymentservice baseline readiness). It is NOT a rerun of 005.
+
+### Run `EXP-STAGE4-SF002-006` (Stage 4 Pre-Reservation Readiness Attempt) — [ABORTED PRE-RESERVATION]
+
+- **Date**: 2026-08-23. Aborted at the pre-fault readiness boundary BEFORE reservation:
+  no attempt marker, no RESERVED state, no Chaos object created, no T0 crossing,
+  and no experiment ID consumed for a replacement trial.
+- **Consequence**: motivated the baseline-readiness-before-reservation ordering change
+  adopted in the same G4 protocol amendment via PR #30; reservation now requires BOTH
+  gates to pass first.
+- **Runlog**: intentionally untracked and workstation-local
+  (`EXP-STAGE4-SF002-006.runlog.txt`). Its formal disposition is **PENDING** team
+  review; do not commit it as part of routine work.
 
 ### Run `EXP-STAGE4-SF002-004` (Stage 4 Causal Golden Incident — Post-PR #19 Merge) — [FAIL (Valid Baseline)]
 

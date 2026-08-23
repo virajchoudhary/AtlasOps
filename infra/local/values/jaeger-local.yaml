@@ -1,15 +1,29 @@
 # AtlasOps Local Jaeger — minimal Kind profile
 # Pipeline v1.1 Free-First
 #
-# Uses all-in-one strategy with in-memory storage
-# Lightest defensible configuration for Stage 3 gate
+# Chart: jaegertracing/jaeger 4.12.0
+# Rendered workload: Jaeger v2 all-in-one binary (image jaegertracing/jaeger,
+# appVersion 2.x) with in-memory storage by default and zero cloud cost.
+#
+# Schema note (2026-08-24): earlier revisions of this file used legacy chart-3.x
+# keys (`provisionDataStore`, `allInOne`, `agent/collector/query` toggles,
+# `storage.type`, `allInOne.extraEnv`). Chart 4.x does not define those keys;
+# helm rendered them as silent no-ops. This file now contains only keys that
+# chart 4.12.0 actually renders.
+#
+# Trace ingestion contract (Stage 3 item B):
+#   Online Boutique services export OTLP/gRPC spans to:
+#     jaeger.jaeger.svc.cluster.local:4317
+#   The rendered all-in-one Service exposes otlp-grpc:4317 / otlp-http:4318 by
+#   default, and the Jaeger v2 binary enables the OTLP receiver in its default
+#   configuration, so no separate OpenTelemetry Collector is required.
+#   Query API: http://jaeger.jaeger.svc.cluster.local:16686 (Service name is
+#   `jaeger`; the legacy `jaeger-query` Service no longer exists on 4.x.)
+#
+# Boutique services are patched for trace export by infra/local/setup_local.sh
+# (ENABLE_TRACING=1 + COLLECTOR_SERVICE_ADDR) after the pinned boutique apply.
 
-provisionDataStore:
-  cassandra: false
-  elasticsearch: false
-
-allInOne:
-  enabled: true
+jaeger:
   resources:
     requests:
       cpu: 50m
@@ -17,18 +31,3 @@ allInOne:
     limits:
       cpu: 200m
       memory: 256Mi
-  extraEnv:
-    - name: MEMORY_MAX_TRACES
-      value: "5000"
-
-storage:
-  type: memory
-
-agent:
-  enabled: false
-
-collector:
-  enabled: false
-
-query:
-  enabled: false

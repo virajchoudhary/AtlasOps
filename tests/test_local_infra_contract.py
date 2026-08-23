@@ -270,3 +270,128 @@ class TestCoordinatorManifestSecurity:
     def test_port_9099(self) -> None:
         content = (INFRA_LOCAL / "coordinator-local.yaml").read_text(encoding="utf-8")
         assert "containerPort: 9099" in content
+
+
+# =============================================================================
+# Jaeger trace ingestion contract (Stage 3 item B)
+#
+# Root cause of historically empty traces: the pinned Online Boutique v0.10.0
+# release manifests ship with tracing disabled (no ENABLE_TRACING), and no OTLP
+# endpoint was referenced anywhere in the deployment path. Chart 4.x renders
+# the Jaeger v2 all-in-one whose default config already listens on OTLP
+# 4317/4318, so only producer-side changes were needed.
+#
+# These checks are static/offline only (yaml.safe_load + text assertions).
+# =============================================================================
+
+JAEGER_LOCAL_VALUES = INFRA_LOCAL / "values" / "jaeger-local.yaml"
+OTLP_GRPC_ENDPOINT = "jaeger.jaeger.svc.cluster.local:4317"
+
+# Services verified against pinned boutique sources at commit 98e60f5e to honor
+# ENABLE_TRACING/COLLECTOR_SERVICE_ADDR with real OTLP export.
+INSTRUMENTED_BOUTIQUE_SERVICES = {
+    "frontend",
+    "checkoutservice",
+    "currencyservice",
+    "emailservice",
+}
+
+# Legacy chart-3.x keys that chart 4.12.0 silently ignores; their presence in
+# values files would be misleading dead configuration.
+LEGACY_JAEGER_KEYS = (
+    "provisionDataStore",
+    "allInOne",
+)
+
+
+class TestJaegerLocalValuesSchema:
+    """Local Jaeger values must contain only chart-4.x-rendered keys."""
+
+    def _load(self) -> dict:
+        import yaml
+
+        return yaml.safe_load(JAEGER_LOCAL_VALUES.read_text(encoding="utf-8"))
+
+    def test_values_parse_as_yaml_mapping(self) -> None:
+        data = self._load()
+        assert isinstance(data, dict)
+
+    def test_no_legacy_chart3_keys(self) -> None:
+        content = JAEGER_LOCAL_VALUES.read_text(encoding="utf-8")
+        for key in LEGACY_JAEGER_KEYS:
+            # allow mentions inside comments explaining the schema history
+            code_lines = [
+                line for line in content.splitlines()
+                if not line.lstrip().startswith("#")
+            ]
+            joined = "\n".join(code_lines)
+            assert f"{key}:" not in joined, f"legacy key '{key}' must not be set"
+            assert f"{key}.enabled" not in joined
+
+    def test_resources_render_under_jaeger_component(self) -> None:
+        data = self._load()
+        assert "jaeger" in data, "chart 4.x renders resources under 'jaeger:'"
+        resources = data["jaeger"]["resources"]
+        assert resources["requests"]["memory"] == "64Mi"
+        assert resources["limits"]["cpu"] == "200m"
+
+    def test_documents_otlp_ingestion_endpoint(self) -> None:
+        content = JAEGER_LOCAL_VALUES.read_text(encoding="utf-8")
+        assert "4317" in content
+
+
+class TestBoutiqueTraceExportPatching:
+    """setup_local.sh must enable trace export on exactly the right services."""
+
+    def _script(self) -> str:
+        return (INFRA_LOCAL / "setup_local.sh").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _normalized(script: str) -> str:
+        """Strip whitespace and shell-escaped quotes for stable assertions."""
+        return script.replace(" ", "").replace('\\"', '"')
+
+    def test_trace_target_list_declares_only_instrumented_services(self) -> None:
+        script = self._script()
+        block = re.search(
+            r"BOUTIQUE_TRACE_TARGETS=\(\n((?:\s+\"[a-z]+\"\n)+)\)", script
+        )
+        assert block, "BOUTIQUE_TRACE_TARGETS array missing"
+        targets = set(re.findall(r'"([a-z]+)"', block.group(1)))
+        assert targets == INSTRUMENTED_BOUTIQUE_SERVICES
+
+    def test_patch_sets_enable_tracing_and_collector_addr(self) -> None:
+        normalized = self._normalized(self._script())
+        assert '{"name":"ENABLE_TRACING","value":"1"}' in normalized
+        assert '{"name":"COLLECTOR_SERVICE_ADDR"' in normalized
+        assert OTLP_GRPC_ENDPOINT in normalized
+
+    def test_patch_uses_strategic_merge_on_server_container(self) -> None:
+        normalized = self._normalized(self._script())
+        assert '--type=strategic' in normalized
+        assert '{"name":"server","env":[' in normalized
+
+    def test_trace_targets_are_subset_of_boutique_deployments(self) -> None:
+        script = self._script()
+        all_deployments = set(
+            re.findall(r'^\s+"([a-z]+)"$', script.split("BOUTIQUE_DEPLOYMENTS=(")[1].split(")")[0], re.M)
+        )
+        targets_block = re.search(
+            r"BOUTIQUE_TRACE_TARGETS=\(\n((?:\s+\"[a-z]+\"\n)+)\)", script
+        ).group(1)
+        targets = set(re.findall(r'"([a-z]+)"', targets_block))
+        assert targets <= all_deployments
+
+    def test_trace_export_enabled_after_jaeger_deploy(self) -> None:
+        """Pods should restart into an already-live OTLP receiver."""
+        main_block = self._script().split("main() {")[-1]
+        jaeger_pos = main_block.find("deploy_jaeger")
+        patch_pos = main_block.find("enable_boutique_trace_export")
+        assert jaeger_pos != -1 and patch_pos != -1
+        assert patch_pos > jaeger_pos
+
+    def test_jaeger_service_name_matches_chart4x(self) -> None:
+        """Chart 4.x renders Service 'jaeger'; legacy 'jaeger-query' is gone."""
+        script = self._script()
+        assert "svc/jaeger-query" not in script
+        assert "svc/jaeger 16686:16686" in script

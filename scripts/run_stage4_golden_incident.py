@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -85,6 +86,21 @@ TARGET_CHAOS_KIND = "StressChaos"
 TARGET_CHAOS_NAME = "sf-002-paymentservice-cpu"
 TARGET_CHAOS_NAMESPACE = "chaos-mesh"
 
+# Predeclared SF002 degradation contract. Prometheus cAdvisor is already part
+# of the canonical G3 stack. A real stress increase must be material in both
+# absolute cores and relative to the healthy baseline.
+DEGRADATION_QUERY = (
+    'max(rate(container_cpu_usage_seconds_total{namespace="default",'
+    'pod=~"paymentservice-.*",container="paymentservice"}[2m]))'
+)
+DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES = 0.25
+DEGRADATION_MIN_RATIO = 2.0
+DEGRADATION_OBSERVATION_TIMEOUT_SECONDS = 30
+DEGRADATION_POLL_INTERVAL_SECONDS = 3
+ATTEMPT_STATE_RESERVED = "RESERVED"
+ATTEMPT_STATE_CONSUMED = "CONSUMED"
+ATTEMPT_STATE_COMPLETED = "COMPLETED"
+
 
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
     cmd = ["kubectl", "--context", KIND_CONTEXT] + args
@@ -98,6 +114,209 @@ def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "returncode": -1}
+
+
+def _experiment_evidence_dir(experiment_id: str, root: str | None = None) -> str:
+    base = root or REPO_ROOT
+    return os.path.join(base, "artifacts", "evidence", "stage4")
+
+
+def _attempt_marker_path(experiment_id: str, root: str | None = None) -> str:
+    safe_id = experiment_id.replace(os.sep, "_").replace("/", "_")
+    return os.path.join(
+        _experiment_evidence_dir(experiment_id, root),
+        ".attempts",
+        f"{safe_id}.attempt.json",
+    )
+
+
+def _write_json_atomic(path: str, data: dict[str, Any]) -> None:
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    temporary = os.path.join(
+        directory,
+        f".{os.path.basename(path)}.{uuid.uuid4().hex}.tmp",
+    )
+    with open(temporary, "x", encoding="utf-8") as stream:
+        json.dump(data, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def _read_json_file(path: str) -> dict[str, Any] | None:
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            value = json.load(stream)
+        return value if isinstance(value, dict) else None
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def reserve_experiment_attempt(
+    experiment_id: str,
+    *,
+    selected_model: str,
+    main_sha: str,
+    attempt_root: str | None = None,
+) -> dict[str, Any]:
+    """Atomically reserve an experiment before any pre-T0 mutation."""
+    evidence_dir = _experiment_evidence_dir(experiment_id)
+    primary_path = os.path.join(evidence_dir, f"{experiment_id}.json")
+    if os.path.exists(primary_path):
+        raise RuntimeError(f"Stage 4 evidence already exists: {primary_path}")
+
+    marker_path = _attempt_marker_path(experiment_id, attempt_root)
+    if os.path.exists(marker_path):
+        existing = _read_json_file(marker_path) or {}
+        raise RuntimeError(
+            f"Stage 4 attempt already exists: {marker_path} "
+            f"(state={existing.get('state', 'UNKNOWN')})"
+        )
+
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": ATTEMPT_STATE_RESERVED,
+        "reserved_at": datetime.now(timezone.utc).isoformat(),
+        "reservation_token": uuid.uuid4().hex,
+        "selected_model": selected_model,
+        "main_sha": main_sha,
+    }
+    _write_json_atomic(marker_path, reservation)
+    persisted = _read_json_file(marker_path) or {}
+    if persisted.get("reservation_token") != reservation["reservation_token"]:
+        raise RuntimeError(f"Concurrent Stage 4 reservation detected: {marker_path}")
+    return reservation
+
+
+def _transition_attempt(
+    reservation: dict[str, Any],
+    *,
+    state: str,
+    timestamp_field: str,
+    attempt_root: str | None = None,
+) -> dict[str, Any]:
+    marker_path = _attempt_marker_path(reservation["experiment_id"], attempt_root)
+    current = _read_json_file(marker_path) or {}
+    if current.get("reservation_token") != reservation.get("reservation_token"):
+        raise RuntimeError(f"Stage 4 attempt ownership mismatch: {marker_path}")
+    expected = {
+        ATTEMPT_STATE_CONSUMED: ATTEMPT_STATE_RESERVED,
+        ATTEMPT_STATE_COMPLETED: ATTEMPT_STATE_CONSUMED,
+    }[state]
+    if current.get("state") != expected:
+        raise RuntimeError(
+            f"Invalid Stage 4 attempt transition "
+            f"{current.get('state')} -> {state}: {marker_path}"
+        )
+    updated = {
+        **current,
+        "state": state,
+        timestamp_field: datetime.now(timezone.utc).isoformat(),
+    }
+    _write_json_atomic(marker_path, updated)
+    return updated
+
+
+def consume_experiment_attempt(
+    reservation: dict[str, Any],
+    attempt_root: str | None = None,
+) -> dict[str, Any]:
+    return _transition_attempt(
+        reservation,
+        state=ATTEMPT_STATE_CONSUMED,
+        timestamp_field="consumed_at",
+        attempt_root=attempt_root,
+    )
+
+
+def complete_experiment_attempt(
+    reservation: dict[str, Any],
+    attempt_root: str | None = None,
+) -> dict[str, Any]:
+    return _transition_attempt(
+        reservation,
+        state=ATTEMPT_STATE_COMPLETED,
+        timestamp_field="completed_at",
+        attempt_root=attempt_root,
+    )
+
+
+def release_experiment_reservation(
+    reservation: dict[str, Any],
+    attempt_root: str | None = None,
+) -> bool:
+    """Release only an unused reservation after a pre-fault setup failure."""
+    marker_path = _attempt_marker_path(reservation["experiment_id"], attempt_root)
+    current = _read_json_file(marker_path) or {}
+    if current.get("reservation_token") != reservation.get("reservation_token"):
+        return False
+    if current.get("state") != ATTEMPT_STATE_RESERVED:
+        return False
+    os.remove(marker_path)
+    return True
+
+
+def _extract_prometheus_cpu_cores(result: dict[str, Any]) -> list[float]:
+    if not result.get("success"):
+        return []
+    values: list[float] = []
+    for series in result.get("result") or []:
+        value = series.get("value", [])
+        if len(value) != 2:
+            continue
+        try:
+            values.append(float(value[1]))
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def collect_sf002_cpu_telemetry(time_unix: float | None = None) -> dict[str, Any]:
+    from agents.tools.prometheus import promql_query
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    result = promql_query(DEGRADATION_QUERY, time_unix=time_unix)
+    samples = _extract_prometheus_cpu_cores(result)
+    return {
+        "timestamp": started_at,
+        "query": DEGRADATION_QUERY,
+        "query_success": result.get("success") is True,
+        "query_error": result.get("error"),
+        "samples_cores": samples,
+        "max_cores": max(samples, default=None),
+    }
+
+
+def sf002_degradation_decision(
+    baseline: dict[str, Any],
+    post_fault: dict[str, Any],
+) -> dict[str, Any]:
+    baseline_max = baseline.get("max_cores")
+    post_max = post_fault.get("max_cores")
+    numeric = (
+        isinstance(baseline_max, (int, float))
+        and isinstance(post_max, (int, float))
+    )
+    absolute_increase = post_max - baseline_max if numeric else None
+    ratio = post_max / baseline_max if numeric and baseline_max > 0 else None
+    passed = bool(
+        absolute_increase is not None
+        and ratio is not None
+        and absolute_increase >= DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES
+        and ratio >= DEGRADATION_MIN_RATIO
+    )
+    return {
+        "measured": absolute_increase is not None and ratio is not None,
+        "passed": passed,
+        "baseline_max_cores": baseline_max,
+        "post_fault_max_cores": post_max,
+        "absolute_increase_cores": absolute_increase,
+        "post_to_baseline_ratio": ratio,
+        "min_absolute_increase_cores": DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES,
+        "min_ratio": DEGRADATION_MIN_RATIO,
+    }
 
 
 def stage4_evidence_metadata() -> dict[str, Any]:
@@ -115,6 +334,10 @@ def evaluate_causal_g4_predicate(
     fault_observed: bool,
     incident_result: dict[str, Any],
     harness_repaired_pre_verification: bool,
+    *,
+    degradation_proven: bool = True,
+    settling_completed: bool = True,
+    primary_evidence_persisted: bool = False,
 ) -> dict[str, Any]:
     """Strictly evaluate the 15 causal requirements for Gate G4 PASS."""
     from agents.tool_policy import CLUSTER_MUTATING_TOOLS
@@ -131,8 +354,8 @@ def evaluate_causal_g4_predicate(
     # 2. Injection success
     c2 = injection_success is True
 
-    # 3. Fault objectively observed pre-trigger
-    c3 = fault_observed is True
+    # 3. Fault observed and independently measured before trigger.
+    c3 = fault_observed is True and degradation_proven is True
 
     # 4. Trigger delivered and handled
     incident_id = incident_result.get("incident_id")
@@ -197,16 +420,16 @@ def evaluate_causal_g4_predicate(
     # 12. No harness repair before verifier
     c12 = harness_repaired_pre_verification is False
 
-    # 13. Objective verifier env_resolved == True (from coordinator internal verification)
+    # 13. Bounded convergence completed, then objective env_resolved is true.
     verifier_result = incident_result.get("verification", {})
     env_resolved = bool(incident_result.get("env_resolved", False) or verifier_result.get("env_resolved", False))
-    c13 = env_resolved is True
+    c13 = env_resolved is True and settling_completed is True
 
     # 14. Comms ran after verifier
     c14 = bool(comms_final and isinstance(comms_final, dict))
 
-    # 15. Evidence bundle / trajectory exists
-    c15 = bool(remediation_traj and len(remediation_traj) > 0)
+    # 15. The coordinator's primary incident record was durably persisted.
+    c15 = primary_evidence_persisted is True
 
     criteria = {
         "1_baseline_healthy": c1,
@@ -235,7 +458,89 @@ def evaluate_causal_g4_predicate(
     }
 
 
+def _paymentservice_baseline_healthy(kubectl_stdout: str) -> bool:
+    try:
+        payload = json.loads(kubectl_stdout)
+    except json.JSONDecodeError:
+        return False
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not items:
+        return False
+    for item in items:
+        status = item.get("status") or {}
+        desired = int(status.get("replicas", 0))
+        ready = int(status.get("readyReplicas", 0))
+        if desired <= 0 or ready < desired:
+            return False
+    return True
+
+
+def _active_chaos_count(kubectl_stdout: str) -> int:
+    try:
+        payload = json.loads(kubectl_stdout)
+    except json.JSONDecodeError:
+        return -1
+    items = payload.get("items") if isinstance(payload, dict) else None
+    return len(items) if isinstance(items, list) else -1
+
+
+def _primary_incident_evidence_persisted(incident_result: dict[str, Any]) -> bool:
+    incident_id = str(incident_result.get("incident_id") or "")
+    if not incident_id:
+        return False
+    trajectory_dir = os.getenv("TRAJECTORIES_DIR", "")
+    if not trajectory_dir:
+        return False
+    path = os.path.join(trajectory_dir, f"{incident_id}.json")
+    persisted = _read_json_file(path)
+    if not persisted or persisted.get("incident_id") != incident_id:
+        return False
+    runtime_trajectory = incident_result.get("remediation", {}).get("trajectory", [])
+    persisted_trajectory = persisted.get("remediation", {}).get("trajectory", [])
+    return len(persisted_trajectory) == len(runtime_trajectory)
+
+
+def _persist_stage4_primary_evidence(evidence: dict[str, Any]) -> str:
+    evidence_dir = _experiment_evidence_dir(evidence["experiment_id"])
+    path = os.path.join(evidence_dir, f"{evidence['experiment_id']}.json")
+    if os.path.exists(path):
+        raise RuntimeError(f"Refusing to overwrite Stage 4 evidence: {path}")
+    _write_json_atomic(path, evidence)
+    return path
+
+
+def _current_main_sha() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    main_sha = result.stdout.strip()
+    if result.returncode != 0 or len(main_sha) != 40:
+        raise RuntimeError("Unable to establish a valid repository HEAD for Stage 4 reservation")
+    return main_sha
+
+
+def _persist_stage4_prefault_failure(evidence: dict[str, Any]) -> str:
+    evidence_dir = _experiment_evidence_dir(evidence["experiment_id"])
+    path = os.path.join(
+        evidence_dir,
+        ".attempts",
+        f"{evidence['experiment_id']}.prefault.json",
+    )
+    _write_json_atomic(path, evidence)
+    return path
+
+
 async def main() -> dict[str, Any]:
+    reservation = reserve_experiment_attempt(
+        EXPERIMENT_ID,
+        selected_model=SELECTED_STAGE4_AGENT_MODEL,
+        main_sha=_current_main_sha(),
+    )
+    fault_crossed = False
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
     print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
@@ -287,30 +592,78 @@ async def main() -> dict[str, Any]:
         "phases": {},
     }
 
+    def abort_before_fault(phase: str) -> dict[str, Any]:
+        released = release_experiment_reservation(reservation)
+        evidence["attempt_state"] = "RELEASED_PRE_FAULT"
+        evidence["reservation_released"] = released
+        evidence["outcome"] = "INVALID"
+        evidence["failure_phase"] = phase
+        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        prefault_path = _persist_stage4_prefault_failure(evidence)
+        evidence["prefault_evidence"] = prefault_path
+        return evidence
+
     try:
         # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
         print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
         run_kubectl(["delete", "stresschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
         run_kubectl(["delete", "podchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
         run_kubectl(["delete", "networkchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "dnschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "iochaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+        run_kubectl(["delete", "timechaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
         time.sleep(2)
+
+        chaos_precheck = run_kubectl(
+            ["get", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos", "-A", "-o", "json"]
+        )
+        active_chaos_count = _active_chaos_count(chaos_precheck.get("stdout", ""))
+        if active_chaos_count != 0:
+            evidence["phases"]["pre_fault_chaos_check"] = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "active_chaos_count": active_chaos_count,
+                "result": chaos_precheck,
+            }
+            print(f"  Active chaos remains ({active_chaos_count}); refusing to start incident setup.")
+            return abort_before_fault("pre_fault_chaos_not_zero")
 
         # Phase 1: Pre-incident Baseline Check
         print("\n>>> Phase 1: Pre-Incident Baseline Check...")
         base_pods = run_kubectl(["get", "pods", "-n", TARGET_NAMESPACE, "-l", f"app={TARGET_SERVICE}", "-o", "json"])
-        baseline_healthy = base_pods.get("success") is True
+        baseline_healthy = (
+            base_pods.get("success") is True
+            and _paymentservice_baseline_healthy(base_pods.get("stdout", ""))
+        )
+        baseline_telemetry = collect_sf002_cpu_telemetry()
         evidence["phases"]["baseline"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "target_pods": base_pods.get("stdout")[:500],
             "baseline_healthy": baseline_healthy,
+            "cpu_telemetry": baseline_telemetry,
         }
         print(f"  Baseline {TARGET_SERVICE} status: {'Healthy' if baseline_healthy else 'Unhealthy'}")
+        if not baseline_healthy:
+            print("  Healthy baseline not established; refusing to inject fault.")
+            return abort_before_fault("unhealthy_baseline")
 
         # Phase 2: Inject Fault
         print(f"\n>>> Phase 2: Injecting Fault ({SCENARIO_ID})...")
         manifest_path = os.path.join(REPO_ROOT, "bench", "chaos_manifests", "single_fault", "sf-002.yaml")
         inject_res = run_kubectl(["apply", "-f", manifest_path])
         injection_success = inject_res.get("success") is True
+        if not injection_success:
+            released = release_experiment_reservation(reservation)
+            evidence["attempt_state"] = "RELEASED_PRE_FAULT"
+            evidence["reservation_released"] = released
+            evidence["outcome"] = "INVALID"
+            evidence["failure_phase"] = "fault_application"
+            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["prefault_evidence"] = _persist_stage4_prefault_failure(evidence)
+            print(f"  Fault application failed; reservation released={released}")
+            return evidence
+        consume_experiment_attempt(reservation)
+        fault_crossed = True
+        evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         evidence["phases"]["injection"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "manifest": manifest_path,
@@ -329,6 +682,60 @@ async def main() -> dict[str, Any]:
             "chaos_status": chaos_check.get("stdout")[:500],
         }
         print(f"  Observable in cluster: {fault_observable}")
+
+        # Phase 3a: Independently measure the CPU effect before any agent runs.
+        print("\n>>> Phase 3a: Measuring SF002 Degradation...")
+        post_fault_observations = []
+        degradation_decision: dict[str, Any] | None = None
+        degradation_deadline = time.monotonic() + DEGRADATION_OBSERVATION_TIMEOUT_SECONDS
+        while time.monotonic() < degradation_deadline:
+            post_fault_telemetry = collect_sf002_cpu_telemetry()
+            post_fault_observations.append(post_fault_telemetry)
+            degradation_decision = sf002_degradation_decision(
+                baseline_telemetry,
+                post_fault_telemetry,
+            )
+            if degradation_decision["passed"]:
+                break
+            await asyncio.sleep(DEGRADATION_POLL_INTERVAL_SECONDS)
+        if degradation_decision is None:
+            degradation_decision = sf002_degradation_decision(
+                baseline_telemetry,
+                {"max_cores": None},
+            )
+        evidence["phases"]["degradation_proof"] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timeout_seconds": DEGRADATION_OBSERVATION_TIMEOUT_SECONDS,
+            "poll_interval_seconds": DEGRADATION_POLL_INTERVAL_SECONDS,
+            "decision": degradation_decision,
+            "post_fault_observations": post_fault_observations,
+        }
+
+        if not fault_observable or not degradation_decision["passed"]:
+            evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
+            evidence["outcome"] = "INVALID"
+            evidence["failure_phase"] = (
+                "fault_activation" if not fault_observable else "measured_degradation"
+            )
+            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            primary_path = _persist_stage4_primary_evidence(evidence)
+            complete_experiment_attempt(reservation)
+            clean_res = run_kubectl(
+                ["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"]
+            )
+            cleanup_record = {
+                "experiment_id": EXPERIMENT_ID,
+                "timing": "after_failure_verdict_persisted",
+                "affects_env_resolved": False,
+                "result": clean_res,
+            }
+            _write_json_atomic(
+                os.path.join(_experiment_evidence_dir(EXPERIMENT_ID), f"{EXPERIMENT_ID}.cleanup.json"),
+                cleanup_record,
+            )
+            print(f"  Degradation proof failed; INVALID evidence saved: {primary_path}")
+            return evidence
+        evidence["phases"]["degradation_proof"]["passed"] = True
 
         # Phase 4: Construct Alert & Trigger Multi-Agent Coordinator Pipeline
         # NOTE: The model-visible alert must contain ONLY realistic operational
@@ -410,12 +817,18 @@ async def main() -> dict[str, Any]:
 
         # Phase 5: Causal Gate G4 Evaluation (NO HARNESS DELETION PRE-VERIFICATION)
         harness_repaired_pre_verification = False
+        primary_evidence_persisted = _primary_incident_evidence_persisted(incident_result)
         eval_result = evaluate_causal_g4_predicate(
             baseline_healthy=baseline_healthy,
             injection_success=injection_success,
             fault_observed=fault_observable,
             incident_result=incident_result,
             harness_repaired_pre_verification=harness_repaired_pre_verification,
+            degradation_proven=bool(degradation_decision["passed"]),
+            settling_completed=bool(
+                incident_result.get("settling", {}).get("settled", False)
+            ),
+            primary_evidence_persisted=primary_evidence_persisted,
         )
 
         gate_g4_pass = eval_result["gate_g4_pass"]
@@ -446,12 +859,13 @@ async def main() -> dict[str, Any]:
                 "Historical experiment records are immutable. Re-run with a new "
                 "STAGE4_EXPERIMENT_ID (e.g. EXP-STAGE4-SF002-005)."
             )
-        with open(per_run_file, "w", encoding="utf-8") as f:
-            json.dump(evidence, f, indent=2)
-        with open(latest_file, "w", encoding="utf-8") as f:
-            json.dump(evidence, f, indent=2)
+        _write_json_atomic(per_run_file, evidence)
+        _write_json_atomic(latest_file, evidence)
         print(f"\nSaved golden incident evidence: {per_run_file}")
         print(f"Updated latest pointer: {latest_file}")
+
+        complete_experiment_attempt(reservation)
+        evidence["attempt_state"] = ATTEMPT_STATE_COMPLETED
 
         # Post-verdict safety cleanup (AFTER verdict is frozen and saved).
         # Recorded in a separate sidecar so the measured evidence file above
@@ -466,13 +880,16 @@ async def main() -> dict[str, Any]:
             "result": clean_res,
         }
         cleanup_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.cleanup.json")
-        with open(cleanup_file, "w", encoding="utf-8") as f:
-            json.dump(cleanup_record, f, indent=2)
+        _write_json_atomic(cleanup_file, cleanup_record)
         print(f"  Safety cleanup: {clean_res.get('stdout', 'clean')}")
         print(f"  Cleanup record (sidecar): {cleanup_file}")
 
         return evidence
 
+    except Exception:
+        if not fault_crossed:
+            release_experiment_reservation(reservation)
+        raise
     finally:
         for p in pf_procs:
             p.terminate()

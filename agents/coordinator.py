@@ -5,6 +5,7 @@ Receives Alertmanager webhooks at POST /webhook on port 9099.
 Each agent is a vLLM endpoint co-hosted on the AMD MI300X.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -197,6 +198,8 @@ _MODEL_TURN_TEXT_CAP = 2000
 
 _RETRY_REASON_NO_TOOL_CALL = "remediation_no_tool_call_retry"
 _TERMINATION_MAX_TURNS = "max_turns_exhausted"
+SETTLE_POLL_INTERVAL_SECONDS = 2
+SETTLE_TIMEOUT_SECONDS = 30
 
 
 def _model_turn_record(
@@ -245,6 +248,9 @@ def _model_turn_record(
         "conclusion_present": conclusion_present,
         "retry": {"triggered": retry_triggered, "reason": retry_reason},
         "termination_reason": termination_reason,
+        "validation_state": "received",
+        "execution_state": "not_executed",
+        "tool_outcomes": [],
     }
 
 
@@ -261,7 +267,13 @@ _CONCLUSION_PROMPTS = {
 }
 
 
-async def _force_json_conclusion(role: str, messages: list[dict], client: httpx.AsyncClient) -> dict[str, Any]:
+async def _force_json_conclusion(
+    role: str,
+    messages: list[dict],
+    client: httpx.AsyncClient,
+    *,
+    telemetry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """One extra turn with tools disabled, forcing a clean JSON conclusion.
 
     Trims the message history to the system prompt + last 4 turns to avoid
@@ -282,11 +294,76 @@ async def _force_json_conclusion(role: str, messages: list[dict], client: httpx.
                 context=f"forced_conclusion/{role}",
             )
             r.raise_for_status()
-            content = r.json()["choices"][0]["message"].get("content", "")
+            choice = r.json()["choices"][0]
+            message = choice.get("message") or {}
+            if telemetry is not None:
+                telemetry.clear()
+                telemetry.update({"choice": choice, "message": message})
+            content = message.get("content", "")
             parsed = _try_parse_json(content)
             return parsed if "raw" not in parsed else {"summary": content[:300]}
     except Exception as e:
+        if telemetry is not None:
+            telemetry.clear()
+            telemetry.update({"error": str(e)})
         return {"error": f"forced_conclusion failed: {e}"}
+
+
+async def settle_environment(
+    *,
+    scenario_id: str,
+    agent_claimed_resolved: bool,
+    alert: dict[str, Any],
+    incident_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Poll frozen verifier prerequisites for bounded convergence.
+
+    This is timing-only convergence observation. The authoritative verifier is
+    still invoked after this function returns; no success predicate is relaxed.
+    """
+    from agents.verifier import verify_environment
+
+    started_at_wall = datetime_now_utc()
+    started_monotonic = time.monotonic()
+    observations = []
+    settled = False
+    while True:
+        result = verify_environment(
+            scenario_id=scenario_id,
+            agent_claimed_resolved=agent_claimed_resolved,
+            alert=alert,
+            incident_context=incident_context,
+        )
+        observation = {
+            "timestamp": datetime_now_utc(),
+            "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+            "env_resolved": bool(result.env_resolved),
+            "verification_status": result.verification_status,
+            "failed_checks": list(result.failed_checks),
+        }
+        observations.append(observation)
+        if result.env_resolved:
+            settled = True
+            break
+        elapsed = time.monotonic() - started_monotonic
+        if elapsed >= SETTLE_TIMEOUT_SECONDS:
+            break
+        await asyncio.sleep(min(SETTLE_POLL_INTERVAL_SECONDS, SETTLE_TIMEOUT_SECONDS - elapsed))
+    return {
+        "started_at": started_at_wall,
+        "completed_at": datetime_now_utc(),
+        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+        "timeout_seconds": SETTLE_TIMEOUT_SECONDS,
+        "poll_interval_seconds": SETTLE_POLL_INTERVAL_SECONDS,
+        "settled": settled,
+        "observations": observations,
+    }
+
+
+def datetime_now_utc() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
 
 
 async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10) -> dict[str, Any]:
@@ -307,6 +384,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     _remediation_retry_given: bool = False
     _last_choice: dict[str, Any] | None = None
     _last_raw_msg: dict[str, Any] | None = None
+    _remediation_turn_record: dict[str, Any] | None = None
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
@@ -344,6 +422,19 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
             _last_choice = choice
             _last_raw_msg = raw_msg_snapshot
 
+            # Every remediation response is persisted before retry, execution,
+            # conclusion, or termination control flow can discard it.
+            if role == "remediation":
+                _remediation_turn_record = _model_turn_record(
+                    role,
+                    turn,
+                    choice,
+                    raw_msg_snapshot,
+                    parsed_count=_parsed_call_count,
+                    executed_names=turn_executed_names,
+                )
+                trajectory.append(_remediation_turn_record)
+
             if not msg.get("tool_calls"):
                 # Generic Remediation Tool Execution Retry:
                 # If remediation model returned conclusion text with NO actual tool calls
@@ -352,14 +443,12 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     _remediation_retry_given = True
                     # Persist the discarded model turn BEFORE continuing (Run-004
                     # observability gap): prose/empty responses must survive.
-                    trajectory.append(_model_turn_record(
-                        role, turn, choice, raw_msg_snapshot,
-                        parsed_count=_parsed_call_count,
-                        executed_names=turn_executed_names,
-                        retry_triggered=True,
-                        retry_reason=_RETRY_REASON_NO_TOOL_CALL,
-                        conclusion_present=False,
-                    ))
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["retry"] = {
+                            "triggered": True,
+                            "reason": _RETRY_REASON_NO_TOOL_CALL,
+                        }
+                        _remediation_turn_record["validation_state"] = "no_tool_calls"
                     audit_log.record(
                         incident_id=incident_id,
                         agent_role=role,
@@ -392,7 +481,29 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 }
                 _required = _ROLE_REQUIRED_KEYS.get(role, set())
                 if "raw" in parsed or (_required and not _required.intersection(parsed.keys())):
-                    parsed = await _force_json_conclusion(role, messages, client)
+                    forced_telemetry: dict[str, Any] = {}
+                    parsed = await _force_json_conclusion(
+                        role,
+                        messages,
+                        client,
+                        telemetry=forced_telemetry,
+                    )
+                    if role == "remediation":
+                        trajectory.append(_model_turn_record(
+                            role,
+                            turn,
+                            forced_telemetry.get("choice") or {},
+                            forced_telemetry.get("message") or {"content": ""},
+                            parsed_count=0,
+                            executed_names=[],
+                            conclusion_present=True,
+                        ))
+                        trajectory[-1]["turn_kind"] = "forced_conclusion"
+                        if forced_telemetry.get("error"):
+                            trajectory[-1]["finish_reason"] = "forced_conclusion_error"
+                            trajectory[-1]["validation_state"] = "forced_conclusion_error"
+                        else:
+                            trajectory[-1]["validation_state"] = "final_conclusion"
 
                 if role == "remediation":
                     # Strictly distinguish proposals from proven executions.
@@ -408,6 +519,9 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                             parsed["status"] = "unresolved"
 
                 thought_emit(role, "conclusion", _summarise_conclusion(role, conclusion))
+                if _remediation_turn_record is not None:
+                    _remediation_turn_record["conclusion_present"] = True
+                    _remediation_turn_record["validation_state"] = "final_conclusion"
                 trajectory.append({"role": role, "turn": turn, "content": conclusion})
                 return {
                     "role": role,
@@ -421,6 +535,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 fn_args, args_error = _parse_tool_arguments(fn_name, tc["function"].get("arguments"))
                 if args_error is not None:
                     tool_output = {"success": False, "error": args_error}
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "invalid_arguments"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "failed", "executed": False}
+                        )
                     audit_log.record(
                         incident_id=incident_id,
                         agent_role=role,
@@ -451,6 +570,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 policy_error = _check_tool_policy(role, fn_name, fn_args, user_input)
                 if policy_error:
                     tool_output = {"success": False, "error": policy_error}
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "blocked_by_policy"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "blocked", "executed": False}
+                        )
                     audit_log.record(
                         incident_id=incident_id,
                         agent_role=role,
@@ -499,6 +623,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     )
                 except CircuitBreakerTripped as e:
                     tool_output = {"success": False, "error": str(e), "blocked_by_circuit_breaker": True}
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "blocked_by_circuit_breaker"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "allowed", "execution": "blocked", "executed": False}
+                        )
                     audit_log.record(
                         incident_id=incident_id,
                         agent_role=role,
@@ -532,6 +661,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 _seen_calls[_call_key] = _seen_calls.get(_call_key, 0) + 1
                 if _seen_calls[_call_key] > 3:
                     tool_output = {"error": f"Duplicate call blocked — {fn_name} already called with these exact args. Try different parameters or produce your conclusion."}
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "dedup_blocked"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "allowed", "execution": "dedup_blocked", "executed": False}
+                        )
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(tool_output)})
                     trajectory.append({"role": role, "turn": turn, "tool": fn_name, "args": fn_args, "output": tool_output, "dedup_blocked": True})
                     continue
@@ -541,6 +675,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 _cap = _TOOL_CAPS.get(fn_name, 8)
                 if _tool_counts[fn_name] > _cap:
                     tool_output = {"error": f"Tool cap reached — {fn_name} called {_tool_counts[fn_name]} times this run (limit {_cap}). You have enough data; produce your conclusion now."}
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "cap_blocked"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "allowed", "execution": "cap_blocked", "executed": False}
+                        )
                     messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(tool_output)})
                     trajectory.append({"role": role, "turn": turn, "tool": fn_name, "args": fn_args, "output": tool_output, "cap_blocked": True})
                     continue
@@ -555,7 +694,26 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = {"error": f"Tool execution failed: {e}"}
                 if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
                     _mutating_tool_executed = True
-                turn_executed_names.append(fn_name)
+                if fn is not None:
+                    turn_executed_names.append(fn_name)
+                if _remediation_turn_record is not None:
+                    _remediation_turn_record["executed_tool_calls"] = list(turn_executed_names)
+                    executed = bool(tool_output.get("success", False))
+                    _remediation_turn_record["validation_state"] = "validated"
+                    known_tool = fn_name in TOOL_REGISTRY and fn is not None
+                    _remediation_turn_record["execution_state"] = (
+                        "executed" if known_tool else "unknown_tool"
+                    )
+                    _remediation_turn_record["tool_outcomes"].append(
+                        {
+                            "id": tc.get("id"),
+                            "name": fn_name,
+                            "validation": "allowed",
+                            "execution": "completed" if known_tool else "not_executed",
+                            "success": executed,
+                            "executed": known_tool,
+                        }
+                    )
                 _executed_actions.append({
                     "step": len(_executed_actions) + 1,
                     "tool": fn_name,
@@ -593,9 +751,16 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     log.warning("%s exceeded %d turns", role, max_turns)
     # Persist the final (turn-limit) model response before the forced
     # conclusion replaces it — otherwise its raw shape is lost.
-    if _last_raw_msg is not None:
+    if role == "remediation" and _remediation_turn_record is not None:
+        _remediation_turn_record["termination_reason"] = _TERMINATION_MAX_TURNS
+        if not _remediation_turn_record["tool_outcomes"]:
+            _remediation_turn_record["validation_state"] = "no_tool_calls"
+    elif _last_raw_msg is not None:
         trajectory.append(_model_turn_record(
-            role, max_turns - 1, _last_choice or {}, _last_raw_msg,
+            role,
+            max_turns - 1,
+            _last_choice or {},
+            _last_raw_msg,
             parsed_count=len(_normalize_assistant_tool_calls(_last_raw_msg)),
             retry_triggered=False,
             retry_reason=None,
@@ -603,7 +768,26 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
             conclusion_present=False,
         ))
     # Ask the model to summarise whatever it found rather than returning an error
-    forced = await _force_json_conclusion(role, messages, client)
+    forced_telemetry: dict[str, Any] = {}
+    forced = await _force_json_conclusion(role, messages, client, telemetry=forced_telemetry)
+    if role == "remediation":
+        trajectory.append(_model_turn_record(
+            role,
+            max_turns,
+            forced_telemetry.get("choice") or {},
+            forced_telemetry.get("message") or {"content": ""},
+            parsed_count=0,
+            executed_names=[],
+            conclusion_present=True,
+        ))
+        trajectory[-1]["turn_kind"] = "forced_conclusion"
+        trajectory[-1]["validation_state"] = (
+            "forced_conclusion_error"
+            if forced_telemetry.get("error")
+            else "final_conclusion"
+        )
+        if forced_telemetry.get("error"):
+            trajectory[-1]["finish_reason"] = "forced_conclusion_error"
     if role == "remediation":
         proposed = forced.get("proposed_actions") or forced.get("actions_taken") or []
         forced["proposed_actions"] = proposed if isinstance(proposed, list) else [proposed]
@@ -1044,25 +1228,30 @@ async def handle_incident(
             remediation = await call_agent("remediation", remediation_input)
         # Remediation execution is complete. Now execute objective environment verification.
         remediation_final = remediation.get("final", {})
+        scenario_id = str(scenario_id or alert.get("scenario_id") or "")
         agent_claimed_resolved = bool(
             remediation_final.get("outcome") == "resolved"
             or remediation_final.get("status") == "resolved"
         )
-        # Evaluation-only scenario identity: explicit argument first, then the
-        # legacy top-level alert key. Never sourced from model-visible labels.
-        scenario_id = str(scenario_id or alert.get("scenario_id") or "")
+        incident_context = {
+            "incident_id": incident_id,
+            "alert": alert,
+            "triage": triage,
+            "diagnosis": diagnosis,
+            "remediation": remediation,
+        }
+        settling_report = await settle_environment(
+            scenario_id=scenario_id,
+            agent_claimed_resolved=agent_claimed_resolved,
+            alert=alert,
+            incident_context=incident_context,
+        )
         from agents.verifier import verify_environment
         verification_result = verify_environment(
             scenario_id=scenario_id,
             agent_claimed_resolved=agent_claimed_resolved,
             alert=alert,
-            incident_context={
-                "incident_id": incident_id,
-                "alert": alert,
-                "triage": triage,
-                "diagnosis": diagnosis,
-                "remediation": remediation,
-            },
+            incident_context=incident_context,
         )
         env_resolved = bool(verification_result.env_resolved)
         verification_dict = verification_result.to_dict()
@@ -1074,6 +1263,7 @@ async def handle_incident(
             "diagnosis": diagnosis.get("final", {}),
             "remediation": remediation_final,
             "verification": verification_dict,
+            "settling": settling_report,
             "env_resolved": env_resolved,
             "agent_claimed_resolved": agent_claimed_resolved,
         })

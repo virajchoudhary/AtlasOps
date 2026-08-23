@@ -7,17 +7,26 @@ equivalence (call counts / outcomes unchanged) while proving persistence.
 from __future__ import annotations
 
 import json
+import pathlib
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def _audit_environment(monkeypatch, tmp_path):
+def _audit_environment(monkeypatch):
     """Self-contained audit config: never depend on import-order side effects
     (e.g. the Stage 4 runner seeding env) and never touch the real audit log."""
+    audit_root = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "scratch"
+        / "coordinator-turn-audit"
+        / uuid.uuid4().hex
+    )
+    audit_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "turn-observability-synthetic-secret-0123456789")
-    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit_log.jsonl"))
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(audit_root / "audit_log.jsonl"))
 
 
 def _response(content="", tool_calls=None, finish_reason="stop"):
@@ -58,22 +67,40 @@ class TestRetryTurnPersistence:
         assert final["executed_actions"] == []
 
         records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
-        assert len(records) == 1
-        rec = records[0]
-        assert rec["turn"] == 0
-        assert rec["retry"] == {"triggered": True, "reason": "remediation_no_tool_call_retry"}
-        assert rec["assistant_text"] == "I will inspect the widget service and then decide."
-        assert rec["assistant_text_truncated"] is False
-        assert rec["native_tool_calls"] == []
-        assert rec["parsed_tool_calls"] == 0
-        assert rec["finish_reason"] == "stop"
-        assert rec["executed_tool_calls"] == []
-        assert rec["conclusion_present"] is False
+        assert [record["turn"] for record in records] == [0, 1]
 
-        # Ordering: the discarded turn precedes the turn-1 conclusion entry.
-        idx_rec = next(i for i, e in enumerate(result["trajectory"]) if e.get("kind") == "model_turn")
-        later = [e for e in result["trajectory"][idx_rec + 1:] if e.get("turn") == 1]
-        assert later, "turn-1 evidence missing"
+        retry_record, final_record = records
+        assert retry_record["assistant_text"] == "I will inspect the widget service and then decide."
+        assert retry_record["assistant_text_truncated"] is False
+        assert retry_record["native_tool_calls"] == []
+        assert retry_record["parsed_tool_calls"] == 0
+        assert retry_record["finish_reason"] == "stop"
+        assert retry_record["validation_state"] == "no_tool_calls"
+        assert retry_record["executed_tool_calls"] == []
+        assert retry_record["conclusion_present"] is False
+        assert retry_record["retry"] == {
+            "triggered": True,
+            "reason": "remediation_no_tool_call_retry",
+        }
+
+        assert final_record["assistant_text"] == CONCLUSION
+        assert final_record["native_tool_calls"] == []
+        assert final_record["finish_reason"] == "stop"
+        assert final_record["validation_state"] == "final_conclusion"
+        assert final_record["executed_tool_calls"] == []
+        assert final_record["conclusion_present"] is True
+
+        indices = [
+            index for index, entry in enumerate(result["trajectory"])
+            if entry.get("kind") == "model_turn"
+        ]
+        conclusion_indices = [
+            index for index, entry in enumerate(result["trajectory"][indices[1] + 1:])
+            if entry.get("role") == "remediation" and entry.get("turn") == 1
+            and entry.get("content") == CONCLUSION
+        ]
+        assert indices[0] < indices[1]
+        assert conclusion_indices, "turn-1 conclusion evidence missing"
 
     def test_empty_content_retry_is_persisted(self):
         import asyncio
@@ -126,15 +153,39 @@ class TestRetryTurnPersistence:
         assert invalid and invalid[0]["output"]["success"] is False
         assert invalid[0]["raw_arguments"] == '{"kind": "StressCh'
 
-        # The following call-less remediation turn is persisted with retry reason.
-        rec = next(e for e in result["trajectory"] if e.get("kind") == "model_turn")
-        assert rec["turn"] == 1
-        assert rec["retry"]["reason"] == "remediation_no_tool_call_retry"
-        assert rec["assistant_text"] == "The experiment could not be stopped; retrying."
+        records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
+        assert [record["turn"] for record in records] == [0, 1, 2]
 
-    def test_normal_paths_do_not_emit_model_turn_records(self):
-        """Invariant: records are emitted only where turns were previously lost
-        (retry skip / max-turns), keeping normal trajectories unchanged."""
+        malformed_record, retry_record, final_record = records
+        assert malformed_record["native_tool_calls"] == [{
+            "id": "call_broken",
+            "name": "chaos_stop_experiment",
+            "arguments": '{"kind": "StressCh',
+        }]
+        assert malformed_record["validation_state"] == "invalid_arguments"
+        assert malformed_record["executed_tool_calls"] == []
+
+        assert invalid[0]["output"]["success"] is False
+        assert invalid[0]["raw_arguments"] == '{"kind": "StressCh'
+
+        assert retry_record["turn"] == 1
+        assert retry_record["assistant_text"] == "The experiment could not be stopped; retrying."
+        assert retry_record["validation_state"] == "no_tool_calls"
+        assert retry_record["retry"]["reason"] == "remediation_no_tool_call_retry"
+        assert retry_record["executed_tool_calls"] == []
+
+        assert final_record["turn"] == 2
+        assert final_record["assistant_text"] == CONCLUSION
+        assert final_record["validation_state"] == "final_conclusion"
+        assert final_record["executed_tool_calls"] == []
+
+        trajectory_indices = {id(entry): index for index, entry in enumerate(result["trajectory"])}
+        model_indices = [trajectory_indices[id(record)] for record in records]
+        invalid_index = trajectory_indices[id(invalid[0])]
+        assert model_indices[0] < invalid_index < model_indices[1] < model_indices[2]
+
+    def test_normal_paths_emit_complete_model_turn_records(self):
+        """Invariant: every remediation response survives normal tool loops."""
         import asyncio
         from agents.coordinator import call_agent
 
@@ -152,7 +203,11 @@ class TestRetryTurnPersistence:
             with patch("agents.coordinator.require_audit_log"):
                 result = asyncio.run(call_agent("remediation", {"incident_id": "inc-obs-5"}))
 
-        assert [e for e in result["trajectory"] if e.get("kind") == "model_turn"] == []
+        records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
+        assert [record["turn"] for record in records] == [0, 1, 2]
+        assert records[0]["executed_tool_calls"] == ["promql_query"]
+        assert records[1]["native_tool_calls"][0]["name"] == "chaos_stop_experiment"
+        assert records[2]["conclusion_present"] is True
         final = result["final"]
         assert final["outcome"] == "resolved"
         # Investigate -> act: both the read-only probe and the mutation executed.
@@ -179,12 +234,38 @@ class TestMaxTurnsPersistence:
         # Behavior equivalence: same number of model calls as before the change.
         assert mock_post.call_count == 11
 
-        rec = next(e for e in result["trajectory"] if e.get("kind") == "model_turn")
-        assert rec["turn"] == 9
-        assert rec["termination_reason"] == "max_turns_exhausted"
-        assert rec["retry"]["triggered"] is False
-        assert rec["finish_reason"] == "tool_calls"
-        assert rec["native_tool_calls"][0]["name"] == "promql_query"
+        records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
+        ordinary_records = records[:-1]
+        forced_record = records[-1]
+
+        assert [record["turn"] for record in ordinary_records] == list(range(10))
+        assert [record["finish_reason"] for record in ordinary_records] == ["tool_calls"] * 10
+        assert all(record["retry"]["triggered"] is False for record in ordinary_records)
+        assert all(
+            isinstance(record["executed_tool_calls"], list)
+            and all(isinstance(name, str) for name in record["executed_tool_calls"])
+            for record in records
+        )
+        assert [record["executed_tool_calls"] for record in ordinary_records[:6]] == [
+            ["promql_query"],
+            ["promql_query"],
+            ["promql_query"],
+            ["promql_query"],
+            ["promql_query"],
+            ["promql_query"],
+        ]
+        assert all(record["executed_tool_calls"] == [] for record in ordinary_records[6:])
+
+        exhausted_record = ordinary_records[-1]
+        assert exhausted_record["termination_reason"] == "max_turns_exhausted"
+        assert exhausted_record["native_tool_calls"][0]["name"] == "promql_query"
+
+        assert forced_record is not exhausted_record
+        assert forced_record["turn"] == 10
+        assert forced_record["turn_kind"] == "forced_conclusion"
+        assert forced_record["validation_state"] == "final_conclusion"
+        assert forced_record["assistant_text"] == CONCLUSION
+        assert forced_record["executed_tool_calls"] == []
 
 
 class TestAuditMirror:

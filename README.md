@@ -31,7 +31,7 @@ tags:
 
 ---
 
-The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 22 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
+The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 20 role-authorized SRE tools, backed by a registry of 23 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
 
 **Triage** acked the alert and mapped the blast radius in 47 seconds.  
 **Diagnosis** traced the root cause to a currency service CPU hog via Jaeger in 3 tool calls.  
@@ -149,7 +149,7 @@ Full training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Ra
 
 ## Tool Registry and Agent Access
 
-AtlasOps registers **22 SRE tool wrappers**. Role ACLs expose **19** to autonomous agents:
+AtlasOps registers **23 SRE tool wrappers**. Role ACLs expose **20** to autonomous agents:
 
 `kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `gcloud_logs_read` · `cloud_monitoring_query` · `alertmanager_list_alerts` · `alertmanager_silence` · `slack_post_update` · **`postmortem_draft`**
 
@@ -346,7 +346,7 @@ atlasops/
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
 │   ├── prompts/                # triage / diagnosis / remediation / comms
-│   └── tools/                  # 22 registered wrappers; 19 agent-exposed
+│   └── tools/                  # 23 registered wrappers; 20 agent-exposed
 ├── bench/
 │   ├── runner.py               # Benchmark harness (28 frozen + optional generated scenarios)
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/

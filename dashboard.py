@@ -306,7 +306,7 @@ def build_about_tab():
 | **GCP Services** | Cloud SQL (Postgres 15), Cloud PubSub, Cloud Monitoring API, Cloud Logging |
 | **GPU** | AMD MI300X (192 GB HBM3) — 5 models co-hosted via vLLM |
 | **Models** | Qwen2.5-7B×4 (LoRA agents) + Qwen2.5-72B (judge) |
-| **Tools** | 22 registered wrappers / 19 agent-exposed vs kube-sre-gym's 7 |
+| **Tools** | 23 registered wrappers / 20 agent-exposed vs kube-sre-gym's 7 |
 
 ### Agent Chain
 ```

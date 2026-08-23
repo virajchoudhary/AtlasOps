@@ -37,7 +37,7 @@ graph TB
     PROM -->|alert fires| AM
     AM -->|webhook| COORD
     COORD --> T --> D --> R --> C
-    T & D & R & C <-->|"19 role-authorized tools<br/>(22 registered wrappers)<br/>kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager"| GKE
+    T & D & R & C <-->|"20 role-authorized tools<br/>(23 registered wrappers)<br/>kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager"| GKE
     T & D & R & C <-->|Cloud APIs| CSQL & PS & CMON & CLOG
     JUDGE -->|generates scenarios| CM
     JUDGE -->|scores actions| COORD
@@ -129,7 +129,7 @@ flowchart LR
 
 ---
 
-## 22 Registered Tool Wrappers, 19 Agent-Exposed
+## 23 Registered Tool Wrappers, 20 Agent-Exposed
 
 ```
 kubectl (8)          promql (2)          jaeger (2)
@@ -144,9 +144,9 @@ kubectl_scale        argocd_app_history  cloud_monitoring_query
 kubectl_exec         argocd_rollback
                      argocd_app_get
 
-alertmanager (2)     comms (2)
-────────────────     ──────────
-alertmanager_silence slack_post_update
+alertmanager (2)     comms (2)           chaos (1)
+────────────────     ──────────          ─────────
+alertmanager_silence slack_post_update   chaos_stop_experiment
 alertmanager_list_alerts
                      postmortem_draft
 ```

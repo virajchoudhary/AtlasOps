@@ -4,17 +4,28 @@
 Multi-agent SRE incident response platform for the **AMD Developer Hackathon (lablab.ai)**.
 Submission deadline: **May 10, 2026 — 7:00 PM UTC (12:30 AM IST May 11)**
 
-## GCP Infrastructure (LIVE — costs money)
+## GCP Infrastructure
+> **Security note:** Live endpoint IPs and any inline credentials were removed from this
+> file because it is in a public repository. Endpoints are ephemeral and have no permanent
+> documentation value; never commit credentials.
+>
+> **How to supply values:** keep endpoints and credentials out of Git entirely. Export
+> them per-session from your shell or an approved secret store, e.g.
+> `$env:GRAFANA_URL = "<grafana-endpoint>"`,
+> `$env:GRAFANA_ADMIN_USER = "<grafana-admin-user>"`,
+> `$env:GRAFANA_ADMIN_PASSWORD = "<from secret store>"`, and analogous variables for
+> other service endpoints (`PROMETHEUS_URL`, `ALERTMANAGER_URL`, `JAEGER_UI_URL`,
+> `ARGOCD_URL`). Reference only variable *names* in docs and scripts.
 - **Project:** `cloudsre-v3-amd`
 - **Cluster:** `atlasops` (was `cloudsre-v3`), GKE Standard, `us-central1`, 3× e2-standard-4
-- **Grafana:** `http://136.119.60.129` (admin / cloudsre-admin)
-- **Online Boutique:** `http://34.132.118.204`
-- **Argo CD:** `https://34.122.132.237`
-- **Cloud SQL:** `cloudsre-cart-db` (Postgres 15, `34.60.234.86`)
+- **Grafana:** `$env:GRAFANA_URL` (credentials via `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`; see security note above)
+- **Online Boutique:** frontend LoadBalancer IP — supply at runtime, not documented here
+- **Argo CD:** `$env:ARGOCD_URL`
+- **Cloud SQL:** `cloudsre-cart-db` (Postgres 15) — connection IP supplied at runtime
 - **PubSub topics:** `cloudsre-checkout-events`, `cloudsre-alerts`
-- **Prometheus:** `http://34.31.150.33:9090` (LoadBalancer — exposed May 9)
-- **Alertmanager:** `http://34.135.158.165:9093` (LoadBalancer — exposed May 9)
-- **Jaeger:** `http://104.198.218.251:16686` (LoadBalancer `jaeger-ui` service — exposed May 9)
+- **Prometheus:** `$env:PROMETHEUS_URL` (LoadBalancer)
+- **Alertmanager:** `$env:ALERTMANAGER_URL` (LoadBalancer)
+- **Jaeger:** `$env:JAEGER_UI_URL` (LoadBalancer `jaeger-ui` service)
 
 ## kubectl / gcloud
 ```powershell
@@ -47,7 +58,7 @@ $helm    = "C:\Users\NSEIT\AppData\Local\Microsoft\WinGet\Packages\Helm.Helm_Mic
 - `agents/stream.py` — real-time thought streaming (SSE + 3s poll in dashboard)
 - `agents/adversarial_designer.py` — 72B judge generates dynamic chaos scenarios
 - `agents/judge.py` — scores agent trajectories
-- `agents/tools/` — 22 registered SRE tool wrappers; 19 agent-exposed
+- `agents/tools/` — 23 registered SRE tool wrappers; 20 agent-exposed
 - `agents/prompts/` — triage / diagnosis / remediation / comms system prompts
 - `bench/runner.py` — benchmark harness, generates adversarial scenarios before run
 - `bench/chaos_manifests/` — sf-001..008, cs-001..005, mf-001..005, named_replays/

@@ -221,7 +221,7 @@ Alert → <span style="color:#FF4560">Triage</span> → <span style="color:#7B61
 </div>
 
 <div>
-<h3>🛠 22 Registered · 19 Agent-Exposed</h3>
+<h3>🛠 23 Registered · 20 Agent-Exposed</h3>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.7em">
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">kubectl (8 registered / 6 exposed)</div>
 <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.12);border-radius:6px;padding:7px 10px;color:#00D4FF">promql_query</div>

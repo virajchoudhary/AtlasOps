@@ -694,7 +694,8 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = {"error": f"Tool execution failed: {e}"}
                 if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
                     _mutating_tool_executed = True
-                turn_executed_names.append(fn_name)
+                if fn is not None:
+                    turn_executed_names.append(fn_name)
                 if _remediation_turn_record is not None:
                     _remediation_turn_record["executed_tool_calls"] = list(turn_executed_names)
                     executed = bool(tool_output.get("success", False))
@@ -776,7 +777,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
             forced_telemetry.get("choice") or {},
             forced_telemetry.get("message") or {"content": ""},
             parsed_count=0,
-            executed_names=list(_executed_actions),
+            executed_names=[],
             conclusion_present=True,
         ))
         trajectory[-1]["turn_kind"] = "forced_conclusion"

@@ -137,9 +137,10 @@ class TestStage4CausalPredicate:
             baseline_healthy=True,
             injection_success=True,
             fault_observed=True,
-            incident_result=inc,
-            harness_repaired_pre_verification=False,
-        )
+        incident_result=inc,
+        harness_repaired_pre_verification=False,
+        primary_evidence_persisted=True,
+    )
         assert eval_res["gate_g4_pass"] is True
         assert all(eval_res["criteria"].values())
 
@@ -531,7 +532,12 @@ class TestCoordinatorRemediationContract:
         final = result["final"]
         assert final["executed_actions"] == []
         assert final["actions_taken"] == []
-        assert result["trajectory"][0]["invalid_arguments"] is True
+        invalid_steps = [
+            step for step in result["trajectory"] if step.get("invalid_arguments")
+        ]
+        assert invalid_steps and invalid_steps[0]["invalid_arguments"] is True
+        assert result["trajectory"][0]["kind"] == "model_turn"
+        assert result["trajectory"][0]["validation_state"] == "invalid_arguments"
         tool_messages = [
             m for m in mock_post.call_args_list[2][0][2]["messages"] if m.get("role") == "tool"
         ]

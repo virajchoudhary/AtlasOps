@@ -62,17 +62,17 @@ def test_coordinator_request_model_matches_selected_model():
         "import pathlib\n"
         "import config.runtime as runtime\n"
         "import scripts.run_stage4_golden_incident as runner\n"
-        "import tempfile\n"
-        "with tempfile.TemporaryDirectory() as trajectories_dir:\n"
-        "    os.environ['TRAJECTORIES_DIR'] = trajectories_dir\n"
-        "    import agents.coordinator as coordinator\n"
-        "    isolated_dir = pathlib.Path(trajectories_dir).resolve()\n"
-        "    default_dir = (pathlib.Path(runner.REPO_ROOT) / 'artifacts' / 'trajectories').resolve()\n"
-        "    print(os.environ['AGENT_MODEL'])\n"
-        "    print(runner.SELECTED_STAGE4_AGENT_MODEL)\n"
-        "    print(coordinator.MODEL_NAME)\n"
-        "    print(pathlib.Path(coordinator.TRAJECTORIES_DIR).resolve() == isolated_dir)\n"
-        "    print(isolated_dir != default_dir)\n",
+        "trajectories_dir = pathlib.Path(runner.REPO_ROOT) / 'scratch' / 'stage4-model-test-trajectories' / os.urandom(8).hex()\n"
+        "trajectories_dir.mkdir(parents=True)\n"
+        "os.environ['TRAJECTORIES_DIR'] = str(trajectories_dir)\n"
+        "import agents.coordinator as coordinator\n"
+        "isolated_dir = pathlib.Path(os.environ['TRAJECTORIES_DIR']).resolve()\n"
+        "default_dir = (pathlib.Path(runner.REPO_ROOT) / 'artifacts' / 'trajectories').resolve()\n"
+        "print(os.environ['AGENT_MODEL'])\n"
+        "print(runner.SELECTED_STAGE4_AGENT_MODEL)\n"
+        "print(coordinator.MODEL_NAME)\n"
+        "print(pathlib.Path(coordinator.TRAJECTORIES_DIR).resolve() == isolated_dir)\n"
+        "print(isolated_dir != default_dir)\n",
         model=qualified_model,
     )
     assert completed.returncode == 0, completed.stderr

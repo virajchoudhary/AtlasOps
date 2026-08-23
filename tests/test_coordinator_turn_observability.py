@@ -126,15 +126,15 @@ class TestRetryTurnPersistence:
         assert invalid and invalid[0]["output"]["success"] is False
         assert invalid[0]["raw_arguments"] == '{"kind": "StressCh'
 
-        # The following call-less remediation turn is persisted with retry reason.
-        rec = next(e for e in result["trajectory"] if e.get("kind") == "model_turn")
+        # The malformed native call and the following call-less remediation turn
+        # are both persisted; the universal model-turn record precedes it.
+        rec = [e for e in result["trajectory"] if e.get("kind") == "model_turn"][0]
         assert rec["turn"] == 1
         assert rec["retry"]["reason"] == "remediation_no_tool_call_retry"
         assert rec["assistant_text"] == "The experiment could not be stopped; retrying."
 
-    def test_normal_paths_do_not_emit_model_turn_records(self):
-        """Invariant: records are emitted only where turns were previously lost
-        (retry skip / max-turns), keeping normal trajectories unchanged."""
+    def test_normal_paths_emit_complete_model_turn_records(self):
+        """Invariant: every remediation response survives normal tool loops."""
         import asyncio
         from agents.coordinator import call_agent
 
@@ -152,7 +152,11 @@ class TestRetryTurnPersistence:
             with patch("agents.coordinator.require_audit_log"):
                 result = asyncio.run(call_agent("remediation", {"incident_id": "inc-obs-5"}))
 
-        assert [e for e in result["trajectory"] if e.get("kind") == "model_turn"] == []
+        records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
+        assert [record["turn"] for record in records] == [0, 1, 2]
+        assert records[0]["executed_tool_calls"] == ["promql_query"]
+        assert records[1]["native_tool_calls"][0]["name"] == "chaos_stop_experiment"
+        assert records[2]["conclusion_present"] is True
         final = result["final"]
         assert final["outcome"] == "resolved"
         # Investigate -> act: both the read-only probe and the mutation executed.

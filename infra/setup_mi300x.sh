@@ -50,7 +50,8 @@ GCP_PROJECT=cloudsre-v3-amd
 # Then kubectl will work from this machine
 
 # ── Prometheus (port-forward from laptop OR use LoadBalancer IP) ─────────────
-PROMETHEUS_URL=http://136.119.60.129:80/prometheus
+# Supply the endpoint per-session; never commit live IPs:
+# PROMETHEUS_URL="$PROMETHEUS_URL"   # e.g. export PROMETHEUS_URL=http://<prometheus-endpoint>:80/prometheus
 # If Grafana LB doesn't expose Prometheus, use:
 # kubectl port-forward svc/prometheus-kube-prometheus-prometheus -n monitoring 9090:9090 &
 # PROMETHEUS_URL=http://localhost:9090

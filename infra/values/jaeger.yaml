@@ -4,8 +4,21 @@
 # Provides private, in-cluster query and collector services for distributed tracing.
 # Query API endpoint: http://jaeger.jaeger.svc.cluster.local:16686
 #
-# Note: Installing this chart establishes backend reachability for G3.
-# Real trace ingestion from Online Boutique remains an independent follow-up.
+# Schema note (2026-08-24): chart 4.x renders the Jaeger v2 all-in-one binary
+# (image jaegertracing/jaeger, appVersion 2.x) with in-memory storage by
+# default. The rendered Service is named `jaeger` and is ClusterIP by default;
+# its Service template already exposes OTLP grpc:4317 / http:4318 and query
+# 16686/16685. `jaeger.service.type` is not a chart-4.x-rendered key — it is
+# retained here as the explicit private-endpoint contract declaration enforced
+# by tests/test_infra_contract.py and tests/test_runtime_infra_contract.py,
+# and matches the rendered default. Legacy chart-3.x keys (`provisionDataStore`,
+# `allInOne`, component toggles, `allInOne.extraEnv`) are NOT valid on 4.x and
+# must not be reintroduced.
+#
+# Trace ingestion contract (Stage 3 item B): Online Boutique services export
+# OTLP/gRPC spans directly to jaeger.jaeger.svc.cluster.local:4317 once patched
+# for trace export (see infra/local/setup_local.sh on the local Kind path); no
+# separate OpenTelemetry Collector is required.
 
 jaeger:
   service:

@@ -50,6 +50,19 @@ readonly BOUTIQUE_DEPLOYMENTS=(
   "adservice"
 )
 
+# Services whose pinned v0.10.0 images honor the tracing contract
+# (ENABLE_TRACING=1 + COLLECTOR_SERVICE_ADDR, OTLP/gRPC export). Verified
+# against service sources at commit 98e60f5e: frontend (Go), checkoutservice
+# (Go), currencyservice (Node), emailservice (Python). Other boutique images at
+# this pin contain no exporter or only stubs, so patching them would be inert.
+readonly BOUTIQUE_TRACE_TARGETS=(
+  "frontend"
+  "checkoutservice"
+  "currencyservice"
+  "emailservice"
+)
+readonly BOUTIQUE_TRACE_COLLECTOR_ADDR="jaeger.jaeger.svc.cluster.local:4317"
+
 readonly PROMETHEUS_CHART_VERSION="88.3.0"
 readonly JAEGER_CHART_VERSION="4.12.0"
 readonly ARGOCD_CHART_VERSION="10.3.2"
@@ -249,6 +262,22 @@ deploy_online_boutique() {
   echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} deployments are Available."
 }
 
+# Enable distributed trace export from Online Boutique into Jaeger.
+# The pinned release manifests ship with tracing disabled (no ENABLE_TRACING),
+# which is why jaeger_search historically returned {"success": true, "count": 0}.
+# Strategic merge on container name "server" appends the two env vars without
+# disturbing the pinned env; the patch is idempotent.
+enable_boutique_trace_export() {
+  local svc
+  for svc in "${BOUTIQUE_TRACE_TARGETS[@]}"; do
+    echo "TRACING: enabling trace export on deployment/$svc..."
+    kubectl_local patch deployment "$svc" --namespace=default --type=strategic -p \
+      "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"server\",\"env\":[{\"name\":\"ENABLE_TRACING\",\"value\":\"1\"},{\"name\":\"COLLECTOR_SERVICE_ADDR\",\"value\":\"${BOUTIQUE_TRACE_COLLECTOR_ADDR}\"}]}]}}}}"
+    kubectl_local rollout status "deployment/$svc" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
+  done
+  echo "TRACING: boutique spans now export OTLP/gRPC to ${BOUTIQUE_TRACE_COLLECTOR_ADDR}."
+}
+
 # ==============================================================================
 # Helm chart deployments
 # ==============================================================================
@@ -394,6 +423,8 @@ main() {
   deploy_online_boutique
   deploy_prometheus
   deploy_jaeger
+  # Patched after Jaeger exists so restarted pods export into a live receiver.
+  enable_boutique_trace_export
   deploy_argocd
   deploy_chaos_mesh
 
@@ -412,7 +443,7 @@ Safe local access:
   kubectl --context=$KUBE_CONTEXT port-forward -n default svc/frontend 8080:80
   kubectl --context=$KUBE_CONTEXT port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
   kubectl --context=$KUBE_CONTEXT port-forward -n monitoring svc/prometheus-kube-prometheus-alertmanager 9093:9093
-  kubectl --context=$KUBE_CONTEXT port-forward -n jaeger svc/jaeger-query 16686:16686
+  kubectl --context=$KUBE_CONTEXT port-forward -n jaeger svc/jaeger 16686:16686
   kubectl --context=$KUBE_CONTEXT port-forward -n argocd svc/argocd-server 8443:80
   kubectl --context=$KUBE_CONTEXT port-forward -n default svc/atlasops-coordinator-svc 9099:9099
 =========================================

@@ -17,6 +17,7 @@ from scripts.run_stage4_golden_incident import (
     ATTEMPT_STATE_CONSUMED,
     DEGRADATION_QUERY,
     _attempt_marker_path,
+    _paymentservice_baseline_check,
     collect_sf002_cpu_telemetry,
     complete_experiment_attempt,
     consume_experiment_attempt,
@@ -117,6 +118,28 @@ def test_sf002_telemetry_uses_targeted_cadvisor_metric():
     assert telemetry["max_cores"] == 0.75
 
 
+def _deployment_item(status: dict) -> dict:
+    return {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": "paymentservice", "namespace": "default", "labels": {"app": "paymentservice"}},
+        "spec": {"replicas": 1, "selector": {"matchLabels": {"app": "paymentservice"}}},
+        "status": status,
+    }
+
+
+def _pod_item(phase: str = "Running", containers_ready: bool = True) -> dict:
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": "paymentservice-754c98b599-rjvxx", "namespace": "default", "labels": {"app": "paymentservice"}},
+        "status": {
+            "phase": phase,
+            "containerStatuses": [{"name": "paymentservice", "ready": containers_ready, "started": True}],
+        },
+    }
+
+
 def test_baseline_health_requires_ready_desired_replicas():
     healthy = json.dumps({
         "items": [{"status": {"replicas": 1, "readyReplicas": 1, "availableReplicas": 1}}]
@@ -124,11 +147,62 @@ def test_baseline_health_requires_ready_desired_replicas():
     not_ready = json.dumps({
         "items": [{"status": {"replicas": 1, "readyReplicas": 0, "availableReplicas": 0}}]
     })
+    zero_desired = json.dumps({
+        "items": [{"status": {"replicas": 0, "readyReplicas": 0, "availableReplicas": 0}}]
+    })
+    missing_replica_state = json.dumps({"items": [{"metadata": {"name": "paymentservice"}}]})
+    ready_without_availability = json.dumps({
+        "items": [{"status": {"replicas": 1, "readyReplicas": 1}}],
+    })
     empty = json.dumps({"items": []})
     assert _paymentservice_baseline_healthy(healthy) is True
     assert _paymentservice_baseline_healthy(not_ready) is False
+    assert _paymentservice_baseline_healthy(zero_desired) is False
+    assert _paymentservice_baseline_healthy(missing_replica_state) is False
+    # Availability is informational in the merged contract (mirrors the
+    # Deployment readiness gate in agents/verifier.py): readiness is gated,
+    # availability is not.
+    assert _paymentservice_baseline_healthy(ready_without_availability) is True
     assert _paymentservice_baseline_healthy(empty) is False
     assert _paymentservice_baseline_healthy("not-json") is False
+
+
+def test_stage4_preflight_supplies_deployment_schema_to_baseline_helper():
+    deployment_payload = json.dumps({"items": [_deployment_item({"replicas": 1, "readyReplicas": 1, "availableReplicas": 1})]})
+    with patch(
+        "scripts.run_stage4_golden_incident.run_kubectl",
+        return_value={"success": True, "stdout": deployment_payload, "returncode": 0},
+    ) as kubectl:
+        healthy, workloads = _paymentservice_baseline_check()
+    kubectl.assert_called_once_with(
+        ["get", "deployments", "-n", "default", "-l", "app=paymentservice", "-o", "json"]
+    )
+    assert healthy is True
+    assert json.loads(workloads["stdout"])["items"][0]["kind"] == "Deployment"
+
+
+def test_stage4_preflight_does_not_rely_on_pod_shaped_input():
+    pod_payload = json.dumps({"items": [_pod_item()]})
+    with patch(
+        "scripts.run_stage4_golden_incident.run_kubectl",
+        return_value={"success": True, "stdout": pod_payload, "returncode": 0},
+    ):
+        healthy, workloads = _paymentservice_baseline_check()
+    assert healthy is False
+    assert json.loads(workloads["stdout"])["items"][0]["kind"] == "Pod"
+    # Directly: Pod JSON never satisfies the Deployment-schema helper even for
+    # fully Running/ready pods (no replicas/readyReplicas fields -> fail closed).
+    assert _paymentservice_baseline_healthy(pod_payload) is False
+
+
+def test_stage4_preflight_fails_closed_when_deployment_query_fails():
+    deployment_payload = json.dumps({"items": [_deployment_item({"replicas": 1, "readyReplicas": 1, "availableReplicas": 1})]})
+    with patch(
+        "scripts.run_stage4_golden_incident.run_kubectl",
+        return_value={"success": False, "stderr": "connection refused", "returncode": 1, "stdout": deployment_payload},
+    ):
+        healthy, _workloads = _paymentservice_baseline_check()
+    assert healthy is False
 
 
 def test_attempt_lifecycle_blocks_duplicate_and_crashed_attempts():

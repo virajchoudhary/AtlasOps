@@ -475,6 +475,18 @@ def _paymentservice_baseline_healthy(kubectl_stdout: str) -> bool:
     return True
 
 
+def _paymentservice_baseline_check() -> tuple[bool, dict[str, Any]]:
+    """Fetch the target Deployment (not Pods) and evaluate Deployment-schema readiness."""
+    workloads = run_kubectl(
+        ["get", "deployments", "-n", TARGET_NAMESPACE, "-l", f"app={TARGET_SERVICE}", "-o", "json"]
+    )
+    healthy = (
+        workloads.get("success") is True
+        and _paymentservice_baseline_healthy(workloads.get("stdout", ""))
+    )
+    return healthy, workloads
+
+
 def _active_chaos_count(kubectl_stdout: str) -> int:
     try:
         payload = json.loads(kubectl_stdout)
@@ -629,15 +641,11 @@ async def main() -> dict[str, Any]:
 
         # Phase 1: Pre-incident Baseline Check
         print("\n>>> Phase 1: Pre-Incident Baseline Check...")
-        base_pods = run_kubectl(["get", "pods", "-n", TARGET_NAMESPACE, "-l", f"app={TARGET_SERVICE}", "-o", "json"])
-        baseline_healthy = (
-            base_pods.get("success") is True
-            and _paymentservice_baseline_healthy(base_pods.get("stdout", ""))
-        )
+        baseline_healthy, base_workloads = _paymentservice_baseline_check()
         baseline_telemetry = collect_sf002_cpu_telemetry()
         evidence["phases"]["baseline"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "target_pods": base_pods.get("stdout")[:500],
+            "target_deployments": base_workloads.get("stdout")[:500],
             "baseline_healthy": baseline_healthy,
             "cpu_telemetry": baseline_telemetry,
         }

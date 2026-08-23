@@ -1,0 +1,4 @@
+# Shell scripts must always use LF: CRLF breaks `bash` execution
+# (observed: `set: pipefail: invalid option name` under WSL/bash when the
+# working copy carried CRLF). Pin text+eol for all shell scripts.
+*.sh text eol=lf

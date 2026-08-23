@@ -89,5 +89,13 @@ Telemetry-readiness failure causes a preflight abort before
 `reserve_experiment_attempt()`: no attempt marker, no RESERVED state, no Chaos
 object, no T0, no CONSUMED, and no experiment ID consumed.
 
+Additionally (adopted after the 2026-08-23 EXP-STAGE4-SF002-006 pre-fault
+abort): the paymentservice Deployment baseline readiness contract is also
+evaluated BEFORE reservation, requiring two consecutive healthy fail-closed
+baseline reads separated by at least five seconds within a bounded timeout.
+Reservation now occurs only after BOTH gates pass; the fault boundary remains
+the sole CONSUMED point. This ordering change preserves every health
+requirement and all F1-F5 semantics.
+
 Such a replacement trial is NOT a rerun of 005. 005 remains part of the
 permanent experiment history.

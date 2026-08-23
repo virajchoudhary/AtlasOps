@@ -112,6 +112,13 @@ DEGRADATION_POLL_INTERVAL_SECONDS = 3
 TELEMETRY_SCRAPE_INTERVAL_SECONDS = 30
 TELEMETRY_REQUIRED_STABLE_PROBES = 2
 TELEMETRY_READINESS_TIMEOUT_SECONDS = 120
+# Pre-reservation paymentservice Deployment readiness gate: the same fail-closed
+# baseline contract as the causal predicate, evaluated BEFORE any reservation.
+# Two consecutive healthy reads separated by a short interval guard against
+# single-read flaps during node resource churn (observed 2026-08-23).
+BASELINE_STABILITY_INTERVAL_SECONDS = 5
+BASELINE_REQUIRED_STABLE_PROBES = 2
+BASELINE_READINESS_TIMEOUT_SECONDS = 60
 ATTEMPT_STATE_RESERVED = "RESERVED"
 ATTEMPT_STATE_CONSUMED = "CONSUMED"
 ATTEMPT_STATE_COMPLETED = "COMPLETED"
@@ -493,6 +500,52 @@ def wait_for_telemetry_readiness(
     }
 
 
+def wait_for_baseline_readiness(
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    monotonic_fn: Callable[[], float] = time.monotonic,
+    timeout_seconds: int = BASELINE_READINESS_TIMEOUT_SECONDS,
+    check_fn: Callable[[], tuple[bool, dict[str, Any]]] | None = None,
+) -> tuple[bool, dict[str, Any], bool, dict[str, Any]]:
+    """Prove paymentservice Deployment readiness BEFORE any experiment reservation.
+
+    Applies the unchanged fail-closed baseline contract and requires
+    BASELINE_REQUIRED_STABLE_PROBES consecutive healthy reads separated by at
+    least BASELINE_STABILITY_INTERVAL_SECONDS. Read-only; never reserves.
+    """
+    check = check_fn or _paymentservice_baseline_check
+    started = monotonic_fn()
+    attempts = 0
+    stable = 0
+    last_healthy = False
+    last_workloads: dict[str, Any] = {}
+    while (monotonic_fn() - started) < timeout_seconds:
+        attempts += 1
+        last_healthy, last_workloads = check()
+        if last_healthy:
+            stable += 1
+            if stable >= BASELINE_REQUIRED_STABLE_PROBES:
+                return True, {"attempts": attempts, "stable_probes": stable}, True, last_workloads
+        else:
+            stable = 0
+        remaining = timeout_seconds - (monotonic_fn() - started)
+        if remaining <= 0:
+            break
+        sleep_fn(min(BASELINE_STABILITY_INTERVAL_SECONDS, remaining))
+    return (
+        False,
+        {
+            "attempts": attempts,
+            "stable_probes": stable,
+            "required_stable_probes": BASELINE_REQUIRED_STABLE_PROBES,
+            "timeout_seconds": timeout_seconds,
+            "stability_interval_seconds": BASELINE_STABILITY_INTERVAL_SECONDS,
+        },
+        last_healthy,
+        last_workloads,
+    )
+
+
 def evaluate_causal_g4_predicate(
     baseline_healthy: bool,
     injection_success: bool,
@@ -799,6 +852,45 @@ async def main() -> dict[str, Any]:
             evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
             return evidence
 
+        # Phase 0b: Paymentservice Deployment baseline readiness — also strictly
+        # BEFORE any reservation. Applies the unchanged fail-closed health
+        # contract with bounded two-consecutive-read stability.
+        print("\n>>> Phase 0b: Paymentservice Baseline Readiness Gate (pre-reservation)...")
+        (
+            baseline_ready,
+            baseline_detail,
+            baseline_healthy,
+            base_workloads,
+        ) = wait_for_baseline_readiness()
+        baseline_telemetry = collect_sf002_cpu_telemetry()
+        evidence["phases"]["baseline"] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "target_deployments": base_workloads.get("stdout")[:500],
+            "baseline_healthy": baseline_healthy,
+            "cpu_telemetry": baseline_telemetry,
+            **(
+                {
+                    "attempts": baseline_detail.get("attempts"),
+                    "stable_probes": baseline_detail.get("stable_probes"),
+                    "required_stable_probes": baseline_detail.get("required_stable_probes"),
+                }
+                if isinstance(baseline_detail, dict)
+                else {}
+            ),
+        }
+        print(
+            f"  Baseline readiness: {'READY' if baseline_ready else 'NOT READY'} "
+            f"(stable_probes={baseline_detail.get('stable_probes')}/"
+            f"{BASELINE_REQUIRED_STABLE_PROBES}, healthy={baseline_healthy})"
+        )
+        if not baseline_ready:
+            print("  Healthy paymentservice baseline not established; refusing to reserve or inject.")
+            evidence["attempt_state"] = "NOT_RESERVED"
+            evidence["outcome"] = "PREFLIGHT_ABORT"
+            evidence["failure_phase"] = "unhealthy_baseline"
+            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            return evidence
+
         reservation = reserve_experiment_attempt(
             EXPERIMENT_ID,
             selected_model=SELECTED_STAGE4_AGENT_MODEL,
@@ -827,21 +919,6 @@ async def main() -> dict[str, Any]:
             }
             print(f"  Active chaos remains ({active_chaos_count}); refusing to start incident setup.")
             return abort_before_fault("pre_fault_chaos_not_zero")
-
-        # Phase 1: Pre-incident Baseline Check
-        print("\n>>> Phase 1: Pre-Incident Baseline Check...")
-        baseline_healthy, base_workloads = _paymentservice_baseline_check()
-        baseline_telemetry = collect_sf002_cpu_telemetry()
-        evidence["phases"]["baseline"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "target_deployments": base_workloads.get("stdout")[:500],
-            "baseline_healthy": baseline_healthy,
-            "cpu_telemetry": baseline_telemetry,
-        }
-        print(f"  Baseline {TARGET_SERVICE} status: {'Healthy' if baseline_healthy else 'Unhealthy'}")
-        if not baseline_healthy:
-            print("  Healthy baseline not established; refusing to inject fault.")
-            return abort_before_fault("unhealthy_baseline")
 
         # Phase 2: Inject Fault
         print(f"\n>>> Phase 2: Injecting Fault ({SCENARIO_ID})...")

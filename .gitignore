@@ -38,3 +38,6 @@ artifacts/trajectories/
 
 .codex/
 .agents/
+
+# Runtime Stage4 attempt-lifecycle markers are internal-only; never publish.
+artifacts/evidence/stage4/.attempts/

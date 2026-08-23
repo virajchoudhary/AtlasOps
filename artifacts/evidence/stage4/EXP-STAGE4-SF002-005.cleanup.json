@@ -1,0 +1,11 @@
+{
+  "affects_env_resolved": false,
+  "experiment_id": "EXP-STAGE4-SF002-005",
+  "result": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "stresschaos.chaos-mesh.org \"sf-002-paymentservice-cpu\" deleted from chaos-mesh namespace",
+    "success": true
+  },
+  "timing": "after_failure_verdict_persisted"
+}

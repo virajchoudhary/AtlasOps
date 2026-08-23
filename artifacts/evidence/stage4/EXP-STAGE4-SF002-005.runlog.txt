@@ -1,0 +1,18 @@
+================================================================================
+ ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION (EXP-STAGE4-SF002-005) 
+ Scenario: single_fault/sf-002 | Model: qwen2.5:3b-instruct (Ollama Local) 
+================================================================================
+
+>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...
+
+>>> Phase 1: Pre-Incident Baseline Check...
+  Baseline paymentservice status: Healthy
+
+>>> Phase 2: Injecting Fault (single_fault/sf-002)...
+  Chaos Mesh injection: stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created
+
+>>> Phase 3: Verifying Observable Fault in Cluster...
+  Observable in cluster: True
+
+>>> Phase 3a: Measuring SF002 Degradation...
+  Degradation proof failed; INVALID evidence saved: C:\AtlasOps\artifacts\evidence\stage4\EXP-STAGE4-SF002-005.json

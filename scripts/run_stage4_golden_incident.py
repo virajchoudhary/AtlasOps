@@ -19,13 +19,14 @@ Zero paid APIs. Local Ollama model selected through ATLASOPS_STAGE4_AGENT_MODEL.
 import asyncio
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -88,15 +89,29 @@ TARGET_CHAOS_NAMESPACE = "chaos-mesh"
 
 # Predeclared SF002 degradation contract. Prometheus cAdvisor is already part
 # of the canonical G3 stack. A real stress increase must be material in both
-# absolute cores and relative to the healthy baseline.
+# absolute cores and relative to the healthy baseline. The application
+# container in the pinned microservices-demo v0.10.6 paymentservice pod is
+# named "server" (verified from the live Deployment spec and cAdvisor labels),
+# so the selector must target container="server" to measure the intended
+# paymentservice application-container CPU.
 DEGRADATION_QUERY = (
     'max(rate(container_cpu_usage_seconds_total{namespace="default",'
-    'pod=~"paymentservice-.*",container="paymentservice"}[2m]))'
+    'pod=~"paymentservice-.*",container="server"}[2m]))'
+)
+RAW_PAYMENTSERVICE_CPU_QUERY = (
+    'container_cpu_usage_seconds_total{namespace="default",'
+    'pod=~"paymentservice-.*",container="server"}'
 )
 DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES = 0.25
 DEGRADATION_MIN_RATIO = 2.0
 DEGRADATION_OBSERVATION_TIMEOUT_SECONDS = 30
 DEGRADATION_POLL_INTERVAL_SECONDS = 3
+# Pre-reservation telemetry-readiness gate: no attempt may be reserved until
+# the exact F1 telemetry path is demonstrably usable. Two consecutive valid
+# probes separated by >= one scrape interval prove a fresh scrape occurred.
+TELEMETRY_SCRAPE_INTERVAL_SECONDS = 30
+TELEMETRY_REQUIRED_STABLE_PROBES = 2
+TELEMETRY_READINESS_TIMEOUT_SECONDS = 120
 ATTEMPT_STATE_RESERVED = "RESERVED"
 ATTEMPT_STATE_CONSUMED = "CONSUMED"
 ATTEMPT_STATE_COMPLETED = "COMPLETED"
@@ -328,6 +343,156 @@ def stage4_evidence_metadata() -> dict[str, Any]:
     }
 
 
+def _prometheus_http_get(path: str) -> tuple[int | None, str]:
+    """Read-only GET against the configured Prometheus endpoint."""
+    base = os.environ.get("PROMETHEUS_URL", "http://localhost:19090").rstrip("/")
+    try:
+        import requests
+
+        resp = requests.get(f"{base}{path}", timeout=10)
+        return resp.status_code, resp.text
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _endpoint_ready(
+    http_get_fn: Callable[[str], tuple[int | None, str]] = _prometheus_http_get,
+) -> tuple[bool, list[str]]:
+    failures: list[str] = []
+    for path in ("/-/healthy", "/-/ready"):
+        try:
+            status, _body = http_get_fn(path)
+        except Exception as exc:
+            failures.append(f"{path} transport error: {exc}")
+            continue
+        if status != 200:
+            failures.append(f"{path} -> HTTP {status}")
+    return not failures, failures
+
+
+def _cadvisor_target_healthy(
+    fetch_targets_fn: Callable[[], Any] | None = None,
+) -> tuple[bool, list[str]]:
+    try:
+        if fetch_targets_fn is not None:
+            payload = fetch_targets_fn()
+        else:
+            status, body = _prometheus_http_get("/api/v1/targets")
+            if status != 200:
+                return False, [f"targets endpoint -> HTTP {status}"]
+            payload = json.loads(body)
+    except Exception as exc:
+        return False, [f"targets fetch error: {exc}"]
+    active = ((payload or {}).get("data") or {}).get("activeTargets") or []
+    cadvisor = [
+        target
+        for target in active
+        if isinstance(target, dict)
+        and "/metrics/cadvisor" in str(target.get("scrapeUrl", ""))
+        and target.get("health") is not None
+    ]
+    if not cadvisor:
+        return False, ["no cAdvisor scrape target configured"]
+    unhealthy = [
+        target
+        for target in cadvisor
+        if target.get("health") != "up" or str(target.get("lastError", "")).strip()
+    ]
+    if unhealthy:
+        reasons = "; ".join(
+            f"{target.get('scrapeUrl')} health={target.get('health')} lastError={target.get('lastError')}"
+            for target in unhealthy
+        )
+        return False, [f"cAdvisor scrape target unhealthy: {reasons}"]
+    return True, []
+
+
+def _finite_cpu_samples(samples: list[Any]) -> list[float]:
+    finite: list[float] = []
+    for sample in samples:
+        try:
+            value = float(sample)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            finite.append(value)
+    return finite
+
+
+def _telemetry_query_valid(
+    run_query_fn: Callable[[str], dict[str, Any]] | None = None,
+) -> tuple[bool, list[str]]:
+    def default_run_query(query: str) -> dict[str, Any]:
+        from agents.tools.prometheus import promql_query
+
+        return promql_query(query)
+
+    query_fn = run_query_fn or default_run_query
+    raw = query_fn(RAW_PAYMENTSERVICE_CPU_QUERY)
+    if raw.get("success") is not True:
+        return False, [f"raw metric query failed: {raw.get('error')}"]
+    if len(raw.get("result") or []) < 1:
+        return False, ["raw paymentservice CPU metric absent"]
+    exact = query_fn(DEGRADATION_QUERY)
+    if exact.get("success") is not True:
+        return False, [f"F1 query failed: {exact.get('error')}"]
+    if exact.get("resultType") != "vector":
+        return False, [f"F1 resultType {exact.get('resultType')!r} != 'vector'"]
+    finite = _finite_cpu_samples(_extract_prometheus_cpu_cores(exact))
+    if not finite:
+        return False, ["F1 query returned no finite numeric sample (empty/NaN/Inf)"]
+    return True, []
+
+
+def wait_for_telemetry_readiness(
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    monotonic_fn: Callable[[], float] = time.monotonic,
+    timeout_seconds: int = TELEMETRY_READINESS_TIMEOUT_SECONDS,
+    http_get_fn: Callable[[str], tuple[int | None, str]] = _prometheus_http_get,
+    fetch_targets_fn: Callable[[], Any] | None = None,
+    run_query_fn: Callable[[str], dict[str, Any]] | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Prove F1 telemetry usability BEFORE any experiment reservation.
+
+    Requires TELEMETRY_REQUIRED_STABLE_PROBES consecutive fully-valid cycles
+    separated by at least one Prometheus scrape interval. Never mutates
+    cluster/experiment state; on failure nothing is reserved.
+    """
+    started = monotonic_fn()
+    attempts = 0
+    stable = 0
+    last_failures: list[str] = []
+    while (monotonic_fn() - started) < timeout_seconds:
+        attempts += 1
+        ok_endpoint, endpoint_failures = _endpoint_ready(http_get_fn=http_get_fn)
+        ok_target, target_failures = _cadvisor_target_healthy(fetch_targets_fn=fetch_targets_fn)
+        ok_query, query_failures = _telemetry_query_valid(run_query_fn=run_query_fn)
+        last_failures = endpoint_failures + target_failures + query_failures
+        if ok_endpoint and ok_target and ok_query:
+            stable += 1
+            if stable >= TELEMETRY_REQUIRED_STABLE_PROBES:
+                return True, {
+                    "attempts": attempts,
+                    "stable_probes": stable,
+                    "required_stable_probes": TELEMETRY_REQUIRED_STABLE_PROBES,
+                }
+        else:
+            stable = 0
+        remaining = timeout_seconds - (monotonic_fn() - started)
+        if remaining <= 0:
+            break
+        sleep_fn(min(TELEMETRY_SCRAPE_INTERVAL_SECONDS, remaining))
+    return False, {
+        "attempts": attempts,
+        "stable_probes": stable,
+        "required_stable_probes": TELEMETRY_REQUIRED_STABLE_PROBES,
+        "timeout_seconds": timeout_seconds,
+        "scrape_interval_seconds": TELEMETRY_SCRAPE_INTERVAL_SECONDS,
+        "failures": last_failures,
+    }
+
+
 def evaluate_causal_g4_predicate(
     baseline_healthy: bool,
     injection_success: bool,
@@ -547,12 +712,8 @@ def _persist_stage4_prefault_failure(evidence: dict[str, Any]) -> str:
 
 
 async def main() -> dict[str, Any]:
-    reservation = reserve_experiment_attempt(
-        EXPERIMENT_ID,
-        selected_model=SELECTED_STAGE4_AGENT_MODEL,
-        main_sha=_current_main_sha(),
-    )
     fault_crossed = False
+    reservation: dict[str, Any] | None = None
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
     print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
@@ -571,9 +732,6 @@ async def main() -> dict[str, Any]:
     os.environ["ARGOCD_URL"] = "http://localhost:18080"
     os.environ["ARGOCD_VERIFY_TLS"] = "false"
 
-    # Pre-clean any stale chaos before baseline check
-    run_kubectl(["delete", "stresschaos", TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-
     start_time = datetime.now(timezone.utc).isoformat()
     t0 = time.time()
 
@@ -589,8 +747,8 @@ async def main() -> dict[str, Any]:
     for ns, svc, lp, rp in pf_specs:
         p = subprocess.Popen(
             ["kubectl", "--context", KIND_CONTEXT, "port-forward", f"svc/{svc}", f"{lp}:{rp}", "-n", ns],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         pf_procs.append(p)
     time.sleep(3)
@@ -616,6 +774,37 @@ async def main() -> dict[str, Any]:
         return evidence
 
     try:
+        # Phase 0: Telemetry readiness gate — strictly BEFORE any reservation.
+        # No attempt marker, no RESERVED state, no chaos object, and no T0 may
+        # exist unless the exact F1 measurement path is demonstrably usable.
+        print("\n>>> Phase 0: Telemetry Readiness Gate (pre-reservation)...")
+        telemetry_ready, readiness_detail = wait_for_telemetry_readiness()
+        evidence["phases"]["telemetry_readiness"] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ready": telemetry_ready,
+            **readiness_detail,
+        }
+        print(
+            f"  Telemetry readiness: {'READY' if telemetry_ready else 'NOT READY'} "
+            f"(stable_probes={readiness_detail.get('stable_probes')}/"
+            f"{TELEMETRY_REQUIRED_STABLE_PROBES})"
+        )
+        if not telemetry_ready:
+            for failure in readiness_detail.get("failures", []):
+                print(f"    - {failure}")
+            print("  Refusing to reserve or inject: F1 telemetry path unusable.")
+            evidence["attempt_state"] = "NOT_RESERVED"
+            evidence["outcome"] = "PREFLIGHT_ABORT"
+            evidence["failure_phase"] = "telemetry_readiness"
+            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            return evidence
+
+        reservation = reserve_experiment_attempt(
+            EXPERIMENT_ID,
+            selected_model=SELECTED_STAGE4_AGENT_MODEL,
+            main_sha=_current_main_sha(),
+        )
+
         # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
         print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
         run_kubectl(["delete", "stresschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
@@ -895,7 +1084,7 @@ async def main() -> dict[str, Any]:
         return evidence
 
     except Exception:
-        if not fault_crossed:
+        if reservation is not None and not fault_crossed:
             release_experiment_reservation(reservation)
         raise
     finally:

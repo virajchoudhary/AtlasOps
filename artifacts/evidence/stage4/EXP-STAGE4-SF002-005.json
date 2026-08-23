@@ -1,0 +1,140 @@
+{
+  "attempt_state": "CONSUMED",
+  "completed_at": "2026-08-23T16:26:28.270706+00:00",
+  "experiment_id": "EXP-STAGE4-SF002-005",
+  "failure_phase": "measured_degradation",
+  "inference_provider": "ollama-local",
+  "model": "qwen2.5:3b-instruct",
+  "outcome": "INVALID",
+  "phases": {
+    "baseline": {
+      "baseline_healthy": true,
+      "cpu_telemetry": {
+        "max_cores": null,
+        "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+        "query_error": "503 Server Error: Service Unavailable for url: http://localhost:19090/api/v1/query?query=max%28rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22default%22%2Cpod%3D~%22paymentservice-.%2A%22%2Ccontainer%3D%22paymentservice%22%7D%5B2m%5D%29%29",
+        "query_success": false,
+        "samples_cores": [],
+        "timestamp": "2026-08-23T16:25:52.001677+00:00"
+      },
+      "target_deployments": "{\n    \"apiVersion\": \"v1\",\n    \"items\": [\n        {\n            \"apiVersion\": \"apps/v1\",\n            \"kind\": \"Deployment\",\n            \"metadata\": {\n                \"annotations\": {\n                    \"deployment.kubernetes.io/revision\": \"1\",\n                    \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"apps/v1\\\",\\\"kind\\\":\\\"Deployment\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"app\\\":\\\"paymentservice\\\"},\\\"name\\\":\\\"paymentservice\\\",\\\"namespace\\\":\\\"default\\\"},\\\"sp",
+      "timestamp": "2026-08-23T16:25:52.173509+00:00"
+    },
+    "degradation_proof": {
+      "decision": {
+        "absolute_increase_cores": null,
+        "baseline_max_cores": null,
+        "measured": false,
+        "min_absolute_increase_cores": 0.25,
+        "min_ratio": 2.0,
+        "passed": false,
+        "post_fault_max_cores": null,
+        "post_to_baseline_ratio": null
+      },
+      "poll_interval_seconds": 3,
+      "post_fault_observations": [
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": "503 Server Error: Service Unavailable for url: http://localhost:19090/api/v1/query?query=max%28rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22default%22%2Cpod%3D~%22paymentservice-.%2A%22%2Ccontainer%3D%22paymentservice%22%7D%5B2m%5D%29%29",
+          "query_success": false,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:25:57.737733+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": "503 Server Error: Service Unavailable for url: http://localhost:19090/api/v1/query?query=max%28rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22default%22%2Cpod%3D~%22paymentservice-.%2A%22%2Ccontainer%3D%22paymentservice%22%7D%5B2m%5D%29%29",
+          "query_success": false,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:00.843330+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": "503 Server Error: Service Unavailable for url: http://localhost:19090/api/v1/query?query=max%28rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22default%22%2Cpod%3D~%22paymentservice-.%2A%22%2Ccontainer%3D%22paymentservice%22%7D%5B2m%5D%29%29",
+          "query_success": false,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:03.933229+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:07.029844+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:10.066796+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:13.102377+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:16.151071+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:19.179331+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:22.205658+00:00"
+        },
+        {
+          "max_cores": null,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"paymentservice\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [],
+          "timestamp": "2026-08-23T16:26:25.236651+00:00"
+        }
+      ],
+      "timeout_seconds": 30,
+      "timestamp": "2026-08-23T16:26:28.270706+00:00"
+    },
+    "injection": {
+      "manifest": "C:\\AtlasOps\\bench\\chaos_manifests\\single_fault\\sf-002.yaml",
+      "result": {
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created",
+        "success": true
+      },
+      "timestamp": "2026-08-23T16:25:53.515266+00:00"
+    },
+    "observable_fault": {
+      "chaos_status": "{\n    \"apiVersion\": \"chaos-mesh.org/v1alpha1\",\n    \"kind\": \"StressChaos\",\n    \"metadata\": {\n        \"annotations\": {\n            \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"chaos-mesh.org/v1alpha1\\\",\\\"kind\\\":\\\"StressChaos\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"scenario\\\":\\\"sf-002\\\",\\\"tier\\\":\\\"single_fault\\\"},\\\"name\\\":\\\"sf-002-paymentservice-cpu\\\",\\\"namespace\\\":\\\"chaos-mesh\\\"},\\\"spec\\\":{\\\"duration\\\":\\\"10m\\\",\\\"mode\\\":\\\"one\\\",\\\"selector\\\":{\\\"labelSelectors\\\":{\\\"",
+      "stresschaos_observed": true,
+      "timestamp": "2026-08-23T16:25:57.737173+00:00"
+    }
+  },
+  "scenario_id": "single_fault/sf-002",
+  "started_at": "2026-08-23T16:25:01.657982+00:00",
+  "tier": "single_fault",
+  "trigger_type": "manual coordinator trigger over a real independently observed cluster fault"
+}

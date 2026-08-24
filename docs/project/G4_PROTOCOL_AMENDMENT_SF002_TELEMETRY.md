@@ -57,8 +57,10 @@ Explicitly unchanged:
 - pod selector (`pod=~"paymentservice-.*"`)
 - rate window (`[2m]`)
 - degradation polling cadence (3s)
-- post-fault observation timeout (30s)
-- absolute threshold (+0.25 cores)
+- post-fault observation timeout (30s) *(superseded 2026-08-24 — see F1
+  envelope amendment below)*
+- absolute threshold (+0.25 cores) *(superseded 2026-08-24 — see F1 envelope
+  amendment below)*
 - relative threshold (2x)
 
 The explicit pinned container name is preferred over a generalized selector
@@ -99,3 +101,91 @@ requirement and all F1-F5 semantics.
 
 Such a replacement trial is NOT a rerun of 005. 005 remains part of the
 permanent experiment history.
+
+---
+
+# SF002 F1 Envelope Amendment (2026-08-24)
+
+## A. Historical contract
+
+The SF002 degradation contract introduced in a86fdf required, within a
+30-second post-fault observation window polled every 3 seconds:
+
+- absolute increase of the frozen F1 metric >= +0.25 cores
+- relative increase >= 2.0x baseline
+- frozen query max(rate(container_cpu_usage_seconds_total{namespace="default",pod=~"paymentservice-.*",container="server"}[2m]))
+  over the unchanged [2m] rate window
+
+## B. Why the historical contract is invalid
+
+The pinned microservices-demo v0.10.6 paymentservice Deployment carries a hard
+CPU limit on its application container (server):
+
+- CPU limit: **200m = 0.2 cores** (Burstable QoS)
+
+Consequences:
+
+1. The container's maximum steady-state measured CPU rate is its CFS quota:
+   **0.2 cores**. The historical absolute requirement of **+0.25 cores above
+   baseline therefore exceeds the container's physical ceiling by more than
+   5x the entire headroom and is unreachable at any exposure duration.
+2. Even granting perfect full-quota execution, an exposure of only 30 seconds
+   inside the 120-second rate window contributes at most
+   .2 * 30 / 120 = 0.05 cores of observed increase at the observation
+   boundary — the window is necessarily dominated by pre-fault history.
+
+Therefore the historical contract could not certify a valid SF002 degradation
+event under the pinned workload under any circumstances. This was confirmed by
+EXP-STAGE4-SF002-007 (T0 crossed; fault created and observable; measured
+relative ratio 34.76x satisfied; measured absolute increase +0.029 cores;
+verdict INVALID at measured_degradation; agents never reached).
+
+## C. Corrected prospective contract
+
+Unchanged:
+
+- scenario single_fault/sf-002, fault StressChaos sf-002-paymentservice-cpu
+  (workers=4, load=90, duration=10m)
+- target paymentservice / default, application container server
+- exact F1 PromQL and [2m] rate window
+- relative requirement >= 2.0x baseline
+- polling cadence 3s
+
+Changed (the only two amended parameters):
+
+- **absolute increase >= +0.15 cores**
+- **post-fault observation timeout = 150 seconds**
+
+## D. Absolute threshold derivation
+
++0.15 cores = **75% of the pinned 0.2-core paymentservice CPU limit**. This
+defines materially elevated application-container CPU while remaining strictly
+inside the workload's physically reachable envelope. The derivation uses only
+the pinned resource specification; it does not use any observed experimental
+value from EXP-STAGE4-SF002-007 or any other attempt.
+
+## E. Observation duration derivation
+
+150 seconds accommodates:
+
+- the full 120-second [2m] rate window being repopulated by post-fault
+  scrapes, and
+- one additional ~30-second Prometheus scrape interval of convergence margin.
+
+With sustained stress, the measured [2m] rate converges toward the delivered
+steady-state CPU as pre-fault samples age out of the window.
+
+## F. Historical integrity
+
+EXP-STAGE4-SF002-005, -006, and -007 retain their original evidence, runlogs,
+lifecycle records, and official verdicts exactly as recorded under the
+contracts in force at their execution time. No verdict is retroactively
+rescored, no evidence is altered, and no attempt is reclassified as having run
+under this amendment.
+
+## G. Prospective scope
+
+This amendment applies prospectively only, beginning with the first future
+uniquely identified replacement trial (no earlier than
+EXP-STAGE4-SF002-008). Such a trial is a new scientific attempt, not a rerun
+of any prior experiment.

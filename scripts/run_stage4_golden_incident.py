@@ -94,6 +94,17 @@ TARGET_CHAOS_NAMESPACE = "chaos-mesh"
 # named "server" (verified from the live Deployment spec and cAdvisor labels),
 # so the selector must target container="server" to measure the intended
 # paymentservice application-container CPU.
+#
+# Absolute threshold derivation (operator-approved 2026-08-24 envelope
+# amendment): the pinned paymentservice container carries a 200m (0.2-core)
+# CPU limit, so the previous +0.25-core threshold exceeded the container's
+# hard CFS ceiling and was mathematically unreachable. The predeclared
+# absolute requirement is now +0.15 cores = 75% of the pinned 0.2-core limit:
+# materially elevated application CPU while remaining physically reachable.
+# The post-fault observation timeout is 150s so the [2m] rate window can be
+# repopulated by post-fault scrapes (~30s scrape interval) plus one scrape
+# interval of convergence margin; the prior 30s window could only observe a
+# rate dominated by pre-fault history.
 DEGRADATION_QUERY = (
     'max(rate(container_cpu_usage_seconds_total{namespace="default",'
     'pod=~"paymentservice-.*",container="server"}[2m]))'
@@ -102,9 +113,9 @@ RAW_PAYMENTSERVICE_CPU_QUERY = (
     'container_cpu_usage_seconds_total{namespace="default",'
     'pod=~"paymentservice-.*",container="server"}'
 )
-DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES = 0.25
+DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES = 0.15
 DEGRADATION_MIN_RATIO = 2.0
-DEGRADATION_OBSERVATION_TIMEOUT_SECONDS = 30
+DEGRADATION_OBSERVATION_TIMEOUT_SECONDS = 150
 DEGRADATION_POLL_INTERVAL_SECONDS = 3
 # Pre-reservation telemetry-readiness gate: no attempt may be reserved until
 # the exact F1 telemetry path is demonstrably usable. Two consecutive valid

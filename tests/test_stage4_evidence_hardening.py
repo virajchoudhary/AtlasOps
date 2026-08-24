@@ -92,7 +92,7 @@ def test_sf002_degradation_requires_absolute_and_relative_increase():
     )
     failed_absolute = sf002_degradation_decision(
         {"max_cores": 0.10},
-        {"max_cores": 0.25},
+        {"max_cores": 0.24},
     )
     failed_ratio = sf002_degradation_decision(
         {"max_cores": 0.80},
@@ -100,6 +100,9 @@ def test_sf002_degradation_requires_absolute_and_relative_increase():
     )
     missing = sf002_degradation_decision({"max_cores": None}, {"max_cores": 1.0})
     assert passed["passed"] is True
+    # Amended envelope contract (2026-08-24): absolute requirement is >= 0.15
+    # cores; a +0.14-core increase is below it even though the relative ratio
+    # would be large.
     assert failed_absolute["passed"] is False
     assert failed_ratio["passed"] is False
     assert missing["measured"] is False

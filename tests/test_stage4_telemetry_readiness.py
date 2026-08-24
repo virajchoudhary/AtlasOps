@@ -347,10 +347,13 @@ def test_gate_never_sleeps_longer_than_remaining_budget():
 # --- 17: frozen F1 scientific contract -------------------------------------------
 
 
-def test_post_fault_f1_contract_values_are_unchanged():
-    assert DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES == 0.25
+def test_post_fault_f1_contract_matches_envelope_amendment():
+    # Operator-approved 2026-08-24 envelope amendment: absolute threshold is
+    # 75% of the pinned 0.2-core paymentservice CPU limit; observation covers
+    # the 120s rate window plus one scrape-interval convergence margin.
+    assert DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES == 0.15
     assert DEGRADATION_MIN_RATIO == 2.0
-    assert DEGRADATION_OBSERVATION_TIMEOUT_SECONDS == 30
+    assert DEGRADATION_OBSERVATION_TIMEOUT_SECONDS == 150
     assert DEGRADATION_POLL_INTERVAL_SECONDS == 3
     assert "[2m]" in DEGRADATION_QUERY
     assert TELEMETRY_REQUIRED_STABLE_PROBES == 2

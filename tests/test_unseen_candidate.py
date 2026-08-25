@@ -116,6 +116,29 @@ def test_admission_rejects_manifest_labels_disagreeing_with_identity():
         )
 
 
+def test_admission_rejects_ungrounded_success_predicate():
+    candidate = _candidate()
+    candidate["success_predicates"]["workloads"][0]["name"] = "unrelated-service"
+    with pytest.raises(ValueError, match="not grounded in manifest targets"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
+def test_admission_requires_alert_to_observe_predicate_workload():
+    candidate = _candidate()
+    candidate["model_visible_alert"]["commonLabels"]["service"] = "other-service"
+    candidate["model_visible_alert"]["alerts"][0]["labels"]["service"] = "other-service"
+    with pytest.raises(ValueError, match="does not observe"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
 def test_admission_rejects_development_exposed_candidate(monkeypatch):
     monkeypatch.setattr(
         candidate_contract,
@@ -133,6 +156,10 @@ def test_admission_rejects_development_exposed_candidate(monkeypatch):
 def test_admission_rejects_paraphrased_existing_alert():
     catalog = contract.build_catalog()
     candidate = _candidate()
+    candidate["manifest_documents"][0]["spec"]["selector"]["labelSelectors"]["app"] = "currencyservice"
+    candidate["model_visible_alert"]["commonLabels"]["service"] = "currencyservice"
+    candidate["model_visible_alert"]["alerts"][0]["labels"]["service"] = "currencyservice"
+    candidate["success_predicates"]["workloads"][0]["name"] = "currencyservice"
     candidate["model_visible_alert"] = copy.deepcopy(
         catalog["entries"][0]["model_visible_alert"]
     )

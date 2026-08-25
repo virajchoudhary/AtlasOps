@@ -172,6 +172,53 @@ def _validate_predicates(scenario_id: str, predicates: dict[str, Any]) -> None:
         raise ValueError("candidate must require chaos clearance")
 
 
+def _validate_predicate_grounding(
+    *,
+    scenario_id: str,
+    documents: list[dict[str, Any]],
+    faults: list[dict[str, Any]],
+    predicates: dict[str, Any],
+    alert: dict[str, Any],
+) -> None:
+    """Require oracle workloads and the initial alert to trace to injected targets."""
+    targets: set[str] = set()
+    namespaces: set[str] = {"default"}
+    for document, fault in zip(documents, faults):
+        if str(document.get("kind", "")).endswith("Chaos"):
+            targets.update(fault.get("targets") or [])
+            selector = document.get("spec", {}).get("selector", {}) or {}
+            namespaces.update(str(item) for item in selector.get("namespaces", []) or [])
+        else:
+            targets.update(fault.get("targets") or [])
+
+    workload_names = {
+        str(workload.get("name", "")).strip()
+        for workload in predicates.get("workloads", [])
+    }
+    if not workload_names or not workload_names.issubset(targets):
+        raise ValueError(
+            f"success-predicate workloads are not grounded in manifest targets: {sorted(targets)}"
+        )
+    for workload in predicates["workloads"]:
+        if str(workload.get("namespace", "default")) not in namespaces:
+            raise ValueError("success-predicate namespace is outside manifest scope")
+
+    services: set[str] = set()
+    labels = alert.get("commonLabels", {}) or {}
+    for key in ("service", "deployment", "pod"):
+        value = str(labels.get(key, "")).strip()
+        if value:
+            services.add(value.removesuffix("-xxx"))
+    for item in alert.get("alerts", []) or []:
+        item_labels = item.get("labels", {}) or {}
+        for key in ("service", "deployment", "pod"):
+            value = str(item_labels.get(key, "")).strip()
+            if value:
+                services.add(value.removesuffix("-xxx"))
+    if not services.intersection(workload_names):
+        raise ValueError("model-visible alert does not observe any success-predicate workload")
+
+
 def admit_unseen_candidate(
     candidate: dict[str, Any],
     *,
@@ -241,6 +288,13 @@ def admit_unseen_candidate(
         alert,
         scenario_id=scenario_id,
         documents=documents,
+    )
+    _validate_predicate_grounding(
+        scenario_id=scenario_id,
+        documents=documents,
+        faults=faults,
+        predicates=predicates,
+        alert=alert,
     )
     coarse_faults = [_coarse_fault(fault) for fault in faults]
     fault_signatures = [sha256_object(item) for item in coarse_faults]

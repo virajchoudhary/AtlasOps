@@ -186,6 +186,7 @@ def test_reward_resolution_requires_verifier_and_attributed_policy_action() -> N
                 "mode": "policy_rollout",
                 "policy_completion_valid": True,
                 "policy_action_identity_match": True,
+                "policy_action_admitted": True,
                 "executed_actions": [action],
             }
         },
@@ -195,7 +196,7 @@ def test_reward_resolution_requires_verifier_and_attributed_policy_action() -> N
         "remediation": {"final": {"mode": "manual", "executed_actions": []}},
     }
 
-    assert compute_reward(attributed_episode) == pytest.approx(0.85)
+    assert compute_reward(attributed_episode) == pytest.approx(0.93)
     assert compute_reward(unattributed) == 0.0
 
 
@@ -209,7 +210,7 @@ def test_false_resolution_penalty_uses_explicit_environment_truth() -> None:
         "remediation": {"final": {"executed_actions": []}},
     }
 
-    assert compute_reward(episode) == 0.0
+    assert compute_reward(episode) == pytest.approx(-0.25)
 
 
 def test_absent_judge_does_not_create_subjective_penalty() -> None:

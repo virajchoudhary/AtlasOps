@@ -201,31 +201,37 @@ Every tool call, approval decision, and incident boundary is written to an appen
 
 ## Training Pipeline
 
-### SFT → Online GRPO on AMD MI300X
+### SFT → Stage 9 GRPO (free-first local contract)
+
+> The historical upstream MI300X/GKE narrative below is not the current Stage 9
+> execution contract. Corrected GRPO is remediation-only, requires explicitly
+> declared local Kind context, and pairs every prompt with hidden scenario
+> provenance before generation.
 
 ```
-5k trajectories (real GKE rollouts, teacher model)
+legal remediation-only rows (G7/G8 provenance required)
         ↓
   QLoRA SFT  (Qwen2.5-7B, 4-bit NF4, LoRA r=16)
         ↓
-  Online GRPO  (G=8 live GKE rollouts per step, DAPO loss)
+  Online GRPO  (G paired local-Kind rollouts per step)
         ↓
   Benchmark  (28 frozen + up to 10 generated scenarios by default, anti-gaming reward contract)
 ```
 
 **This is true online RL.** Each GRPO training step:
-1. Applies a real Chaos Mesh fault to the live GKE cluster
-2. Runs G=8 parallel agent chain rollouts
-3. Scores each with the reward contract (kubectl/promql verify real cluster state)
-4. Computes GRPO advantages and updates the policy
+1. Verifies the declared local context and healthy baseline
+2. Applies and objectively establishes one training-only fault
+3. Executes one optimized-policy action through existing safety gates
+4. Independently verifies recovery, resets, and checks post-reset health
+5. Attributes reward only to that exact policy action and updates the policy
 
 ### What makes our training different from competitors
 
 | Feature | Standard GRPO | AtlasOps |
 |---|---|---|
-| Environment | Simulator / offline rewards | **Real GKE cluster, live kubectl** |
+| Environment | Simulator / offline rewards | **Real local Kubernetes lifecycle with explicit context** |
 | Loss | Standard GRPO | **DAPO** (distributional advantage — more stable on skewed rewards) |
-| Reward | Episode-level only | **Dense per-step** (progress delta per tool call) + episode contract |
+| Reward | Episode-level only | **Verifier plus exact policy-action attribution** |
 | Curriculum | Random / fixed | **Spaced repetition** (mastery tracking, [3→6→12→24→48] resurface intervals) |
 | Scenario generation | Static | **Dynamic adversarial** (default benchmark requests up to 10 newly generated Chaos YAML scenarios) |
 
@@ -301,15 +307,12 @@ python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3
 # Results → bench/results/comparison_table.md
 ```
 
-### 5. Train on AMD MI300X
-```bash
-# Set up MI300X (installs ROCm deps, downloads models)
-bash infra/setup_mi300x.sh
+### 5. Stage 9 training prerequisites
 
-python training/generate_trajectories.py   # 5k SFT examples
-python training/sft.py --model Qwen/Qwen2.5-7B-Instruct --rocm
-python training/grpo.py --model checkpoints/sft_v3 --rocm
-```
+Stage 9 remains gated behind frozen G5 splits and a validated G8 checkpoint.
+The corrected entry point requires a legal remediation-only row file and explicit
+local environment identity; it does not use an ambient kubectl context or a
+mixed-role prompt fallback.
 
 ### 6. Run tests
 ```bash

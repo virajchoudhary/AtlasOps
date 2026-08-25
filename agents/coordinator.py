@@ -6,6 +6,7 @@ Each agent is a vLLM endpoint co-hosted on the AMD MI300X.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -193,70 +194,59 @@ def _parse_tool_arguments(fn_name: str, raw: Any) -> tuple[dict[str, Any] | None
 
 
 def _parse_policy_remediation_completion(completion_text: str) -> dict[str, Any]:
-    """Parse one TRL policy completion into an OpenAI-compatible assistant turn.
+    """Parse the sole approved Stage 9 policy wire format.
 
-    The Stage 9 wire contract is either a native assistant message with exactly
-    one tool call or a JSON object containing exactly that call. Parsing is
-    deliberately strict: prose and multi-action plans are invalid so a failed
-    parse can never be silently replaced by another model's action.
+    The completion must be exactly ``{"name": ..., "arguments": {...}}``.
+    Provider artifacts, prose wrappers, stringified argument objects, and
+    multi-action payloads are intentionally invalid. A parse failure is
+    returned as data so the caller can preserve and score it without executing
+    another model's interpretation.
     """
     raw_text = completion_text.strip()
     if not raw_text:
-        return {"role": "assistant", "content": "", "tool_calls": []}
+        return {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [],
+            "policy_parse_error": "empty_completion",
+        }
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError:
-        parsed = None
+        return {
+            "role": "assistant",
+            "content": raw_text,
+            "tool_calls": [],
+            "policy_parse_error": "not_canonical_json",
+        }
 
-    if isinstance(parsed, dict):
-        calls = parsed.get("tool_calls")
-        if isinstance(calls, list):
-            normalized = []
-            for index, call in enumerate(calls):
-                fn = call.get("function") if isinstance(call, dict) else {}
-                name = (fn or {}).get("name")
-                arguments = (fn or {}).get("arguments", "{}")
-                normalized.append({
-                    "id": str((call or {}).get("id") or f"policy_call_{index}"),
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": (
-                            arguments
-                            if isinstance(arguments, str)
-                            else json.dumps(arguments or {})
-                        ),
-                    },
-                })
-            return {"role": "assistant", "content": "", "tool_calls": normalized}
+    if (
+        not isinstance(parsed, dict)
+        or set(parsed) != {"name", "arguments"}
+        or not isinstance(parsed["name"], str)
+        or not parsed["name"].strip()
+        or not isinstance(parsed["arguments"], dict)
+    ):
+        return {
+            "role": "assistant",
+            "content": raw_text,
+            "tool_calls": [],
+            "policy_parse_error": "invalid_canonical_action_shape",
+        }
 
-        function = parsed.get("function")
-        name = parsed.get("name") or (function or {}).get("name")
-        arguments = parsed.get("arguments")
-        if arguments is None and isinstance(function, dict):
-            arguments = function.get("arguments")
-        if name is not None:
-            return {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": "policy_call_0",
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": (
-                            arguments
-                            if isinstance(arguments, str)
-                            else json.dumps(arguments or {})
-                        ),
-                    },
-                }],
-            }
-
-    # TRL chat templates may emit the same shapes inside text content.
-    fallback = _normalize_assistant_tool_calls({"content": raw_text})
-    return {"role": "assistant", "content": raw_text, "tool_calls": fallback}
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{
+            "id": "policy_call_0",
+            "type": "function",
+            "function": {
+                "name": parsed["name"],
+                "arguments": json.dumps(parsed["arguments"], sort_keys=True),
+            },
+        }],
+    }
 
 
 def _invalid_policy_remediation_record(
@@ -281,6 +271,8 @@ def _invalid_policy_remediation_record(
         "execution_state": "not_executed",
         "tool_outcomes": [],
     }
+
+
     conclusion = {
         "mode": "policy_rollout",
         "outcome": "unresolved",
@@ -297,6 +289,53 @@ def _invalid_policy_remediation_record(
         "final": conclusion,
         "step_reward_summary": StepRewardTracker().summary(),
     }
+
+
+def _canonical_action_identity(tool: str, arguments: dict[str, Any]) -> dict[str, str]:
+    """Return deterministic hashes for the exact tool/argument identity."""
+    canonical = json.dumps(
+        {"tool": tool, "arguments": arguments},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {"canonical_json": canonical, "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+
+def _validate_policy_action_schema(tool: str, args: Any) -> str | None:
+    """Validate the policy-owned call against the same schema exposed to tools."""
+    if not isinstance(args, dict):
+        return "arguments_must_be_object"
+    schema = _TOOL_PARAMETER_SCHEMAS.get(tool)
+    if schema is None:
+        return "unknown_tool_schema"
+    if schema.get("type") != "object":
+        return "unsupported_tool_schema"
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    missing = [name for name in required if name not in args]
+    if missing:
+        return f"missing_required_arguments:{','.join(missing)}"
+    extra = [name for name in args if name not in properties]
+    if extra:
+        return f"unexpected_arguments:{','.join(sorted(extra))}"
+
+    type_checks = {
+        "string": lambda value: isinstance(value, str),
+        "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+        "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool),
+        "boolean": lambda value: isinstance(value, bool),
+        "array": lambda value: isinstance(value, list),
+        "object": lambda value: isinstance(value, dict),
+    }
+    for name, value in args.items():
+        expected = properties[name].get("type")
+        if expected not in type_checks or not type_checks[expected](value):
+            return f"invalid_argument_type:{name}"
+        allowed = properties[name].get("enum")
+        if allowed is not None and value not in allowed:
+            return f"invalid_argument_value:{name}"
+    return None
 
 
 # Maximum persisted characters of raw assistant text per model-turn record.
@@ -487,10 +526,18 @@ async def call_agent(
     policy_message: dict[str, Any] | None = None
     if policy_completion is not None:
         policy_message = _parse_policy_remediation_completion(policy_completion)
-        if len(policy_message.get("tool_calls") or []) != 1:
+        parse_error = policy_message.get("policy_parse_error")
+        if not parse_error and len(policy_message.get("tool_calls") or []) == 1:
+            call = policy_message["tool_calls"][0]["function"]
+            try:
+                candidate_args = json.loads(call["arguments"])
+            except json.JSONDecodeError:
+                candidate_args = None
+            parse_error = _validate_policy_action_schema(call["name"], candidate_args)
+        if parse_error or len(policy_message.get("tool_calls") or []) != 1:
             return _invalid_policy_remediation_record(
                 policy_completion,
-                "expected_exactly_one_tool_call",
+                parse_error or "expected_exactly_one_tool_call",
             )
     system_prompt = load_prompt(role)
     incident_id = str(user_input.get("incident_id", "unknown"))
@@ -516,6 +563,7 @@ async def call_agent(
             if policy_message is not None:
                 if turn != 0:
                     break
+                policy_denial_reason: str | None = None
                 choice = {"finish_reason": "policy_completion"}
                 msg = json.loads(json.dumps(policy_message))
             else:
@@ -707,6 +755,7 @@ async def call_agent(
                     continue
                 policy_error = _check_tool_policy(role, fn_name, fn_args, user_input)
                 if policy_error:
+                    policy_denial_reason = f"policy_blocked:{policy_error}"
                     tool_output = {"success": False, "error": policy_error}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "blocked_by_policy"
@@ -760,6 +809,7 @@ async def call_agent(
                         is_cluster_mutating=fn_name in CLUSTER_MUTATING_TOOLS,
                     )
                 except CircuitBreakerTripped as e:
+                    policy_denial_reason = f"circuit_breaker_blocked:{e}"
                     tool_output = {"success": False, "error": str(e), "blocked_by_circuit_breaker": True}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "blocked_by_circuit_breaker"
@@ -798,6 +848,7 @@ async def call_agent(
                 _call_key = f"{fn_name}:{json.dumps(fn_args, sort_keys=True)}"
                 _seen_calls[_call_key] = _seen_calls.get(_call_key, 0) + 1
                 if _seen_calls[_call_key] > 3:
+                    policy_denial_reason = "dedup_blocked"
                     tool_output = {"error": f"Duplicate call blocked — {fn_name} already called with these exact args. Try different parameters or produce your conclusion."}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "dedup_blocked"
@@ -812,6 +863,7 @@ async def call_agent(
                 _tool_counts[fn_name] = _tool_counts.get(fn_name, 0) + 1
                 _cap = _TOOL_CAPS.get(fn_name, 8)
                 if _tool_counts[fn_name] > _cap:
+                    policy_denial_reason = "tool_cap_blocked"
                     tool_output = {"error": f"Tool cap reached — {fn_name} called {_tool_counts[fn_name]} times this run (limit {_cap}). You have enough data; produce your conclusion now."}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "cap_blocked"
@@ -824,6 +876,7 @@ async def call_agent(
 
                 fn = TOOL_REGISTRY.get(fn_name)
                 if not fn:
+                    policy_denial_reason = "unknown_tool"
                     tool_output = {"error": f"Unknown tool: {fn_name}"}
                 else:
                     try:
@@ -895,11 +948,20 @@ async def call_agent(
                     plan_args = json.loads(plan_call["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
                     plan_args = {"__invalid_json__": True}
-                identity_match = (
-                    len(_executed_actions) == 1
-                    and _executed_actions[0].get("tool") == plan_call["function"]["name"]
-                    and _executed_actions[0].get("args") == plan_args
+                parsed_identity = _canonical_action_identity(
+                    plan_call["function"]["name"], plan_args
                 )
+                executed_record = _executed_actions[0] if len(_executed_actions) == 1 else None
+                executed_identity = (
+                    _canonical_action_identity(executed_record["tool"], executed_record["args"])
+                    if executed_record
+                    else None
+                )
+                identity_match = bool(
+                    executed_identity
+                    and executed_identity["sha256"] == parsed_identity["sha256"]
+                )
+                admitted = identity_match and policy_denial_reason is None
                 outcome = (
                     "resolved"
                     if _mutating_tool_executed
@@ -912,6 +974,21 @@ async def call_agent(
                     "status": outcome,
                     "policy_completion_valid": True,
                     "policy_action_identity_match": identity_match,
+                    "policy_action_admitted": admitted,
+                    "policy_denial_reason": policy_denial_reason,
+                    "policy_parsed_action": {
+                        "tool": plan_call["function"]["name"],
+                        "arguments": plan_args,
+                        **parsed_identity,
+                    },
+                    "policy_executed_action": {
+                        "tool": executed_record.get("tool"),
+                        "arguments": executed_record.get("args"),
+                        **executed_identity,
+                    } if executed_identity else None,
+                    "policy_completion_sha256": hashlib.sha256(
+                        (policy_completion or "").encode("utf-8")
+                    ).hexdigest(),
                     "proposed_actions": proposed_tools,
                     "executed_actions": list(_executed_actions),
                     "actions_taken": list(_executed_actions),

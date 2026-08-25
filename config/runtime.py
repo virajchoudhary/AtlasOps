@@ -7,6 +7,7 @@ training, and evaluation pipelines.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 import random
@@ -299,6 +300,7 @@ class CurriculumManager:
     MASTERY_WINDOW = 10
     MASTERY_DECAY = 0.85
     MIN_ATTEMPTS_FOR_MASTERY = 3
+    STATE_SCHEMA_VERSION = 2
 
     def __init__(self, seed: int | None = None) -> None:
         # scenario_id → list of (episode_idx, reward) tuples
@@ -314,7 +316,8 @@ class CurriculumManager:
 
     def export_state(self) -> dict[str, Any]:
         """Return a JSON-serializable snapshot sufficient to resume sampling."""
-        return {
+        state = {
+            "schema_version": self.STATE_SCHEMA_VERSION,
             "seed_state": list(self._rng.getstate()),
             "history": {
                 scenario_id: list(entries)
@@ -325,9 +328,22 @@ class CurriculumManager:
             "recent": list(self._recent),
             "episode_count": self._episode_count,
         }
+        state["state_sha256"] = hashlib.sha256(
+            json.dumps(state, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return state
 
     def restore_state(self, state: dict[str, Any]) -> None:
         """Restore a snapshot produced by :meth:`export_state`."""
+        if state.get("schema_version") != self.STATE_SCHEMA_VERSION:
+            raise ValueError("curriculum_state_schema_mismatch")
+        expected_digest = state.get("state_sha256")
+        digest_payload = {key: value for key, value in state.items() if key != "state_sha256"}
+        actual_digest = hashlib.sha256(
+            json.dumps(digest_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if expected_digest != actual_digest:
+            raise ValueError("curriculum_state_corrupt")
         rng_state = state["seed_state"]
         self._rng.setstate((int(rng_state[0]), tuple(int(x) for x in rng_state[1]), None))
         self._history = {

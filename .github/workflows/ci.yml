@@ -45,7 +45,9 @@ jobs:
             app.py dashboard.py eval.py inference.py leaderboard.py
 
       - name: Check infrastructure shell syntax
-        run: bash -n infra/setup.sh infra/setup_impl.sh infra/teardown.sh infra/teardown_impl.sh
+        run: |
+          bash -n infra/setup.sh infra/setup_impl.sh infra/teardown.sh infra/teardown_impl.sh \
+            infra/local/install_metrics_server.sh
 
       - name: Ruff correctness checks
         run: python -m ruff check . --select E9,F63,F7,F821

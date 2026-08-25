@@ -34,7 +34,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bench.scenario_contract import assert_consumer_may_use_scenario, development_scenario_ids
+from bench.scenario_contract import assert_consumer_may_use_scenario
 from config.runtime import LEADERBOARD_SCENARIOS
 
 log = logging.getLogger(__name__)

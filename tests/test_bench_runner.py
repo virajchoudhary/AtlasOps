@@ -181,6 +181,58 @@ class TestRunScenario:
         assert episode["agent_claimed_resolved"] is True
         assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
 
+    def test_reset_failure_preserves_harness_invalid_episode(self, monkeypatch):
+        from bench import runner
+
+        incident = {
+            "triage": {"final": {"severity": "P1"}},
+            "diagnosis": {"final": {"root_cause": "OOMKill"}},
+            "remediation": {"final": {"outcome": "resolved", "time_to_resolve_seconds": 10}},
+            "comms": {"final": {}},
+            "verification": {"agent_claimed_resolved": True, "env_resolved": True},
+        }
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(
+            runner,
+            "wait_for_alert",
+            Mock(return_value={"commonLabels": {"alertname": "Test"}, "alerts": []}),
+        )
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={"overall": 0.8}))
+        monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=False))
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["status"] == "error"
+        assert episode["error"] == "cluster_reset_failed"
+        assert episode["reset_failure"] is True
+        assert episode["environment_invalid_before_trial"] is True
+        assert episode["env_resolved"] is True
+
+
+    def test_prepare_rejects_resume_after_reset_failure(self, tmp_path):
+        from bench import runner
+
+        out = tmp_path / "run"
+        out.mkdir()
+        (out / "results_per_episode.jsonl").write_text(
+            '{"scenario_id":"single_fault/sf-001","status":"error","reset_failure":true}\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(RuntimeError, match="prior cluster reset failed"):
+            runner.prepare_output_directory(out)
+
+
+class TestResetFailureBoundary:
+    def test_runner_stops_before_next_episode_after_reset_failure(self):
+        from bench import runner
+
+        with pytest.raises(RuntimeError, match="prevent environment contamination"):
+            runner.ensure_environment_safe_for_next_episode({
+                "reset_failure": True,
+                "scenario_id": "single_fault/sf-001",
+            })
+
     def test_run_scenario_agent_claims_true_verifier_false(self, monkeypatch):
         from bench import runner
 

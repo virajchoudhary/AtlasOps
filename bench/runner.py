@@ -257,6 +257,14 @@ def prepare_output_directory(out_dir: Path) -> list[dict]:
                 episodes = [json.loads(line) for line in handle if line.strip()]
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"raw episode log is truncated/invalid; refusing resume: {exc}") from exc
+        contaminated = [
+            str(episode.get("scenario_id", "")) for episode in episodes if episode.get("reset_failure") is True
+        ]
+        if contaminated:
+            raise RuntimeError(
+                "prior cluster reset failed for scenarios; refusing resume to avoid environment contamination: "
+                + ", ".join(contaminated)
+            )
     return episodes
 
 
@@ -311,6 +319,14 @@ def validate_resume_raw_records(out_dir: Path, episode_count: int) -> None:
         raise RuntimeError(f"raw-record log is missing/truncated; refusing resume: {exc}") from exc
     if len(records) != episode_count:
         raise RuntimeError("raw-record count does not match completed episodes; refusing resume")
+
+
+def ensure_environment_safe_for_next_episode(episode: dict) -> None:
+    if episode.get("reset_failure") is True:
+        raise RuntimeError(
+            f"cluster reset failed after {episode.get('scenario_id')}; "
+            "stopping to prevent environment contamination"
+        )
 
 
 def finalize_raw_run(
@@ -380,15 +396,20 @@ def apply_chaos(scenario_id: str) -> bool:
     return r.returncode == 0
 
 
-def reset_cluster() -> None:
-    subprocess.run(
+def reset_cluster() -> bool:
+    chaos_reset = subprocess.run(
         ["kubectl", "delete", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
          "--all", "-A"],
         capture_output=True,
     )
     # Also remove any legacy deployment created by named replays
-    subprocess.run(["kubectl", "delete", "deployment", "checkoutservice-legacy",
-                    "-n", "default", "--ignore-not-found=true"], capture_output=True)
+    legacy_reset = subprocess.run(
+        ["kubectl", "delete", "deployment", "checkoutservice-legacy",
+         "-n", "default", "--ignore-not-found=true"],
+        capture_output=True,
+    )
+    time.sleep(60)
+    return chaos_reset.returncode == 0 and legacy_reset.returncode == 0
     time.sleep(60)
 
 
@@ -417,15 +438,27 @@ async def run_scenario(scenario_id: str) -> dict:
     alert_was_synthetic_timeout = bool(alert.get("synthetic"))
     model_visible_alert = _model_visible_alert(alert)
 
+    agent_error: str | None = None
+    incident: dict | None = None
+    judge_score: dict | None = None
     try:
         incident = await handle_incident(model_visible_alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
     except Exception as e:
         log.exception("scenario %s failed: %s", scenario_id, e)
-        reset_cluster()
-        return {"scenario_id": scenario_id, "status": "error", "error": str(e)}
+        agent_error = str(e)
 
-    reset_cluster()
+    reset_ok = reset_cluster()
+    if agent_error is not None:
+        if not reset_ok:
+            return {
+                "scenario_id": scenario_id,
+                "status": "error",
+                "error": "cluster_reset_failed",
+                "reset_failure": True,
+                "environment_invalid_before_trial": True,
+            }
+        return {"scenario_id": scenario_id, "status": "error", "error": agent_error}
 
     remediation = incident.get("remediation", {}).get("final", {})
     triage = incident.get("triage", {}).get("final", {})
@@ -469,6 +502,13 @@ async def run_scenario(scenario_id: str) -> dict:
     }
     # Keep reward evaluation centralized so train/eval/bench cannot drift.
     episode["reward_contract"] = evaluate_reward_contract(episode)
+    if not reset_ok:
+        episode.update({
+            "environment_invalid_before_trial": True,
+            "error": "cluster_reset_failed",
+            "reset_failure": True,
+            "status": "error",
+        })
     return episode
 
 
@@ -801,6 +841,7 @@ async def main() -> None:
                 episode_index=i,
             ),
         )
+        ensure_environment_safe_for_next_episode(r)
 
     summary = compute_summary(results, tag, args.model, {
         **config_provenance,

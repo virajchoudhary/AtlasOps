@@ -6,6 +6,7 @@ import json
 import math
 import platform
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -163,7 +164,15 @@ def classify_episode(episode: dict[str, Any]) -> dict[str, Any]:
             categories.add("INVALID_EPISODE")
 
     ordered = [item for item in ("HARNESS_INVALID", "EXECUTION_FAILURE", "VERIFICATION_FAILURE", "MODEL_FAILURE", "OK", "INVALID_EPISODE") if item in categories]
-    return {"categories": ordered, "reasons": sorted(reasons)}
+    return {
+        "categories": ordered,
+        "infrastructure_valid": bool(
+            status == "ok"
+            and "HARNESS_INVALID" not in categories
+            and "EXECUTION_FAILURE" not in categories
+        ),
+        "reasons": sorted(reasons),
+    }
 
 
 def _quantile(values: list[float], probability: float) -> float | None:
@@ -312,8 +321,10 @@ def build_raw_record(
     *,
     run_manifest: dict[str, Any],
     episode_index: int,
+    written_at: str | None = None,
 ) -> dict[str, Any]:
     classification = classify_episode(episode)
+    record_written_at = written_at or datetime.now(timezone.utc).isoformat()
     record = {
         "agent_claimed_resolved": episode.get("agent_claimed_resolved"),
         "episode_index": episode_index,
@@ -326,6 +337,7 @@ def build_raw_record(
             "tool_metrics": episode.get("tool_metrics"),
             "total_turns": episode.get("total_turns"),
         },
+        "infrastructure_valid": classification["infrastructure_valid"],
         "run_provenance": {
             "catalog_sha256": run_manifest.get("catalog_sha256"),
             "frozen_split_sha256": run_manifest.get("frozen_split_sha256"),
@@ -343,7 +355,7 @@ def build_raw_record(
         "status": episode.get("status"),
         "taxonomy": classification,
         "timestamps": {
-            "record_written_at": None,
+            "record_written_at": record_written_at,
             "verification_at": (episode.get("verification") or {}).get("verification_timestamp"),
         },
         "verifier_output": episode.get("verification"),

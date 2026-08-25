@@ -28,6 +28,19 @@ def _episode(**overrides):
     return value
 
 
+def test_reset_failure_is_preserved_as_harness_invalid():
+    episode = _episode(
+        environment_invalid_before_trial=True,
+        reset_failure=True,
+        status="error",
+    )
+    classification = evidence.classify_episode(episode)
+
+    assert classification["categories"][0] == "HARNESS_INVALID"
+    assert "reset_failure" in classification["reasons"]
+    assert classification["infrastructure_valid"] is False
+
+
 def test_taxonomy_separates_harness_model_and_verification():
     harness = evidence.classify_episode({
         "error": "manifest_apply_failed",
@@ -105,11 +118,18 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
         "predeclared_protocol": {"split_role": "validation"},
         "run_id": "run-1",
     }
-    record = evidence.build_raw_record(episode, run_manifest=manifest, episode_index=7)
+    record = evidence.build_raw_record(
+        episode,
+        run_manifest=manifest,
+        episode_index=7,
+        written_at="2030-01-01T00:00:00Z",
+    )
     unsigned = {key: value for key, value in record.items() if key != "record_sha256"}
 
     assert record["record_sha256"]
     assert record["record_sha256"] == evidence.sha256_object(unsigned)
+    assert record["infrastructure_valid"] is True
+    assert record["timestamps"]["record_written_at"] == "2030-01-01T00:00:00Z"
     assert record["episode_index"] == 7
     assert record["scenario_identity"]["hidden_orchestration_metadata"] is True
 

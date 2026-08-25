@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -177,3 +178,10 @@ def test_quick_eval_uses_hidden_evaluation_channel(monkeypatch):
 
     assert "scenario_id" not in seen["alert"]
     assert seen["scenario_id"] == "single_fault/sf-001"
+
+
+def test_legacy_eval_and_leaderboard_do_not_embed_scenario_identity():
+    for filename in ("eval.py", "leaderboard.py"):
+        text = Path(filename).read_text(encoding="utf-8")
+        assert 'alert["scenario_id"]' not in text
+        assert "model_alert.pop(\"scenario_id\", None)" in text

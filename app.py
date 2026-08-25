@@ -74,6 +74,7 @@ from agents.circuit_breaker import circuit_breaker
 from agents.correlator import correlator
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import subscribe, get_history
+from bench.scenario_contract import assert_consumer_may_use_scenario
 
 app = FastAPI(title="AtlasOps", docs_url="/api/docs")
 
@@ -133,6 +134,7 @@ async def inject_chaos(request: Request):
 
     if not manifest.exists():
         return JSONResponse({"ok": False, "error": f"Manifest not found: {scenario_id}"}, 404)
+    assert_consumer_may_use_scenario("demo_development", scenario_id)
 
     kubectl_skipped = _truthy_env("ATLASOPS_SKIP_KUBECTL_INJECT")
     if kubectl_skipped:

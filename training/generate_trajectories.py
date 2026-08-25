@@ -29,6 +29,7 @@ from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from bench.scenario_contract import (
     allowed_scenario_ids,
+    assert_consumer_may_use_scenario,
     sha256_file,
     sha256_object,
     write_json_atomically,
@@ -272,6 +273,7 @@ async def run() -> None:
             for repeat in range(args.repeats):
                 if not apply_chaos(manifest):
                     continue
+                assert_consumer_may_use_scenario("sft", scenario_id)
                 alert = wait_for_alert()
                 if not alert:
                     reset_cluster()

@@ -286,3 +286,27 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
 def test_runtime_role_gate_refuses_missing_active_split(tmp_path):
     with pytest.raises(RuntimeError, match="G5_SPLIT_NOT_ACTIVE"):
         contract.allowed_scenario_ids("sft", repo_root=tmp_path)
+
+
+def test_development_consumer_policy_and_stage4_special():
+    assert len(contract.development_scenario_ids("evaluation_subset")) == 11
+    assert len(contract.development_scenario_ids("leaderboard_subset")) == 7
+    assert contract.assert_consumer_may_use_scenario(
+        "stage4_special", "single_fault/sf-002"
+    ) is None
+    with pytest.raises(ValueError, match="Stage4 special"):
+        contract.assert_consumer_may_use_scenario("stage4_special", "cascade/cs-001")
+
+
+def test_demo_consumer_cannot_reach_declared_final_test(monkeypatch):
+    monkeypatch.setattr(
+        contract,
+        "load_active_split",
+        lambda repo_root=contract.REPO_ROOT: {
+            "splits": {"final_test": ["single_fault/private-holdout"]}
+        },
+    )
+    with pytest.raises(ValueError, match="final-test scenario"):
+        contract.assert_consumer_may_use_scenario(
+            "demo_development", "single_fault/private-holdout"
+        )

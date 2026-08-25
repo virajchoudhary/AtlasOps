@@ -29,7 +29,7 @@ from typing import Any
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import GRPOConfig, GRPOTrainer
-from bench.scenario_contract import allowed_scenario_ids
+from bench.scenario_contract import allowed_scenario_ids, assert_consumer_may_use_scenario
 from config.runtime import (
     SCENARIOS_BY_TIER,
     CurriculumManager,
@@ -95,7 +95,9 @@ def sample_scenario(tiers: list[str]) -> tuple[str, str]:
         raise RuntimeError(
             "GRPO_CURRICULUM_BLOCKED: active frozen split has no train scenarios for tiers"
         )
-    return _curriculum.next_scenario(pool)
+    scenario_id, tier = _curriculum.next_scenario(pool)
+    assert_consumer_may_use_scenario("grpo", scenario_id)
+    return scenario_id, tier
 
 
 def apply_chaos(scenario_id: str) -> bool:

@@ -103,14 +103,17 @@ def score_incident(incident: dict, elapsed_s: float, scenario_id: str) -> dict:
 
 async def run_scenario(scenario_id: str) -> dict:
     from agents.coordinator import handle_incident
+    from bench.scenario_contract import assert_consumer_may_use_scenario
 
     alert = json.loads(json.dumps(SCENARIOS[scenario_id]))
+    evaluation_scenario_id = _EVALUATION_SCENARIO_IDS[scenario_id]
+    assert_consumer_may_use_scenario("demo_development", evaluation_scenario_id)
 
     print(f"\n[-->] {scenario_id}")
     t0 = time.time()
     incident = await handle_incident(
         alert,
-        scenario_id=_EVALUATION_SCENARIO_IDS[scenario_id],
+        scenario_id=evaluation_scenario_id,
     )
     elapsed = time.time() - t0
     return score_incident(incident, elapsed, scenario_id)

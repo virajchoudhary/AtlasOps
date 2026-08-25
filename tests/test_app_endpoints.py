@@ -42,9 +42,8 @@ def test_inject_missing_manifest_returns_404():
 
 
 @patch("app.subprocess.run")
-@patch("app.Path.exists", return_value=True)
 @patch("asyncio.create_task")
-def test_inject_success_returns_correlation_id(mock_task, mock_exists, mock_run):
+def test_inject_success_returns_correlation_id(mock_task, mock_run):
     # The endpoint constructs a coroutine before scheduling it; close it in the
     # mock so pytest doesn't report an un-awaited coroutine warning.
     mock_task.side_effect = lambda coro: coro.close()

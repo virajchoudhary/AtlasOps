@@ -323,11 +323,14 @@ def _evaluation_scenario_id(source_id: str) -> str | None:
 
 async def run(scenario: str) -> dict:
     from agents.coordinator import handle_incident
+    from bench.scenario_contract import assert_consumer_may_use_scenario
     from agents.stream import get_history
 
     source_id = scenario if scenario in ALERTS else "hist-cloudflare-2019"
     alert = json.loads(json.dumps(ALERTS[source_id]))
     evaluation_scenario_id = _evaluation_scenario_id(source_id)
+    if evaluation_scenario_id:
+        assert_consumer_may_use_scenario("demo_development", evaluation_scenario_id)
 
     print(f"[→] Firing alert: {alert['commonLabels']['alertname']}")
     t0 = time.time()

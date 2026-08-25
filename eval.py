@@ -27,7 +27,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config.runtime import EVAL_SCENARIOS_BY_TIER
+from bench.scenario_contract import assert_consumer_may_use_scenario, development_scenario_ids
 
 log = logging.getLogger(__name__)
 
@@ -77,15 +77,17 @@ async def run_episode(scenario_id: str) -> dict:
 
     t0 = time.time()
     tier = scenario_id.split("/")[0]
+    assert_consumer_may_use_scenario("evaluation_subset", scenario_id)
 
     if not apply_chaos(scenario_id):
         return {"scenario_id": scenario_id, "status": "skip", "tier": tier}
 
     alert = wait_for_alert()
-    alert["scenario_id"] = scenario_id
+    model_alert = json.loads(json.dumps(alert))
+    model_alert.pop("scenario_id", None)
 
     try:
-        incident = await handle_incident(alert)
+        incident = await handle_incident(model_alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident)
     except Exception as e:
         reset_chaos()
@@ -103,7 +105,13 @@ async def run_episode(scenario_id: str) -> dict:
         "scenario_id": scenario_id,
         "tier": tier,
         "status": "ok",
-        "resolved": remediation.get("outcome") == "resolved",
+        "agent_claimed_resolved": bool(
+            remediation.get("outcome") == "resolved"
+            or remediation.get("status") == "resolved"
+        ),
+        "env_resolved": bool(incident.get("env_resolved") is True),
+        "verification": incident.get("verification", {}),
+        "resolved": bool(incident.get("env_resolved") is True),
         "outcome": remediation.get("outcome", "unknown"),
         "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
         "total_turns": total_turns,
@@ -206,7 +214,10 @@ async def main():
     tiers = [t.strip() for t in args.tiers.split(",")]
     scenarios = []
     for tier in tiers:
-        scenarios.extend(EVAL_SCENARIOS_BY_TIER.get(tier, []))
+        evaluation_ids = development_scenario_ids("evaluation_subset")
+        scenarios.extend(
+            scenario for scenario in evaluation_ids if scenario.split("/", 1)[0] in tiers
+        )
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 

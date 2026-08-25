@@ -59,6 +59,12 @@ ROLE_IDS_KEY = {
     "validation": "validation",
     "final_test": "final_test",
 }
+DEVELOPMENT_CONSUMERS = {
+    "evaluation_subset",
+    "grpo_curriculum",
+    "leaderboard_subset",
+}
+_STAGE4_SPECIAL_SCENARIO = "single_fault/sf-002"
 _JSON_SORT_KWARGS = {
     "sort_keys": True,
     "separators": (",", ":"),
@@ -985,6 +991,71 @@ def allowed_scenario_ids(role: str, repo_root: Path = REPO_ROOT) -> tuple[str, .
         raise ValueError(f"unknown scenario consumer role: {role}")
     split = load_active_split(repo_root)
     return tuple(sorted(split["splits"][ROLE_IDS_KEY[role]]))
+
+
+def development_scenario_ids(consumer: str) -> tuple[str, ...]:
+    """Return the pre-G5 development subset through one named-policy boundary."""
+    if consumer not in DEVELOPMENT_CONSUMERS:
+        raise ValueError(f"unknown development consumer: {consumer}")
+    import config.runtime as runtime
+
+    if consumer == "leaderboard_subset":
+        return tuple(sorted({scenario for scenario, _tier in runtime.LEADERBOARD_SCENARIOS}))
+    mapping = {
+        "evaluation_subset": runtime.EVAL_SCENARIOS_BY_TIER,
+        "grpo_curriculum": runtime.SCENARIOS_BY_TIER,
+    }
+    return tuple(sorted({
+        scenario
+        for scenarios in mapping[consumer].values()
+        for scenario in scenarios
+    }))
+
+
+def canonical_split_status(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    frozen_path = repo_root / "bench" / "g5" / "split.frozen.json"
+    if not frozen_path.exists():
+        return {"active": False, "status": "NOT_ACTIVE"}
+    split = load_active_split(repo_root)
+    return {
+        "active": True,
+        "catalog_sha256": split["catalog_sha256"],
+        "exposure_ledger_sha256": split["exposure_ledger_sha256"],
+        "status": split["status"],
+    }
+
+
+def assert_consumer_may_use_scenario(
+    consumer: str,
+    scenario_id: str,
+    repo_root: Path = REPO_ROOT,
+) -> None:
+    """Fail closed before a demo/development consumer reaches a declared holdout."""
+    if consumer == "stage4_special":
+        if scenario_id != _STAGE4_SPECIAL_SCENARIO:
+            raise ValueError("Stage4 special consumer is restricted to the golden scenario")
+        return
+    if consumer in ROLE_IDS_KEY:
+        allowed = set(allowed_scenario_ids(ROLE_IDS_KEY[consumer], repo_root))
+        if scenario_id not in allowed:
+            raise ValueError(f"scenario is outside active {consumer} population: {scenario_id}")
+        return
+    if consumer == "demo_development":
+        try:
+            split = load_active_split(repo_root)
+        except RuntimeError as exc:
+            if "G5_SPLIT_NOT_ACTIVE" not in str(exc):
+                raise
+            return
+        if scenario_id in set(split["splits"]["final_test"]):
+            raise ValueError("demo/development consumer cannot use final-test scenario")
+        return
+    if consumer in DEVELOPMENT_CONSUMERS:
+        if scenario_id not in development_scenario_ids(consumer):
+            raise ValueError(f"scenario is outside {consumer}: {scenario_id}")
+        assert_consumer_may_use_scenario("demo_development", scenario_id, repo_root)
+        return
+    raise ValueError(f"unknown canonical scenario consumer: {consumer}")
 
 
 def _write_catalog(args: argparse.Namespace) -> int:

@@ -42,7 +42,12 @@ log = logging.getLogger("gen_traj")
 
 # ── Import scenario catalogue from inference.py ───────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from bench.scenario_contract import allowed_scenario_ids, sha256_file, sha256_object  # noqa: E402
+from bench.scenario_contract import (  # noqa: E402
+    allowed_scenario_ids,
+    assert_consumer_may_use_scenario,
+    sha256_file,
+    sha256_object,
+)
 from inference import ALERTS, SCENARIO_GROUPS  # noqa: E402
 
 OUTPUT = Path("data/sft_corpus.jsonl")
@@ -276,6 +281,8 @@ async def main():
         else:
             candidate_ids.append(contract_id)
     scenario_ids, blocked = select_training_scenarios(candidate_ids)
+    for scenario_id in scenario_ids:
+        assert_consumer_may_use_scenario("sft", scenario_id)
 
     if args.max_scenarios:
         scenario_ids = scenario_ids[:args.max_scenarios]

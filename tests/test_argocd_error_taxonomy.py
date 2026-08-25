@@ -50,7 +50,7 @@ def test_404_is_classified_as_not_found(monkeypatch):
     _auth_ok(monkeypatch, argocd)
     not_found = _api_response(404, {"message": "app paymentservice not found"})
     with patch.object(argocd.requests, "request", return_value=not_found):
-        result = argocd.argocd_rollback("paymentservice", "latest")
+        result = argocd.argocd_rollback("paymentservice", "3")
     assert result["success"] is False
     assert result["error_class"] == "not_found"
     assert result["status_code"] == 404
@@ -60,14 +60,27 @@ def test_404_is_classified_as_not_found(monkeypatch):
 def test_400_is_classified_as_invalid_request(monkeypatch):
     argocd = _reload_with_env(monkeypatch)
     _auth_ok(monkeypatch, argocd)
-    bad = _api_response(400, {"message": "invalid revision"})
+    bad = _api_response(400, {"message": "invalid rollback id"})
     with patch.object(argocd.requests, "request", return_value=bad):
-        result = argocd.argocd_rollback("paymentservice", "-4")
+        result = argocd.argocd_rollback("paymentservice", "999")
     assert result["success"] is False
     assert result["error_class"] == "invalid_request"
     assert result["status_code"] == 400
     # Response bodies are intentionally not echoed (secret-safety).
-    assert "invalid revision" not in result["error"]
+    assert "invalid rollback id" not in result["error"]
+
+
+def test_non_numeric_rollback_revision_fails_before_api(monkeypatch):
+    argocd = _reload_with_env(monkeypatch)
+    _auth_ok(monkeypatch, argocd)
+    with patch.object(argocd.requests, "request") as request:
+        result = argocd.argocd_rollback("paymentservice", "latest")
+    assert result == {
+        "success": False,
+        "error": "argocd_invalid_revision: revision must be a non-negative integer, got 'latest'",
+        "error_class": "invalid_revision",
+    }
+    request.assert_not_called()
 
 
 def test_timeout_is_classified(monkeypatch):
@@ -89,6 +102,19 @@ def test_connection_error_is_classified(monkeypatch):
         result = argocd.argocd_app_get("paymentservice")
     assert result["error_class"] == "connection_failed"
     assert result["success"] is False
+
+
+def test_authentication_transport_timeout_is_timeout_not_auth_failure(monkeypatch):
+    argocd = _reload_with_env(monkeypatch)
+    with patch.object(
+        argocd.requests, "post", side_effect=requests.exceptions.Timeout()
+    ):
+        result = argocd.argocd_list_apps()
+    assert result == {
+        "success": False,
+        "error": "argocd_error: request timeout",
+        "error_class": "timeout",
+    }
 
 
 @pytest.mark.parametrize(

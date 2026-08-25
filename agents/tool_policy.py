@@ -28,8 +28,6 @@ ROLE_ALLOWED_TOOLS: dict[str, frozenset[str]] = {
         "kubectl_top_pods",
         "argocd_list_apps",
         "argocd_app_history",
-        "gcloud_logs_read",
-        "cloud_monitoring_query",
     }),
     "remediation": frozenset({
         "argocd_rollback",
@@ -52,6 +50,11 @@ AGENT_EXPOSED_TOOLS = frozenset().union(*ROLE_ALLOWED_TOOLS.values())
 # because an allowed executable such as curl or wget can still have side effects.
 ADMIN_OR_UNEXPOSED_TOOLS = frozenset({
     "argocd_app_get",
+    # Canonical Pipeline v1.1 has no GCP project/credentials. Keep the wrappers
+    # registered for a future explicitly configured cloud runtime, but never
+    # offer structurally unavailable dependencies to local agents.
+    "cloud_monitoring_query",
+    "gcloud_logs_read",
     "kubectl_exec",
     "kubectl_top_nodes",
 })

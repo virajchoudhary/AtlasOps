@@ -136,6 +136,8 @@ def _get_token(config: _ArgoCDConfig) -> str:
         _cached_token = response.json()["token"]
         _cached_token_identity = identity
         return _cached_token
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+        raise
     except Exception:
         raise _ArgoCDAuthenticationError(
             "argocd_authentication_error: authentication request failed"
@@ -211,7 +213,14 @@ def argocd_app_history(app: str) -> dict[str, Any]:
 
 def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     """Roll back an Argo CD application to a previous revision."""
-    revision_id = int(revision) if str(revision).isdigit() else 0
+    revision_text = str(revision).strip()
+    if not revision_text.isdigit():
+        return {
+            "success": False,
+            "error": f"argocd_invalid_revision: revision must be a non-negative integer, got {revision_text!r}",
+            "error_class": "invalid_revision",
+        }
+    revision_id = int(revision_text)
     result = _api("POST", f"/applications/{app}/rollback", json={"id": revision_id})
     if result.get("success"):
         result["message"] = f"Rollback of {app} to revision {revision} initiated."

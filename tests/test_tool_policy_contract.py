@@ -13,8 +13,6 @@ EXPECTED_ROLE_TOOLS = {
     "diagnosis": {
         "argocd_app_history",
         "argocd_list_apps",
-        "cloud_monitoring_query",
-        "gcloud_logs_read",
         "jaeger_get_trace",
         "jaeger_search",
         "kubectl_describe",
@@ -45,7 +43,7 @@ def test_registry_and_agent_exposure_counts_are_exact():
 
     assert REGISTERED_TOOLS == frozenset(TOOL_REGISTRY)
     assert len(REGISTERED_TOOLS) == 23
-    assert len(AGENT_EXPOSED_TOOLS) == 20
+    assert len(AGENT_EXPOSED_TOOLS) == 18
 
 
 def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
@@ -53,7 +51,7 @@ def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
     from agents.tools import REGISTERED_TOOLS
 
     assert set(ROLE_ALLOWED_TOOLS) == {"triage", "diagnosis", "remediation", "comms"}
-    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 12, "remediation": 9, "comms": 2}
+    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 10, "remediation": 9, "comms": 2}
     assert {role: set(tools) for role, tools in ROLE_ALLOWED_TOOLS.items()} == EXPECTED_ROLE_TOOLS
     assert all(tools <= REGISTERED_TOOLS for tools in ROLE_ALLOWED_TOOLS.values())
 
@@ -68,6 +66,8 @@ def test_unexposed_tools_are_explicit_and_not_role_reachable():
 
     assert ADMIN_OR_UNEXPOSED_TOOLS == {
         "argocd_app_get",
+        "cloud_monitoring_query",
+        "gcloud_logs_read",
         "kubectl_exec",
         "kubectl_top_nodes",
     }

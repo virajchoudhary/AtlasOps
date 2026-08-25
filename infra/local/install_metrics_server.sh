@@ -24,7 +24,6 @@
 set -euo pipefail
 
 CONTEXT="${KUBECONFIG_CONTEXT:-kind-atlasops-local}"
-MANIFEST="https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml"
 PINNED_MANIFEST="https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml"
 
 kubectl --context "$CONTEXT" get deployment metrics-server -n kube-system >/dev/null 2>&1 && {
@@ -47,8 +46,12 @@ kubectl --context "$CONTEXT" wait --for=condition=Available \
 echo "Verifying Metrics API..."
 for i in $(seq 1 24); do
   if kubectl --context "$CONTEXT" top nodes >/dev/null 2>&1; then
-    echo "Metrics API operational. kubectl top is now functional."
-    exit 0
+    REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+    PYTHON_BIN="${PYTHON_BIN:-python}"
+    if (cd "$REPO_ROOT" && "$PYTHON_BIN" -c 'from agents.tools.kubectl import kubectl_top_pods; r=kubectl_top_pods(); assert r.get("success"), r' ); then
+      echo "Metrics API operational and AtlasOps kubectl_top_pods wrapper verified."
+      exit 0
+    fi
   fi
   sleep 5
 done

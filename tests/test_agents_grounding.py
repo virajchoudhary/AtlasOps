@@ -46,7 +46,7 @@ def test_fabricated_citation_is_detected_deterministically():
             "path": "final.root_cause.evidence[0]",
             "claimed_tool": "argocd_list_apps",
             "finding": "No recent deployments found in the `paymentservice` namespace",
-            "reason": "cited tool has no execution record in this agent's trajectory",
+            "reason": "cited observation has no actual execution record in this agent's trajectory",
         }
     ]
     # The executed tools observed in the trajectory are reported for contrast.
@@ -72,6 +72,30 @@ def test_genuine_citation_is_grounded():
     assert report["violations"] == []
 
 
+def test_identifier_mismatch_on_executed_tool_is_ungrounded():
+    doc = {
+        "role": "diagnosis",
+        "trajectory": [
+            {
+                "tool": "promql_query",
+                "args": {"query": "up"},
+                "output": {"success": True},
+            }
+        ],
+        "final": {
+            "evidence": [
+                {"finding": "invented", "tool": "promql_query", "query": "http_errors"}
+            ]
+        },
+    }
+    report = validate_evidence_grounding(doc)
+    assert report["grounded"] is False
+    assert report["citation_count"] == 1
+    assert report["violations"][0]["reason"] == (
+        "cited observation parameters do not match an actual execution"
+    )
+
+
 def test_evidence_without_tool_field_is_not_a_provenance_claim():
     doc = {
         "role": "triage",
@@ -86,7 +110,7 @@ def test_evidence_without_tool_field_is_not_a_provenance_claim():
 def test_nested_and_multiple_violations_are_all_reported():
     doc = {
         "role": "remediation",
-        "trajectory": [{"tool": "kubectl_get"}],
+        "trajectory": [{"tool": "kubectl_get", "execution_state": "executed"}],
         "final": {
             "evidence": [
                 {"finding": "a", "tool": "promql_query"},
@@ -130,3 +154,13 @@ def test_build_reports_never_raises_and_records_errors():
 def test_reports_are_json_serializable_for_evidence_persistence():
     payload = build_grounding_reports({"diagnosis": _doc_008_style()})
     assert json.loads(json.dumps(payload))["diagnosis"]["grounded"] is False
+
+
+def test_blocked_calls_are_not_available_as_cited_observations():
+    doc = _doc_008_style()
+    doc["trajectory"] = [
+        {"role": "diagnosis", "tool": "argocd_list_apps", "args": {}, "output": {"success": False}, "invalid_arguments": True}
+    ]
+    report = validate_evidence_grounding(doc)
+    assert report["grounded"] is False
+    assert report["executed_tools"] == []

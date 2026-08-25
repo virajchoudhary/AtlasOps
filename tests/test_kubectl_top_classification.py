@@ -38,7 +38,6 @@ def test_healthy_top_output_passes_through_untouched():
 
 
 def test_unrelated_failure_is_not_misclassified():
-    other = _run_result(stderr='error: unable to read pod "x"'), 
     unrelated = _run_result(stderr='Error from server (NotFound): pods "x" not found', returncode=1)
     with patch("agents.tools.kubectl._run", return_value=unrelated):
         result = kubectl_top_pods(namespace="default")

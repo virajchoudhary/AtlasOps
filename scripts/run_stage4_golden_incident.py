@@ -1088,6 +1088,7 @@ async def main() -> dict[str, Any]:
             "triage": triage_res.get("final"),
             "diagnosis": diagnosis_res.get("final"),
             "approval": incident_result.get("approval"),
+            "grounding_validation": incident_result.get("grounding_validation", {}),
             "model_proposed_action": remediation_res.get("final"),
             "executed_tool_actions": executed_tools,
             "comms": comms_res.get("final"),

@@ -42,6 +42,21 @@ def test_installer_check_does_not_treat_cluster_failure_as_missing_dependency():
 def test_apply_verifies_existing_deployment_before_reporting_success():
     assert "verify_metrics_api()" in _SCRIPT
     assert (
-        _SCRIPT.index("deployment already present; verifying Metrics API")
+        _SCRIPT.index("existing deployment provenance verified; verifying Metrics API")
         < _SCRIPT.index("APPLY: waiting for metrics-server availability")
     )
+
+
+def test_installer_rejects_unverified_existing_deployment_provenance():
+    assert "metrics_server_provenance()" in _SCRIPT
+    assert 'EXPECTED_METRICS_SERVER_IMAGE="registry.k8s.io/metrics-server/metrics-server:v0.7.2"' in _SCRIPT
+    assert "--cert-dir=/tmp" in _SCRIPT
+    assert "--secure-port=10250" in _SCRIPT
+    assert "--metric-resolution=15s" in _SCRIPT
+    assert "--kubelet-insecure-tls" in _SCRIPT
+    assert "EXPECTED_METRICS_SERVER_ARGS" in _SCRIPT
+    assert '[[ "$args" != "$EXPECTED_METRICS_SERVER_ARGS" ]]' in _SCRIPT
+    assert "does not match the pinned provenance contract" in _SCRIPT
+    assert "service_account" in _SCRIPT
+    assert "priority_class" in _SCRIPT
+    assert "memory_request" in _SCRIPT

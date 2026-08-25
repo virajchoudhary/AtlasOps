@@ -20,6 +20,8 @@ set -euo pipefail
 readonly CANONICAL_CONTEXT="kind-atlasops-local"
 readonly METRICS_SERVER_COMMIT="096960107da4a1b2e2ec83b2ac3424248cfc0ad5"
 readonly METRICS_SERVER_VERSION="v0.7.2"
+readonly EXPECTED_METRICS_SERVER_IMAGE="registry.k8s.io/metrics-server/metrics-server:v0.7.2"
+readonly EXPECTED_METRICS_SERVER_ARGS="--cert-dir=/tmp --secure-port=10250 --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname --kubelet-use-node-status-port --metric-resolution=15s --kubelet-insecure-tls"
 readonly PINNED_SOURCE="https://github.com/kubernetes-sigs/metrics-server/manifests/overlays/release?ref=${METRICS_SERVER_COMMIT}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -69,6 +71,48 @@ metrics_server_state() {
   fi
 }
 
+metrics_server_provenance() {
+  local image args service_account priority_class cpu_request memory_request port
+  local container_names port_names port_protocols container_count
+  local deployment_path='spec.template.spec.containers[?(@.name=="metrics-server")]'
+  local base="deployment.metrics-server -n kube-system"
+
+  container_names="$(kubectl --context "$CONTEXT" get $base -o jsonpath='{.spec.template.spec.containers[*].name}')"
+  container_count="$(printf '%s\n' "$container_names" | wc -w)"
+
+  image="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.image}")"
+  args="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.args[*]}")"
+  service_account="$(kubectl --context "$CONTEXT" get $base -o jsonpath='{.spec.template.spec.serviceAccountName}')"
+  priority_class="$(kubectl --context "$CONTEXT" get $base -o jsonpath='{.spec.template.spec.priorityClassName}')"
+  cpu_request="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.resources.requests.cpu}")"
+  memory_request="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.resources.requests.memory}")"
+  port_names="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.ports[*].name}")"
+  port_protocols="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.ports[*].protocol}")"
+  port="$(kubectl --context "$CONTEXT" get $base -o jsonpath="{.${deployment_path}.ports[0].containerPort}")"
+
+  if [[ "$image" != "$EXPECTED_METRICS_SERVER_IMAGE" ]] \
+    || [[ "$container_count" != "1" ]] \
+    || [[ "$container_names" != "metrics-server" ]] \
+    || [[ "$service_account" != "metrics-server" ]] \
+    || [[ "$priority_class" != "system-cluster-critical" ]] \
+    || [[ "$cpu_request" != "100m" ]] \
+    || [[ "$memory_request" != "200Mi" ]] \
+    || [[ "$(printf '%s\n' "$port_names" | wc -w)" != "1" ]] \
+    || [[ "$(printf '%s\n' "$port_protocols" | wc -w)" != "1" ]] \
+    || [[ "$port_names" != "https" ]] \
+    || [[ "$port_protocols" != "TCP" ]] \
+    || [[ "$port" != "10250" ]] \
+    || [[ "$args" != "$EXPECTED_METRICS_SERVER_ARGS" ]]
+  then
+    fail "Existing metrics-server Deployment does not match the pinned provenance contract."
+  fi
+
+  printf 'namespace=%s\nname=%s\ncontainer=%s\nimage=%s\n' \
+    kube-system metrics-server metrics-server "$image"
+  printf 'service_account=%s\npriority_class=%s\ncpu_request=%s\nmemory_request=%s\nport=%s\nargs=%s\n' \
+    "$service_account" "$priority_class" "$cpu_request" "$memory_request" "$port" "$args"
+}
+
 verify_metrics_api() {
   echo "Verifying Metrics API through direct kubectl and the AtlasOps wrapper..."
   REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -101,11 +145,12 @@ main() {
   case "$state" in
     installed)
       echo "CHECK: metrics-server is already installed."
+      metrics_server_provenance
       if [[ "$MODE" == "--check" ]]; then
         echo "CHECK COMPLETE: no resources were changed."
         return
       fi
-      echo "APPLY: deployment already present; verifying Metrics API..."
+      echo "APPLY: existing deployment provenance verified; verifying Metrics API..."
       PYTHON_BIN="${PYTHON_BIN:-python}"
       command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Required command '$PYTHON_BIN' is not available."
       verify_metrics_api
@@ -138,6 +183,7 @@ main() {
   kubectl --context "$CONTEXT" wait --for=condition=Available \
     deployment/metrics-server -n kube-system --timeout=180s
 
+  metrics_server_provenance
   verify_metrics_api
 }
 

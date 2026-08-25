@@ -22,10 +22,19 @@ remediation into a doomed strategy.
 
 A deterministic, general provenance validator (`agents/grounding.py`) checks
 every structured `evidence[].tool` citation in an agent's final output against
-the tools actually executed in that agent's own trajectory. Reports are
-recorded per role (`triage`/`diagnosis`/`remediation`) as
+the tools actually executed in that agent's own trajectory, and checks supplied
+generic identifiers such as `query`, `resource`, and `app` against the
+execution arguments. This proves citation provenance and identifier matching.
+It does **not** prove that arbitrary natural-language `finding` text semantically
+follows from the raw tool output; semantic entailment remains outside its
+guarantee. Reports are recorded per role (`triage`/`diagnosis`/`remediation`) as
 `grounding_validation` in the persisted trajectory record and in Stage 4
 evidence (`phases.coordinator_execution.grounding_validation`).
+
+An observation-id/call-id requirement was evaluated but not added: it would
+alter the model-visible evidence schema and therefore require another protocol
+change. The existing tool/argument check is sufficient for deterministic
+provenance without unnecessarily changing task behavior.
 
 ### Behavior choice: preserve-and-score
 
@@ -91,6 +100,15 @@ CPU/~200Mi memory. It was NOT executed in this change: installing optional
 infrastructure into the canonical scientific environment requires operator
 authorization and should happen outside soak/science windows.
 
+For an already-present Deployment, apply mode first verifies the canonical
+namespace/name/container identity, exact v0.7.2 image, complete ordered argument
+set including Kind TLS compatibility, service account, priority class, resource
+requests, and container port. It prints that provenance before functional API
+checks; any mismatch or inspection failure is fatal. The next hardened G4
+protocol declares Metrics API **required-present** with this exact configuration,
+so a missing Deployment cannot reserve an attempt. No installation occurs in
+this Goal.
+
 ## 3. Argo CD deterministic error taxonomy (implemented)
 
 ### Old behavior
@@ -114,7 +132,8 @@ auto-converted into other actions — the model still chooses its next step.
 | Grounding validator | Correctness/grounding defect fix (deterministic detection) | None within-run (diagnostic-only, preserve-and-score). Prospective: makes hallucination measurable. |
 | kubectl top classification | Tool-contract correctness | None on workload health; improves agent failure attribution |
 | Argo CD taxonomy | Observability/tool-contract correctness | Removes an information asymmetry; model must still choose actions |
-| Protocol marker + two-attempt cap | Scientific protocol/process control | Prospective only: legacy attempts remain immutable under their original contracts and do not consume the new marker's budget. |
+| Diagnosis prompt/tool-contract changes | Scientific protocol change | Prospective: removes unavailable cloud tools and scenario-specific hints, adds generic CRD discovery and `unknown`; changes task difficulty. |
+| Protocol profile/fingerprint + two-attempt cap | Scientific protocol/process control | Prospective only: legacy attempts remain immutable under their original contracts and do not consume the new profile budget. |
 
 None of these weaken readiness gates, thresholds, windows, prompts (other than
 the declared Diagnosis category/discovery changes), scenario semantics,
@@ -125,11 +144,16 @@ introduced anywhere.
 
 All changes are local, free-tier, and read-mostly except the explicit opt-in
 installer. Verifier remains authoritative; causal predicates are untouched;
-evidence schemas gain additive provenance/marker fields. Reservations record
-the hardening marker, and reservation fails closed after two spent attempts
-carry that marker. Existing unmarked 005/006/007/008 attempts remain under
+evidence schemas gain additive provenance/marker fields. Future reservations
+must exactly match a statically declared protocol profile and record its
+human-readable components plus canonical SHA-256 fingerprint. The profile pins
+the qualified 3B model/digest, exact Diagnosis prompt hash, model-visible role
+tool contract hash, F1 contract, SF002 fault contract, and required-present
+pinned Metrics API state. Reservation fails closed after two spent attempts for
+the same complete fingerprint; model, prompt/tool, or Metrics API drift cannot
+consume that budget. Existing unmarked 005/006/007/008 attempts remain under
 their original protocol versions and are not retroactively charged to this new
-marker. Launching any next attempt remains outside this Goal and requires a
+profile. Launching any next attempt remains outside this Goal and requires a
 separate authorization decision.
 
 Required tests: `tests/test_agents_grounding.py`,
@@ -137,6 +161,13 @@ Required tests: `tests/test_agents_grounding.py`,
 `tests/test_kubectl_top_classification.py`, plus full suite green.
 
 ## 6. Model-selection decision support (read-only analysis)
+
+For this prospective hardening profile only, the executable Stage 4 contract is
+pinned to `qwen2.5:3b-instruct` with digest
+`357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b`. The general
+1.5B runtime default remains available elsewhere, but cannot reserve under this
+profile. A different model or digest fails reservation and must be declared in
+a separately reviewed protocol profile before it can consume any attempt budget.
 
 Feasibility on the canonical host (15.37 GB RAM; WSL2 default ≈ half system
 memory; Ollama CPU inference):
@@ -160,8 +191,11 @@ Pre-specified future-attempt policy (avoids success-chasing):
 2. At most two attempts per platform-hardening version marker.
 3. Any threshold/window/prompt/model change requires a new prospective
    amendment with independent justification AND increments the marker.
-4. Escalation to a stronger untrained base model is permitted at most once,
+4. Metrics API is required-present under the next hardened profile using the
+   pinned v0.7.2 upstream release configuration; it is not installed or
+   activated by this amendment.
+5. Escalation to a stronger untrained base model is permitted at most once,
    only after ≥2 consecutive valid model-capability failures with DISTINCT
    failure signatures across different hardening versions, and itself
    constitutes a new protocol version.
-5. No parameter may be changed based on a single failed attempt's outcome.
+6. No parameter may be changed based on a single failed attempt's outcome.

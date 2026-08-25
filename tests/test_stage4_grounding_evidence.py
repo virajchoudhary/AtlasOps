@@ -37,3 +37,12 @@ def test_stage4_persists_grounding_validation_in_execution_phase():
         if isinstance(key, ast.Constant)
     }
     assert "grounding_validation" in keys
+
+
+def test_stage4_persists_exact_protocol_profile_after_reservation():
+    source = _RUNNER_PATH.read_text(encoding="utf-8")
+    assignment = 'evidence["protocol_profile"] = reservation["protocol_profile"]'
+    assert assignment in source
+    assert source.index("reservation = reserve_experiment_attempt(") < source.index(
+        assignment
+    )

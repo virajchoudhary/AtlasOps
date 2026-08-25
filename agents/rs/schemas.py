@@ -9,7 +9,9 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
-_PLACEHOLDER_RE = re.compile(r"\{\{([a-z][a-z0-9_]*)(?::(int|str))?(?::[A-Za-z0-9_.-]+)?\}\}")
+_PLACEHOLDER_RE = re.compile(
+    r"\{\{([a-z][a-z0-9_]*)(?:[|:](int|str)(?::([A-Za-z0-9_.-]+))?)?\}\}"
+)
 VALID_SPLITS = frozenset({"train", "calibration", "test", "future_final_test"})
 SPLIT_FIT_ELIGIBILITY = {
     "train": True,
@@ -87,7 +89,8 @@ class Runbook:
             raise SchemaError(f"name/description cannot be blank on {self.action_id}")
         _validate_json_values(self.parameter_template, f"{self.action_id}.parameter_template")
         placeholders = {name for name, _kind in _iter_placeholders(self.parameter_template)}
-        undeclared = placeholders.difference(self.prerequisites)
+        declared_names = {prerequisite.removesuffix(":int") for prerequisite in self.prerequisites}
+        undeclared = placeholders.difference(declared_names)
         if undeclared:
             raise SchemaError(
                 f"{self.action_id} has undeclared template inputs: {sorted(undeclared)}"

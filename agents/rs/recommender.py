@@ -25,6 +25,25 @@ class BaseRecommender:
                 f"fit received ineligible split rows: {sorted(set(illegal))[:3]}"
             )
 
+    @staticmethod
+    def _observable_rows(rows: list[InteractionRow]) -> list[InteractionRow]:
+        """Exclude rows whose utility is absent by construction.
+
+        Synthetic labels are complete offline fixtures. Real selected/human-
+        override outcomes are observable; not-selected and filtered/rejected
+        recommendations have unknown counterfactual utility.
+        """
+        return [
+            row for row in rows
+            if row.observation_type in {
+                "synthetic_label",
+                "selected_success",
+                "selected_partial",
+                "selected_failure",
+                "human_override",
+            }
+        ]
+
 
 @dataclass
 class PopularitySuccessBaseline(BaseRecommender):
@@ -43,8 +62,9 @@ class PopularitySuccessBaseline(BaseRecommender):
 
     def fit(self, rows: list[InteractionRow]) -> None:
         self._validate_fit_rows(rows)
+        observable = self._observable_rows(rows)
         grouped: dict[str, list[InteractionRow]] = {}
-        for row in rows:
+        for row in observable:
             grouped.setdefault(row.action_id, []).append(row)
         self._stats = {
             action_id: (
@@ -66,6 +86,9 @@ class PopularitySuccessBaseline(BaseRecommender):
             popularity = min(count / 10.0, 1.0)
             scores[candidate.action_id] = self.alpha * shrunk_success + (1.0 - self.alpha) * popularity
         return scores
+
+    def history_count(self, action_id: str) -> int:
+        return self._stats.get(action_id, (0, self.prior_success))[0]
 
 
 @dataclass
@@ -112,11 +135,14 @@ class CollaborativeSVDBaseline(BaseRecommender):
         self._incident_factors: list[list[float]] = []
         self._action_factors: list[list[float]] = []
         self._last_right_factors: list[list[float]] = []
+        self._singular_values: list[float] = []
+        self._last_singular_values: list[float] = []
 
     def fit(self, rows: list[InteractionRow]) -> None:
         self._validate_fit_rows(rows)
-        incidents = sorted({row.incident_key for row in rows})
-        actions = sorted({row.action_id for row in rows})
+        observable = self._observable_rows(rows)
+        incidents = sorted({row.incident_key for row in observable})
+        actions = sorted({row.action_id for row in observable})
         if not incidents or not actions:
             self._incident_index, self._action_index = {}, {}
             self._matrix = []
@@ -124,12 +150,38 @@ class CollaborativeSVDBaseline(BaseRecommender):
         self._incident_index = {key: idx for idx, key in enumerate(incidents)}
         self._action_index = {key: idx for idx, key in enumerate(actions)}
         matrix = [[self.prior() for _ in actions] for _ in incidents]
-        for row in rows:
+        for row in observable:
             matrix[self._incident_index[row.incident_key]][self._action_index[row.action_id]] = float(row.relevance)
         factors = self._truncated_svd(matrix, min(self.latent_dimensions, min(len(incidents), len(actions))))
         self._matrix = matrix
         self._incident_factors = factors[0]
         self._action_factors = self._last_right_factors
+        self._singular_values = list(self._last_singular_values)
+
+    @property
+    def singular_values(self) -> tuple[float, ...]:
+        return tuple(self._singular_values)
+
+    def reconstruction_error(self) -> float:
+        if not self._matrix:
+            return 0.0
+        rank = len(self._action_factors)
+        reconstructed = [
+            [
+                sum(
+                    self._incident_factors[row_idx][dim]
+                    * self._action_factors[dim][col_idx]
+                    for dim in range(rank)
+                )
+                for col_idx in range(len(matrix_row))
+            ]
+            for row_idx, matrix_row in enumerate(self._matrix)
+        ]
+        return math.sqrt(sum(
+            (original - estimate) ** 2
+            for original_row, estimate_row in zip(self._matrix, reconstructed)
+            for original, estimate in zip(original_row, estimate_row)
+        ))
 
     def prior(self) -> float:
         return 0.0
@@ -148,9 +200,11 @@ class CollaborativeSVDBaseline(BaseRecommender):
             if action_idx is None:
                 scores[candidate.action_id] = 0.0
             else:
-                scores[candidate.action_id] = max(0.0, self._dot(projected_query, [
+                raw_utility = max(0.0, self._dot(projected_query, [
                     factor[action_idx] for factor in self._action_factors
                 ]))
+                # Bound the latent contribution to [0, 1] for compatible late fusion.
+                scores[candidate.action_id] = raw_utility / (1.0 + raw_utility)
         return scores
 
     def _project_mean_row(self, mean_row: list[float]) -> list[float]:
@@ -195,6 +249,7 @@ class CollaborativeSVDBaseline(BaseRecommender):
         right = self._transpose(vectors)
         # SVD scoring uses V-transpose (rank x actions).
         self._last_right_factors = vectors
+        self._last_singular_values = values
         return left, right
 
     @staticmethod
@@ -236,6 +291,7 @@ class HybridRecommender(BaseRecommender):
         self.collaborative_model = collaborative_model
         self.success_model = success_model
         self._fit_rows: list[InteractionRow] = []
+        self._has_been_fit = False
 
     def fit(self, rows: list[InteractionRow]) -> None:
         self._validate_fit_rows(rows)
@@ -243,10 +299,15 @@ class HybridRecommender(BaseRecommender):
         self.collaborative_model.fit(rows)
         self.success_model.fit(rows)
         self._fit_rows = list(rows)
+        self._has_been_fit = True
 
     @property
     def fitted_split_rows(self) -> tuple[InteractionRow, ...]:
         return tuple(self._fit_rows)
+
+    @property
+    def is_fitted(self) -> bool:
+        return self._has_been_fit
 
     def score(
         self,

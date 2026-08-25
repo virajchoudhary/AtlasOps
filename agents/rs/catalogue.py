@@ -281,7 +281,7 @@ def _build_catalogue() -> list[Runbook]:
                 tool_name="argocd_rollback",
                 parameter_template={
                     "app": "{{argocd_app}}",
-                    "revision": f"{{{{{revision_input}|int}}}}",
+                    "revision": f"{{{{{revision_input}}}}}",
                 },
                 applicable_fault_types=(fault,),
                 prerequisites=("argocd_app", f"{revision_input}:int", "revision_history_available"),

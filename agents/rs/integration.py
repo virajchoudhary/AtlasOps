@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from agents.rs.features import build_content_query
+from agents.rs.ontology import derive_parameter_requirements, service_matches_constraints
 from agents.rs.recommender import HybridRecommender, default_risk_penalty, rank_candidates
 from agents.rs.schemas import (
     InteractionRow,
@@ -22,7 +23,9 @@ from agents.rs.schemas import (
 )
 from agents.tool_policy import ROLE_ALLOWED_TOOLS
 
-_TEMPLATE_RE = re.compile(r"\{\{([a-z][a-z0-9_]*)(?::(int|str))?(?::([A-Za-z0-9_.-]+))?\}\}")
+_TEMPLATE_RE = re.compile(
+    r"\{\{([a-z][a-z0-9_]*)(?:[|:](int|str)(?::([A-Za-z0-9_.-]+))?)?\}\}"
+)
 _DEFAULT_RISK_PENALTIES = {
     "content": 0.0,
     "collaborative": 0.0,
@@ -86,7 +89,7 @@ class RecommendationPacketBuilder:
         if not toggle.enabled:
             base_packet["disabled_reason"] = toggle.reason
             return base_packet
-        if not self.recommender.fitted_split_rows:
+        if not self.recommender.is_fitted:
             raise SchemaError("recommend before calling fit on legal train/calibration rows")
         query = build_content_query(context)
         safe_candidates = []
@@ -101,6 +104,12 @@ class RecommendationPacketBuilder:
             if risk_penalty_overrides else default_risk_penalty(runbook)
             for runbook in safe_candidates
         }
+        invalid_penalties = [
+            value for value in penalties.values()
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 2.0
+        ]
+        if invalid_penalties:
+            raise SchemaError("risk penalty overrides must be finite numbers in [0, 2]")
         raw_scores = self.recommender.score(query, safe_candidates, risk_penalty_by_action=penalties)
         ranked = rank_candidates(raw_scores, min(self.k, len(safe_candidates)))
         component_models = {
@@ -125,6 +134,17 @@ class RecommendationPacketBuilder:
                 name: model[action_id]
                 for name, model in component_models.items()
             }
+            historical_count = self.recommender.success_model.history_count(action_id)
+            confidence_state = (
+                "insufficient_history"
+                if historical_count < self.recommender.success_model.min_actions_for_rate
+                else "observed_uncalibrated"
+            )
+            weighted_components = {
+                name: self.recommender.weights[name] * value
+                for name, value in components.items()
+            }
+            requirements = derive_parameter_requirements(runbook)
             candidates.append({
                 "rank": rank,
                 "action_id": action_id,
@@ -135,13 +155,41 @@ class RecommendationPacketBuilder:
                 "mutating": runbook.mutating,
                 "risk": runbook.risk,
                 "stage": runbook.stage,
+                "description": runbook.description,
+                "version": runbook.version,
+                "prerequisites": list(runbook.prerequisites),
+                "safety_constraints": list(runbook.safety_constraints),
+                "verification_action_ids": list(runbook.verification_action_ids),
+                "parameter_requirements": [
+                    {
+                        "name": item.name,
+                        "type": item.parameter_type,
+                        "required": item.required,
+                        "default": item.default,
+                        "source": item.source,
+                    }
+                    for item in requirements
+                ],
                 "approval_required_before_execution": runbook.mutating,
                 "downstream_execution_blockers": downstream_blockers,
                 "execution_eligible_after_downstream_gates": not downstream_blockers,
                 "parameter_template": runbook.parameter_template,
+                "historical_action_count": historical_count,
+                "confidence_state": confidence_state,
+                "confidence_is_calibrated_probability": False,
+                "ranking_explanation": {
+                    "formula": "sum(weight * component) - weight_risk * risk_penalty",
+                    "weighted_component_scores": weighted_components,
+                    "risk_contribution": self.recommender.weights["risk"] * penalty,
+                    "satisfied_gates": [
+                        item.name for item in requirements if item.source == "gate"
+                    ],
+                },
             })
         base_packet["candidate_pool_size"] = len(safe_candidates)
         base_packet["weights"] = dict(self.recommender.weights)
+        base_packet["score_semantics"] = "deterministic_raw_late_fusion_not_probability"
+        base_packet["confidence_state"] = "uncalibrated"
         base_packet["candidates"] = candidates
         return base_packet
 
@@ -192,6 +240,8 @@ class RecommendationPacketBuilder:
         reasons: list[str] = []
         if runbook.tool_name not in self.available_tools:
             reasons.append("tool_unavailable")
+        if not service_matches_constraints(str(getattr(context, "service", "")), runbook.service_constraints):
+            reasons.append("service_constraint_mismatch")
         missing = self._missing_prerequisites(runbook, context, template_values)
         if missing:
             reasons.append("missing_prerequisite:" + ",".join(sorted(missing)))

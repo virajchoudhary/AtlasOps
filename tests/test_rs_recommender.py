@@ -20,6 +20,11 @@ from agents.rs.metrics import (
     mrr_at_k,
     ndcg_at_k,
 )
+from agents.rs.ontology import (
+    derive_parameter_requirements,
+    service_matches_constraints,
+    validate_parameter_contract,
+)
 from agents.rs.recommender import (
     CollaborativeSVDBaseline,
     ContentBasedBaseline,
@@ -103,6 +108,54 @@ def test_catalogue_contains_only_real_remediation_acl_tools():
     side_effecting_tools = CLUSTER_MUTATING_TOOLS | {"slack_post_update"}
     mutating = {item.tool_name for item in RUNBOOK_CATALOGUE if item.mutating}
     assert mutating == side_effecting_tools
+
+
+def test_catalogue_templates_match_strict_coordinator_tool_schemas():
+    from agents.coordinator import _TOOL_PARAMETER_SCHEMAS
+
+    json_type_for_literal = {
+        dict: "object",
+        list: "array",
+        bool: "boolean",
+        int: "integer",
+        float: "number",
+        str: "string",
+    }
+    for runbook in RUNBOOK_CATALOGUE:
+        schema = _TOOL_PARAMETER_SCHEMAS[runbook.tool_name]
+        properties = schema["properties"]
+        assert set(runbook.parameter_template) <= set(properties), runbook.action_id
+        for key, value in runbook.parameter_template.items():
+            expected_type = properties[key]["type"]
+            if isinstance(value, str) and value.startswith("{{"):
+                actual_type = "integer" if "|int" in value else "string"
+            else:
+                actual_type = next(
+                    json_type for python_type, json_type in json_type_for_literal.items()
+                    if isinstance(value, python_type)
+                )
+            assert actual_type == expected_type, (runbook.action_id, key)
+        assert set(schema.get("required", ())) <= set(runbook.parameter_template)
+
+
+def test_parameter_contracts_are_typed_defaults_and_reject_unknown_values():
+    scale = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "scale_up_cpu_saturation")
+    requirements = derive_parameter_requirements(scale)
+    by_name = {item.name: item for item in requirements}
+    assert by_name["target_replicas"].parameter_type == "integer"
+    assert by_name["target_replicas"].default == 4
+    assert by_name["namespace"].required is True
+    normalized = validate_parameter_contract(
+        scale,
+        {"service": "synthetic-service", "namespace": "synthetic-ns", "target_replicas": 5},
+    )
+    assert normalized["target_replicas"] == 5
+    with pytest.raises(SchemaError, match="unknown parameters"):
+        validate_parameter_contract(scale, {"arbitrary_shell": "forbidden-value"})
+    with pytest.raises(SchemaError, match="must be integer"):
+        validate_parameter_contract(scale, {"target_replicas": True})
+    assert service_matches_constraints("paymentservice", ("*",))
+    assert not service_matches_constraints("paymentservice", ())
 
 
 def test_runbook_templates_declare_inputs_and_have_json_values():
@@ -321,6 +374,107 @@ def test_models_fail_closed_on_ineligible_fit_rows():
     for model in models:
         with pytest.raises(SchemaError):
             model.fit(rows)
+
+
+def test_svd_implementation_recovers_hand_verifiable_rank_one_matrix():
+    model = CollaborativeSVDBaseline(latent_dimensions=1, iterations=120)
+    matrix_values = [
+        ("synthetic/svd-1", "scale_up_cpu_saturation", 0.2),
+        ("synthetic/svd-1", "stop_dns_chaos", 0.4),
+        ("synthetic/svd-2", "scale_up_cpu_saturation", 0.4),
+        ("synthetic/svd-2", "stop_dns_chaos", 0.8),
+    ]
+    rows = []
+    for rank, (incident, action_id, relevance) in enumerate(matrix_values, start=1):
+        rows.append(InteractionRow(
+            incident_key=incident,
+            action_id=action_id,
+            service="synthetic-service",
+            fault_types=("cpu_saturation",),
+            outcome="success" if relevance >= 0.5 else "partial",
+            relevance=relevance,
+            selected=True,
+            split="train",
+            eligible_for_fit=True,
+            observation_type="selected_success" if relevance >= 0.5 else "selected_partial",
+            rank=rank,
+            family_id="synthetic-svd-family",
+        ))
+    model.fit(rows)
+    assert math.isclose(model.singular_values[0], 1.0, abs_tol=1e-9)
+    assert model.reconstruction_error() < 1e-8
+    factor = [model._action_factors[0][idx] for idx in range(2)]
+    denominator = math.sqrt(5.0)
+    expected = [1.0 / denominator, 2.0 / denominator]
+    if factor[0] < 0:
+        expected = [-value for value in expected]
+    assert math.isclose(factor[0], expected[0], abs_tol=1e-8)
+    assert math.isclose(factor[1], expected[1], abs_tol=1e-8)
+    candidates = [
+        next(item for item in RUNBOOK_CATALOGUE if item.action_id == "scale_up_cpu_saturation"),
+        next(item for item in RUNBOOK_CATALOGUE if item.action_id == "stop_dns_chaos"),
+    ]
+    first_scores = model.score({}, candidates)
+    assert first_scores == model.score({}, candidates)
+
+
+def test_empty_legal_history_has_deterministic_conservative_cold_start():
+    builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=5)
+    with pytest.raises(SchemaError, match="recommend before calling fit"):
+        builder.recommend_packet(synthetic_context())
+    builder.recommender.fit([])
+    packet = builder.recommend_packet(synthetic_context(approval=False))
+    assert packet["confidence_state"] == "uncalibrated"
+    assert all(
+        candidate["confidence_state"] == "insufficient_history"
+        for candidate in packet["candidates"]
+    )
+    assert all(candidate["score"] == candidate["score"] for candidate in packet["candidates"])
+    repeat = builder.recommend_packet(synthetic_context(approval=False))
+    assert packet == repeat
+    mutating_positions = [
+        index for index, candidate in enumerate(packet["candidates"])
+        if candidate["mutating"]
+    ]
+    low_risk_positions = [
+        index for index, candidate in enumerate(packet["candidates"])
+        if candidate["risk"] == "low"
+    ]
+    if mutating_positions:
+        assert max(mutating_positions) > min(low_risk_positions)
+
+
+def test_unobserved_recommendations_do_not_create_negative_success_labels():
+    action_id = "rollout_undo_error_rate_regression"
+    observed = InteractionRow(
+        incident_key="synthetic/observed",
+        action_id=action_id,
+        service="synthetic-service",
+        fault_types=("error_rate",),
+        outcome="success",
+        relevance=1.0,
+        selected=True,
+        split="train",
+        eligible_for_fit=True,
+        observation_type="selected_success",
+    )
+    unobserved = InteractionRow(
+        incident_key="synthetic/unobserved",
+        action_id=action_id,
+        service="synthetic-service",
+        fault_types=("error_rate",),
+        outcome="not_selected",
+        relevance=0.0,
+        selected=False,
+        split="calibration",
+        eligible_for_fit=True,
+        observation_type="not_selected",
+    )
+    baseline = PopularitySuccessBaseline()
+    baseline.fit([observed])
+    observed_only_score = baseline.score({}, RUNBOOK_CATALOGUE)[action_id]
+    baseline.fit([observed, unobserved])
+    assert baseline.score({}, RUNBOOK_CATALOGUE)[action_id] == observed_only_score
 
 
 def test_baselines_emit_distinct_deterministic_signals():

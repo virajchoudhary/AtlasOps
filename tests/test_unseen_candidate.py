@@ -130,6 +130,31 @@ def test_admission_rejects_development_exposed_candidate(monkeypatch):
         )
 
 
+def test_admission_rejects_paraphrased_existing_alert():
+    catalog = contract.build_catalog()
+    candidate = _candidate()
+    candidate["model_visible_alert"] = copy.deepcopy(
+        catalog["entries"][0]["model_visible_alert"]
+    )
+    del candidate["model_visible_alert"]["commonLabels"]["namespace"]
+    with pytest.raises(ValueError, match="alert paraphrase leakage"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=catalog,
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
+def test_alert_similarity_detects_rewrites_but_not_distinct_incidents():
+    catalog = contract.build_catalog()
+    alert = copy.deepcopy(catalog["entries"][0]["model_visible_alert"])
+    assert contract.alert_similarity(alert, alert) == 1.0
+    assert contract.alert_similarity(
+        alert,
+        catalog["entries"][1]["model_visible_alert"],
+    ) < 0.85
+
+
 def test_admission_rejects_existing_family_signature():
     candidate = _candidate()
     catalog = contract.build_catalog()

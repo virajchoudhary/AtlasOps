@@ -463,6 +463,55 @@ def _semantic_alert(alert: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _alert_tokens(value: Any) -> set[str]:
+    words: set[str] = set()
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            for key, nested in item.items():
+                visit(key)
+                visit(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                visit(nested)
+        elif item is not None:
+            words.update(re.findall(r"[a-z0-9]+", str(item).lower()))
+
+    visit(value)
+    return words
+
+
+def alert_similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
+    """Return conservative Jaccard similarity of serialized alert tokens."""
+    left_tokens = _alert_tokens(_semantic_alert(left))
+    right_tokens = _alert_tokens(_semantic_alert(right))
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens.intersection(right_tokens)) / len(
+        left_tokens.union(right_tokens)
+    )
+
+
+def near_duplicate_alerts(
+    alert: dict[str, Any],
+    catalog: dict[str, Any],
+    *,
+    threshold: float = 0.85,
+) -> list[dict[str, Any]]:
+    conflicts = []
+    for entry in catalog_entries(catalog).values():
+        similarity = alert_similarity(alert, entry["model_visible_alert"])
+        if similarity >= threshold:
+            conflicts.append(
+                {
+                    "reason": "alert_near_duplicate",
+                    "scenario_id": entry["scenario_id"],
+                    "similarity": round(similarity, 6),
+                }
+            )
+    return sorted(conflicts, key=lambda item: (-item["similarity"], item["scenario_id"]))
+
+
 def _coarse_fault(record: dict[str, Any]) -> dict[str, Any]:
     parameters = record.get("parameters", {}) or {}
     if record["kind"] == "StressChaos":

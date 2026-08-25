@@ -22,6 +22,7 @@ from bench.scenario_contract import (
     _fault_records_from_documents,
     _normalise,
     _semantic_alert,
+    near_duplicate_alerts,
     catalog_entries,
     development_exposed_ids,
     sha256_object,
@@ -262,6 +263,10 @@ def admit_unseen_candidate(
             conflicts.append({"reason": "source_incident", "scenario_id": entry["scenario_id"]})
     if conflicts:
         raise ValueError(f"family leakage against existing scenarios: {conflicts}")
+    paraphrase_conflicts = near_duplicate_alerts(alert, catalog)
+    conflicts.extend(paraphrase_conflicts)
+    if paraphrase_conflicts:
+        raise ValueError(f"alert paraphrase leakage against existing scenarios: {paraphrase_conflicts}")
 
     computed = {
         "alert_semantic_hash": alert_semantic_hash,

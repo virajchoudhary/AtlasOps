@@ -413,21 +413,104 @@ def reset_cluster() -> bool:
     )
     time.sleep(60)
     return chaos_reset.returncode == 0 and legacy_reset.returncode == 0
-    time.sleep(60)
 
 
-def wait_for_alert(timeout_s: int = 300) -> dict | None:
+class AlertObservationTimeout(RuntimeError):
+    pass
+
+
+class AlertObservationContaminated(RuntimeError):
+    pass
+
+
+def _alert_fingerprint(alert: dict, labels: dict | None = None) -> tuple[str, ...]:
+    merged = {**(labels or {}), **(alert.get("labels") or {})}
+    values = []
+    for key in ("alertname", "service", "deployment", "pod", "namespace", "severity"):
+        value = str(merged.get(key, "")).strip().lower()
+        if value:
+            values.append(f"{key}={value}")
+    return tuple(values) if values else (f"alertname={merged.get('alertname', 'unknown')}",)
+
+
+def _alert_observation_contract(entry: dict) -> tuple[dict, list[tuple[str, ...]]]:
+    template = entry.get("model_visible_alert") or {}
+    common = template.get("commonLabels") or {}
+    expected = sorted(
+        _alert_fingerprint(item, common)
+        for item in template.get("alerts") or []
+        if isinstance(item, dict)
+    )
+    return template, expected
+
+
+def select_expected_alerts(active_alerts: list[dict], expected: list[tuple[str, ...]]) -> tuple[list[dict], list[tuple[str, ...]], list[tuple[str, ...]]]:
+    """Select only predeclared observations; reject unrelated active alerts."""
+    remaining = list(expected)
+    matched: list[dict] = []
+    unexpected: list[tuple[str, ...]] = []
+    expected_set = set(expected)
+    for alert in active_alerts:
+        fingerprint = _alert_fingerprint(alert)
+        if fingerprint in remaining:
+            matched.append(alert)
+            remaining.remove(fingerprint)
+        elif any(
+            fingerprint[:index] == candidate[:index]
+            for candidate in expected_set
+            for index in range(1, len(candidate) + 1)
+        ):
+            # A missing optional label remains a valid match; retain it.
+            candidate = min(
+                (item for item in expected_set if _is_prefix_match(fingerprint, item)),
+                key=len,
+            )
+            matched.append(alert)
+            if candidate in remaining:
+                remaining.remove(candidate)
+        else:
+            unexpected.append(fingerprint)
+    missing = list(remaining)
+    return matched, missing, unexpected
+
+
+def _is_prefix_match(observed: tuple[str, ...], expected: tuple[str, ...]) -> bool:
+    return observed == expected or (
+        len(observed) < len(expected) and expected[:len(observed)] == observed
+    )
+
+
+def wait_for_alert(scenario_id: str, timeout_s: int = 300) -> dict:
     from agents.tools.alertmanager import alertmanager_list_alerts
+    entry = load_catalog_entry(scenario_id)
+    if entry is None:
+        raise AlertObservationContaminated("catalogue entry unavailable")
+    template, expected = _alert_observation_contract(entry)
+    if not expected:
+        raise AlertObservationContaminated("catalogue alert contract is empty")
+
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         result = alertmanager_list_alerts(active_only=True)
-        if result.get("success") and result.get("count", 0) > 0:
-            return {"commonLabels": {"alertname": result["alerts"][0]["alertname"]},
-                    "alerts": result["alerts"]}
+        if not result.get("success"):
+            time.sleep(20)
+            continue
+        matched, missing, unexpected = select_expected_alerts(
+            result.get("alerts") or [], expected
+        )
+        if unexpected:
+            raise AlertObservationContaminated(
+                "unrelated active alerts observed: " + "; ".join(
+                    "/".join(item) for item in sorted(unexpected)
+                )
+            )
+        if matched and not missing:
+            return {
+                "commonLabels": dict(template.get("commonLabels") or {}),
+                "alerts": matched,
+            }
         time.sleep(20)
-    log.warning("no alert fired within %ds — synthesising fallback", timeout_s)
-    return {"commonLabels": {"alertname": "BenchmarkTimeout"}, "alerts": [],
-            "scenario": "unknown", "synthetic": True}
+    raise AlertObservationTimeout(f"expected alerts did not fire within {timeout_s}s")
 
 
 async def run_scenario(scenario_id: str) -> dict:
@@ -437,8 +520,31 @@ async def run_scenario(scenario_id: str) -> dict:
     if not ok:
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
 
-    alert = wait_for_alert()
-    alert_was_synthetic_timeout = bool(alert.get("synthetic"))
+    try:
+        alert = wait_for_alert(scenario_id)
+    except (AlertObservationTimeout, AlertObservationContaminated) as exc:
+        reset_ok = reset_cluster()
+        error_code = (
+            "alert_observation_timeout"
+            if isinstance(exc, AlertObservationTimeout)
+            else "alert_observation_contaminated"
+        )
+        if not reset_ok:
+            return {
+                "scenario_id": scenario_id,
+                "status": "error",
+                "error": "cluster_reset_failed",
+                "reset_failure": True,
+                "environment_invalid_before_trial": True,
+            }
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": error_code,
+            "alert_observation_failure": True,
+            "environment_invalid_before_trial": True,
+        }
     model_visible_alert = _model_visible_alert(alert)
 
     agent_error: str | None = None
@@ -493,7 +599,7 @@ async def run_scenario(scenario_id: str) -> dict:
         "total_turns": total_turns,
         "judge": judge_score,
         "incident": incident,
-        "alert_was_synthetic_timeout": alert_was_synthetic_timeout,
+        "alert_observation_status": "complete",
         "approval": incident.get("approval"),
         "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
         "root_cause_evaluation": (

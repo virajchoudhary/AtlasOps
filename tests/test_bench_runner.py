@@ -130,7 +130,7 @@ class TestRunScenario:
         # 1. Chaos applied for scenario
         apply_chaos_mock.assert_called_once_with(scenario_id)
         # 2. Alert ingested without evaluation-only identity.
-        wait_for_alert_mock.assert_called_once_with()
+        wait_for_alert_mock.assert_called_once_with(scenario_id)
         # 3. Coordinator receives an explicit verifier-only scenario channel.
         handle_incident_mock.assert_awaited_once()
         passed_alert = handle_incident_mock.call_args[0][0]

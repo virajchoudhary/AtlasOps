@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -185,3 +186,35 @@ def test_legacy_eval_and_leaderboard_do_not_embed_scenario_identity():
         text = Path(filename).read_text(encoding="utf-8")
         assert 'alert["scenario_id"]' not in text
         assert "model_alert.pop(\"scenario_id\", None)" in text
+
+
+def test_expected_alert_selector_rejects_unrelated_alerts():
+    expected = [
+        ("alertname=a", "service=one", "namespace=default", "severity=critical"),
+        ("alertname=b", "service=two", "namespace=default", "severity=warning"),
+    ]
+    active = [
+        {"labels": {"alertname": "b", "service": "two", "namespace": "default", "severity": "warning"}},
+        {"labels": {"alertname": "a", "service": "one", "namespace": "default"}},
+        {"labels": {"alertname": "unrelated", "service": "other"}},
+    ]
+    matched, missing, unexpected = runner.select_expected_alerts(active, expected)
+
+    assert len(matched) == 2
+    assert not missing
+    assert unexpected == [("alertname=unrelated", "service=other")]
+
+
+def test_run_scenario_preserves_harness_invalid_alert_observations(monkeypatch):
+    monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+    monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=True))
+    monkeypatch.setattr(
+        runner,
+        "wait_for_alert",
+        Mock(side_effect=runner.AlertObservationContaminated("unrelated")),
+    )
+
+    episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+    assert episode["status"] == "error"
+    assert episode["error"] == "alert_observation_contaminated"
+    assert episode["environment_invalid_before_trial"] is True

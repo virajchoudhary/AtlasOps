@@ -124,7 +124,14 @@ def classify_episode(episode: dict[str, Any]) -> dict[str, Any]:
     if status == "error":
         categories.add("EXECUTION_FAILURE")
         reasons.add("agent_or_external_error")
-    if bool(episode.get("alert_was_synthetic_timeout")) or bool(episode.get("timed_out")):
+    if episode.get("alert_observation_failure") is True:
+        categories.add("HARNESS_INVALID")
+        reasons.add(
+            "alert_timeout"
+            if episode.get("error") == "alert_observation_timeout"
+            else "unexpected_active_alert"
+        )
+    elif bool(episode.get("alert_was_synthetic_timeout")) or bool(episode.get("timed_out")):
         categories.add("EXECUTION_FAILURE")
         reasons.add("timeout")
 

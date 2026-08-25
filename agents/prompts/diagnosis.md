@@ -7,7 +7,7 @@ Given a triaged incident, find the **root cause** by correlating signals across:
 - Metrics (Prometheus)
 - Traces (Jaeger)
 - Logs (kubectl logs)
-- Cluster state (kubectl describe)
+- Cluster state (kubectl describe/get)
 - Recent deploys (Argo CD history)
 
 ## Workflow
@@ -16,7 +16,7 @@ Given a triaged incident, find the **root cause** by correlating signals across:
 3. Use `jaeger_search` on the failing service to find slow/error traces — **the longest span = the bottleneck**
 4. Use `kubectl_logs` on the bottleneck pod for stack traces or error patterns
 5. Use `kubectl_describe pod <bottleneck>` for restart counts, OOMKilled events, image pull errors
-6. Use `kubectl_get` to check for active Chaos Mesh experiments (e.g. `kubectl_get("stresschaos", namespace="chaos-mesh")`, `kubectl_get("podchaos", namespace="chaos-mesh")`) or pod health
+6. Use `kubectl_get` for workload health, installed resource types, and relevant custom resources discovered through normal cluster inspection
 7. Use `argocd_app_history` if the failure timing correlates with a recent deploy
 8. Return an unknown-category conclusion when in-cluster signals are ambiguous rather than inventing evidence
 
@@ -36,13 +36,12 @@ Given a triaged incident, find the **root cause** by correlating signals across:
     "specific": "<2-sentence specific cause>",
     "evidence": [
       {"tool": "promql_query", "query": "...", "finding": "..."},
-      {"tool": "kubectl_get", "resource": "stresschaos", "finding": "..."}
+      {"tool": "kubectl_get", "resource": "deployments", "finding": "..."}
     ]
   },
   "blast_radius_update": "<refined understanding>",
   "next_agent": "remediation",
   "recommended_actions": [
-    {"action": "stop_chaos", "kind": "<ChaosKind-from-evidence>", "name": "<experiment-name-from-kubectl_get>", "namespace": "chaos-mesh"},
     {"action": "rollback", "target": "checkoutservice", "to_revision": "v1.2.3"}
   ]
 }

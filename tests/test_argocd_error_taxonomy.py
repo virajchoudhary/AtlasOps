@@ -77,10 +77,11 @@ def test_non_numeric_rollback_revision_fails_before_api(monkeypatch):
         result = argocd.argocd_rollback("paymentservice", "latest")
     assert result == {
         "success": False,
-        "error": "argocd_invalid_revision: revision must be a non-negative integer, got 'latest'",
+        "error": "argocd_invalid_revision: revision must be a non-negative integer",
         "error_class": "invalid_revision",
     }
     request.assert_not_called()
+    assert "latest" not in result["error"]
 
 
 def test_timeout_is_classified(monkeypatch):
@@ -114,6 +115,42 @@ def test_authentication_transport_timeout_is_timeout_not_auth_failure(monkeypatc
         "success": False,
         "error": "argocd_error: request timeout",
         "error_class": "timeout",
+    }
+
+
+def test_configuration_error_has_deterministic_class(monkeypatch):
+    monkeypatch.delenv("ARGOCD_URL", raising=False)
+    monkeypatch.delenv("ARGOCD_USER", raising=False)
+    monkeypatch.delenv("ARGOCD_PASS", raising=False)
+    import agents.tools.argocd as argocd
+
+    argocd = importlib.reload(argocd)
+    result = argocd.argocd_list_apps()
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: missing required environment variable ARGOCD_URL"
+    )
+
+
+def test_authentication_request_failure_is_classified_without_leaking_secret(monkeypatch):
+    argocd = _reload_with_env(monkeypatch)
+    unauthorized = Mock()
+    unauthorized.status_code = 401
+    unauthorized.text = "bad password SUPERSECRET"
+
+    def raise_for_status():
+        err = requests.HTTPError("401 error")
+        err.response = unauthorized
+        raise err
+
+    unauthorized.raise_for_status = raise_for_status
+    monkeypatch.setattr(argocd.requests, "post", Mock(return_value=unauthorized))
+    result = argocd.argocd_list_apps()
+    assert result == {
+        "success": False,
+        "error": "argocd_authentication_error: authentication request failed",
+        "error_class": "authentication_failed",
     }
 
 

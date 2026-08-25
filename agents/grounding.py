@@ -15,9 +15,9 @@ measure. Preserve-and-score keeps the authoritative environment verifier as
 the only success authority while making hallucination deterministically
 quantifiable from immutable evidence.
 
-The validator is fully general: it recognizes any list field named
-``evidence`` whose items carry a ``tool`` key, anywhere inside an agent's
-final output. It is not tied to Argo CD, SF002, paymentservice, or Chaos.
+The validator is fully general: every item in any list field named ``evidence``
+must identify a tool observation, anywhere inside an agent's final output. It
+is not tied to Argo CD, SF002, paymentservice, or Chaos.
 """
 
 from __future__ import annotations
@@ -53,20 +53,24 @@ def _executed_tools(trajectory: Any) -> set[str]:
     for entry in trajectory:
         if not isinstance(entry, dict):
             continue
-        if entry.get("executed_tool_calls"):
-            executed.update(str(name) for name in entry["executed_tool_calls"] if name)
-        elif entry.get("execution_state") == "executed":
-            if entry.get("tool"):
+        if _is_completed_execution(entry):
+            if entry.get("executed_tool_calls"):
+                executed.update(str(name) for name in entry["executed_tool_calls"] if name)
+            else:
                 executed.add(str(entry["tool"]))
-        elif (
-            entry.get("tool")
-            and not any(entry.get(marker) for marker in _BLOCKED_EXECUTION_MARKERS)
-        ):
-            # Coordinator trajectories identify a completed wrapper invocation by
-            # the presence of its tool result. Blocked attempts carry explicit
-            # markers and are therefore not observations available for citation.
-            executed.add(str(entry["tool"]))
     return executed
+
+
+def _is_completed_execution(entry: dict[str, Any]) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("executed_tool_calls"):
+        return True
+    if entry.get("execution_state") == "executed":
+        return bool(entry.get("tool"))
+    return bool(entry.get("tool")) and not any(
+        entry.get(marker) for marker in _BLOCKED_EXECUTION_MARKERS
+    )
 
 
 def _iter_evidence_citations(node: Any, path: str):
@@ -79,8 +83,9 @@ def _iter_evidence_citations(node: Any, path: str):
         evidence = node.get("evidence")
         if isinstance(evidence, list):
             for i, item in enumerate(evidence):
-                if isinstance(item, dict) and item.get("tool"):
-                    yield f"{path}.evidence[{i}]", str(item["tool"]), item.get("finding"), item
+                tool = str(item.get("tool")) if isinstance(item, dict) and item.get("tool") else None
+                finding = item.get("finding") if isinstance(item, dict) else ""
+                yield f"{path}.evidence[{i}]", tool, finding, item
         for k, v in node.items():
             yield from _iter_evidence_citations(v, f"{path}.{k}")
     elif isinstance(node, list):
@@ -115,7 +120,7 @@ def validate_evidence_grounding(agent_doc: Any) -> dict[str, Any]:
     executed_entries = [
         entry
         for entry in (trajectory if isinstance(trajectory, list) else [])
-        if isinstance(entry, dict) and entry.get("tool") and isinstance(entry.get("args"), dict)
+        if _is_completed_execution(entry) and isinstance(entry.get("args"), dict)
     ]
     violations = [
         {
@@ -123,13 +128,17 @@ def validate_evidence_grounding(agent_doc: Any) -> dict[str, Any]:
             "claimed_tool": tool,
             "finding": str(finding)[:_MAX_FINDING_LEN] if finding else "",
             "reason": (
-                "cited observation parameters do not match an actual execution"
-                if tool in executed
-                else "cited observation has no actual execution record in this agent's trajectory"
+                "evidence item does not identify a tool observation"
+                if tool is None
+                else (
+                    "cited observation parameters do not match an actual execution"
+                    if tool in executed
+                    else "cited observation has no actual execution record in this agent's trajectory"
+                )
             ),
         }
         for path, tool, finding, citation in citations
-        if (
+        if tool is None or (
             tool not in executed
             or (
                 any(citation.get(key) is not None for key in _CITATION_IDENTIFIER_KEYS)
@@ -144,7 +153,7 @@ def validate_evidence_grounding(agent_doc: Any) -> dict[str, Any]:
     return {
         "grounded": len(violations) == 0,
         "citation_count": len(citations),
-        "cited_tools": sorted({tool for _, tool, _, _ in citations}),
+        "cited_tools": sorted({tool for _, tool, _, _ in citations if tool is not None}),
         "executed_tools": sorted(executed),
         "violations": violations,
     }

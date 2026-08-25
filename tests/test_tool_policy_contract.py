@@ -124,6 +124,17 @@ def test_agent_schema_map_exactly_matches_exposed_tools():
         assert all(name in AGENT_EXPOSED_TOOLS for name in schema_names)
 
 
+def test_kubectl_get_contract_discovers_custom_resource_types():
+    from agents.coordinator import _tool_schema
+
+    schema = _tool_schema("kubectl_get")
+    assert schema["function"]["description"] == (
+        "Get a Kubernetes built-in or custom resource type. "
+        "Use customresourcedefinitions to discover installed custom resource types."
+    )
+    assert schema["function"]["parameters"]["required"] == ["resource"]
+
+
 def test_policy_blocks_unexposed_high_risk_tool():
     from agents.coordinator import _check_tool_policy
 

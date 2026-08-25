@@ -96,15 +96,23 @@ def test_identifier_mismatch_on_executed_tool_is_ungrounded():
     )
 
 
-def test_evidence_without_tool_field_is_not_a_provenance_claim():
+def test_evidence_item_without_tool_is_recorded_as_ungrounded():
     doc = {
         "role": "triage",
         "trajectory": [],
         "final": {"evidence": ["Workload default/paymentservice Ready replicas: 1/1"]},
     }
     report = validate_evidence_grounding(doc)
-    assert report["grounded"] is True
-    assert report["citation_count"] == 0
+    assert report["grounded"] is False
+    assert report["citation_count"] == 1
+    assert report["violations"] == [
+        {
+            "path": "final.evidence[0]",
+            "claimed_tool": None,
+            "finding": "",
+            "reason": "evidence item does not identify a tool observation",
+        }
+    ]
 
 
 def test_nested_and_multiple_violations_are_all_reported():
@@ -125,6 +133,7 @@ def test_nested_and_multiple_violations_are_all_reported():
     paths = [v["path"] for v in report["violations"]]
     assert paths == [
         "final.evidence[0]",
+        "final.evidence[1]",
         "final.nested.evidence[0]",
         "final.list[0].evidence[0]",
     ]
@@ -164,3 +173,27 @@ def test_blocked_calls_are_not_available_as_cited_observations():
     report = validate_evidence_grounding(doc)
     assert report["grounded"] is False
     assert report["executed_tools"] == []
+
+
+def test_blocked_call_arguments_cannot_validate_a_citation():
+    doc = {
+        "trajectory": [
+            {"tool": "promql_query", "args": {"query": "up"}, "output": {"success": True}},
+            {
+                "tool": "promql_query",
+                "args": {"query": "invented"},
+                "output": {"success": False},
+                "invalid_arguments": True,
+            },
+        ],
+        "final": {
+            "evidence": [
+                {"finding": "unsupported", "tool": "promql_query", "query": "invented"}
+            ]
+        },
+    }
+    report = validate_evidence_grounding(doc)
+    assert report["grounded"] is False
+    assert report["violations"][0]["reason"] == (
+        "cited observation parameters do not match an actual execution"
+    )

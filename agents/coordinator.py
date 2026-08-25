@@ -934,13 +934,21 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "kubectl_get": (
+        "Get a Kubernetes built-in or custom resource type. "
+        "Use customresourcedefinitions to discover installed custom resource types."
+    )
+}
+
+
 def _tool_schema(name: str) -> dict[str, Any]:
     """Generate OpenAI-format tool schema with strict known arguments."""
     return {
         "type": "function",
         "function": {
             "name": name,
-            "description": f"Real SRE tool: {name}",
+            "description": _TOOL_DESCRIPTIONS.get(name, f"Real SRE tool: {name}"),
             "parameters": _TOOL_PARAMETER_SCHEMAS[name],
         },
     }

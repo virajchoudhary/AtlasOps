@@ -171,8 +171,18 @@ def _api(method: str, path: str, **kwargs) -> dict[str, Any]:
             )
         response.raise_for_status()
         return {"success": True, "data": response.json()}
-    except (_ArgoCDConfigurationError, _ArgoCDAuthenticationError) as exc:
-        return {"success": False, "error": str(exc)}
+    except _ArgoCDConfigurationError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_class": "configuration_error",
+        }
+    except _ArgoCDAuthenticationError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_class": "authentication_failed",
+        }
     except requests.HTTPError as exc:
         return _classify_api_failure(exc)
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
@@ -217,7 +227,7 @@ def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     if not revision_text.isdigit():
         return {
             "success": False,
-            "error": f"argocd_invalid_revision: revision must be a non-negative integer, got {revision_text!r}",
+            "error": "argocd_invalid_revision: revision must be a non-negative integer",
             "error_class": "invalid_revision",
         }
     revision_id = int(revision_text)

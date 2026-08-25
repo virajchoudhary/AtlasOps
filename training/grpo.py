@@ -374,6 +374,7 @@ def validate_reward_pairing(
     completions: list[Any],
     metadata: dict[str, list[Any]],
     rows_by_group: dict[str, dict[str, Any]],
+    expected_environment: dict[str, str],
 ) -> list[dict[str, Any]]:
     """Guarantee each completion stays paired with its original hidden row."""
     count = len(completions)
@@ -404,6 +405,8 @@ def validate_reward_pairing(
             raise RuntimeError(f"scenario_metadata_mismatch:group={group}")
         if row["role"] != columns["role"][index] or row["row_id"] != columns["row_id"][index]:
             raise RuntimeError(f"row_identity_mismatch:group={group}")
+        if row["hidden_metadata"]["environment_identity"] != expected_environment:
+            raise RuntimeError(f"environment_identity_mismatch:group={group}")
         paired_rows.append(row)
     return paired_rows
 
@@ -465,6 +468,7 @@ class OnlineRewardFunction:
             completions,
             metadata,
             self.rows_by_group,
+            self.environment.to_dict(),
         )
         verify_kubernetes_environment(self.environment)
         for index, (completion, row) in enumerate(zip(completions, paired_rows)):

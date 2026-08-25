@@ -243,7 +243,13 @@ def test_reward_pairing_uses_hidden_row_metadata() -> None:
         second["stage9_group_id"]: second,
     }
 
-    paired = validate_reward_pairing(prompts, ["{}", "{}"], metadata, rows_by_group)
+    paired = validate_reward_pairing(
+        prompts,
+        ["{}", "{}"],
+        metadata,
+        rows_by_group,
+        ENVIRONMENT,
+    )
     assert [row["stage9_group_id"] for row in paired] == [
         first["stage9_group_id"],
         second["stage9_group_id"],
@@ -345,6 +351,24 @@ def test_swapped_scenario_metadata_fails_closed() -> None:
             ["{}", "{}"],
             metadata,
             {first["stage9_group_id"]: first, second["stage9_group_id"]: second},
+            ENVIRONMENT,
+        )
+
+
+def test_row_environment_mismatch_fails_closed() -> None:
+    row = _row()
+    metadata = {
+        key: [row[key]]
+        for key in ("prompt_sha256", "provenance_hash", "role", "row_id", "stage9_group_id")
+    }
+
+    with pytest.raises(RuntimeError, match="environment_identity_mismatch"):
+        validate_reward_pairing(
+            [row["model_visible_prompt"]],
+            ["{}"],
+            metadata,
+            {row["stage9_group_id"]: row},
+            {"provider": "local-kind", "kubernetes_context": "other-context"},
         )
 
 

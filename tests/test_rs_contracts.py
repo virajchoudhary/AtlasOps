@@ -77,6 +77,18 @@ def test_synthetic_content_preferences_are_learnable_and_deterministic():
     assert build_content_query(fixture["contexts"]["cpu"]) == build_content_query(fixture["contexts"]["cpu"])
 
 
+def test_synthetic_contradictory_evidence_is_preserved_without_resolution_bias():
+    fixture = build_synthetic_fixture()
+    baseline = PopularitySuccessBaseline(min_actions_for_rate=1)
+    baseline.fit([row for row in fixture["rows"] if row.split == "train"])
+    scale_count, scale_average = baseline._stats["scale_up_cpu_saturation"]
+    rollback_count, rollback_average = baseline._stats["rollout_undo_error_rate_regression"]
+    assert (scale_count, rollback_count) == (4, 3)
+    assert math.isclose(scale_average, (0.90 + 0.85 + 0.90 + 0.20) / 4.0)
+    assert math.isclose(rollback_average, (0.70 + 0.10 + 0.85) / 3.0)
+    assert abs(scale_average - rollback_average) < 0.25
+
+
 def test_model_serialization_roundtrip_is_deterministic_and_fail_closed():
     model, fixture = fitted_model()
     envelope = serialize_hybrid_model(

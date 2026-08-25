@@ -159,3 +159,21 @@ def test_model_alert_sanitiser_removes_only_evaluation_identity():
     assert "scenario_id" not in cleaned
     assert cleaned["commonLabels"]["service"] == "paymentservice"
     assert alert["scenario_id"] == "single_fault/sf-002"
+
+
+def test_quick_eval_uses_hidden_evaluation_channel(monkeypatch):
+    from bench import quick_eval
+    from agents import coordinator
+
+    seen = {}
+
+    async def fake_handle(alert, incident_id=None, scenario_id=None):
+        seen["alert"] = alert
+        seen["scenario_id"] = scenario_id
+        return {}
+
+    monkeypatch.setattr(coordinator, "handle_incident", fake_handle)
+    asyncio.run(quick_eval.run_scenario("sf-001"))
+
+    assert "scenario_id" not in seen["alert"]
+    assert seen["scenario_id"] == "single_fault/sf-001"

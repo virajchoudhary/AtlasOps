@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFESTS_DIR = REPO_ROOT / "bench" / "chaos_manifests"
 CONTRACT_DIR = REPO_ROOT / "bench" / "g5"
 CATALOG_PATH = CONTRACT_DIR / "scenario_catalog.json"

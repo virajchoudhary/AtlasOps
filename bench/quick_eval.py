@@ -44,6 +44,12 @@ SCENARIOS = {
     },
 }
 
+_EVALUATION_SCENARIO_IDS = {
+    "hist-cloudflare-2019": "named_replays/hist-cloudflare-2019",
+    "hist-github-2018": "named_replays/hist-github-2018",
+    "sf-001": "single_fault/sf-001",
+}
+
 
 def score_incident(incident: dict, elapsed_s: float, scenario_id: str) -> dict:
     """Compute reward metrics for a completed incident chain."""
@@ -97,14 +103,15 @@ def score_incident(incident: dict, elapsed_s: float, scenario_id: str) -> dict:
 
 async def run_scenario(scenario_id: str) -> dict:
     from agents.coordinator import handle_incident
-    from agents.stream import get_history
 
-    alert = SCENARIOS[scenario_id]
-    alert["scenario_id"] = scenario_id
+    alert = json.loads(json.dumps(SCENARIOS[scenario_id]))
 
     print(f"\n[-->] {scenario_id}")
     t0 = time.time()
-    incident = await handle_incident(alert)
+    incident = await handle_incident(
+        alert,
+        scenario_id=_EVALUATION_SCENARIO_IDS[scenario_id],
+    )
     elapsed = time.time() - t0
     return score_incident(incident, elapsed, scenario_id)
 

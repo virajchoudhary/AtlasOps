@@ -3,9 +3,9 @@
 These tests mock external side effects so they can run in CI without a cluster.
 """
 
+import asyncio
 import json
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -57,6 +57,41 @@ def test_inject_success_returns_correlation_id(mock_task, mock_exists, mock_run)
     assert body["scenario_id"] == "single_fault/sf-001"
     assert body["correlation_id"].startswith("inj-")
     assert mock_task.called
+
+
+def test_ui_inject_keeps_scenario_identity_out_of_model_alert(monkeypatch):
+    import app
+
+    seen = {}
+
+    def fake_ingest(alert):
+        seen["correlator"] = alert
+        return "inc-ui-leak", True, True
+
+    async def fake_handle(alert, incident_id=None, scenario_id=None):
+        seen["handle"] = alert
+        seen["scenario_id"] = scenario_id
+        return {}
+
+    def fake_alerts(active_only=True):
+        return {"alerts": [{"alertname": "TestAlert"}]}
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "unit-test-audit-secret")
+    monkeypatch.setattr(app.correlator, "ingest", fake_ingest)
+    monkeypatch.setattr(app, "handle_incident", fake_handle)
+    monkeypatch.setattr("agents.tools.alertmanager.alertmanager_list_alerts", fake_alerts)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+    asyncio.run(
+        app._handle_after_delay("Smoke", "single_fault/sf-001", "inj-unit")
+    )
+
+    assert "scenario_id" not in seen["correlator"]
+    assert "scenario_id" not in seen["handle"]
+    assert seen["scenario_id"] == "single_fault/sf-001"
 
 
 @patch("app.subprocess.run")

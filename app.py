@@ -164,7 +164,8 @@ async def inject_chaos(request: Request):
 
     # Fire the incident through the coordinator after a brief wait
     import asyncio
-    asyncio.create_task(_handle_after_delay(body.name or scenario_id, scenario_id, correlation_id))
+    fallback_name = body.name or "UIInjectedIncident"
+    asyncio.create_task(_handle_after_delay(fallback_name, scenario_id, correlation_id))
     return JSONResponse(
         InjectResponse(
             ok=True,
@@ -185,23 +186,23 @@ async def _handle_after_delay(name: str, scenario_id: str, correlation_id: str):
     if alerts_list:
         first = alerts_list[0]
         top_alert = first.get("alertname") or (first.get("labels") or {}).get("alertname")
-    alert = {
+    # scenario_id is an evaluation/orchestration channel.  It must never enter
+    # commonLabels or the alert object consumed by the model-facing agents.
+    model_alert = {
         "commonLabels": {
             "alertname": top_alert if top_alert else name,
-            "scenario_id": scenario_id,
         },
         "alerts": result.get("alerts", []),
-        "scenario_id": scenario_id,
         "correlation_id": correlation_id,
     }
     # Route through correlator so UI-injected incidents obey the same
     # deduplication and dispatch rules as real Alertmanager webhooks.
-    incident_id, _is_new, should_dispatch = correlator.ingest(alert)
+    incident_id, _is_new, should_dispatch = correlator.ingest(model_alert)
     if not should_dispatch:
         return
     correlator.mark_processing(incident_id, True)
     try:
-        await handle_incident(alert, incident_id=incident_id)
+        await handle_incident(model_alert, incident_id=incident_id, scenario_id=scenario_id)
     finally:
         correlator.mark_processing(incident_id, False)
 

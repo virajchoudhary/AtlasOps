@@ -10,7 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bench.scenario_contract import REPO_ROOT, repository_head, sha256_file, sha256_object
+from bench.scenario_contract import (
+    REPO_ROOT,
+    portable_sha256_file,
+    repository_head,
+    sha256_object,
+)
 
 
 RAW_RECORD_SCHEMA_VERSION = "atlasops.g6.raw-record/v1"
@@ -31,7 +36,7 @@ _VERIFIER_FILES = ("agents/verifier.py",)
 def contract_hashes(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     def files_hash(relative_paths: tuple[str, ...]) -> dict[str, str]:
         return {
-            relative: sha256_file(repo_root / relative)
+            relative: portable_sha256_file(repo_root / relative)
             for relative in relative_paths
             if (repo_root / relative).exists()
         }
@@ -56,6 +61,7 @@ def build_run_manifest(
     model_provider: str,
     model_name: str,
     model_digest: str,
+    environment_identity: str,
     seed: str,
     split_role: str,
     scenario_ids: list[str],
@@ -75,6 +81,7 @@ def build_run_manifest(
             "provider": model_provider,
         },
         "observed_runtime": {
+            "environment_identity": environment_identity,
             "git_commit": repository_head(),
             "platform": platform.platform(),
             "python_version": sys.version,
@@ -223,6 +230,23 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in results
         if (result.get("tool_metrics") or {}).get("pre_action_evidence") is False
     ]
+    mutating_episodes = [
+        result
+        for result in completed
+        if int((result.get("tool_metrics") or {}).get("mutating_attempts", 0)) > 0
+    ]
+    supported_mutating_episodes = [
+        result for result in mutating_episodes
+        if (result.get("tool_metrics") or {}).get("pre_action_evidence") is True
+    ]
+    mutation_attempts = sum(
+        int((result.get("tool_metrics") or {}).get("mutating_attempts", 0))
+        for result in results
+    )
+    successful_mutations = sum(
+        int((result.get("tool_metrics") or {}).get("successful_mutations", 0))
+        for result in results
+    )
 
     tool_attempts = sum(int((result.get("tool_metrics") or {}).get("attempts", 0)) for result in results)
     invalid_tool_calls = sum(
@@ -264,6 +288,11 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             "numerator": len(hallucinations),
             "rate": rate(len(hallucinations), attempted),
         },
+        "evidence_support": {
+            "denominator": "completed episodes performing mutations",
+            "numerator": len(supported_mutating_episodes),
+            "rate": rate(len(supported_mutating_episodes), len(mutating_episodes)),
+        },
         "false_resolution": {
             "denominator": "all_attempted_episodes",
             "numerator": len(false_resolutions),
@@ -281,6 +310,12 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             "correct": len(root_correct),
             "denominator": "all_attempted_episodes",
             "rate": rate(len(root_correct), attempted),
+        },
+        "remediation_actions": {
+            "attempts": mutation_attempts,
+            "denominator": "all recorded mutating-action attempts",
+            "successes": successful_mutations,
+            "validity_rate": rate(successful_mutations, mutation_attempts),
         },
         "schema_version": METRICS_SCHEMA_VERSION,
         "tool_calls": {
@@ -344,6 +379,9 @@ def build_raw_record(
             "git_commit": (run_manifest.get("observed_runtime") or {}).get("git_commit"),
             "model": run_manifest.get("model"),
             "run_id": run_manifest.get("run_id"),
+            "environment_identity": (run_manifest.get("observed_runtime") or {}).get(
+                "environment_identity"
+            ),
             "split_role": (run_manifest.get("predeclared_protocol") or {}).get("split_role"),
         },
         "scenario_identity": {

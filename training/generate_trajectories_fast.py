@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from bench.scenario_contract import (  # noqa: E402
     allowed_scenario_ids,
     assert_consumer_may_use_scenario,
-    sha256_file,
+    portable_sha256_file,
     sha256_object,
 )
 from inference import ALERTS, SCENARIO_GROUPS  # noqa: E402
@@ -116,7 +116,7 @@ def write_generation_manifest(
         "config_sha256": sha256_object(config),
         "config_provenance": config,
         "corpus_path": str(output),
-        "corpus_sha256": sha256_file(output),
+        "corpus_sha256": portable_sha256_file(output),
         "example_count": written,
         "schema_version": "atlasops.g5.sft-generation-manifest/v1",
         "skipped_example_count": skipped,

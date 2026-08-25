@@ -156,6 +156,7 @@ def tool_metrics(incident: dict) -> dict:
         "executed_successes": 0,
         "invalid_arguments": 0,
         "mutating_attempts": 0,
+        "successful_mutations": 0,
         "successful_investigations": 0,
     }
     first_mutation_index: int | None = None
@@ -190,7 +191,9 @@ def tool_metrics(incident: dict) -> dict:
                 counts["dedup_blocked"] += 1
             elif success:
                 counts["executed_successes"] += 1
-                if name in _INVESTIGATIVE_TOOLS:
+                if name in _MUTATING_TOOLS:
+                    counts["successful_mutations"] += 1
+                elif name in _INVESTIGATIVE_TOOLS:
                     counts["successful_investigations"] += 1
                     if first_mutation_index is None or flat_index < first_mutation_index:
                         successful_investigations_before_first_mutation += 1
@@ -569,6 +572,7 @@ def compute_summary(
             "attempts", "blocked_by_circuit_breaker", "blocked_by_policy",
             "cap_blocked", "dedup_blocked", "executed_failures",
             "executed_successes", "invalid_arguments", "mutating_attempts",
+            "successful_mutations",
             "successful_investigations",
         )
     }
@@ -697,6 +701,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Model path or HF ID")
     parser.add_argument("--model-digest", default="", help="Immutable model/provider digest")
+    parser.add_argument("--environment-id", default="", help="Declared benchmark environment identity")
     parser.add_argument("--seed", default="", help="Predeclared inference seed where supported")
     parser.add_argument("--tag", default="", help="Run label (e.g. grpo_v3, baseline_v2)")
     parser.add_argument(
@@ -734,12 +739,16 @@ async def main() -> None:
     if args.split_role == "validation":
         if not args.model_digest:
             raise RuntimeError("validation benchmark requires --model-digest for reproducibility")
+        if not args.environment_id:
+            raise RuntimeError("validation benchmark requires --environment-id for provenance")
         selected_scenarios = list(allowed_scenario_ids("validation"))
     elif args.split_role == "final_test":
         if not args.allow_final_test:
             raise RuntimeError("final-test membership is gated; pass --allow-final-test explicitly")
         if not args.model_digest:
             raise RuntimeError("final-test benchmark requires --model-digest for provenance")
+        if not args.environment_id:
+            raise RuntimeError("final-test benchmark requires --environment-id for provenance")
         selected_scenarios = list(allowed_scenario_ids("final_test"))
     else:
         selected_scenarios = []
@@ -804,6 +813,7 @@ async def main() -> None:
             model_provider=os.getenv("BACKEND", "undeclared"),
             model_name=args.model,
             model_digest=args.model_digest or "UNDECLARED",
+            environment_identity=args.environment_id or "UNDECLARED",
             seed=args.seed,
             split_role=args.split_role,
             scenario_ids=scenarios,

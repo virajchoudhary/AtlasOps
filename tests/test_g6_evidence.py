@@ -20,6 +20,8 @@ def _episode(**overrides):
             "executed_successes": 2,
             "invalid_arguments": 0,
             "pre_action_evidence": True,
+            "mutating_attempts": 2,
+            "successful_mutations": 1,
         },
         "total_turns": 4,
         "verification": {"verification_status": "passed", "verification_timestamp": 1},
@@ -76,6 +78,8 @@ def test_metrics_have_explicit_denominators_and_ttr_distribution():
                 "executed_successes": 1,
                 "invalid_arguments": 1,
                 "pre_action_evidence": False,
+                "mutating_attempts": 2,
+                "successful_mutations": 0,
             },
         ),
         {"error": "manifest_apply_failed", "scenario_id": "x", "status": "skip"},
@@ -94,10 +98,19 @@ def test_metrics_have_explicit_denominators_and_ttr_distribution():
     assert metrics["root_cause_accuracy"]["correct"] == 1
     assert metrics["root_cause_accuracy"]["rate"] == pytest.approx(1 / 3)
     assert metrics["evidence_fabrication"]["rate"] == pytest.approx(1 / 3)
+    assert metrics["evidence_support"]["numerator"] == 1
+    assert metrics["evidence_support"]["denominator"] == "completed episodes performing mutations"
+    assert metrics["evidence_support"]["rate"] == pytest.approx(0.5)
     assert metrics["unnecessary_mutation"]["rate"] == pytest.approx(1 / 3)
     assert metrics["tool_calls"]["attempts"] == 4
     assert metrics["tool_calls"]["invalid_or_unsupported"] == 1
     assert metrics["tool_calls"]["validity_rate"] == pytest.approx(0.75)
+    assert metrics["remediation_actions"] == {
+        "attempts": 4,
+        "denominator": "all recorded mutating-action attempts",
+        "successes": 1,
+        "validity_rate": pytest.approx(0.25),
+    }
     assert metrics["ttr_seconds"] == {
         "count": 2,
         "max": 30.0,
@@ -114,7 +127,7 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
         "catalog_sha256": "catalog",
         "frozen_split_sha256": "split",
         "model": {"name": "model", "provider": "provider"},
-        "observed_runtime": {"git_commit": "sha"},
+        "observed_runtime": {"git_commit": "sha", "environment_identity": "env-unit"},
         "predeclared_protocol": {"split_role": "validation"},
         "run_id": "run-1",
     }
@@ -132,6 +145,27 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
     assert record["timestamps"]["record_written_at"] == "2030-01-01T00:00:00Z"
     assert record["episode_index"] == 7
     assert record["scenario_identity"]["hidden_orchestration_metadata"] is True
+    assert record["run_provenance"]["environment_identity"] == "env-unit"
+
+
+def test_run_manifest_keeps_environment_identity_observed():
+    manifest = evidence.build_run_manifest(
+        run_id="run",
+        tag="tag",
+        model_provider="provider",
+        model_name="model",
+        model_digest="digest",
+        environment_identity="env-unit",
+        seed="seed",
+        split_role="validation",
+        scenario_ids=["a"],
+        catalog_sha256="catalog",
+        frozen_split_sha256="split",
+        benchmark_version="benchmark",
+        arguments={},
+    )
+
+    assert manifest["observed_runtime"]["environment_identity"] == "env-unit"
 
 
 def test_resume_rejects_changed_scenarios_or_configuration():

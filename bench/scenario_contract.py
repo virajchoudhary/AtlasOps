@@ -28,9 +28,9 @@ SPLIT_PROPOSED_PATH = CONTRACT_DIR / "split.proposed.json"
 SPLIT_FROZEN_PATH = CONTRACT_DIR / "split.frozen.json"
 EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 
-CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v2"
+CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v3"
 SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v2"
-EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v1"
+EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v2"
 SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v2"
 SPLIT_GENERATOR_VERSION = "bench.scenario_contract/v2"
 FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
@@ -91,6 +91,18 @@ def sha256_object(value: Any) -> str:
 
 def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
+
+
+def portable_sha256_bytes(value: bytes) -> str:
+    """Hash logical UTF-8 text independently of checkout line endings and BOM."""
+    if value.startswith(b"\xef\xbb\xbf"):
+        value = value[3:]
+    value = value.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return sha256_bytes(value)
+
+
+def portable_sha256_file(path: Path) -> str:
+    return portable_sha256_bytes(path.read_bytes())
 
 
 def repository_head(repo_root: Path = REPO_ROOT) -> str:
@@ -216,7 +228,7 @@ def build_exposure_ledger(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
             {
                 "path": relative,
                 "scenario_ids": scenario_ids,
-                "sha256": sha256_file(absolute),
+                "sha256": portable_sha256_file(absolute),
                 "surface_classifications": _classifications_for_path(relative),
             }
         )
@@ -590,7 +602,7 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 "fault_signature": sha256_object(coarse_faults),
                 "fault_signatures": fault_signatures,
                 "manifest_path": f"bench/chaos_manifests/{scenario_id}.yaml",
-                "manifest_sha256": sha256_file(manifest_path),
+                "manifest_sha256": portable_sha256_file(manifest_path),
                 "manifest_semantic_hash": sha256_object(faults),
                 "model_visible_alert": _normalise(alert),
                 "model_visible_alert_sha256": sha256_object(alert),
@@ -624,7 +636,7 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "inference.py",
     ]
     source_files = {
-        relative: sha256_file(repo_root / relative)
+        relative: portable_sha256_file(repo_root / relative)
         for relative in sorted(relative_sources)
         if (repo_root / relative).exists()
     }

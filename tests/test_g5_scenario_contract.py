@@ -29,6 +29,20 @@ def test_catalog_is_complete_and_deterministic():
         assert "scenario_id" not in entry["model_visible_alert"]
 
 
+def test_contract_hashes_are_portable_across_line_endings(tmp_path):
+    line_ending = tmp_path / "lf.txt"
+    carriage = tmp_path / "crlf.txt"
+    bom = tmp_path / "bom.txt"
+    line_ending.write_bytes(b"one\ntwo\n")
+    carriage.write_bytes(b"one\r\ntwo\r\n")
+    bom.write_bytes(b"\xef\xbb\xbfone\r\ntwo\r\n")
+
+    expected = contract.portable_sha256_file(line_ending)
+    assert contract.portable_sha256_file(carriage) == expected
+    assert contract.portable_sha256_file(bom) == expected
+    assert contract.sha256_file(line_ending) != contract.sha256_file(carriage)
+
+
 def test_family_signatures_group_same_causal_fault():
     catalog = contract.build_catalog()
     relations = contract.scenario_relationships(catalog)

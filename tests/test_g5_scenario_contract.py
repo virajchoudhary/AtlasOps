@@ -57,6 +57,21 @@ def test_family_signatures_group_same_causal_fault():
     assert "multi_fault/mf-002" in redis_relation["scenario_ids"]
 
 
+def test_catalog_does_not_confuse_cascade_effects_with_red_herrings():
+    catalog = contract.build_catalog()
+    entries = contract.catalog_entries(catalog)
+    cascade = entries["cascade/cs-001"]
+    single = entries["single_fault/sf-001"]
+
+    assert cascade["injected_fault_services"] == ["currencyservice"]
+    assert {"checkoutservice", "frontend"}.issubset(
+        set(cascade["non_target_alert_services"])
+    )
+    assert cascade["reviewed_red_herring_services"] == []
+    assert cascade["red_herring_review_status"] == "NOT_REVIEWED"
+    assert single["red_herring_review_status"] == "NO_CANDIDATES"
+
+
 def test_exposure_ledger_is_deterministic_and_fails_closed():
     catalog = contract.build_catalog()
     first = contract.build_exposure_ledger()
@@ -167,6 +182,7 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         return {
             "alert_semantic_hash": f"alert-{scenario_id}",
             "fault_signatures": [signature],
+            "red_herring_review_status": "NO_CANDIDATES",
             "scenario_id": scenario_id,
             "source_incident_id": None,
         }

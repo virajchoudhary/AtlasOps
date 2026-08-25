@@ -28,7 +28,7 @@ SPLIT_PROPOSED_PATH = CONTRACT_DIR / "split.proposed.json"
 SPLIT_FROZEN_PATH = CONTRACT_DIR / "split.frozen.json"
 EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 
-CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v3"
+CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v4"
 SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v2"
 EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v3"
 SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v2"
@@ -656,7 +656,9 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
             for target in fault["targets"]
             if target and "->" not in target and "+" not in target and "/" not in target
         }
-        red_herrings = sorted(set(_services_from_alert(alert)) - targets)
+        alert_services = _services_from_alert(alert)
+        non_target_services = sorted(set(alert_services) - targets)
+        red_herring_status = "NO_CANDIDATES" if not non_target_services else "NOT_REVIEWED"
         entries.append(
             {
                 "alert_source_id": alert_source_id,
@@ -673,7 +675,11 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 "model_visible_alert": _normalise(alert),
                 "model_visible_alert_sha256": sha256_object(alert),
                 "scenario_family_id": sha256_object(fault_signatures),
-                "red_herring_services": red_herrings,
+                "alert_observed_services": alert_services,
+                "injected_fault_services": sorted(targets),
+                "non_target_alert_services": non_target_services,
+                "reviewed_red_herring_services": [],
+                "red_herring_review_status": red_herring_status,
                 "scenario_id": scenario_id,
                 "source_incident_id": _historical_source_id(manifest_path),
                 "target_signature": sha256_object(
@@ -1003,6 +1009,16 @@ def validate_split(
         coverage = split.get("coverage", {}).get("final_test_by_tier", {})
         if any(int(coverage.get(tier, 0)) < 1 for tier in FROZEN_TIERS):
             raise ValueError("ready split must cover every frozen tier in final test")
+        unresolved_red_herrings = sorted(
+            entry["scenario_id"]
+            for entry in catalog_entries(catalog).values()
+            if entry.get("red_herring_review_status") == "NOT_REVIEWED"
+        )
+        if unresolved_red_herrings:
+            raise ValueError(
+                "red-herring classification requires operator review for: "
+                + ", ".join(unresolved_red_herrings)
+            )
         validate_family_boundaries(split, catalog)
 
 

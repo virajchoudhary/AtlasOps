@@ -369,21 +369,6 @@ def compute_reward(episode: dict) -> float:
     return float(compute_reward_breakdown(episode)["total"])
 
 
-def sample_training_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Select one immutable prompt/scenario pair using curriculum state."""
-    representatives: dict[str, dict[str, Any]] = {}
-    pool: list[tuple[str, str]] = []
-    for row in rows:
-        group = row["stage9_group_id"]
-        if group not in representatives:
-            representatives[group] = row
-            pool.append((group, row["hidden_metadata"]["tier"]))
-    if not pool:
-        raise RuntimeError("stage9_training_pool_empty")
-    selected_group, _tier = _curriculum.next_scenario(pool)
-    return representatives[selected_group]
-
-
 def validate_reward_pairing(
     prompts: list[Any],
     completions: list[Any],
@@ -467,7 +452,7 @@ class OnlineRewardFunction:
         if completion_ids is not None and len(completion_ids) != len(completions):
             raise RuntimeError("completion_id_count_mismatch")
         return self._loop.run_until_complete(
-            self._score_batch(prompts, completions, kwargs)
+            self._score_batch(completions, prompts, kwargs)
         )
 
     async def _score_batch(self, completions: list[str],
@@ -1002,6 +987,7 @@ def main() -> None:
         "max_completion_length": args.max_compl_len,
         "max_steps": args.max_steps,
         "num_generations": args.num_generations,
+        "shuffle_dataset": False,
     }
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1088,6 +1074,10 @@ def main() -> None:
         "prompt", "prompt_sha256", "provenance_hash", "role", "row_id",
         "stage9_group_id", "hidden_metadata",
     )
+    # The present standard-TRL boundary uses a deterministic fixed schedule.
+    # The ledger records outcomes for reproducibility and a future custom
+    # trainer; it does not falsely claim adaptive mid-run scenario selection.
+    rows = sorted(rows, key=lambda row: (row["stage9_group_id"], row["row_id"]))
     dataset = Dataset.from_list([
         {column: row[column] for column in metadata_columns}
         for row in rows
@@ -1115,6 +1105,7 @@ def main() -> None:
         save_safetensors=True,
         save_total_limit=3,
         remove_unused_columns=False,
+        shuffle_dataset=False,
     )
 
     trainer = GRPOTrainer(

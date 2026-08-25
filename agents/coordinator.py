@@ -238,6 +238,7 @@ def _parse_policy_remediation_completion(completion_text: str) -> dict[str, Any]
     return {
         "role": "assistant",
         "content": "",
+        "policy_parse_error": None,
         "tool_calls": [{
             "id": "policy_call_0",
             "type": "function",

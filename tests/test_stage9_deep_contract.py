@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -247,6 +248,86 @@ def test_reward_pairing_uses_hidden_row_metadata() -> None:
         first["stage9_group_id"],
         second["stage9_group_id"],
     ]
+
+
+def test_policy_parser_accepts_only_canonical_single_action_json() -> None:
+    parsed = coordinator._parse_policy_remediation_completion(
+        '{"arguments":{"query":"up"},"name":"promql_query"}'
+    )
+    assert parsed["policy_parse_error"] is None
+
+
+@pytest.mark.parametrize("completion", [
+    '<tool_call>{"name":"promql_query","arguments":{}}</tool_call>',
+    '{"name":"promql_query","arguments":"{\\"query\\":\\"up\\"}"}',
+    '{"name":"promql_query","arguments":{},"rationale":"because"}',
+    "promql_query",
+])
+def test_provider_artifacts_and_noncanonical_shapes_are_invalid(completion: str) -> None:
+    parsed = coordinator._parse_policy_remediation_completion(completion)
+
+    assert parsed["tool_calls"] == []
+    assert parsed["policy_parse_error"]
+
+
+def test_same_tool_with_different_arguments_has_different_identity() -> None:
+    first = coordinator._canonical_action_identity("promql_query", {"query": "up"})
+    second = coordinator._canonical_action_identity("promql_query", {"query": "down"})
+
+    assert first["sha256"] != second["sha256"]
+
+
+def test_disallowed_known_tool_is_admitted_never_and_not_executed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    executed = []
+
+    def reject_executor(**_args):
+        executed.append(_args)
+        return {"success": True}
+
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_top_pods", reject_executor)
+    result = asyncio.run(coordinator.call_agent(
+        "remediation",
+        {"incident_id": "inc-acl"},
+        policy_completion='{"name":"kubectl_top_pods","arguments":{}}',
+    ))
+
+    assert executed == []
+    assert result["final"]["policy_denial_reason"].startswith("policy_blocked:")
+    breakdown = compute_reward_breakdown({"remediation": {"final": result["final"]}})
+    assert breakdown["penalties"]["unadmitted_policy_action"] == pytest.approx(0.20)
+
+
+@pytest.mark.parametrize(("completion", "reason"), [
+    ('{"name":"kubectl_get","arguments":{}}', "missing_required_arguments"),
+    ('{"name":"kubectl_get","arguments":{"resource":"pods","extra":1}}', "unexpected_arguments"),
+    ('{"name":"kubectl_scale","arguments":{"deployment":"app","replicas":"three"}}', "invalid_argument_type"),
+])
+def test_schema_drift_cannot_reach_executor(
+    completion: str,
+    reason: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+
+    def reject_executor(**_args):
+        raise AssertionError("schema-invalid policy action must not execute")
+
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_get", reject_executor)
+    result = asyncio.run(coordinator.call_agent(
+        "remediation",
+        {"incident_id": "inc-schema"},
+        policy_completion=completion,
+    ))
+
+    assert result["final"]["policy_completion_error"].startswith(reason)
+    assert result["trajectory"][0]["validation_state"] == "invalid_policy_completion"
 
 
 def test_swapped_scenario_metadata_fails_closed() -> None:
@@ -587,6 +668,99 @@ def test_resume_identity_rejects_incompatible_contract_seed_model_or_split() -> 
         current[field] = f"changed-{field}"
         with pytest.raises(RuntimeError, match="incompatible_resume_identity"):
             validate_resume_identity(previous, current)
+
+
+def test_reward_callback_scores_each_completion_with_its_paired_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _row("single_fault/sf-911", "replay-a")
+    second = _row("multi_fault/mf-912", "replay-b")
+    episodes_path = tmp_path / "episodes.jsonl"
+    reward_fn = OnlineRewardFunction(
+        [first, second],
+        resolve_environment_identity("local-kind", "kind-atlasops-local"),
+        curriculum_seed=5,
+        dataset_sha256="d" * 64,
+        episodes_path=episodes_path,
+    )
+    seen = []
+
+    async def fake_score(row, completion):
+        seen.append((row["stage9_group_id"], completion))
+        return {
+            "episode": {
+                "env_resolved": False,
+                "outcome": "unresolved",
+                "remediation": {
+                    "final": {
+                        "executed_actions": [{
+                            "args": {},
+                            "success": True,
+                            "tool": "kubectl_get",
+                        }],
+                        "mode": "policy_rollout",
+                        "policy_action_admitted": True,
+                        "policy_action_identity_match": True,
+                        "policy_completion_valid": True,
+                    }
+                },
+            },
+            "lifecycle": [{"phase": "MOCK_LIFECYCLE"}],
+            "model_visible_alert": {},
+        }
+
+    monkeypatch.setattr(
+        reward_fn,
+        "_score_paired_rollout",
+        fake_score,
+    )
+    rewards = reward_fn(
+        completion_ids=[[1], [2]],
+        prompts=[first["model_visible_prompt"], second["model_visible_prompt"]],
+        completions=[
+            '{"name":"promql_query","arguments":{"query":"a"}}',
+            '{"name":"promql_query","arguments":{"query":"b"}}',
+        ],
+        prompt_sha256=[first["prompt_sha256"], second["prompt_sha256"]],
+        provenance_hash=[first["provenance_hash"], second["provenance_hash"]],
+        role=[first["role"], second["role"]],
+        row_id=[first["row_id"], second["row_id"]],
+        stage9_group_id=[first["stage9_group_id"], second["stage9_group_id"]],
+    )
+
+    assert rewards == pytest.approx([0.04, 0.04])
+    assert [group for group, _ in seen] == [
+        first["stage9_group_id"],
+        second["stage9_group_id"],
+    ]
+    records = [json.loads(line) for line in episodes_path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert [record["stage9_group_id"] for record in records] == [
+        first["stage9_group_id"],
+        second["stage9_group_id"],
+    ]
+
+
+def test_scientific_tool_context_pins_cluster_and_blocks_webhooks() -> None:
+    from training.grpo import _approved_tool_context
+
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    os.environ["KUBECONFIG_CONTEXT"] = "ambient-forbidden"
+    os.environ["DISCORD_WEBHOOK_URL"] = "https://discord.invalid/webhook"
+    os.environ["SLACK_WEBHOOK_URL"] = "https://slack.invalid/webhook"
+    try:
+        with _approved_tool_context(identity):
+            assert os.environ["KUBECONFIG_CONTEXT"] == "kind-atlasops-local"
+            assert "DISCORD_WEBHOOK_URL" not in os.environ
+            assert "SLACK_WEBHOOK_URL" not in os.environ
+        assert os.environ["KUBECONFIG_CONTEXT"] == "ambient-forbidden"
+        assert os.environ["DISCORD_WEBHOOK_URL"] == "https://discord.invalid/webhook"
+        assert os.environ["SLACK_WEBHOOK_URL"] == "https://slack.invalid/webhook"
+    finally:
+        os.environ.pop("KUBECONFIG_CONTEXT", None)
+        os.environ.pop("DISCORD_WEBHOOK_URL", None)
+        os.environ.pop("SLACK_WEBHOOK_URL", None)
 
 
 def test_corrupt_curriculum_state_fails_closed() -> None:

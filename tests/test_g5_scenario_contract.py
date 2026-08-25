@@ -115,7 +115,12 @@ def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
         contract.freeze_split(
             candidate_path,
             frozen_path,
-            authorized_at="2026-08-26T00:00:00Z",
+            authorization={
+                "authorized_at": "2026-08-26T00:00:00Z",
+                "authorized_by": "operator",
+                "authorization_ref": "blocked",
+                "g4_passed": True,
+            },
             catalog_path=catalog_path,
         )
     assert not frozen_path.exists()
@@ -137,6 +142,9 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
             entry("heldout-b", "signature-heldout"),
             entry("safe-c", "signature-safe"),
             entry("related-d", "signature-train"),
+            entry("cascade-e", "signature-cascade"),
+            entry("multi-f", "signature-multi"),
+            entry("named-g", "signature-named"),
         ],
     }
     candidate = {
@@ -145,13 +153,30 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         "catalog_sha256": "test-digest",
         "exposure_ledger_sha256": "ledger-digest",
         "ready_for_freeze": True,
+        "contract_provenance": {
+            "algorithm_version": contract.SPLIT_ALGORITHM_VERSION,
+            "generator_version": contract.SPLIT_GENERATOR_VERSION,
+            "repo_sha": "0123456789abcdef0123456789abcdef01234567",
+        },
+        "coverage": {
+            "final_test_by_tier": {
+                "cascade": 1,
+                "multi_fault": 1,
+                "named_replays": 1,
+                "single_fault": 1,
+            }
+        },
+        "gate_prerequisites": {
+            "G4": "OPEN",
+            "explicit_freeze_authorization": False,
+        },
         "schema_version": contract.SPLIT_SCHEMA_VERSION,
         "seed": "unit",
         "split_fractions": {"train": 0.5, "validation": 0.0, "final_test": 0.5},
         "splits": {
             "train": ["train-a", "related-d"],
             "validation": ["heldout-b"],
-            "final_test": ["safe-c"],
+            "final_test": ["safe-c", "cascade-e", "multi-f", "named-g"],
             "ineligible_final_test_development_exposed": ["train-a"],
         },
         "status": "PROPOSED_READY",
@@ -161,7 +186,9 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         "schema_version": contract.EXPOSURE_SCHEMA_VERSION,
         "summary": {
             "development_exposed_scenario_ids": ["train-a"],
-            "eligible_final_test_candidates": ["heldout-b", "safe-c", "related-d"],
+            "eligible_final_test_candidates": [
+                "cascade-e", "heldout-b", "multi-f", "named-g", "related-d", "safe-c",
+            ],
         },
     }
     unsigned = {key: value for key, value in synthetic_ledger.items()}
@@ -181,8 +208,14 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
     frozen = contract.freeze_split(
         candidate_path,
         frozen_path,
-        authorized_at="2026-08-26T00:00:00Z",
+        authorization={
+            "authorized_at": "2026-08-26T00:00:00Z",
+            "authorized_by": "operator",
+            "authorization_ref": "G5-FREEZE-1",
+            "g4_passed": True,
+        },
         catalog_path=catalog_path,
+        expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
     )
     assert frozen["status"] == "FROZEN"
     assert frozen["activation"]["active"] is True
@@ -191,8 +224,8 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
     leaked = dict(candidate)
     leaked["exposure_ledger_sha256"] = candidate["exposure_ledger_sha256"]
     leaked["splits"] = dict(candidate["splits"])
-    leaked["splits"]["train"] = ["heldout-b"]
-    leaked["splits"]["validation"] = ["safe-c", "related-d"]
+    leaked["splits"]["train"] = ["heldout-b", "related-d"]
+    leaked["splits"]["validation"] = ["safe-c", "cascade-e", "multi-f", "named-g"]
     leaked["splits"]["final_test"] = ["train-a"]
     leaked["splits"]["ineligible_final_test_development_exposed"] = ["train-a"]
     leaked_path = tmp_path / "leaked.json"
@@ -202,15 +235,21 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         contract.freeze_split(
             leaked_path,
             conflict_path,
-            authorized_at="2026-08-26T00:00:00Z",
+            authorization={
+                "authorized_at": "2026-08-26T00:00:00Z",
+                "authorized_by": "operator",
+                "authorization_ref": "G5-FREEZE-1",
+                "g4_passed": True,
+            },
             catalog_path=catalog_path,
+            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
         )
     assert not conflict_path.exists()
     related = dict(candidate)
     related["splits"] = dict(candidate["splits"])
     related["splits"]["train"] = ["train-a"]
     related["splits"]["validation"] = ["heldout-b", "safe-c"]
-    related["splits"]["final_test"] = ["related-d"]
+    related["splits"]["final_test"] = ["related-d", "cascade-e", "multi-f", "named-g"]
     related["splits"]["ineligible_final_test_development_exposed"] = ["train-a"]
     related_path = tmp_path / "related.json"
     related_conflict_path = tmp_path / "related-frozen.json"
@@ -219,16 +258,28 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         contract.freeze_split(
             related_path,
             related_conflict_path,
-            authorized_at="2026-08-26T00:00:00Z",
+            authorization={
+                "authorized_at": "2026-08-26T00:00:00Z",
+                "authorized_by": "operator",
+                "authorization_ref": "G5-FREEZE-1",
+                "g4_passed": True,
+            },
             catalog_path=catalog_path,
+            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
         )
     assert not related_conflict_path.exists()
     with pytest.raises(FileExistsError):
         contract.freeze_split(
             candidate_path,
             frozen_path,
-            authorized_at="2026-08-26T00:00:01Z",
+            authorization={
+                "authorized_at": "2026-08-26T00:00:01Z",
+                "authorized_by": "operator",
+                "authorization_ref": "G5-FREEZE-1",
+                "g4_passed": True,
+            },
             catalog_path=catalog_path,
+            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
         )
 
 

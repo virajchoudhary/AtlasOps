@@ -29,8 +29,10 @@ SPLIT_FROZEN_PATH = CONTRACT_DIR / "split.frozen.json"
 EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 
 CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v2"
-SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v1"
+SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v2"
 EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v1"
+SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v2"
+SPLIT_GENERATOR_VERSION = "bench.scenario_contract/v2"
 FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
 
 _BARE_ID_PREFIXES = {"sf": "single_fault", "cs": "cascade", "mf": "multi_fault"}
@@ -83,6 +85,22 @@ def sha256_object(value: Any) -> str:
 
 def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
+
+
+def repository_head(repo_root: Path = REPO_ROOT) -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError("cannot determine repository HEAD")
+    value = completed.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise RuntimeError("repository HEAD is not a full commit SHA")
+    return value
 
 
 def write_json_atomically(path: Path, value: Any) -> None:
@@ -320,11 +338,9 @@ def _application_target(doc: dict[str, Any]) -> tuple[list[str], str, dict[str, 
     return sorted(set(targets)), action, {"replicas": replicas}
 
 
-def _fault_records(path: Path) -> list[dict[str, Any]]:
-    import yaml
-
+def _fault_records_from_documents(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+    for document in documents:
         if not document:
             continue
         kind = str(document.get("kind", ""))
@@ -378,6 +394,14 @@ def _fault_records(path: Path) -> list[dict[str, Any]]:
                 }
             )
     return sorted(records, key=lambda item: canonical_json(item))
+
+
+def _fault_records(path: Path) -> list[dict[str, Any]]:
+    import yaml
+
+    return _fault_records_from_documents(
+        [doc for doc in yaml.safe_load_all(path.read_text(encoding="utf-8")) if doc]
+    )
 
 
 def _services_from_alert(alert: dict[str, Any]) -> list[str]:
@@ -587,6 +611,7 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "agents/verifier.py",
         "bench/scenario_contract.py",
         "bench/runner.py",
+        "bench/unseen_candidate.py",
         "bench/g5/exposure_ledger.json",
         "config/runtime.py",
         "inference.py",
@@ -689,6 +714,7 @@ def build_proposed_split(
     train_fraction: float = 0.60,
     validation_fraction: float = 0.20,
     exposure_ledger: dict[str, Any] | None = None,
+    repo_sha: str | None = None,
 ) -> dict[str, Any]:
     if not 0 < train_fraction < 1 or not 0 < validation_fraction < 1:
         raise ValueError("split fractions must be between zero and one")
@@ -756,6 +782,28 @@ def build_proposed_split(
         "catalog_sha256": catalog["catalog_sha256"],
         "exposure_ledger_sha256": ledger["ledger_sha256"],
         "family_relation_count": len(scenario_relationships(catalog)),
+        "contract_provenance": {
+            "algorithm_version": SPLIT_ALGORITHM_VERSION,
+            "generator_version": SPLIT_GENERATOR_VERSION,
+            "repo_sha": repo_sha or repository_head(),
+        },
+        "coverage": {
+            "final_test_by_tier": {
+                tier: sum(1 for item in final_test if item.startswith(f"{tier}/"))
+                for tier in FROZEN_TIERS
+            },
+            "final_test_causal_templates": sorted(
+                {
+                    catalog_entries(catalog)[item]["causal_template_id"]
+                    for item in final_test
+                }
+            ),
+        },
+        "gate_prerequisites": {
+            "G4": "OPEN",
+            "explicit_freeze_authorization": False,
+            "no_seed_retry_policy": "One predeclared seed per reviewed candidate generation.",
+        },
         "ready_for_freeze": False,
         "schema_version": SPLIT_SCHEMA_VERSION,
         "seed": seed,
@@ -784,6 +832,15 @@ def validate_split(
         raise ValueError("unsupported split schema")
     if split.get("catalog_sha256") != catalog.get("catalog_sha256"):
         raise ValueError("split catalog digest mismatch")
+    provenance = split.get("contract_provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("split contract provenance is missing")
+    if not re.fullmatch(r"[0-9a-f]{40}", str(provenance.get("repo_sha", ""))):
+        raise ValueError("split repository SHA is missing or malformed")
+    if provenance.get("algorithm_version") != SPLIT_ALGORITHM_VERSION or provenance.get(
+        "generator_version"
+    ) != SPLIT_GENERATOR_VERSION:
+        raise ValueError("split generator/algorithm version mismatch")
     if split.get("status") == "FROZEN":
         expected_activation = {"active": True, "authorized_at": split["activation"].get("authorized_at"), "frozen": True}
     else:
@@ -831,6 +888,15 @@ def validate_split(
     if not declared_ineligible:
         raise ValueError("ineligible-final-test ledger does not match the exposure ledger")
 
+    gates = split.get("gate_prerequisites")
+    if not isinstance(gates, dict):
+        raise ValueError("split gate prerequisites are missing")
+    if split.get("status") == "FROZEN":
+        if gates.get("G4") != "PASSED" or gates.get("explicit_freeze_authorization") is not True:
+            raise ValueError("frozen split lacks G4 or explicit authorization prerequisites")
+    elif gates.get("G4") != "OPEN" or gates.get("explicit_freeze_authorization") is not False:
+        raise ValueError("inactive split gate prerequisites are inconsistent")
+
     if require_ready:
         if split.get("status") != "PROPOSED_READY":
             raise ValueError(f"split is not PROPOSED_READY: {split.get('status')}")
@@ -840,6 +906,9 @@ def validate_split(
             raise ValueError("freezable split still has blockers")
         if split.get("ready_for_freeze") is not True:
             raise ValueError("ready_for_freeze is not true")
+        coverage = split.get("coverage", {}).get("final_test_by_tier", {})
+        if any(int(coverage.get(tier, 0)) < 1 for tier in FROZEN_TIERS):
+            raise ValueError("ready split must cover every frozen tier in final test")
         validate_family_boundaries(split, catalog)
 
 
@@ -847,8 +916,9 @@ def freeze_split(
     candidate_path: Path,
     frozen_path: Path,
     *,
-    authorized_at: str,
+    authorization: dict[str, Any],
     catalog_path: Path = CATALOG_PATH,
+    expected_repo_sha: str | None = None,
 ) -> dict[str, Any]:
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     split = json.loads(candidate_path.read_text(encoding="utf-8"))
@@ -857,9 +927,36 @@ def freeze_split(
     if frozen_path.exists():
         raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")
 
+    required_keys = {"authorized_at", "authorized_by", "authorization_ref"}
+    if not required_keys.issubset(authorization) or any(
+        not str(authorization[key]).strip() for key in required_keys
+    ):
+        raise ValueError("freeze authorization record is incomplete")
+    if authorization.get("g4_passed") is not True:
+        raise ValueError("G4 must be passed before split freeze")
+    source_repo_sha = str(split["contract_provenance"]["repo_sha"])
+    candidate_root = candidate_path.resolve().parent.parent.parent
+    current_repo_sha = expected_repo_sha or repository_head(candidate_root)
+    if current_repo_sha != source_repo_sha:
+        raise RuntimeError(
+            "split drift detected: candidate repository SHA differs from current HEAD; "
+            "regenerate and review a new proposal"
+        )
+
     frozen = dict(split)
-    frozen["activation"] = {"active": True, "authorized_at": authorized_at, "frozen": True}
+    frozen["activation"] = {
+        "active": True,
+        "authorized_at": str(authorization["authorized_at"]),
+        "authorized_by": str(authorization["authorized_by"]),
+        "authorization_ref": str(authorization["authorization_ref"]),
+        "frozen": True,
+    }
     frozen["status"] = "FROZEN"
+    frozen["gate_prerequisites"] = {
+        **split["gate_prerequisites"],
+        "G4": "PASSED",
+        "explicit_freeze_authorization": True,
+    }
     write_json_atomically(frozen_path, frozen)
     return frozen
 
@@ -903,6 +1000,7 @@ def _write_plan(args: argparse.Namespace) -> int:
         seed=args.seed,
         train_fraction=args.train_fraction,
         validation_fraction=args.validation_fraction,
+        repo_sha=args.repo_sha or None,
     )
     write_json_atomically(Path(args.output), plan)
     print(f"wrote inert split proposal ({plan['status']}): {args.output}")
@@ -916,11 +1014,19 @@ def _write_exposure(args: argparse.Namespace) -> int:
 
 
 def _freeze_command(args: argparse.Namespace) -> int:
+    if not args.g4_passed:
+        raise ValueError("freeze requires --g4-passed as an explicit operator attestation")
     frozen = freeze_split(
         Path(args.candidate),
         Path(args.frozen_output),
-        authorized_at=args.authorized_at,
+        authorization={
+            "authorized_at": args.authorized_at,
+            "authorized_by": args.authorized_by,
+            "authorization_ref": args.authorization_ref,
+            "g4_passed": True,
+        },
         catalog_path=Path(args.catalog),
+        expected_repo_sha=args.repo_sha or None,
     )
     print(f"froze active split: {args.frozen_output} ({len(frozen['splits']['final_test'])} final-test scenarios)")
     return 0
@@ -951,6 +1057,7 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("--seed", default="atlasops-g5-proposal-v1")
     plan_parser.add_argument("--train-fraction", type=float, default=0.60)
     plan_parser.add_argument("--validation-fraction", type=float, default=0.20)
+    plan_parser.add_argument("--repo-sha", default="", help="exact clean source revision")
     plan_parser.set_defaults(handler=_write_plan)
 
     exposure_parser = subparsers.add_parser("exposure", help="build deterministic exposure ledger")
@@ -961,7 +1068,11 @@ def main(argv: list[str] | None = None) -> int:
     freeze_parser.add_argument("--candidate", default=str(SPLIT_PROPOSED_PATH))
     freeze_parser.add_argument("--frozen-output", default=str(SPLIT_FROZEN_PATH))
     freeze_parser.add_argument("--catalog", default=str(CATALOG_PATH))
-    freeze_parser.add_argument("--authorized-at", required=True, help="ISO-8601 authorization timestamp")
+    freeze_parser.add_argument("--authorized-at", required=True)
+    freeze_parser.add_argument("--authorized-by", required=True)
+    freeze_parser.add_argument("--authorization-ref", required=True)
+    freeze_parser.add_argument("--g4-passed", action="store_true")
+    freeze_parser.add_argument("--repo-sha", default="", help="expected clean HEAD")
     freeze_parser.set_defaults(handler=_freeze_command)
 
     verify_parser = subparsers.add_parser("verify", help="reproduce and verify catalog/split")

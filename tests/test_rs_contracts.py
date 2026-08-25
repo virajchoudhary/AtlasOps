@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import math
+import ast
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,7 @@ from agents.rs.integration import RecommendationPacketBuilder
 from agents.rs.persistence import interaction_corpus_fingerprint
 from agents.rs.recommender import HybridRecommender, CollaborativeSVDBaseline, ContentBasedBaseline, PopularitySuccessBaseline, rank_candidates
 from agents.rs.schemas import ContextFeatures, InteractionRow, SchemaError, validate_interactions
+from agents.tool_policy import CLUSTER_MUTATING_TOOLS
 from agents.tool_policy import ROLE_ALLOWED_TOOLS
 
 
@@ -188,3 +191,54 @@ def test_catalogue_accepts_only_complete_current_remediation_acl():
             HybridRecommender(ContentBasedBaseline(), CollaborativeSVDBaseline(), PopularitySuccessBaseline()),
             available_tools=frozenset(ROLE_ALLOWED_TOOLS["remediation"] - {"kubectl_scale"}),
         )
+
+
+def test_side_effect_classification_and_unseen_action_cold_start():
+    for runbook in RUNBOOK_CATALOGUE:
+        expected_mutation = (
+            runbook.tool_name in CLUSTER_MUTATING_TOOLS
+            or runbook.tool_name == "slack_post_update"
+        )
+        assert runbook.mutating is expected_mutation, runbook.action_id
+        if runbook.stage != "remediation":
+            assert not runbook.mutating
+    model, _fixture = fitted_model()
+    trained_actions = set(model.collaborative_model._action_index)
+    unseen = next(item for item in RUNBOOK_CATALOGUE if item.action_id not in trained_actions)
+    assert model.collaborative_model.score({}, [unseen]) == {unseen.action_id: 0.0}
+
+
+def test_empty_ranking_and_malformed_relevance_are_handled_explicitly():
+    assert rank_candidates({}, 3) == []
+    with pytest.raises(SchemaError, match="relevance"):
+        InteractionRow(
+            incident_key="synthetic/bad-relevance",
+            action_id="scale_up_cpu_saturation",
+            service="service",
+            fault_types=("cpu_saturation",),
+            outcome="success",
+            relevance=math.nan,
+            selected=True,
+            split="train",
+            eligible_for_fit=True,
+        )
+
+
+def test_rs_package_ast_has_no_runtime_execution_or_network_surface():
+    forbidden_modules = {"agents.tools", "subprocess", "socket", "requests", "httpx"}
+    forbidden_calls = {"open", "eval", "exec", "system", "popen"}
+    for path in (Path("agents/rs")).glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                assert all(
+                    alias.name not in forbidden_modules
+                    and not any(alias.name.startswith(module + ".") for module in forbidden_modules)
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                assert module not in forbidden_modules
+                assert not any(module.startswith(item + ".") for item in forbidden_modules)
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                assert node.func.id not in forbidden_calls

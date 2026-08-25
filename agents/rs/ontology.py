@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from agents.rs.schemas import Runbook, SchemaError, iter_placeholder_names_and_kinds
@@ -71,6 +71,16 @@ def derive_parameter_requirements(runbook: Runbook) -> tuple[ParameterRequiremen
     for name in runbook.prerequisites:
         base_name = name.removesuffix(":int")
         if base_name in requirements:
+            if name.endswith(":int"):
+                # A gate can type a numeric logical input even when the downstream
+                # tool schema receives its JSON-string rendering.
+                requirements[base_name] = replace(
+                    requirements[base_name],
+                    parameter_type="integer",
+                    required=True,
+                    default=None,
+                    source="gate",
+                )
             continue
         parameter_type = _GATE_TYPES.get(base_name, "string")
         if name.endswith(":int"):

@@ -234,7 +234,7 @@ def _build_catalogue() -> list[Runbook]:
                     "namespace": "{{namespace}}",
                 },
                 applicable_fault_types=(fault,),
-                prerequisites=("target_replicas:int", *common_prereqs),
+                prerequisites=("target_replicas", *common_prereqs),
                 risk="high",
                 mutating=True,
                 description=description,

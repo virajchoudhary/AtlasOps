@@ -144,6 +144,7 @@ def test_parameter_contracts_are_typed_defaults_and_reject_unknown_values():
     by_name = {item.name: item for item in requirements}
     assert by_name["target_replicas"].parameter_type == "integer"
     assert by_name["target_replicas"].default == 4
+    assert by_name["target_replicas"].required is False
     assert by_name["namespace"].required is True
     normalized = validate_parameter_contract(
         scale,
@@ -156,6 +157,15 @@ def test_parameter_contracts_are_typed_defaults_and_reject_unknown_values():
         validate_parameter_contract(scale, {"target_replicas": True})
     assert service_matches_constraints("paymentservice", ("*",))
     assert not service_matches_constraints("paymentservice", ())
+    argo = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "argocd_rollback_bad_manifest")
+    argo_requirements = {
+        item.name: item for item in derive_parameter_requirements(argo)
+    }
+    typed_revision_name = next(
+        item.removesuffix(":int") for item in argo.prerequisites if item.endswith(":int")
+    )
+    assert argo_requirements[typed_revision_name].parameter_type == "integer"
+    assert argo_requirements[typed_revision_name].source == "gate"
 
 
 def test_runbook_templates_declare_inputs_and_have_json_values():
@@ -638,6 +648,28 @@ def test_disabled_toggle_and_feedback_contract_are_explicit():
         recorded_at_unix=999.0,
     )
     assert row.incident_key == "synthetic/inc-001"
+    assert row.observation_type == "selected_success"
+    assert row.context_hash
+    rejected_action = enabled_packet["candidates"][-1]["action_id"]
+    rejected = builder.feedback_row(
+        enabled_packet,
+        rejected_action,
+        selected=False,
+        relevance=0.0,
+        outcome="policy_rejected",
+        split="train",
+        counterfactual_status="unknown_counterfactual",
+    )
+    assert rejected.observation_type == "policy_rejected"
+    with pytest.raises(SchemaError):
+        builder.feedback_row(
+            enabled_packet,
+            rejected_action,
+            selected=False,
+            relevance=1.0,
+            outcome="not_selected",
+            split="future_final_test",
+        )
     with pytest.raises(SchemaError):
         builder.feedback_row(
             enabled_packet,

@@ -191,7 +191,7 @@ class InteractionRow:
         relevance = float(self.relevance)
         if not math.isfinite(relevance) or not 0.0 <= relevance <= 1.0:
             raise SchemaError("relevance must be finite in [0, 1]")
-        if self.selected == (self.outcome == "not_selected"):
+        if self.outcome == "not_selected" and self.selected:
             raise SchemaError("selected/outcome combination is inconsistent")
         non_observed = {"not_selected", "unknown_counterfactual", "unsafe_filtered", "policy_rejected"}
         if self.observation_type in non_observed:

@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 from agents.rs.features import build_content_query
 from agents.rs.ontology import derive_parameter_requirements, service_matches_constraints
+from agents.rs.persistence import stable_hash
 from agents.rs.recommender import HybridRecommender, default_risk_penalty, rank_candidates
 from agents.rs.schemas import (
     InteractionRow,
@@ -74,13 +75,21 @@ class RecommendationPacketBuilder:
         risk_penalty_overrides: Mapping[str, float] | None = None,
     ) -> dict[str, Any]:
         toggle = toggle or RecommendationToggle(enabled=True)
+        profile = {
+            "service": getattr(context, "service", ""),
+            "fault_types": list(getattr(context, "fault_types", ())),
+        }
+        context_hash = stable_hash({
+            "incident_key": getattr(context, "incident_key", ""),
+            "profile": profile,
+            "diagnosis_text": getattr(context, "diagnosis_text", ""),
+            "symptoms": list(getattr(context, "symptoms", ())),
+        })
         base_packet: dict[str, Any] = {
             "contract_version": "rs-v0",
             "incident_key": getattr(context, "incident_key", ""),
-            "profile": {
-                "service": getattr(context, "service", ""),
-                "fault_types": list(getattr(context, "fault_types", ())),
-            },
+            "profile": profile,
+            "context_hash": context_hash,
             "toggle": {"enabled": toggle.enabled, "reason": toggle.reason},
             "top_k_requested": self.k if toggle.enabled else 0,
             "candidates": [],
@@ -188,6 +197,7 @@ class RecommendationPacketBuilder:
             })
         base_packet["candidate_pool_size"] = len(safe_candidates)
         base_packet["weights"] = dict(self.recommender.weights)
+        base_packet["available_tools"] = sorted(self.available_tools)
         base_packet["score_semantics"] = "deterministic_raw_late_fusion_not_probability"
         base_packet["confidence_state"] = "uncalibrated"
         base_packet["candidates"] = candidates
@@ -203,6 +213,11 @@ class RecommendationPacketBuilder:
         outcome: str,
         split: str,
         recorded_at_unix: float | None = None,
+        approval_result: str = "",
+        executor_outcome: str = "",
+        verifier_outcome: str = "",
+        counterfactual_status: str = "",
+        provenance: str = "recommendation-packet-rs-v0",
     ) -> InteractionRow:
         """Create an ablation row after a human/system decision is known."""
         if packet.get("contract_version") != "rs-v0":
@@ -213,7 +228,13 @@ class RecommendationPacketBuilder:
         ), None)
         if candidate is None:
             raise SchemaError(f"action was not in packet: {action_id}")
-        if selected != (outcome != "not_selected"):
+        if outcome in {"success", "partial", "failure"}:
+            observation_type = f"selected_{outcome}"
+            if not selected:
+                raise SchemaError(f"{outcome} requires selected=True")
+        else:
+            observation_type = outcome
+        if outcome == "not_selected" and selected:
             raise SchemaError("selected/outcome combination is inconsistent")
         row = InteractionRow(
             incident_key=str(packet["incident_key"]),
@@ -227,6 +248,15 @@ class RecommendationPacketBuilder:
             eligible_for_fit=split in {"train", "calibration"},
             recorded_at_unix=recorded_at_unix,
             source_run="rs_feedback",
+            observation_type=observation_type,
+            rank=candidate.get("rank"),
+            approval_result=approval_result,
+            executor_outcome=executor_outcome,
+            verifier_outcome=verifier_outcome,
+            counterfactual_status=counterfactual_status,
+            context_hash=str(packet.get("context_hash", "")),
+            episode_id=f"{packet.get('incident_key', '')}:recommendation",
+            provenance=provenance,
         )
         validate_interactions([row])
         return row

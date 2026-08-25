@@ -30,8 +30,18 @@ from bench.scenario_contract import (
 )
 
 
-CANDIDATE_SCHEMA_VERSION = "atlasops.g5.unseen-candidate/v1"
+CANDIDATE_SCHEMA_VERSION = "atlasops.g5.unseen-candidate/v2"
 ADMISSION_SCHEMA_VERSION = "atlasops.g5.candidate-admission/v1"
+_SUPPORTED_CANDIDATE_DOCUMENT_KINDS = {
+    "PodChaos",
+    "NetworkChaos",
+    "StressChaos",
+    "DNSChaos",
+    "IOChaos",
+    "TimeChaos",
+    "Application",
+    "Deployment",
+}
 _REQUIRED_TOP_LEVEL = {
     "description",
     "exposure_attestation",
@@ -121,6 +131,9 @@ def _validate_candidate_documents(
     names: set[str] = set()
     labelled = False
     for document in documents:
+        kind = str(document.get("kind", ""))
+        if kind not in _SUPPORTED_CANDIDATE_DOCUMENT_KINDS:
+            raise ValueError(f"unsupported candidate manifest document kind: {kind}")
         metadata = document.get("metadata", {}) or {}
         labels = metadata.get("labels", {}) or {}
         name = str(metadata.get("name", "")).strip()
@@ -150,6 +163,12 @@ def _candidate_faults(candidate: dict[str, Any]) -> list[dict[str, Any]]:
     faults = _fault_records_from_documents([doc for doc in documents if doc])
     if not faults:
         raise ValueError("manifest_documents contain no recognised fault injection")
+    fault_signatures = [
+        sha256_object(_coarse_fault(fault))
+        for fault in faults
+    ]
+    if len(fault_signatures) != len(set(fault_signatures)):
+        raise ValueError("candidate contains duplicate causal faults")
     return faults
 
 

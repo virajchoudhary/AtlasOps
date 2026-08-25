@@ -139,6 +139,37 @@ def test_admission_requires_alert_to_observe_predicate_workload():
         )
 
 
+def test_admission_rejects_unsupported_manifest_document():
+    candidate = _candidate()
+    candidate["manifest_documents"].append(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "helper"},
+        }
+    )
+    with pytest.raises(ValueError, match="unsupported candidate manifest document"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
+def test_admission_rejects_duplicate_causal_fault_with_new_resource_name():
+    candidate = _candidate()
+    duplicate = copy.deepcopy(candidate["manifest_documents"][0])
+    duplicate["metadata"]["name"] = "holdout-x-private-copy"
+    duplicate["spec"]["selector"]["labelSelectors"]["app"] = "unpublished-service"
+    candidate["manifest_documents"].append(duplicate)
+    with pytest.raises(ValueError, match="duplicate causal faults"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
 def test_admission_rejects_development_exposed_candidate(monkeypatch):
     monkeypatch.setattr(
         candidate_contract,

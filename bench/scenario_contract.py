@@ -1,0 +1,627 @@
+"""Deterministic G5 scenario catalogue and split-freeze contract.
+
+The catalogue is derived from immutable inputs that already exist in the
+repository: frozen Chaos Mesh manifests, the objective verifier specifications,
+and the model-visible alert templates.  A *proposed* split is inert data.  Only
+``split.frozen.json`` is consumed by training/evaluation, and freezing is
+intentionally a separate, fail-closed operation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFESTS_DIR = REPO_ROOT / "bench" / "chaos_manifests"
+CONTRACT_DIR = REPO_ROOT / "bench" / "g5"
+CATALOG_PATH = CONTRACT_DIR / "scenario_catalog.json"
+SPLIT_PROPOSED_PATH = CONTRACT_DIR / "split.proposed.json"
+SPLIT_FROZEN_PATH = CONTRACT_DIR / "split.frozen.json"
+
+CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v1"
+SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v1"
+FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
+ROLE_IDS_KEY = {
+    "sft": "train",
+    "grpo": "train",
+    "rs_tuning": "train",
+    "validation": "validation",
+    "final_test": "final_test",
+}
+_JSON_SORT_KWARGS = {
+    "sort_keys": True,
+    "separators": (",", ":"),
+    "ensure_ascii": False,
+}
+
+
+def canonical_json(value: Any) -> str:
+    """Return stable JSON used for hashes and byte-for-byte artifacts."""
+    return json.dumps(value, **_JSON_SORT_KWARGS)
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def sha256_text(value: str) -> str:
+    return sha256_bytes(value.encode("utf-8"))
+
+
+def sha256_object(value: Any) -> str:
+    return sha256_text(canonical_json(value))
+
+
+def sha256_file(path: Path) -> str:
+    return sha256_bytes(path.read_bytes())
+
+
+def write_json_atomically(path: Path, value: Any) -> None:
+    """Write deterministic JSON through a same-directory temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        temporary.write_text(canonical_json(value) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _normalise(value: Any) -> Any:
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
+def _chaos_targets(spec: dict[str, Any]) -> list[str]:
+    selector = spec.get("selector") or {}
+    labels = selector.get("labelSelectors") or {}
+    namespaces = selector.get("namespaces") or []
+    targets = [str(value) for value in labels.values() if str(value).strip()]
+    if not targets and namespaces:
+        targets = ["+".join(str(item) for item in namespaces)]
+
+    target_selector = spec.get("target", {}).get("selector") or {}
+    target_namespaces = target_selector.get("namespaces") or []
+    if target_namespaces and namespaces:
+        source = "+".join(str(item) for item in namespaces)
+        destination = "+".join(str(item) for item in target_namespaces)
+        targets.append(f"{source}->{destination}")
+    return sorted(dict.fromkeys(targets))
+
+
+def _application_target(doc: dict[str, Any]) -> tuple[list[str], str, dict[str, Any]]:
+    import yaml
+
+    targets: list[str] = []
+    replicas: int | None = None
+    kustomize = doc.get("spec", {}).get("source", {}).get("kustomize", {}) or {}
+    for patch in kustomize.get("patches", []):
+        target = patch.get("target", {}) or {}
+        name = str(target.get("name", "")).strip()
+        if name:
+            targets.append(name)
+        try:
+            patch_body = yaml.safe_load(patch.get("patch", "")) or []
+        except yaml.YAMLError:
+            patch_body = []
+        for operation in patch_body:
+            if operation.get("op") == "replace" and operation.get("path") == "/spec/replicas":
+                replicas = int(operation.get("value", 0))
+    action = "argo_scale_to_zero" if replicas == 0 else "argo_application_patch"
+    return sorted(set(targets)), action, {"replicas": replicas}
+
+
+def _fault_records(path: Path) -> list[dict[str, Any]]:
+    import yaml
+
+    records: list[dict[str, Any]] = []
+    for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+        if not document:
+            continue
+        kind = str(document.get("kind", ""))
+        spec = document.get("spec", {}) or {}
+        if kind.endswith("Chaos"):
+            records.append(
+                {
+                    "action": str(spec.get("action", "unspecified")),
+                    "duration": str(spec.get("duration", "")),
+                    "kind": kind,
+                    "parameters": _normalise(
+                        {
+                            key: value
+                            for key, value in spec.items()
+                            if key
+                            in {
+                                "corrupt",
+                                "delay",
+                                "duplicate",
+                                "loss",
+                                "partition",
+                                "patterns",
+                                "stressors",
+                            }
+                        }
+                    ),
+                    "targets": _chaos_targets(spec),
+                }
+            )
+        elif kind == "Application":
+            targets, action, parameters = _application_target(document)
+            records.append(
+                {
+                    "action": action,
+                    "duration": "",
+                    "kind": kind,
+                    "parameters": parameters,
+                    "targets": targets,
+                }
+            )
+        elif kind == "Deployment":
+            name = str(document.get("metadata", {}).get("name", "")).strip()
+            replicas = int(spec.get("replicas", 0))
+            records.append(
+                {
+                    "action": "deploy_legacy_replicas" if replicas else "deploy_legacy",
+                    "duration": "",
+                    "kind": kind,
+                    "parameters": {"replicas": replicas},
+                    "targets": [name] if name else [],
+                }
+            )
+    return sorted(records, key=lambda item: canonical_json(item))
+
+
+def _services_from_alert(alert: dict[str, Any]) -> list[str]:
+    services: set[str] = set()
+
+    def visit(labels: Any) -> None:
+        if not isinstance(labels, dict):
+            return
+        for key in ("service", "deployment", "pod"):
+            value = str(labels.get(key, "")).strip()
+            if value:
+                services.add(value.removesuffix("-xxx"))
+
+    visit(alert.get("commonLabels"))
+    for item in alert.get("alerts", []) or []:
+        if isinstance(item, dict):
+            visit(item.get("labels"))
+    return sorted(item for item in services if item)
+
+
+def _alert_template(scenario_id: str) -> tuple[dict[str, Any], str]:
+    # Imported lazily so catalogue inspection does not require agent runtime setup.
+    from inference import ALERTS
+
+    source_id = scenario_id.split("/", 1)[1]
+    if source_id not in ALERTS:
+        raise KeyError(f"frozen scenario has no model-visible alert template: {scenario_id}")
+    return ALERTS[source_id], source_id
+
+
+def _verifier_predicates(scenario_id: str) -> dict[str, Any]:
+    from agents.verifier import SCENARIO_VERIFICATION_SPECS
+
+    try:
+        specification = SCENARIO_VERIFICATION_SPECS[scenario_id]
+    except KeyError as exc:
+        raise KeyError(f"frozen scenario has no objective verifier predicate: {scenario_id}") from exc
+    return _normalise(asdict(specification))
+
+
+def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    from config.runtime import FROZEN_SCENARIOS
+
+    manifests_dir = repo_root / "bench" / "chaos_manifests"
+    filesystem_ids = {
+        path.relative_to(manifests_dir).with_suffix("").as_posix()
+        for tier in FROZEN_TIERS
+        for path in (manifests_dir / tier).glob("*.yaml")
+    }
+    catalogue_ids = set(FROZEN_SCENARIOS)
+    if filesystem_ids != catalogue_ids:
+        raise ValueError(
+            "frozen catalogue/filesystem mismatch: "
+            f"missing={sorted(catalogue_ids - filesystem_ids)}, "
+            f"extra={sorted(filesystem_ids - catalogue_ids)}"
+        )
+
+    entries: list[dict[str, Any]] = []
+    for scenario_id in sorted(FROZEN_SCENARIOS):
+        manifest_path = manifests_dir / f"{scenario_id}.yaml"
+        alert, alert_source_id = _alert_template(scenario_id)
+        faults = _fault_records(manifest_path)
+        if not faults:
+            raise ValueError(f"scenario has no derivable fault injection: {scenario_id}")
+        targets = {
+            target
+            for fault in faults
+            for target in fault["targets"]
+            if target and "->" not in target and "+" not in target and "/" not in target
+        }
+        red_herrings = sorted(set(_services_from_alert(alert)) - targets)
+        entries.append(
+            {
+                "alert_source_id": alert_source_id,
+                "faults": faults,
+                "manifest_path": f"bench/chaos_manifests/{scenario_id}.yaml",
+                "manifest_sha256": sha256_file(manifest_path),
+                "model_visible_alert": _normalise(alert),
+                "model_visible_alert_sha256": sha256_object(alert),
+                "red_herring_services": red_herrings,
+                "scenario_id": scenario_id,
+                "success_predicates": _verifier_predicates(scenario_id),
+                "tier": scenario_id.split("/", 1)[0],
+            }
+        )
+
+    relative_sources = [
+        "agents/verifier.py",
+        "bench/scenario_contract.py",
+        "bench/runner.py",
+        "config/runtime.py",
+        "inference.py",
+    ]
+    source_files = {
+        relative: sha256_file(repo_root / relative)
+        for relative in sorted(relative_sources)
+        if (repo_root / relative).exists()
+    }
+    payload = {
+        "entries": entries,
+        "schema_version": CATALOG_SCHEMA_VERSION,
+        "scenario_count": len(entries),
+        "source_files": source_files,
+    }
+    payload["catalog_sha256"] = sha256_object({key: value for key, value in payload.items()})
+    return payload
+
+
+def catalog_entries(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    entries = {entry["scenario_id"]: entry for entry in catalog.get("entries", [])}
+    if len(entries) != len(catalog.get("entries", [])):
+        raise ValueError("catalog contains duplicate scenario_id entries")
+    return entries
+
+
+def development_exposure_ledger() -> dict[str, Any]:
+    from config.runtime import FROZEN_SCENARIOS, EVAL_SCENARIOS_BY_TIER, LEADERBOARD_SCENARIOS, SCENARIOS_BY_TIER
+
+    evaluation = {
+        scenario
+        for scenarios in EVAL_SCENARIOS_BY_TIER.values()
+        for scenario in scenarios
+    }
+    leaderboard = {scenario for scenario, _tier in LEADERBOARD_SCENARIOS}
+    grpo_curriculum = {
+        scenario
+        for scenarios in SCENARIOS_BY_TIER.values()
+        for scenario in scenarios
+    }
+    ledger = {
+        "categories": {
+            "evaluation_subset": sorted(evaluation),
+            "grpo_curriculum": sorted(grpo_curriculum),
+            "leaderboard_subset": sorted(leaderboard),
+            "stage4_golden": ["single_fault/sf-002"],
+            # Both current SFT generators default to every frozen manifest/alert.
+            # This is the exposure snapshot for this baseline; the generators now
+            # fail closed without an active split, so future isolated IDs differ.
+            "sft_generation_defaults": {
+                "paths": [
+                    "training/generate_trajectories.py:list_scenarios(all manifests)",
+                    "training/generate_trajectories_fast.py:ALERTS(all)",
+                ],
+                "scenario_ids": sorted(FROZEN_SCENARIOS),
+            },
+        },
+        "notes": (
+            "A '*' SFT category intentionally makes every frozen ID development-exposed "
+            "until generators are gated by an active frozen split."
+        ),
+    }
+    return ledger
+
+
+def development_exposed_ids(catalog: dict[str, Any], ledger: dict[str, Any] | None = None) -> set[str]:
+    selected = ledger or development_exposure_ledger()
+    categories = selected["categories"]
+    all_ids = set(catalog_entries(catalog))
+    exposed: set[str] = set()
+    for key in ("evaluation_subset", "grpo_curriculum", "leaderboard_subset", "stage4_golden"):
+        exposed.update(str(value) for value in categories.get(key, []))
+    sft_exposure = categories.get("sft_generation_defaults", {}).get("scenario_ids")
+    if sft_exposure == "*":
+        exposed.update(all_ids)
+    else:
+        exposed.update(str(value) for value in sft_exposure or [])
+    unknown = exposed - all_ids
+    if unknown:
+        raise ValueError(f"exposure ledger refers to unknown scenarios: {sorted(unknown)}")
+    return exposed
+
+
+def _stratified_quotas(count: int, train_fraction: float, validation_fraction: float) -> tuple[int, int]:
+    exact_train = count * train_fraction
+    exact_validation = count * validation_fraction
+    base_train = int(exact_train)
+    base_validation = int(exact_validation)
+    remaining = count - base_train - base_validation
+    remainders = sorted(
+        (
+            (exact_train - base_train, 0),
+            (exact_validation - base_validation, 1),
+        ),
+        reverse=True,
+    )
+    additions = {0: 0, 1: 0}
+    for index in range(min(remaining, 2)):
+        additions[remainders[index][1]] += 1
+    if remaining > 2:
+        additions[0] += remaining - 2
+    return base_train + additions[0], base_validation + additions[1]
+
+
+def build_proposed_split(
+    catalog: dict[str, Any],
+    *,
+    seed: str = "atlasops-g5-proposal-v1",
+    train_fraction: float = 0.60,
+    validation_fraction: float = 0.20,
+) -> dict[str, Any]:
+    if not 0 < train_fraction < 1 or not 0 < validation_fraction < 1:
+        raise ValueError("split fractions must be between zero and one")
+    if train_fraction + validation_fraction >= 1:
+        raise ValueError("train and validation fractions must leave room for final test")
+
+    entries = catalog_entries(catalog)
+    by_tier: dict[str, list[str]] = {tier: [] for tier in FROZEN_TIERS}
+    for scenario_id in entries:
+        by_tier[scenario_id.split("/", 1)[0]].append(scenario_id)
+
+    assignments: dict[str, str] = {}
+    for tier in FROZEN_TIERS:
+        ranked = sorted(
+            by_tier[tier],
+            key=lambda scenario_id: hashlib.sha256(
+                f"{seed}:{scenario_id}".encode()
+            ).hexdigest(),
+        )
+        train_count, validation_count = _stratified_quotas(
+            len(ranked), train_fraction, validation_fraction
+        )
+        assignments.update({scenario_id: "train" for scenario_id in ranked[:train_count]})
+        assignments.update(
+            {scenario_id: "validation" for scenario_id in ranked[train_count : train_count + validation_count]}
+        )
+
+    exposed = development_exposed_ids(catalog)
+    # No current ID is eligible for final test because both SFT defaults expose all.
+    final_test: list[str] = []
+    blockers = [
+        {
+            "code": "NO_UNEXPOSED_FINAL_TEST_CANDIDATES",
+            "detail": (
+                "All 28 frozen scenarios are exposed by current SFT-generation defaults. "
+                "Add new isolated scenarios and regenerate the candidate before freeze."
+            ),
+        }
+    ]
+    splits = {
+        "train": sorted(scenario_id for scenario_id, role in assignments.items() if role == "train"),
+        "validation": sorted(
+            scenario_id for scenario_id, role in assignments.items() if role == "validation"
+        ),
+        "final_test": final_test,
+        "ineligible_final_test_development_exposed": sorted(exposed),
+    }
+    return {
+        "activation": {"active": False, "authorized_at": None, "frozen": False},
+        "blockers": blockers,
+        "catalog_sha256": catalog["catalog_sha256"],
+        "ready_for_freeze": False,
+        "schema_version": SPLIT_SCHEMA_VERSION,
+        "seed": seed,
+        "split_fractions": {
+            "train": train_fraction,
+            "validation": validation_fraction,
+            "final_test": round(max(0.0, 1.0 - train_fraction - validation_fraction), 12),
+        },
+        "splits": splits,
+        "status": "PROPOSED_BLOCKED_NO_FINAL_TEST",
+        "usage_policy": {
+            "consumed_by_runtime": False,
+            "required_role_gate": "Only bench/g5/split.frozen.json may select runtime scenarios.",
+        },
+    }
+
+
+def validate_split(
+    split: dict[str, Any],
+    catalog: dict[str, Any],
+    *,
+    require_ready: bool = False,
+) -> None:
+    if split.get("schema_version") != SPLIT_SCHEMA_VERSION:
+        raise ValueError("unsupported split schema")
+    if split.get("catalog_sha256") != catalog.get("catalog_sha256"):
+        raise ValueError("split catalog digest mismatch")
+    if split.get("status") == "FROZEN":
+        expected_activation = {"active": True, "authorized_at": split["activation"].get("authorized_at"), "frozen": True}
+    else:
+        expected_activation = {"active": False, "authorized_at": None, "frozen": False}
+    if split.get("activation") != expected_activation:
+        raise ValueError("split activation state is inconsistent")
+
+    splits = split.get("splits")
+    if not isinstance(splits, dict) or set(splits) != {"train", "validation", "final_test", "ineligible_final_test_development_exposed"}:
+        raise ValueError("split roles are incomplete")
+    role_lists = {
+        role: list(values)
+        for role, values in splits.items()
+        if role != "ineligible_final_test_development_exposed"
+    }
+    seen: set[str] = set()
+    for role, values in role_lists.items():
+        if len(values) != len(set(values)):
+            raise ValueError(f"duplicate scenario in {role}")
+        overlap = seen.intersection(values)
+        if overlap:
+            raise ValueError(f"scenario appears in multiple roles: {sorted(overlap)}")
+        seen.update(values)
+    expected_ids = set(catalog_entries(catalog))
+    assigned = set(role_lists["train"]) | set(role_lists["validation"]) | set(role_lists["final_test"])
+    ineligible = set(splits["ineligible_final_test_development_exposed"])
+    if assigned != expected_ids:
+        raise ValueError(
+            "split assignment mismatch: "
+            f"missing={sorted(expected_ids - assigned)}, extra={sorted(assigned - expected_ids)}"
+        )
+
+    exposed = development_exposed_ids(catalog)
+    leaked = set(role_lists["final_test"]).intersection(exposed)
+    if leaked:
+        raise ValueError(f"final-test leakage: development-exposed scenarios present: {sorted(leaked)}")
+    declared_ineligible = ineligible == exposed
+    if not declared_ineligible:
+        raise ValueError("ineligible-final-test ledger does not match the exposure ledger")
+
+    if require_ready:
+        if split.get("status") != "PROPOSED_READY":
+            raise ValueError(f"split is not PROPOSED_READY: {split.get('status')}")
+        if not role_lists["final_test"]:
+            raise ValueError("freezable split must have final-test scenarios")
+        if split.get("blockers"):
+            raise ValueError("freezable split still has blockers")
+        if split.get("ready_for_freeze") is not True:
+            raise ValueError("ready_for_freeze is not true")
+
+
+def freeze_split(
+    candidate_path: Path,
+    frozen_path: Path,
+    *,
+    authorized_at: str,
+    catalog_path: Path = CATALOG_PATH,
+) -> dict[str, Any]:
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    split = json.loads(candidate_path.read_text(encoding="utf-8"))
+    validate_split(split, catalog, require_ready=True)
+    if frozen_path.exists():
+        raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")
+
+    frozen = dict(split)
+    frozen["activation"] = {"active": True, "authorized_at": authorized_at, "frozen": True}
+    frozen["status"] = "FROZEN"
+    write_json_atomically(frozen_path, frozen)
+    return frozen
+
+
+def load_active_split(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    frozen_path = repo_root / "bench" / "g5" / "split.frozen.json"
+    if not frozen_path.exists():
+        raise RuntimeError(
+            "G5_SPLIT_NOT_ACTIVE: no bench/g5/split.frozen.json; refusing to select scenarios"
+        )
+    split = json.loads(frozen_path.read_text(encoding="utf-8"))
+    catalog = json.loads((repo_root / "bench" / "g5" / "scenario_catalog.json").read_text(encoding="utf-8"))
+    validate_split(split, catalog, require_ready=True)
+    if split.get("status") != "FROZEN" or split.get("activation", {}).get("active") is not True:
+        raise RuntimeError("G5 split is present but not active")
+    return split
+
+
+def allowed_scenario_ids(role: str, repo_root: Path = REPO_ROOT) -> tuple[str, ...]:
+    if role not in ROLE_IDS_KEY:
+        raise ValueError(f"unknown scenario consumer role: {role}")
+    split = load_active_split(repo_root)
+    return tuple(sorted(split["splits"][ROLE_IDS_KEY[role]]))
+
+
+def _write_catalog(args: argparse.Namespace) -> int:
+    write_json_atomically(Path(args.output), build_catalog())
+    print(f"wrote catalog: {args.output}")
+    return 0
+
+
+def _write_plan(args: argparse.Namespace) -> int:
+    catalog = json.loads(Path(args.catalog).read_text(encoding="utf-8"))
+    plan = build_proposed_split(
+        catalog,
+        seed=args.seed,
+        train_fraction=args.train_fraction,
+        validation_fraction=args.validation_fraction,
+    )
+    write_json_atomically(Path(args.output), plan)
+    print(f"wrote inert split proposal ({plan['status']}): {args.output}")
+    return 0
+
+
+def _freeze_command(args: argparse.Namespace) -> int:
+    frozen = freeze_split(
+        Path(args.candidate),
+        Path(args.frozen_output),
+        authorized_at=args.authorized_at,
+        catalog_path=Path(args.catalog),
+    )
+    print(f"froze active split: {args.frozen_output} ({len(frozen['splits']['final_test'])} final-test scenarios)")
+    return 0
+
+
+def _verify_command(args: argparse.Namespace) -> int:
+    catalog = json.loads(Path(args.catalog).read_text(encoding="utf-8"))
+    rebuilt = build_catalog()
+    if canonical_json(rebuilt) != canonical_json(catalog):
+        raise ValueError("catalog does not reproduce byte-for-byte from current sources")
+    target = json.loads(Path(args.path).read_text(encoding="utf-8"))
+    validate_split(target, catalog, require_ready=target.get("status") in {"PROPOSED_READY", "FROZEN"})
+    print(f"verified: {args.path}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    catalog_parser = subparsers.add_parser("catalog", help="build deterministic catalog")
+    catalog_parser.add_argument("--output", default=str(CATALOG_PATH))
+    catalog_parser.set_defaults(handler=_write_catalog)
+
+    plan_parser = subparsers.add_parser("plan", help="build an inactive split proposal")
+    plan_parser.add_argument("--catalog", default=str(CATALOG_PATH))
+    plan_parser.add_argument("--output", default=str(SPLIT_PROPOSED_PATH))
+    plan_parser.add_argument("--seed", default="atlasops-g5-proposal-v1")
+    plan_parser.add_argument("--train-fraction", type=float, default=0.60)
+    plan_parser.add_argument("--validation-fraction", type=float, default=0.20)
+    plan_parser.set_defaults(handler=_write_plan)
+
+    freeze_parser = subparsers.add_parser("freeze", help="atomically activate a ready candidate")
+    freeze_parser.add_argument("--candidate", default=str(SPLIT_PROPOSED_PATH))
+    freeze_parser.add_argument("--frozen-output", default=str(SPLIT_FROZEN_PATH))
+    freeze_parser.add_argument("--catalog", default=str(CATALOG_PATH))
+    freeze_parser.add_argument("--authorized-at", required=True, help="ISO-8601 authorization timestamp")
+    freeze_parser.set_defaults(handler=_freeze_command)
+
+    verify_parser = subparsers.add_parser("verify", help="reproduce and verify catalog/split")
+    verify_parser.add_argument("--catalog", default=str(CATALOG_PATH))
+    verify_parser.add_argument("--path", required=True)
+    verify_parser.set_defaults(handler=_verify_command)
+
+    args = parser.parse_args(argv)
+    try:
+        return int(args.handler(args))
+    except (OSError, ValueError, KeyError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

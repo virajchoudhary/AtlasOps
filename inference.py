@@ -312,17 +312,27 @@ def print_final(role: str, final: dict, turns: int):
         print(f"    {line}")
 
 
+def _evaluation_scenario_id(source_id: str) -> str | None:
+    tier = {"sf": "single_fault", "cs": "cascade", "mf": "multi_fault"}.get(
+        source_id.split("-", 1)[0]
+    )
+    if source_id.startswith("hist-"):
+        return f"named_replays/{source_id}"
+    return f"{tier}/{source_id}" if tier else None
+
+
 async def run(scenario: str) -> dict:
     from agents.coordinator import handle_incident
     from agents.stream import get_history
 
-    alert = ALERTS.get(scenario, ALERTS["hist-cloudflare-2019"])
-    alert["scenario_id"] = scenario
+    source_id = scenario if scenario in ALERTS else "hist-cloudflare-2019"
+    alert = json.loads(json.dumps(ALERTS[source_id]))
+    evaluation_scenario_id = _evaluation_scenario_id(source_id)
 
     print(f"[→] Firing alert: {alert['commonLabels']['alertname']}")
     t0 = time.time()
 
-    incident = await handle_incident(alert)
+    incident = await handle_incident(alert, scenario_id=evaluation_scenario_id)
 
     elapsed = round(time.time() - t0, 1)
     print(f"[✓] Chain complete in {elapsed}s\n")

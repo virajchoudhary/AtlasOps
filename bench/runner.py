@@ -1,11 +1,12 @@
-"""AtlasOps Benchmark Runner.
+"""AtlasOps zero-shot benchmark runner.
 
-Runs all 28 frozen scenarios (8 single-fault + 5 cascade + 5 multi-fault + 10 named replays)
-against a model, scores them with the LLM judge, and outputs a comparison table.
+New runs are selected from an active G5 frozen split. Dynamic adversarial
+manifests remain available only in an explicit exploration mode and never mix
+with validation or final-test populations.
 
 Usage:
-  python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3
-  python bench/runner.py --model checkpoints/AtlasOps_v2_baseline --tag baseline_v2
+  python -m bench.runner --model MODEL --split-role validation
+  python -m bench.runner --model MODEL --split-role final_test --allow-final-test
 
 Output:
   bench/results/<run_id>/results_per_episode.jsonl
@@ -18,22 +19,24 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import subprocess
+import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from datetime import datetime, timezone
 
 from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
-from config.runtime import (
-    DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
-    FROZEN_SCENARIOS,
-    evaluate_reward_contract,
-    bounded_speed_score as _bounded_speed_score,
-)
+from bench.scenario_contract import allowed_scenario_ids, canonical_json, sha256_file, sha256_object
+from config.runtime import bounded_speed_score, evaluate_reward_contract
 
 # Backwards-compatible alias — tests import this name from bench.runner
+_bounded_speed_score = bounded_speed_score
 _evaluate_episode_reward = evaluate_reward_contract
 
 
@@ -42,6 +45,295 @@ log = logging.getLogger("runner")
 
 RESULTS_DIR = Path("bench/results")
 MANIFESTS_DIR = Path("bench/chaos_manifests")
+
+# Raw-run schema marker.  Existing historical files intentionally retain their
+# old shape; this version applies to newly created zero-shot runs only.
+RESULT_SCHEMA_VERSION = "atlasops.g6.zero-shot-result/v2"
+_INVESTIGATIVE_TOOLS = frozenset({
+    "alertmanager_list_alerts", "cloud_monitoring_query", "gcloud_logs_read",
+    "jaeger_get_trace", "jaeger_search", "kubectl_describe", "kubectl_logs",
+    "promql_query", "promql_query_range",
+})
+_MUTATING_TOOLS = frozenset({
+    "alertmanager_silence", "argocd_rollback", "chaos_stop_experiment",
+    "kubectl_rollout", "kubectl_scale",
+})
+_FAULT_CLASS_KEYWORDS = {
+    "Application:argo_scale_to_zero": {"scale", "replicas"},
+    "Deployment:deploy_legacy_replicas": {"deployment", "legacy"},
+    "DNSChaos": {"dns"},
+    "IOChaos": {"disk", "io"},
+    "NetworkChaos:corrupt": {"corrupt"},
+    "NetworkChaos:duplicate": {"duplicate"},
+    "NetworkChaos:loss": {"loss", "packet"},
+    "NetworkChaos:partition": {"partition"},
+    "NetworkChaos:delay": {"delay", "latency"},
+    "PodChaos": {"crash", "kill", "oom"},
+    "StressChaos:cpu": {"cpu"},
+    "StressChaos:memory": {"memory", "oom"},
+    "TimeChaos": {"clock", "time"},
+}
+_CATALOG_ENTRY_CACHE: dict[str, dict] | None = None
+
+
+def load_catalog_entry(scenario_id: str) -> dict | None:
+    """Load immutable fault metadata; dynamic scenarios have no catalogue entry."""
+    global _CATALOG_ENTRY_CACHE
+    if _CATALOG_ENTRY_CACHE is None:
+        from bench.scenario_contract import build_catalog, catalog_entries
+
+        _CATALOG_ENTRY_CACHE = catalog_entries(build_catalog())
+    return _CATALOG_ENTRY_CACHE.get(scenario_id)
+
+
+def _model_visible_alert(alert: dict) -> dict:
+    """Remove evaluation-only identifiers before the alert reaches an agent."""
+    model_alert = json.loads(json.dumps(alert))
+    model_alert.pop("scenario_id", None)
+    return model_alert
+
+
+def _normalise_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.lower().replace("_", " ").replace("-", " ")
+    try:
+        return _normalise_text(json.dumps(value, sort_keys=True))
+    except (TypeError, ValueError):
+        return str(value).lower()
+
+
+def evaluate_root_cause(incident: dict, faults: list[dict]) -> dict:
+    """Score deterministic target/fault-class coverage in the diagnosis output."""
+    diagnosis = incident.get("diagnosis", {}).get("final", {})
+    haystack = _normalise_text(diagnosis)
+    matched_faults = []
+    target_hits = 0
+    class_hits = 0
+    for fault in faults:
+        target = str((fault.get("targets") or [""])[0])
+        action = str(fault.get("action", ""))
+        kind = str(fault.get("kind", ""))
+        key = f"{kind}:{action}"
+        keywords = set(
+            _FAULT_CLASS_KEYWORDS.get(key, set())
+            or _FAULT_CLASS_KEYWORDS.get(kind, set())
+        )
+        if kind == "StressChaos":
+            stressors = (fault.get("parameters", {}) or {}).get("stressors", {}) or {}
+            if "cpu" in stressors:
+                keywords.update(_FAULT_CLASS_KEYWORDS["StressChaos:cpu"])
+            if "memory" in stressors:
+                keywords.update(_FAULT_CLASS_KEYWORDS["StressChaos:memory"])
+        target_hit = bool(target and target.lower() in haystack)
+        class_hit = any(keyword in haystack for keyword in keywords)
+        target_hits += int(target_hit)
+        class_hits += int(class_hit)
+        if target_hit and class_hit:
+            matched_faults.append(f"{kind}:{action}")
+    fault_count = len(faults)
+    return {
+        "expected_fault_count": fault_count,
+        "matched_fault_count": len(matched_faults),
+        "matched_faults": sorted(matched_faults),
+        "score": round(len(matched_faults) / fault_count, 4) if fault_count else 0.0,
+        "target_coverage": round(target_hits / fault_count, 4) if fault_count else 0.0,
+        "fault_class_coverage": round(class_hits / fault_count, 4) if fault_count else 0.0,
+        "correct": bool(fault_count and len(matched_faults) == fault_count),
+    }
+
+
+def tool_metrics(incident: dict) -> dict:
+    counts = {
+        "attempts": 0,
+        "blocked_by_circuit_breaker": 0,
+        "blocked_by_policy": 0,
+        "cap_blocked": 0,
+        "dedup_blocked": 0,
+        "executed_failures": 0,
+        "executed_successes": 0,
+        "invalid_arguments": 0,
+        "mutating_attempts": 0,
+        "successful_investigations": 0,
+    }
+    first_mutation_index: int | None = None
+    successful_investigations_before_first_mutation = 0
+    flat_index = 0
+    for role in ("triage", "diagnosis", "remediation", "comms"):
+        for entry in incident.get(role, {}).get("trajectory", []):
+            if not isinstance(entry, dict) or "tool" not in entry:
+                continue
+            flat_index += 1
+            counts["attempts"] += 1
+            name = str(entry.get("tool", ""))
+            output = entry.get("output", {}) or {}
+            success = bool(output.get("success", False))
+            execution_blocked = any(
+                entry.get(flag)
+                for flag in (
+                    "blocked_by_policy",
+                    "blocked_by_circuit_breaker",
+                    "cap_blocked",
+                    "dedup_blocked",
+                )
+            )
+            if entry.get("blocked_by_policy"):
+                counts["blocked_by_policy"] += 1
+                counts["invalid_arguments"] += 1 if "arguments" in str(output.get("error", "")).lower() else 0
+            elif entry.get("blocked_by_circuit_breaker"):
+                counts["blocked_by_circuit_breaker"] += 1
+            elif entry.get("cap_blocked"):
+                counts["cap_blocked"] += 1
+            elif entry.get("dedup_blocked"):
+                counts["dedup_blocked"] += 1
+            elif success:
+                counts["executed_successes"] += 1
+                if name in _INVESTIGATIVE_TOOLS:
+                    counts["successful_investigations"] += 1
+                    if first_mutation_index is None or flat_index < first_mutation_index:
+                        successful_investigations_before_first_mutation += 1
+            else:
+                error = str(output.get("error", "")).lower()
+                if "arguments" in error:
+                    counts["invalid_arguments"] += 1
+                else:
+                    counts["executed_failures"] += 1
+
+            if not execution_blocked and name in _MUTATING_TOOLS:
+                counts["mutating_attempts"] += 1
+                if first_mutation_index is None:
+                    first_mutation_index = flat_index
+
+    counts["successful_investigations_before_first_mutation"] = (
+        successful_investigations_before_first_mutation
+    )
+    counts["pre_action_evidence"] = bool(
+        counts["mutating_attempts"] == 0
+        or successful_investigations_before_first_mutation > 0
+    )
+    return counts
+
+
+def failure_reasons(episode: dict) -> list[str]:
+    reasons: list[str] = []
+    status = episode.get("status")
+    if status == "skip":
+        reasons.append(str(episode.get("error", "scenario_skipped")))
+    elif status == "error":
+        reasons.append("agent_exception")
+    verification = episode.get("verification", {}) or {}
+    verification_status = str(verification.get("verification_status", ""))
+    if verification_status in {"failed", "inconclusive", "error"}:
+        reasons.append(f"verification_{verification_status}")
+    penalties = (episode.get("reward_contract", {}) or {}).get("penalties", {}) or {}
+    reasons.extend(name for name, value in penalties.items() if float(value or 0) > 0)
+    root_cause = episode.get("root_cause_evaluation", {}) or {}
+    if root_cause and root_cause.get("correct") is False:
+        reasons.append("root_cause_incomplete")
+    if episode.get("alert_was_synthetic_timeout"):
+        reasons.append("alert_timeout_fallback")
+    approval = episode.get("approval", {}) or {}
+    mode = str(approval.get("mode", "")).lower()
+    decision = str(approval.get("decision", "")).lower()
+    if mode == "manual":
+        reasons.append("manual_approval_runbook")
+    if decision in {"rejected", "timeout"}:
+        reasons.append(f"approval_{decision}")
+    return sorted(set(reasons))
+
+
+def prepare_output_directory(out_dir: Path) -> list[dict]:
+    """Open a run fail-closed; return completed episodes when resuming."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    episodes_path = out_dir / "results_per_episode.jsonl"
+    if (out_dir / ".run_complete.json").exists() or (out_dir / "results_summary.json").exists():
+        raise RuntimeError(f"refusing to mutate completed raw run: {out_dir}")
+    episodes: list[dict] = []
+    if episodes_path.exists():
+        try:
+            with episodes_path.open("r", encoding="utf-8") as handle:
+                episodes = [json.loads(line) for line in handle if line.strip()]
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"raw episode log is truncated/invalid; refusing resume: {exc}") from exc
+    return episodes
+
+
+def append_episode(out_dir: Path, episode: dict) -> None:
+    with (out_dir / "results_per_episode.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(episode, sort_keys=True) + "\n")
+        handle.flush()
+
+
+def write_run_manifest(path: Path, manifest: dict) -> None:
+    if path.exists():
+        raise RuntimeError(f"run manifest already exists: {path}")
+    write_json_atomic(path, manifest)
+
+
+def read_run_manifest(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read immutable run manifest: {exc}") from exc
+
+
+def finalize_raw_run(
+    out_dir: Path,
+    summary: dict,
+    *,
+    episode_count: int,
+) -> None:
+    marker = {
+        "complete_at": datetime.now(timezone.utc).isoformat(),
+        "episode_sha256": sha256_file(out_dir / "results_per_episode.jsonl"),
+        "episode_count": episode_count,
+        "summary_sha256": sha256_object(summary),
+    }
+    write_json_atomic(out_dir / ".run_complete.json", marker)
+
+
+def git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        )
+        return result.stdout.strip() or None
+    except OSError:
+        return None
+
+
+def configuration_provenance(args: argparse.Namespace) -> tuple[dict, str]:
+    values = vars(args).copy()
+    values.pop("handler", None)
+    config = {
+        "arguments": values,
+        "git_commit": git_commit(),
+        "platform": platform.platform(),
+        "python_version": sys.version,
+        "runtime_environment": {
+            key: ("set" if os.environ.get(key) else "unset")
+            for key in (
+                "AGENT_MODEL",
+                "ATLASOPS_LIVE_JUDGE",
+                "BACKEND",
+                "JUDGE_MODEL",
+                "OPENAI_API_BASE",
+            )
+        },
+    }
+    return config, sha256_object(config)
+
+
+def write_json_atomic(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        temporary.write_text(canonical_json(value) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def apply_chaos(scenario_id: str) -> bool:
@@ -87,10 +379,11 @@ async def run_scenario(scenario_id: str) -> dict:
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
 
     alert = wait_for_alert()
-    alert["scenario_id"] = scenario_id
+    alert_was_synthetic_timeout = bool(alert.get("synthetic"))
+    model_visible_alert = _model_visible_alert(alert)
 
     try:
-        incident = await handle_incident(alert)
+        incident = await handle_incident(model_visible_alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
     except Exception as e:
         log.exception("scenario %s failed: %s", scenario_id, e)
@@ -128,14 +421,27 @@ async def run_scenario(scenario_id: str) -> dict:
         "severity": triage.get("severity", "unknown"),
         "total_turns": total_turns,
         "judge": judge_score,
+        "alert_was_synthetic_timeout": alert_was_synthetic_timeout,
+        "approval": incident.get("approval"),
         "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
+        "root_cause_evaluation": (
+            evaluate_root_cause(incident, entry.get("faults", []))
+            if (entry := load_catalog_entry(scenario_id)) is not None
+            else {"available": False, "correct": None}
+        ),
+        "tool_metrics": tool_metrics(incident),
     }
     # Keep reward evaluation centralized so train/eval/bench cannot drift.
     episode["reward_contract"] = evaluate_reward_contract(episode)
     return episode
 
 
-def compute_summary(results: list[dict], tag: str, model: str) -> dict:
+def compute_summary(
+    results: list[dict],
+    tag: str,
+    model: str,
+    config_provenance: dict | None = None,
+) -> dict:
     valid = [r for r in results if r.get("status") == "ok"]
     resolved = [r for r in valid if r.get("resolved")]
     cascades = [r for r in valid if r.get("tier") == "cascade"]
@@ -148,18 +454,23 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
     judge_scores = [r.get("judge", {}).get("overall", 0) for r in valid if r.get("judge")]
     contract_scores = [r.get("reward_contract", {}).get("total", 0) for r in valid]
     penalties = [r.get("reward_contract", {}).get("penalty_total", 0) for r in valid]
+    tiers = sorted({r.get("tier", "unknown") for r in results})
 
     per_tier = {}
-    tiers = sorted({r.get("tier", "unknown") for r in valid})
     for tier in tiers:
-        trows = [r for r in valid if r.get("tier") == tier]
-        t_resolved = [r for r in trows if r.get("resolved")]
+        attempted = [r for r in results if r.get("tier", "unknown") == tier]
+        completed = [r for r in attempted if r.get("status") == "ok"]
+        tier_resolved = [r for r in completed if r.get("resolved")]
         per_tier[tier] = {
-            "count": len(trows),
-            "resolution_rate": round(len(t_resolved) / max(len(trows), 1), 3),
-            "avg_time_to_resolve_s": mean(trows, "time_to_resolve_s"),
+            "attempted_count": len(attempted),
+            "completed_count": len(completed),
+            "count": len(completed),
+            "resolution_rate": round(len(tier_resolved) / max(len(attempted), 1), 3),
+            "avg_time_to_resolve_s": mean(completed, "time_to_resolve_s"),
             "avg_reward_contract": round(
-                sum(r.get("reward_contract", {}).get("total", 0) for r in trows) / max(len(trows), 1), 3
+                sum(r.get("reward_contract", {}).get("total", 0) for r in completed)
+                / max(len(completed), 1),
+                3,
             ),
         }
 
@@ -175,12 +486,38 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         if r.get("reward_contract", {}).get("penalties", {}).get("hallucinated_evidence", 0) > 0
     )
 
+    reason_counts: dict[str, int] = {}
+    tool_totals = {
+        key: sum(int((r.get("tool_metrics", {}) or {}).get(key, 0)) for r in valid)
+        for key in (
+            "attempts", "blocked_by_circuit_breaker", "blocked_by_policy",
+            "cap_blocked", "dedup_blocked", "executed_failures",
+            "executed_successes", "invalid_arguments", "mutating_attempts",
+            "successful_investigations",
+        )
+    }
+    root_available = [r for r in valid if (r.get("root_cause_evaluation", {}) or {}).get("available", True)]
+    root_correct = [r for r in root_available if r.get("root_cause_evaluation", {}).get("correct") is True]
+
+    for result in results:
+        for reason in failure_reasons(result):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
     return {
+        "schema_version": RESULT_SCHEMA_VERSION,
         "tag": tag,
         "model": model,
         "run_date": datetime.now(timezone.utc).isoformat(),
+        "config_sha256": (config_provenance or {}).get("config_sha256"),
+        "config_provenance": config_provenance,
         "total_scenarios": len(results),
-        "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
+        "status_counts": {
+            "ok": len(valid),
+            "skip": sum(1 for r in results if r.get("status") == "skip"),
+            "error": sum(1 for r in results if r.get("status") == "error"),
+        },
+        "completion_rate": round(len(valid) / max(len(results), 1), 3),
+        "resolution_rate": round(len(resolved) / max(len(results), 1), 3),
         "avg_reward": round(sum(judge_scores) / max(len(judge_scores), 1), 3),
         "avg_reward_contract": round(sum(contract_scores) / max(len(contract_scores), 1), 3),
         "avg_penalty": round(sum(penalties) / max(len(penalties), 1), 3),
@@ -195,6 +532,32 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         "unsafe_action_count": unsafe_action_count,
         "false_resolution_count": false_resolution_count,
         "hallucinated_evidence_count": hallucinated_evidence_count,
+        "evidence_support": {
+            "episodes_with_pre_action_evidence": sum(
+                1 for r in valid if (r.get("tool_metrics", {}) or {}).get("pre_action_evidence") is True
+            ),
+            "successful_investigations_before_first_mutation": sum(
+                int((r.get("tool_metrics", {}) or {})
+                    .get("successful_investigations_before_first_mutation", 0))
+                for r in valid
+            ),
+        },
+        "failure_taxonomy": {
+            "reason_counts": dict(sorted(reason_counts.items())),
+            "episode_reasons": {
+                str(r.get("scenario_id", "")): failure_reasons(r)
+                for r in results
+                if failure_reasons(r)
+            },
+        },
+        "tool_metrics": tool_totals,
+        "root_cause_metrics": {
+            "available_episodes": len(root_available),
+            "correct_episodes": len(root_correct),
+            "correct_rate_among_available": round(
+                len(root_correct) / max(len(root_available), 1), 3
+            ),
+        },
         "per_tier": per_tier,
     }
 
@@ -257,21 +620,52 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Model path or HF ID")
     parser.add_argument("--tag", default="", help="Run label (e.g. grpo_v3, baseline_v2)")
-    parser.add_argument("--scenarios", nargs="*", help="Override scenario list")
+    parser.add_argument(
+        "--split-role",
+        choices=("validation", "final_test", "exploration"),
+        default="validation",
+        help="Active G5 population to measure; exploration is for dynamic-only runs",
+    )
+    parser.add_argument("--allow-final-test", action="store_true",
+                        help="Explicitly authorize a real final-test measurement")
+    parser.add_argument("--scenarios", nargs="*", help="Subset within the selected split role")
     parser.add_argument("--output", default="", help="Override output dir")
-    parser.add_argument("--adversarial", type=int, default=DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
-                        help="Number of dynamic adversarial scenarios to generate (0 to skip)")
+    parser.add_argument("--adversarial", type=int, default=0,
+                        help="Dynamic adversarial count; requires --split-role exploration")
     args = parser.parse_args()
+
+    if args.allow_final_test and args.split_role != "final_test":
+        raise RuntimeError("--allow-final-test requires --split-role final_test")
+    if args.split_role == "exploration":
+        if args.scenarios:
+            raise RuntimeError("exploration selects generated scenarios; --scenarios is unavailable")
+        if args.adversarial <= 0:
+            raise RuntimeError("exploration requires --adversarial greater than zero")
+    else:
+        if args.adversarial != 0:
+            raise RuntimeError("dynamic adversarial scenarios cannot be mixed into a frozen split")
 
     os.environ["AGENT_MODEL"] = args.model
     tag = args.tag or f"run-{int(time.time())}"
     run_id = f"{tag}-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     out_dir = Path(args.output) if args.output else (RESULTS_DIR / run_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
-    scenarios = list(args.scenarios or FROZEN_SCENARIOS)
+    if args.split_role == "validation":
+        selected_scenarios = list(allowed_scenario_ids("validation"))
+    elif args.split_role == "final_test":
+        if not args.allow_final_test:
+            raise RuntimeError("final-test membership is gated; pass --allow-final-test explicitly")
+        selected_scenarios = list(allowed_scenario_ids("final_test"))
+    else:
+        selected_scenarios = []
 
-    # Generate fresh adversarial scenarios from 72B judge before running frozen set
+    scenarios = list(selected_scenarios)
+    if args.scenarios:
+        unknown = sorted(set(args.scenarios).difference(selected_scenarios))
+        if unknown:
+            raise RuntimeError(f"--scenarios are outside active {args.split_role} split: {unknown}")
+        scenarios = list(args.scenarios)
+
     if args.adversarial > 0:
         log.info("generating %d dynamic adversarial scenarios via 72B judge...", args.adversarial)
         # Seed with any existing failure history from prior runs
@@ -293,20 +687,53 @@ async def main() -> None:
             rel = rel.replace("\\", "/").removesuffix(".yaml")
             scenarios.append(rel)
         log.info("added %d adversarial scenarios to run", len(adv_results))
+    if not scenarios:
+        raise RuntimeError("refusing to launch an empty zero-shot benchmark")
+
+    results = prepare_output_directory(out_dir)
+    config_provenance, config_hash = configuration_provenance(args)
+    manifest_path = out_dir / "run_manifest.json"
+    if manifest_path.exists():
+        stored_manifest = read_run_manifest(manifest_path)
+        if stored_manifest.get("scenario_ids") != scenarios:
+            raise RuntimeError("resume scenario sequence differs from immutable run manifest")
+        if stored_manifest.get("config_sha256") != config_hash:
+            raise RuntimeError("resume configuration differs from immutable run manifest")
+    else:
+        write_run_manifest(
+            manifest_path,
+            {
+                "config_provenance": config_provenance,
+                "config_sha256": config_hash,
+                "model": args.model,
+                "result_schema_version": RESULT_SCHEMA_VERSION,
+                "run_id": run_id,
+                "scenario_count": len(scenarios),
+                "scenario_ids": scenarios,
+                "split_role": args.split_role,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "tag": tag,
+            },
+        )
+
+    completed_ids = [str(r.get("scenario_id", "")) for r in results]
+    if completed_ids != scenarios[: len(completed_ids)]:
+        raise RuntimeError("completed episode sequence does not match the planned scenario sequence")
+
     log.info("running %d scenarios for tag=%s model=%s", len(scenarios), tag, args.model)
+    for i in range(len(results), len(scenarios)):
+        s = scenarios[i]
+        log.info("[%d/%d] %s", i + 1, len(scenarios), s)
+        r = await run_scenario(s)
+        results.append(r)
+        append_episode(out_dir, r)
 
-    results = []
-    episodes_file = out_dir / "results_per_episode.jsonl"
-    with episodes_file.open("w", encoding="utf-8") as f:
-        for i, s in enumerate(scenarios, 1):
-            log.info("[%d/%d] %s", i, len(scenarios), s)
-            r = await run_scenario(s)
-            results.append(r)
-            f.write(json.dumps(r) + "\n")
-            f.flush()
-
-    summary = compute_summary(results, tag, args.model)
-    (out_dir / "results_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    summary = compute_summary(results, tag, args.model, {
+        **config_provenance,
+        "config_sha256": config_hash,
+    })
+    write_json_atomic(out_dir / "results_summary.json", summary)
+    finalize_raw_run(out_dir, summary, episode_count=len(results))
     write_comparison_table(summary)
 
     log.info("=== Benchmark complete ===")

@@ -1,4 +1,4 @@
-"""Generate SFT trajectories by running scripted incident scenarios on a real GKE cluster.
+"""Generate SFT trajectories for the active G5 train split on a real GKE cluster.
 
 For each scenario:
   1. Apply Chaos Mesh manifest
@@ -8,7 +8,7 @@ For each scenario:
   5. Record (state, action, output, reward) tuples
   6. Reset cluster
 
-Output: data/sft_corpus.jsonl  (one trajectory per line, ChatML format for SFT)
+Output: data/sft_corpus.jsonl plus an immutable generation manifest
 """
 
 import sys
@@ -19,12 +19,20 @@ import argparse
 import asyncio
 import json
 import logging
+import platform
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
+from bench.scenario_contract import (
+    allowed_scenario_ids,
+    sha256_file,
+    sha256_object,
+    write_json_atomically,
+)
 from config.runtime import evaluate_reward_contract
 
 
@@ -34,6 +42,58 @@ log = logging.getLogger("trajectories")
 
 def list_scenarios(manifests_root: Path) -> list[Path]:
     return sorted(p for p in manifests_root.rglob("*.yaml") if p.is_file())
+
+
+def select_training_manifests(manifests_root: Path) -> tuple[list[Path], list[str]]:
+    """Restrict SFT trajectory generation to the active frozen train population."""
+    allowed = set(allowed_scenario_ids("sft"))
+    selected: list[Path] = []
+    blocked: list[str] = []
+    for path in list_scenarios(manifests_root):
+        scenario_id = f"{path.parent.name}/{path.stem}"
+        if scenario_id in allowed:
+            selected.append(path)
+        else:
+            blocked.append(scenario_id)
+    if not selected:
+        raise RuntimeError(
+            "SFT_GENERATION_BLOCKED: active frozen split contains no train scenarios"
+        )
+    return sorted(selected), sorted(blocked)
+
+
+def git_commit() -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+    )
+    return result.stdout.strip() or None
+
+
+def write_generation_manifest(
+    output: Path,
+    *,
+    args: argparse.Namespace,
+    scenario_ids: list[str],
+    blocked_scenario_ids: list[str],
+    written: int,
+) -> None:
+    config = {
+        "arguments": vars(args),
+        "blocked_scenario_ids": blocked_scenario_ids,
+        "git_commit": git_commit(),
+        "platform": platform.platform(),
+        "python_version": sys.version,
+        "scenario_ids": scenario_ids,
+    }
+    manifest = {
+        "config_sha256": sha256_object(config),
+        "config_provenance": config,
+        "corpus_path": str(output),
+        "corpus_sha256": sha256_file(output),
+        "example_count": written,
+        "schema_version": "atlasops.g5.sft-generation-manifest/v1",
+    }
+    write_json_atomically(output.with_suffix(output.suffix + ".manifest.json"), manifest)
 
 
 def apply_chaos(manifest: Path) -> bool:
@@ -189,18 +249,23 @@ async def run() -> None:
     parser.add_argument("--output", default="data/sft_corpus.jsonl")
     parser.add_argument("--max-scenarios", type=int, default=0, help="0 = all")
     parser.add_argument("--repeats", type=int, default=10, help="repeats per scenario for variance")
+    parser.add_argument("--overwrite", action="store_true", help="explicitly replace prior corpus")
     args = parser.parse_args()
 
-    scenarios = list_scenarios(Path(args.manifests))
+    scenarios, blocked = select_training_manifests(Path(args.manifests))
+    scenario_ids = [f"{path.parent.name}/{path.stem}" for path in scenarios]
     if args.max_scenarios:
         scenarios = scenarios[: args.max_scenarios]
+        scenario_ids = scenario_ids[: args.max_scenarios]
     log.info("found %d scenarios; %d repeats each = %d trajectories",
              len(scenarios), args.repeats, len(scenarios) * args.repeats)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists() and not args.overwrite:
+        raise RuntimeError(f"SFT corpus already exists; pass --overwrite explicitly: {output}")
     written = 0
-    with output.open("a", encoding="utf-8") as f:
+    with output.open("w", encoding="utf-8") as f:
         for manifest in scenarios:
             tier = manifest.parent.name
             scenario_id = f"{tier}/{manifest.stem}"
@@ -212,7 +277,7 @@ async def run() -> None:
                     reset_cluster()
                     continue
                 t0 = time.time()
-                incident = await handle_incident(alert)
+                incident = await handle_incident(alert, scenario_id=scenario_id)
                 judge_score = await judge_trajectory(incident)
                 remediation = incident.get("remediation", {}).get("final", {})
                 episode = {
@@ -249,6 +314,13 @@ async def run() -> None:
                 )
                 reset_cluster()
 
+    write_generation_manifest(
+        output,
+        args=args,
+        scenario_ids=scenario_ids,
+        blocked_scenario_ids=blocked,
+        written=written,
+    )
     log.info("done. %d examples in %s", written, output)
 
 

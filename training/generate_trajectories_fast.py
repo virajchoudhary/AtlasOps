@@ -1,7 +1,8 @@
 """Fast SFT trajectory generator — no Chaos Mesh required.
 
-Runs all 31 scenarios from inference.py directly against the real GKE cluster
-using the pre-defined alert payloads (no waiting for real alerts to fire).
+Runs only scenarios in the active G5 train split, using pre-defined alert
+payloads (no waiting for real alerts to fire). Warmups are excluded because
+they are outside the frozen 28-scenario contract.
 
 Each completed incident chain → multiple ChatML training examples (one per turn).
 Writes to data/sft_corpus.jsonl in the format expected by training/sft.py.
@@ -17,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import sys
 import time
 from pathlib import Path
@@ -40,6 +42,7 @@ log = logging.getLogger("gen_traj")
 
 # ── Import scenario catalogue from inference.py ───────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from bench.scenario_contract import allowed_scenario_ids, sha256_file, sha256_object  # noqa: E402
 from inference import ALERTS, SCENARIO_GROUPS  # noqa: E402
 
 OUTPUT = Path("data/sft_corpus.jsonl")
@@ -48,6 +51,74 @@ OUTPUT = Path("data/sft_corpus.jsonl")
 def load_prompt(role: str) -> str:
     p = Path("agents/prompts") / f"{role}.md"
     return p.read_text(encoding="utf-8") if p.exists() else f"You are the {role} agent."
+
+
+def contract_scenario_id(source_id: str) -> str | None:
+    tier = {
+        "sf": "single_fault",
+        "cs": "cascade",
+        "mf": "multi_fault",
+    }.get(source_id.split("-", 1)[0])
+    if source_id.startswith("hist-"):
+        return f"named_replays/{source_id}"
+    if tier:
+        return f"{tier}/{source_id}"
+    return None
+
+
+def select_training_scenarios(scenario_ids: list[str]) -> tuple[list[str], list[str]]:
+    """Gate every SFT source through the active frozen train population."""
+    allowed = set(allowed_scenario_ids("sft"))
+    selected = [scenario_id for scenario_id in dict.fromkeys(scenario_ids) if scenario_id in allowed]
+    blocked = sorted(set(scenario_ids) - allowed)
+    if not selected:
+        raise RuntimeError(
+            "SFT_GENERATION_BLOCKED: active frozen split contains no requested train scenarios"
+        )
+    return selected, blocked
+
+
+def git_commit() -> str | None:
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        )
+        return result.stdout.strip() or None
+    except OSError:
+        return None
+
+
+def write_generation_manifest(
+    output: Path,
+    *,
+    args: argparse.Namespace,
+    scenario_ids: list[str],
+    blocked_scenario_ids: list[str],
+    written: int,
+    skipped: int,
+) -> None:
+    config = {
+        "arguments": vars(args),
+        "blocked_scenario_ids": blocked_scenario_ids,
+        "git_commit": git_commit(),
+        "platform": platform.platform(),
+        "python_version": sys.version,
+        "scenario_ids": scenario_ids,
+    }
+    manifest = {
+        "config_sha256": sha256_object(config),
+        "config_provenance": config,
+        "corpus_path": str(output),
+        "corpus_sha256": sha256_file(output),
+        "example_count": written,
+        "schema_version": "atlasops.g5.sft-generation-manifest/v1",
+        "skipped_example_count": skipped,
+    }
+    from bench.scenario_contract import write_json_atomically
+
+    write_json_atomically(output.with_suffix(output.suffix + ".manifest.json"), manifest)
 
 
 def trajectory_to_sft(scenario_id: str, incident: dict, elapsed_s: float) -> list[dict]:
@@ -69,10 +140,10 @@ def trajectory_to_sft(scenario_id: str, incident: dict, elapsed_s: float) -> lis
     alert = incident.get("alert", {})
 
     role_inputs = {
-        "triage":      {"scenario_id": scenario_id, "alert": alert},
-        "diagnosis":   {"scenario_id": scenario_id, "triage": triage_final},
-        "remediation": {"scenario_id": scenario_id, "triage": triage_final, "diagnosis": diag_final},
-        "comms":       {"scenario_id": scenario_id, "triage": triage_final,
+        "triage":      {"alert": alert},
+        "diagnosis":   {"triage": triage_final},
+        "remediation": {"triage": triage_final, "diagnosis": diag_final},
+        "comms":       {"triage": triage_final,
                         "diagnosis": diag_final, "remediation": remed_final},
     }
 
@@ -156,13 +227,11 @@ def _score(triage: dict, diagnosis: dict, remediation: dict, elapsed_s: float) -
 
 async def run_scenario(scenario_id: str) -> tuple[dict, float]:
     from agents.coordinator import handle_incident
-    from agents.stream import get_history
 
-    alert = dict(ALERTS[scenario_id])
-    alert["scenario_id"] = scenario_id
+    alert = dict(ALERTS[scenario_id.split("/", 1)[1]])
 
     t0 = time.time()
-    incident = await handle_incident(alert)
+    incident = await handle_incident(alert, scenario_id=scenario_id)
     elapsed = time.time() - t0
 
     # Attach alert to incident for trajectory_to_sft
@@ -182,6 +251,8 @@ async def main():
     parser.add_argument("--output", default="data/sft_corpus.jsonl")
     parser.add_argument("--min-reward", type=float, default=0.0,
                         help="Skip examples below this reward threshold")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Explicitly replace a prior corpus; otherwise fail closed")
     args = parser.parse_args()
 
     # Resolve scenario list
@@ -196,10 +267,20 @@ async def main():
                 scenario_ids.append(s)
             else:
                 log.warning("unknown scenario/group: %s — skipping", s)
-        scenario_ids = list(dict.fromkeys(scenario_ids))  # deduplicate, preserve order
+
+    candidate_ids = []
+    for source_id in dict.fromkeys(scenario_ids):
+        contract_id = contract_scenario_id(source_id)
+        if contract_id is None:
+            log.warning("non-frozen warmup/group source excluded from split-gated SFT: %s", source_id)
+        else:
+            candidate_ids.append(contract_id)
+    scenario_ids, blocked = select_training_scenarios(candidate_ids)
 
     if args.max_scenarios:
         scenario_ids = scenario_ids[:args.max_scenarios]
+        if not scenario_ids:
+            raise RuntimeError("max-scenarios left no train scenarios")
 
     total_runs = len(scenario_ids) * args.repeats
     log.info("generating SFT data: %d scenarios × %d repeats = %d runs",
@@ -207,6 +288,8 @@ async def main():
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists() and not args.overwrite:
+        raise RuntimeError(f"SFT corpus already exists; pass --overwrite explicitly: {output}")
 
     written = 0
     skipped = 0
@@ -239,6 +322,14 @@ async def main():
                     continue
 
     log.info("done. wrote %d examples (%d skipped) to %s", written, skipped, output)
+    write_generation_manifest(
+        output,
+        args=args,
+        scenario_ids=scenario_ids,
+        blocked_scenario_ids=blocked,
+        written=written,
+        skipped=skipped,
+    )
     print(f"\n[OK] {written} training examples saved to {output}")
     print(f"     Run: python training/sft.py --data {output}")
 

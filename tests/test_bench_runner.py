@@ -1,10 +1,7 @@
 """Tests for the benchmark runner — reward contract, scoring, comparison table."""
 
 import asyncio
-import json
-import math
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 
@@ -132,12 +129,13 @@ class TestRunScenario:
 
         # 1. Chaos applied for scenario
         apply_chaos_mock.assert_called_once_with(scenario_id)
-        # 2. Alert ingested and enriched with scenario_id
+        # 2. Alert ingested without evaluation-only identity.
         wait_for_alert_mock.assert_called_once_with()
-        # 3. Incident handled by multi-agent coordinator flow with enriched alert
+        # 3. Coordinator receives an explicit verifier-only scenario channel.
         handle_incident_mock.assert_awaited_once()
         passed_alert = handle_incident_mock.call_args[0][0]
-        assert passed_alert["scenario_id"] == scenario_id
+        assert "scenario_id" not in passed_alert
+        assert handle_incident_mock.call_args.kwargs["scenario_id"] == scenario_id
         assert passed_alert["commonLabels"]["alertname"] == "AtlasOpsOnlineBoutiqueDeploymentUnavailable"
         assert passed_alert["commonLabels"]["service"] == "cartservice"
         assert len(passed_alert["alerts"]) == 1
@@ -327,7 +325,7 @@ class TestFrozenScenarioList:
         assert len(FROZEN_SCENARIOS) == FROZEN_STATIC_SCENARIO_COUNT
 
     def test_all_tiers_represented(self):
-        from bench.runner import FROZEN_SCENARIOS
+        from config.runtime import FROZEN_SCENARIOS
         tiers = {s.split("/")[0] for s in FROZEN_SCENARIOS}
         assert "single_fault" in tiers
         assert "cascade" in tiers
@@ -335,12 +333,12 @@ class TestFrozenScenarioList:
         assert "multi_fault" in tiers
 
     def test_named_replays_count(self):
-        from bench.runner import FROZEN_SCENARIOS
+        from config.runtime import FROZEN_SCENARIOS
         replays = [s for s in FROZEN_SCENARIOS if "named_replays" in s]
         assert len(replays) == 10
 
     def test_no_duplicate_scenarios(self):
-        from bench.runner import FROZEN_SCENARIOS
+        from config.runtime import FROZEN_SCENARIOS
         assert len(FROZEN_SCENARIOS) == len(set(FROZEN_SCENARIOS))
 
     def test_dynamic_default_is_separate_from_frozen_catalogue(self):

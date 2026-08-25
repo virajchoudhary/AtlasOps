@@ -21,18 +21,19 @@ import asyncio
 import json
 import logging
 import os
-import random
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import GRPOConfig, GRPOTrainer
+from bench.scenario_contract import allowed_scenario_ids
 from config.runtime import (
-    SCENARIOS_BY_TIER, TIER_SAMPLING_WEIGHTS, evaluate_reward_contract,
+    SCENARIOS_BY_TIER,
     CurriculumManager,
+    evaluate_reward_contract,
 )
 
 log = logging.getLogger(__name__)
@@ -83,11 +84,17 @@ def compute_reward(episode: dict) -> float:
 
 def sample_scenario(tiers: list[str]) -> tuple[str, str]:
     """Use CurriculumManager priority scoring (spaced repetition + weakness targeting)."""
+    allowed = set(allowed_scenario_ids("grpo"))
     pool = [
         (sid, sid.split("/")[0])
         for tier in tiers
         for sid in SCENARIOS_BY_TIER.get(tier, [])
+        if sid in allowed
     ]
+    if not pool:
+        raise RuntimeError(
+            "GRPO_CURRICULUM_BLOCKED: active frozen split has no train scenarios for tiers"
+        )
     return _curriculum.next_scenario(pool)
 
 
@@ -221,13 +228,12 @@ class OnlineRewardFunction:
         # the reward IS conditioned on the specific completion TRL produced.
         alert = {
             "commonLabels": {"alertname": "GRPOTrainingAlert"},
-            "scenario_id": scenario_id,
             "alerts": [],
             "triage_seed": completion_text[:512] if completion_text else "",
         }
 
         t0 = time.time()
-        incident = await handle_incident(alert)
+        incident = await handle_incident(alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
 
         remediation = incident.get("remediation", {}).get("final", {})
@@ -238,7 +244,13 @@ class OnlineRewardFunction:
 
         return {
             "tier": tier,
-            "resolved": remediation.get("outcome") == "resolved",
+            "agent_claimed_resolved": bool(
+                remediation.get("outcome") == "resolved"
+                or remediation.get("status") == "resolved"
+            ),
+            "env_resolved": bool(incident.get("env_resolved") is True),
+            "verification": incident.get("verification", {}),
+            "resolved": bool(incident.get("env_resolved") is True),
             "outcome": remediation.get("outcome", "unknown"),
             "total_turns": total_turns,
             "time_to_resolve_s": round(time.time() - t0),
@@ -286,7 +298,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
         )
         trainer.train()
         logs = trainer.state.log_history
-        rewards = [l.get("rewards/mean", 0) for l in logs if "rewards/mean" in l]
+        rewards = [entry.get("rewards/mean", 0) for entry in logs if "rewards/mean" in entry]
         return sum(rewards[-3:]) / max(len(rewards[-3:]), 1)
 
     study = optuna.create_study(direction="maximize",
@@ -422,9 +434,13 @@ def main() -> None:
     tokenizer.save_pretrained(str(output_dir))
 
     logs = trainer.state.log_history
-    rewards = [l.get("rewards/mean") for l in logs if "rewards/mean" in l]
+    rewards = [entry.get("rewards/mean") for entry in logs if "rewards/mean" in entry]
     summary = {
         "model": args.model, "tiers": tiers,
+        "scenario_population": {
+            "role": "grpo",
+            "scenario_ids": list(allowed_scenario_ids("grpo")),
+        },
         "total_steps": trainer.state.global_step,
         "final_reward_mean": rewards[-1] if rewards else None,
         "best_reward_mean": max(rewards) if rewards else None,

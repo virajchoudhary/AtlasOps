@@ -279,11 +279,38 @@ def read_run_manifest(path: Path) -> dict:
         raise RuntimeError(f"cannot read immutable run manifest: {exc}") from exc
 
 
-def validate_resume_manifest(stored: dict, *, scenario_ids: list[str], config_hash: str) -> None:
+def validate_resume_manifest(
+    stored: dict,
+    *,
+    scenario_ids: list[str],
+    config_hash: str,
+    catalog_sha256: str,
+    frozen_split_sha256: str,
+    contracts: dict,
+) -> None:
     if stored.get("scenario_ids") != scenario_ids:
         raise RuntimeError("resume scenario sequence differs from immutable run manifest")
     if stored.get("config_sha256") != config_hash:
         raise RuntimeError("resume configuration differs from immutable run manifest")
+    if stored.get("catalog_sha256") != catalog_sha256:
+        raise RuntimeError("resume catalogue differs from immutable run manifest")
+    if stored.get("frozen_split_sha256") != frozen_split_sha256:
+        raise RuntimeError("resume frozen split differs from immutable run manifest")
+    if stored.get("role_and_verifier_contracts") != contracts:
+        raise RuntimeError("resume prompt/tool/verifier contract differs from immutable run manifest")
+
+
+def validate_resume_raw_records(out_dir: Path, episode_count: int) -> None:
+    raw_path = out_dir / "raw_records.jsonl"
+    if episode_count == 0 and not raw_path.exists():
+        return
+    try:
+        with raw_path.open("r", encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"raw-record log is missing/truncated; refusing resume: {exc}") from exc
+    if len(records) != episode_count:
+        raise RuntimeError("raw-record count does not match completed episodes; refusing resume")
 
 
 def finalize_raw_run(
@@ -710,6 +737,15 @@ async def main() -> None:
 
     results = prepare_output_directory(out_dir)
     config_provenance, config_hash = configuration_provenance(args)
+    from bench.g6_evidence import contract_hashes
+    from bench.scenario_contract import build_catalog, load_active_split
+
+    current_contracts = contract_hashes()
+    catalog_sha256 = build_catalog()["catalog_sha256"]
+    if args.split_role == "exploration":
+        frozen_split_sha256 = "EXPLORATION_NO_FROZEN_SPLIT"
+    else:
+        frozen_split_sha256 = sha256_object(load_active_split())
     manifest_path = out_dir / "run_manifest.json"
     if manifest_path.exists():
         stored_manifest = read_run_manifest(manifest_path)
@@ -717,14 +753,11 @@ async def main() -> None:
             stored_manifest,
             scenario_ids=scenarios,
             config_hash=config_hash,
+            catalog_sha256=catalog_sha256,
+            frozen_split_sha256=frozen_split_sha256,
+            contracts=current_contracts,
         )
     else:
-        from bench.scenario_contract import build_catalog, load_active_split
-
-        if args.split_role == "exploration":
-            frozen_split_sha256 = "EXPLORATION_NO_FROZEN_SPLIT"
-        else:
-            frozen_split_sha256 = sha256_object(load_active_split())
         immutable_manifest = build_run_manifest(
             run_id=run_id,
             tag=tag,
@@ -734,7 +767,7 @@ async def main() -> None:
             seed=args.seed,
             split_role=args.split_role,
             scenario_ids=scenarios,
-            catalog_sha256=build_catalog()["catalog_sha256"],
+            catalog_sha256=catalog_sha256,
             frozen_split_sha256=frozen_split_sha256,
             benchmark_version=RESULT_SCHEMA_VERSION,
             arguments=vars(args),
@@ -746,6 +779,8 @@ async def main() -> None:
             "started_at": datetime.now(timezone.utc).isoformat(),
         })
         write_run_manifest(manifest_path, immutable_manifest)
+
+    validate_resume_raw_records(out_dir, len(results))
 
     completed_ids = [str(r.get("scenario_id", "")) for r in results]
     if completed_ids != scenarios[: len(completed_ids)]:

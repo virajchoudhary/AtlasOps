@@ -115,12 +115,47 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
 
 
 def test_resume_rejects_changed_scenarios_or_configuration():
-    stored = {"scenario_ids": ["a"], "config_sha256": "one"}
+    stored = {
+        "catalog_sha256": "catalog",
+        "config_sha256": "one",
+        "frozen_split_sha256": "split",
+        "role_and_verifier_contracts": {"tool": "contract"},
+        "scenario_ids": ["a"],
+    }
+    common = {
+        "catalog_sha256": "catalog",
+        "contracts": {"tool": "contract"},
+        "frozen_split_sha256": "split",
+    }
 
     runner.validate_resume_manifest(
-        stored, scenario_ids=["a"], config_hash="one"
+        stored,
+        config_hash="one",
+        scenario_ids=["a"],
+        **common,
     )
     with pytest.raises(RuntimeError, match="scenario sequence"):
-        runner.validate_resume_manifest(stored, scenario_ids=["b"], config_hash="one")
+        runner.validate_resume_manifest(stored, config_hash="one", scenario_ids=["b"], **common)
     with pytest.raises(RuntimeError, match="configuration"):
-        runner.validate_resume_manifest(stored, scenario_ids=["a"], config_hash="two")
+        runner.validate_resume_manifest(stored, config_hash="two", scenario_ids=["a"], **common)
+    with pytest.raises(RuntimeError, match="catalogue"):
+        runner.validate_resume_manifest(
+            stored,
+            catalog_sha256="other",
+            config_hash="one",
+            contracts={"tool": "contract"},
+            frozen_split_sha256="split",
+            scenario_ids=["a"],
+        )
+
+
+def test_resume_rejects_missing_or_mismatched_raw_records(tmp_path):
+    with pytest.raises(RuntimeError, match="raw-record"):
+        runner.validate_resume_raw_records(tmp_path, 1)
+
+    raw_path = tmp_path / "raw_records.jsonl"
+    raw_path.write_text('{"a":1}\n', encoding="utf-8")
+    runner.validate_resume_raw_records(tmp_path, 1)
+    raw_path.write_text('{"a":1}\n{broken\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="truncated"):
+        runner.validate_resume_raw_records(tmp_path, 1)

@@ -22,17 +22,14 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from agents.tool_policy import CLUSTER_MUTATING_TOOLS
 from config.runtime import (
-    TRAINING_SCENARIOS_BY_TIER,
-    TIER_SAMPLING_WEIGHTS,
     CurriculumManager,
     evaluate_reward_contract,
 )
 from training.stage9_contract import (
-    REMEDIATION_POLICY_ROLE,
     load_remediation_training_rows,
     remediation_dataset_catalogue,
 )
@@ -217,12 +214,24 @@ def cluster_healthy(
 
 
 def apply_fault(identity: EnvironmentIdentity, scenario_id: str) -> dict[str, Any]:
+    scenario_parts = scenario_id.split("/")
+    if (
+        len(scenario_parts) != 2
+        or any(not part or part in {".", ".."} for part in scenario_parts)
+        or any(not _CONTEXT_RE.fullmatch(part) for part in scenario_parts)
+    ):
+        raise InfrastructureInvalid(f"fault_scenario_identity_invalid:{scenario_id}")
     manifest = Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
-    if not manifest.is_file() or Path(scenario_id).name != scenario_id.split("/")[-1]:
+    resolved_manifest = manifest.resolve()
+    try:
+        resolved_manifest.relative_to((Path("bench/chaos_manifests")).resolve())
+    except ValueError as exc:
+        raise InfrastructureInvalid(f"fault_manifest_path_escape:{scenario_id}") from exc
+    if not resolved_manifest.is_file():
         raise InfrastructureInvalid(f"fault_manifest_missing:{scenario_id}")
     result = _run_kubectl(
         identity,
-        ["apply", "--filename", str(manifest)],
+        ["apply", "--filename", str(resolved_manifest)],
         timeout=60,
     )
     if not result["success"]:
@@ -523,7 +532,10 @@ class OnlineRewardFunction:
         try:
             await asyncio.sleep(self.fault_settle_seconds)
             lifecycle.append(fault_established(self.environment, scenario_id))
+        finally:
+            await self._reset_and_verify(lifecycle)
 
+        try:
             alert = {
                 "alerts": [],
                 "commonLabels": {"alertname": "GRPOTrainingAlert"},
@@ -538,22 +550,7 @@ class OnlineRewardFunction:
         except Exception as exc:
             raise PolicyExecutionInvalid(f"rollout_harness_error:{exc}") from exc
         finally:
-            reset_error: InfrastructureInvalid | None = None
-            try:
-                lifecycle.append(reset_faults(self.environment))
-            except InfrastructureInvalid as exc:
-                reset_error = exc
-            await asyncio.sleep(self.reset_settle_seconds)
-            post_health, post_details = cluster_healthy(self.environment)
-            lifecycle.append({
-                "phase": "POST_RESET_HEALTHY",
-                "passed": post_health,
-                **post_details,
-            })
-            if not post_health:
-                raise InfrastructureInvalid("post_reset_unhealthy")
-            if reset_error is not None:
-                raise reset_error
+            await self._reset_and_verify(lifecycle)
 
         remediation = incident.get("remediation", {}).get("final", {})
         env_resolved = bool(incident.get("env_resolved") is True)
@@ -579,6 +576,28 @@ class OnlineRewardFunction:
             "lifecycle": lifecycle,
             "model_visible_alert": alert,
         }
+
+    async def _reset_and_verify(self, lifecycle: list[dict[str, Any]]) -> None:
+        """Reset even after setup/harness failure and classify invalidity."""
+        reset_error: InfrastructureInvalid | None = None
+        try:
+            lifecycle.append(reset_faults(self.environment))
+        except InfrastructureInvalid as exc:
+            reset_error = exc
+        await self._reset_settle()
+        post_health, post_details = cluster_healthy(self.environment)
+        lifecycle.append({
+            "phase": "POST_RESET_HEALTHY",
+            "passed": post_health,
+            **post_details,
+        })
+        if reset_error is not None:
+            raise reset_error
+        if not post_health:
+            raise InfrastructureInvalid("post_reset_unhealthy")
+
+    async def _reset_settle(self) -> None:
+        await asyncio.sleep(self.reset_settle_seconds)
 
     def _persist_episode(
         self,
@@ -662,6 +681,30 @@ def validate_sft_checkpoint(
     corpus = manifest.get("sft_corpus")
     if not isinstance(corpus, dict) or not _SHA256_RE.fullmatch(str(corpus.get("sha256", ""))):
         raise ValueError("sft_corpus_hash_missing")
+    base_model = manifest.get("base_model")
+    if (
+        not isinstance(base_model, dict)
+        or not str(base_model.get("name", "")).strip()
+        or not str(base_model.get("revision", "")).strip()
+        or not str(base_model.get("architecture", "")).strip()
+    ):
+        raise ValueError("sft_base_identity_missing")
+    tokenizer_identity = manifest.get("tokenizer")
+    if (
+        not isinstance(tokenizer_identity, dict)
+        or not str(tokenizer_identity.get("name", "")).strip()
+        or not str(tokenizer_identity.get("revision", "")).strip()
+    ):
+        raise ValueError("sft_tokenizer_identity_missing")
+    lora_provenance = manifest.get("lora")
+    required_lora = {
+        key: LORA_HYPERPARAMETERS[key]
+        for key in ("r", "lora_alpha", "lora_dropout", "target_modules", "bias")
+    }
+    if not isinstance(lora_provenance, dict) or {
+        key: lora_provenance.get(key) for key in required_lora
+    } != required_lora:
+        raise ValueError("sft_lora_provenance_mismatch")
 
     required_files = ("config.json", "generation_config.json", "tokenizer_config.json")
     missing = [name for name in required_files if not (path / name).is_file()]
@@ -679,6 +722,12 @@ def validate_sft_checkpoint(
         actual = _sha256_file(path / relative_name) if (path / relative_name).is_file() else None
         if expected != actual:
             raise ValueError(f"sft_file_hash_mismatch:{relative_name}")
+    try:
+        architecture_config = json.loads((path / "config.json").read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("sft_model_config_invalid_json") from exc
+    if architecture_config.get("model_type") != base_model["architecture"]:
+        raise ValueError("sft_architecture_mismatch")
     if verify_files:
         for relative_name, expected in file_hashes.items():
             target = (path / relative_name).resolve()
@@ -888,6 +937,29 @@ def write_curriculum_state(path: Path, seed: int, dataset_hash: str) -> None:
     temporary.replace(path)
 
 
+RESUME_IDENTITY_FIELDS = frozenset({
+    "code_commit",
+    "contracts",
+    "curriculum_seed",
+    "dataset",
+    "dependency_versions",
+    "environment_identity",
+    "hyperparameters",
+    "model_path",
+    "sft_manifest",
+})
+
+
+def validate_resume_identity(previous: dict[str, Any], current: dict[str, Any]) -> None:
+    """Reject model, split, contract, seed, environment, or dependency drift."""
+    changed = sorted(
+        field for field in RESUME_IDENTITY_FIELDS
+        if previous.get(field) != current.get(field)
+    )
+    if changed:
+        raise RuntimeError(f"incompatible_resume_identity:{changed}")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -971,21 +1043,11 @@ def main() -> None:
     provenance["resumed_from"] = resume_checkpoint or None
     provenance["dependency_versions"] = validate_trl_runtime()
     manifest_path = output_dir / "run_manifest.json"
-    identity_fields = {
-        "code_commit", "contracts", "curriculum_seed", "dataset",
-        "dependency_versions", "environment_identity", "hyperparameters",
-        "model_path", "sft_manifest",
-    }
     if resume_checkpoint:
         if not manifest_path.is_file():
             raise RuntimeError("resume_run_manifest_missing")
         previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        changed = {
-            field for field in identity_fields
-            if previous_manifest.get(field) != provenance.get(field)
-        }
-        if changed:
-            raise RuntimeError(f"incompatible_resume_identity:{sorted(changed)}")
+        validate_resume_identity(previous_manifest, provenance)
     else:
         manifest_path.write_text(
             json.dumps(provenance, indent=2, sort_keys=True),

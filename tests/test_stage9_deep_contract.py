@@ -16,12 +16,15 @@ from config.runtime import CurriculumManager
 from training.grpo import (
     EnvironmentIdentity,
     InfrastructureInvalid,
+    PolicyExecutionInvalid,
     OnlineRewardFunction,
+    apply_fault,
     compute_reward,
     compute_reward_breakdown,
     cluster_healthy,
     fault_established,
     resolve_environment_identity,
+    validate_resume_identity,
     validate_sft_checkpoint,
     validate_reward_pairing,
     verify_kubernetes_environment,
@@ -403,6 +406,189 @@ def test_paired_rollout_keeps_scenario_out_of_model_visible_alert(
     assert result["lifecycle"][-1]["phase"] == "POST_RESET_HEALTHY"
 
 
+def test_pre_rollout_invalidity_never_applies_fault_or_scores_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    async def reject_handle(*_args, **_kwargs):
+        raise AssertionError("invalid setup must not reach policy execution")
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", reject_handle)
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _identity: {"status": "CONTEXT_VERIFIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cluster_healthy",
+        lambda _identity, **_kwargs: (False, {"ready_deployments": 3}),
+    )
+    monkeypatch.setattr(
+        "training.grpo.apply_fault",
+        lambda _identity, _scenario_id: pytest.fail("fault applied after failed health gate"),
+    )
+    reward_fn = OnlineRewardFunction(
+        [_row()],
+        identity,
+        curriculum_seed=1,
+        dataset_sha256="b" * 64,
+    )
+
+    with pytest.raises(InfrastructureInvalid, match="pre_rollout_unhealthy"):
+        asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
+
+
+def test_fault_establishment_failure_always_resets_before_raising(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    calls = []
+
+    async def reject_handle(*_args, **_kwargs):
+        raise AssertionError("unestablished fault must not reach policy execution")
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", reject_handle)
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _identity: {"status": "CONTEXT_VERIFIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cluster_healthy",
+        lambda _identity, **_kwargs: (True, {}),
+    )
+    monkeypatch.setattr(
+        "training.grpo.apply_fault",
+        lambda _identity, scenario_id: calls.append(("apply", scenario_id)) or {},
+    )
+    def fail_established(_identity, scenario_id):
+        calls.append(("establish_failed", scenario_id))
+        raise InfrastructureInvalid("fault_not_objectively_established")
+    monkeypatch.setattr("training.grpo.fault_established", fail_established)
+    monkeypatch.setattr(
+        "training.grpo.reset_faults",
+        lambda _identity: calls.append(("reset", "")),
+    )
+    reward_fn = OnlineRewardFunction(
+        [_row()],
+        identity,
+        curriculum_seed=1,
+        dataset_sha256="b" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    with pytest.raises(InfrastructureInvalid, match="fault_not_objectively_established"):
+        asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
+    assert [call[0] for call in calls] == ["apply", "establish_failed", "reset"]
+
+
+def test_reset_failure_is_infrastructure_invalid_even_when_handler_succeeds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    async def fake_handle_incident(*_args, **_kwargs):
+        return {
+            "agent_claimed_resolved": False,
+            "comms": {}, "diagnosis": {}, "env_resolved": False,
+            "remediation": {"final": {}}, "triage": {},
+            "verification": {"env_resolved": False},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", fake_handle_incident)
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _identity: {"status": "CONTEXT_VERIFIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cluster_healthy",
+        lambda _identity, **_kwargs: (True, {}),
+    )
+    monkeypatch.setattr("training.grpo.apply_fault", lambda *_: {})
+    monkeypatch.setattr("training.grpo.fault_established", lambda *_: {})
+    def fail_reset(_identity):
+        raise InfrastructureInvalid("fault_reset_failed")
+    monkeypatch.setattr("training.grpo.reset_faults", fail_reset)
+    reward_fn = OnlineRewardFunction(
+        [_row()],
+        identity,
+        curriculum_seed=1,
+        dataset_sha256="b" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    with pytest.raises(InfrastructureInvalid, match="post_reset_unhealthy|fault_reset_failed"):
+        asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
+
+
+def test_harness_error_is_not_scored_as_policy_reward(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    async def fail_handle_incident(*_args, **_kwargs):
+        raise RuntimeError("coordinator unavailable")
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", fail_handle_incident)
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _identity: {"status": "CONTEXT_VERIFIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cluster_healthy",
+        lambda _identity, **_kwargs: (True, {}),
+    )
+    monkeypatch.setattr("training.grpo.apply_fault", lambda *_: {})
+    monkeypatch.setattr("training.grpo.fault_established", lambda *_: {})
+    monkeypatch.setattr("training.grpo.reset_faults", lambda *_: {})
+    reward_fn = OnlineRewardFunction(
+        [_row()],
+        identity,
+        curriculum_seed=1,
+        dataset_sha256="b" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    with pytest.raises(PolicyExecutionInvalid, match="rollout_harness_error"):
+        asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
+
+
+def test_apply_fault_rejects_path_traversal() -> None:
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    with pytest.raises(InfrastructureInvalid, match="fault_scenario_identity_invalid"):
+        apply_fault(identity, "../single_fault/sf-900")
+
+
+def test_resume_identity_rejects_incompatible_contract_seed_model_or_split() -> None:
+    previous = {field: field for field in (
+        "code_commit", "contracts", "curriculum_seed", "dataset",
+        "dependency_versions", "environment_identity", "hyperparameters",
+        "model_path", "sft_manifest",
+    )}
+    validate_resume_identity(previous, dict(previous))
+
+    for field in previous:
+        current = dict(previous)
+        current[field] = f"changed-{field}"
+        with pytest.raises(RuntimeError, match="incompatible_resume_identity"):
+            validate_resume_identity(previous, current)
+
+
 def test_corrupt_curriculum_state_fails_closed() -> None:
     manager = CurriculumManager(seed=3)
     state = manager.export_state()
@@ -430,12 +616,28 @@ def _write_sft_checkpoint(root: Path, *, adapter: bool = False) -> Path:
         (root / name).write_text(content, encoding="utf-8")
         hashes[name] = hashlib.sha256(content.encode()).hexdigest()
     manifest = {
+        "base_model": {
+            "architecture": "qwen2",
+            "name": "Qwen/Qwen2.5-7B-Instruct",
+            "revision": "synthetic",
+        },
         "checkpoint_kind": "merged_decoder",
         "file_hashes": hashes,
         "g8_evaluation": {"passed": True},
+        "lora": {
+            "bias": "none",
+            "lora_alpha": 32,
+            "lora_dropout": 0.05,
+            "r": 16,
+            "target_modules": [
+                "q_proj", "k_proj", "v_proj", "o_proj",
+                "gate_proj", "up_proj", "down_proj",
+            ],
+        },
         "schema_version": 1,
         "sft_corpus": {"sha256": "c" * 64},
         "stage": "G8",
+        "tokenizer": {"name": "Qwen/Qwen2.5-7B-Instruct", "revision": "synthetic"},
     }
     (root / "checkpoint_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return root

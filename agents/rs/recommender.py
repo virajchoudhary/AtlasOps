@@ -94,6 +94,10 @@ class CollaborativeSVDBaseline(BaseRecommender):
     The implementation uses seeded power iterations and deterministic Gram-Schmidt
     orthogonalization. It is intentionally compact and dependency-free; G5 will
     replace synthetic matrices only after legal source splits are assigned.
+
+    Cold-start limitation: an unseen incident is scored from the training
+    population mean projection, so it receives no incident-specific
+    personalization; an action absent from training scores zero.
     """
 
     def __init__(self, latent_dimensions: int = 4, seed: int = 1729, iterations: int = 30) -> None:

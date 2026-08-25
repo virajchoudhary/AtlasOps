@@ -7,7 +7,12 @@ import pytest
 
 from agents.rs import RUNBOOK_CATALOGUE
 from agents.rs.catalogue import validate_catalogue as validate_catalogue_module
-from agents.rs.features import context_from_diagnosis
+from agents.rs.features import (
+    build_content_query,
+    content_vector,
+    context_from_diagnosis,
+    cosine_similarity,
+)
 from agents.rs.integration import RecommendationPacketBuilder, RecommendationToggle
 from agents.rs.metrics import (
     coverage_at_k,
@@ -20,7 +25,6 @@ from agents.rs.recommender import (
     ContentBasedBaseline,
     HybridRecommender,
     PopularitySuccessBaseline,
-    build_content_query,
     rank_candidates,
 )
 from agents.rs.schemas import (
@@ -146,10 +150,27 @@ def test_context_profile_maps_coordinator_shapes_without_runtime_import():
         "labels": {"namespace": "default"},
     }
     diagnosis = {
-        "root_cause": "CPU stress caused paymentservice saturation.",
-        "evidence": ["Prometheus CPU above 90%", "active StressChaos"],
-        "recommended_fix": "stop stress chaos experiment",
-        "active_chaos_experiment": True,
+        "incident_id": "synthetic/profile",
+        "root_cause": {
+            "category": "resource",
+            "specific": "CPU stress caused paymentservice saturation.",
+            "evidence": [
+                {"tool": "promql_query", "finding": "CPU above 90%"},
+                {
+                    "tool": "kubectl_get",
+                    "resource": "stresschaos",
+                    "finding": "active StressChaos",
+                },
+            ],
+        },
+        "recommended_actions": [
+            {
+                "action": "stop_chaos",
+                "kind": "StressChaos",
+                "name": "paymentservice-cpu",
+                "namespace": "chaos-mesh",
+            }
+        ],
     }
     context = context_from_diagnosis(
         incident_key="synthetic/profile",
@@ -160,8 +181,39 @@ def test_context_profile_maps_coordinator_shapes_without_runtime_import():
     )
     assert context.service == "paymentservice"
     assert "cpu_saturation" in context.fault_types
+    assert "stresschaos" in context.diagnosis_text
+    assert "paymentservice-cpu" in context.diagnosis_text
     assert context.active_chaos_experiment is True
     assert context.approval_granted is False
+
+
+@pytest.mark.parametrize(
+    ("removed_key", "message"),
+    [
+        ("category", "diagnosis.root_cause.category"),
+        ("specific", "diagnosis.root_cause.specific"),
+        ("evidence", "diagnosis.root_cause.evidence"),
+    ],
+)
+def test_context_adapter_fails_closed_on_missing_canonical_diagnosis_fields(
+    removed_key,
+    message,
+):
+    diagnosis = {
+        "root_cause": {
+            "category": "resource",
+            "specific": "CPU stress caused saturation.",
+            "evidence": [{"tool": "promql_query", "finding": "CPU above 90%"}],
+        },
+        "recommended_actions": [{"action": "scale_up", "target": "paymentservice"}],
+    }
+    del diagnosis["root_cause"][removed_key]
+    with pytest.raises(SchemaError, match=message):
+        context_from_diagnosis(
+            incident_key="synthetic/malformed",
+            triage={"affected_services": ["paymentservice"]},
+            diagnosis=diagnosis,
+        )
 
 
 def test_ranking_is_deterministic_and_top_k_respects_limit():
@@ -231,6 +283,31 @@ def test_models_fail_closed_on_ineligible_fit_rows():
             model.fit(rows)
 
 
+def test_baselines_emit_distinct_deterministic_signals():
+    rows = [row for row in synthetic_rows() if row.eligible_for_fit]
+    model = hybrid_model()
+    model.fit(rows)
+    query = build_content_query(synthetic_context())
+    candidates = RUNBOOK_CATALOGUE
+    component_sets = [
+        model.content_model.score(query, candidates),
+        model.collaborative_model.score(query, candidates),
+        model.success_model.score(query, candidates),
+    ]
+    for scores in component_sets:
+        assert len(set(scores.values())) > 1
+    assert component_sets[0] != component_sets[1]
+    assert component_sets[0] != component_sets[2]
+    assert component_sets[1] != component_sets[2]
+
+    repeat_content = model.content_model.score(query, candidates)
+    repeat_collaborative = model.collaborative_model.score(query, candidates)
+    repeat_success = model.success_model.score(query, candidates)
+    assert repeat_content == component_sets[0]
+    assert repeat_collaborative == component_sets[1]
+    assert repeat_success == component_sets[2]
+
+
 def test_synthetic_baselines_learn_expected_preferences_and_hybrid_fits_legally():
     rows = [row for row in synthetic_rows() if row.eligible_for_fit]
     model = hybrid_model()
@@ -249,12 +326,71 @@ def test_synthetic_baselines_learn_expected_preferences_and_hybrid_fits_legally(
     assert ranked == sorted(ranked, key=lambda item: (-item[1], item[0]))
 
 
-def test_packet_filters_unapproved_or_budget_exhausted_mutations_and_missing_inputs():
+def test_content_feature_space_hashes_query_and_candidates_identically():
+    cpu_context = ContextFeatures(
+        incident_key="synthetic/content-cpu",
+        service="synthetic-service",
+        namespace="synthetic-namespace",
+        fault_types=("cpu_saturation",),
+        symptoms=("cpu", "saturation"),
+        severity="P2",
+        diagnosis_text="Sustained CPU saturation on the affected workload.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+    )
+    unrelated_context = ContextFeatures(
+        **{
+            **cpu_context.__dict__,
+            "fault_types": ("dns_failure",),
+            "symptoms": ("dns", "resolution"),
+            "diagnosis_text": "DNS resolution failures are causing timeouts.",
+        }
+    )
+    cpu_runbook = next(
+        item for item in RUNBOOK_CATALOGUE
+        if item.action_id == "scale_up_cpu_saturation"
+    )
+    dns_runbook = next(
+        item for item in RUNBOOK_CATALOGUE
+        if item.action_id == "stop_dns_chaos"
+    )
+    cpu_query = build_content_query(cpu_context)
+    unrelated_query = build_content_query(unrelated_context)
+    cpu_vector = content_vector(cpu_runbook)
+    unrelated_vector = content_vector(dns_runbook)
+
+    assert cosine_similarity(cpu_query, cpu_vector) > 0.0
+    assert cosine_similarity(unrelated_query, unrelated_vector) > 0.0
+    assert len(cpu_query) > 0 and len(cpu_vector) > 0
+    assert build_content_query(cpu_context) == cpu_query
+    assert content_vector(cpu_runbook) == cpu_vector
+    scores = ContentBasedBaseline().score(cpu_query, [cpu_runbook, dns_runbook])
+    assert scores["scale_up_cpu_saturation"] > scores[
+        "stop_dns_chaos"
+    ]
+    changed_scores = ContentBasedBaseline().score(
+        unrelated_query,
+        [cpu_runbook, dns_runbook],
+    )
+    assert changed_scores != scores
+    assert len(set(scores.values())) > 1
+    assert all("service" not in vector for vector in (cpu_query, unrelated_query))
+
+
+def test_preapproval_packet_ranks_mutations_and_preserves_execution_boundary():
     rows = [row for row in synthetic_rows() if row.eligible_for_fit]
     builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=5)
     builder.recommender.fit(rows)
     unapproved = builder.recommend_packet(synthetic_context(approval=False))
-    assert all(not candidate["mutating"] for candidate in unapproved["candidates"])
+    mutating = [candidate for candidate in unapproved["candidates"] if candidate["mutating"]]
+    assert mutating
+    assert unapproved["next_stage"] == "safety_approval_and_grpo_policy"
+    for candidate in mutating:
+        assert candidate["approval_required_before_execution"] is True
+        assert candidate["downstream_execution_blockers"] == ["approval_pending"]
+        assert candidate["execution_eligible_after_downstream_gates"] is False
+
     exhausted_context = ContextFeatures(
         **{
             **synthetic_context().__dict__,
@@ -262,14 +398,31 @@ def test_packet_filters_unapproved_or_budget_exhausted_mutations_and_missing_inp
         }
     )
     exhausted = builder.recommend_packet(exhausted_context)
-    assert all(not candidate["mutating"] for candidate in exhausted["candidates"])
+    exhausted_mutating = [
+        candidate for candidate in exhausted["candidates"] if candidate["mutating"]
+    ]
+    assert exhausted_mutating
+    for candidate in exhausted_mutating:
+        assert set(candidate["downstream_execution_blockers"]) == {
+            "approval_pending",
+            "mutation_budget_exhausted",
+        }
+        assert candidate["execution_eligible_after_downstream_gates"] is False
+
     approved = builder.recommend_packet(
         synthetic_context(),
         template_values={"chaos_resource_name": "synthetic-stress"},
     )
     assert approved["candidate_pool_size"] > 0
     assert len(approved["candidates"]) <= 5
-    assert all(candidate["approval_required_before_execution"] == candidate["mutating"] for candidate in approved["candidates"])
+    for candidate in approved["candidates"]:
+        assert candidate["approval_required_before_execution"] is candidate["mutating"]
+        expected_blockers = ["approval_pending"] if candidate["mutating"] else []
+        assert candidate["downstream_execution_blockers"] == expected_blockers
+        assert (
+            candidate["execution_eligible_after_downstream_gates"]
+            is not candidate["mutating"]
+        )
 
 
 def test_disabled_toggle_and_feedback_contract_are_explicit():

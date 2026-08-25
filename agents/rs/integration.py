@@ -112,6 +112,15 @@ class RecommendationPacketBuilder:
         for rank, (action_id, score) in enumerate(ranked, start=1):
             runbook = self.catalogue_by_id[action_id]
             penalty = penalties[action_id]
+            budget_exhausted = (
+                runbook.mutating
+                and int(getattr(context, "mutation_budget_remaining", 0)) <= 0
+            )
+            downstream_blockers = []
+            if runbook.mutating:
+                downstream_blockers.append("approval_pending")
+            if budget_exhausted:
+                downstream_blockers.append("mutation_budget_exhausted")
             components = {
                 name: model[action_id]
                 for name, model in component_models.items()
@@ -127,6 +136,8 @@ class RecommendationPacketBuilder:
                 "risk": runbook.risk,
                 "stage": runbook.stage,
                 "approval_required_before_execution": runbook.mutating,
+                "downstream_execution_blockers": downstream_blockers,
+                "execution_eligible_after_downstream_gates": not downstream_blockers,
                 "parameter_template": runbook.parameter_template,
             })
         base_packet["candidate_pool_size"] = len(safe_candidates)
@@ -181,16 +192,7 @@ class RecommendationPacketBuilder:
         reasons: list[str] = []
         if runbook.tool_name not in self.available_tools:
             reasons.append("tool_unavailable")
-        if runbook.mutating:
-            if not bool(getattr(context, "approval_granted", False)):
-                reasons.append("mutation_approval_missing")
-            if int(getattr(context, "mutation_budget_remaining", 0)) <= 0:
-                reasons.append("mutation_budget_exhausted")
-        required = self._required_inputs(runbook)
-        missing = [
-            name for name in required
-            if name not in template_values and not self._known_context_input(name, context)
-        ]
+        missing = self._missing_prerequisites(runbook, context, template_values)
         if missing:
             reasons.append("missing_prerequisite:" + ",".join(sorted(missing)))
         return reasons
@@ -213,19 +215,27 @@ class RecommendationPacketBuilder:
         return sorted(required)
 
     @staticmethod
-    def _known_context_input(name: str, context: Any) -> bool:
-        boolean_inputs = {
+    def _missing_prerequisites(
+        runbook: Runbook,
+        context: Any,
+        template_values: Mapping[str, Any],
+    ) -> list[str]:
+        """Return inputs that make a candidate impossible to instantiate now.
+
+        Template defaults are recommendations, not hard prerequisites; they do
+        not suppress ranking. Rendering remains downstream after safety/approval.
+        """
+        known = {
+            "service": str(getattr(context, "service", "")),
+            "namespace": str(getattr(context, "namespace", "")),
             "active_chaos_experiment": bool(getattr(context, "active_chaos_experiment", False)),
             "deployment_recently_changed": bool(getattr(context, "deployment_recently_changed", False)),
             "mitigation_in_progress": True,
-        }
-        derived_inputs = {
             "workload_kind": "deployment",
             "severity": str(getattr(context, "severity", "")),
             "recommendation_summary": "Top-K recommendation pending approval",
         }
-        if name in boolean_inputs:
-            return boolean_inputs[name]
-        if name in derived_inputs:
-            return bool(derived_inputs[name])
-        return False
+        return [
+            name for name in RecommendationPacketBuilder._required_inputs(runbook)
+            if name not in template_values and name not in known
+        ]

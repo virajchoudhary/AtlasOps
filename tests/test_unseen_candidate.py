@@ -92,6 +92,30 @@ def test_admission_rejects_hidden_answer_sentinel_in_alert():
         )
 
 
+def test_admission_rejects_hidden_identity_prose_in_alert():
+    candidate = _candidate()
+    candidate["model_visible_alert"]["commonAnnotations"] = {
+        "summary": "Investigate holdout-x-private"
+    }
+    with pytest.raises(ValueError, match="hidden identity prose"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
+def test_admission_rejects_manifest_labels_disagreeing_with_identity():
+    candidate = _candidate()
+    candidate["manifest_documents"][0]["metadata"]["labels"]["scenario"] = "other"
+    with pytest.raises(ValueError, match="labels disagree"):
+        candidate_contract.admit_unseen_candidate(
+            candidate,
+            catalog=contract.build_catalog(),
+            exposure_ledger=contract.load_exposure_ledger(),
+        )
+
+
 def test_admission_rejects_development_exposed_candidate(monkeypatch):
     monkeypatch.setattr(
         candidate_contract,

@@ -69,6 +69,73 @@ def _reject_forbidden_alert_fields(value: Any, path: str = "$") -> None:
             _reject_forbidden_alert_fields(item, f"{path}[{index}]")
 
 
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [str(key) for key in value] + [
+            item for nested in value.values() for item in _strings(nested)
+        ]
+    if isinstance(value, list):
+        return [item for nested in value for item in _strings(nested)]
+    return []
+
+
+def _reject_alert_identity_prose(
+    alert: dict[str, Any],
+    *,
+    scenario_id: str,
+    documents: list[dict[str, Any]],
+) -> None:
+    tier, stem = scenario_id.split("/", 1)
+    forbidden = {scenario_id.lower(), stem.lower()}
+    for document in documents:
+        metadata = document.get("metadata", {}) or {}
+        name = str(metadata.get("name", "")).strip().lower()
+        if name:
+            forbidden.add(name)
+
+    haystack = " ".join(_strings(alert)).lower()
+    leaks = sorted(token for token in forbidden if token and token in haystack)
+    if leaks:
+        raise ValueError(f"model-visible alert contains hidden identity prose: {leaks}")
+
+    hidden_phrases = (
+        "expected remediation",
+        "ground truth",
+        "root cause",
+        "scenario family",
+        "success predicate",
+        "verifier oracle",
+    )
+    phrase_leaks = sorted(phrase for phrase in hidden_phrases if phrase in haystack)
+    if phrase_leaks:
+        raise ValueError(f"model-visible alert contains hidden-truth prose: {phrase_leaks}")
+
+
+def _validate_candidate_documents(
+    documents: list[dict[str, Any]], *, scenario_id: str
+) -> None:
+    tier, stem = scenario_id.split("/", 1)
+    names: set[str] = set()
+    labelled = False
+    for document in documents:
+        metadata = document.get("metadata", {}) or {}
+        labels = metadata.get("labels", {}) or {}
+        name = str(metadata.get("name", "")).strip()
+        if not name:
+            raise ValueError("candidate manifest document lacks metadata.name")
+        if name in names:
+            raise ValueError(f"candidate has duplicate manifest resource name: {name}")
+        names.add(name)
+        if "scenario" in labels or "tier" in labels:
+            labelled = True
+            if str(labels.get("scenario")) != stem or str(labels.get("tier")) != tier:
+                raise ValueError("candidate manifest labels disagree with scenario_id")
+    if not labelled:
+        raise ValueError("candidate manifest documents lack scenario/tier identity labels")
+
+
 def _require_nonempty_strings(mapping: dict[str, Any], keys: set[str], label: str) -> None:
     missing = sorted(key for key in keys if not str(mapping.get(key, "")).strip())
     if missing:
@@ -167,7 +234,13 @@ def admit_unseen_candidate(
     _validate_predicates(scenario_id, predicates)
 
     documents = [doc for doc in candidate["manifest_documents"] if doc]
+    _validate_candidate_documents(documents, scenario_id=scenario_id)
     faults = _candidate_faults(candidate)
+    _reject_alert_identity_prose(
+        alert,
+        scenario_id=scenario_id,
+        documents=documents,
+    )
     coarse_faults = [_coarse_fault(fault) for fault in faults]
     fault_signatures = [sha256_object(item) for item in coarse_faults]
     semantic_alert = _semantic_alert(alert)

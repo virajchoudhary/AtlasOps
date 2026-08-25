@@ -598,6 +598,10 @@ class OnlineRewardFunction:
         record = {
             "episode": result["episode"],
             "hidden_metadata": row["hidden_metadata"],
+            "curriculum_state": {
+                "sha256": _curriculum.export_state()["state_sha256"],
+                **_curriculum.stats(),
+            },
             "lifecycle": result["lifecycle"],
             "model_visible_alert": result["model_visible_alert"],
             "policy_completion": completion,
@@ -1113,7 +1117,7 @@ def main() -> None:
         args=grpo_args,
         train_dataset=dataset,
         processing_class=tokenizer,
-        reward_funcs=[reward_fn],  # ← online RL against real GKE cluster
+        reward_funcs=[reward_fn],
     )
 
     log.info("Starting local free-first GRPO; each completion gets an independently reset paired environment.")

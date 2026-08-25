@@ -33,7 +33,7 @@ G4_PROTOCOL_PROFILE_VERSION = "g4-hardening-profile-v2"
 APPROVED_G4_MODEL = "qwen2.5:3b-instruct"
 APPROVED_G4_MODEL_DIGEST = "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
-APPROVED_TOOL_CONTRACT_SHA256 = "52ecf641cb915a3660af1fdf50c4065e388194eaedf0b788a6b0d7480378ecc6"
+APPROVED_TOOL_CONTRACT_SHA256 = "47b309395c327dd3e7ca93d3e5f2c44c93ba35cc7f58bd5ad34c9bc0f6061926"
 EXPECTED_METRICS_API_STATE = "required-present"
 
 METRICS_SERVER_CONTEXT = "kind-atlasops-local"
@@ -66,7 +66,9 @@ def file_sha256(path: Path) -> str:
 
 def _tool_contract_components() -> dict[str, Any]:
     from agents.coordinator import _TOOL_DESCRIPTIONS, _TOOL_PARAMETER_SCHEMAS
+    from agents.tools.argocd import response_contract_profile as argocd_response_contract
     from agents.tools import REGISTERED_TOOLS
+    from agents.tools.kubectl import response_contract_profile as kubectl_response_contract
 
     return {
         "registered_tools": sorted(REGISTERED_TOOLS),
@@ -87,6 +89,10 @@ def _tool_contract_components() -> dict[str, Any]:
         ),
         "tool_parameter_schemas": _TOOL_PARAMETER_SCHEMAS,
         "tool_descriptions": _TOOL_DESCRIPTIONS,
+        "response_contract_profiles": {
+            "argocd": argocd_response_contract(),
+            "kubectl_top": kubectl_response_contract(),
+        },
     }
 
 
@@ -210,7 +216,7 @@ APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = {
         "sha256": APPROVED_DIAGNOSIS_PROMPT_SHA256,
     },
     "role_tool_contract": {
-        "version": "g4-role-tool-contract-52ecf641cb91",
+        "version": "g4-role-tool-contract-47b309395c32",
         "sha256": APPROVED_TOOL_CONTRACT_SHA256,
     },
     "f1_contract": _f1_contract(),

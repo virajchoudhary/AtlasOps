@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import pathlib
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -228,6 +229,121 @@ def test_third_spent_attempt_for_same_protocol_marker_fails_closed():
             main_sha="test-sha",
             attempt_root=root,
         )
+
+
+def test_corrupt_attempt_accounting_fails_closed():
+    root = _attempt_root()
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    attempts_dir.mkdir(parents=True)
+    (attempts_dir / "corrupt.attempt.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="attempt accounting record is invalid"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-CORRUPT-ACCOUNTING",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(attempts_dir.glob("EXP-STAGE4-CORRUPT-ACCOUNTING.*"))
+    assert not (attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME).exists()
+
+
+def test_stale_reservation_lock_fails_closed_without_creating_attempt():
+    root = _attempt_root()
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    lock_path = attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME
+    attempts_dir.mkdir(parents=True)
+    lock_path.write_text("stale", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="reservation budget is locked"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-STALE-LOCK",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not any(attempts_dir.glob("EXP-STAGE4-STALE-LOCK.*"))
+    assert lock_path.exists()
+    lock_path.unlink()
+
+
+def test_reserved_attempts_occupy_budget_slots_and_release_frees_a_slot():
+    root = _attempt_root()
+    spent = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-A",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    consume_experiment_attempt(spent, attempt_root=root)
+
+    reserved = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-B",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    with pytest.raises(RuntimeError, match="protocol attempt limit reached"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-SLOT-C",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+
+    assert release_experiment_reservation(reserved, attempt_root=root) is True
+    replacement = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-D",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert replacement["state"] == ATTEMPT_STATE_RESERVED
+
+
+def test_concurrent_reservations_cannot_exceed_the_last_budget_slot():
+    root = _attempt_root()
+    first = reserve_experiment_attempt(
+        "EXP-STAGE4-RACE-SPENT",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    consume_experiment_attempt(first, attempt_root=root)
+
+    def reserve_slot(experiment_id):
+        try:
+            return reserve_experiment_attempt(
+                experiment_id,
+                selected_model=APPROVED_G4_MODEL,
+                main_sha="test-sha",
+                attempt_root=root,
+            )
+        except RuntimeError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                reserve_slot,
+                ("EXP-STAGE4-RACE-A", "EXP-STAGE4-RACE-B"),
+            )
+        )
+
+    successes = [result for result in results if isinstance(result, dict)]
+    failures = [result for result in results if isinstance(result, RuntimeError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert any(
+        marker in str(failures[0])
+        for marker in (
+            "protocol attempt limit reached",
+            "reservation budget is locked",
+        )
+    )
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    assert len(list(attempts_dir.glob("*.attempt.json"))) == 2
+    assert not (attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME).exists()
 
 
 def _valid_incident() -> dict:

@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -139,8 +140,14 @@ BASELINE_READINESS_TIMEOUT_SECONDS = 60
 ATTEMPT_STATE_RESERVED = "RESERVED"
 ATTEMPT_STATE_CONSUMED = "CONSUMED"
 ATTEMPT_STATE_COMPLETED = "COMPLETED"
+ATTEMPT_STATES = {
+    ATTEMPT_STATE_RESERVED,
+    ATTEMPT_STATE_CONSUMED,
+    ATTEMPT_STATE_COMPLETED,
+}
 G4_PLATFORM_HARDENING_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
 MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
+ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
 
 
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
@@ -236,7 +243,7 @@ def _read_json_file(path: str) -> dict[str, Any] | None:
         return None
 
 
-def _spent_attempts_for_protocol_fingerprint(
+def _claimed_attempts_for_protocol_fingerprint(
     protocol_fingerprint_value: str, attempt_root: str | None = None
 ) -> int:
     attempts_dir = os.path.join(
@@ -245,18 +252,50 @@ def _spent_attempts_for_protocol_fingerprint(
     if not os.path.isdir(attempts_dir):
         return 0
 
-    spent_states = {ATTEMPT_STATE_CONSUMED, ATTEMPT_STATE_COMPLETED}
-    return sum(
-        (
-            attempt.get("state") in spent_states
-            and attempt.get("protocol_fingerprint") == protocol_fingerprint_value
-        )
-        for attempt in (
-            _read_json_file(os.path.join(attempts_dir, name))
-            for name in os.listdir(attempts_dir)
-            if name.endswith(".attempt.json")
-        )
+    claimed_attempts = 0
+    for name in os.listdir(attempts_dir):
+        if not name.endswith(".attempt.json"):
+            continue
+        path = os.path.join(attempts_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                attempt = json.load(stream)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"Stage 4 attempt accounting record is invalid: {path}"
+            ) from exc
+        if not isinstance(attempt, dict):
+            raise RuntimeError(f"Stage 4 attempt accounting record is invalid: {path}")
+        if attempt.get("protocol_fingerprint") != protocol_fingerprint_value:
+            continue
+        if attempt.get("state") not in ATTEMPT_STATES:
+            raise RuntimeError(
+                f"Stage 4 attempt has an invalid state for accounting: {path}"
+            )
+        # An unused reservation occupies a slot until explicitly released.
+        claimed_attempts += 1
+    return claimed_attempts
+
+
+@contextmanager
+def _reservation_budget_lock(attempt_root: str | None = None):
+    attempts_dir = os.path.join(
+        _experiment_evidence_dir("", attempt_root), ".attempts"
     )
+    os.makedirs(attempts_dir, exist_ok=True)
+    lock_path = os.path.join(attempts_dir, ATTEMPT_BUDGET_LOCK_FILENAME)
+    try:
+        lock_descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError(
+            "Stage 4 reservation budget is locked by another process; "
+            f"refusing ambiguous accounting: {lock_path}"
+        ) from exc
+    try:
+        yield
+    finally:
+        os.close(lock_descriptor)
+        os.unlink(lock_path)
 
 
 def reserve_experiment_attempt(
@@ -275,33 +314,34 @@ def reserve_experiment_attempt(
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
     profile = _observe_protocol_profile(selected_model)
     profile_fingerprint = protocol_fingerprint(profile)
-    spent_attempts = _spent_attempts_for_protocol_fingerprint(
-        profile_fingerprint, attempt_root
-    )
-    if spent_attempts >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
-        raise RuntimeError(
-            "protocol attempt limit reached for "
-            f"profile {profile_fingerprint}: "
-            f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
+    with _reservation_budget_lock(attempt_root):
+        spent_attempts = _claimed_attempts_for_protocol_fingerprint(
+            profile_fingerprint, attempt_root
         )
-    if os.path.exists(marker_path):
-        existing = _read_json_file(marker_path) or {}
-        raise RuntimeError(
-            f"Stage 4 attempt already exists: {marker_path} "
-            f"(state={existing.get('state', 'UNKNOWN')})"
-        )
+        if spent_attempts >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
+            raise RuntimeError(
+                "protocol attempt limit reached for "
+                f"profile {profile_fingerprint}: "
+                f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
+            )
+        if os.path.exists(marker_path):
+            existing = _read_json_file(marker_path) or {}
+            raise RuntimeError(
+                f"Stage 4 attempt already exists: {marker_path} "
+                f"(state={existing.get('state', 'UNKNOWN')})"
+            )
 
-    reservation = {
-        "experiment_id": experiment_id,
-        "state": ATTEMPT_STATE_RESERVED,
-        "reserved_at": datetime.now(timezone.utc).isoformat(),
-        "reservation_token": uuid.uuid4().hex,
-        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
-        "protocol_profile": profile,
-        "protocol_fingerprint": profile_fingerprint,
-        "main_sha": main_sha,
-    }
-    _write_json_atomic(marker_path, reservation)
+        reservation = {
+            "experiment_id": experiment_id,
+            "state": ATTEMPT_STATE_RESERVED,
+            "reserved_at": datetime.now(timezone.utc).isoformat(),
+            "reservation_token": uuid.uuid4().hex,
+            "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+            "protocol_profile": profile,
+            "protocol_fingerprint": profile_fingerprint,
+            "main_sha": main_sha,
+        }
+        _write_json_atomic(marker_path, reservation)
     persisted = _read_json_file(marker_path) or {}
     if persisted.get("reservation_token") != reservation["reservation_token"]:
         raise RuntimeError(f"Concurrent Stage 4 reservation detected: {marker_path}")

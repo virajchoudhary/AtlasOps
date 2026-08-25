@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
+
+import agents.tools.argocd as argocd
+import agents.tools.kubectl as kubectl
 
 import config.g4_protocol as protocol
 import scripts.run_stage4_golden_incident as runner
@@ -35,6 +39,67 @@ def test_approved_profile_pins_exact_model_and_digest():
 def test_declared_prompt_and_tool_hashes_match_current_contract():
     assert diagnosis_prompt_profile()["sha256"] == APPROVED_DIAGNOSIS_PROMPT_SHA256
     assert tool_contract_profile()["sha256"] == APPROVED_TOOL_CONTRACT_SHA256
+
+
+def test_changed_response_taxonomies_change_the_tool_contract():
+    base = tool_contract_profile()
+    argocd_actual = argocd.response_contract_profile()
+    kubectl_actual = kubectl.response_contract_profile()
+
+    with patch.object(
+        argocd,
+        "response_contract_profile",
+        return_value={**argocd_actual, "version": "drift"},
+    ):
+        argocd_drift = tool_contract_profile()
+    with patch.object(
+        kubectl,
+        "response_contract_profile",
+        return_value={**kubectl_actual, "version": "drift"},
+    ):
+        kubectl_drift = tool_contract_profile()
+
+    assert argocd_drift["sha256"] != base["sha256"]
+    assert kubectl_drift["sha256"] != base["sha256"]
+
+
+def test_declared_argocd_response_contract_matches_runtime_taxonomy():
+    profile = argocd.response_contract_profile()
+    timeout = argocd._classify_api_failure(requests.exceptions.Timeout())
+    assert timeout == {"success": False, **profile["transport_errors"]["timeout"]}
+
+    connection = argocd._classify_api_failure(requests.exceptions.ConnectionError())
+    assert connection == {
+        "success": False,
+        **profile["transport_errors"]["connection_failed"],
+    }
+
+    for status, error_class in profile["http_status_classes"].items():
+        response = Mock()
+        response.status_code = int(status)
+        failure = requests.HTTPError("hidden body")
+        failure.response = response
+        result = argocd._classify_api_failure(failure)
+        assert result == {
+            "success": False,
+            "error": f"argocd_{error_class} (HTTP {status})",
+            "error_class": error_class,
+            "status_code": int(status),
+        }
+
+
+def test_declared_kubectl_top_response_contract_matches_runtime_taxonomy():
+    profile = kubectl.response_contract_profile()
+    failing = {
+        "success": True,
+        "stderr": "Error: Metrics API Not Available",
+        "returncode": 1,
+    }
+    result = kubectl._classify_metrics_api_result(failing)
+    assert result["success"] is False
+    assert result["stderr"] == failing["stderr"]
+    assert result["error"] == profile["unavailable_result"]["error"]
+    assert result["error_class"] == profile["unavailable_result"]["error_class"]
 
 
 def test_file_hashes_are_independent_of_windows_or_posix_newlines(tmp_path):

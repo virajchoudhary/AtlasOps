@@ -6,6 +6,13 @@ import subprocess
 from typing import Any
 
 
+METRICS_API_UNAVAILABLE_SIGNATURE = "metrics api not available"
+METRICS_API_UNAVAILABLE_ERROR_CLASS = "metrics_api_unavailable"
+METRICS_API_UNAVAILABLE_ERROR = (
+    "metrics-server Metrics API is not available in this cluster"
+)
+
+
 def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
     ctx = os.getenv("KUBECONFIG_CONTEXT", "").strip()
     if ctx and len(cmd) > 1 and cmd[0] == "kubectl" and "--context" not in cmd:
@@ -66,14 +73,31 @@ def _classify_metrics_api_result(result: dict[str, Any]) -> dict[str, Any]:
     from transient command failures.
     """
     err = str((result or {}).get("stderr") or "").casefold()
-    if "metrics api not available" in err:
+    if METRICS_API_UNAVAILABLE_SIGNATURE in err:
         return {
             **result,
             "success": False,
-            "error_class": "metrics_api_unavailable",
-            "error": "metrics-server Metrics API is not available in this cluster",
+            "error_class": METRICS_API_UNAVAILABLE_ERROR_CLASS,
+            "error": METRICS_API_UNAVAILABLE_ERROR,
         }
     return result
+
+
+def response_contract_profile() -> dict[str, Any]:
+    """Declare the model-visible Metrics API dependency contract."""
+    return {
+        "version": "g4-kubectl-top-response-v1",
+        "tools": ["kubectl_top_nodes", "kubectl_top_pods"],
+        "unavailable_signature": METRICS_API_UNAVAILABLE_SIGNATURE,
+        "signature_matching": "casefold-substring",
+        "unavailable_result": {
+            "success": False,
+            "error": METRICS_API_UNAVAILABLE_ERROR,
+            "error_class": METRICS_API_UNAVAILABLE_ERROR_CLASS,
+        },
+        "preserves_raw_stderr": True,
+        "unrelated_failures_passthrough": True,
+    }
 
 
 def kubectl_top_pods(namespace: str = "-A") -> dict[str, Any]:

@@ -148,10 +148,13 @@ evidence schemas gain additive provenance/marker fields. Future reservations
 must exactly match a statically declared protocol profile and record its
 human-readable components plus canonical SHA-256 fingerprint. The profile pins
 the qualified 3B model/digest, exact Diagnosis prompt hash, model-visible role
-tool contract hash, F1 contract, SF002 fault contract, and required-present
-pinned Metrics API state. Reservation fails closed after two spent attempts for
-the same complete fingerprint; model, prompt/tool, or Metrics API drift cannot
-consume that budget. Existing unmarked 005/006/007/008 attempts remain under
+tool contract hash (including schemas, ACLs/descriptions, and changed Argo CD /
+kubectl response taxonomies), F1 contract, SF002 fault contract, and
+required-present pinned Metrics API state. Reservation fails closed after two
+claimed attempts for the same complete fingerprint; model, prompt/tool,
+Metrics API drift, malformed accounting records, concurrent check-and-reserve
+races, or stale reservation locks cannot consume an unaccounted budget slot.
+Existing unmarked 005/006/007/008 attempts remain under
 their original protocol versions and are not retroactively charged to this new
 profile. Launching any next attempt remains outside this Goal and requires a
 separate authorization decision.

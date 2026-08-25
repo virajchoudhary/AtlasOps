@@ -17,7 +17,7 @@ class _ArgoCDAuthenticationError(RuntimeError):
     """Raised when Argo CD authentication fails without exposing request data."""
 
 
-_STATUS_ERROR_CLASSES = {
+_ARGOCD_STATUS_ERROR_CLASSES = {
     400: "invalid_request",
     401: "authentication_failed",
     403: "authorization_failed",
@@ -25,6 +25,40 @@ _STATUS_ERROR_CLASSES = {
     409: "conflict",
     422: "unprocessable",
 }
+
+
+def response_contract_profile() -> dict[str, Any]:
+    """Declare the model-visible failure vocabulary added by G4 hardening."""
+    return {
+        "version": "g4-argocd-response-v1",
+        "http_status_classes": dict(sorted(_ARGOCD_STATUS_ERROR_CLASSES.items())),
+        "unknown_http_status_class_template": "http_{status}_error",
+        "http_error_template": "argocd_{error_class} (HTTP {status})",
+        "transport_errors": {
+            "timeout": {
+                "error": "argocd_error: request timeout",
+                "error_class": "timeout",
+            },
+            "connection_failed": {
+                "error": "argocd_error: connection failed",
+                "error_class": "connection_failed",
+            },
+        },
+        "authentication_error": {
+            "error": "argocd_authentication_error: authentication request failed",
+            "error_class": "authentication_failed",
+        },
+        "request_error": {
+            "error": "argocd_request_error: request failed",
+            "error_class": "request_failed",
+        },
+        "invalid_revision": {
+            "error": "argocd_invalid_revision: revision must be a non-negative integer",
+            "error_class": "invalid_revision",
+        },
+        "rollback_success_template": "Rollback of {app} to revision {revision} initiated.",
+        "response_body_echoed": False,
+    }
 
 
 def _classify_api_failure(exc: Exception) -> dict[str, Any]:
@@ -45,7 +79,7 @@ def _classify_api_failure(exc: Exception) -> dict[str, Any]:
     status = getattr(response, "status_code", None)
     if status is not None:
         status = int(status)
-        error_class = _STATUS_ERROR_CLASSES.get(status, f"http_{status}_error")
+        error_class = _ARGOCD_STATUS_ERROR_CLASSES.get(status, f"http_{status}_error")
         return {
             "success": False,
             "error": f"argocd_{error_class} (HTTP {status})",

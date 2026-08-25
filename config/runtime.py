@@ -96,6 +96,41 @@ SCENARIOS_BY_TIER = {
 }
 TRAINING_CURRICULUM_SUBSET_COUNT = sum(len(items) for items in SCENARIOS_BY_TIER.values())
 
+
+def validate_scenario_splits(
+    training_by_tier: dict[str, list[str]],
+    final_test_by_tier: dict[str, list[str]],
+) -> None:
+    """Fail closed before a final-test identity can enter the RL curriculum."""
+    training = {
+        scenario
+        for scenarios in training_by_tier.values()
+        for scenario in scenarios
+    }
+    final_test = {
+        scenario
+        for scenarios in final_test_by_tier.values()
+        for scenario in scenarios
+    }
+    overlap = sorted(training & final_test)
+    if overlap:
+        raise ValueError(f"training_scenario_leak:{overlap}")
+
+# Stage 5 owns this map. Keep it empty until the split freeze explicitly names
+# unseen final-test scenarios; importing this module fails if a later split
+# accidentally places one of those identities in the GRPO curriculum.
+FINAL_TEST_SCENARIOS_BY_TIER: dict[str, list[str]] = {}
+FINAL_TEST_SCENARIOS = frozenset(
+    scenario
+    for tier_scenarios in FINAL_TEST_SCENARIOS_BY_TIER.values()
+    for scenario in tier_scenarios
+)
+TRAINING_SCENARIOS_BY_TIER = {
+    tier: [sid for sid in scenarios if sid not in FINAL_TEST_SCENARIOS]
+    for tier, scenarios in SCENARIOS_BY_TIER.items()
+}
+validate_scenario_splits(TRAINING_SCENARIOS_BY_TIER, FINAL_TEST_SCENARIOS_BY_TIER)
+
 TIER_SAMPLING_WEIGHTS = {
     "single_fault": 0.20,
     "cascade": 0.30,
@@ -129,6 +164,20 @@ def bounded_speed_score(seconds: float, tier: str) -> float:
     midpoint = SPEED_MIDPOINTS.get(tier, 240.0)
     slope = 40.0
     return max(0.0, min(1.0, 1.0 / (1.0 + math.exp((seconds - midpoint) / slope))))
+
+
+def _used_silence(episode: dict[str, Any]) -> bool:
+    """Detect actual silence execution, not incidental alert or prose text."""
+    remediation = episode.get("remediation", {})
+    if not isinstance(remediation, dict):
+        return False
+    actions = remediation.get("final", {}).get("executed_actions", [])
+    if isinstance(actions, list):
+        return any(
+            isinstance(action, dict) and action.get("tool") == "alertmanager_silence"
+            for action in actions
+        )
+    return False
 
 
 def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
@@ -174,9 +223,19 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
     penalties = {
         "command_spam":          0.10 if turns > 40 else 0.0,
         "false_resolution":      0.25 if (agent_claimed_resolved and not env_resolved) else 0.0,
-        "unsafe_shortcut":       0.20 if efficiency < 0.3 else 0.0,
-        "hallucinated_evidence": 0.20 if (reasoning < 0.25 and correctness < 0.5) else 0.0,
-        "over_silence":          0.10 if ("silence" in json.dumps(episode).lower() and not resolved) else 0.0,
+        # Judge-derived penalties require judge evidence. In verifier-only RL,
+        # an absent judge must not look like hallucinated or unsafe behaviour.
+        "unsafe_shortcut":       (
+            0.20 if bool(judge) and efficiency < 0.3 else 0.0
+        ),
+        "hallucinated_evidence": (
+            0.20
+            if bool(judge) and (reasoning < 0.25 and correctness < 0.5)
+            else 0.0
+        ),
+        "over_silence": (
+            0.10 if _used_silence(episode) and not resolved else 0.0
+        ),
         # Phase ordering: too few turns without resolution = investigation was skipped
         "phase_skip":            0.20 if (turns < 4 and not resolved) else 0.0,
         # Lazy investigation: suspiciously fast resolution on hard tiers without
@@ -241,7 +300,7 @@ class CurriculumManager:
     MASTERY_DECAY = 0.85
     MIN_ATTEMPTS_FOR_MASTERY = 3
 
-    def __init__(self) -> None:
+    def __init__(self, seed: int | None = None) -> None:
         # scenario_id → list of (episode_idx, reward) tuples
         self._history: dict[str, list[tuple[int, float]]] = {}
         # scenario_id → index into SPACED_REP_INTERVALS
@@ -251,6 +310,36 @@ class CurriculumManager:
         # last 2 scenario IDs (recency penalty)
         self._recent: list[str] = []
         self._episode_count = 0
+        self._rng = random.Random(seed)
+
+    def export_state(self) -> dict[str, Any]:
+        """Return a JSON-serializable snapshot sufficient to resume sampling."""
+        return {
+            "seed_state": list(self._rng.getstate()),
+            "history": {
+                scenario_id: list(entries)
+                for scenario_id, entries in self._history.items()
+            },
+            "graduated": dict(self._graduated),
+            "next_resurface": dict(self._next_resurface),
+            "recent": list(self._recent),
+            "episode_count": self._episode_count,
+        }
+
+    def restore_state(self, state: dict[str, Any]) -> None:
+        """Restore a snapshot produced by :meth:`export_state`."""
+        rng_state = state["seed_state"]
+        self._rng.setstate((int(rng_state[0]), tuple(int(x) for x in rng_state[1]), None))
+        self._history = {
+            str(scenario_id): [(int(index), float(reward)) for index, reward in entries]
+            for scenario_id, entries in state["history"].items()
+        }
+        self._graduated = {str(k): int(v) for k, v in state["graduated"].items()}
+        self._next_resurface = {
+            str(k): int(v) for k, v in state["next_resurface"].items()
+        }
+        self._recent = [str(scenario_id) for scenario_id in state["recent"]]
+        self._episode_count = int(state["episode_count"])
 
     def record(self, scenario_id: str, resolved: bool, reward: float) -> None:
         """Call after every episode to update mastery and spaced-rep state."""
@@ -294,7 +383,7 @@ class CurriculumManager:
         weights = [max(s, 0.01) for s, _, _ in top]
         total_w = sum(weights)
         probs = [w / total_w for w in weights]
-        chosen_idx = random.choices(range(len(top)), weights=probs)[0]
+        chosen_idx = self._rng.choices(range(len(top)), weights=probs)[0]
         _, scenario_id, tier = top[chosen_idx]
         return scenario_id, tier
 
@@ -369,6 +458,7 @@ class StepRewardTracker:
 
     _MUTATING = frozenset({
         "argocd_rollback", "kubectl_rollout", "kubectl_scale", "alertmanager_silence",
+        "chaos_stop_experiment",
     })
     _INVESTIGATIVE = frozenset({
         "promql_query", "promql_query_range", "jaeger_search", "jaeger_get_trace",

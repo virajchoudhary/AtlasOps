@@ -192,6 +192,113 @@ def _parse_tool_arguments(fn_name: str, raw: Any) -> tuple[dict[str, Any] | None
     return parsed, None
 
 
+def _parse_policy_remediation_completion(completion_text: str) -> dict[str, Any]:
+    """Parse one TRL policy completion into an OpenAI-compatible assistant turn.
+
+    The Stage 9 wire contract is either a native assistant message with exactly
+    one tool call or a JSON object containing exactly that call. Parsing is
+    deliberately strict: prose and multi-action plans are invalid so a failed
+    parse can never be silently replaced by another model's action.
+    """
+    raw_text = completion_text.strip()
+    if not raw_text:
+        return {"role": "assistant", "content": "", "tool_calls": []}
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        calls = parsed.get("tool_calls")
+        if isinstance(calls, list):
+            normalized = []
+            for index, call in enumerate(calls):
+                fn = call.get("function") if isinstance(call, dict) else {}
+                name = (fn or {}).get("name")
+                arguments = (fn or {}).get("arguments", "{}")
+                normalized.append({
+                    "id": str((call or {}).get("id") or f"policy_call_{index}"),
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": (
+                            arguments
+                            if isinstance(arguments, str)
+                            else json.dumps(arguments or {})
+                        ),
+                    },
+                })
+            return {"role": "assistant", "content": "", "tool_calls": normalized}
+
+        function = parsed.get("function")
+        name = parsed.get("name") or (function or {}).get("name")
+        arguments = parsed.get("arguments")
+        if arguments is None and isinstance(function, dict):
+            arguments = function.get("arguments")
+        if name is not None:
+            return {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "policy_call_0",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": (
+                            arguments
+                            if isinstance(arguments, str)
+                            else json.dumps(arguments or {})
+                        ),
+                    },
+                }],
+            }
+
+    # TRL chat templates may emit the same shapes inside text content.
+    fallback = _normalize_assistant_tool_calls({"content": raw_text})
+    return {"role": "assistant", "content": raw_text, "tool_calls": fallback}
+
+
+def _invalid_policy_remediation_record(
+    completion_text: str,
+    reason: str,
+) -> dict[str, Any]:
+    trajectory_record = {
+        "role": "remediation",
+        "turn": 0,
+        "kind": "model_turn",
+        "turn_kind": "policy_completion",
+        "assistant_text": completion_text[:_MODEL_TURN_TEXT_CAP],
+        "assistant_text_truncated": len(completion_text) > _MODEL_TURN_TEXT_CAP,
+        "native_tool_calls": [],
+        "parsed_tool_calls": 0,
+        "finish_reason": "policy_completion_invalid",
+        "executed_tool_calls": [],
+        "conclusion_present": False,
+        "retry": {"triggered": False, "reason": None},
+        "termination_reason": f"policy_completion_{reason}",
+        "validation_state": "invalid_policy_completion",
+        "execution_state": "not_executed",
+        "tool_outcomes": [],
+    }
+    conclusion = {
+        "mode": "policy_rollout",
+        "outcome": "unresolved",
+        "status": "unresolved",
+        "policy_completion_valid": False,
+        "policy_completion_error": reason,
+        "proposed_actions": [],
+        "executed_actions": [],
+        "actions_taken": [],
+    }
+    return {
+        "role": "remediation",
+        "trajectory": [trajectory_record],
+        "final": conclusion,
+        "step_reward_summary": StepRewardTracker().summary(),
+    }
+
+
 # Maximum persisted characters of raw assistant text per model-turn record.
 # Deterministic cap; truncation is always flagged explicitly on the record.
 _MODEL_TURN_TEXT_CAP = 2000
@@ -366,9 +473,25 @@ def datetime_now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10) -> dict[str, Any]:
+async def call_agent(
+    role: str,
+    user_input: dict[str, Any],
+    max_turns: int = 10,
+    *,
+    policy_completion: str | None = None,
+) -> dict[str, Any]:
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
     require_audit_log()
+    if policy_completion is not None and role != "remediation":
+        raise ValueError("policy_completion is supported only for remediation")
+    policy_message: dict[str, Any] | None = None
+    if policy_completion is not None:
+        policy_message = _parse_policy_remediation_completion(policy_completion)
+        if len(policy_message.get("tool_calls") or []) != 1:
+            return _invalid_policy_remediation_record(
+                policy_completion,
+                "expected_exactly_one_tool_call",
+            )
     system_prompt = load_prompt(role)
     incident_id = str(user_input.get("incident_id", "unknown"))
     messages = [
@@ -390,26 +513,32 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     async with httpx.AsyncClient(timeout=120, headers=headers) as client:
         for turn in range(max_turns):
             turn_executed_names: list[str] = []
-            tool_choice = (
-                "required"
-                if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
-                else "auto"
-            )
-            r = await post_with_retry(
-                client,
-                f"{VLLM_BASE}/chat/completions",
-                {
-                    "model": MODEL_NAME,
-                    "messages": messages,
-                    "temperature": 0.2,
-                    "tools": _tool_schemas_for_role(role),
-                    "tool_choice": tool_choice,
-                },
-                context=f"{role}/turn-{turn}",
-            )
-            r.raise_for_status()
-            choice = r.json()["choices"][0]
-            msg = choice["message"]
+            if policy_message is not None:
+                if turn != 0:
+                    break
+                choice = {"finish_reason": "policy_completion"}
+                msg = json.loads(json.dumps(policy_message))
+            else:
+                tool_choice = (
+                    "required"
+                    if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
+                    else "auto"
+                )
+                r = await post_with_retry(
+                    client,
+                    f"{VLLM_BASE}/chat/completions",
+                    {
+                        "model": MODEL_NAME,
+                        "messages": messages,
+                        "temperature": 0.2,
+                        "tools": _tool_schemas_for_role(role),
+                        "tool_choice": tool_choice,
+                    },
+                    context=f"{role}/turn-{turn}",
+                )
+                r.raise_for_status()
+                choice = r.json()["choices"][0]
+                msg = choice["message"]
             # Snapshot the RAW provider payload before adapter normalization so
             # the forensic record preserves exactly what the model returned.
             raw_msg_snapshot = json.loads(json.dumps(msg)) if isinstance(msg, dict) else {}
@@ -433,9 +562,18 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     parsed_count=_parsed_call_count,
                     executed_names=turn_executed_names,
                 )
+                if policy_message is not None:
+                    _remediation_turn_record["turn_kind"] = "policy_completion"
                 trajectory.append(_remediation_turn_record)
 
             if not msg.get("tool_calls"):
+                if policy_message is not None:
+                    # Parser already rejects this case; retain the fail-closed
+                    # branch for direct callers of the internal loop.
+                    return _invalid_policy_remediation_record(
+                        policy_completion or "",
+                        "expected_exactly_one_tool_call",
+                    )
                 # Generic Remediation Tool Execution Retry:
                 # If remediation model returned conclusion text with NO actual tool calls
                 # and no mutating tool has executed yet, grant one structured retry.
@@ -747,6 +885,52 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     "tool_call_id": tc["id"],
                     "content": json.dumps(tool_output)[:8000],
                 })
+
+            if policy_message is not None:
+                proposed_tools: list[str] = [
+                    call["function"]["name"] for call in policy_message["tool_calls"]
+                ]
+                plan_call = policy_message["tool_calls"][0]
+                try:
+                    plan_args = json.loads(plan_call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    plan_args = {"__invalid_json__": True}
+                identity_match = (
+                    len(_executed_actions) == 1
+                    and _executed_actions[0].get("tool") == plan_call["function"]["name"]
+                    and _executed_actions[0].get("args") == plan_args
+                )
+                outcome = (
+                    "resolved"
+                    if _mutating_tool_executed
+                    else "escalated" if any(a.get("success") for a in _executed_actions) else "unresolved"
+                )
+                conclusion = {
+                    "incident_id": incident_id,
+                    "mode": "policy_rollout",
+                    "outcome": outcome,
+                    "status": outcome,
+                    "policy_completion_valid": True,
+                    "policy_action_identity_match": identity_match,
+                    "proposed_actions": proposed_tools,
+                    "executed_actions": list(_executed_actions),
+                    "actions_taken": list(_executed_actions),
+                }
+                if _remediation_turn_record is not None:
+                    _remediation_turn_record["conclusion_present"] = True
+                    _remediation_turn_record["validation_state"] = "final_conclusion"
+                trajectory.append({
+                    "role": role,
+                    "turn": 0,
+                    "content": "",
+                    "note": "execution_ground_policy_conclusion",
+                })
+                return {
+                    "role": role,
+                    "trajectory": trajectory,
+                    "final": conclusion,
+                    "step_reward_summary": step_tracker.summary(),
+                }
 
     log.warning("%s exceeded %d turns", role, max_turns)
     # Persist the final (turn-limit) model response before the forced
@@ -1099,6 +1283,7 @@ async def handle_incident(
     alert: dict[str, Any],
     incident_id: str | None = None,
     scenario_id: str | None = None,
+    remediation_policy_completion: str | None = None,
 ) -> dict[str, Any]:
     """Run the full agent chain for one incident.
 
@@ -1223,9 +1408,17 @@ async def handle_incident(
                 )
                 thought_emit("remediation", "thinking", f"Approval granted by {approver}; executing plan.")
                 remediation_input["approval"] = approval_result
-                remediation = await call_agent("remediation", remediation_input)
+                remediation = await call_agent(
+                    "remediation",
+                    remediation_input,
+                    policy_completion=remediation_policy_completion,
+                )
         else:
-            remediation = await call_agent("remediation", remediation_input)
+            remediation = await call_agent(
+                "remediation",
+                remediation_input,
+                policy_completion=remediation_policy_completion,
+            )
         # Remediation execution is complete. Now execute objective environment verification.
         remediation_final = remediation.get("final", {})
         scenario_id = str(scenario_id or alert.get("scenario_id") or "")

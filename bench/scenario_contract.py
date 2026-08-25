@@ -618,6 +618,7 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "bench/scenario_contract.py",
         "bench/runner.py",
         "bench/unseen_candidate.py",
+        "bench/g6_evidence.py",
         "bench/g5/exposure_ledger.json",
         "config/runtime.py",
         "inference.py",

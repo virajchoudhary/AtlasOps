@@ -33,6 +33,7 @@ from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from bench.scenario_contract import allowed_scenario_ids, canonical_json, sha256_file, sha256_object
+from bench.g6_evidence import append_raw_record, build_raw_record, build_run_manifest, compute_g6_metrics
 from config.runtime import bounded_speed_score, evaluate_reward_contract
 
 # Backwards-compatible alias — tests import this name from bench.runner
@@ -278,6 +279,13 @@ def read_run_manifest(path: Path) -> dict:
         raise RuntimeError(f"cannot read immutable run manifest: {exc}") from exc
 
 
+def validate_resume_manifest(stored: dict, *, scenario_ids: list[str], config_hash: str) -> None:
+    if stored.get("scenario_ids") != scenario_ids:
+        raise RuntimeError("resume scenario sequence differs from immutable run manifest")
+    if stored.get("config_sha256") != config_hash:
+        raise RuntimeError("resume configuration differs from immutable run manifest")
+
+
 def finalize_raw_run(
     out_dir: Path,
     summary: dict,
@@ -421,6 +429,7 @@ async def run_scenario(scenario_id: str) -> dict:
         "severity": triage.get("severity", "unknown"),
         "total_turns": total_turns,
         "judge": judge_score,
+        "incident": incident,
         "alert_was_synthetic_timeout": alert_was_synthetic_timeout,
         "approval": incident.get("approval"),
         "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
@@ -550,6 +559,7 @@ def compute_summary(
                 if failure_reasons(r)
             },
         },
+        "metrics": compute_g6_metrics(results),
         "tool_metrics": tool_totals,
         "root_cause_metrics": {
             "available_episodes": len(root_available),
@@ -619,6 +629,8 @@ def write_comparison_table(summary: dict) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Model path or HF ID")
+    parser.add_argument("--model-digest", default="", help="Immutable model/provider digest")
+    parser.add_argument("--seed", default="", help="Predeclared inference seed where supported")
     parser.add_argument("--tag", default="", help="Run label (e.g. grpo_v3, baseline_v2)")
     parser.add_argument(
         "--split-role",
@@ -646,15 +658,21 @@ async def main() -> None:
             raise RuntimeError("dynamic adversarial scenarios cannot be mixed into a frozen split")
 
     os.environ["AGENT_MODEL"] = args.model
+    if args.seed:
+        os.environ["ATLASOPS_BENCHMARK_SEED"] = args.seed
     tag = args.tag or f"run-{int(time.time())}"
     run_id = f"{tag}-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     out_dir = Path(args.output) if args.output else (RESULTS_DIR / run_id)
 
     if args.split_role == "validation":
+        if not args.model_digest:
+            raise RuntimeError("validation benchmark requires --model-digest for reproducibility")
         selected_scenarios = list(allowed_scenario_ids("validation"))
     elif args.split_role == "final_test":
         if not args.allow_final_test:
             raise RuntimeError("final-test membership is gated; pass --allow-final-test explicitly")
+        if not args.model_digest:
+            raise RuntimeError("final-test benchmark requires --model-digest for provenance")
         selected_scenarios = list(allowed_scenario_ids("final_test"))
     else:
         selected_scenarios = []
@@ -695,26 +713,39 @@ async def main() -> None:
     manifest_path = out_dir / "run_manifest.json"
     if manifest_path.exists():
         stored_manifest = read_run_manifest(manifest_path)
-        if stored_manifest.get("scenario_ids") != scenarios:
-            raise RuntimeError("resume scenario sequence differs from immutable run manifest")
-        if stored_manifest.get("config_sha256") != config_hash:
-            raise RuntimeError("resume configuration differs from immutable run manifest")
-    else:
-        write_run_manifest(
-            manifest_path,
-            {
-                "config_provenance": config_provenance,
-                "config_sha256": config_hash,
-                "model": args.model,
-                "result_schema_version": RESULT_SCHEMA_VERSION,
-                "run_id": run_id,
-                "scenario_count": len(scenarios),
-                "scenario_ids": scenarios,
-                "split_role": args.split_role,
-                "started_at": datetime.now(timezone.utc).isoformat(),
-                "tag": tag,
-            },
+        validate_resume_manifest(
+            stored_manifest,
+            scenario_ids=scenarios,
+            config_hash=config_hash,
         )
+    else:
+        from bench.scenario_contract import build_catalog, load_active_split
+
+        if args.split_role == "exploration":
+            frozen_split_sha256 = "EXPLORATION_NO_FROZEN_SPLIT"
+        else:
+            frozen_split_sha256 = sha256_object(load_active_split())
+        immutable_manifest = build_run_manifest(
+            run_id=run_id,
+            tag=tag,
+            model_provider=os.getenv("BACKEND", "undeclared"),
+            model_name=args.model,
+            model_digest=args.model_digest or "UNDECLARED",
+            seed=args.seed,
+            split_role=args.split_role,
+            scenario_ids=scenarios,
+            catalog_sha256=build_catalog()["catalog_sha256"],
+            frozen_split_sha256=frozen_split_sha256,
+            benchmark_version=RESULT_SCHEMA_VERSION,
+            arguments=vars(args),
+        )
+        immutable_manifest.update({
+            "config_provenance": config_provenance,
+            "config_sha256": config_hash,
+            "scenario_count": len(scenarios),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+        write_run_manifest(manifest_path, immutable_manifest)
 
     completed_ids = [str(r.get("scenario_id", "")) for r in results]
     if completed_ids != scenarios[: len(completed_ids)]:
@@ -727,6 +758,14 @@ async def main() -> None:
         r = await run_scenario(s)
         results.append(r)
         append_episode(out_dir, r)
+        append_raw_record(
+            out_dir,
+            build_raw_record(
+                r,
+                run_manifest=read_run_manifest(manifest_path),
+                episode_index=i,
+            ),
+        )
 
     summary = compute_summary(results, tag, args.model, {
         **config_provenance,

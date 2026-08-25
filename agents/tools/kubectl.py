@@ -56,6 +56,26 @@ def kubectl_logs(pod: str, namespace: str = "default", tail: int = 200,
     return _run(cmd, timeout=20)
 
 
+def _classify_metrics_api_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Deterministically classify a failed `kubectl top` call.
+
+    The Metrics API (metrics-server) is an optional cluster dependency. When it
+    is absent, `kubectl top` fails with a stable stderr signature; surface that
+    as a machine-differentiable ``metrics_api_unavailable`` class instead of raw
+    stderr so agents and evidence can distinguish "tool dependency missing"
+    from transient command failures.
+    """
+    err = str((result or {}).get("stderr") or "")
+    if "Metrics API not available" in err or "metrics API not available" in err.lower():
+        return {
+            **result,
+            "success": False,
+            "error_class": "metrics_api_unavailable",
+            "error": "metrics-server Metrics API is not available in this cluster",
+        }
+    return result
+
+
 def kubectl_top_pods(namespace: str = "-A") -> dict[str, Any]:
     """Get CPU/memory usage for pods."""
     cmd = ["kubectl", "top", "pods"]
@@ -63,12 +83,12 @@ def kubectl_top_pods(namespace: str = "-A") -> dict[str, Any]:
         cmd.append("-A")
     else:
         cmd.extend(["-n", namespace])
-    return _run(cmd)
+    return _classify_metrics_api_result(_run(cmd))
 
 
 def kubectl_top_nodes() -> dict[str, Any]:
     """Get CPU/memory usage for nodes."""
-    return _run(["kubectl", "top", "nodes"])
+    return _classify_metrics_api_result(_run(["kubectl", "top", "nodes"]))
 
 
 def kubectl_rollout(action: str, resource: str, namespace: str = "default") -> dict[str, Any]:

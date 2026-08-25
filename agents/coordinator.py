@@ -33,6 +33,7 @@ from agents.tool_policy import (
     ROLE_ALLOWED_TOOLS,
 )
 from agents.tools import TOOL_REGISTRY
+from agents.grounding import build_grounding_reports
 from agents.tools.alertmanager import alertmanager_list_alerts
 from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES
 from config.runtime import StepRewardTracker
@@ -1305,6 +1306,9 @@ async def handle_incident(
             except Exception as e:
                 log.warning("closure notify failed: %s", e)
 
+        grounding_reports = build_grounding_reports(
+            {"triage": triage, "diagnosis": diagnosis, "remediation": remediation}
+        )
         full_record = {
             "incident_id": incident_id,
             "alert": alert,
@@ -1317,6 +1321,7 @@ async def handle_incident(
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
             "comms": comms,
+            "grounding_validation": grounding_reports,
         }
         TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
         (TRAJECTORIES_DIR / f"{incident_id}.json").write_text(

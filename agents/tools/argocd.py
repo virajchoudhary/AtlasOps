@@ -17,6 +17,44 @@ class _ArgoCDAuthenticationError(RuntimeError):
     """Raised when Argo CD authentication fails without exposing request data."""
 
 
+_STATUS_ERROR_CLASSES = {
+    400: "invalid_request",
+    401: "authentication_failed",
+    403: "authorization_failed",
+    404: "not_found",
+    409: "conflict",
+    422: "unprocessable",
+}
+
+
+def _classify_api_failure(exc: Exception) -> dict[str, Any]:
+    """Map an Argo CD API failure to a deterministic, secret-free error class.
+
+    The raw model-facing contract stays a flat ``{success, error}`` dict; the
+    ``error_class``/``status_code`` fields make failures machine-differentiable
+    (missing application vs bad revision vs transport/auth). Response bodies
+    are intentionally NOT echoed back — they may contain implementation or
+    operational data, and the class alone is what agents need to choose a next
+    action.
+    """
+    if isinstance(exc, requests.exceptions.Timeout):
+        return {"success": False, "error": "argocd_error: request timeout", "error_class": "timeout"}
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return {"success": False, "error": "argocd_error: connection failed", "error_class": "connection_failed"}
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if status is not None:
+        status = int(status)
+        error_class = _STATUS_ERROR_CLASSES.get(status, f"http_{status}_error")
+        return {
+            "success": False,
+            "error": f"argocd_{error_class} (HTTP {status})",
+            "error_class": error_class,
+            "status_code": status,
+        }
+    return {"success": False, "error": "argocd_request_error: request failed", "error_class": "request_failed"}
+
+
 @dataclass(frozen=True)
 class _ArgoCDConfig:
     base_url: str
@@ -133,8 +171,12 @@ def _api(method: str, path: str, **kwargs) -> dict[str, Any]:
         return {"success": True, "data": response.json()}
     except (_ArgoCDConfigurationError, _ArgoCDAuthenticationError) as exc:
         return {"success": False, "error": str(exc)}
+    except requests.HTTPError as exc:
+        return _classify_api_failure(exc)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+        return _classify_api_failure(exc)
     except Exception:
-        return {"success": False, "error": "argocd_request_error: request failed"}
+        return {"success": False, "error": "argocd_request_error: request failed", "error_class": "request_failed"}
 
 
 def argocd_list_apps() -> dict[str, Any]:

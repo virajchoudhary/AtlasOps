@@ -83,6 +83,28 @@ def test_exposure_ledger_is_deterministic_and_fails_closed():
         contract.validate_exposure_ledger(tampered, catalog)
 
 
+def test_exposure_ledger_excludes_derived_artifacts_and_detects_drift():
+    ledger = contract.build_exposure_ledger()
+    paths = {surface["path"] for surface in ledger["surfaces"]}
+
+    assert not (paths & contract._DERIVED_CONTRACT_ARTIFACT_PATHS)
+    assert any(exclusion["paths"] for exclusion in ledger["exclusions"])
+    contract.validate_exposure_ledger(ledger, contract.build_catalog(), require_reproducible=True)
+
+    stale = dict(ledger)
+    stale.pop("ledger_sha256")
+    stale["exclusions"] = [dict(ledger["exclusions"][0])]
+    stale["exclusions"][0]["reason"] = "stale reason"
+    stale["ledger_sha256"] = contract.sha256_object(stale)
+    catalog = contract.build_catalog()
+    with pytest.raises(ValueError, match="exposure ledger drift"):
+        contract.validate_exposure_ledger(
+            stale,
+            catalog,
+            require_reproducible=True,
+        )
+
+
 def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
     catalog = contract.build_catalog()
     ledger = contract.load_exposure_ledger()

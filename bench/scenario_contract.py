@@ -30,7 +30,7 @@ EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 
 CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v3"
 SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v2"
-EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v2"
+EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v3"
 SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v2"
 SPLIT_GENERATOR_VERSION = "bench.scenario_contract/v2"
 FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
@@ -51,6 +51,12 @@ _MODEL_VISIBLE_HISTORICAL_PATHS = {
     "static/index.html",
     "training/generate_trajectories_fast.py",
     "training/grpo.py",
+}
+_DERIVED_CONTRACT_ARTIFACT_PATHS = {
+    "bench/g5/exposure_ledger.json",
+    "bench/g5/scenario_catalog.json",
+    "bench/g5/split.proposed.json",
+    "bench/g5/split.frozen.json",
 }
 ROLE_IDS_KEY = {
     "sft": "train",
@@ -193,7 +199,6 @@ def _classifications_for_path(path: str) -> list[str]:
         posix_path.startswith("bench/chaos_manifests/")
         or posix_path == "agents/verifier.py"
         or posix_path == "scripts/run_stage4_golden_incident.py"
-        or posix_path in {"bench/g5/scenario_catalog.json", "bench/g5/split.proposed.json"}
     ):
         return ["HIDDEN_ORACLE_DEVELOPER_EXPOSURE"]
     return ["DEVELOPER_TUNING_EXPOSURE"]
@@ -215,6 +220,8 @@ def build_exposure_ledger(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     surfaces: list[dict[str, Any]] = []
     for relative in paths:
         if relative.replace("\\", "/") == EXPOSURE_LEDGER_PATH.as_posix():
+            continue
+        if relative.replace("\\", "/") in _DERIVED_CONTRACT_ARTIFACT_PATHS:
             continue
         absolute = repo_root / relative
         try:
@@ -304,6 +311,16 @@ def build_exposure_ledger(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
             "SAFE_UNUSED_SCENARIO": "Canonical scenarios with no observed development exposure.",
             "RS_NOT_IMPLEMENTED": "No RS interaction generation/fitting path exists.",
         },
+        "exclusions": [
+            {
+                "paths": sorted(_DERIVED_CONTRACT_ARTIFACT_PATHS),
+                "reason": (
+                    "Derived contract artifacts are excluded to prevent self-referential "
+                    "ledger drift; every exposure they restate is already captured from "
+                    "independent manifests, runtime code, tests, docs, evidence, and subsets."
+                ),
+            }
+        ],
         "schema_version": EXPOSURE_SCHEMA_VERSION,
         "summary": {
             "by_classification": {key: sorted(value) for key, value in by_classification.items()},
@@ -706,7 +723,12 @@ def catalog_entries(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return entries
 
 
-def validate_exposure_ledger(ledger: dict[str, Any], catalog: dict[str, Any]) -> None:
+def validate_exposure_ledger(
+    ledger: dict[str, Any],
+    catalog: dict[str, Any],
+    *,
+    require_reproducible: bool = False,
+) -> None:
     if ledger.get("schema_version") != EXPOSURE_SCHEMA_VERSION:
         raise ValueError("unsupported exposure ledger schema")
     expected_hash = ledger.get("ledger_sha256")
@@ -726,6 +748,10 @@ def validate_exposure_ledger(ledger: dict[str, Any], catalog: dict[str, Any]) ->
         raise ValueError("exposure ledger does not account for every catalogue scenario")
     if development.intersection(eligible):
         raise ValueError("scenario is both development-exposed and final-test-eligible")
+    if require_reproducible:
+        rebuilt = build_exposure_ledger()
+        if canonical_json(rebuilt) != canonical_json(ledger):
+            raise ValueError("exposure ledger drift detected; regenerate from current sources")
 
 
 def load_exposure_ledger(repo_root: Path = REPO_ROOT, *, verify: bool = True) -> dict[str, Any]:
@@ -740,7 +766,7 @@ def load_exposure_ledger(repo_root: Path = REPO_ROOT, *, verify: bool = True) ->
         raise RuntimeError(f"cannot read exposure ledger: {exc}") from exc
     if verify:
         catalog = build_catalog(repo_root)
-        validate_exposure_ledger(ledger, catalog)
+        validate_exposure_ledger(ledger, catalog, require_reproducible=True)
     return ledger
 
 
@@ -1170,6 +1196,7 @@ def _verify_command(args: argparse.Namespace) -> int:
     rebuilt = build_catalog()
     if canonical_json(rebuilt) != canonical_json(catalog):
         raise ValueError("catalog does not reproduce byte-for-byte from current sources")
+    load_exposure_ledger(verify=True)
     target = json.loads(Path(args.path).read_text(encoding="utf-8"))
     validate_split(target, catalog, require_ready=target.get("status") in {"PROPOSED_READY", "FROZEN"})
     print(f"verified: {args.path}")

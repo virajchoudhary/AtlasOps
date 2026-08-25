@@ -18,30 +18,73 @@ def test_catalog_is_complete_and_deterministic():
 
     for entry in first["entries"]:
         assert entry["manifest_sha256"]
+        assert entry["fault_signature"]
+        assert entry["fault_signatures"]
+        assert entry["scenario_family_id"]
+        assert entry["alert_semantic_hash"]
+        assert entry["manifest_semantic_hash"]
+        assert entry["target_signature"]
         assert entry["success_predicates"]["scenario_id"] == entry["scenario_id"]
         assert entry["faults"], entry["scenario_id"]
         assert "scenario_id" not in entry["model_visible_alert"]
 
 
-def test_exposure_ledger_fails_closed_for_current_sft_defaults():
+def test_family_signatures_group_same_causal_fault():
     catalog = contract.build_catalog()
-    ledger = contract.development_exposure_ledger()
-    exposed = contract.development_exposed_ids(catalog, ledger)
+    relations = contract.scenario_relationships(catalog)
 
+    assert len(relations) == 8
+    redis_relation = next(
+        relation
+        for relation in relations
+        if {"cascade/cs-002", "single_fault/sf-005"}.issubset(set(relation["scenario_ids"]))
+    )
+    assert redis_relation["reason"] == "fault_signature"
+    assert "multi_fault/mf-002" in redis_relation["scenario_ids"]
+
+
+def test_exposure_ledger_is_deterministic_and_fails_closed():
+    catalog = contract.build_catalog()
+    first = contract.build_exposure_ledger()
+    second = contract.build_exposure_ledger()
+
+    assert first == second
+    assert contract.canonical_json(first) == contract.canonical_json(second)
+    assert first["schema_version"] == contract.EXPOSURE_SCHEMA_VERSION
+    assert len(first["surfaces"]) > 20
+    assert "agents/coordinator.py" in {
+        surface["path"] for surface in first["surfaces"]
+    }
+
+    exposed = contract.development_exposed_ids(catalog, first)
     assert len(exposed) == 28
     assert "single_fault/sf-002" in exposed
-    assert len(ledger["categories"]["sft_generation_defaults"]["scenario_ids"]) == 28
+    assert first["summary"]["eligible_final_test_candidates"] == []
+
+    contract.validate_exposure_ledger(first, catalog)
+    tampered = dict(first)
+    tampered["summary"] = dict(first["summary"])
+    tampered["summary"]["development_exposed_scenario_ids"] = sorted(exposed - {"single_fault/sf-001"})
+    with pytest.raises(ValueError, match="hash mismatch"):
+        contract.validate_exposure_ledger(tampered, catalog)
 
 
 def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
     catalog = contract.build_catalog()
-    first = contract.build_proposed_split(catalog, seed="test-seed")
-    second = contract.build_proposed_split(catalog, seed="test-seed")
-    different = contract.build_proposed_split(catalog, seed="other-seed")
+    ledger = contract.load_exposure_ledger()
+    first = contract.build_proposed_split(catalog, seed="test-seed", exposure_ledger=ledger)
+    second = contract.build_proposed_split(catalog, seed="test-seed", exposure_ledger=ledger)
+    different = contract.build_proposed_split(catalog, seed="other-seed", exposure_ledger=ledger)
 
     assert first == second
     assert first != different
     assert first["status"] == "PROPOSED_BLOCKED_NO_FINAL_TEST"
+    assert first["exposure_ledger_sha256"] == ledger["ledger_sha256"]
+    assert first["family_relation_count"] == 8
+    assert any(
+        blocker["code"] == "FAMILY_RELATIONS_CROSS_ASSIGNED_SPLITS"
+        for blocker in first["blockers"]
+    )
     assert first["activation"] == {"active": False, "authorized_at": None, "frozen": False}
     assert first["splits"]["final_test"] == []
     assert first["ready_for_freeze"] is False
@@ -56,7 +99,12 @@ def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
         contract.development_exposed_ids(catalog)
     )
 
-    contract.validate_split(first, catalog, require_ready=False)
+    contract.validate_split(
+        first,
+        catalog,
+        require_ready=False,
+        exposure_ledger=contract.load_exposure_ledger(),
+    )
     catalog_path = tmp_path / "catalog.json"
     candidate_path = tmp_path / "candidate.json"
     frozen_path = tmp_path / "frozen.json"
@@ -74,28 +122,56 @@ def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
 
 
 def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
+    def entry(scenario_id: str, signature: str):
+        return {
+            "alert_semantic_hash": f"alert-{scenario_id}",
+            "fault_signatures": [signature],
+            "scenario_id": scenario_id,
+            "source_incident_id": None,
+        }
+
     catalog = {
         "catalog_sha256": "test-digest",
-        "entries": [{"scenario_id": scenario_id} for scenario_id in ("train-a", "heldout-b")],
+        "entries": [
+            entry("train-a", "signature-train"),
+            entry("heldout-b", "signature-heldout"),
+            entry("safe-c", "signature-safe"),
+            entry("related-d", "signature-train"),
+        ],
     }
     candidate = {
         "activation": {"active": False, "authorized_at": None, "frozen": False},
         "blockers": [],
         "catalog_sha256": "test-digest",
+        "exposure_ledger_sha256": "ledger-digest",
         "ready_for_freeze": True,
         "schema_version": contract.SPLIT_SCHEMA_VERSION,
         "seed": "unit",
         "split_fractions": {"train": 0.5, "validation": 0.0, "final_test": 0.5},
         "splits": {
-            "train": ["train-a"],
-            "validation": [],
-            "final_test": ["heldout-b"],
+            "train": ["train-a", "related-d"],
+            "validation": ["heldout-b"],
+            "final_test": ["safe-c"],
             "ineligible_final_test_development_exposed": ["train-a"],
         },
         "status": "PROPOSED_READY",
         "usage_policy": {},
     }
-    monkeypatch.setattr(contract, "development_exposed_ids", lambda _catalog: {"train-a"})
+    synthetic_ledger = {
+        "schema_version": contract.EXPOSURE_SCHEMA_VERSION,
+        "summary": {
+            "development_exposed_scenario_ids": ["train-a"],
+            "eligible_final_test_candidates": ["heldout-b", "safe-c", "related-d"],
+        },
+    }
+    unsigned = {key: value for key, value in synthetic_ledger.items()}
+    synthetic_ledger["ledger_sha256"] = contract.sha256_object(unsigned)
+    candidate["exposure_ledger_sha256"] = synthetic_ledger["ledger_sha256"]
+    monkeypatch.setattr(
+        contract,
+        "load_exposure_ledger",
+        lambda repo_root=contract.REPO_ROOT, verify=True: synthetic_ledger,
+    )
     catalog_path = tmp_path / "catalog.json"
     candidate_path = tmp_path / "candidate.json"
     frozen_path = tmp_path / "split.frozen.json"
@@ -113,8 +189,10 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
     assert json.loads(frozen_path.read_text(encoding="utf-8")) == frozen
 
     leaked = dict(candidate)
+    leaked["exposure_ledger_sha256"] = candidate["exposure_ledger_sha256"]
     leaked["splits"] = dict(candidate["splits"])
     leaked["splits"]["train"] = ["heldout-b"]
+    leaked["splits"]["validation"] = ["safe-c", "related-d"]
     leaked["splits"]["final_test"] = ["train-a"]
     leaked["splits"]["ineligible_final_test_development_exposed"] = ["train-a"]
     leaked_path = tmp_path / "leaked.json"
@@ -128,6 +206,23 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
             catalog_path=catalog_path,
         )
     assert not conflict_path.exists()
+    related = dict(candidate)
+    related["splits"] = dict(candidate["splits"])
+    related["splits"]["train"] = ["train-a"]
+    related["splits"]["validation"] = ["heldout-b", "safe-c"]
+    related["splits"]["final_test"] = ["related-d"]
+    related["splits"]["ineligible_final_test_development_exposed"] = ["train-a"]
+    related_path = tmp_path / "related.json"
+    related_conflict_path = tmp_path / "related-frozen.json"
+    contract.write_json_atomically(related_path, related)
+    with pytest.raises(ValueError, match="family leakage"):
+        contract.freeze_split(
+            related_path,
+            related_conflict_path,
+            authorized_at="2026-08-26T00:00:00Z",
+            catalog_path=catalog_path,
+        )
+    assert not related_conflict_path.exists()
     with pytest.raises(FileExistsError):
         contract.freeze_split(
             candidate_path,

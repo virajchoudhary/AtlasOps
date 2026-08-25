@@ -13,6 +13,8 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -24,10 +26,30 @@ CONTRACT_DIR = REPO_ROOT / "bench" / "g5"
 CATALOG_PATH = CONTRACT_DIR / "scenario_catalog.json"
 SPLIT_PROPOSED_PATH = CONTRACT_DIR / "split.proposed.json"
 SPLIT_FROZEN_PATH = CONTRACT_DIR / "split.frozen.json"
+EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 
-CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v1"
+CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v2"
 SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v1"
+EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v1"
 FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
+
+_BARE_ID_PREFIXES = {"sf": "single_fault", "cs": "cascade", "mf": "multi_fault"}
+_NAMED_REPLAYS = (
+    "hist-aws-s3-2017", "hist-azure-dns-2019", "hist-cloudflare-2019",
+    "hist-datadog-2023", "hist-discord-2022", "hist-facebook-bgp-2021",
+    "hist-fastly-2021", "hist-github-2018", "hist-knight-capital-2012",
+    "hist-slack-2022",
+)
+_MODEL_VISIBLE_HISTORICAL_PATHS = {
+    "app.py",
+    "bench/quick_eval.py",
+    "bench/runner.py",
+    "dashboard.py",
+    "inference.py",
+    "static/index.html",
+    "training/generate_trajectories_fast.py",
+    "training/grpo.py",
+}
 ROLE_IDS_KEY = {
     "sft": "train",
     "grpo": "train",
@@ -77,6 +99,186 @@ def write_json_atomically(path: Path, value: Any) -> None:
 
 def _normalise(value: Any) -> Any:
     return json.loads(json.dumps(value, sort_keys=True))
+
+
+def _extract_scenario_ids(content: str) -> list[str]:
+    alternatives = [
+        r"single_fault/sf-\d{3}",
+        r"cascade/cs-\d{3}",
+        r"multi_fault/mf-\d{3}",
+        "|".join(re.escape(f"named_replays/{item}") for item in _NAMED_REPLAYS),
+        r"\b(sf|cs|mf)-(\d{3})\b",
+        "|".join(re.escape(item) for item in _NAMED_REPLAYS),
+        r"\bSF-?002\b",
+        r"\bsf-001\.\.008\b",
+        r"\bcs-001\.\.005\b",
+        r"\bmf-001\.\.005\b",
+        r"named_replays/",
+    ]
+    pattern = re.compile("|".join(alternatives), re.IGNORECASE)
+    found: set[str] = set()
+    for match in pattern.finditer(content):
+        token = match.group(0).lower()
+        bare_match = re.fullmatch(r"(sf|cs|mf)-(\d{3})", token)
+        if bare_match:
+            found.add(f"{_BARE_ID_PREFIXES[bare_match.group(1)]}/{token}")
+        elif token == "sf002":
+            found.add("single_fault/sf-002")
+        elif token == "sf-001..008":
+            found.update(f"single_fault/sf-{index:03d}" for index in range(1, 9))
+        elif token == "cs-001..005":
+            found.update(f"cascade/cs-{index:03d}" for index in range(1, 6))
+        elif token == "mf-001..005":
+            found.update(f"multi_fault/mf-{index:03d}" for index in range(1, 6))
+        elif token == "named_replays/":
+            found.update(f"named_replays/{item}" for item in _NAMED_REPLAYS)
+        elif token in _NAMED_REPLAYS:
+            found.add(f"named_replays/{token}")
+        else:
+            found.add(token)
+    return sorted(found)
+
+
+def _classifications_for_path(path: str) -> list[str]:
+    posix_path = path.replace("\\", "/")
+    if posix_path.startswith("artifacts/evidence/stage4/") or posix_path.startswith(
+        "docs/postmortems/"
+    ):
+        return [
+            "MODEL_VISIBLE_HISTORICAL_EXPOSURE",
+            "HIDDEN_ORACLE_DEVELOPER_EXPOSURE",
+        ]
+    if posix_path in _MODEL_VISIBLE_HISTORICAL_PATHS:
+        return [
+            "MODEL_VISIBLE_HISTORICAL_EXPOSURE",
+            "DEVELOPER_TUNING_EXPOSURE",
+        ]
+    if (
+        posix_path.startswith("bench/chaos_manifests/")
+        or posix_path == "agents/verifier.py"
+        or posix_path == "scripts/run_stage4_golden_incident.py"
+        or posix_path in {"bench/g5/scenario_catalog.json", "bench/g5/split.proposed.json"}
+    ):
+        return ["HIDDEN_ORACLE_DEVELOPER_EXPOSURE"]
+    return ["DEVELOPER_TUNING_EXPOSURE"]
+
+
+def build_exposure_ledger(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    """Scan tracked files and classify every canonical-scenario reference."""
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    paths = sorted(
+        item.decode("utf-8").replace("\\", "/")
+        for item in completed.stdout.split(b"\0")
+        if item
+    )
+    surfaces: list[dict[str, Any]] = []
+    for relative in paths:
+        if relative.replace("\\", "/") == EXPOSURE_LEDGER_PATH.as_posix():
+            continue
+        absolute = repo_root / relative
+        try:
+            content = absolute.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        scenario_ids = _extract_scenario_ids(content)
+        if not scenario_ids:
+            continue
+        surfaces.append(
+            {
+                "path": relative,
+                "scenario_ids": scenario_ids,
+                "sha256": sha256_file(absolute),
+                "surface_classifications": _classifications_for_path(relative),
+            }
+        )
+
+    surfaces.extend(
+        [
+            {
+                "note": (
+                    "handle_incident(scenario_id=...) is an execution-only channel; "
+                    "the benchmark and training callers pass it outside the model alert."
+                ),
+                "path": "agents/coordinator.py",
+                "scenario_ids": [],
+                "surface_classifications": ["EXECUTION_ONLY_HIDDEN_CHANNEL"],
+            },
+            {
+                "note": "No recommender-system interaction generation or fitting path exists.",
+                "path": "<repository>",
+                "scenario_ids": [],
+                "surface_classifications": ["RS_NOT_IMPLEMENTED"],
+            },
+        ]
+    )
+    surfaces.sort(key=lambda item: (str(item["path"]), canonical_json(item)))
+
+    by_classification: dict[str, set[str]] = {name: set() for name in (
+        "MODEL_VISIBLE_HISTORICAL_EXPOSURE",
+        "DEVELOPER_TUNING_EXPOSURE",
+        "HIDDEN_ORACLE_DEVELOPER_EXPOSURE",
+        "EXECUTION_ONLY_HIDDEN_CHANNEL",
+        "SAFE_UNUSED_SCENARIO",
+        "RS_NOT_IMPLEMENTED",
+    )}
+    development_exposed: set[str] = set()
+    all_ids = {f"single_fault/sf-{index:03d}" for index in range(1, 9)}
+    all_ids.update(f"cascade/cs-{index:03d}" for index in range(1, 6))
+    all_ids.update(f"multi_fault/mf-{index:03d}" for index in range(1, 6))
+    all_ids.update(f"named_replays/{item}" for item in _NAMED_REPLAYS)
+    for surface in surfaces:
+        ids = set(surface["scenario_ids"])
+        canonical_ids = ids.intersection(all_ids)
+        classifications = surface["surface_classifications"]
+        for classification in classifications:
+            by_classification.setdefault(classification, set()).update(canonical_ids)
+        if {"MODEL_VISIBLE_HISTORICAL_EXPOSURE", "DEVELOPER_TUNING_EXPOSURE", "HIDDEN_ORACLE_DEVELOPER_EXPOSURE"}.intersection(classifications):
+            development_exposed.update(canonical_ids)
+
+    safe_unused = sorted(all_ids - development_exposed)
+    by_classification["DEVELOPER_TUNING_EXPOSURE"] = sorted(by_classification["DEVELOPER_TUNING_EXPOSURE"])
+    by_classification["EXECUTION_ONLY_HIDDEN_CHANNEL"] = []
+    by_classification["HIDDEN_ORACLE_DEVELOPER_EXPOSURE"] = sorted(by_classification["HIDDEN_ORACLE_DEVELOPER_EXPOSURE"])
+    by_classification["MODEL_VISIBLE_HISTORICAL_EXPOSURE"] = sorted(by_classification["MODEL_VISIBLE_HISTORICAL_EXPOSURE"])
+    by_classification["RS_NOT_IMPLEMENTED"] = []
+    by_classification["SAFE_UNUSED_SCENARIO"] = safe_unused
+
+    payload = {
+        "classification_definitions": {
+            "MODEL_VISIBLE_HISTORICAL_EXPOSURE": (
+                "Scenario identity or fault identity reached an agent-visible alert/input "
+                "in a historical implementation or recorded transcript."
+            ),
+            "DEVELOPER_TUNING_EXPOSURE": (
+                "Developers, tests, demos, documentation, subset selection, or tuning code "
+                "observed scenario identity or results."
+            ),
+            "HIDDEN_ORACLE_DEVELOPER_EXPOSURE": (
+                "Manifests, verifier mappings, evidence, or catalogue metadata reveal intended "
+                "truth to developers but are not placed in model prompts."
+            ),
+            "EXECUTION_ONLY_HIDDEN_CHANNEL": (
+                "Identity is accepted as orchestration metadata without serialization into agent input."
+            ),
+            "SAFE_UNUSED_SCENARIO": "Canonical scenarios with no observed development exposure.",
+            "RS_NOT_IMPLEMENTED": "No RS interaction generation/fitting path exists.",
+        },
+        "schema_version": EXPOSURE_SCHEMA_VERSION,
+        "summary": {
+            "by_classification": {key: sorted(value) for key, value in by_classification.items()},
+            "canonical_scenario_count": len(all_ids),
+            "development_exposed_scenario_ids": sorted(development_exposed),
+            "eligible_final_test_candidates": safe_unused,
+        },
+        "surfaces": surfaces,
+    }
+    payload["ledger_sha256"] = sha256_object(payload)
+    return payload
 
 
 def _chaos_targets(spec: dict[str, Any]) -> list[str]:
@@ -206,6 +408,103 @@ def _alert_template(scenario_id: str) -> tuple[dict[str, Any], str]:
     return ALERTS[source_id], source_id
 
 
+def _semantic_alert(alert: dict[str, Any]) -> dict[str, Any]:
+    """Remove volatile timing/status and prose annotations before comparison."""
+    value = _normalise(alert)
+    value.pop("commonAnnotations", None)
+    value.get("commonLabels", {}).pop("startsAt", None)
+    value.get("commonLabels", {}).pop("status", None)
+    for item in value.get("alerts", []) or []:
+        item.pop("startsAt", None)
+        item.pop("status", None)
+        item.pop("annotations", None)
+    return value
+
+
+def _coarse_fault(record: dict[str, Any]) -> dict[str, Any]:
+    parameters = record.get("parameters", {}) or {}
+    if record["kind"] == "StressChaos":
+        coarse_parameters = {
+            "stressor_types": sorted((parameters.get("stressors") or {}).keys())
+        }
+    elif record["kind"] == "NetworkChaos":
+        coarse_parameters = {
+            "effect_types": sorted(
+                key
+                for key in ("corrupt", "delay", "duplicate", "loss")
+                if key in parameters
+            )
+        }
+    elif record["kind"] == "DNSChaos":
+        coarse_parameters = {"patterns": parameters.get("patterns", [])}
+    else:
+        coarse_parameters = {}
+    return {
+        "action": record.get("action"),
+        "kind": record.get("kind"),
+        "parameters": coarse_parameters,
+        "targets": sorted(record.get("targets") or []),
+    }
+
+
+def _historical_source_id(path: Path) -> str | None:
+    import yaml
+
+    for document in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+        value = ((document or {}).get("metadata", {}).get("labels", {}) or {}).get(
+            "historical_incident"
+        )
+        if value:
+            return str(value)
+    return None
+
+
+def scenario_relationships(catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return conservative near-duplicate relations among catalogue entries."""
+    groups: dict[tuple[str, str], set[str]] = {}
+    for entry in catalog_entries(catalog).values():
+        scenario_id = entry["scenario_id"]
+        for fault_signature in entry.get("fault_signatures", []):
+            groups.setdefault(("fault_signature", fault_signature), set()).add(scenario_id)
+        if entry.get("source_incident_id"):
+            groups.setdefault(
+                ("source_incident", str(entry["source_incident_id"])), {scenario_id}
+            ).add(scenario_id)
+        if entry.get("alert_semantic_hash"):
+            groups.setdefault(
+                ("alert_semantics", str(entry["alert_semantic_hash"])), {scenario_id}
+            ).add(scenario_id)
+    return [
+        {"key": key, "reason": reason, "scenario_ids": sorted(members)}
+        for (reason, key), members in sorted(groups.items())
+        if len(members) > 1
+    ]
+
+
+def cross_split_family_conflicts(split: dict[str, Any], catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    splits = split["splits"]
+    membership = {
+        scenario_id: role
+        for role in ("train", "validation", "final_test")
+        for scenario_id in splits[role]
+    }
+    conflicts: list[dict[str, Any]] = []
+    for relation in scenario_relationships(catalog):
+        roles = sorted({membership[item] for item in relation["scenario_ids"]})
+        if len(roles) > 1:
+            conflicts.append({**relation, "roles": roles})
+    return sorted(conflicts, key=canonical_json)
+
+
+def validate_family_boundaries(split: dict[str, Any], catalog: dict[str, Any]) -> None:
+    conflicts = cross_split_family_conflicts(split, catalog)
+    if conflicts:
+        raise ValueError(
+            "family leakage across split boundaries: "
+            + canonical_json(conflicts)
+        )
+
+
 def _verifier_predicates(scenario_id: str) -> dict[str, Any]:
     from agents.verifier import SCENARIO_VERIFICATION_SPECS
 
@@ -240,6 +539,9 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         faults = _fault_records(manifest_path)
         if not faults:
             raise ValueError(f"scenario has no derivable fault injection: {scenario_id}")
+        coarse_faults = [_coarse_fault(fault) for fault in faults]
+        fault_signatures = [sha256_object(fault) for fault in coarse_faults]
+        semantic_alert = _semantic_alert(alert)
         targets = {
             target
             for fault in faults
@@ -250,13 +552,32 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         entries.append(
             {
                 "alert_source_id": alert_source_id,
+                "alert_semantic_hash": sha256_object(semantic_alert),
+                "causal_template_id": "|".join(
+                    sorted(f"{fault['kind']}:{fault['action']}" for fault in faults)
+                ),
                 "faults": faults,
+                "fault_signature": sha256_object(coarse_faults),
+                "fault_signatures": fault_signatures,
                 "manifest_path": f"bench/chaos_manifests/{scenario_id}.yaml",
                 "manifest_sha256": sha256_file(manifest_path),
+                "manifest_semantic_hash": sha256_object(faults),
                 "model_visible_alert": _normalise(alert),
                 "model_visible_alert_sha256": sha256_object(alert),
+                "scenario_family_id": sha256_object(fault_signatures),
                 "red_herring_services": red_herrings,
                 "scenario_id": scenario_id,
+                "source_incident_id": _historical_source_id(manifest_path),
+                "target_signature": sha256_object(
+                    sorted(
+                        {
+                            target
+                            for fault in faults
+                            for target in fault["targets"]
+                        }
+                    )
+                ),
+                "variant_parent_id": None,
                 "success_predicates": _verifier_predicates(scenario_id),
                 "tier": scenario_id.split("/", 1)[0],
             }
@@ -266,6 +587,7 @@ def build_catalog(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "agents/verifier.py",
         "bench/scenario_contract.py",
         "bench/runner.py",
+        "bench/g5/exposure_ledger.json",
         "config/runtime.py",
         "inference.py",
     ]
@@ -291,58 +613,49 @@ def catalog_entries(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return entries
 
 
-def development_exposure_ledger() -> dict[str, Any]:
-    from config.runtime import FROZEN_SCENARIOS, EVAL_SCENARIOS_BY_TIER, LEADERBOARD_SCENARIOS, SCENARIOS_BY_TIER
+def validate_exposure_ledger(ledger: dict[str, Any], catalog: dict[str, Any]) -> None:
+    if ledger.get("schema_version") != EXPOSURE_SCHEMA_VERSION:
+        raise ValueError("unsupported exposure ledger schema")
+    expected_hash = ledger.get("ledger_sha256")
+    if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+        raise ValueError("exposure ledger hash is missing or malformed")
+    unsigned = {key: value for key, value in ledger.items() if key != "ledger_sha256"}
+    if sha256_object(unsigned) != expected_hash:
+        raise ValueError("exposure ledger hash mismatch")
+    summary = ledger.get("summary", {})
+    catalog_ids = set(catalog_entries(catalog))
+    development = set(summary.get("development_exposed_scenario_ids", []))
+    eligible = set(summary.get("eligible_final_test_candidates", []))
+    unknown = development.union(eligible) - catalog_ids
+    if unknown:
+        raise ValueError(f"exposure ledger refers to unknown scenarios: {sorted(unknown)}")
+    if development | eligible != catalog_ids:
+        raise ValueError("exposure ledger does not account for every catalogue scenario")
+    if development.intersection(eligible):
+        raise ValueError("scenario is both development-exposed and final-test-eligible")
 
-    evaluation = {
-        scenario
-        for scenarios in EVAL_SCENARIOS_BY_TIER.values()
-        for scenario in scenarios
-    }
-    leaderboard = {scenario for scenario, _tier in LEADERBOARD_SCENARIOS}
-    grpo_curriculum = {
-        scenario
-        for scenarios in SCENARIOS_BY_TIER.values()
-        for scenario in scenarios
-    }
-    ledger = {
-        "categories": {
-            "evaluation_subset": sorted(evaluation),
-            "grpo_curriculum": sorted(grpo_curriculum),
-            "leaderboard_subset": sorted(leaderboard),
-            "stage4_golden": ["single_fault/sf-002"],
-            # Both current SFT generators default to every frozen manifest/alert.
-            # This is the exposure snapshot for this baseline; the generators now
-            # fail closed without an active split, so future isolated IDs differ.
-            "sft_generation_defaults": {
-                "paths": [
-                    "training/generate_trajectories.py:list_scenarios(all manifests)",
-                    "training/generate_trajectories_fast.py:ALERTS(all)",
-                ],
-                "scenario_ids": sorted(FROZEN_SCENARIOS),
-            },
-        },
-        "notes": (
-            "A '*' SFT category intentionally makes every frozen ID development-exposed "
-            "until generators are gated by an active frozen split."
-        ),
-    }
+
+def load_exposure_ledger(repo_root: Path = REPO_ROOT, *, verify: bool = True) -> dict[str, Any]:
+    path = repo_root / EXPOSURE_LEDGER_PATH
+    if not path.exists():
+        raise RuntimeError(
+            "EXPOSURE_LEDGER_NOT_FOUND: bench/g5/exposure_ledger.json is required"
+        )
+    try:
+        ledger = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read exposure ledger: {exc}") from exc
+    if verify:
+        catalog = build_catalog(repo_root)
+        validate_exposure_ledger(ledger, catalog)
     return ledger
 
 
 def development_exposed_ids(catalog: dict[str, Any], ledger: dict[str, Any] | None = None) -> set[str]:
-    selected = ledger or development_exposure_ledger()
-    categories = selected["categories"]
-    all_ids = set(catalog_entries(catalog))
-    exposed: set[str] = set()
-    for key in ("evaluation_subset", "grpo_curriculum", "leaderboard_subset", "stage4_golden"):
-        exposed.update(str(value) for value in categories.get(key, []))
-    sft_exposure = categories.get("sft_generation_defaults", {}).get("scenario_ids")
-    if sft_exposure == "*":
-        exposed.update(all_ids)
-    else:
-        exposed.update(str(value) for value in sft_exposure or [])
-    unknown = exposed - all_ids
+    selected = ledger or load_exposure_ledger()
+    summary = selected["summary"]
+    exposed = set(summary["development_exposed_scenario_ids"])
+    unknown = exposed - set(catalog_entries(catalog))
     if unknown:
         raise ValueError(f"exposure ledger refers to unknown scenarios: {sorted(unknown)}")
     return exposed
@@ -375,6 +688,7 @@ def build_proposed_split(
     seed: str = "atlasops-g5-proposal-v1",
     train_fraction: float = 0.60,
     validation_fraction: float = 0.20,
+    exposure_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not 0 < train_fraction < 1 or not 0 < validation_fraction < 1:
         raise ValueError("split fractions must be between zero and one")
@@ -402,7 +716,8 @@ def build_proposed_split(
             {scenario_id: "validation" for scenario_id in ranked[train_count : train_count + validation_count]}
         )
 
-    exposed = development_exposed_ids(catalog)
+    ledger = exposure_ledger or load_exposure_ledger()
+    exposed = development_exposed_ids(catalog, ledger)
     # No current ID is eligible for final test because both SFT defaults expose all.
     final_test: list[str] = []
     blockers = [
@@ -422,10 +737,25 @@ def build_proposed_split(
         "final_test": final_test,
         "ineligible_final_test_development_exposed": sorted(exposed),
     }
+    family_conflicts = cross_split_family_conflicts({"splits": splits}, catalog)
+    if family_conflicts:
+        blockers.append(
+            {
+                "code": "FAMILY_RELATIONS_CROSS_ASSIGNED_SPLITS",
+                "count": len(family_conflicts),
+                "detail": (
+                    "Related scenarios share fault signatures, source incidents, or alert "
+                    "semantics across proposed roles; regenerate only after a reviewed "
+                    "family-aware assignment exists."
+                ),
+            }
+        )
     return {
         "activation": {"active": False, "authorized_at": None, "frozen": False},
         "blockers": blockers,
         "catalog_sha256": catalog["catalog_sha256"],
+        "exposure_ledger_sha256": ledger["ledger_sha256"],
+        "family_relation_count": len(scenario_relationships(catalog)),
         "ready_for_freeze": False,
         "schema_version": SPLIT_SCHEMA_VERSION,
         "seed": seed,
@@ -448,6 +778,7 @@ def validate_split(
     catalog: dict[str, Any],
     *,
     require_ready: bool = False,
+    exposure_ledger: dict[str, Any] | None = None,
 ) -> None:
     if split.get("schema_version") != SPLIT_SCHEMA_VERSION:
         raise ValueError("unsupported split schema")
@@ -486,6 +817,13 @@ def validate_split(
         )
 
     exposed = development_exposed_ids(catalog)
+    expected_ledger_hash = split.get("exposure_ledger_sha256")
+    if not isinstance(expected_ledger_hash, str):
+        raise ValueError("split exposure ledger hash is missing")
+    selected_ledger = exposure_ledger or load_exposure_ledger()
+    validate_exposure_ledger(selected_ledger, catalog)
+    if selected_ledger["ledger_sha256"] != expected_ledger_hash:
+        raise ValueError("split exposure ledger digest mismatch")
     leaked = set(role_lists["final_test"]).intersection(exposed)
     if leaked:
         raise ValueError(f"final-test leakage: development-exposed scenarios present: {sorted(leaked)}")
@@ -502,6 +840,7 @@ def validate_split(
             raise ValueError("freezable split still has blockers")
         if split.get("ready_for_freeze") is not True:
             raise ValueError("ready_for_freeze is not true")
+        validate_family_boundaries(split, catalog)
 
 
 def freeze_split(
@@ -513,7 +852,8 @@ def freeze_split(
 ) -> dict[str, Any]:
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     split = json.loads(candidate_path.read_text(encoding="utf-8"))
-    validate_split(split, catalog, require_ready=True)
+    ledger = load_exposure_ledger()
+    validate_split(split, catalog, require_ready=True, exposure_ledger=ledger)
     if frozen_path.exists():
         raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")
 
@@ -532,7 +872,12 @@ def load_active_split(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         )
     split = json.loads(frozen_path.read_text(encoding="utf-8"))
     catalog = json.loads((repo_root / "bench" / "g5" / "scenario_catalog.json").read_text(encoding="utf-8"))
-    validate_split(split, catalog, require_ready=True)
+    validate_split(
+        split,
+        catalog,
+        require_ready=True,
+        exposure_ledger=load_exposure_ledger(repo_root),
+    )
     if split.get("status") != "FROZEN" or split.get("activation", {}).get("active") is not True:
         raise RuntimeError("G5 split is present but not active")
     return split
@@ -561,6 +906,12 @@ def _write_plan(args: argparse.Namespace) -> int:
     )
     write_json_atomically(Path(args.output), plan)
     print(f"wrote inert split proposal ({plan['status']}): {args.output}")
+    return 0
+
+
+def _write_exposure(args: argparse.Namespace) -> int:
+    write_json_atomically(Path(args.output), build_exposure_ledger())
+    print(f"wrote exposure ledger: {args.output}")
     return 0
 
 
@@ -601,6 +952,10 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("--train-fraction", type=float, default=0.60)
     plan_parser.add_argument("--validation-fraction", type=float, default=0.20)
     plan_parser.set_defaults(handler=_write_plan)
+
+    exposure_parser = subparsers.add_parser("exposure", help="build deterministic exposure ledger")
+    exposure_parser.add_argument("--output", default=str(EXPOSURE_LEDGER_PATH))
+    exposure_parser.set_defaults(handler=_write_exposure)
 
     freeze_parser = subparsers.add_parser("freeze", help="atomically activate a ready candidate")
     freeze_parser.add_argument("--candidate", default=str(SPLIT_PROPOSED_PATH))

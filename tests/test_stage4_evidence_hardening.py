@@ -19,12 +19,15 @@ from scripts.run_stage4_golden_incident import (
     _attempt_marker_path,
     _paymentservice_baseline_check,
     collect_sf002_cpu_telemetry,
+    G4_PLATFORM_HARDENING_MARKER,
+    MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
     complete_experiment_attempt,
     consume_experiment_attempt,
     evaluate_causal_g4_predicate,
     release_experiment_reservation,
     reserve_experiment_attempt,
     sf002_degradation_decision,
+    stage4_evidence_metadata,
     _paymentservice_baseline_healthy,
 )
 
@@ -38,6 +41,43 @@ def _attempt_root() -> str:
     )
     root.mkdir(parents=True, exist_ok=True)
     return str(root)
+
+
+def test_stage4_metadata_persists_protocol_marker():
+    metadata = stage4_evidence_metadata()
+    assert metadata["protocol_marker"] == G4_PLATFORM_HARDENING_MARKER
+
+
+def test_reservation_records_protocol_marker_and_spent_limit_is_two():
+    root = _attempt_root()
+    reservation = reserve_experiment_attempt(
+        "EXP-STAGE4-MARKER",
+        selected_model="qwen2.5:3b-instruct",
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert reservation["protocol_marker"] == G4_PLATFORM_HARDENING_MARKER
+    assert MAX_ATTEMPTS_PER_PROTOCOL_MARKER == 2
+
+
+def test_third_spent_attempt_for_same_protocol_marker_fails_closed():
+    root = _attempt_root()
+    for experiment_id in ("EXP-STAGE4-MARKER-A", "EXP-STAGE4-MARKER-B"):
+        reservation = reserve_experiment_attempt(
+            experiment_id,
+            selected_model="qwen2.5:3b-instruct",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+        consume_experiment_attempt(reservation, attempt_root=root)
+
+    with pytest.raises(RuntimeError, match="protocol attempt limit reached"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-MARKER-C",
+            selected_model="qwen2.5:3b-instruct",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
 
 
 def _valid_incident() -> dict:

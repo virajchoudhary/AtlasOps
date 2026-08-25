@@ -133,6 +133,8 @@ BASELINE_READINESS_TIMEOUT_SECONDS = 60
 ATTEMPT_STATE_RESERVED = "RESERVED"
 ATTEMPT_STATE_CONSUMED = "CONSUMED"
 ATTEMPT_STATE_COMPLETED = "COMPLETED"
+G4_PLATFORM_HARDENING_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
+MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
 
 
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
@@ -187,6 +189,27 @@ def _read_json_file(path: str) -> dict[str, Any] | None:
         return None
 
 
+def _spent_attempts_for_protocol_marker(attempt_root: str | None = None) -> int:
+    attempts_dir = os.path.join(
+        _experiment_evidence_dir("", attempt_root), ".attempts"
+    )
+    if not os.path.isdir(attempts_dir):
+        return 0
+
+    spent_states = {ATTEMPT_STATE_CONSUMED, ATTEMPT_STATE_COMPLETED}
+    return sum(
+        (
+            attempt.get("state") in spent_states
+            and attempt.get("protocol_marker") == G4_PLATFORM_HARDENING_MARKER
+        )
+        for attempt in (
+            _read_json_file(os.path.join(attempts_dir, name))
+            for name in os.listdir(attempts_dir)
+            if name.endswith(".attempt.json")
+        )
+    )
+
+
 def reserve_experiment_attempt(
     experiment_id: str,
     *,
@@ -201,6 +224,13 @@ def reserve_experiment_attempt(
         raise RuntimeError(f"Stage 4 evidence already exists: {primary_path}")
 
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
+    spent_attempts = _spent_attempts_for_protocol_marker(attempt_root)
+    if spent_attempts >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
+        raise RuntimeError(
+            "protocol attempt limit reached for "
+            f"{G4_PLATFORM_HARDENING_MARKER}: "
+            f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
+        )
     if os.path.exists(marker_path):
         existing = _read_json_file(marker_path) or {}
         raise RuntimeError(
@@ -213,6 +243,7 @@ def reserve_experiment_attempt(
         "state": ATTEMPT_STATE_RESERVED,
         "reserved_at": datetime.now(timezone.utc).isoformat(),
         "reservation_token": uuid.uuid4().hex,
+        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
         "selected_model": selected_model,
         "main_sha": main_sha,
     }
@@ -357,6 +388,7 @@ def stage4_evidence_metadata() -> dict[str, Any]:
     return {
         "model": SELECTED_STAGE4_AGENT_MODEL,
         "inference_provider": "ollama-local",
+        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
         "trigger_type": "manual coordinator trigger over a real independently observed cluster fault",
     }
 

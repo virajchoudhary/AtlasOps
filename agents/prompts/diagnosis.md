@@ -32,7 +32,7 @@ Given a triaged incident, find the **root cause** by correlating signals across:
 {
   "incident_id": "<inc-id>",
   "root_cause": {
-    "category": "deploy|resource|network|dependency|config|external",
+    "category": "deploy|resource|network|dependency|config|external|unknown",
     "specific": "<2-sentence specific cause>",
     "evidence": [
       {"tool": "promql_query", "query": "...", "finding": "..."},

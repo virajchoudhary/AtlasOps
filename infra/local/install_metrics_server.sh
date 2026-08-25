@@ -2,59 +2,143 @@
 # =============================================================================
 # AtlasOps OPTIONAL local metrics-server installer (Kind, zero-cost).
 #
-# STATUS: NOT INSTALLED BY DEFAULT. This script exists as the reproducible
-# adoption path for the `kubectl top` tool contract (G4-PLATFORM-HARDENING-
-# 2026-08-25). Operators may run it to make `kubectl top pods/nodes` — and the
-# AtlasOps `kubectl_top_pods` tool — functional in the canonical local cluster.
+# STATUS: NOT INSTALLED BY DEFAULT. This is the opt-in adoption path for the
+# `kubectl top` tool contract (G4-PLATFORM-HARDENING-2026-08-25).
 #
-# Properties:
-#   - Idempotent: skips if the metrics-server is already present.
-#   - Reproducible: pinned upstream manifest version.
-#   - Free: upstream Kubernetes SIG project manifests only.
-#   - Reversible: `kubectl delete -f <manifest-url>` removes it cleanly;
-#     the AtlasOps tool degrades deterministically without it.
-#
-# Resource cost on the host/cluster is small but non-zero (~100m CPU /
-# ~200Mi memory for the metrics-server pod). Run only outside scientific
-# observation windows so the soak gates measure an undisturbed baseline.
+# The canonical Kind context is fixed so an ambient kubectl context cannot be
+# accidentally patched or used for wrapper verification. Apply mode mutates
+# only kind-atlasops-local and must be run outside scientific observation
+# windows.
 #
 # Usage:
-#   bash infra/local/install_metrics_server.sh
+#   bash infra/local/install_metrics_server.sh --check
+#   bash infra/local/install_metrics_server.sh --apply
+#   PYTHON_BIN=/path/to/python bash infra/local/install_metrics_server.sh --check
 # =============================================================================
 set -euo pipefail
 
-CONTEXT="${KUBECONFIG_CONTEXT:-kind-atlasops-local}"
-PINNED_MANIFEST="https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml"
+readonly CANONICAL_CONTEXT="kind-atlasops-local"
+readonly METRICS_SERVER_COMMIT="096960107da4a1b2e2ec83b2ac3424248cfc0ad5"
+readonly METRICS_SERVER_VERSION="v0.7.2"
+readonly PINNED_SOURCE="https://github.com/kubernetes-sigs/metrics-server/manifests/overlays/release?ref=${METRICS_SERVER_COMMIT}"
 
-kubectl --context "$CONTEXT" get deployment metrics-server -n kube-system >/dev/null 2>&1 && {
-  echo "metrics-server already installed; nothing to do."
-  exit 0
+fail() { echo "ERROR: $*" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash infra/local/install_metrics_server.sh --check
+  bash infra/local/install_metrics_server.sh --apply
+
+Modes:
+  --check  Report whether metrics-server is installed; mutate nothing.
+  --apply  Install into the exact canonical Kind context.
+EOF
 }
 
-echo "Installing metrics-server into context '$CONTEXT'..."
-# Kind control plane uses a self-signed serving cert; pass -kubelet-insecure-tls
-# via an args patch after install (standard practice for local clusters).
-kubectl --context "$CONTEXT" apply -f "$PINNED_MANIFEST"
-kubectl --context "$CONTEXT" patch deployment metrics-server -n kube-system \
-  --type json \
-  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+MODE=""
+parse_arguments() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --check|--apply)
+        [[ -z "$MODE" ]] || fail "Specify exactly one mode."
+        MODE="$arg"
+        ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "Unexpected argument: $arg" ;;
+    esac
+  done
+  [[ -n "$MODE" ]] || { usage >&2; fail "An explicit --check or --apply mode is required."; }
+}
 
-echo "Waiting for metrics-server availability..."
-kubectl --context "$CONTEXT" wait --for=condition=Available \
-  deployment/metrics-server -n kube-system --timeout=180s
+CONTEXT="${KUBECONFIG_CONTEXT:-$CANONICAL_CONTEXT}"
+if [[ "$CONTEXT" != "$CANONICAL_CONTEXT" ]]; then
+  fail "Refusing non-canonical context '$CONTEXT'; this installer may target only $CANONICAL_CONTEXT."
+fi
+export KUBECONFIG_CONTEXT="$CONTEXT"
 
-echo "Verifying Metrics API..."
-for i in $(seq 1 24); do
-  if kubectl --context "$CONTEXT" top nodes >/dev/null 2>&1; then
-    REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-    PYTHON_BIN="${PYTHON_BIN:-python}"
-    if (cd "$REPO_ROOT" && "$PYTHON_BIN" -c 'from agents.tools.kubectl import kubectl_top_pods; r=kubectl_top_pods(); assert r.get("success"), r' ); then
-      echo "Metrics API operational and AtlasOps kubectl_top_pods wrapper verified."
-      exit 0
-    fi
+metrics_server_state() {
+  local stderr
+  if stderr=$(kubectl --context "$CONTEXT" get deployment metrics-server -n kube-system 2>&1); then
+    echo "installed"
+  elif [[ "$stderr" == *'deployments.apps "metrics-server" not found'* ]]; then
+    echo "missing"
+  else
+    echo "unknown"
   fi
-  sleep 5
-done
+}
 
-echo "WARNING: metrics-server installed but Metrics API not answering yet." >&2
-exit 1
+verify_metrics_api() {
+  echo "Verifying Metrics API through direct kubectl and the AtlasOps wrapper..."
+  REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+  for _ in $(seq 1 24); do
+    if \
+      kubectl --context "$CONTEXT" top nodes >/dev/null 2>&1 && \
+      (cd "$REPO_ROOT" && "$PYTHON_BIN" -c 'from agents.tools.kubectl import kubectl_top_pods; result=kubectl_top_pods(); assert result.get("success"), result')
+    then
+      echo "Metrics API operational and AtlasOps kubectl_top_pods wrapper verified on $CONTEXT."
+      return
+    fi
+    sleep 5
+  done
+
+  fail "metrics-server installed but its Metrics API did not become usable."
+}
+
+main() {
+  parse_arguments "$@"
+  command -v kubectl >/dev/null 2>&1 || fail "Required command 'kubectl' is not available."
+
+  echo "=== AtlasOps Metrics Server Installer ==="
+  echo "Context:         $CONTEXT"
+  echo "Source commit:   $METRICS_SERVER_COMMIT"
+  echo "Release version: $METRICS_SERVER_VERSION"
+  echo "Mode:            $MODE"
+  echo "========================================="
+
+  state="$(metrics_server_state)"
+  case "$state" in
+    installed)
+      echo "CHECK: metrics-server is already installed."
+      if [[ "$MODE" == "--check" ]]; then
+        echo "CHECK COMPLETE: no resources were changed."
+        return
+      fi
+      echo "APPLY: deployment already present; verifying Metrics API..."
+      PYTHON_BIN="${PYTHON_BIN:-python}"
+      command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Required command '$PYTHON_BIN' is not available."
+      verify_metrics_api
+      return
+      ;;
+    missing)
+      if [[ "$MODE" == "--check" ]]; then
+        echo "CHECK: metrics-server would be installed from commit-pinned source."
+        echo "CHECK COMPLETE: no resources were changed."
+        return
+      fi
+      ;;
+    *)
+      fail "Unable to determine metrics-server state on '$CONTEXT'; refusing ambiguous check or install."
+      ;;
+  esac
+
+  echo "APPLY: installing metrics-server..."
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+  command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Required command '$PYTHON_BIN' is not available."
+  # Commit-pinned upstream source resolves the release image tag at that exact
+  # revision. Kind uses self-signed kubelet certificates, so the local TLS flag
+  # is added with a standard JSON patch after installation.
+  kubectl --context "$CONTEXT" apply -k "$PINNED_SOURCE"
+  kubectl --context "$CONTEXT" patch deployment metrics-server -n kube-system \
+    --type json \
+    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+
+  echo "APPLY: waiting for metrics-server availability..."
+  kubectl --context "$CONTEXT" wait --for=condition=Available \
+    deployment/metrics-server -n kube-system --timeout=180s
+
+  verify_metrics_api
+}
+
+main "$@"

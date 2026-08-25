@@ -82,13 +82,14 @@ Agents can now distinguish "dependency missing" from "command failed".
 
 ### Opt-in adoption path (A — reproducible artifact provided, NOT installed by this change)
 
-`infra/local/install_metrics_server.sh` installs a pinned upstream
-metrics-server into the existing Kind cluster idempotently, waits for
-availability, and verifies `kubectl top`. It is reversible
-(`kubectl delete -f <manifest>`), free, and costs ~100m CPU/~200Mi memory.
-It was NOT executed in this change: installing optional infrastructure into the
-canonical scientific environment requires operator authorization and should
-happen outside soak/science windows.
+`infra/local/install_metrics_server.sh` installs a commit-pinned upstream
+metrics-server into the exact canonical Kind context idempotently, waits for
+availability, and verifies both direct `kubectl top` and the AtlasOps wrapper.
+Apply mode is explicit; check mode mutates nothing. It is reversible with
+`kubectl delete -k` against the same pinned source, free, and costs ~100m
+CPU/~200Mi memory. It was NOT executed in this change: installing optional
+infrastructure into the canonical scientific environment requires operator
+authorization and should happen outside soak/science windows.
 
 ## 3. Argo CD deterministic error taxonomy (implemented)
 
@@ -113,16 +114,23 @@ auto-converted into other actions — the model still chooses its next step.
 | Grounding validator | Correctness/grounding defect fix (deterministic detection) | None within-run (diagnostic-only, preserve-and-score). Prospective: makes hallucination measurable. |
 | kubectl top classification | Tool-contract correctness | None on workload health; improves agent failure attribution |
 | Argo CD taxonomy | Observability/tool-contract correctness | Removes an information asymmetry; model must still choose actions |
+| Protocol marker + two-attempt cap | Scientific protocol/process control | Prospective only: legacy attempts remain immutable under their original contracts and do not consume the new marker's budget. |
 
-None of these weaken readiness gates, thresholds, windows, prompts, scenario
-semantics, verifier predicates, or attempt lifecycle. No SF002-specific hint is
+None of these weaken readiness gates, thresholds, windows, prompts (other than
+the declared Diagnosis category/discovery changes), scenario semantics,
+verifier predicates, or per-attempt lifecycle. No SF002-specific hint is
 introduced anywhere.
 
 ## 5. Compatibility with Pipeline v1.1
 
-All changes are local, zero-cost, free-tier, and read-mostly. Verifier remains
-authoritative; causal predicates untouched; attempt lifecycle untouched;
-evidence schema gains one additive diagnostic field.
+All changes are local, free-tier, and read-mostly except the explicit opt-in
+installer. Verifier remains authoritative; causal predicates are untouched;
+evidence schemas gain additive provenance/marker fields. Reservations record
+the hardening marker, and reservation fails closed after two spent attempts
+carry that marker. Existing unmarked 005/006/007/008 attempts remain under
+their original protocol versions and are not retroactively charged to this new
+marker. Launching any next attempt remains outside this Goal and requires a
+separate authorization decision.
 
 Required tests: `tests/test_agents_grounding.py`,
 `tests/test_argocd_error_taxonomy.py`,
@@ -133,16 +141,18 @@ Required tests: `tests/test_agents_grounding.py`,
 Feasibility on the canonical host (15.37 GB RAM; WSL2 default ≈ half system
 memory; Ollama CPU inference):
 
-- `qwen2.5:3b-instruct` (current): ~2–3 GB resident; proven coexistence with
-  the full Kind stack during passing soaks; latency acceptable (model turns of
-  seconds to ~45s).
+- The executable default remains `qwen2.5:1.5b`; `qwen2.5:3b-instruct` is the
+  explicitly configured, previously qualified model. It uses ~2–3 GB resident,
+  demonstrated coexistence with the full Kind stack during passing soaks, and
+  had acceptable latency (model turns of seconds to ~45s).
 - `qwen2.5:7b-instruct` Q4: ~5–6 GB resident — coexistence risk HIGH alongside
   Docker+Kind (~3–5 GB vmmem) with <6 GB typical free; multi-turn remediation
   latency would multiply, raising settling-window risk.
 - Larger models: infeasible free-first on this host.
 
-Recommendation: retain the qualified 3B for the immediate next attempt under
-this hardening marker, for comparability with 008 and coexistence safety.
+Recommendation: if and only if a separate Goal explicitly authorizes another
+attempt, retain the qualified 3B under this hardening marker for comparability
+with 008 and coexistence safety.
 
 Pre-specified future-attempt policy (avoids success-chasing):
 

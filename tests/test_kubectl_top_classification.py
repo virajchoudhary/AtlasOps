@@ -28,6 +28,13 @@ def test_top_nodes_same_dependency_classification():
     assert result["error_class"] == "metrics_api_unavailable"
 
 
+def test_missing_metrics_api_classification_is_case_insensitive():
+    failing = _run_result(stderr="error: metrics api not available\n", returncode=1)
+    with patch("agents.tools.kubectl._run", return_value=failing):
+        result = kubectl_top_pods()
+    assert result["error_class"] == "metrics_api_unavailable"
+
+
 def test_healthy_top_output_passes_through_untouched():
     good = _run_result(stdout='NAME              CPU(cores)   MEMORY(bytes)\npaymentservice…   1m           22Mi\n')
     with patch("agents.tools.kubectl._run", return_value=good) as run:

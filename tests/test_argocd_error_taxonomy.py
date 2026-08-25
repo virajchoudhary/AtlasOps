@@ -70,18 +70,19 @@ def test_400_is_classified_as_invalid_request(monkeypatch):
     assert "invalid rollback id" not in result["error"]
 
 
-def test_non_numeric_rollback_revision_fails_before_api(monkeypatch):
+@pytest.mark.parametrize("revision", ["latest", "²"])
+def test_non_numeric_rollback_revision_fails_before_api(monkeypatch, revision):
     argocd = _reload_with_env(monkeypatch)
     _auth_ok(monkeypatch, argocd)
     with patch.object(argocd.requests, "request") as request:
-        result = argocd.argocd_rollback("paymentservice", "latest")
+        result = argocd.argocd_rollback("paymentservice", revision)
     assert result == {
         "success": False,
         "error": "argocd_invalid_revision: revision must be a non-negative integer",
         "error_class": "invalid_revision",
     }
     request.assert_not_called()
-    assert "latest" not in result["error"]
+    assert str(revision) not in result["error"]
 
 
 def test_timeout_is_classified(monkeypatch):

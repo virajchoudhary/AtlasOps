@@ -148,27 +148,23 @@ def _api(method: str, path: str, **kwargs) -> dict[str, Any]:
     try:
         config = _get_argocd_config()
         token = _get_token(config)
-        response = requests.request(
-            method,
-            f"{config.base_url}/api/v1{path}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-            verify=config.verify_tls,
-            **kwargs,
-        )
+        def request_with_token(active_token: str):
+            return requests.request(
+                method,
+                f"{config.base_url}/api/v1{path}",
+                headers={"Authorization": f"Bearer {active_token}"},
+                timeout=30,
+                verify=config.verify_tls,
+                **kwargs,
+            )
+
+        response = request_with_token(token)
         if response.status_code == 401:
             global _cached_token, _cached_token_identity
             _cached_token = None
             _cached_token_identity = None
             token = _get_token(config)
-            response = requests.request(
-                method,
-                f"{config.base_url}/api/v1{path}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30,
-                verify=config.verify_tls,
-                **kwargs,
-            )
+            response = request_with_token(token)
         response.raise_for_status()
         return {"success": True, "data": response.json()}
     except _ArgoCDConfigurationError as exc:
@@ -224,7 +220,7 @@ def argocd_app_history(app: str) -> dict[str, Any]:
 def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     """Roll back an Argo CD application to a previous revision."""
     revision_text = str(revision).strip()
-    if not revision_text.isdigit():
+    if not (revision_text.isascii() and revision_text.isdigit()):
         return {
             "success": False,
             "error": "argocd_invalid_revision: revision must be a non-negative integer",

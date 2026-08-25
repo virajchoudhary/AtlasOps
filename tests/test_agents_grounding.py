@@ -175,6 +175,45 @@ def test_blocked_calls_are_not_available_as_cited_observations():
     assert report["executed_tools"] == []
 
 
+def test_unregistered_tool_placeholder_is_not_available_as_cited_observation():
+    doc = _doc_008_style()
+    doc["trajectory"] = [
+        {
+            "role": "diagnosis",
+            "tool": "invented_unregistered_tool",
+            "args": {},
+            "output": {"error": "Unknown tool: invented_unregistered_tool"},
+            "execution_state": "unknown_tool",
+        }
+    ]
+    report = validate_evidence_grounding(doc)
+    assert report["grounded"] is False
+    assert report["executed_tools"] == []
+
+
+def test_app_identifier_mismatch_on_executed_history_is_ungrounded():
+    doc = {
+        "role": "diagnosis",
+        "trajectory": [
+            {
+                "tool": "argocd_app_history",
+                "args": {"app": "actual-app"},
+                "output": {"success": True},
+            }
+        ],
+        "final": {
+            "evidence": [
+                {"finding": "invented", "tool": "argocd_app_history", "app": "wrong-app"}
+            ]
+        },
+    }
+    report = validate_evidence_grounding(doc)
+    assert report["grounded"] is False
+    assert report["violations"][0]["reason"] == (
+        "cited observation parameters do not match an actual execution"
+    )
+
+
 def test_blocked_call_arguments_cannot_validate_a_citation():
     doc = {
         "trajectory": [

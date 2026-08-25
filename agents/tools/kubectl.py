@@ -65,8 +65,8 @@ def _classify_metrics_api_result(result: dict[str, Any]) -> dict[str, Any]:
     stderr so agents and evidence can distinguish "tool dependency missing"
     from transient command failures.
     """
-    err = str((result or {}).get("stderr") or "")
-    if "Metrics API not available" in err or "metrics API not available" in err.lower():
+    err = str((result or {}).get("stderr") or "").casefold()
+    if "metrics api not available" in err:
         return {
             **result,
             "success": False,

@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agents.tools import REGISTERED_TOOLS
+
 _MAX_FINDING_LEN = 200
 
 
@@ -36,6 +38,7 @@ _BLOCKED_EXECUTION_MARKERS = (
 )
 
 _CITATION_IDENTIFIER_KEYS = (
+    "app",
     "query",
     "resource",
     "namespace",
@@ -55,7 +58,11 @@ def _executed_tools(trajectory: Any) -> set[str]:
             continue
         if _is_completed_execution(entry):
             if entry.get("executed_tool_calls"):
-                executed.update(str(name) for name in entry["executed_tool_calls"] if name)
+                executed.update(
+                    str(name)
+                    for name in entry["executed_tool_calls"]
+                    if str(name) in REGISTERED_TOOLS
+                )
             else:
                 executed.add(str(entry["tool"]))
     return executed
@@ -65,10 +72,13 @@ def _is_completed_execution(entry: dict[str, Any]) -> bool:
     if not isinstance(entry, dict):
         return False
     if entry.get("executed_tool_calls"):
-        return True
+        return any(str(name) in REGISTERED_TOOLS for name in entry["executed_tool_calls"])
+    if entry.get("execution_state") == "unknown_tool":
+        return False
+    tool = str(entry.get("tool"))
     if entry.get("execution_state") == "executed":
-        return bool(entry.get("tool"))
-    return bool(entry.get("tool")) and not any(
+        return tool in REGISTERED_TOOLS
+    return tool in REGISTERED_TOOLS and "output" in entry and not any(
         entry.get(marker) for marker in _BLOCKED_EXECUTION_MARKERS
     )
 

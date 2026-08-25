@@ -1,0 +1,882 @@
+{
+  "attempt_state": "CONSUMED",
+  "causal_criteria": {
+    "10_remediation_tool_success": false,
+    "11_remediation_target_match": false,
+    "12_no_harness_repair_pre_verification": true,
+    "13_objective_env_resolved": false,
+    "14_comms_executed": true,
+    "15_evidence_persisted": true,
+    "1_baseline_healthy": true,
+    "2_injection_success": true,
+    "3_fault_observed_pre_trigger": true,
+    "4_trigger_delivered": true,
+    "5_triage_valid": true,
+    "6_diagnosis_valid": true,
+    "7_diagnosis_truth_match": true,
+    "8_approval_satisfied": true,
+    "9_remediation_mutating_tool_executed": true
+  },
+  "completed_at": "2026-08-25T03:56:00.703449+00:00",
+  "duration_seconds": 721.06,
+  "experiment_id": "EXP-STAGE4-SF002-008",
+  "gate_g4_pass": false,
+  "inference_provider": "ollama-local",
+  "model": "qwen2.5:3b-instruct",
+  "phases": {
+    "baseline": {
+      "attempts": 2,
+      "baseline_healthy": true,
+      "cpu_telemetry": {
+        "max_cores": 0.0008402604427100003,
+        "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+        "query_error": null,
+        "query_success": true,
+        "samples_cores": [
+          0.0008402604427100003
+        ],
+        "timestamp": "2026-08-25T03:44:38.859369+00:00"
+      },
+      "required_stable_probes": null,
+      "stable_probes": 2,
+      "target_deployments": "{\n    \"apiVersion\": \"v1\",\n    \"items\": [\n        {\n            \"apiVersion\": \"apps/v1\",\n            \"kind\": \"Deployment\",\n            \"metadata\": {\n                \"annotations\": {\n                    \"deployment.kubernetes.io/revision\": \"1\",\n                    \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"apps/v1\\\",\\\"kind\\\":\\\"Deployment\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"app\\\":\\\"paymentservice\\\"},\\\"name\\\":\\\"paymentservice\\\",\\\"namespace\\\":\\\"default\\\"},\\\"sp",
+      "timestamp": "2026-08-25T03:44:38.869895+00:00"
+    },
+    "coordinator_execution": {
+      "approval": {
+        "decision": "timeout",
+        "mode": "approve",
+        "severity": "P1"
+      },
+      "comms": {
+        "incident_id": "single_fault/sf-002",
+        "postmortem_path": "docs/postmortems/2023-10-05-cloudflare-2023-active-chaos-experiment.md",
+        "slack_posted": false,
+        "summary": "The incident was not fully resolved due to the presence of active chaos experiments. The environment and agent did not claim the issue as resolved, indicating that further action is needed to clear the chaos experiment and verify the environment."
+      },
+      "diagnosis": {
+        "confidence": 0.5,
+        "recommended_fix": [
+          {
+            "action": "rollback",
+            "target": "paymentservice",
+            "to_revision": "latest"
+          }
+        ],
+        "root_cause": {
+          "category": "deploy",
+          "evidence": [
+            {
+              "finding": "No recent deployments found in the `paymentservice` namespace",
+              "tool": "argocd_list_apps"
+            }
+          ],
+          "specific": "A recent deployment to the `paymentservice` namespace may have introduced the issue."
+        }
+      },
+      "executed_tool_actions": [
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "latest"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "previous"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "1"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "0"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "-1"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "0"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "-2"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "-3"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "argocd_request_error: request failed",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "app": "paymentservice",
+            "revision": "-4"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "error": "Tool cap reached \u2014 argocd_rollback called 9 times this run (limit 8). You have enough data; produce your conclusion now."
+          },
+          "tool": "argocd_rollback"
+        }
+      ],
+      "incident_id": "inc-1787629578-51b219",
+      "model_proposed_action": {
+        "actions_taken": [
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "latest"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 1,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "previous"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 2,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "1"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 3,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "0"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 4,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-1"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 5,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "0"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 6,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-2"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 7,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-3"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 8,
+            "success": false,
+            "tool": "argocd_rollback"
+          }
+        ],
+        "executed_actions": [
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "latest"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 1,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "previous"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 2,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "1"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 3,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "0"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 4,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-1"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 5,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "0"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 6,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-2"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 7,
+            "success": false,
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-3"
+            },
+            "output": {
+              "error": "argocd_request_error: request failed",
+              "success": false
+            },
+            "step": 8,
+            "success": false,
+            "tool": "argocd_rollback"
+          }
+        ],
+        "outcome": "unresolved",
+        "proposed_actions": [
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "latest"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "previous"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "0"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-1"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-2"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-3"
+            },
+            "tool": "argocd_rollback"
+          },
+          {
+            "args": {
+              "app": "paymentservice",
+              "revision": "-4"
+            },
+            "tool": "argocd_rollback"
+          }
+        ],
+        "verified_by": "promql_query"
+      },
+      "timestamp": "2026-08-25T03:56:00.680443+00:00",
+      "triage": {
+        "affected_services": [
+          "paymentservice"
+        ],
+        "blast_radius": {
+          "namespaces": [
+            "default"
+          ],
+          "revenue_path_affected": true,
+          "services": [
+            "paymentservice"
+          ],
+          "user_impact_pct": 100
+        },
+        "incident_id": "inc-1787629578-51b219",
+        "severity": "P1",
+        "title": "High CPU usage on paymentservice"
+      }
+    },
+    "degradation_proof": {
+      "decision": {
+        "absolute_increase_cores": 0.1589046316235732,
+        "baseline_max_cores": 0.0008402604427100003,
+        "measured": true,
+        "min_absolute_increase_cores": 0.15,
+        "min_ratio": 2.0,
+        "passed": true,
+        "post_fault_max_cores": 0.1597448920662832,
+        "post_to_baseline_ratio": 190.11354568956673
+      },
+      "passed": true,
+      "poll_interval_seconds": 3,
+      "post_fault_observations": [
+        {
+          "max_cores": 0.0010085250791660818,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.0010085250791660818
+          ],
+          "timestamp": "2026-08-25T03:44:46.267381+00:00"
+        },
+        {
+          "max_cores": 0.00824699497918883,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.00824699497918883
+          ],
+          "timestamp": "2026-08-25T03:44:49.292675+00:00"
+        },
+        {
+          "max_cores": 0.00824699497918883,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.00824699497918883
+          ],
+          "timestamp": "2026-08-25T03:44:52.315759+00:00"
+        },
+        {
+          "max_cores": 0.00824699497918883,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.00824699497918883
+          ],
+          "timestamp": "2026-08-25T03:44:55.339949+00:00"
+        },
+        {
+          "max_cores": 0.00824699497918883,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.00824699497918883
+          ],
+          "timestamp": "2026-08-25T03:44:58.370996+00:00"
+        },
+        {
+          "max_cores": 0.009441533685056123,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.009441533685056123
+          ],
+          "timestamp": "2026-08-25T03:45:01.388172+00:00"
+        },
+        {
+          "max_cores": 0.008637783790392033,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.008637783790392033
+          ],
+          "timestamp": "2026-08-25T03:45:04.412606+00:00"
+        },
+        {
+          "max_cores": 0.008400407897660249,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.008400407897660249
+          ],
+          "timestamp": "2026-08-25T03:45:07.428553+00:00"
+        },
+        {
+          "max_cores": 0.03875962469344454,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.03875962469344454
+          ],
+          "timestamp": "2026-08-25T03:45:10.439126+00:00"
+        },
+        {
+          "max_cores": 0.03875962469344454,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.03875962469344454
+          ],
+          "timestamp": "2026-08-25T03:45:13.462024+00:00"
+        },
+        {
+          "max_cores": 0.04506599709973683,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.04506599709973683
+          ],
+          "timestamp": "2026-08-25T03:45:16.473510+00:00"
+        },
+        {
+          "max_cores": 0.06272339779294848,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.06272339779294848
+          ],
+          "timestamp": "2026-08-25T03:45:19.485780+00:00"
+        },
+        {
+          "max_cores": 0.06272339779294848,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.06272339779294848
+          ],
+          "timestamp": "2026-08-25T03:45:22.499004+00:00"
+        },
+        {
+          "max_cores": 0.06272339779294848,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.06272339779294848
+          ],
+          "timestamp": "2026-08-25T03:45:25.533679+00:00"
+        },
+        {
+          "max_cores": 0.06272339779294848,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.06272339779294848
+          ],
+          "timestamp": "2026-08-25T03:45:28.550438+00:00"
+        },
+        {
+          "max_cores": 0.08850097528021465,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.08850097528021465
+          ],
+          "timestamp": "2026-08-25T03:45:31.572771+00:00"
+        },
+        {
+          "max_cores": 0.08850097528021465,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.08850097528021465
+          ],
+          "timestamp": "2026-08-25T03:45:34.584484+00:00"
+        },
+        {
+          "max_cores": 0.08850097528021465,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.08850097528021465
+          ],
+          "timestamp": "2026-08-25T03:45:37.618711+00:00"
+        },
+        {
+          "max_cores": 0.08850097528021465,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.08850097528021465
+          ],
+          "timestamp": "2026-08-25T03:45:40.648927+00:00"
+        },
+        {
+          "max_cores": 0.08850097528021465,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.08850097528021465
+          ],
+          "timestamp": "2026-08-25T03:45:43.669807+00:00"
+        },
+        {
+          "max_cores": 0.09017128847222222,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.09017128847222222
+          ],
+          "timestamp": "2026-08-25T03:45:46.696776+00:00"
+        },
+        {
+          "max_cores": 0.12224798542863434,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.12224798542863434
+          ],
+          "timestamp": "2026-08-25T03:45:49.711897+00:00"
+        },
+        {
+          "max_cores": 0.12224798542863434,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.12224798542863434
+          ],
+          "timestamp": "2026-08-25T03:45:52.726200+00:00"
+        },
+        {
+          "max_cores": 0.12224798542863434,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.12224798542863434
+          ],
+          "timestamp": "2026-08-25T03:45:55.750679+00:00"
+        },
+        {
+          "max_cores": 0.12224798542863434,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.12224798542863434
+          ],
+          "timestamp": "2026-08-25T03:45:58.763533+00:00"
+        },
+        {
+          "max_cores": 0.13264914339743758,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.13264914339743758
+          ],
+          "timestamp": "2026-08-25T03:46:01.791421+00:00"
+        },
+        {
+          "max_cores": 0.1456264126500286,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.1456264126500286
+          ],
+          "timestamp": "2026-08-25T03:46:04.811093+00:00"
+        },
+        {
+          "max_cores": 0.14562641265002857,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.14562641265002857
+          ],
+          "timestamp": "2026-08-25T03:46:07.831079+00:00"
+        },
+        {
+          "max_cores": 0.14562641265002857,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.14562641265002857
+          ],
+          "timestamp": "2026-08-25T03:46:10.856699+00:00"
+        },
+        {
+          "max_cores": 0.14562641265002857,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.14562641265002857
+          ],
+          "timestamp": "2026-08-25T03:46:13.881921+00:00"
+        },
+        {
+          "max_cores": 0.1597448920662832,
+          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
+          "query_error": null,
+          "query_success": true,
+          "samples_cores": [
+            0.1597448920662832
+          ],
+          "timestamp": "2026-08-25T03:46:16.903700+00:00"
+        }
+      ],
+      "timeout_seconds": 150,
+      "timestamp": "2026-08-25T03:46:16.932571+00:00"
+    },
+    "injection": {
+      "manifest": "C:\\AtlasOps\\bench\\chaos_manifests\\single_fault\\sf-002.yaml",
+      "result": {
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created",
+        "success": true
+      },
+      "timestamp": "2026-08-25T03:44:42.149030+00:00"
+    },
+    "observable_fault": {
+      "chaos_status": "{\n    \"apiVersion\": \"chaos-mesh.org/v1alpha1\",\n    \"kind\": \"StressChaos\",\n    \"metadata\": {\n        \"annotations\": {\n            \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"chaos-mesh.org/v1alpha1\\\",\\\"kind\\\":\\\"StressChaos\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"scenario\\\":\\\"sf-002\\\",\\\"tier\\\":\\\"single_fault\\\"},\\\"name\\\":\\\"sf-002-paymentservice-cpu\\\",\\\"namespace\\\":\\\"chaos-mesh\\\"},\\\"spec\\\":{\\\"duration\\\":\\\"10m\\\",\\\"mode\\\":\\\"one\\\",\\\"selector\\\":{\\\"labelSelectors\\\":{\\\"",
+      "stresschaos_observed": true,
+      "timestamp": "2026-08-25T03:44:46.267381+00:00"
+    },
+    "telemetry_readiness": {
+      "attempts": 2,
+      "ready": true,
+      "required_stable_probes": 2,
+      "stable_probes": 2,
+      "timestamp": "2026-08-25T03:44:33.639925+00:00"
+    },
+    "verification": {
+      "agent_claimed_resolved": false,
+      "env_resolved": false,
+      "timestamp": "2026-08-25T03:56:00.680443+00:00",
+      "verification_report": {
+        "agent_claimed_resolved": false,
+        "checks": [
+          {
+            "details": "Ready replicas: 1/1 (available: 1)",
+            "name": "workload_paymentservice_ready",
+            "observed": {
+              "desired_replicas": 1,
+              "ready_replicas": 1
+            },
+            "passed": true,
+            "required": true,
+            "target": "default/paymentservice"
+          },
+          {
+            "details": "Active scenario chaos experiments remain: StressChaos/sf-002-paymentservice-cpu",
+            "name": "chaos_mesh_cleared",
+            "observed": {
+              "active_chaos_count": 1,
+              "active_experiments": [
+                "StressChaos/sf-002-paymentservice-cpu"
+              ],
+              "matching_experiments": [
+                "StressChaos/sf-002-paymentservice-cpu"
+              ],
+              "scenario_matching_count": 1
+            },
+            "passed": false,
+            "required": true,
+            "target": "chaos-mesh"
+          }
+        ],
+        "env_resolved": false,
+        "error": null,
+        "evidence": [
+          "Workload default/paymentservice (deployment): Ready replicas: 1/1 (available: 1)",
+          "FAILED Chaos clearance: Active scenario chaos experiments remain: StressChaos/sf-002-paymentservice-cpu"
+        ],
+        "failed_checks": [
+          "chaos_mesh_cleared"
+        ],
+        "is_false_negative": false,
+        "is_false_resolution": false,
+        "observed_metrics": {},
+        "scenario_id": "single_fault/sf-002",
+        "verification_status": "failed",
+        "verification_timestamp": 1787630003.286592
+      }
+    }
+  },
+  "scenario_id": "single_fault/sf-002",
+  "started_at": "2026-08-25T03:43:59.641314+00:00",
+  "tier": "single_fault",
+  "trigger_type": "manual coordinator trigger over a real independently observed cluster fault"
+}

@@ -1,0 +1,79 @@
+2026-08-25 09:16:18,265 [INFO] coordinator: [inc-1787629578-51b219] handling alert: HighCpuUsage
+2026-08-25 09:16:44,149 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:16:50,656 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:17:35,937 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:18:30,727 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:09,027 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:15,004 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:21,644 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:29,731 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:36,732 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:19:53,595 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:39,975 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:45,106 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:48,574 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:52,140 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:55,801 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:20:59,357 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:21:02,964 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:21:06,580 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:21:50,150 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:21:54,605 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:21:54,606 [WARNING] coordinator: remediation exceeded 10 turns
+2026-08-25 09:22:52,763 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:25:14,447 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-08-25 09:26:00,665 [INFO] httpx: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+================================================================================
+ ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION (EXP-STAGE4-SF002-008) 
+ Scenario: single_fault/sf-002 | Model: qwen2.5:3b-instruct (Ollama Local) 
+================================================================================
+
+>>> Phase 0: Telemetry Readiness Gate (pre-reservation)...
+  Telemetry readiness: READY (stable_probes=2/2)
+
+>>> Phase 0b: Paymentservice Baseline Readiness Gate (pre-reservation)...
+  Baseline readiness: READY (stable_probes=2/2, healthy=True)
+
+>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...
+
+>>> Phase 2: Injecting Fault (single_fault/sf-002)...
+  Chaos Mesh injection: stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created
+
+>>> Phase 3: Verifying Observable Fault in Cluster...
+  Observable in cluster: True
+
+>>> Phase 3a: Measuring SF002 Degradation...
+
+>>> Phase 4: Triggering Coordinator Multi-Agent Pipeline...
+  Incident ID: inc-1787629578-51b219
+  Triage Final: {'incident_id': 'inc-1787629578-51b219', 'severity': 'P1', 'title': 'High CPU usage on paymentservice', 'affected_services': ['paymentservice'], 'blast_radius': {'services': ['paymentservice'], 'namespaces': ['default'], 'user_impact_pct': 100, 'revenue_path_affected': True}}
+  Diagnosis Final: {'root_cause': {'category': 'deploy', 'specific': 'A recent deployment to the `paymentservice` namespace may have introduced the issue.', 'evidence': [{'tool': 'argocd_list_apps', 'finding': 'No recent deployments found in the `paymentservice` namespace'}]}, 'confidence': 0.5, 'recommended_fix': [{'action': 'rollback', 'target': 'paymentservice', 'to_revision': 'latest'}]}
+  Remediation Final: {'outcome': 'unresolved', 'proposed_actions': [{'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'latest'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'previous'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '0'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-1'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-2'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-3'}}, {'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-4'}}], 'executed_actions': [{'step': 1, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'latest'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 2, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'previous'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 3, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '1'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 4, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '0'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 5, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-1'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 6, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '0'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 7, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-2'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 8, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-3'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}], 'verified_by': 'promql_query', 'actions_taken': [{'step': 1, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'latest'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 2, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': 'previous'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 3, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '1'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 4, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '0'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 5, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-1'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 6, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '0'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 7, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-2'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}, {'step': 8, 'tool': 'argocd_rollback', 'args': {'app': 'paymentservice', 'revision': '-3'}, 'output': {'success': False, 'error': 'argocd_request_error: request failed'}, 'success': False}]}
+  Coordinator Verifier Env Resolved: False
+
+================================================================================
+ STAGE 4 GOLDEN INCIDENT RESULT: FAIL 
+ Objective Env Resolved: False | Total Duration: 721.06s 
+   [PASS] 1_baseline_healthy
+   [PASS] 2_injection_success
+   [PASS] 3_fault_observed_pre_trigger
+   [PASS] 4_trigger_delivered
+   [PASS] 5_triage_valid
+   [PASS] 6_diagnosis_valid
+   [PASS] 7_diagnosis_truth_match
+   [PASS] 8_approval_satisfied
+   [PASS] 9_remediation_mutating_tool_executed
+   [FAIL] 10_remediation_tool_success
+   [FAIL] 11_remediation_target_match
+   [PASS] 12_no_harness_repair_pre_verification
+   [FAIL] 13_objective_env_resolved
+   [PASS] 14_comms_executed
+   [PASS] 15_evidence_persisted
+================================================================================
+
+Saved golden incident evidence: C:\AtlasOps\artifacts\evidence\stage4\EXP-STAGE4-SF002-008.json
+Updated latest pointer: C:\AtlasOps\artifacts\evidence\stage4\golden_incident_sf002_manifest.json
+
+>>> Phase 6: Post-Verdict Cluster Safety Cleanup...
+  Safety cleanup: stresschaos.chaos-mesh.org "sf-002-paymentservice-cpu" deleted from chaos-mesh namespace
+  Cleanup record (sidecar): C:\AtlasOps\artifacts\evidence\stage4\EXP-STAGE4-SF002-008.cleanup.json

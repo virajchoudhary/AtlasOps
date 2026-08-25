@@ -390,6 +390,162 @@ def write_json_atomic(path: Path, value: dict) -> None:
             temporary.unlink()
 
 
+class EnvironmentPreflightError(RuntimeError):
+    pass
+
+
+class InjectionVerificationError(RuntimeError):
+    pass
+
+
+def _kubectl_get_json(resource: str, namespace: str | None = None) -> dict:
+    command = ["kubectl", "get", resource]
+    if namespace in (None, "-A"):
+        command.append("-A")
+    else:
+        command.extend(["-n", namespace])
+    command.extend(["-o", "json"])
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "kubectl get failed")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("kubectl returned malformed JSON") from exc
+
+
+def _chaos_items() -> list[dict]:
+    parsed = _kubectl_get_json(
+        "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos"
+    )
+    return [item for item in parsed.get("items", []) if item.get("kind")]
+
+
+def _workload_ready(workload: dict) -> bool:
+    kind = str(workload.get("kind", "deployment")).lower()
+    name = str(workload.get("name", ""))
+    namespace = str(workload.get("namespace", "default"))
+    if kind not in {"deployment", "deployments"}:
+        raise EnvironmentPreflightError(f"unsupported preflight workload kind: {kind}")
+    parsed = _kubectl_get_json(kind, namespace)
+    items = parsed.get("items", []) if "items" in parsed else [parsed]
+    target = next(
+        (
+            item for item in items
+            if item.get("metadata", {}).get("name") == name
+        ),
+        None,
+    )
+    if target is None:
+        return False
+    status = target.get("status", {})
+    desired = int(target.get("spec", {}).get("replicas", 0))
+    ready = int(status.get("readyReplicas", 0))
+    minimum = int(workload.get("min_ready_replicas", 1))
+    fraction = float(workload.get("min_ready_fraction", 1.0))
+    return desired > 0 and ready >= minimum and ready / desired >= fraction
+
+
+def preflight_environment(scenario_id: str, *, require_catalogue: bool = True) -> None:
+    """Prove the cluster is clean and baseline workloads are ready before injection."""
+    try:
+        active_faults = _chaos_items()
+    except RuntimeError as exc:
+        raise EnvironmentPreflightError(f"cannot inspect chaos resources: {exc}") from exc
+    if active_faults:
+        raise EnvironmentPreflightError("active chaos resources existed before injection")
+
+    entry = load_catalog_entry(scenario_id)
+    if entry is None:
+        if require_catalogue:
+            raise EnvironmentPreflightError("catalogue entry unavailable")
+        return
+
+    predicates = entry.get("success_predicates") or {}
+    workloads = predicates.get("workloads") or []
+    if not workloads:
+        raise EnvironmentPreflightError("catalogue has no baseline workload predicates")
+    try:
+        not_ready = [
+            f"{item.get('namespace', 'default')}/{item.get('name')}"
+            for item in workloads
+            if not _workload_ready(item)
+        ]
+    except EnvironmentPreflightError:
+        raise
+    except RuntimeError as exc:
+        raise EnvironmentPreflightError(f"cannot inspect baseline workloads: {exc}") from exc
+    if not_ready:
+        raise EnvironmentPreflightError(
+            "baseline workloads were not ready: " + ", ".join(sorted(not_ready))
+        )
+    for legacy_name in predicates.get("require_no_legacy_deployments") or []:
+        parsed = _kubectl_get_json("deployments", "default")
+        items = parsed.get("items", []) if "items" in parsed else [parsed]
+        if any(item.get("metadata", {}).get("name") == legacy_name for item in items):
+            raise EnvironmentPreflightError(f"legacy deployment was present: {legacy_name}")
+
+
+def _manifest_resources(scenario_id: str) -> list[tuple[str, str, str]]:
+    import yaml
+
+    manifest = MANIFESTS_DIR / f"{scenario_id}.yaml"
+    try:
+        documents = [
+            document
+            for document in yaml.safe_load_all(manifest.read_text(encoding="utf-8"))
+            if document
+        ]
+    except (OSError, yaml.YAMLError) as exc:
+        raise InjectionVerificationError(f"cannot inspect injection manifest: {exc}") from exc
+
+    resources = []
+    for document in documents:
+        if not isinstance(document, dict):
+            raise InjectionVerificationError("manifest document is not an object")
+        raw_metadata = document.get("metadata") or {}
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        kind = str(document.get("kind", ""))
+        name = str(metadata.get("name", ""))
+        namespace = str(metadata.get("namespace", "default"))
+        if not kind or not name:
+            raise InjectionVerificationError("manifest resource lacks kind/name")
+        resources.append((kind, name, namespace))
+    if not resources:
+        raise InjectionVerificationError("manifest contains no resources")
+    return resources
+
+
+def verify_injection(scenario_id: str) -> None:
+    """Prove every declared manifest resource was admitted by the API server."""
+    missing = []
+    for kind, name, namespace in _manifest_resources(scenario_id):
+        try:
+            _kubectl_get_json(f"{kind}/{name}", namespace)
+        except RuntimeError as exc:
+            missing.append(f"{kind}/{namespace}/{name}: {exc}")
+    if missing:
+        raise InjectionVerificationError("; ".join(missing))
+
+
+def _cluster_fault_free() -> bool:
+    try:
+        if _chaos_items():
+            return False
+        parsed = _kubectl_get_json("deployments", "default")
+        items = parsed.get("items", []) if "items" in parsed else [parsed]
+        legacy = next(
+            (
+                item for item in items
+                if item.get("metadata", {}).get("name") == "checkoutservice-legacy"
+            ),
+            None,
+        )
+        return legacy is None or int(legacy.get("status", {}).get("readyReplicas") or 0) == 0
+    except (RuntimeError, ValueError, TypeError):
+        return False
+
+
 def apply_chaos(scenario_id: str) -> bool:
     manifest = MANIFESTS_DIR / f"{scenario_id}.yaml"
     if not manifest.exists():
@@ -412,7 +568,11 @@ def reset_cluster() -> bool:
         capture_output=True,
     )
     time.sleep(60)
-    return chaos_reset.returncode == 0 and legacy_reset.returncode == 0
+    return (
+        chaos_reset.returncode == 0
+        and legacy_reset.returncode == 0
+        and _cluster_fault_free()
+    )
 
 
 class AlertObservationTimeout(RuntimeError):
@@ -513,12 +673,55 @@ def wait_for_alert(scenario_id: str, timeout_s: int = 300) -> dict:
     raise AlertObservationTimeout(f"expected alerts did not fire within {timeout_s}s")
 
 
-async def run_scenario(scenario_id: str) -> dict:
+async def run_scenario(scenario_id: str, *, require_catalogue: bool = True) -> dict:
     t0 = time.time()
     tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
+    try:
+        preflight_environment(scenario_id, require_catalogue=require_catalogue)
+    except EnvironmentPreflightError as exc:
+        log.error("environment preflight failed for %s: %s", scenario_id, exc)
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": "environment_preflight_failed",
+            "environment_invalid_before_trial": True,
+        }
+
     ok = apply_chaos(scenario_id)
     if not ok:
+        if not reset_cluster():
+            return {
+                "scenario_id": scenario_id,
+                "tier": tier,
+                "status": "error",
+                "error": "cluster_reset_failed",
+                "reset_failure": True,
+                "environment_invalid_before_trial": True,
+            }
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
+
+    try:
+        verify_injection(scenario_id)
+    except InjectionVerificationError as exc:
+        log.error("injection verification failed for %s: %s", scenario_id, exc)
+        reset_ok = reset_cluster()
+        if not reset_ok:
+            return {
+                "scenario_id": scenario_id,
+                "tier": tier,
+                "status": "error",
+                "error": "cluster_reset_failed",
+                "reset_failure": True,
+                "environment_invalid_before_trial": True,
+            }
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": "injection_verification_failed",
+            "environment_invalid_before_trial": True,
+        }
 
     try:
         alert = wait_for_alert(scenario_id)
@@ -946,7 +1149,7 @@ async def main() -> None:
     for i in range(len(results), len(scenarios)):
         s = scenarios[i]
         log.info("[%d/%d] %s", i + 1, len(scenarios), s)
-        r = await run_scenario(s)
+        r = await run_scenario(s, require_catalogue=args.split_role != "exploration")
         results.append(r)
         append_episode(out_dir, r)
         append_raw_record(

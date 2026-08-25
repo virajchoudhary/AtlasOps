@@ -206,6 +206,8 @@ def test_expected_alert_selector_rejects_unrelated_alerts():
 
 
 def test_run_scenario_preserves_harness_invalid_alert_observations(monkeypatch):
+    monkeypatch.setattr(runner, "preflight_environment", Mock())
+    monkeypatch.setattr(runner, "verify_injection", Mock())
     monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
     monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=True))
     monkeypatch.setattr(

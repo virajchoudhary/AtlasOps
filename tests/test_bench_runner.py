@@ -4,8 +4,15 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, Mock
 
+from bench import runner
+
 
 class TestRunScenario:
+    @pytest.fixture(autouse=True)
+    def trusted_environment(self, monkeypatch):
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "verify_injection", Mock())
+
     def test_passes_cascade_tier_to_judge(self, monkeypatch):
         from bench import runner
 
@@ -234,14 +241,14 @@ class TestResetFailureBoundary:
             })
 
     def test_run_scenario_agent_claims_true_verifier_false(self, monkeypatch):
-        from bench import runner
-
         scenario_id = "single_fault/sf-001"
         incident = {
             "remediation": {"final": {"outcome": "resolved"}},
             "verification": {"agent_claimed_resolved": True, "env_resolved": False, "verification_status": "failed"},
             "triage": {"final": {"severity": "P1"}},
         }
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "verify_injection", Mock())
         monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
         monkeypatch.setattr(runner, "wait_for_alert", Mock(return_value={"commonLabels": {"alertname": "Test"}}))
         monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
@@ -253,6 +260,193 @@ class TestResetFailureBoundary:
         assert episode["resolved"] is False
         assert episode["agent_claimed_resolved"] is True
         assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
+
+
+class TestEnvironmentContract:
+    def test_workload_ready_uses_declared_replica_count(self, monkeypatch):
+        deployment = {
+            "spec": {"replicas": 0},
+            "status": {"replicas": 1, "readyReplicas": 1},
+        }
+        monkeypatch.setattr(
+            runner,
+            "_kubectl_get_json",
+            Mock(return_value=deployment),
+        )
+
+        assert runner._workload_ready({
+            "kind": "deployment",
+            "name": "cartservice",
+            "namespace": "default",
+        }) is False
+
+    def test_failed_apply_attempts_partial_resource_cleanup(self, monkeypatch):
+        reset_cluster = Mock(return_value=True)
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=False))
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["status"] == "skip"
+        assert episode["error"] == "manifest_apply_failed"
+        reset_cluster.assert_called_once_with()
+
+    def test_cleanup_after_failed_apply_is_harness_invalid(self, monkeypatch):
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=False))
+        monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=False))
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["error"] == "cluster_reset_failed"
+        assert episode["reset_failure"] is True
+        assert episode["environment_invalid_before_trial"] is True
+
+    def test_active_chaos_rejects_episode_before_injection(self, monkeypatch):
+        entry = {
+            "success_predicates": {
+                "workloads": [{
+                    "kind": "deployment",
+                    "name": "cartservice",
+                    "namespace": "default",
+                    "min_ready_fraction": 1.0,
+                    "min_ready_replicas": 1,
+                }],
+            }
+        }
+        apply_chaos = Mock()
+        reset_cluster = Mock()
+        monkeypatch.setattr(runner, "load_catalog_entry", Mock(return_value=entry))
+        monkeypatch.setattr(runner, "_chaos_items", Mock(return_value=[{"kind": "PodChaos"}]))
+        monkeypatch.setattr(runner, "apply_chaos", apply_chaos)
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["status"] == "error"
+        assert episode["error"] == "environment_preflight_failed"
+        assert episode["environment_invalid_before_trial"] is True
+        apply_chaos.assert_not_called()
+        reset_cluster.assert_not_called()
+
+    def test_baseline_inspection_failure_is_recorded_harness_invalid(self, monkeypatch):
+        entry = {
+            "success_predicates": {
+                "workloads": [{"kind": "deployment", "name": "cartservice", "namespace": "default"}],
+            }
+        }
+        apply_chaos = Mock()
+        monkeypatch.setattr(runner, "load_catalog_entry", Mock(return_value=entry))
+        monkeypatch.setattr(runner, "_chaos_items", Mock(return_value=[]))
+        monkeypatch.setattr(
+            runner,
+            "_workload_ready",
+            Mock(side_effect=RuntimeError("kubectl unavailable")),
+        )
+        monkeypatch.setattr(runner, "apply_chaos", apply_chaos)
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["error"] == "environment_preflight_failed"
+        assert episode["environment_invalid_before_trial"] is True
+        apply_chaos.assert_not_called()
+
+    def test_missing_injected_resource_resets_and_fails_closed(self, monkeypatch):
+        reset_cluster = Mock(return_value=True)
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(
+            runner,
+            "verify_injection",
+            Mock(side_effect=runner.InjectionVerificationError("resource missing")),
+        )
+        monkeypatch.setattr(runner, "reset_cluster", reset_cluster)
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["status"] == "error"
+        assert episode["error"] == "injection_verification_failed"
+        assert episode["environment_invalid_before_trial"] is True
+        reset_cluster.assert_called_once_with()
+
+    def test_reset_after_failed_admission_is_harness_invalid(self, monkeypatch):
+        monkeypatch.setattr(runner, "preflight_environment", Mock())
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(
+            runner,
+            "verify_injection",
+            Mock(side_effect=runner.InjectionVerificationError("resource missing")),
+        )
+        monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=False))
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["error"] == "cluster_reset_failed"
+        assert episode["reset_failure"] is True
+        assert episode["environment_invalid_before_trial"] is True
+
+    def test_dynamic_exploration_can_skip_catalogue_predicates(self, monkeypatch):
+        incident = {
+            "triage": {"trajectory": [], "final": {"severity": "P1"}},
+            "diagnosis": {"trajectory": [], "final": {}},
+            "remediation": {
+                "trajectory": [],
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 10},
+            },
+            "comms": {"trajectory": [], "final": {}},
+            "verification": {"agent_claimed_resolved": True, "env_resolved": True},
+        }
+        monkeypatch.setattr(runner, "load_catalog_entry", Mock(return_value=None))
+        monkeypatch.setattr(runner, "_chaos_items", Mock(return_value=[]))
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(runner, "verify_injection", Mock())
+        monkeypatch.setattr(
+            runner,
+            "wait_for_alert",
+            Mock(return_value={"commonLabels": {"alertname": "Dynamic"}, "alerts": []}),
+        )
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(
+            runner,
+            "judge_trajectory",
+            AsyncMock(return_value={"overall": 0.8}),
+        )
+        monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=True))
+
+        episode = asyncio.run(
+            runner.run_scenario("adv-unit", require_catalogue=False)
+        )
+
+        assert episode["status"] == "ok"
+        assert episode["root_cause_evaluation"]["available"] is False
+
+    def test_reset_cluster_verifies_fault_objects_are_gone(self, monkeypatch):
+        subprocess_result = Mock(returncode=0)
+        subprocess_mock = Mock(return_value=subprocess_result)
+        monkeypatch.setattr(runner.subprocess, "run", subprocess_mock)
+        monkeypatch.setattr(runner.time, "sleep", Mock())
+        monkeypatch.setattr(runner, "_cluster_fault_free", Mock(return_value=False))
+
+        assert runner.reset_cluster() is False
+        subprocess_mock.assert_any_call(
+            [
+                "kubectl", "delete",
+                "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
+                "--all", "-A",
+            ],
+            capture_output=True,
+        )
+
+        monkeypatch.setattr(runner, "_cluster_fault_free", Mock(return_value=True))
+        assert runner.reset_cluster() is True
+
+    def test_malformed_manifest_becomes_injection_failure(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(runner, "MANIFESTS_DIR", tmp_path)
+        (tmp_path / "bad.yaml").write_text("{ broken", encoding="utf-8")
+
+        with pytest.raises(runner.InjectionVerificationError, match="cannot inspect"):
+            runner._manifest_resources("bad")
 
 
 # ── Reward contract ────────────────────────────────────────────────────────────

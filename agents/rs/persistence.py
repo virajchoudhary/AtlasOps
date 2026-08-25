@@ -222,12 +222,6 @@ def _validate_and_restore_state(
         raise SchemaError("malformed RS model indexes")
     if not all(isinstance(item, list) for item in (matrix, action_factors, singular_values)):
         raise SchemaError("malformed RS model matrices")
-    assert isinstance(incident_index, dict)
-    assert isinstance(action_index, dict)
-    assert isinstance(success_stats, dict)
-    assert isinstance(matrix, list)
-    assert isinstance(action_factors, list)
-    assert isinstance(singular_values, list)
     if list(incident_index.values()) != list(range(len(incident_index))):
         raise SchemaError("incident index must be contiguous")
     if list(action_index.values()) != list(range(len(action_index))):

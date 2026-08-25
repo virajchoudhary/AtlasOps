@@ -32,7 +32,7 @@ G4_PROTOCOL_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
 G4_PROTOCOL_PROFILE_VERSION = "g4-hardening-profile-v2"
 APPROVED_G4_MODEL = "qwen2.5:3b-instruct"
 APPROVED_G4_MODEL_DIGEST = "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
-APPROVED_DIAGNOSIS_PROMPT_SHA256 = "5617f9235959b638311c37650ec640fc84b21de505a2a295cc4a6425f507edfa"
+APPROVED_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
 APPROVED_TOOL_CONTRACT_SHA256 = "52ecf641cb915a3660af1fdf50c4065e388194eaedf0b788a6b0d7480378ecc6"
 EXPECTED_METRICS_API_STATE = "required-present"
 
@@ -59,7 +59,9 @@ def _canonical_hash(value: Any) -> str:
 
 
 def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hash canonical LF-normalized bytes so checkout style cannot split profiles."""
+    content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 def _tool_contract_components() -> dict[str, Any]:

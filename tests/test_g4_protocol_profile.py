@@ -37,6 +37,21 @@ def test_declared_prompt_and_tool_hashes_match_current_contract():
     assert tool_contract_profile()["sha256"] == APPROVED_TOOL_CONTRACT_SHA256
 
 
+def test_file_hashes_are_independent_of_windows_or_posix_newlines(tmp_path):
+    text = b"model-visible protocol contract\nline two"
+    posix_copy = tmp_path / "posix.txt"
+    windows_copy = tmp_path / "windows.txt"
+    posix_copy.write_bytes(text)
+    windows_copy.write_bytes(text.replace(b"\n", b"\r\n"))
+
+    expected = protocol.file_sha256(posix_copy)
+    assert protocol.file_sha256(windows_copy) == expected
+
+    changed = tmp_path / "changed.txt"
+    changed.write_bytes(text + b"\nchanged")
+    assert protocol.file_sha256(changed) != expected
+
+
 def test_fingerprint_is_deterministic_and_covers_all_components():
     first = protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)
     second = protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)

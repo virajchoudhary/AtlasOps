@@ -18,6 +18,17 @@ SPLIT_FIT_ELIGIBILITY = {
     "future_final_test": False,
 }
 VALID_RISKS = frozenset({"low", "medium", "high"})
+VALID_OBSERVATION_TYPES = frozenset({
+    "synthetic_label",
+    "selected_success",
+    "selected_partial",
+    "selected_failure",
+    "not_selected",
+    "unknown_counterfactual",
+    "human_override",
+    "unsafe_filtered",
+    "policy_rejected",
+})
 
 
 class SchemaError(ValueError):
@@ -37,6 +48,12 @@ class Runbook:
     description: str
     stage: str = "remediation"
     tags: tuple[str, ...] = ()
+    version: int = 1
+    service_constraints: tuple[str, ...] = ("*",)
+    safety_constraints: tuple[str, ...] = ()
+    verification_action_ids: tuple[str, ...] = ()
+    deprecated: bool = False
+    provenance: str = "registered-tool-policy"
 
     def __post_init__(self) -> None:
         if not _IDENTIFIER_RE.fullmatch(self.action_id):
@@ -51,10 +68,19 @@ class Runbook:
             raise SchemaError(f"invalid stage on {self.action_id}: {self.stage!r}")
         if self.stage != "remediation" and self.mutating:
             raise SchemaError(f"non-remediation runbook cannot mutate: {self.action_id}")
-        for attr in ("applicable_fault_types", "prerequisites", "tags"):
+        for attr in (
+            "applicable_fault_types", "prerequisites", "tags",
+            "service_constraints", "safety_constraints", "verification_action_ids",
+        ):
             values = getattr(self, attr)
             if isinstance(values, str) or not all(isinstance(v, str) and v for v in values):
                 raise SchemaError(f"{attr} must be non-empty strings on {self.action_id}")
+        if isinstance(self.version, bool) or self.version < 1:
+            raise SchemaError(f"version must be positive on {self.action_id}")
+        if self.deprecated not in {True, False}:
+            raise SchemaError(f"deprecated must be boolean on {self.action_id}")
+        if not self.provenance.strip():
+            raise SchemaError(f"provenance cannot be blank on {self.action_id}")
         if not isinstance(self.parameter_template, dict):
             raise SchemaError(f"parameter_template must be an object on {self.action_id}")
         if not self.name.strip() or not self.description.strip():
@@ -126,6 +152,18 @@ class InteractionRow:
     eligible_for_fit: bool
     source_run: str = ""
     recorded_at_unix: float | None = None
+    observation_type: str = "synthetic_label"
+    rank: int | None = None
+    policy_choice: str = ""
+    approval_result: str = ""
+    executor_outcome: str = ""
+    verifier_outcome: str = ""
+    counterfactual_status: str = ""
+    context_hash: str = ""
+    family_id: str = ""
+    episode_id: str = ""
+    schema_version: str = "rs-interaction-v1"
+    provenance: str = ""
 
     def __post_init__(self) -> None:
         for attr in ("incident_key", "action_id", "service"):
@@ -136,8 +174,15 @@ class InteractionRow:
             isinstance(item, str) and item for item in self.fault_types
         ):
             raise SchemaError("fault_types must be non-empty strings")
-        if self.outcome not in {"success", "partial", "failure", "rejected", "not_selected"}:
+        if self.outcome not in {
+            "success", "partial", "failure", "rejected", "not_selected",
+            "unknown", "human_override", "unsafe_filtered", "policy_rejected",
+        }:
             raise SchemaError(f"invalid outcome: {self.outcome!r}")
+        if self.observation_type not in VALID_OBSERVATION_TYPES:
+            raise SchemaError(f"invalid observation_type: {self.observation_type!r}")
+        if self.schema_version != "rs-interaction-v1":
+            raise SchemaError("unsupported interaction schema_version")
         if isinstance(self.relevance, bool) or not isinstance(self.relevance, (int, float)):
             raise SchemaError("relevance must be numeric")
         relevance = float(self.relevance)
@@ -145,6 +190,19 @@ class InteractionRow:
             raise SchemaError("relevance must be finite in [0, 1]")
         if self.selected == (self.outcome == "not_selected"):
             raise SchemaError("selected/outcome combination is inconsistent")
+        non_observed = {"not_selected", "unknown_counterfactual", "unsafe_filtered", "policy_rejected"}
+        if self.observation_type in non_observed:
+            if self.selected:
+                raise SchemaError(f"{self.observation_type} rows cannot be selected")
+            if relevance != 0.0:
+                raise SchemaError(f"{self.observation_type} rows cannot claim positive utility")
+        if self.observation_type in {"selected_success", "selected_partial", "selected_failure"}:
+            expected_outcome = self.observation_type.removeprefix("selected_")
+            if not self.selected or self.outcome != expected_outcome:
+                raise SchemaError(f"{self.observation_type} conflicts with selected/outcome")
+        if self.rank is not None:
+            if isinstance(self.rank, bool) or self.rank < 1:
+                raise SchemaError("rank must be a positive integer when present")
         if self.split not in VALID_SPLITS:
             raise SchemaError(f"unknown split: {self.split!r}")
         expected_fit = SPLIT_FIT_ELIGIBILITY[self.split]
@@ -172,17 +230,29 @@ def validate_catalogue(catalogue: list[Runbook], registered_tools: frozenset[str
 def validate_interactions(rows: list[InteractionRow]) -> None:
     seen: set[tuple[str, str]] = set()
     by_incident: dict[str, set[str]] = {}
+    by_family: dict[str, set[str]] = {}
+    by_episode: dict[str, set[str]] = {}
     for row in rows:
         pair = (row.incident_key, row.action_id)
         if pair in seen:
             raise SchemaError(f"duplicate interaction for incident/action: {pair}")
         seen.add(pair)
         by_incident.setdefault(row.incident_key, set()).add(row.split)
+        if row.family_id:
+            by_family.setdefault(row.family_id, set()).add(row.split)
+        if row.episode_id:
+            by_episode.setdefault(row.episode_id, set()).add(row.split)
         if row.eligible_for_fit and row.split not in {"train", "calibration"}:
             raise SchemaError(f"illegal fit row outside train/calibration: {row.incident_key}")
     mixed = {key: splits for key, splits in by_incident.items() if len(splits) != 1}
     if mixed:
         raise SchemaError(f"incident appears in multiple splits: {sorted(mixed)[:3]}")
+    mixed_families = {key: splits for key, splits in by_family.items() if len(splits) != 1}
+    if mixed_families:
+        raise SchemaError(f"incident family crosses splits: {sorted(mixed_families)[:3]}")
+    mixed_episodes = {key: splits for key, splits in by_episode.items() if len(splits) != 1}
+    if mixed_episodes:
+        raise SchemaError(f"source episode crosses splits: {sorted(mixed_episodes)[:3]}")
 
 
 def validate_split_boundaries(rows: list[InteractionRow]) -> None:

@@ -5,12 +5,79 @@ placeholders; rendering is deferred to the future GRPO/remediation integration,
 after approval. No module in this package executes tools.
 """
 
+from dataclasses import replace
+
 from agents.rs.schemas import Runbook, validate_catalogue
 from agents.tool_policy import ROLE_ALLOWED_TOOLS
 
 
 def _runbook(action_id: str, **kwargs: object) -> Runbook:
     return Runbook(action_id=action_id, **kwargs)  # type: ignore[arg-type]
+
+
+def _apply_governance(items: list[Runbook]) -> list[Runbook]:
+    """Attach explicit safety/verification provenance to executable templates.
+
+    ``mutating`` follows AtlasOps' broad side-effect boundary: Slack is not a
+    cluster mutation, but it does create an external communication record and is
+    therefore gated before execution.
+    """
+    verification_by_tool = {
+        "chaos_stop_experiment": ("verify_readiness_after_action", "verify_signal_recovery"),
+        "kubectl_scale": ("verify_readiness_after_action", "verify_signal_recovery"),
+        "kubectl_rollout": ("describe_after_action", "verify_signal_recovery"),
+        "argocd_rollback": ("verify_readiness_after_action", "describe_after_action", "verify_signal_recovery"),
+        "alertmanager_silence": ("verify_signal_recovery",),
+    }
+    safety_by_tool = {
+        "chaos_stop_experiment": (
+            "requires_downstream_approval",
+            "chaos_namespace_locked_to_chaos_mesh",
+            "resource_name_must_identify_active_experiment",
+        ),
+        "kubectl_scale": (
+            "requires_downstream_approval",
+            "replicas_must_be_0_through_20",
+            "namespace_must_match_incident_profile",
+        ),
+        "kubectl_rollout": (
+            "requires_downstream_approval",
+            "only_undo_is_permitted",
+            "rollout_history_must_exist",
+        ),
+        "argocd_rollback": (
+            "requires_downstream_approval",
+            "revision_id_must_exist_in_application_history",
+        ),
+        "alertmanager_silence": (
+            "requires_downstream_approval",
+            "temporary_mitigation_only_does_not_resolve_root_cause",
+        ),
+        "slack_post_update": (
+            "external_communication_side_effect",
+            "requires_downstream_approval",
+        ),
+    }
+    by_id = {item.action_id: item for item in items}
+    governed = []
+    for item in items:
+        updates: dict[str, object] = {
+            "version": 1,
+            "service_constraints": ("*",),
+            "safety_constraints": safety_by_tool.get(item.tool_name, ()),
+            "deprecated": False,
+            "provenance": f"agents.tool_policy:{item.tool_name}; agents.coordinator._TOOL_PARAMETER_SCHEMAS:{item.tool_name}",
+        }
+        if item.stage == "remediation":
+            updates["verification_action_ids"] = verification_by_tool.get(item.tool_name, ())
+        governed.append(replace(item, **updates))  # type: ignore[arg-type]
+    for item in governed:
+        unknown_verifiers = set(item.verification_action_ids).difference(by_id)
+        if unknown_verifiers:
+            raise ValueError(
+                f"{item.action_id} references unknown verification actions: {sorted(unknown_verifiers)}"
+            )
+    return governed
 
 
 def _build_catalogue() -> list[Runbook]:
@@ -73,10 +140,10 @@ def _build_catalogue() -> list[Runbook]:
             applicable_fault_types=("all",),
             prerequisites=("severity", "recommendation_summary"),
             risk="low",
-            mutating=False,
+            mutating=True,
             description="Publish a human-readable recommendation without cluster mutation.",
             stage="remediation",
-            tags=("communication",),
+            tags=("communication", "side_effect"),
         ),
         _runbook(
             "verify_readiness_after_action",
@@ -164,6 +231,7 @@ def _build_catalogue() -> list[Runbook]:
                 parameter_template={
                     "deployment": "{{service}}",
                     "replicas": f"{{{{target_replicas|int:{default_replicas}}}}}",
+                    "namespace": "{{namespace}}",
                 },
                 applicable_fault_types=(fault,),
                 prerequisites=("target_replicas:int", *common_prereqs),
@@ -238,7 +306,6 @@ def _build_catalogue() -> list[Runbook]:
                     "matchers": [{"name": "alertname", "value": "{{alertname}}", "isRegex": False}],
                     "duration_minutes": "{{duration_minutes|int:30}}",
                     "comment": "AtlasOps temporary mitigation silence",
-                    "created_by": "atlasops-recommender",
                 },
                 applicable_fault_types=(fault,),
                 prerequisites=("alertname", "duration_minutes:int", "mitigation_in_progress"),
@@ -251,5 +318,6 @@ def _build_catalogue() -> list[Runbook]:
     return items
 
 
-RUNBOOK_CATALOGUE: list[Runbook] = _build_catalogue()
+RAW_RUNBOOK_CATALOGUE: list[Runbook] = _build_catalogue()
+RUNBOOK_CATALOGUE: list[Runbook] = _apply_governance(RAW_RUNBOOK_CATALOGUE)
 validate_catalogue(RUNBOOK_CATALOGUE, ROLE_ALLOWED_TOOLS["remediation"])

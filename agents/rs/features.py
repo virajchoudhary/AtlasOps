@@ -44,25 +44,47 @@ def context_from_diagnosis(
     alert_labels = triage.get("labels") if isinstance(triage.get("labels"), dict) else {}
     namespace = str(alert_labels.get("namespace") or triage.get("namespace") or "default")
     severity = str(triage.get("severity") or alert_labels.get("severity") or "unknown")
-    root_cause = diagnosis.get("root_cause")
-    if not isinstance(root_cause, dict):
-        raise SchemaError("diagnosis.root_cause must be an object")
-    category = root_cause.get("category")
-    specific = root_cause.get("specific")
-    evidence_items = root_cause.get("evidence")
-    recommended_actions = diagnosis.get("recommended_actions")
-    if not isinstance(category, str) or not category.strip():
-        raise SchemaError("diagnosis.root_cause.category must be a non-empty string")
-    if not isinstance(specific, str) or not specific.strip():
-        raise SchemaError("diagnosis.root_cause.specific must be a non-empty string")
-    if not isinstance(evidence_items, list):
-        raise SchemaError("diagnosis.root_cause.evidence must be a list")
-    if not isinstance(recommended_actions, list):
-        raise SchemaError("diagnosis.recommended_actions must be a list")
-    category_text = _text(category)
-    specific_text = _text(specific)
-    evidence_text = _text(evidence_items)
-    actions_text = _text(recommended_actions)
+    root_cause_value = diagnosis.get("root_cause")
+    if isinstance(root_cause_value, dict):
+        category = root_cause_value.get("category")
+        specific = root_cause_value.get("specific")
+        evidence_items = root_cause_value.get("evidence")
+        recommended_actions = diagnosis.get("recommended_actions")
+        if not isinstance(category, str) or not category.strip():
+            raise SchemaError("diagnosis.root_cause.category must be a non-empty string")
+        if not isinstance(specific, str) or not specific.strip():
+            raise SchemaError("diagnosis.root_cause.specific must be a non-empty string")
+        if not isinstance(evidence_items, list):
+            raise SchemaError("diagnosis.root_cause.evidence must be a list")
+        if not isinstance(recommended_actions, list):
+            raise SchemaError("diagnosis.recommended_actions must be a list")
+        category_text = _text(category)
+        specific_text = _text(specific)
+        evidence_text = _text(evidence_items)
+        actions_text = _text(recommended_actions)
+    elif isinstance(root_cause_value, str) and root_cause_value.strip():
+        # Coordinator's forced-conclusion compatibility form keeps root_cause
+        # flat while retaining explicit evidence plus one recommendation field.
+        evidence_items = diagnosis.get("evidence")
+        legacy_action = diagnosis.get(
+            "recommended_fix",
+            diagnosis.get("next_action", diagnosis.get("recommended_actions")),
+        )
+        if not isinstance(evidence_items, list):
+            raise SchemaError("legacy diagnosis.evidence must be a list")
+        if not (
+            (isinstance(legacy_action, str) and legacy_action.strip())
+            or isinstance(legacy_action, list)
+        ):
+            raise SchemaError(
+                "legacy diagnosis requires recommended_fix, next_action, or recommended_actions"
+            )
+        category_text = ""
+        specific_text = root_cause_value
+        evidence_text = _text(evidence_items)
+        actions_text = _text(legacy_action)
+    else:
+        raise SchemaError("diagnosis.root_cause must be an object or non-empty string")
     combined = " ".join((category_text, specific_text, evidence_text, actions_text)).lower()
     fault_types = tuple(_infer_fault_types(combined))
     symptoms = tuple(dict.fromkeys(

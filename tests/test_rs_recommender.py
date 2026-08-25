@@ -100,8 +100,9 @@ def test_catalogue_contains_only_real_remediation_acl_tools():
     validate_catalogue_module(RUNBOOK_CATALOGUE, ROLE_ALLOWED_TOOLS["remediation"])
     tools = {item.tool_name for item in RUNBOOK_CATALOGUE}
     assert tools <= ROLE_ALLOWED_TOOLS["remediation"]
+    side_effecting_tools = CLUSTER_MUTATING_TOOLS | {"slack_post_update"}
     mutating = {item.tool_name for item in RUNBOOK_CATALOGUE if item.mutating}
-    assert mutating == CLUSTER_MUTATING_TOOLS
+    assert mutating == side_effecting_tools
 
 
 def test_runbook_templates_declare_inputs_and_have_json_values():
@@ -213,6 +214,45 @@ def test_context_adapter_fails_closed_on_missing_canonical_diagnosis_fields(
             incident_key="synthetic/malformed",
             triage={"affected_services": ["paymentservice"]},
             diagnosis=diagnosis,
+        )
+
+
+def test_context_adapter_supports_flat_coordinator_compatibility_contract():
+    context = context_from_diagnosis(
+        incident_key="synthetic/flat-profile",
+        triage={
+            "severity": "P1",
+            "affected_services": ["paymentservice"],
+            "labels": {"namespace": "default"},
+        },
+        diagnosis={
+            "root_cause": "CPU stress caused paymentservice saturation.",
+            "confidence": 0.82,
+            "evidence": [
+                {"tool": "promql_query", "finding": "CPU above 90%"},
+            ],
+            "recommended_fix": "scale paymentservice after confirming capacity headroom",
+        },
+        mutation_budget_remaining=2,
+    )
+    assert context.service == "paymentservice"
+    assert "cpu_saturation" in context.fault_types
+    assert "promql_query" in context.diagnosis_text
+    assert context.approval_granted is False
+
+
+def test_context_adapter_rejects_dict_stringification_and_incomplete_legacy():
+    with pytest.raises(SchemaError, match="category"):
+        context_from_diagnosis(
+            incident_key="synthetic/incomplete-nested",
+            triage={"affected_services": ["paymentservice"]},
+            diagnosis={"root_cause": {"specific": "CPU stress"}, "recommended_actions": []},
+        )
+    with pytest.raises(SchemaError, match="legacy diagnosis"):
+        context_from_diagnosis(
+            incident_key="synthetic/incomplete-flat",
+            triage={"affected_services": ["paymentservice"]},
+            diagnosis={"root_cause": "CPU stress", "evidence": []},
         )
 
 

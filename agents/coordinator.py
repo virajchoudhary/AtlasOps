@@ -1391,6 +1391,11 @@ def _stage9_remediation_observation(
     approval_mode = str(observation["approval_mode"])
     if approval_mode != expected_approval_mode:
         raise ValueError("stage9_approval_gate_mismatch")
+    if approval_mode == "approve":
+        raise ValueError(
+            "stage9_interactive_approval_required: unattended training may not "
+            "use the human-approval timeout path"
+        )
     if not isinstance(observation["incident_id"], str) or not observation["incident_id"]:
         raise ValueError("stage9_observation_incident_invalid")
     return alert, triage, diagnosis, severity
@@ -1672,7 +1677,7 @@ async def handle_incident(
         (TRAJECTORIES_DIR / f"{incident_id}.json").write_text(
             json.dumps(full_record, indent=2), encoding="utf-8",
         )
-        if _live_judge_requested():
+        if remediation_observation is None and _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory
 
             tier = infer_tier_from_alert(alert)

@@ -169,12 +169,17 @@ def _approved_tool_context(identity: EnvironmentIdentity):
 def verify_kubernetes_environment(identity: EnvironmentIdentity) -> dict[str, Any]:
     if identity.provider != CANONICAL_LOCAL_ENVIRONMENT_PROVIDER:
         raise InfrastructureInvalid("environment_provider_invalid")
-    result = _run_kubectl(identity, ["config", "current-context"], timeout=10)
-    observed = result.get("stdout", "").strip()
-    if not result["success"] or observed != identity.kubernetes_context:
+    result = _run_kubectl(identity, ["config", "get-contexts", "--output", "name"], timeout=10)
+    observed_contexts = {
+        line.strip() for line in result.get("stdout", "").splitlines() if line.strip()
+    }
+    if (
+        not result["success"]
+        or identity.kubernetes_context not in observed_contexts
+    ):
         raise InfrastructureInvalid(
             f"kubernetes_context_mismatch:expected={identity.kubernetes_context},"
-            f"observed={observed or 'none'}"
+            f"observed={sorted(observed_contexts) or 'none'}"
         )
     return {"status": "CONTEXT_VERIFIED", "identity": identity.to_dict()}
 
@@ -721,11 +726,13 @@ def validate_sft_checkpoint(
         raise ValueError("sft_file_hashes_missing")
     weight_index_name = None
     shard_names: list[str] = []
+    hash_checked_files = list(required_files)
     weight_index_name = next(
         (name for name in ("model.safetensors.index.json", "pytorch_model.bin.index.json") if (path / name).is_file()),
         None,
     )
     if weight_index_name:
+        hash_checked_files.append(weight_index_name)
         try:
             index = json.loads((path / weight_index_name).read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -739,8 +746,16 @@ def validate_sft_checkpoint(
         missing_shards = [name for name in shard_names if not (path / name).is_file()]
         if missing_shards:
             raise ValueError(f"sft_weight_shards_missing:{','.join(missing_shards)}")
+        hash_checked_files.extend(shard_names)
 
-    hash_checked_files = [*required_files, *(shard_names if weight_index_name else [])]
+    if not weight_index_name:
+        single_weight = next(
+            (name for name in ("model.safetensors", "pytorch_model.bin") if (path / name).is_file()),
+            None,
+        )
+        if single_weight:
+            hash_checked_files.append(single_weight)
+
     for relative_name in hash_checked_files:
         expected = file_hashes.get(relative_name)
         actual = _sha256_file(path / relative_name) if (path / relative_name).is_file() else None
@@ -766,6 +781,7 @@ def validate_sft_checkpoint(
     # Copy only the declared scientific provenance into run manifests. A G8
     # sidecar must never become a path for unrelated credentials to persist.
     return {
+        "_raw_manifest_sha256": _sha256_file(manifest_path),
         "base_model": base_model,
         "checkpoint_kind": manifest["checkpoint_kind"],
         "file_hashes": file_hashes,

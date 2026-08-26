@@ -413,6 +413,21 @@ def test_kubectl_always_carries_declared_context_and_never_gcloud_auth() -> None
     assert all("USE_GKE_GCLOUD_AUTH_PLUGIN" not in kwargs.get("env", {}) for _, kwargs in commands)
 
 
+def test_unlisted_kubectl_context_fails_closed() -> None:
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    def fake_run(_identity, _args, **_kwargs):
+        return {"success": True, "stdout": "other-context\n"}
+
+    original = verify_kubernetes_environment.__globals__["_run_kubectl"]
+    verify_kubernetes_environment.__globals__["_run_kubectl"] = fake_run
+    try:
+        with pytest.raises(InfrastructureInvalid, match="kubernetes_context_mismatch"):
+            verify_kubernetes_environment(identity)
+    finally:
+        verify_kubernetes_environment.__globals__["_run_kubectl"] = original
+
+
 def test_cluster_health_requires_all_minimum_deployments_ready() -> None:
     identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
     payload = {
@@ -585,6 +600,15 @@ def test_stage9_observation_cannot_bypass_approval_policy() -> None:
     observation["triage"]["severity"] = "P0"
 
     with pytest.raises(ValueError, match="stage9_approval_gate_mismatch"):
+        coordinator._stage9_remediation_observation(observation)
+
+
+def test_interactive_approval_rows_fail_closed_before_waiting() -> None:
+    observation = _observation()
+    observation["triage"]["severity"] = "P1"
+    observation["approval_mode"] = "approve"
+
+    with pytest.raises(ValueError, match="stage9_interactive_approval_required"):
         coordinator._stage9_remediation_observation(observation)
 
 
@@ -980,6 +1004,20 @@ def test_merged_g8_checkpoint_manifest_is_required(tmp_path: Path) -> None:
 
     assert manifest["checkpoint_kind"] == "merged_decoder"
     assert "operator_credential" not in manifest
+    assert manifest["_raw_manifest_sha256"]
+
+
+def test_single_weight_hash_is_required(tmp_path: Path) -> None:
+    checkpoint = _write_sft_checkpoint(tmp_path / "unhashed-weight")
+    manifest = json.loads((checkpoint / "checkpoint_manifest.json").read_text(encoding="utf-8"))
+    manifest["file_hashes"].pop("model.safetensors")
+    (checkpoint / "checkpoint_manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="sft_file_hash_mismatch:model.safetensors"):
+        validate_sft_checkpoint(checkpoint)
 
 
 def test_weight_index_shard_completeness_is_enforced(tmp_path: Path) -> None:

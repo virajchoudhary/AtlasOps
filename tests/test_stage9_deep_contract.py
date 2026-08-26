@@ -64,6 +64,17 @@ def _row(scenario_id: str = "single_fault/sf-900", replay_id: str = "replay-1") 
     )
 
 
+def _policy_completion() -> str:
+    return json.dumps({
+        "name": "chaos_stop_experiment",
+        "arguments": {
+            "kind": "StressChaos",
+            "name": "sf-002-paymentservice-cpu",
+            "namespace": "chaos-mesh",
+        },
+    })
+
+
 def test_remediation_row_is_rebuildable_and_hides_scenario_identity() -> None:
     row = _row()
     normalized = validate_remediation_training_row(row)
@@ -161,7 +172,7 @@ def test_invalid_policy_completion_receives_no_progress_credit() -> None:
     assert breakdown["components"]["dense_policy_action"] == 0.0
 
 
-def test_policy_owned_nonmutating_success_gets_bounded_dense_credit() -> None:
+def test_policy_owned_nonmutating_success_gets_no_progress_credit() -> None:
     action = {
         "args": {"query": "up"},
         "output": {"success": True},
@@ -183,8 +194,8 @@ def test_policy_owned_nonmutating_success_gets_bounded_dense_credit() -> None:
     }
     breakdown = compute_reward_breakdown(episode)
 
-    assert breakdown["components"]["dense_policy_action"] == pytest.approx(0.04)
-    assert breakdown["total"] == pytest.approx(0.04)
+    assert breakdown["components"]["dense_policy_action"] == pytest.approx(0.0)
+    assert breakdown["total"] == pytest.approx(0.0)
 
 
 def test_env_truth_without_policy_owned_mutation_cannot_resolve() -> None:
@@ -456,11 +467,18 @@ def test_paired_rollout_keeps_scenario_out_of_model_visible_alert(
     identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
     seen = {}
 
-    async def fake_handle_incident(alert, *, scenario_id, remediation_policy_completion):
+    async def fake_handle_incident(
+        alert,
+        *,
+        scenario_id,
+        remediation_policy_completion,
+        remediation_observation,
+    ):
         seen.update({
             "alert": alert,
             "completion": remediation_policy_completion,
             "scenario_id": scenario_id,
+            "observation": remediation_observation,
         })
         return {
             "agent_claimed_resolved": False,
@@ -506,9 +524,116 @@ def test_paired_rollout_keeps_scenario_out_of_model_visible_alert(
 
     assert seen["scenario_id"] == "single_fault/sf-900"
     assert "scenario_id" not in seen["alert"]
+    assert seen["observation"] == _row()["observation"]
     assert result["lifecycle"][0]["phase"] == "CONTEXT_VERIFIED"
     assert result["lifecycle"][1]["phase"] == "PRE_ROLLOUT_HEALTHY"
     assert result["lifecycle"][-1]["phase"] == "POST_RESET_HEALTHY"
+
+
+def test_stage9_rollout_replays_exact_row_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    observed = []
+
+    def fake_tool(**args):
+        observed.append(args)
+        return {"success": True}
+
+    verification = SimpleNamespace(
+        env_resolved=True,
+        verification_status="passed",
+        failed_checks=[],
+        to_dict=lambda: {"env_resolved": True},
+    )
+
+    async def fake_settle(**kwargs):
+        return {"scenario_id": kwargs["scenario_id"]}
+
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "chaos_stop_experiment", fake_tool)
+    monkeypatch.setattr(coordinator, "settle_environment", fake_settle)
+    monkeypatch.setattr("agents.verifier.verify_environment", lambda **kwargs: verification)
+    monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path)
+
+    observation = _observation()
+    incident = asyncio.run(coordinator.handle_incident(
+        observation["alert"],
+        incident_id="inc-stage9-replay",
+        scenario_id="single_fault/sf-900",
+        remediation_policy_completion=_policy_completion(),
+        remediation_observation=observation,
+    ))
+
+    assert observed == [{
+        "kind": "StressChaos",
+        "name": "sf-002-paymentservice-cpu",
+        "namespace": "chaos-mesh",
+    }]
+    assert incident["triage"]["source"] == "stage9_training_row"
+    assert incident["diagnosis"]["source"] == "stage9_training_row"
+    assert incident["triage"]["final"] is observation["triage"]
+    assert incident["diagnosis"]["final"] is observation["diagnosis"]
+    assert "scenario_id" not in incident["alert"]
+    assert incident["comms"]["final"]["skipped"] == "stage9_reward_rollout"
+
+
+def test_stage9_observation_cannot_bypass_approval_policy() -> None:
+    observation = _observation()
+    observation["approval_mode"] = "auto"
+    observation["triage"]["severity"] = "P0"
+
+    with pytest.raises(ValueError, match="stage9_approval_gate_mismatch"):
+        coordinator._stage9_remediation_observation(observation)
+
+
+def test_stage9_observation_rejects_hidden_identity_key() -> None:
+    observation = _observation()
+    observation["alert"]["scenario_id"] = "single_fault/sf-900"
+
+    with pytest.raises(ValueError, match="hidden_scenario_leak"):
+        coordinator._stage9_remediation_observation(observation)
+
+
+def test_manual_gate_prevents_stage9_policy_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+
+    def reject_tool(**_args):
+        raise AssertionError("manual gate must block optimized execution")
+
+    verification = SimpleNamespace(
+        env_resolved=False,
+        verification_status="failed",
+        failed_checks=["manual"],
+        to_dict=lambda: {"env_resolved": False},
+    )
+
+    async def fake_settle(**_kwargs):
+        return {}
+
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "chaos_stop_experiment", reject_tool)
+    monkeypatch.setattr(coordinator, "settle_environment", fake_settle)
+    monkeypatch.setattr("agents.verifier.verify_environment", lambda **_kwargs: verification)
+    monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path)
+    observation = _observation()
+    observation["triage"]["severity"] = "P0"
+    observation["approval_mode"] = "manual"
+
+    incident = asyncio.run(coordinator.handle_incident(
+        observation["alert"],
+        incident_id="inc-manual-stage9",
+        scenario_id="single_fault/sf-900",
+        remediation_policy_completion=_policy_completion(),
+        remediation_observation=observation,
+    ))
+
+    assert incident["remediation"]["final"]["mode"] == "manual"
+    assert incident["remediation"]["trajectory"] == []
 
 
 def test_pre_rollout_invalidity_never_applies_fault_or_scores_policy(
@@ -721,7 +846,7 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
                         "executed_actions": [{
                             "args": {},
                             "success": True,
-                            "tool": "kubectl_get",
+                            "tool": "chaos_stop_experiment",
                         }],
                         "mode": "policy_rollout",
                         "policy_action_admitted": True,
@@ -753,7 +878,7 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
         stage9_group_id=[first["stage9_group_id"], second["stage9_group_id"]],
     )
 
-    assert rewards == pytest.approx([0.04, 0.04])
+    assert rewards == pytest.approx([0.08, 0.08])
     assert [group for group, _ in seen] == [
         first["stage9_group_id"],
         second["stage9_group_id"],
@@ -805,6 +930,7 @@ def _write_sft_checkpoint(root: Path, *, adapter: bool = False) -> Path:
         "config.json": '{"model_type":"qwen2"}',
         "generation_config.json": "{}",
         "tokenizer_config.json": "{}",
+        "tokenizer.json": "{}",
         "model.safetensors": "weights",
     }
     if adapter:
@@ -817,11 +943,16 @@ def _write_sft_checkpoint(root: Path, *, adapter: bool = False) -> Path:
         "base_model": {
             "architecture": "qwen2",
             "name": "Qwen/Qwen2.5-7B-Instruct",
-            "revision": "synthetic",
+            "revision": "a" * 40,
         },
         "checkpoint_kind": "merged_decoder",
         "file_hashes": hashes,
-        "g8_evaluation": {"passed": True},
+        "g8_evaluation": {
+            "code_commit": "b" * 40,
+            "metrics": {"resolution_rate": 1.0},
+            "passed": True,
+            "run_id": "EXP-G8-SYNTHETIC",
+        },
         "lora": {
             "bias": "none",
             "lora_alpha": 32,
@@ -835,8 +966,10 @@ def _write_sft_checkpoint(root: Path, *, adapter: bool = False) -> Path:
         "schema_version": 1,
         "sft_corpus": {"sha256": "c" * 64},
         "stage": "G8",
-        "tokenizer": {"name": "Qwen/Qwen2.5-7B-Instruct", "revision": "synthetic"},
+        "tokenizer": {"name": "Qwen/Qwen2.5-7B-Instruct", "revision": "c" * 40},
     }
+    # Unknown sidecar fields must never be copied into a Stage 9 run manifest.
+    manifest["operator_credential"] = "must-not-propagate"
     (root / "checkpoint_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return root
 
@@ -846,6 +979,18 @@ def test_merged_g8_checkpoint_manifest_is_required(tmp_path: Path) -> None:
     manifest = validate_sft_checkpoint(checkpoint)
 
     assert manifest["checkpoint_kind"] == "merged_decoder"
+    assert "operator_credential" not in manifest
+
+
+def test_weight_index_shard_completeness_is_enforced(tmp_path: Path) -> None:
+    checkpoint = _write_sft_checkpoint(tmp_path / "sharded")
+    (checkpoint / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"layer": "missing.safetensors"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="sft_weight_shards_missing"):
+        validate_sft_checkpoint(checkpoint)
 
 
 def test_adapter_only_checkpoint_fails_closed(tmp_path: Path) -> None:

@@ -48,6 +48,7 @@ CANONICAL_LOCAL_KUBERNETES_CONTEXT = "kind-atlasops-local"
 _CONTEXT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 REWARD_CONTRACT_VERSION = "stage9-policy-attributed-v2"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Training-time-only dependencies are imported inside the functions that need
 # them so coupling audits do not require a GPU/TRL installation.
@@ -314,18 +315,16 @@ def compute_reward_breakdown(episode: dict) -> dict[str, Any]:
         and owned.get("tool") in CLUSTER_MUTATING_TOOLS
         and owned.get("success") is True
     )
-    nonmutating_success = bool(
-        owned
-        and owned.get("tool") not in CLUSTER_MUTATING_TOOLS
-        and owned.get("success") is True
-    )
+    # A successful read-only action is attributable but does not advance fault
+    # resolution. Keep it at zero so one-action rollouts cannot farm progress.
+    nonmutating_success = False
     resolution = 0.85 if env_resolved and mutating_success else 0.0
     partial = 0.25 if (
         not resolution
         and str(episode.get("outcome")) == "partial"
-        and (mutating_success or nonmutating_success)
+        and mutating_success
     ) else 0.0
-    dense = 0.08 if mutating_success else (0.04 if nonmutating_success else 0.0)
+    dense = 0.08 if mutating_success else 0.0
     penalties = {
         key: float(value)
         for key, value in audit.get("penalties", {}).items()
@@ -525,16 +524,14 @@ class OnlineRewardFunction:
             await self._reset_and_verify(lifecycle)
 
         try:
-            alert = {
-                "alerts": [],
-                "commonLabels": {"alertname": "GRPOTrainingAlert"},
-            }
+            alert = row["observation"]["alert"]
             started = time.time()
             with _approved_tool_context(self.environment):
                 incident = await handle_incident(
                     alert,
                     scenario_id=scenario_id,
                     remediation_policy_completion=completion_text,
+                    remediation_observation=row["observation"],
                 )
         except Exception as exc:
             raise PolicyExecutionInvalid(f"rollout_harness_error:{exc}") from exc
@@ -669,7 +666,13 @@ def validate_sft_checkpoint(
     if manifest.get("stage") != "G8":
         raise ValueError("sft_stage_must_be_g8")
     evaluation = manifest.get("g8_evaluation")
-    if not isinstance(evaluation, dict) or evaluation.get("passed") is not True:
+    if (
+        not isinstance(evaluation, dict)
+        or evaluation.get("passed") is not True
+        or not str(evaluation.get("run_id", "")).strip()
+        or not _GIT_COMMIT_RE.fullmatch(str(evaluation.get("code_commit", "")))
+        or not isinstance(evaluation.get("metrics"), dict)
+    ):
         raise ValueError("g8_evaluation_not_passed")
     corpus = manifest.get("sft_corpus")
     if not isinstance(corpus, dict) or not _SHA256_RE.fullmatch(str(corpus.get("sha256", ""))):
@@ -678,7 +681,7 @@ def validate_sft_checkpoint(
     if (
         not isinstance(base_model, dict)
         or not str(base_model.get("name", "")).strip()
-        or not str(base_model.get("revision", "")).strip()
+        or not _GIT_COMMIT_RE.fullmatch(str(base_model.get("revision", "")))
         or not str(base_model.get("architecture", "")).strip()
     ):
         raise ValueError("sft_base_identity_missing")
@@ -686,7 +689,7 @@ def validate_sft_checkpoint(
     if (
         not isinstance(tokenizer_identity, dict)
         or not str(tokenizer_identity.get("name", "")).strip()
-        or not str(tokenizer_identity.get("revision", "")).strip()
+        or not _GIT_COMMIT_RE.fullmatch(str(tokenizer_identity.get("revision", "")))
     ):
         raise ValueError("sft_tokenizer_identity_missing")
     lora_provenance = manifest.get("lora")
@@ -699,7 +702,13 @@ def validate_sft_checkpoint(
     } != required_lora:
         raise ValueError("sft_lora_provenance_mismatch")
 
-    required_files = ("config.json", "generation_config.json", "tokenizer_config.json")
+    required_files = ["config.json", "generation_config.json", "tokenizer_config.json"]
+    if (path / "tokenizer.json").is_file():
+        required_files.append("tokenizer.json")
+    else:
+        if not ((path / "vocab.json").is_file() and (path / "merges.txt").is_file()):
+            raise ValueError("incomplete_tokenizer_artifacts")
+        required_files.extend(("vocab.json", "merges.txt"))
     missing = [name for name in required_files if not (path / name).is_file()]
     has_weights = any((path / name).is_file() for name in (
         "model.safetensors", "pytorch_model.bin", "model.safetensors.index.json",
@@ -710,7 +719,29 @@ def validate_sft_checkpoint(
     file_hashes = manifest.get("file_hashes")
     if not isinstance(file_hashes, dict):
         raise ValueError("sft_file_hashes_missing")
-    for relative_name in required_files:
+    weight_index_name = None
+    shard_names: list[str] = []
+    weight_index_name = next(
+        (name for name in ("model.safetensors.index.json", "pytorch_model.bin.index.json") if (path / name).is_file()),
+        None,
+    )
+    if weight_index_name:
+        try:
+            index = json.loads((path / weight_index_name).read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"sft_weight_index_invalid_json:{weight_index_name}") from exc
+        weight_map = index.get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise ValueError(f"sft_weight_map_missing:{weight_index_name}")
+        shard_names = sorted(set(weight_map.values()))
+        if any(not isinstance(name, str) or not name for name in shard_names):
+            raise ValueError(f"sft_weight_map_invalid:{weight_index_name}")
+        missing_shards = [name for name in shard_names if not (path / name).is_file()]
+        if missing_shards:
+            raise ValueError(f"sft_weight_shards_missing:{','.join(missing_shards)}")
+
+    hash_checked_files = [*required_files, *(shard_names if weight_index_name else [])]
+    for relative_name in hash_checked_files:
         expected = file_hashes.get(relative_name)
         actual = _sha256_file(path / relative_name) if (path / relative_name).is_file() else None
         if expected != actual:
@@ -732,7 +763,19 @@ def validate_sft_checkpoint(
                 raise ValueError(f"sft_manifest_file_missing:{relative_name}")
             if _SHA256_RE.fullmatch(str(expected)) and _sha256_file(target) != expected:
                 raise ValueError(f"sft_file_hash_mismatch:{relative_name}")
-    return manifest
+    # Copy only the declared scientific provenance into run manifests. A G8
+    # sidecar must never become a path for unrelated credentials to persist.
+    return {
+        "base_model": base_model,
+        "checkpoint_kind": manifest["checkpoint_kind"],
+        "file_hashes": file_hashes,
+        "g8_evaluation": evaluation,
+        "lora": lora_provenance,
+        "schema_version": manifest["schema_version"],
+        "sft_corpus": corpus,
+        "stage": manifest["stage"],
+        "tokenizer": tokenizer_identity,
+    }
 
 
 def load_model_and_tokenizer(model_path: str):

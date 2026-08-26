@@ -1357,11 +1357,51 @@ def _live_judge_requested() -> bool:
     return os.getenv("ATLASOPS_USE_HF_INFERENCE", "").strip().lower() in ("1", "true", "yes")
 
 
+def _reject_scenario_identity(node: Any, path: str = "observation") -> None:
+    """Keep the evaluation-only scenario channel out of model-visible context."""
+    if isinstance(node, dict):
+        if "scenario_id" in node:
+            raise ValueError(f"hidden_scenario_leak:{path}.scenario_id")
+        for key, value in node.items():
+            _reject_scenario_identity(value, f"{path}.{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _reject_scenario_identity(value, f"{path}[{index}]")
+
+
+def _stage9_remediation_observation(
+    observation: Any,
+) -> tuple[dict[str, Any], dict[str, Any], str, str]:
+    """Validate replayed upstream context without allowing a safety-gate bypass."""
+    required = {"alert", "approval_mode", "diagnosis", "incident_id", "triage"}
+    if not isinstance(observation, dict) or set(observation) != required:
+        raise ValueError("invalid_stage9_remediation_observation")
+    _reject_scenario_identity(observation)
+
+    triage = observation["triage"]
+    diagnosis = observation["diagnosis"]
+    alert = observation["alert"]
+    if not all(isinstance(value, dict) for value in (triage, diagnosis, alert)):
+        raise ValueError("invalid_stage9_remediation_observation")
+
+    severity = _extract_severity({"triage": triage})
+    if severity not in {"P0", "P1", "P2", "P3"}:
+        raise ValueError("stage9_observation_severity_invalid")
+    expected_approval_mode = approval_mode_for_severity(severity)
+    approval_mode = str(observation["approval_mode"])
+    if approval_mode != expected_approval_mode:
+        raise ValueError("stage9_approval_gate_mismatch")
+    if not isinstance(observation["incident_id"], str) or not observation["incident_id"]:
+        raise ValueError("stage9_observation_incident_invalid")
+    return alert, triage, diagnosis, severity
+
+
 async def handle_incident(
     alert: dict[str, Any],
     incident_id: str | None = None,
     scenario_id: str | None = None,
     remediation_policy_completion: str | None = None,
+    remediation_observation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the full agent chain for one incident.
 
@@ -1384,10 +1424,37 @@ async def handle_incident(
     finish_reason = ""
     approval_record: dict[str, Any] | None = None
     try:
-        triage = await call_agent("triage", {"incident_id": incident_id, "alert": alert})
+        if remediation_observation is not None:
+            if remediation_policy_completion is None:
+                raise ValueError(
+                    "stage9_observation_requires_policy_completion"
+                )
+            replay_alert, replay_triage, replay_diagnosis, severity = (
+                _stage9_remediation_observation(remediation_observation)
+            )
+            alert = replay_alert
+            triage = {
+                "final": replay_triage,
+                "role": "triage",
+                "source": "stage9_training_row",
+                "step_reward_summary": {},
+                "trajectory": [],
+            }
+            diagnosis = {
+                "final": replay_diagnosis,
+                "role": "diagnosis",
+                "source": "stage9_training_row",
+                "step_reward_summary": {},
+                "trajectory": [],
+            }
+        else:
+            triage = await call_agent("triage", {"incident_id": incident_id, "alert": alert})
+            diagnosis = await call_agent(
+                "diagnosis",
+                {"incident_id": incident_id, "triage": triage["final"]},
+            )
+            severity = _extract_severity({"triage": triage.get("final", {})})
         tri_snap = triage.get("final") or {}
-        diagnosis = await call_agent("diagnosis", {"incident_id": incident_id, "triage": triage["final"]})
-        severity = _extract_severity({"triage": triage.get("final", {})})
         approval_mode = approval_mode_for_severity(severity)
         approval_record = {"mode": approval_mode, "severity": severity}
         remediation_input = {
@@ -1499,7 +1566,9 @@ async def handle_incident(
             )
         # Remediation execution is complete. Now execute objective environment verification.
         remediation_final = remediation.get("final", {})
-        scenario_id = str(scenario_id or alert.get("scenario_id") or "")
+        scenario_id = str(
+            scenario_id or ("" if remediation_observation is not None else alert.get("scenario_id") or "")
+        )
         agent_claimed_resolved = bool(
             remediation_final.get("outcome") == "resolved"
             or remediation_final.get("status") == "resolved"
@@ -1527,17 +1596,27 @@ async def handle_incident(
         env_resolved = bool(verification_result.env_resolved)
         verification_dict = verification_result.to_dict()
 
-        # Comms agent runs after environment verification and receives objective truth
-        comms = await call_agent("comms", {
-            "incident_id": incident_id,
-            "triage": triage.get("final", {}),
-            "diagnosis": diagnosis.get("final", {}),
-            "remediation": remediation_final,
-            "verification": verification_dict,
-            "settling": settling_report,
-            "env_resolved": env_resolved,
-            "agent_claimed_resolved": agent_claimed_resolved,
-        })
+        # A Stage 9 reward rollout ends at the optimized policy's one decision;
+        # comms is neither rewarded nor allowed to add nondeterministic side work.
+        if remediation_observation is not None:
+            comms = {
+                "final": {"skipped": "stage9_reward_rollout"},
+                "role": "comms",
+                "source": "stage9_training_row",
+                "step_reward_summary": {},
+                "trajectory": [],
+            }
+        else:
+            comms = await call_agent("comms", {
+                "incident_id": incident_id,
+                "triage": triage.get("final", {}),
+                "diagnosis": diagnosis.get("final", {}),
+                "remediation": remediation_final,
+                "verification": verification_dict,
+                "settling": settling_report,
+                "env_resolved": env_resolved,
+                "agent_claimed_resolved": agent_claimed_resolved,
+            })
 
         # If the LLM skipped webhooks, still deliver a closure/status message (judges expect Discord/Slack pings).
         _webhook_out = bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip() or os.getenv("SLACK_WEBHOOK_URL", "").strip())

@@ -24,6 +24,7 @@ API_KEY     = os.getenv("LLM_API_KEY", "")
 
 ADVERSARIAL_DIR = Path("bench/chaos_manifests/adversarial")
 ADVERSARIAL_DIR.mkdir(parents=True, exist_ok=True)
+_SAFE_SCENARIO_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 # All Chaos Mesh fault primitives the designer can combine
 AVAILABLE_PRIMITIVES = [
@@ -180,6 +181,28 @@ spec:
     return base
 
 
+def _safe_scenario_id(raw_id: object) -> str:
+    candidate = str(raw_id or "").strip()
+    if not _SAFE_SCENARIO_ID.fullmatch(candidate):
+        raise ValueError(
+            f"unsafe adversarial scenario_id (use 1-64 letters/digits/dot/underscore/hyphen): {candidate!r}"
+        )
+    return candidate
+
+
+def _adversarial_paths(scenario_id: str) -> tuple[Path, Path]:
+    root = ADVERSARIAL_DIR.resolve()
+    manifest_path = (ADVERSARIAL_DIR / f"{scenario_id}.yaml").resolve()
+    metadata_path = (ADVERSARIAL_DIR / f"{scenario_id}.json").resolve()
+    if manifest_path.parent != root or metadata_path.parent != root:
+        raise ValueError("adversarial scenario path escapes the generated-scenario directory")
+    if manifest_path.exists() or metadata_path.exists():
+        raise FileExistsError(
+            f"refusing to overwrite generated adversarial evidence: {scenario_id}"
+        )
+    return manifest_path, metadata_path
+
+
 async def design_scenario(failure_history: list[dict]) -> dict[str, Any]:
     """Generate one unique adversarial scenario targeting the agent's weaknesses."""
     weaknesses = _extract_weaknesses(failure_history)
@@ -217,8 +240,10 @@ Make it {('extreme' if len(failure_history) > 20 else 'expert' if len(failure_hi
             ],
         }
 
-    # Ensure unique scenario_id
-    scenario_id = spec.get("scenario_id", f"adv-{uuid.uuid4().hex[:8]}")
+    # Model-supplied identity is untrusted and must never select an arbitrary path.
+    scenario_id = _safe_scenario_id(
+        spec.get("scenario_id") or f"adv-{uuid.uuid4().hex[:8]}"
+    )
     spec["scenario_id"] = scenario_id
     spec["generated_at"] = datetime.now(timezone.utc).isoformat()
     spec["weaknesses_targeted"] = weaknesses
@@ -228,12 +253,11 @@ Make it {('extreme' if len(failure_history) > 20 else 'expert' if len(failure_hi
     yamls    = [_fault_to_yaml(f, scenario_id, i) for i, f in enumerate(faults)]
     manifest = "---\n".join(yamls)
 
-    manifest_path = ADVERSARIAL_DIR / f"{scenario_id}.yaml"
+    manifest_path, metadata_path = _adversarial_paths(scenario_id)
     manifest_path.write_text(manifest, encoding="utf-8")
 
     # Write metadata sidecar
-    meta_path = ADVERSARIAL_DIR / f"{scenario_id}.json"
-    meta_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    metadata_path.write_text(json.dumps(spec, indent=2), encoding="utf-8")
 
     return {
         "scenario_id": scenario_id,

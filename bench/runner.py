@@ -1068,6 +1068,16 @@ def write_comparison_table(summary: dict) -> None:
     log.info("comparison table updated: %s", table_path)
 
 
+def _exploration_scenario_id(manifest_path: Path | str) -> str:
+    """Return a runnable ID only for a manifest inside the adversarial contract."""
+    path = Path(manifest_path).resolve()
+    adversarial_root = (MANIFESTS_DIR / "adversarial").resolve()
+    relative = path.relative_to(adversarial_root)
+    if path.parent != adversarial_root or path.suffix != ".yaml":
+        raise ValueError(f"path is not an adversarial manifest: {path}")
+    return f"adversarial/{relative.stem}"
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Model path or HF ID")
@@ -1147,10 +1157,7 @@ async def main() -> None:
                         pass
         adv_results = await design_batch(prior_failures, count=args.adversarial)
         for adv in adv_results:
-            # Add generated manifest path as a runnable scenario
-            rel = str(Path(adv["manifest_path"]).relative_to(Path("bench/chaos_manifests")))
-            rel = rel.replace("\\", "/").removesuffix(".yaml")
-            scenarios.append(rel)
+            scenarios.append(_exploration_scenario_id(adv["manifest_path"]))
         log.info("added %d adversarial scenarios to run", len(adv_results))
     if not scenarios:
         raise RuntimeError("refusing to launch an empty zero-shot benchmark")

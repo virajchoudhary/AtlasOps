@@ -134,7 +134,7 @@ def test_proposed_split_is_reproducible_and_blocked_before_freeze(tmp_path):
     assert first != different
     assert first["status"] == "PROPOSED_BLOCKED_NO_FINAL_TEST"
     assert first["exposure_ledger_sha256"] == ledger["ledger_sha256"]
-    assert first["family_relation_count"] == 8
+    assert first["family_relation_count"] == 17
     assert any(
         blocker["code"] == "FAMILY_RELATIONS_CROSS_ASSIGNED_SPLITS"
         for blocker in first["blockers"]

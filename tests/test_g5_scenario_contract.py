@@ -355,10 +355,17 @@ def test_demo_consumer_cannot_reach_declared_final_test(monkeypatch):
         contract,
         "load_active_split",
         lambda repo_root=contract.REPO_ROOT: {
-            "splits": {"final_test": ["single_fault/private-holdout"]}
+            "splits": {"final_test": ["single_fault/sf-001"]}
         },
     )
     with pytest.raises(ValueError, match="final-test scenario"):
         contract.assert_consumer_may_use_scenario(
-            "demo_development", "single_fault/private-holdout"
+            "demo_development", "single_fault/sf-001"
+        )
+
+
+def test_demo_consumer_rejects_unknown_scenario_before_freeze():
+    with pytest.raises(ValueError, match="outside the frozen scenario catalogue"):
+        contract.assert_consumer_may_use_scenario(
+            "demo_development", "single_fault/not-in-catalogue"
         )

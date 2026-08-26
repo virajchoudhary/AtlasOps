@@ -1145,6 +1145,10 @@ def assert_consumer_may_use_scenario(
             raise ValueError(f"scenario is outside active {consumer} population: {scenario_id}")
         return
     if consumer == "demo_development":
+        from config.runtime import FROZEN_SCENARIOS
+
+        if scenario_id not in set(FROZEN_SCENARIOS):
+            raise ValueError(f"scenario is outside the frozen scenario catalogue: {scenario_id}")
         try:
             split = load_active_split(repo_root)
         except RuntimeError as exc:

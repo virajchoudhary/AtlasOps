@@ -96,14 +96,22 @@ def test_metrics_have_explicit_denominators_and_ttr_distribution():
     assert metrics["env_resolution"]["numerator"] == 1
     assert metrics["env_resolution"]["denominator"] == "all_attempted_episodes"
     assert metrics["env_resolution"]["rate"] == pytest.approx(1 / 3)
-    assert metrics["false_resolution"]["rate"] == pytest.approx(1 / 3)
+    assert metrics["model_population"] == {
+        "count": 2,
+        "denominator": "episodes classified infrastructure_valid after execution",
+    }
+    assert metrics["false_resolution"]["rate"] == pytest.approx(1 / 2)
+    assert metrics["false_resolution"]["denominator"] == "infrastructure_valid_completed_episodes"
     assert metrics["root_cause_accuracy"]["correct"] == 1
-    assert metrics["root_cause_accuracy"]["rate"] == pytest.approx(1 / 3)
-    assert metrics["evidence_fabrication"]["rate"] == pytest.approx(1 / 3)
+    assert metrics["root_cause_accuracy"]["available_count"] == 2
+    assert metrics["root_cause_accuracy"]["rate"] == pytest.approx(1 / 2)
+    assert metrics["evidence_fabrication"]["rate"] == pytest.approx(1 / 2)
     assert metrics["evidence_support"]["numerator"] == 1
-    assert metrics["evidence_support"]["denominator"] == "completed episodes performing mutations"
+    assert metrics["evidence_support"]["denominator"] == (
+        "infrastructure-valid completed episodes performing mutations"
+    )
     assert metrics["evidence_support"]["rate"] == pytest.approx(0.5)
-    assert metrics["unnecessary_mutation"]["rate"] == pytest.approx(1 / 3)
+    assert metrics["unnecessary_mutation"]["rate"] == pytest.approx(1 / 2)
     assert metrics["tool_calls"]["attempts"] == 4
     assert metrics["tool_calls"]["invalid_or_unsupported"] == 1
     assert metrics["tool_calls"]["validity_rate"] == pytest.approx(0.75)
@@ -121,6 +129,51 @@ def test_metrics_have_explicit_denominators_and_ttr_distribution():
         "p50": 20.0,
         "p95": 29.0,
     }
+
+
+def test_invalid_episodes_do_not_enter_model_quality_denominators():
+    valid_correct = _episode()
+    valid_incorrect = _episode(
+        agent_claimed_resolved=False,
+        env_resolved=False,
+        root_cause_evaluation={"available": True, "correct": False},
+        reward_contract={"penalties": {
+            "hallucinated_evidence": 0.2,
+            "unsafe_shortcut": 0.3,
+        }},
+    )
+    harness_invalid = _episode(
+        environment_invalid_before_trial=True,
+        error="environment_preflight_failed",
+        status="error",
+        root_cause_evaluation={"available": True, "correct": False},
+        reward_contract={"penalties": {
+            "hallucinated_evidence": 0.9,
+            "false_resolution": 0.9,
+            "unsafe_shortcut": 0.9,
+        }},
+        tool_metrics={
+            **_episode()["tool_metrics"],
+            "pre_action_evidence": False,
+        },
+    )
+
+    metrics = evidence.compute_g6_metrics([
+        valid_correct,
+        valid_incorrect,
+        harness_invalid,
+    ])
+
+    assert metrics["category_counts"]["HARNESS_INVALID"] == 1
+    assert metrics["failure_reasons"]["counts"]["evidence_fabrication"] >= 2
+    assert metrics["model_population"]["count"] == 2
+    assert metrics["root_cause_accuracy"]["correct"] == 1
+    assert metrics["root_cause_accuracy"]["available_count"] == 2
+    assert metrics["root_cause_accuracy"]["rate"] == pytest.approx(0.5)
+    assert metrics["false_resolution"]["numerator"] == 0
+    assert metrics["evidence_fabrication"]["numerator"] == 1
+    assert metrics["unsafe_actions"]["numerator"] == 1
+    assert metrics["unnecessary_mutation"]["numerator"] == 0
 
 
 def test_raw_record_is_hashed_and_marks_identity_hidden():

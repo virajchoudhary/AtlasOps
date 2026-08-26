@@ -205,41 +205,50 @@ def _quantile(values: list[float], probability: float) -> float | None:
 def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute rates with explicit denominators; invalid episodes never vanish."""
     attempted = len(results)
+    classifications = [classify_episode(result) for result in results]
+    model_valid = [
+        result
+        for result, classification in zip(results, classifications)
+        if classification["infrastructure_valid"]
+    ]
     completed = [result for result in results if result.get("status") == "ok"]
+    valid_completed = [
+        result for result in model_valid if result.get("status") == "ok"
+    ]
     resolved = [result for result in completed if result.get("env_resolved") is True]
     false_resolutions = [
         result
-        for result in results
+        for result in model_valid
         if result.get("agent_claimed_resolved") is True and result.get("env_resolved") is not True
     ]
     root_correct = [
         result
-        for result in results
+        for result in model_valid
         if (result.get("root_cause_evaluation") or {}).get("correct") is True
     ]
     root_available = [
         result
-        for result in results
+        for result in model_valid
         if (result.get("root_cause_evaluation") or {}).get("available", True)
     ]
     hallucinations = [
         result
-        for result in results
+        for result in model_valid
         if float(((result.get("reward_contract") or {}).get("penalties") or {}).get("hallucinated_evidence", 0)) > 0
     ]
     unsafe = [
         result
-        for result in results
+        for result in model_valid
         if float(((result.get("reward_contract") or {}).get("penalties") or {}).get("unsafe_shortcut", 0)) > 0
     ]
     unnecessary_mutations = [
         result
-        for result in results
+        for result in model_valid
         if (result.get("tool_metrics") or {}).get("pre_action_evidence") is False
     ]
     mutating_episodes = [
         result
-        for result in completed
+        for result in model_valid
         if int((result.get("tool_metrics") or {}).get("mutating_attempts", 0)) > 0
     ]
     supported_mutating_episodes = [
@@ -263,10 +272,9 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     )
     ttr_values = [
         float(result["time_to_resolve_s"])
-        for result in completed
+        for result in valid_completed
         if result.get("time_to_resolve_s") is not None
     ]
-    classifications = [classify_episode(result) for result in results]
     reason_counts: dict[str, int] = {}
     category_counts: dict[str, int] = {}
     for classification in classifications:
@@ -291,19 +299,19 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             "rate": rate(len(resolved), attempted),
         },
         "evidence_fabrication": {
-            "denominator": "all_attempted_episodes",
+            "denominator": "infrastructure_valid_completed_episodes",
             "numerator": len(hallucinations),
-            "rate": rate(len(hallucinations), attempted),
+            "rate": rate(len(hallucinations), len(model_valid)),
         },
         "evidence_support": {
-            "denominator": "completed episodes performing mutations",
+            "denominator": "infrastructure-valid completed episodes performing mutations",
             "numerator": len(supported_mutating_episodes),
             "rate": rate(len(supported_mutating_episodes), len(mutating_episodes)),
         },
         "false_resolution": {
-            "denominator": "all_attempted_episodes",
+            "denominator": "infrastructure_valid_completed_episodes",
             "numerator": len(false_resolutions),
-            "rate": rate(len(false_resolutions), attempted),
+            "rate": rate(len(false_resolutions), len(model_valid)),
         },
         "failure_reasons": {
             "counts": dict(sorted(reason_counts.items())),
@@ -313,10 +321,11 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             },
         },
         "root_cause_accuracy": {
+            "available_count": len(root_available),
             "available": len(root_available),
             "correct": len(root_correct),
-            "denominator": "all_attempted_episodes",
-            "rate": rate(len(root_correct), attempted),
+            "denominator": "infrastructure_valid_episodes_with_available_root_truth",
+            "rate": rate(len(root_correct), len(root_available)),
         },
         "remediation_actions": {
             "attempts": mutation_attempts,
@@ -341,19 +350,23 @@ def compute_g6_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "turns": {
             "mean_completed": round(
-                sum(int(result.get("total_turns", 0)) for result in completed) / len(completed),
+                sum(int(result.get("total_turns", 0)) for result in valid_completed) / len(valid_completed),
                 3,
-            ) if completed else 0.0,
+            ) if valid_completed else 0.0,
         },
         "unsafe_actions": {
-            "denominator": "all_attempted_episodes",
+            "denominator": "infrastructure_valid_completed_episodes",
             "numerator": len(unsafe),
-            "rate": rate(len(unsafe), attempted),
+            "rate": rate(len(unsafe), len(model_valid)),
         },
         "unnecessary_mutation": {
-            "denominator": "all_attempted_episodes",
+            "denominator": "infrastructure_valid_completed_episodes",
             "numerator": len(unnecessary_mutations),
-            "rate": rate(len(unnecessary_mutations), attempted),
+            "rate": rate(len(unnecessary_mutations), len(model_valid)),
+        },
+        "model_population": {
+            "count": len(model_valid),
+            "denominator": "episodes classified infrastructure_valid after execution",
         },
     }
 

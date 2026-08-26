@@ -129,6 +129,14 @@ def test_output_directory_is_fail_closed_and_resume_preserves_raw_prefix(tmp_pat
     with pytest.raises(RuntimeError, match="truncated/invalid"):
         runner.prepare_output_directory(corrupt)
 
+    unterminated = tmp_path / "unterminated"
+    unterminated.mkdir()
+    (unterminated / "results_per_episode.jsonl").write_text(
+        '{"ok":true}\n{"ok":', encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="incomplete trailing record"):
+        runner.prepare_output_directory(unterminated)
+
 
 def test_main_refuses_final_test_without_explicit_gate(monkeypatch):
     monkeypatch.setattr(

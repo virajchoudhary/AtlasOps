@@ -269,11 +269,18 @@ def prepare_output_directory(out_dir: Path) -> list[dict]:
         raise RuntimeError(f"refusing to mutate completed raw run: {out_dir}")
     episodes: list[dict] = []
     if episodes_path.exists():
+        raw_text = episodes_path.read_text(encoding="utf-8")
+        if raw_text and not raw_text.endswith("\n"):
+            raise RuntimeError(
+                "raw episode log has an incomplete trailing record; refusing resume"
+            )
         try:
             with episodes_path.open("r", encoding="utf-8") as handle:
                 episodes = [json.loads(line) for line in handle if line.strip()]
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"raw episode log is truncated/invalid; refusing resume: {exc}") from exc
+            raise RuntimeError(
+                f"raw episode log is truncated/invalid; refusing resume: {exc}"
+            ) from exc
         contaminated = [
             str(episode.get("scenario_id", "")) for episode in episodes if episode.get("reset_failure") is True
         ]

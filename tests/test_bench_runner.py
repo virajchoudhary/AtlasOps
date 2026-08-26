@@ -98,7 +98,7 @@ class TestRunScenario:
             },
             "remediation": {
                 "trajectory": [{"turn": 3, "action": "deployment_restart", "result": "restarted"}],
-                "final": {"outcome": "resolved", "time_to_resolve_seconds": 45},
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 9999},
             },
             "comms": {
                 "trajectory": [{"turn": 4, "action": "postmortem_draft", "result": {"path": "docs/postmortems/sf-001.md"}}],
@@ -160,6 +160,8 @@ class TestRunScenario:
         assert episode["scenario_id"] == scenario_id
         assert episode["total_turns"] == 4
         assert episode["time_to_resolve_s"] == 45
+        assert episode["time_to_resolve_source"] == "harness_wall_clock"
+        assert episode["agent_declared_time_to_resolve_s"] == 9999
         # 7. Centralized reward contract computed
         assert "reward_contract" in episode
         assert 0.0 <= episode["reward_contract"]["total"] <= 1.0

@@ -32,6 +32,14 @@ from datetime import datetime, timezone
 from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
+from bench.alert_contract import (
+    AlertObservationContaminated,
+    AlertObservationTimeout,
+    _alert_fingerprint,
+    _alert_observation_contract,
+    select_expected_alerts,
+    wait_for_alert,
+)
 from bench.scenario_contract import allowed_scenario_ids, canonical_json, sha256_file, sha256_object
 from bench.g6_evidence import (
     append_raw_record,
@@ -589,106 +597,7 @@ def reset_cluster() -> bool:
     )
 
 
-class AlertObservationTimeout(RuntimeError):
-    pass
-
-
-class AlertObservationContaminated(RuntimeError):
-    pass
-
-
-def _alert_fingerprint(alert: dict, labels: dict | None = None) -> tuple[str, ...]:
-    merged = {**(labels or {}), **(alert.get("labels") or {})}
-    values = []
-    for key in ("alertname", "service", "deployment", "pod", "namespace", "severity"):
-        value = str(merged.get(key, "")).strip().lower()
-        if value:
-            values.append(f"{key}={value}")
-    return tuple(values) if values else (f"alertname={merged.get('alertname', 'unknown')}",)
-
-
-def _alert_observation_contract(entry: dict) -> tuple[dict, list[tuple[str, ...]]]:
-    template = entry.get("model_visible_alert") or {}
-    common = template.get("commonLabels") or {}
-    expected = sorted(
-        _alert_fingerprint(item, common)
-        for item in template.get("alerts") or []
-        if isinstance(item, dict)
-    )
-    return template, expected
-
-
-def select_expected_alerts(active_alerts: list[dict], expected: list[tuple[str, ...]]) -> tuple[list[dict], list[tuple[str, ...]], list[tuple[str, ...]]]:
-    """Select only predeclared observations; reject unrelated active alerts."""
-    remaining = list(expected)
-    matched: list[dict] = []
-    unexpected: list[tuple[str, ...]] = []
-    expected_set = set(expected)
-    for alert in active_alerts:
-        fingerprint = _alert_fingerprint(alert)
-        if fingerprint in remaining:
-            matched.append(alert)
-            remaining.remove(fingerprint)
-        elif any(
-            fingerprint[:index] == candidate[:index]
-            for candidate in expected_set
-            for index in range(1, len(candidate) + 1)
-        ):
-            # A missing optional label remains a valid match; retain it.
-            candidate = min(
-                (item for item in expected_set if _is_prefix_match(fingerprint, item)),
-                key=len,
-            )
-            matched.append(alert)
-            if candidate in remaining:
-                remaining.remove(candidate)
-        else:
-            unexpected.append(fingerprint)
-    missing = list(remaining)
-    return matched, missing, unexpected
-
-
-def _is_prefix_match(observed: tuple[str, ...], expected: tuple[str, ...]) -> bool:
-    return observed == expected or (
-        len(observed) < len(expected) and expected[:len(observed)] == observed
-    )
-
-
-def wait_for_alert(scenario_id: str, timeout_s: int = 300) -> dict:
-    from agents.tools.alertmanager import alertmanager_list_alerts
-    entry = load_catalog_entry(scenario_id)
-    if entry is None:
-        raise AlertObservationContaminated("catalogue entry unavailable")
-    template, expected = _alert_observation_contract(entry)
-    if not expected:
-        raise AlertObservationContaminated("catalogue alert contract is empty")
-
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        result = alertmanager_list_alerts(active_only=True)
-        if not result.get("success"):
-            time.sleep(20)
-            continue
-        matched, missing, unexpected = select_expected_alerts(
-            result.get("alerts") or [], expected
-        )
-        if unexpected:
-            raise AlertObservationContaminated(
-                "unrelated active alerts observed: " + "; ".join(
-                    "/".join(item) for item in sorted(unexpected)
-                )
-            )
-        if matched and not missing:
-            return {
-                "commonLabels": dict(template.get("commonLabels") or {}),
-                "alerts": matched,
-            }
-        time.sleep(20)
-    raise AlertObservationTimeout(f"expected alerts did not fire within {timeout_s}s")
-
-
 async def run_scenario(scenario_id: str, *, require_catalogue: bool = True) -> dict:
-    t0 = time.time()
     tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
     try:
         preflight_environment(scenario_id, require_catalogue=require_catalogue)
@@ -767,12 +676,14 @@ async def run_scenario(scenario_id: str, *, require_catalogue: bool = True) -> d
     agent_error: str | None = None
     incident: dict | None = None
     judge_score: dict | None = None
+    handling_started_at = time.time()
     try:
         incident = await handle_incident(model_visible_alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
     except Exception as e:
         log.exception("scenario %s failed: %s", scenario_id, e)
         agent_error = str(e)
+    handling_finished_at = time.time()
 
     reset_ok = reset_cluster()
     if agent_error is not None:
@@ -811,7 +722,7 @@ async def run_scenario(scenario_id: str, *, require_catalogue: bool = True) -> d
         "env_resolved": env_resolved,
         "resolved": env_resolved,
         "verification": verification,
-        "time_to_resolve_s": round(time.time() - t0),
+        "time_to_resolve_s": round(handling_finished_at - handling_started_at),
         "time_to_resolve_source": "harness_wall_clock",
         "agent_declared_time_to_resolve_s": remediation.get("time_to_resolve_seconds"),
         "severity": triage.get("severity", "unknown"),

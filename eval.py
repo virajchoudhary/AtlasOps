@@ -32,6 +32,11 @@ from bench.scenario_contract import (
     assert_consumer_may_use_scenario,
     development_scenario_ids,
 )
+from bench.alert_contract import (
+    AlertObservationContaminated,
+    AlertObservationTimeout,
+    wait_for_alert,
+)
 
 log = logging.getLogger(__name__)
 
@@ -63,18 +68,6 @@ def reset_chaos():
     time.sleep(30)
 
 
-def wait_for_alert(timeout_s: int = 180) -> dict | None:
-    from agents.tools.alertmanager import alertmanager_list_alerts
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        result = alertmanager_list_alerts(active_only=True)
-        if result.get("success") and result.get("count", 0) > 0:
-            return {"commonLabels": {"alertname": result["alerts"][0]["alertname"]},
-                    "alerts": result["alerts"]}
-        time.sleep(10)
-    return {"commonLabels": {"alertname": "EvalTimeout"}, "alerts": [], "synthetic": True}
-
-
 async def run_episode(
     scenario_id: str,
     *,
@@ -83,23 +76,45 @@ async def run_episode(
     from agents.coordinator import handle_incident
     from agents.judge import judge_trajectory
 
-    t0 = time.time()
     tier = scenario_id.split("/")[0]
     assert_consumer_may_use_scenario(scenario_consumer, scenario_id)
 
     if not apply_chaos(scenario_id):
         return {"scenario_id": scenario_id, "status": "skip", "tier": tier}
 
-    alert = wait_for_alert()
+    try:
+        alert = wait_for_alert(scenario_id, timeout_s=180)
+    except AlertObservationTimeout:
+        reset_chaos()
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": "alert_observation_timeout",
+            "alert_observation_failure": True,
+            "environment_invalid_before_trial": True,
+        }
+    except AlertObservationContaminated:
+        reset_chaos()
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": "alert_observation_contaminated",
+            "alert_observation_failure": True,
+            "environment_invalid_before_trial": True,
+        }
     model_alert = json.loads(json.dumps(alert))
     model_alert.pop("scenario_id", None)
 
     try:
+        handling_started_at = time.time()
         incident = await handle_incident(model_alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident)
     except Exception as e:
         reset_chaos()
         return {"scenario_id": scenario_id, "status": "error", "error": str(e), "tier": tier}
+    handling_finished_at = time.time()
 
     reset_chaos()
 
@@ -121,7 +136,9 @@ async def run_episode(
         "verification": incident.get("verification", {}),
         "resolved": bool(incident.get("env_resolved") is True),
         "outcome": remediation.get("outcome", "unknown"),
-        "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
+        "time_to_resolve_s": round(handling_finished_at - handling_started_at),
+        "time_to_resolve_source": "harness_wall_clock",
+        "agent_declared_time_to_resolve_s": remediation.get("time_to_resolve_seconds"),
         "total_turns": total_turns,
         "judge": judge_score,
         "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),

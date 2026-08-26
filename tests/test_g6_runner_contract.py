@@ -198,11 +198,17 @@ def test_expected_alert_selector_rejects_unrelated_alerts():
         {"labels": {"alertname": "a", "service": "one", "namespace": "default"}},
         {"labels": {"alertname": "unrelated", "service": "other"}},
     ]
-    matched, missing, unexpected = runner.select_expected_alerts(active, expected)
+    matched, missing, unexpected = runner.select_expected_alerts(
+        active,
+        expected,
+        common_labels={"namespace": "default"},
+    )
 
     assert len(matched) == 2
     assert not missing
-    assert unexpected == [("alertname=unrelated", "service=other")]
+    assert unexpected == [
+        ("alertname=unrelated", "namespace=default", "service=other")
+    ]
 
 
 def test_run_scenario_preserves_harness_invalid_alert_observations(monkeypatch):

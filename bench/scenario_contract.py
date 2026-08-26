@@ -1172,7 +1172,38 @@ def _write_catalog(args: argparse.Namespace) -> int:
     return 0
 
 
+def _unexpected_dirty_proposal_sources(repo_root: Path = REPO_ROOT) -> list[str]:
+    """Return non-artifact paths that make a default repo_sha untrustworthy."""
+    completed = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return ["<git status failed>"]
+
+    unexpected = []
+    for line in completed.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        path = path.replace("\\", "/").strip('"')
+        if path not in _DERIVED_CONTRACT_ARTIFACT_PATHS:
+            unexpected.append(path)
+    return sorted(set(unexpected))
+
+
 def _write_plan(args: argparse.Namespace) -> int:
+    dirty_sources = _unexpected_dirty_proposal_sources()
+    if dirty_sources and not args.repo_sha:
+        raise ValueError(
+            "proposal repo_sha would be ambiguous because non-derived sources are "
+            f"dirty: {dirty_sources}"
+        )
     catalog = json.loads(Path(args.catalog).read_text(encoding="utf-8"))
     plan = build_proposed_split(
         catalog,

@@ -35,6 +35,11 @@ from bench.scenario_contract import (
     write_json_atomically,
 )
 from config.runtime import evaluate_reward_contract
+from bench.alert_contract import (
+    AlertObservationContaminated,
+    AlertObservationTimeout,
+    wait_for_alert,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -104,22 +109,6 @@ def apply_chaos(manifest: Path) -> bool:
         log.error("kubectl apply failed: %s", r.stderr)
         return False
     return True
-
-
-def wait_for_alert(timeout_s: int = 300) -> dict | None:
-    """Poll Alertmanager until at least one alert is firing."""
-    from agents.tools.alertmanager import alertmanager_list_alerts
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        result = alertmanager_list_alerts(active_only=True)
-        if result.get("success") and result.get("count", 0) > 0:
-            return {
-                "commonLabels": {"alertname": result["alerts"][0]["alertname"]},
-                "alerts": result["alerts"],
-            }
-        time.sleep(15)
-    log.warning("no alert fired within %ds", timeout_s)
-    return None
 
 
 def reset_cluster() -> None:
@@ -274,13 +263,16 @@ async def run() -> None:
                 if not apply_chaos(manifest):
                     continue
                 assert_consumer_may_use_scenario("sft", scenario_id)
-                alert = wait_for_alert()
-                if not alert:
+                try:
+                    alert = wait_for_alert(scenario_id)
+                except (AlertObservationTimeout, AlertObservationContaminated) as exc:
+                    log.error("invalid alert observation for %s: %s", scenario_id, exc)
                     reset_cluster()
                     continue
-                t0 = time.time()
+                handling_started_at = time.time()
                 incident = await handle_incident(alert, scenario_id=scenario_id)
                 judge_score = await judge_trajectory(incident)
+                handling_finished_at = time.time()
                 remediation = incident.get("remediation", {}).get("final", {})
                 episode = {
                     "scenario_id": scenario_id,
@@ -288,7 +280,11 @@ async def run() -> None:
                     "resolved": remediation.get("outcome") == "resolved",
                     "outcome": remediation.get("outcome", "unknown"),
                     "time_to_resolve_s": float(
-                        remediation.get("time_to_resolve_seconds", round(time.time() - t0))
+                        round(handling_finished_at - handling_started_at)
+                    ),
+                    "time_to_resolve_source": "harness_wall_clock",
+                    "agent_declared_time_to_resolve_s": remediation.get(
+                        "time_to_resolve_seconds"
                     ),
                     "total_turns": sum(
                         len(incident.get(r, {}).get("trajectory", []))

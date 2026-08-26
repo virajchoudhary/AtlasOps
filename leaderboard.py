@@ -35,6 +35,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from bench.scenario_contract import assert_consumer_may_use_scenario
+from bench.alert_contract import (
+    AlertObservationContaminated,
+    AlertObservationTimeout,
+    wait_for_alert,
+)
 from config.runtime import LEADERBOARD_SCENARIOS
 
 log = logging.getLogger(__name__)
@@ -118,23 +123,6 @@ def reset_chaos():
     time.sleep(20)
 
 
-def wait_for_alert(timeout_s: int = 120) -> dict:
-    try:
-        from agents.tools.alertmanager import alertmanager_list_alerts
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            result = alertmanager_list_alerts(active_only=True)
-            if result.get("success") and result.get("count", 0) > 0:
-                return {
-                    "commonLabels": {"alertname": result["alerts"][0]["alertname"]},
-                    "alerts": result["alerts"],
-                }
-            time.sleep(10)
-    except Exception:
-        pass
-    return {"commonLabels": {"alertname": "LeaderboardTimeout"}, "alerts": []}
-
-
 # ── Single episode runner ─────────────────────────────────────────────────────
 
 async def run_episode(model_cfg: dict, scenario_id: str, tier: str) -> dict:
@@ -170,7 +158,18 @@ async def run_episode(model_cfg: dict, scenario_id: str, tier: str) -> dict:
         return {"scenario_id": scenario_id, "tier": tier, "status": "skip",
                 "reason": "chaos apply failed"}
 
-    alert = wait_for_alert()
+    try:
+        alert = wait_for_alert(scenario_id, timeout_s=120)
+    except (AlertObservationTimeout, AlertObservationContaminated) as exc:
+        reset_chaos()
+        return {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "error",
+            "error": str(exc),
+            "alert_observation_failure": True,
+            "environment_invalid_before_trial": True,
+        }
     model_alert = json.loads(json.dumps(alert))
     model_alert.pop("scenario_id", None)
 
@@ -203,6 +202,8 @@ async def run_episode(model_cfg: dict, scenario_id: str, tier: str) -> dict:
         "resolved": bool(incident.get("env_resolved") is True),
         "outcome": remediation.get("outcome", "unknown"),
         "time_to_resolve_s": round(time.time() - t0),
+        "time_to_resolve_source": "harness_wall_clock",
+        "agent_declared_time_to_resolve_s": remediation.get("time_to_resolve_seconds"),
         "total_turns": total_turns,
         "judge": judge_score,
         "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),

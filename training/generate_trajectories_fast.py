@@ -241,6 +241,13 @@ async def run_scenario(scenario_id: str) -> tuple[dict, float]:
 
     # Attach alert to incident for trajectory_to_sft
     incident["alert"] = alert
+    remediation = incident.get("remediation", {}).get("final", {})
+    incident["timing_provenance"] = {
+        "time_to_resolve_source": "harness_wall_clock",
+        "agent_declared_time_to_resolve_s": remediation.get(
+            "time_to_resolve_seconds"
+        ),
+    }
     return incident, elapsed
 
 

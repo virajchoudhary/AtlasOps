@@ -48,7 +48,9 @@ def test_family_signatures_group_same_causal_fault():
     catalog = contract.build_catalog()
     relations = contract.scenario_relationships(catalog)
 
-    assert len(relations) == 8
+    assert len(relations) == 17
+    reasons = {relation["reason"] for relation in relations}
+    assert "single_target" in reasons
     redis_relation = next(
         relation
         for relation in relations

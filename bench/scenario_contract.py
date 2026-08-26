@@ -31,7 +31,7 @@ EXPOSURE_LEDGER_PATH = CONTRACT_DIR / "exposure_ledger.json"
 CATALOG_SCHEMA_VERSION = "atlasops.g5.scenario-catalog/v4"
 SPLIT_SCHEMA_VERSION = "atlasops.g5.split-plan/v2"
 EXPOSURE_SCHEMA_VERSION = "atlasops.g5.exposure-ledger/v3"
-SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v2"
+SPLIT_ALGORITHM_VERSION = "stratified-family-aware-v3"
 SPLIT_GENERATOR_VERSION = "bench.scenario_contract/v2"
 FROZEN_TIERS = ("single_fault", "cascade", "multi_fault", "named_replays")
 
@@ -544,7 +544,7 @@ def _coarse_fault(record: dict[str, Any]) -> dict[str, Any]:
             )
         }
     elif record["kind"] == "DNSChaos":
-        coarse_parameters = {"patterns": parameters.get("patterns", [])}
+        coarse_parameters = {"patterns": sorted(parameters.get("patterns", []))}
     else:
         coarse_parameters = {}
     return {
@@ -570,8 +570,12 @@ def _historical_source_id(path: Path) -> str | None:
 def scenario_relationships(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     """Return conservative near-duplicate relations among catalogue entries."""
     groups: dict[tuple[str, str], set[str]] = {}
+    targets: dict[str, set[str]] = {}
     for entry in catalog_entries(catalog).values():
         scenario_id = entry["scenario_id"]
+        for target in entry.get("injected_fault_services") or []:
+            if str(target) and "->" not in str(target) and "+" not in str(target):
+                targets.setdefault(str(target), set()).add(scenario_id)
         for fault_signature in entry.get("fault_signatures", []):
             groups.setdefault(("fault_signature", fault_signature), set()).add(scenario_id)
         if entry.get("source_incident_id"):
@@ -582,6 +586,9 @@ def scenario_relationships(catalog: dict[str, Any]) -> list[dict[str, Any]]:
             groups.setdefault(
                 ("alert_semantics", str(entry["alert_semantic_hash"])), {scenario_id}
             ).add(scenario_id)
+    for target, scenario_ids in targets.items():
+        if len(scenario_ids) > 1:
+            groups.setdefault(("single_target", target), set()).update(scenario_ids)
     return [
         {"key": key, "reason": reason, "scenario_ids": sorted(members)}
         for (reason, key), members in sorted(groups.items())

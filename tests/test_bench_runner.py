@@ -482,6 +482,78 @@ class TestEnvironmentContract:
         with pytest.raises(runner.InjectionVerificationError, match="cannot inspect"):
             runner._manifest_resources("bad")
 
+    def test_verify_injection_rejects_stale_resource_with_expected_name(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(runner, "MANIFESTS_DIR", tmp_path)
+        (tmp_path / "unit.yaml").write_text(
+            """apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: unit-fault
+  namespace: chaos-mesh
+  labels:
+    scenario: unit
+spec:
+  selector:
+    labelSelectors:
+      app: paymentservice
+  stressors:
+    cpu:
+      load: 90
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            runner,
+            "_kubectl_get_json",
+            Mock(return_value={
+                "apiVersion": "chaos-mesh.org/v1alpha1",
+                "kind": "StressChaos",
+                "metadata": {"name": "unit-fault", "namespace": "chaos-mesh"},
+                "spec": {
+                    "selector": {"labelSelectors": {"app": "cartservice"}},
+                    "stressors": {"cpu": {"load": 90}},
+                },
+            }),
+        )
+
+        with pytest.raises(
+            runner.InjectionVerificationError,
+            match="live resource differs from manifest",
+        ):
+            runner.verify_injection("unit")
+
+    def test_verify_injection_accepts_matching_resource(self, tmp_path, monkeypatch):
+        document = {
+            "apiVersion": "chaos-mesh.org/v1alpha1",
+            "kind": "StressChaos",
+            "metadata": {
+                "name": "unit-fault",
+                "namespace": "chaos-mesh",
+                "labels": {"scenario": "unit"},
+            },
+            "spec": {"stressors": {"cpu": {"load": 90}}},
+        }
+        observed = {
+            **document,
+            "metadata": {**document["metadata"], "uid": "server-generated"},
+            "status": {"conditions": []},
+        }
+        import yaml
+
+        monkeypatch.setattr(runner, "MANIFESTS_DIR", tmp_path)
+        (tmp_path / "unit.yaml").write_text(
+            yaml.safe_dump(document), encoding="utf-8"
+        )
+        monkeypatch.setattr(runner, "_kubectl_get_json", Mock(return_value=observed))
+
+        runner.verify_injection("unit")
+
+        runner._kubectl_get_json.assert_called_once_with(
+            "StressChaos/unit-fault", "chaos-mesh"
+        )
+
 
 # ── Reward contract ────────────────────────────────────────────────────────────
 

@@ -605,14 +605,82 @@ def _manifest_resources(scenario_id: str) -> list[tuple[str, str, str]]:
     return resources
 
 
+def _manifest_documents(scenario_id: str) -> list[dict]:
+    import yaml
+
+    manifest = MANIFESTS_DIR / f"{scenario_id}.yaml"
+    try:
+        documents = [
+            document
+            for document in yaml.safe_load_all(manifest.read_text(encoding="utf-8"))
+            if document
+        ]
+    except (OSError, yaml.YAMLError) as exc:
+        raise InjectionVerificationError(f"cannot inspect injection manifest: {exc}") from exc
+
+    if not documents:
+        raise InjectionVerificationError("manifest contains no resources")
+    for document in documents:
+        if not isinstance(document, dict):
+            raise InjectionVerificationError("manifest document is not an object")
+    return documents
+
+
+def _contains_expected_subset(expected: object, observed: object) -> bool:
+    """Return true when every declared value is present in the API object."""
+    if isinstance(expected, dict):
+        return (
+            isinstance(observed, dict)
+            and all(
+                key in observed and _contains_expected_subset(value, observed[key])
+                for key, value in expected.items()
+            )
+        )
+    if isinstance(expected, list):
+        return isinstance(observed, list) and expected == observed
+    return expected == observed
+
+
+def _verify_manifest_resource(document: dict, observed: dict) -> None:
+    metadata = document.get("metadata") or {}
+    kind = str(document.get("kind", ""))
+    name = str(metadata.get("name", ""))
+    namespace = str(metadata.get("namespace", "default"))
+    observed_metadata = observed.get("metadata") or {}
+    identity = f"{kind}/{namespace}/{name}"
+    expected_identity = {
+        "apiVersion": document.get("apiVersion"),
+        "kind": document.get("kind"),
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            **({"labels": metadata["labels"]} if "labels" in metadata else {}),
+        },
+        "spec": document.get("spec") or {},
+    }
+    if not _contains_expected_subset(expected_identity, observed):
+        raise InjectionVerificationError(
+            f"live resource differs from manifest: {identity}; "
+            f"expected={canonical_json(expected_identity)}"
+        )
+    if not observed_metadata.get("name"):
+        raise InjectionVerificationError(f"live resource lacks metadata.name: {identity}")
+
+
 def verify_injection(scenario_id: str) -> None:
-    """Prove every declared manifest resource was admitted by the API server."""
+    """Prove each declared resource was admitted with its manifest semantics."""
     missing = []
-    for kind, name, namespace in _manifest_resources(scenario_id):
+    for document in _manifest_documents(scenario_id):
+        metadata = document.get("metadata") or {}
+        kind = str(document.get("kind", ""))
+        name = str(metadata.get("name", ""))
+        namespace = str(metadata.get("namespace", "default"))
         try:
-            _kubectl_get_json(f"{kind}/{name}", namespace)
+            observed = _kubectl_get_json(f"{kind}/{name}", namespace)
         except RuntimeError as exc:
             missing.append(f"{kind}/{namespace}/{name}: {exc}")
+            continue
+        _verify_manifest_resource(document, observed)
     if missing:
         raise InjectionVerificationError("; ".join(missing))
 

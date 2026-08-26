@@ -832,7 +832,7 @@ def test_resume_identity_rejects_incompatible_contract_seed_model_or_split() -> 
     previous = {field: field for field in (
         "code_commit", "contracts", "curriculum_seed", "dataset",
         "dependency_versions", "environment_identity", "hyperparameters",
-        "model_path", "sft_manifest",
+        "environment_observed", "model_path", "sft_manifest",
     )}
     validate_resume_identity(previous, dict(previous))
 
@@ -913,6 +913,48 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
         first["stage9_group_id"],
         second["stage9_group_id"],
     ]
+    assert all(record["status"] == "COMPLETED" for record in records)
+
+
+def test_infrastructure_invalidation_is_persisted_before_batch_abort(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = _row()
+    episodes_path = tmp_path / "episodes.jsonl"
+    reward_fn = OnlineRewardFunction(
+        [row],
+        resolve_environment_identity("local-kind", "kind-atlasops-local"),
+        curriculum_seed=2,
+        dataset_sha256="e" * 64,
+        episodes_path=episodes_path,
+    )
+
+    async def fail_rollout(_row, _completion):
+        raise InfrastructureInvalid("pre_rollout_unhealthy")
+
+    monkeypatch.setattr(
+        reward_fn,
+        "_score_paired_rollout",
+        fail_rollout,
+    )
+
+    with pytest.raises(InfrastructureInvalid, match="pre_rollout_unhealthy"):
+        reward_fn(
+            completions=['{"name":"promql_query","arguments":{}}'],
+            prompts=[row["model_visible_prompt"]],
+            prompt_sha256=[row["prompt_sha256"]],
+            provenance_hash=[row["provenance_hash"]],
+            role=[row["role"]],
+            row_id=[row["row_id"]],
+            stage9_group_id=[row["stage9_group_id"]],
+        )
+
+    records = [json.loads(line) for line in episodes_path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    assert records[0]["status"] == "INFRASTRUCTURE_INVALID"
+    assert records[0]["reward"] is None
+    assert records[0]["invalidation_reason"] == "pre_rollout_unhealthy"
 
 
 def test_scientific_tool_context_pins_cluster_and_blocks_webhooks() -> None:

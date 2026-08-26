@@ -229,10 +229,21 @@ def remediation_dataset_catalogue(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
         for row in rows
     ]
+    scenario_inventory = sorted({
+        canonical_json({
+            "environment_identity": row["hidden_metadata"]["environment_identity"],
+            "replay_id": row["hidden_metadata"]["replay_id"],
+            "scenario_id": row["hidden_metadata"]["scenario_id"],
+            "tier": row["hidden_metadata"]["tier"],
+        })
+        for row in rows
+    })
     return {
         "contract_version": STAGE9_ROW_SCHEMA_VERSION,
         "role": REMEDIATION_POLICY_ROLE,
         "rows": len(rows),
         "sha256": sha256_json(fingerprints),
         "unique_stage9_groups": len({row["stage9_group_id"] for row in rows}),
+        "unique_hidden_scenarios": len(scenario_inventory),
+        "hidden_scenario_inventory": [json.loads(item) for item in scenario_inventory],
     }

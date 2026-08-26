@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -482,7 +483,11 @@ class OnlineRewardFunction:
                 len(completions),
                 row["stage9_group_id"],
             )
-            result = await self._score_paired_rollout(row, completion)
+            try:
+                result = await self._score_paired_rollout(row, completion)
+            except Exception as exc:
+                self._persist_invalidation(index, row, completion, exc)
+                raise
             reward_breakdown = compute_reward_breakdown(result["episode"])
             reward = float(reward_breakdown["total"])
             rewards.append(reward)
@@ -620,6 +625,42 @@ class OnlineRewardFunction:
             "rollout_index": rollout_index,
             "row_id": row["row_id"],
             "stage9_group_id": row["stage9_group_id"],
+            "status": "COMPLETED",
+        }
+        with self.episodes_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def _persist_invalidation(
+        self,
+        rollout_index: int,
+        row: dict[str, Any],
+        completion: str,
+        exc: Exception,
+    ) -> None:
+        """Persist why no policy reward exists before aborting the batch."""
+        if not self.episodes_path:
+            return
+        status = (
+            "INFRASTRUCTURE_INVALID"
+            if isinstance(exc, InfrastructureInvalid)
+            else "POLICY_EXECUTION_INVALID"
+            if isinstance(exc, PolicyExecutionInvalid)
+            else "ROLLOUT_EXCEPTION"
+        )
+        self.episodes_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "completion_sha256": hashlib.sha256(completion.encode("utf-8")).hexdigest(),
+            "hidden_metadata": row["hidden_metadata"],
+            "invalidation_reason": str(exc),
+            "policy_completion": completion,
+            "prompt_sha256": row["prompt_sha256"],
+            "reward": None,
+            "rollout_index": rollout_index,
+            "row_id": row["row_id"],
+            "stage9_group_id": row["stage9_group_id"],
+            "status": status,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "event_id": uuid.uuid4().hex,
         }
         with self.episodes_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, sort_keys=True) + "\n")
@@ -996,6 +1037,7 @@ RESUME_IDENTITY_FIELDS = frozenset({
     "dataset",
     "dependency_versions",
     "environment_identity",
+    "environment_observed",
     "hyperparameters",
     "model_path",
     "sft_manifest",
@@ -1095,6 +1137,7 @@ def main() -> None:
     )
     provenance["resumed_from"] = resume_checkpoint or None
     provenance["dependency_versions"] = validate_trl_runtime()
+    provenance["environment_observed"] = verify_kubernetes_environment(environment)
     manifest_path = output_dir / "run_manifest.json"
     if resume_checkpoint:
         if not manifest_path.is_file():

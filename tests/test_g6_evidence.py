@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from bench import runner
 
@@ -299,6 +301,27 @@ def test_resume_rejects_missing_or_mismatched_raw_records(tmp_path):
         episodes=[episode],
         run_manifest=manifest,
     )
+
+    (tmp_path / "run_manifest.json").write_text(
+        runner.canonical_json(manifest) + "\n", encoding="utf-8"
+    )
+    summary = {"total": 1}
+    runner.finalize_raw_run(
+        tmp_path,
+        summary,
+        episode_count=1,
+    )
+    marker = json.loads((tmp_path / ".run_complete.json").read_text(encoding="utf-8"))
+    assert marker["raw_record_count"] == 1
+    assert marker["raw_records_sha256"] == runner.sha256_file(
+        tmp_path / "raw_records.jsonl"
+    )
+    assert marker["manifest_sha256"] == runner.sha256_file(
+        tmp_path / "run_manifest.json"
+    )
+
+    with pytest.raises(RuntimeError, match="count mismatch"):
+        runner.finalize_raw_run(tmp_path, summary, episode_count=2)
 
     swapped_record = dict(record)
     swapped_record["episode_index"] = 1

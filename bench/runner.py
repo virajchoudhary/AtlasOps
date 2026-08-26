@@ -289,6 +289,7 @@ def append_episode(out_dir: Path, episode: dict) -> None:
     with (out_dir / "results_per_episode.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(episode, sort_keys=True) + "\n")
         handle.flush()
+        os.fsync(handle.fileno())
 
 
 def write_run_manifest(path: Path, manifest: dict) -> None:
@@ -404,10 +405,29 @@ def finalize_raw_run(
     *,
     episode_count: int,
 ) -> None:
+    raw_path = out_dir / "raw_records.jsonl"
+    if not raw_path.is_file():
+        raise RuntimeError("raw-record log is missing; refusing to finalize run")
+    try:
+        with raw_path.open("r", encoding="utf-8") as handle:
+            raw_record_count = sum(1 for line in handle if line.strip())
+    except OSError as exc:
+        raise RuntimeError(f"cannot read raw-record log while finalizing: {exc}") from exc
+    manifest_path = out_dir / "run_manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("run manifest is missing; refusing to finalize run")
+    if episode_count == 0 or raw_record_count != episode_count:
+        raise RuntimeError(
+            "episode/raw-record count mismatch; refusing to finalize run: "
+            f"{raw_record_count} != {episode_count}"
+        )
     marker = {
         "complete_at": datetime.now(timezone.utc).isoformat(),
         "episode_sha256": sha256_file(out_dir / "results_per_episode.jsonl"),
         "episode_count": episode_count,
+        "manifest_sha256": sha256_file(manifest_path),
+        "raw_records_sha256": sha256_file(raw_path),
+        "raw_record_count": raw_record_count,
         "summary_sha256": sha256_object(summary),
     }
     write_json_atomic(out_dir / ".run_complete.json", marker)
@@ -449,7 +469,10 @@ def write_json_atomic(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     try:
-        temporary.write_text(canonical_json(value) + "\n", encoding="utf-8")
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(canonical_json(value) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
         if temporary.exists():

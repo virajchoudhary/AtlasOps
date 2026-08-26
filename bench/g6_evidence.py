@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import platform
 import sys
 from datetime import datetime, timezone
@@ -432,3 +433,4 @@ def append_raw_record(out_dir: Path, record: dict[str, Any]) -> None:
     with (out_dir / "raw_records.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
         handle.flush()
+        os.fsync(handle.fileno())

@@ -3,6 +3,7 @@ import json
 import pytest
 
 from bench import scenario_contract as contract
+from eval import _evaluation_population
 
 
 def test_catalog_is_complete_and_deterministic():
@@ -369,3 +370,40 @@ def test_demo_consumer_rejects_unknown_scenario_before_freeze():
         contract.assert_consumer_may_use_scenario(
             "demo_development", "single_fault/not-in-catalogue"
         )
+
+
+def test_evaluation_prefers_active_validation_population(monkeypatch):
+    monkeypatch.setattr(
+        "eval.allowed_scenario_ids",
+        lambda role: ("multi_fault/mf-001", "single_fault/sf-001")
+        if role == "validation"
+        else (),
+    )
+    monkeypatch.setattr(
+        "eval.development_scenario_ids",
+        lambda consumer: (_ for _ in ()).throw(AssertionError("fallback used")),
+    )
+
+    scenarios, consumer = _evaluation_population(["single_fault"])
+
+    assert scenarios == ["single_fault/sf-001"]
+    assert consumer == "validation"
+
+
+def test_evaluation_falls_back_only_before_split_activation(monkeypatch):
+    def refuse_active_split(role):
+        raise RuntimeError("G5_SPLIT_NOT_ACTIVE: no frozen split")
+
+    monkeypatch.setattr("eval.allowed_scenario_ids", refuse_active_split)
+    monkeypatch.setattr(
+        "eval.development_scenario_ids",
+        lambda consumer: (
+            "cascade/cs-001",
+            "single_fault/sf-001",
+        ),
+    )
+
+    scenarios, consumer = _evaluation_population(["cascade"])
+
+    assert scenarios == ["cascade/cs-001"]
+    assert consumer == "evaluation_subset"

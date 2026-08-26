@@ -27,7 +27,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bench.scenario_contract import assert_consumer_may_use_scenario, development_scenario_ids
+from bench.scenario_contract import (
+    allowed_scenario_ids,
+    assert_consumer_may_use_scenario,
+    development_scenario_ids,
+)
 
 log = logging.getLogger(__name__)
 
@@ -71,13 +75,17 @@ def wait_for_alert(timeout_s: int = 180) -> dict | None:
     return {"commonLabels": {"alertname": "EvalTimeout"}, "alerts": [], "synthetic": True}
 
 
-async def run_episode(scenario_id: str) -> dict:
+async def run_episode(
+    scenario_id: str,
+    *,
+    scenario_consumer: str = "evaluation_subset",
+) -> dict:
     from agents.coordinator import handle_incident
     from agents.judge import judge_trajectory
 
     t0 = time.time()
     tier = scenario_id.split("/")[0]
-    assert_consumer_may_use_scenario("evaluation_subset", scenario_id)
+    assert_consumer_may_use_scenario(scenario_consumer, scenario_id)
 
     if not apply_chaos(scenario_id):
         return {"scenario_id": scenario_id, "status": "skip", "tier": tier}
@@ -122,6 +130,19 @@ async def run_episode(scenario_id: str) -> dict:
 
 def reset_cluster():
     reset_chaos()
+
+
+def _evaluation_population(tiers: list[str]) -> tuple[list[str], str]:
+    """Use the declared validation split once active; otherwise development only."""
+    try:
+        scenario_ids = list(allowed_scenario_ids("validation"))
+        consumer = "validation"
+    except RuntimeError as exc:
+        if "G5_SPLIT_NOT_ACTIVE" not in str(exc):
+            raise
+        scenario_ids = list(development_scenario_ids("evaluation_subset"))
+        consumer = "evaluation_subset"
+    return [sid for sid in scenario_ids if sid.split("/", 1)[0] in tiers], consumer
 
 
 def compute_stats(results: list[dict], tag: str) -> dict:
@@ -184,15 +205,21 @@ def print_comparison(base_stats: dict, ft_stats: dict):
     print("=" * 70 + "\n")
 
 
-async def eval_model(model_id: str, tag: str, scenarios: list[str],
-                     episodes: int) -> dict:
+async def eval_model(
+    model_id: str,
+    tag: str,
+    scenarios: list[str],
+    episodes: int,
+    *,
+    scenario_consumer: str = "evaluation_subset",
+) -> dict:
     os.environ["AGENT_MODEL"] = model_id
     log.info("Evaluating %s (%d episodes)...", tag, episodes)
 
     results = []
     for i, scenario in enumerate(scenarios[:episodes], 1):
         log.info("[%d/%d] %s", i, episodes, scenario)
-        result = await run_episode(scenario)
+        result = await run_episode(scenario, scenario_consumer=scenario_consumer)
         results.append(result)
 
     return compute_stats(results, tag)
@@ -212,17 +239,18 @@ async def main():
         args.episodes = 5
 
     tiers = [t.strip() for t in args.tiers.split(",")]
-    scenarios = []
-    for tier in tiers:
-        evaluation_ids = development_scenario_ids("evaluation_subset")
-        scenarios.extend(
-            scenario for scenario in evaluation_ids if scenario.split("/", 1)[0] in tiers
-        )
+    scenarios, scenario_consumer = _evaluation_population(tiers)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     if args.model:
-        stats = await eval_model(args.model, "model", scenarios, args.episodes)
+        stats = await eval_model(
+            args.model,
+            "model",
+            scenarios,
+            args.episodes,
+            scenario_consumer=scenario_consumer,
+        )
         print(json.dumps(stats, indent=2))
         (RESULTS_DIR / f"eval_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
          ).write_text(json.dumps(stats, indent=2))
@@ -231,8 +259,20 @@ async def main():
     if not args.base or not args.ft:
         parser.error("Provide --base and --ft for comparison, or --model for single eval")
 
-    base_stats = await eval_model(args.base, "base", scenarios, args.episodes)
-    ft_stats   = await eval_model(args.ft,   "fine_tuned", scenarios, args.episodes)
+    base_stats = await eval_model(
+        args.base,
+        "base",
+        scenarios,
+        args.episodes,
+        scenario_consumer=scenario_consumer,
+    )
+    ft_stats = await eval_model(
+        args.ft,
+        "fine_tuned",
+        scenarios,
+        args.episodes,
+        scenario_consumer=scenario_consumer,
+    )
 
     print_comparison(base_stats, ft_stats)
 

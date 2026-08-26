@@ -325,16 +325,21 @@ def validate_resume_manifest(
         raise RuntimeError("resume prompt/tool/verifier contract differs from immutable run manifest")
 
 
-def validate_resume_raw_records(out_dir: Path, episode_count: int) -> None:
+def validate_resume_raw_records(
+    out_dir: Path,
+    *,
+    episodes: list[dict],
+    run_manifest: dict | None = None,
+) -> None:
     raw_path = out_dir / "raw_records.jsonl"
-    if episode_count == 0 and not raw_path.exists():
-        return
+    if not raw_path.is_file():
+        raise RuntimeError("raw-record log is missing; refusing resume")
     try:
         with raw_path.open("r", encoding="utf-8") as handle:
             records = [json.loads(line) for line in handle if line.strip()]
-    except (OSError, json.JSONDecodeError) as exc:
+    except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"raw-record log is missing/truncated; refusing resume: {exc}") from exc
-    if len(records) != episode_count:
+    if len(records) != len(episodes):
         raise RuntimeError("raw-record count does not match completed episodes; refusing resume")
     incompatible = [
         index for index, record in enumerate(records)
@@ -343,6 +348,45 @@ def validate_resume_raw_records(out_dir: Path, episode_count: int) -> None:
     if incompatible:
         raise RuntimeError(
             f"raw-record schema differs from current runner at episodes {incompatible}; refusing resume"
+        )
+
+    mismatched_indexes: list[int] = []
+    expected_run_id = (run_manifest or {}).get("run_id")
+    expected_catalog_sha256 = (run_manifest or {}).get("catalog_sha256")
+    expected_split_sha256 = (run_manifest or {}).get("frozen_split_sha256")
+    expected_git_commit = ((run_manifest or {}).get("observed_runtime") or {}).get(
+        "git_commit"
+    )
+    episode_log_hash = sha256_file(out_dir / "results_per_episode.jsonl")
+    for index, record in enumerate(records):
+        episode = episodes[index]
+        provenance = record.get("run_provenance") or {}
+        identity = record.get("scenario_identity") or {}
+        matches = (
+            int(record.get("episode_index", -1)) == index
+            and identity.get("scenario_id") == episode.get("scenario_id")
+            and identity.get("tier") == episode.get("tier")
+            and provenance.get("episode_sha256") == episode_log_hash
+            and (expected_run_id is None or provenance.get("run_id") == expected_run_id)
+            and (
+                expected_catalog_sha256 is None
+                or provenance.get("catalog_sha256") == expected_catalog_sha256
+            )
+            and (
+                expected_split_sha256 is None
+                or provenance.get("frozen_split_sha256") == expected_split_sha256
+            )
+            and (
+                expected_git_commit is None
+                or provenance.get("git_commit") == expected_git_commit
+            )
+        )
+        if not matches:
+            mismatched_indexes.append(index)
+    if mismatched_indexes:
+        raise RuntimeError(
+            "raw records differ from completed episodes/manifest at episodes "
+            f"{mismatched_indexes}; refusing resume"
         )
 
 
@@ -1066,7 +1110,13 @@ async def main() -> None:
         })
         write_run_manifest(manifest_path, immutable_manifest)
 
-    validate_resume_raw_records(out_dir, len(results))
+    stored_manifest = read_run_manifest(manifest_path)
+    if results:
+        validate_resume_raw_records(
+            out_dir,
+            episodes=results,
+            run_manifest=stored_manifest,
+        )
 
     completed_ids = [str(r.get("scenario_id", "")) for r in results]
     if completed_ids != scenarios[: len(completed_ids)]:
@@ -1083,7 +1133,7 @@ async def main() -> None:
             out_dir,
             build_raw_record(
                 r,
-                run_manifest=read_run_manifest(manifest_path),
+                run_manifest=stored_manifest,
                 episode_index=i,
             ),
         )

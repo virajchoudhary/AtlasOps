@@ -137,18 +137,20 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
         episode,
         run_manifest=manifest,
         episode_index=7,
+        episode_sha256="episode-log-digest",
         written_at="2030-01-01T00:00:00Z",
     )
     unsigned = {key: value for key, value in record.items() if key != "record_sha256"}
 
     assert record["record_sha256"]
-    assert record["schema_version"] == "atlasops.g6.raw-record/v2"
+    assert record["schema_version"] == "atlasops.g6.raw-record/v3"
     assert record["record_sha256"] == evidence.sha256_object(unsigned)
     assert record["infrastructure_valid"] is True
     assert record["timestamps"]["record_written_at"] == "2030-01-01T00:00:00Z"
     assert record["episode_index"] == 7
     assert record["scenario_identity"]["hidden_orchestration_metadata"] is True
     assert record["run_provenance"]["environment_identity"] == "env-unit"
+    assert record["run_provenance"]["episode_sha256"] == "episode-log-digest"
     assert record["metrics_inputs"]["time_to_resolve_source"] == "harness_wall_clock"
     assert record["metrics_inputs"]["agent_declared_time_to_resolve_s"] == 999
 
@@ -209,18 +211,76 @@ def test_resume_rejects_changed_scenarios_or_configuration():
 
 
 def test_resume_rejects_missing_or_mismatched_raw_records(tmp_path):
+    episode = _episode()
+    (tmp_path / "results_per_episode.jsonl").write_text(
+        runner.canonical_json(episode) + "\n", encoding="utf-8"
+    )
     with pytest.raises(RuntimeError, match="raw-record"):
-        runner.validate_resume_raw_records(tmp_path, 1)
+        runner.validate_resume_raw_records(tmp_path, episodes=[])
 
     raw_path = tmp_path / "raw_records.jsonl"
     raw_path.write_text(
         f'{{"a":1,"schema_version":"{evidence.RAW_RECORD_SCHEMA_VERSION}"}}\n',
         encoding="utf-8",
     )
-    runner.validate_resume_raw_records(tmp_path, 1)
+    episode = _episode()
+    (tmp_path / "results_per_episode.jsonl").write_text(
+        runner.canonical_json(episode) + "\n", encoding="utf-8"
+    )
+    manifest = {
+        "catalog_sha256": "catalog",
+        "frozen_split_sha256": "split",
+        "observed_runtime": {"git_commit": "sha"},
+        "run_id": "run-1",
+    }
+    record = evidence.build_raw_record(
+        episode,
+        run_manifest=manifest,
+        episode_index=0,
+        episode_sha256=runner.sha256_file(tmp_path / "results_per_episode.jsonl"),
+        written_at="2030-01-01T00:00:00Z",
+    )
+    raw_path.write_text(runner.canonical_json(record) + "\n", encoding="utf-8")
+    runner.validate_resume_raw_records(
+        tmp_path,
+        episodes=[episode],
+        run_manifest=manifest,
+    )
+
+    swapped_record = dict(record)
+    swapped_record["episode_index"] = 1
+    raw_path.write_text(
+        runner.canonical_json(swapped_record) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="raw records differ"):
+        runner.validate_resume_raw_records(
+            tmp_path,
+            episodes=[episode],
+            run_manifest=manifest,
+        )
+
+    stale_run = dict(record)
+    stale_run["run_provenance"] = {
+        **record["run_provenance"],
+        "run_id": "different-run",
+    }
+    raw_path.write_text(runner.canonical_json(stale_run) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="raw records differ"):
+        runner.validate_resume_raw_records(
+            tmp_path,
+            episodes=[episode],
+            run_manifest=manifest,
+        )
+
     raw_path.write_text('{"a":1,"schema_version":"old"}\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="raw-record schema"):
-        runner.validate_resume_raw_records(tmp_path, 1)
+        runner.validate_resume_raw_records(
+            tmp_path,
+            episodes=[_episode()],
+        )
     raw_path.write_text('{"a":1}\n{broken\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="truncated"):
-        runner.validate_resume_raw_records(tmp_path, 1)
+        runner.validate_resume_raw_records(
+            tmp_path,
+            episodes=[_episode()],
+        )

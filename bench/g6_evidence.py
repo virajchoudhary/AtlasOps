@@ -18,7 +18,7 @@ from bench.scenario_contract import (
 )
 
 
-RAW_RECORD_SCHEMA_VERSION = "atlasops.g6.raw-record/v2"
+RAW_RECORD_SCHEMA_VERSION = "atlasops.g6.raw-record/v3"
 METRICS_SCHEMA_VERSION = "atlasops.g6.metrics/v1"
 _PROMPT_FILES = (
     "agents/prompts/triage.md",
@@ -363,6 +363,7 @@ def build_raw_record(
     *,
     run_manifest: dict[str, Any],
     episode_index: int,
+    episode_sha256: str,
     written_at: str | None = None,
 ) -> dict[str, Any]:
     classification = classify_episode(episode)
@@ -387,6 +388,7 @@ def build_raw_record(
         "run_provenance": {
             "catalog_sha256": run_manifest.get("catalog_sha256"),
             "frozen_split_sha256": run_manifest.get("frozen_split_sha256"),
+            "episode_sha256": episode_sha256,
             "git_commit": (run_manifest.get("observed_runtime") or {}).get("git_commit"),
             "model": run_manifest.get("model"),
             "run_id": run_manifest.get("run_id"),

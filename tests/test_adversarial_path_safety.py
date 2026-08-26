@@ -50,7 +50,10 @@ def test_rejects_unsafe_model_supplied_ids(tmp_path, monkeypatch, unsafe_id):
 def test_missing_model_id_gets_safe_random_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(adversarial_designer, "ADVERSARIAL_DIR", tmp_path)
 
-    result = _design_once({"title": "Unit scenario", "faults": []})
+    result = _design_once({
+        "title": "Unit scenario",
+        "faults": [_payload("adv-fallback")["faults"][0]],
+    })
 
     assert result["scenario_id"].startswith("adv-")
     assert (tmp_path / f"{result['scenario_id']}.yaml").is_file()
@@ -97,3 +100,143 @@ def test_runner_derives_exploration_id_inside_contract_root(tmp_path, monkeypatc
     assert runner._exploration_scenario_id(manifest) == "adversarial/adv-unit"
     with pytest.raises(ValueError):
         runner._exploration_scenario_id(outside)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        {
+            "kind": "Namespace",
+            "action": "create",
+            "target_service": "frontend",
+            "params": {},
+        },
+        {
+            "kind": "NetworkChaos",
+            "action": "partition",
+            "target_service": "../../other",
+            "params": {},
+        },
+        {
+            "kind": "PodChaos",
+            "action": "pod-kill",
+            "target_service": "frontend",
+            "params": {"selector": {"namespace": "kube-system"}},
+        },
+        {
+            "kind": "StressChaos",
+            "action": "cpu",
+            "target_service": "frontend",
+            "params": {"workers": 999, "load": 90},
+        },
+        {
+            "kind": "PodChaos",
+            "action": "pod-kill",
+            "target_service": "frontend",
+            "params": {"duration": "24h"},
+        },
+        {
+            "kind": "NetworkChaos",
+            "action": "delay",
+            "target_service": "frontend",
+            "params": {"latency": "16h"},
+        },
+        {
+            "kind": "NetworkChaos",
+            "action": "delay",
+            "target_service": "frontend",
+            "params": {"jitter": "99999h"},
+        },
+        {
+            "kind": "StressChaos",
+            "action": "memory",
+            "target_service": "frontend",
+            "params": {"size": "9999Gi"},
+        },
+    ],
+)
+def test_rejects_untrusted_fault_semantics(fault):
+    with pytest.raises(ValueError):
+        adversarial_designer._fault_document(fault, "adv-safe", 0)
+
+
+def test_manifest_uses_kind_valid_specification():
+    pod_document = adversarial_designer._fault_document(
+        {
+            "kind": "PodChaos",
+            "action": "pod-kill",
+            "target_service": "frontend",
+            "params": {},
+        },
+        "adv-safe",
+        0,
+    )
+    stress_document = adversarial_designer._fault_document(
+        {
+            "kind": "StressChaos",
+            "action": "cpu",
+            "target_service": "frontend",
+            "params": {},
+        },
+        "adv-safe",
+        0,
+    )
+    time_document = adversarial_designer._fault_document(
+        {
+            "kind": "TimeChaos",
+            "action": "offset",
+            "target_service": "frontend",
+            "params": {},
+        },
+        "adv-safe",
+        0,
+    )
+
+    assert pod_document["spec"]["action"] == "pod-kill"
+    assert "action" not in stress_document["spec"]
+    assert stress_document["spec"]["stressors"] == {
+        "cpu": {"workers": 4, "load": 80}
+    }
+    assert "action" not in time_document["spec"]
+    assert time_document["spec"]["timeOffset"] == "+300s"
+
+
+def test_structured_manifest_contains_only_declared_faults(tmp_path, monkeypatch):
+    monkeypatch.setattr(adversarial_designer, "ADVERSARIAL_DIR", tmp_path)
+    payload = _payload("adv-yaml-boundary")
+    payload["ignored_attack_field"] = {
+        "kind": "Namespace",
+        "metadata": {"name": "injected"},
+    }
+    payload["faults"].append({
+        "kind": "NetworkChaos",
+        "action": "delay",
+        "target_service": "checkoutservice",
+        "params": {"latency": "2000ms", "correlation": 70},
+    })
+
+    result = _design_once(payload)
+
+    import yaml
+
+    documents = list(
+        yaml.safe_load_all((tmp_path / "adv-yaml-boundary.yaml").read_text(encoding="utf-8"))
+    )
+    assert len(documents) == 2
+    assert [document["kind"] for document in documents] == ["PodChaos", "NetworkChaos"]
+    assert all(document["apiVersion"] == "chaos-mesh.org/v1alpha1" for document in documents)
+    assert all(
+        document["metadata"]["namespace"] == "chaos-mesh"
+        for document in documents
+    )
+    assert all(
+        document["spec"]["selector"]["namespaces"] == ["default"]
+        for document in documents
+    )
+    metadata_path = tmp_path / "adv-yaml-boundary.json"
+    parsed_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata_path.is_file()
+    assert parsed_metadata.get("ignored_attack_field") is None
+    assert result["spec"]["faults"] == parsed_metadata["faults"]
+    fault_keys = {"kind", "action", "target_service", "params"}
+    assert all(set(fault) == fault_keys for fault in parsed_metadata["faults"])

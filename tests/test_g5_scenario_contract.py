@@ -254,6 +254,17 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
         "load_exposure_ledger",
         lambda repo_root=contract.REPO_ROOT, verify=True: synthetic_ledger,
     )
+    monkeypatch.setattr(contract, "repository_head", lambda repo_root: "head-sha")
+    monkeypatch.setattr(
+        contract,
+        "_unexpected_dirty_proposal_sources",
+        lambda repo_root=contract.REPO_ROOT: [],
+    )
+    monkeypatch.setattr(
+        contract,
+        "_non_derived_source_drift_since",
+        lambda repo_root, source_sha, head_sha: [],
+    )
     catalog_path = tmp_path / "catalog.json"
     candidate_path = tmp_path / "candidate.json"
     frozen_path = tmp_path / "split.frozen.json"
@@ -270,7 +281,7 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
             "g4_passed": True,
         },
         catalog_path=catalog_path,
-        expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
+        expected_repo_sha="head-sha",
     )
     assert frozen["status"] == "FROZEN"
     assert frozen["activation"]["active"] is True
@@ -297,7 +308,7 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
                 "g4_passed": True,
             },
             catalog_path=catalog_path,
-            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
+            expected_repo_sha="head-sha",
         )
     assert not conflict_path.exists()
     related = dict(candidate)
@@ -320,7 +331,7 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
                 "g4_passed": True,
             },
             catalog_path=catalog_path,
-            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
+            expected_repo_sha="head-sha",
         )
     assert not related_conflict_path.exists()
     with pytest.raises(FileExistsError):
@@ -334,7 +345,7 @@ def test_freeze_requires_clean_final_test_and_is_atomic(tmp_path, monkeypatch):
                 "g4_passed": True,
             },
             catalog_path=catalog_path,
-            expected_repo_sha="0123456789abcdef0123456789abcdef01234567",
+            expected_repo_sha="head-sha",
         )
 
 

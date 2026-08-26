@@ -1053,11 +1053,27 @@ def freeze_split(
         raise ValueError("G4 must be passed before split freeze")
     source_repo_sha = str(split["contract_provenance"]["repo_sha"])
     candidate_root = candidate_path.resolve().parent.parent.parent
-    current_repo_sha = expected_repo_sha or repository_head(candidate_root)
-    if current_repo_sha != source_repo_sha:
+    observed_repo_sha = repository_head(candidate_root)
+    if expected_repo_sha is not None and expected_repo_sha != observed_repo_sha:
         raise RuntimeError(
-            "split drift detected: candidate repository SHA differs from current HEAD; "
-            "regenerate and review a new proposal"
+            "expected repository SHA differs from the observed clean HEAD; "
+            "refusing to attest a different revision"
+        )
+    dirty_sources = _unexpected_dirty_proposal_sources(candidate_root)
+    if dirty_sources:
+        raise RuntimeError(
+            "split worktree is not clean for non-derived sources: "
+            + ", ".join(dirty_sources)
+        )
+    drifted_sources = _non_derived_source_drift_since(
+        candidate_root,
+        source_repo_sha,
+        observed_repo_sha,
+    )
+    if drifted_sources:
+        raise RuntimeError(
+            "split drift detected since the recorded proposal source: "
+            + ", ".join(drifted_sources)
         )
 
     frozen = dict(split)
@@ -1177,6 +1193,44 @@ def _write_catalog(args: argparse.Namespace) -> int:
     write_json_atomically(Path(args.output), build_catalog())
     print(f"wrote catalog: {args.output}")
     return 0
+
+
+def _non_derived_source_drift_since(
+    repo_root: Path,
+    source_sha: str,
+    head_sha: str,
+) -> list[str]:
+    """Return non-derived paths changed after the proposal's source revision."""
+    completed_ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", source_sha, head_sha],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed_ancestry.returncode != 0:
+        return ["<proposal source is not an ancestor of the observed HEAD>"]
+
+    exclusions = [
+        f":(exclude){path}"
+        for path in sorted(_DERIVED_CONTRACT_ARTIFACT_PATHS)
+    ]
+    completed_diff = subprocess.run(
+        ["git", "diff", "--name-only", source_sha, head_sha, "--", ".", *exclusions],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed_diff.returncode != 0:
+        return ["<git diff failed>"]
+
+    unexpected = []
+    for line in completed_diff.stdout.splitlines():
+        path = line.replace("\\", "/").strip('"')
+        if path and path not in _DERIVED_CONTRACT_ARTIFACT_PATHS:
+            unexpected.append(path)
+    return sorted(set(unexpected))
 
 
 def _unexpected_dirty_proposal_sources(repo_root: Path = REPO_ROOT) -> list[str]:

@@ -957,6 +957,49 @@ def test_infrastructure_invalidation_is_persisted_before_batch_abort(
     assert records[0]["invalidation_reason"] == "pre_rollout_unhealthy"
 
 
+def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
+    tmp_path: Path,
+) -> None:
+    row = _row()
+    episodes_path = tmp_path / "episodes.jsonl"
+    reward_fn = OnlineRewardFunction(
+        [row],
+        resolve_environment_identity("local-kind", "kind-atlasops-local"),
+        curriculum_seed=3,
+        dataset_sha256="f" * 64,
+        episodes_path=episodes_path,
+    )
+    valid = {
+        "event_id": "event-1",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": "a" * 64,
+        "prompt_sha256": row["prompt_sha256"],
+        "reward": {"total": 0.0},
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "COMPLETED",
+    }
+    episodes_path.write_text(json.dumps(valid) + "\n", encoding="utf-8")
+    assert reward_fn.validate_existing_episode_log() == 1
+
+    invalid_single_cases = [
+        "{",
+        json.dumps({**valid, "status": "UNKNOWN"}),
+        json.dumps({**valid, "reward": None}),
+    ]
+    for case in invalid_single_cases:
+        episodes_path.write_text(case + "\n", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="episode_evidence|completed_episode"):
+            reward_fn.validate_existing_episode_log()
+
+    episodes_path.write_text(
+        json.dumps(valid) + "\n" + json.dumps(valid) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="episode_evidence_event_id_invalid"):
+        reward_fn.validate_existing_episode_log()
+
+
 def test_scientific_tool_context_pins_cluster_and_blocks_webhooks() -> None:
     from training.grpo import _approved_tool_context
 

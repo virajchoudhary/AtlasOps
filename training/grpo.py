@@ -50,6 +50,12 @@ _CONTEXT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 REWARD_CONTRACT_VERSION = "stage9-policy-attributed-v2"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+EPISODE_STATUSES = {
+    "COMPLETED",
+    "INFRASTRUCTURE_INVALID",
+    "POLICY_EXECUTION_INVALID",
+    "ROLLOUT_EXCEPTION",
+}
 
 # Training-time-only dependencies are imported inside the functions that need
 # them so coupling audits do not require a GPU/TRL installation.
@@ -607,6 +613,7 @@ class OnlineRewardFunction:
             return
         self.episodes_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
+            "event_id": uuid.uuid4().hex,
             "episode": result["episode"],
             "hidden_metadata": row["hidden_metadata"],
             "curriculum_state": {
@@ -626,9 +633,50 @@ class OnlineRewardFunction:
             "row_id": row["row_id"],
             "stage9_group_id": row["stage9_group_id"],
             "status": "COMPLETED",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         }
         with self.episodes_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def validate_existing_episode_log(self) -> int:
+        """Fail closed on corrupt or ambiguous prior evidence before resume."""
+        if not self.episodes_path or not self.episodes_path.is_file():
+            return 0
+        seen_events: set[str] = set()
+        count = 0
+        with self.episodes_path.open("r", encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"episode_evidence_invalid_json:{line_number}") from exc
+                if not isinstance(record, dict):
+                    raise RuntimeError(f"episode_evidence_not_object:{line_number}")
+                missing = sorted(
+                    key for key in (
+                        "event_id", "hidden_metadata", "policy_completion_sha256",
+                        "prompt_sha256", "reward", "row_id", "stage9_group_id",
+                        "status",
+                    )
+                    if key not in record
+                )
+                if missing:
+                    raise RuntimeError(
+                        f"episode_evidence_fields_missing:{line_number}:{','.join(missing)}"
+                    )
+                if record["status"] not in EPISODE_STATUSES:
+                    raise RuntimeError(f"episode_evidence_status_invalid:{line_number}")
+                event_id = str(record["event_id"])
+                if not event_id or event_id in seen_events:
+                    raise RuntimeError(f"episode_evidence_event_id_invalid:{line_number}")
+                seen_events.add(event_id)
+                if record["status"] == "COMPLETED":
+                    if not isinstance(record["reward"], dict):
+                        raise RuntimeError(f"completed_episode_reward_missing:{line_number}")
+                elif record["reward"] is not None:
+                    raise RuntimeError(f"invalidated_episode_has_reward:{line_number}")
+                count += 1
+        return count
 
     def _persist_invalidation(
         self,
@@ -1081,6 +1129,7 @@ def main() -> None:
         args.environment_provider,
         args.kubernetes_context,
     )
+    observed_environment = verify_kubernetes_environment(environment)
     training_rows_path = Path(args.training_rows)
     rows = load_remediation_training_rows(
         training_rows_path,
@@ -1104,6 +1153,14 @@ def main() -> None:
     curriculum_state_path = output_dir / "curriculum_state.json"
     episodes_path = output_dir / "grpo_episodes.jsonl"
     resume_checkpoint = args.resume_from_checkpoint
+    reward_fn = OnlineRewardFunction(
+        rows,
+        environment,
+        curriculum_seed,
+        raw_dataset_hash,
+        episodes_path=episodes_path,
+        curriculum_state_path=curriculum_state_path,
+    )
     validate_sft_checkpoint(args.model, verify_files=True)
     if resume_checkpoint:
         if not curriculum_state_path.exists():
@@ -1118,6 +1175,7 @@ def main() -> None:
         )
         if not episodes_path.is_file():
             raise RuntimeError("resume_episode_evidence_missing")
+        reward_fn.validate_existing_episode_log()
     else:
         if episodes_path.exists():
             raise RuntimeError("refusing_to_overwrite_existing_episode_evidence")
@@ -1137,7 +1195,7 @@ def main() -> None:
     )
     provenance["resumed_from"] = resume_checkpoint or None
     provenance["dependency_versions"] = validate_trl_runtime()
-    provenance["environment_observed"] = verify_kubernetes_environment(environment)
+    provenance["environment_observed"] = observed_environment
     manifest_path = output_dir / "run_manifest.json"
     if resume_checkpoint:
         if not manifest_path.is_file():
@@ -1169,15 +1227,6 @@ def main() -> None:
     )
 
     model, tokenizer = load_model_and_tokenizer(args.model)
-
-    reward_fn = OnlineRewardFunction(
-        rows,
-        environment,
-        curriculum_seed,
-        raw_dataset_hash,
-        episodes_path=output_dir / "grpo_episodes.jsonl",
-        curriculum_state_path=curriculum_state_path,
-    )
 
     from datasets import Dataset
     metadata_columns = (

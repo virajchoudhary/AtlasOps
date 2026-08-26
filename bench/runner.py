@@ -33,7 +33,13 @@ from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from bench.scenario_contract import allowed_scenario_ids, canonical_json, sha256_file, sha256_object
-from bench.g6_evidence import append_raw_record, build_raw_record, build_run_manifest, compute_g6_metrics
+from bench.g6_evidence import (
+    append_raw_record,
+    build_raw_record,
+    build_run_manifest,
+    compute_g6_metrics,
+    RAW_RECORD_SCHEMA_VERSION,
+)
 from config.runtime import bounded_speed_score, evaluate_reward_contract
 
 # Backwards-compatible alias — tests import this name from bench.runner
@@ -322,6 +328,14 @@ def validate_resume_raw_records(out_dir: Path, episode_count: int) -> None:
         raise RuntimeError(f"raw-record log is missing/truncated; refusing resume: {exc}") from exc
     if len(records) != episode_count:
         raise RuntimeError("raw-record count does not match completed episodes; refusing resume")
+    incompatible = [
+        index for index, record in enumerate(records)
+        if record.get("schema_version") != RAW_RECORD_SCHEMA_VERSION
+    ]
+    if incompatible:
+        raise RuntimeError(
+            f"raw-record schema differs from current runner at episodes {incompatible}; refusing resume"
+        )
 
 
 def ensure_environment_safe_for_next_episode(episode: dict) -> None:
@@ -797,7 +811,9 @@ async def run_scenario(scenario_id: str, *, require_catalogue: bool = True) -> d
         "env_resolved": env_resolved,
         "resolved": env_resolved,
         "verification": verification,
-        "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
+        "time_to_resolve_s": round(time.time() - t0),
+        "time_to_resolve_source": "harness_wall_clock",
+        "agent_declared_time_to_resolve_s": remediation.get("time_to_resolve_seconds"),
         "severity": triage.get("severity", "unknown"),
         "total_turns": total_turns,
         "judge": judge_score,

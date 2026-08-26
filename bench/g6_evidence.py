@@ -18,7 +18,7 @@ from bench.scenario_contract import (
 )
 
 
-RAW_RECORD_SCHEMA_VERSION = "atlasops.g6.raw-record/v1"
+RAW_RECORD_SCHEMA_VERSION = "atlasops.g6.raw-record/v2"
 METRICS_SCHEMA_VERSION = "atlasops.g6.metrics/v1"
 _PROMPT_FILES = (
     "agents/prompts/triage.md",
@@ -376,6 +376,10 @@ def build_raw_record(
         "metrics_inputs": {
             "root_cause_evaluation": episode.get("root_cause_evaluation"),
             "time_to_resolve_s": episode.get("time_to_resolve_s"),
+            "time_to_resolve_source": episode.get("time_to_resolve_source"),
+            "agent_declared_time_to_resolve_s": episode.get(
+                "agent_declared_time_to_resolve_s"
+            ),
             "tool_metrics": episode.get("tool_metrics"),
             "total_turns": episode.get("total_turns"),
         },

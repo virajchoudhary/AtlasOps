@@ -14,6 +14,8 @@ def _episode(**overrides):
         "status": "ok",
         "tier": "single_fault",
         "time_to_resolve_s": 10,
+        "time_to_resolve_source": "harness_wall_clock",
+        "agent_declared_time_to_resolve_s": 999,
         "tool_metrics": {
             "attempts": 2,
             "executed_failures": 0,
@@ -140,12 +142,15 @@ def test_raw_record_is_hashed_and_marks_identity_hidden():
     unsigned = {key: value for key, value in record.items() if key != "record_sha256"}
 
     assert record["record_sha256"]
+    assert record["schema_version"] == "atlasops.g6.raw-record/v2"
     assert record["record_sha256"] == evidence.sha256_object(unsigned)
     assert record["infrastructure_valid"] is True
     assert record["timestamps"]["record_written_at"] == "2030-01-01T00:00:00Z"
     assert record["episode_index"] == 7
     assert record["scenario_identity"]["hidden_orchestration_metadata"] is True
     assert record["run_provenance"]["environment_identity"] == "env-unit"
+    assert record["metrics_inputs"]["time_to_resolve_source"] == "harness_wall_clock"
+    assert record["metrics_inputs"]["agent_declared_time_to_resolve_s"] == 999
 
 
 def test_run_manifest_keeps_environment_identity_observed():
@@ -208,8 +213,14 @@ def test_resume_rejects_missing_or_mismatched_raw_records(tmp_path):
         runner.validate_resume_raw_records(tmp_path, 1)
 
     raw_path = tmp_path / "raw_records.jsonl"
-    raw_path.write_text('{"a":1}\n', encoding="utf-8")
+    raw_path.write_text(
+        f'{{"a":1,"schema_version":"{evidence.RAW_RECORD_SCHEMA_VERSION}"}}\n',
+        encoding="utf-8",
+    )
     runner.validate_resume_raw_records(tmp_path, 1)
+    raw_path.write_text('{"a":1,"schema_version":"old"}\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="raw-record schema"):
+        runner.validate_resume_raw_records(tmp_path, 1)
     raw_path.write_text('{"a":1}\n{broken\n', encoding="utf-8")
     with pytest.raises(RuntimeError, match="truncated"):
         runner.validate_resume_raw_records(tmp_path, 1)

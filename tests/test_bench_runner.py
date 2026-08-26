@@ -126,6 +126,7 @@ class TestRunScenario:
         judge_trajectory_mock = AsyncMock(return_value=judge_score)
         reset_cluster_mock = Mock()
 
+        monkeypatch.setattr(runner.time, "time", Mock(side_effect=[1000.0, 1045.0]))
         monkeypatch.setattr(runner, "apply_chaos", apply_chaos_mock)
         monkeypatch.setattr(runner, "wait_for_alert", wait_for_alert_mock)
         monkeypatch.setattr(runner, "handle_incident", handle_incident_mock)
@@ -187,6 +188,37 @@ class TestRunScenario:
         assert episode["resolved"] is False
         assert episode["agent_claimed_resolved"] is True
         assert episode["reward_contract"]["penalties"]["false_resolution"] == pytest.approx(0.25)
+
+    def test_ttr_uses_harness_clock_not_agent_claim(self, monkeypatch):
+        from bench import runner
+
+        incident = {
+            "triage": {"trajectory": [], "final": {"severity": "P1"}},
+            "diagnosis": {"trajectory": [], "final": {}},
+            "remediation": {
+                "trajectory": [],
+                "final": {"outcome": "resolved", "time_to_resolve_seconds": 9999},
+            },
+            "comms": {"trajectory": [], "final": {}},
+            "verification": {"agent_claimed_resolved": True, "env_resolved": True},
+        }
+        monkeypatch.setattr(runner.time, "time", Mock(side_effect=[2000.0, 2030.0]))
+        monkeypatch.setattr(runner, "apply_chaos", Mock(return_value=True))
+        monkeypatch.setattr(runner, "wait_for_alert", Mock(return_value={"commonLabels": {}}))
+        monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=incident))
+        monkeypatch.setattr(
+            runner,
+            "judge_trajectory",
+            AsyncMock(return_value={"overall": 0.8}),
+        )
+        monkeypatch.setattr(runner, "reset_cluster", Mock(return_value=True))
+
+        episode = asyncio.run(runner.run_scenario("single_fault/sf-001"))
+
+        assert episode["status"] == "ok"
+        assert episode["time_to_resolve_s"] == 30
+        assert episode["time_to_resolve_source"] == "harness_wall_clock"
+        assert episode["agent_declared_time_to_resolve_s"] == 9999
 
     def test_reset_failure_preserves_harness_invalid_episode(self, monkeypatch):
         from bench import runner

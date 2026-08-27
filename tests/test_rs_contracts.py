@@ -15,6 +15,7 @@ from agents.rs import (
     build_corpus_manifest,
     build_synthetic_fixture,
     deserialize_hybrid_model,
+    evaluate_prerequisites,
     mutating_action_exposure_at_k,
     serialize_hybrid_model,
     unsafe_recommendation_rate,
@@ -196,13 +197,63 @@ def test_adversarial_numeric_split_and_rank_inputs_fail_or_degrade_safely():
     assert rank_candidates(scores, 99) == [("a", 1.0), ("b", 1.0)]
 
 
-def test_catalogue_accepts_only_complete_current_remediation_acl():
-    with pytest.raises(SchemaError):
+def test_builder_rejects_unregistered_tools_and_handles_reduced_availability():
+    with pytest.raises(SchemaError, match="unregistered tools"):
         RecommendationPacketBuilder(
             RUNBOOK_CATALOGUE,
             HybridRecommender(ContentBasedBaseline(), CollaborativeSVDBaseline(), PopularitySuccessBaseline()),
-            available_tools=frozenset(ROLE_ALLOWED_TOOLS["remediation"] - {"kubectl_scale"}),
+            available_tools=frozenset({"unregistered_tool_surface"}),
         )
+    # Reduced availability is accepted at init and excludes those tools at recommendation time
+    reduced_builder = RecommendationPacketBuilder(
+        RUNBOOK_CATALOGUE,
+        HybridRecommender(ContentBasedBaseline(), CollaborativeSVDBaseline(), PopularitySuccessBaseline()),
+        available_tools=frozenset(ROLE_ALLOWED_TOOLS["remediation"] - {"kubectl_scale"}),
+    )
+    assert "kubectl_scale" not in reduced_builder.available_tools
+
+
+def test_evaluate_prerequisites_contract_and_deterministic_states():
+    scale = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "scale_up_cpu_saturation")
+    chaos = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "stop_stress_chaos")
+    argo = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "argocd_rollback_bad_manifest")
+    silence = next(item for item in RUNBOOK_CATALOGUE if item.action_id == "silence_flapping_alert_during_mitigation")
+
+    context = ContextFeatures(
+        incident_key="synthetic/eval-prereqs",
+        service="paymentservice",
+        namespace="default",
+        fault_types=("cpu_saturation",),
+        symptoms=("cpu",),
+        severity="P1",
+        diagnosis_text="CPU saturation.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+        revision_history_available=None,
+        mitigation_in_progress=None,
+    )
+
+    # Scale has default target_replicas=4, service and namespace from context => all satisfied
+    scale_states = evaluate_prerequisites(scale, context)
+    assert scale_states == {"service": "satisfied", "namespace": "satisfied", "target_replicas": "satisfied"}
+
+    # Chaos has missing chaos_resource_name (unknown) and active_chaos_experiment=False (unmet)
+    chaos_states = evaluate_prerequisites(chaos, context)
+    assert chaos_states["active_chaos_experiment"] == "unmet"
+    assert chaos_states["chaos_resource_name"] == "unknown"
+
+    # Argo has missing app/manifest (unknown) and revision_history_available=None (unknown)
+    argo_states = evaluate_prerequisites(argo, context)
+    assert argo_states["revision_history_available"] == "unknown"
+    assert argo_states["argocd_app"] == "unknown"
+    assert argo_states["bad_manifest"] == "unknown"
+
+    # Silence has duration_minutes (default 30 => satisfied), alertname (unknown), mitigation_in_progress (unknown)
+    silence_states = evaluate_prerequisites(silence, context)
+    assert silence_states["duration_minutes"] == "satisfied"
+    assert silence_states["alertname"] == "unknown"
+    assert silence_states["mitigation_in_progress"] == "unknown"
 
 
 def test_side_effect_classification_and_unseen_action_cold_start():

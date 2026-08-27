@@ -113,6 +113,8 @@ class ContextFeatures:
     active_chaos_experiment: bool
     mutation_budget_remaining: int
     approval_granted: bool = False
+    revision_history_available: bool | None = None
+    mitigation_in_progress: bool | None = None
     numeric_features: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -131,6 +133,10 @@ class ContextFeatures:
         for attr in ("deployment_recently_changed", "active_chaos_experiment", "approval_granted"):
             if not isinstance(getattr(self, attr), bool):
                 raise SchemaError(f"{attr} must be boolean")
+        for attr in ("revision_history_available", "mitigation_in_progress"):
+            value = getattr(self, attr)
+            if value is not None and not isinstance(value, bool):
+                raise SchemaError(f"{attr} must be boolean or None")
         if isinstance(self.mutation_budget_remaining, bool) or self.mutation_budget_remaining < 0:
             raise SchemaError("mutation_budget_remaining must be a non-negative integer")
         if not isinstance(self.numeric_features, dict):

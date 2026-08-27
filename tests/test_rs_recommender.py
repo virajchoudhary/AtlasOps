@@ -428,6 +428,118 @@ def test_svd_implementation_recovers_hand_verifiable_rank_one_matrix():
     assert first_scores == model.score({}, candidates)
 
 
+def test_svd_recovers_hand_verifiable_non_unit_singular_value_matrix():
+    """Rank-one matrix with non-unit singular value sigma = sqrt(1.25) ~= 1.11803398875 != 1.0.
+
+    Matrix M = [[0.3, 0.6], [0.4, 0.8]].
+    Gram matrix M^T M = [[0.25, 0.50], [0.50, 1.00]].
+    Nonzero eigenvalue lambda_1 = 1.25 => sigma_1 = sqrt(1.25) = sqrt(5)/2.
+    Left singular vector u_1 = [0.6, 0.8]^T (unit norm).
+    Right singular vector v_1 = [1/sqrt(5), 2/sqrt(5)]^T (unit norm).
+    Exact reconstruction: sigma_1 * u_1 * v_1^T = M.
+    """
+    model = CollaborativeSVDBaseline(latent_dimensions=1, iterations=120)
+    matrix_values = [
+        ("synthetic/svd-nonunit-1", "scale_up_cpu_saturation", 0.3),
+        ("synthetic/svd-nonunit-1", "stop_dns_chaos", 0.6),
+        ("synthetic/svd-nonunit-2", "scale_up_cpu_saturation", 0.4),
+        ("synthetic/svd-nonunit-2", "stop_dns_chaos", 0.8),
+    ]
+    rows = []
+    for rank, (incident, action_id, relevance) in enumerate(matrix_values, start=1):
+        rows.append(InteractionRow(
+            incident_key=incident,
+            action_id=action_id,
+            service="synthetic-service",
+            fault_types=("cpu_saturation",),
+            outcome="success" if relevance >= 0.5 else "partial",
+            relevance=relevance,
+            selected=True,
+            split="train",
+            eligible_for_fit=True,
+            observation_type="selected_success" if relevance >= 0.5 else "selected_partial",
+            rank=rank,
+            family_id="synthetic-svd-nonunit-family",
+        ))
+    model.fit(rows)
+
+    # 1. Expected non-unit singular value
+    expected_sigma = math.sqrt(1.25)
+    assert math.isclose(model.singular_values[0], expected_sigma, abs_tol=1e-8)
+
+    # 2. Near-zero rank-one reconstruction error with corrected U Sigma V^T
+    assert model.reconstruction_error() < 1e-8
+
+    # 3. Deterministic factor sign convention handling
+    action_factor = [model._action_factors[0][idx] for idx in range(2)]
+    denom = math.sqrt(5.0)
+    expected_v = [1.0 / denom, 2.0 / denom]
+    if action_factor[0] < 0:
+        expected_v = [-val for val in expected_v]
+    assert math.isclose(action_factor[0], expected_v[0], abs_tol=1e-8)
+    assert math.isclose(action_factor[1], expected_v[1], abs_tol=1e-8)
+
+    incident_factor = [model._incident_factors[row_idx][0] for row_idx in range(2)]
+    expected_u = [0.6, 0.8]
+    if action_factor[0] < 0:
+        # Left singular vector absorbs opposite sign when right vector is negated
+        expected_u = [-val for val in expected_u]
+    assert math.isclose(incident_factor[0], expected_u[0], abs_tol=1e-8)
+    assert math.isclose(incident_factor[1], expected_u[1], abs_tol=1e-8)
+
+    # 4. Reconstructed entries match expected matrix values
+    reconstructed = model.reconstructed_matrix()
+    assert math.isclose(reconstructed[0][0], 0.3, abs_tol=1e-8)
+    assert math.isclose(reconstructed[0][1], 0.6, abs_tol=1e-8)
+    assert math.isclose(reconstructed[1][0], 0.4, abs_tol=1e-8)
+    assert math.isclose(reconstructed[1][1], 0.8, abs_tol=1e-8)
+
+
+def test_svd_rank_truncation_nonzero_reconstruction_error():
+    """Rank-2 matrix M = [[0.9, 0.1], [0.1, 0.9]].
+
+    Singular values: sigma_1 = 1.0 (vector [1/sqrt(2), 1/sqrt(2)]), sigma_2 = 0.8 (vector [1/sqrt(2), -1/sqrt(2)]).
+    Rank-1 truncated reconstruction error is exactly sigma_2 = 0.8.
+    Rank-2 full reconstruction error is < 1e-8.
+    """
+    matrix_values = [
+        ("synthetic/svd-rank2-1", "scale_up_cpu_saturation", 0.9),
+        ("synthetic/svd-rank2-1", "stop_dns_chaos", 0.1),
+        ("synthetic/svd-rank2-2", "scale_up_cpu_saturation", 0.1),
+        ("synthetic/svd-rank2-2", "stop_dns_chaos", 0.9),
+    ]
+    rows = []
+    for rank, (incident, action_id, relevance) in enumerate(matrix_values, start=1):
+        rows.append(InteractionRow(
+            incident_key=incident,
+            action_id=action_id,
+            service="synthetic-service",
+            fault_types=("cpu_saturation",),
+            outcome="success" if relevance >= 0.5 else "partial",
+            relevance=relevance,
+            selected=True,
+            split="train",
+            eligible_for_fit=True,
+            observation_type="selected_success" if relevance >= 0.5 else "selected_partial",
+            rank=rank,
+            family_id="synthetic-svd-rank2-family",
+        ))
+
+    # Rank-1 truncated model: nonzero reconstruction error expected
+    model_rank1 = CollaborativeSVDBaseline(latent_dimensions=1, iterations=120)
+    model_rank1.fit(rows)
+    assert math.isclose(model_rank1.singular_values[0], 1.0, abs_tol=1e-6)
+    assert math.isclose(model_rank1.reconstruction_error(), 0.8, abs_tol=1e-6)
+
+    # Rank-2 full model: near-zero reconstruction error expected
+    model_rank2 = CollaborativeSVDBaseline(latent_dimensions=2, iterations=120)
+    model_rank2.fit(rows)
+    assert len(model_rank2.singular_values) == 2
+    assert math.isclose(model_rank2.singular_values[0], 1.0, abs_tol=1e-6)
+    assert math.isclose(model_rank2.singular_values[1], 0.8, abs_tol=1e-6)
+    assert model_rank2.reconstruction_error() < 1e-5
+
+
 def test_empty_legal_history_has_deterministic_conservative_cold_start():
     builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=5)
     with pytest.raises(SchemaError, match="recommend before calling fit"):
@@ -592,7 +704,7 @@ def test_preapproval_packet_ranks_mutations_and_preserves_execution_boundary():
     assert unapproved["next_stage"] == "safety_approval_and_grpo_policy"
     for candidate in mutating:
         assert candidate["approval_required_before_execution"] is True
-        assert candidate["downstream_execution_blockers"] == ["approval_pending"]
+        assert "approval_pending" in candidate["downstream_execution_blockers"]
         assert candidate["execution_eligible_after_downstream_gates"] is False
 
     exhausted_context = ContextFeatures(
@@ -607,14 +719,19 @@ def test_preapproval_packet_ranks_mutations_and_preserves_execution_boundary():
     ]
     assert exhausted_mutating
     for candidate in exhausted_mutating:
-        assert set(candidate["downstream_execution_blockers"]) == {
-            "approval_pending",
-            "mutation_budget_exhausted",
-        }
+        assert "approval_pending" in candidate["downstream_execution_blockers"]
+        assert "mutation_budget_exhausted" in candidate["downstream_execution_blockers"]
         assert candidate["execution_eligible_after_downstream_gates"] is False
 
+    # When active_chaos_experiment is True on context, stop-chaos actions have satisfied gates
+    active_chaos_context = ContextFeatures(
+        **{
+            **synthetic_context().__dict__,
+            "active_chaos_experiment": True,
+        }
+    )
     approved = builder.recommend_packet(
-        synthetic_context(),
+        active_chaos_context,
         template_values={"chaos_resource_name": "synthetic-stress"},
     )
     assert approved["candidate_pool_size"] > 0
@@ -683,12 +800,11 @@ def test_disabled_toggle_and_feedback_contract_are_explicit():
 
 def test_packet_fails_closed_for_missing_action_and_prerequisite():
     rows = [row for row in synthetic_rows() if row.eligible_for_fit]
-    reduced_tools = ROLE_ALLOWED_TOOLS["remediation"] - {"alertmanager_silence"}
-    with pytest.raises(SchemaError):
+    with pytest.raises(SchemaError, match="unregistered tools"):
         RecommendationPacketBuilder(
             RUNBOOK_CATALOGUE,
             hybrid_model(),
-            available_tools=frozenset(reduced_tools),
+            available_tools=frozenset({"unregistered_tool_surface"}),
         )
     builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=5)
     builder.recommender.fit(rows)
@@ -698,6 +814,206 @@ def test_packet_fails_closed_for_missing_action_and_prerequisite():
         template_values={"chaos_resource_name": "synthetic-stress"},
     )
     assert with_name["candidate_pool_size"] > without_name["candidate_pool_size"]
+
+
+def test_explicit_empty_available_tools_fails_closed():
+    """Prove that passing available_tools=frozenset() fails closed and does not regain canonical ACL."""
+    rows = [row for row in synthetic_rows() if row.eligible_for_fit]
+    builder = RecommendationPacketBuilder(
+        RUNBOOK_CATALOGUE,
+        hybrid_model(),
+        k=5,
+        available_tools=frozenset(),
+    )
+    assert builder.available_tools == frozenset()
+    builder.recommender.fit(rows)
+    packet = builder.recommend_packet(synthetic_context())
+    assert packet["candidates"] == []
+    assert packet["candidate_pool_size"] == 0
+    assert packet["available_tools"] == []
+
+    # None defaults to canonical ACL
+    builder_default = RecommendationPacketBuilder(
+        RUNBOOK_CATALOGUE,
+        hybrid_model(),
+        k=5,
+        available_tools=None,
+    )
+    assert builder_default.available_tools == frozenset(ROLE_ALLOWED_TOOLS["remediation"])
+
+
+def test_operational_prerequisites_become_downstream_blockers():
+    """Operational gates must not prevent ranking, but unmet/unknown gates must block execution."""
+    rows = [row for row in synthetic_rows() if row.eligible_for_fit]
+    builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=10)
+    builder.recommender.fit(rows)
+
+    # 1. active_chaos_experiment=False blocks stop-chaos actions
+    no_chaos_context = ContextFeatures(
+        incident_key="synthetic/chaos-test",
+        service="synthetic-service",
+        namespace="synthetic-namespace",
+        fault_types=("cpu_saturation",),
+        symptoms=("cpu",),
+        severity="P2",
+        diagnosis_text="CPU saturation caused by injected StressChaos.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+    )
+    packet_chaos = builder.recommend_packet(
+        no_chaos_context,
+        template_values={"chaos_resource_name": "synthetic-cpu-stress"},
+    )
+    stop_chaos_candidate = next(
+        (c for c in packet_chaos["candidates"] if c["action_id"] == "stop_stress_chaos"),
+        None,
+    )
+    assert stop_chaos_candidate is not None
+    assert stop_chaos_candidate["prerequisite_states"]["active_chaos_experiment"] == "unmet"
+    assert "prerequisite_unmet:active_chaos_experiment" in stop_chaos_candidate["downstream_execution_blockers"]
+    assert stop_chaos_candidate["execution_eligible_after_downstream_gates"] is False
+
+    # 2. deployment_recently_changed=False blocks rollout undo
+    no_deploy_context = ContextFeatures(
+        incident_key="synthetic/deploy-test",
+        service="synthetic-service",
+        namespace="synthetic-namespace",
+        fault_types=("configuration_regression",),
+        symptoms=("rollback",),
+        severity="P2",
+        diagnosis_text="Configuration regression observed.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+    )
+    packet_deploy = builder.recommend_packet(no_deploy_context)
+    rollout_candidate = next(
+        (c for c in packet_deploy["candidates"] if c["action_id"] == "rollout_undo_configuration_regression"),
+        None,
+    )
+    assert rollout_candidate is not None
+    assert rollout_candidate["prerequisite_states"]["deployment_recently_changed"] == "unmet"
+    assert "prerequisite_unmet:deployment_recently_changed" in rollout_candidate["downstream_execution_blockers"]
+    assert rollout_candidate["execution_eligible_after_downstream_gates"] is False
+
+    # 3. revision_history_available unknown / false blocks Argo CD rollback
+    argo_unknown_context = ContextFeatures(
+        incident_key="synthetic/argo-test",
+        service="synthetic-service",
+        namespace="synthetic-namespace",
+        fault_types=("configuration_regression",),
+        symptoms=("manifest",),
+        severity="P2",
+        diagnosis_text="Bad manifest applied via Argo CD.",
+        deployment_recently_changed=True,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+        revision_history_available=None,
+    )
+    packet_argo = builder.recommend_packet(
+        argo_unknown_context,
+        template_values={"argocd_app": "paymentservice", "bad_manifest": 3},
+    )
+    argo_candidate = next(
+        (c for c in packet_argo["candidates"] if c["action_id"] == "argocd_rollback_bad_manifest"),
+        None,
+    )
+    assert argo_candidate is not None
+    assert argo_candidate["prerequisite_states"]["revision_history_available"] == "unknown"
+    assert "prerequisite_unknown:revision_history_available" in argo_candidate["downstream_execution_blockers"]
+    assert argo_candidate["execution_eligible_after_downstream_gates"] is False
+
+    # 4. mitigation_in_progress unknown / false blocks alert silencing; explicit True satisfies
+    silence_unknown_context = ContextFeatures(
+        incident_key="synthetic/silence-test",
+        service="synthetic-service",
+        namespace="synthetic-namespace",
+        fault_types=("flapping_alert",),
+        symptoms=("flapping",),
+        severity="P2",
+        diagnosis_text="Flapping alert noise during investigation.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+        mitigation_in_progress=None,
+    )
+    packet_silence = builder.recommend_packet(
+        silence_unknown_context,
+        template_values={"alertname": "HighLatencyAlert"},
+    )
+    silence_candidate = next(
+        (c for c in packet_silence["candidates"] if c["action_id"] == "silence_flapping_alert_during_mitigation"),
+        None,
+    )
+    assert silence_candidate is not None
+    assert silence_candidate["prerequisite_states"]["mitigation_in_progress"] == "unknown"
+    assert "prerequisite_unknown:mitigation_in_progress" in silence_candidate["downstream_execution_blockers"]
+    assert silence_candidate["execution_eligible_after_downstream_gates"] is False
+
+    # Explicit mitigation_in_progress=True satisfies the gate
+    silence_active_context = ContextFeatures(
+        **{
+            **silence_unknown_context.__dict__,
+            "mitigation_in_progress": True,
+        }
+    )
+    packet_silence_active = builder.recommend_packet(
+        silence_active_context,
+        template_values={"alertname": "HighLatencyAlert"},
+    )
+    silence_active_cand = next(
+        c for c in packet_silence_active["candidates"]
+        if c["action_id"] == "silence_flapping_alert_during_mitigation"
+    )
+    assert silence_active_cand["prerequisite_states"]["mitigation_in_progress"] == "satisfied"
+    assert "prerequisite_unknown:mitigation_in_progress" not in silence_active_cand["downstream_execution_blockers"]
+    assert "prerequisite_unmet:mitigation_in_progress" not in silence_active_cand["downstream_execution_blockers"]
+
+
+def test_tokenization_case_normalization_and_semantic_invariance():
+    """Case variations must produce identical tokens, feature vectors, and ranking."""
+    from agents.rs.features import tokenize_for_matching
+
+    # 1. Regex tokenization normalizes mixed-case terms
+    mixed_text = "StressChaos CPU DNS NetworkChaos"
+    lower_text = "stresschaos cpu dns networkchaos"
+    upper_text = "STRESSCHAOS CPU DNS NETWORKCHAOS"
+
+    assert tokenize_for_matching(mixed_text) == ["stresschaos", "cpu", "dns", "networkchaos"]
+    assert tokenize_for_matching(mixed_text) == tokenize_for_matching(lower_text)
+    assert tokenize_for_matching(mixed_text) == tokenize_for_matching(upper_text)
+
+    # 2. Context feature queries are invariant to case
+    mixed_context = ContextFeatures(
+        incident_key="synthetic/case-mixed",
+        service="paymentservice",
+        namespace="default",
+        fault_types=("cpu_saturation", "network_partition"),
+        symptoms=("CPU", "NetworkChaos"),
+        severity="P1",
+        diagnosis_text="Observed active StressChaos and NetworkChaos causing DNS failure and high CPU.",
+        deployment_recently_changed=False,
+        active_chaos_experiment=True,
+        mutation_budget_remaining=3,
+    )
+    lower_context = ContextFeatures(
+        **{
+            **mixed_context.__dict__,
+            "symptoms": ("cpu", "networkchaos"),
+            "diagnosis_text": "observed active stresschaos and networkchaos causing dns failure and high cpu.",
+        }
+    )
+    mixed_query = build_content_query(mixed_context)
+    lower_query = build_content_query(lower_context)
+    assert mixed_query == lower_query
+
+    # 3. Model scoring and ranking are invariant to capitalization
+    model = ContentBasedBaseline()
+    scores_mixed = model.score(mixed_query, RUNBOOK_CATALOGUE)
+    scores_lower = model.score(lower_query, RUNBOOK_CATALOGUE)
+    assert scores_mixed == scores_lower
+    assert rank_candidates(scores_mixed, 5) == rank_candidates(scores_lower, 5)
 
 
 def test_rs_package_has_no_direct_tool_execution_path():

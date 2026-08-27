@@ -77,15 +77,13 @@ def derive_parameter_requirements(runbook: Runbook) -> tuple[ParameterRequiremen
                 requirements[base_name] = replace(
                     requirements[base_name],
                     parameter_type="integer",
-                    required=True,
-                    default=None,
                     source="gate",
                 )
             continue
         parameter_type = _GATE_TYPES.get(base_name, "string")
         if name.endswith(":int"):
             parameter_type = "integer"
-        requirements[name] = ParameterRequirement(
+        requirements[base_name] = ParameterRequirement(
             name=base_name,
             parameter_type=parameter_type,
             required=True,
@@ -93,6 +91,65 @@ def derive_parameter_requirements(runbook: Runbook) -> tuple[ParameterRequiremen
             description="Operational prerequisite evaluated before downstream rendering",
         )
     return tuple(requirements[name] for name in sorted(requirements))
+
+
+def evaluate_prerequisites(
+    runbook: Runbook,
+    context: Any,
+    template_values: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    """Evaluate operational gates and inputs for a runbook against context/values.
+
+    Returns a mapping of base prerequisite name -> "satisfied" | "unmet" | "unknown".
+    Boolean operational gates evaluate to:
+      - "satisfied" if explicitly True
+      - "unmet" if explicitly False
+      - "unknown" if None / absent / not boolean
+    Template inputs evaluate to:
+      - "satisfied" if supplied (or having a declared default)
+      - "unknown" if missing / None / empty
+    """
+    values = template_values or {}
+    requirements = {req.name: req for req in derive_parameter_requirements(runbook)}
+    states: dict[str, str] = {}
+    for prereq in runbook.prerequisites:
+        base_name = prereq.removesuffix(":int")
+        req = requirements.get(base_name)
+        param_type = req.parameter_type if req else _GATE_TYPES.get(base_name, "string")
+        has_default = req is not None and req.default is not None
+
+        # 1. Check explicit template_values or context
+        val: Any = None
+        if base_name in values:
+            val = values[base_name]
+        elif hasattr(context, base_name):
+            val = getattr(context, base_name)
+        elif prereq in values:
+            val = values[prereq]
+        elif base_name == "workload_kind":
+            val = getattr(context, "workload_kind", "deployment")
+        elif base_name == "recommendation_summary":
+            val = getattr(context, "recommendation_summary", "Top-K recommendation pending approval")
+
+        # 2. Evaluate based on type and gate vs template
+        if param_type == "boolean" or base_name in _GATE_TYPES:
+            if val is True:
+                states[base_name] = "satisfied"
+            elif val is False:
+                states[base_name] = "unmet"
+            else:
+                states[base_name] = "unknown"
+        else:
+            if val is not None and val != "":
+                if _matches_type(val, param_type):
+                    states[base_name] = "satisfied"
+                else:
+                    states[base_name] = "unmet"
+            elif has_default:
+                states[base_name] = "satisfied"
+            else:
+                states[base_name] = "unknown"
+    return states
 
 
 def validate_parameter_contract(

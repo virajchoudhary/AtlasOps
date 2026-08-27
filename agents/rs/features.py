@@ -26,6 +26,8 @@ def context_from_diagnosis(
     approval_granted: bool = False,
     deployment_recently_changed: bool = False,
     active_chaos_experiment: bool = False,
+    revision_history_available: bool | None = None,
+    mitigation_in_progress: bool | None = None,
 ) -> ContextFeatures:
     """Map existing coordinator dictionaries without importing runtime code.
 
@@ -103,13 +105,15 @@ def context_from_diagnosis(
         active_chaos_experiment=bool(active_chaos_experiment),
         mutation_budget_remaining=int(mutation_budget_remaining),
         approval_granted=bool(approval_granted),
+        revision_history_available=revision_history_available,
+        mitigation_in_progress=mitigation_in_progress,
     )
 
 
 def tokenize_for_matching(*values: Any) -> list[str]:
     tokens: list[str] = []
     for value in values:
-        tokens.extend(_TOKEN_RE.findall(_text(value)))
+        tokens.extend(_TOKEN_RE.findall(_text(value).lower()))
     return [token for token in tokens if len(token) > 2]
 
 
@@ -122,11 +126,11 @@ def content_vector(runbook: Runbook) -> dict[str, float]:
         runbook.tags,
     )
     structured_terms = [
-        f"fault_type={value}"
+        f"fault_type={value.lower()}"
         for value in runbook.applicable_fault_types
-        if value != "all"
+        if value.lower() != "all"
     ]
-    structured_terms.extend(f"tag={value}" for value in runbook.tags)
+    structured_terms.extend(f"tag={value.lower()}" for value in runbook.tags)
     enriched = (
         base_tokens
         + [f"{left}_{right}" for left, right in zip(base_tokens, base_tokens[1:])]
@@ -153,7 +157,7 @@ def build_content_query(context: ContextFeatures) -> dict[str, float]:
         context.symptoms,
         context.diagnosis_text,
     )
-    structured_terms = [f"fault_type={value}" for value in context.fault_types]
+    structured_terms = [f"fault_type={value.lower()}" for value in context.fault_types]
     return _hashed_vector(base_tokens + structured_terms)
 
 

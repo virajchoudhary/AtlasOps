@@ -38,14 +38,19 @@ Optional arguments may be omitted; no unknown argument is allowed. The catalogue
 audit removed `created_by` from Alertmanager silence because the model-visible
 schema does not expose it, and added the incident namespace to scale templates.
 
-`ontology.py` derives typed parameter requirements from templates/gates and
-validates logical values/defaults. It never renders commands. A successful
-parameter-contract validation is not approval or runtime-policy authorization.
+`ontology.py` derives typed parameter requirements from templates/gates,
+evaluates operational prerequisites into deterministic states (`satisfied`,
+`unmet`, `unknown`), and validates logical values/defaults. It never renders commands.
+A successful parameter-contract validation is not approval or runtime-policy authorization.
+Unmet and unknown operational prerequisites become explicit downstream execution blockers
+in recommendation packets rather than silently dropping candidate actions from ranking.
 
 ## Features And Baselines
 
 Context and candidate text use one deterministic Blake2b-hashed sparse feature
-space. Structured `fault_type=...` terms improve meaningful overlap without Python's
+space. All text is case-normalized before regex tokenization to ensure terms like
+`StressChaos`, `CPU`, `DNS`, and `NetworkChaos` are extracted deterministically.
+Structured `fault_type=...` terms improve meaningful overlap without Python's
 randomized hash. There is no constant service bonus because current runbooks have
 wildcard service constraints.
 
@@ -55,7 +60,8 @@ Not-selected, policy-rejected, unsafe-filtered, and unknown-counterfactual rows 
 contribute utility labels.
 
 The collaborative baseline performs seeded truncated decomposition of the dense
-incident/action matrix through power iteration on its Gram matrix. Missing entries are
+incident/action matrix through power iteration on its Gram matrix, computing the
+exact truncated SVD reconstruction $M \approx U \Sigma V^T$. Missing entries are
 treated as zero, which is explicit cold-start pessimism rather than an imputed preference.
 Latent scores are bounded to `[0,1]` before hybrid fusion. Unseen actions score zero;
 unseen incidents receive the training population-mean projection without personalization.

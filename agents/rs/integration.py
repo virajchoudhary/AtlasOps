@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from agents.rs.features import build_content_query
-from agents.rs.ontology import derive_parameter_requirements, service_matches_constraints
+from agents.rs.ontology import (
+    derive_parameter_requirements,
+    evaluate_prerequisites,
+    service_matches_constraints,
+)
 from agents.rs.persistence import stable_hash
 from agents.rs.recommender import HybridRecommender, default_risk_penalty, rank_candidates
 from agents.rs.schemas import (
@@ -56,15 +60,24 @@ class RecommendationPacketBuilder:
         k: int = 5,
         available_tools: frozenset[str] | None = None,
     ) -> None:
-        tools = available_tools or ROLE_ALLOWED_TOOLS["remediation"]
-        validate_catalogue(catalogue, frozenset(tools))
+        canonical_tools = ROLE_ALLOWED_TOOLS["remediation"]
+        validate_catalogue(catalogue, canonical_tools)
+        if available_tools is None:
+            tools = canonical_tools
+        else:
+            tools = frozenset(available_tools)
+            unregistered = tools.difference(canonical_tools)
+            if unregistered:
+                raise SchemaError(
+                    f"available_tools contains unregistered tools: {sorted(unregistered)}"
+                )
         if k <= 0:
             raise SchemaError("k must be positive")
         self.catalogue = list(catalogue)
         self.catalogue_by_id = {item.action_id: item for item in catalogue}
         self.recommender = recommender
         self.k = k
-        self.available_tools = frozenset(tools)
+        self.available_tools = tools
 
     def recommend_packet(
         self,
@@ -74,7 +87,7 @@ class RecommendationPacketBuilder:
         template_values: Mapping[str, Any] | None = None,
         risk_penalty_overrides: Mapping[str, float] | None = None,
     ) -> dict[str, Any]:
-        toggle = toggle or RecommendationToggle(enabled=True)
+        toggle = toggle if toggle is not None else RecommendationToggle(enabled=True)
         profile = {
             "service": getattr(context, "service", ""),
             "fault_types": list(getattr(context, "fault_types", ())),
@@ -107,10 +120,11 @@ class RecommendationPacketBuilder:
             if not reasons:
                 safe_candidates.append(runbook)
         penalties = {
-            runbook.action_id: risk_penalty_overrides.get(
-                runbook.action_id, default_risk_penalty(runbook)
+            runbook.action_id: (
+                risk_penalty_overrides[runbook.action_id]
+                if risk_penalty_overrides is not None and runbook.action_id in risk_penalty_overrides
+                else default_risk_penalty(runbook)
             )
-            if risk_penalty_overrides else default_risk_penalty(runbook)
             for runbook in safe_candidates
         }
         invalid_penalties = [
@@ -120,7 +134,7 @@ class RecommendationPacketBuilder:
         if invalid_penalties:
             raise SchemaError("risk penalty overrides must be finite numbers in [0, 2]")
         raw_scores = self.recommender.score(query, safe_candidates, risk_penalty_by_action=penalties)
-        ranked = rank_candidates(raw_scores, min(self.k, len(safe_candidates)))
+        ranked = rank_candidates(raw_scores, min(self.k, len(safe_candidates))) if safe_candidates else []
         component_models = {
             "content": self.recommender.content_model.score(query, safe_candidates),
             "collaborative": self.recommender.collaborative_model.score(query, safe_candidates),
@@ -134,11 +148,17 @@ class RecommendationPacketBuilder:
                 runbook.mutating
                 and int(getattr(context, "mutation_budget_remaining", 0)) <= 0
             )
+            prereq_states = evaluate_prerequisites(runbook, context, template_values or {})
             downstream_blockers = []
             if runbook.mutating:
                 downstream_blockers.append("approval_pending")
             if budget_exhausted:
                 downstream_blockers.append("mutation_budget_exhausted")
+            for prereq_name, state in prereq_states.items():
+                if state == "unmet":
+                    downstream_blockers.append(f"prerequisite_unmet:{prereq_name}")
+                elif state == "unknown":
+                    downstream_blockers.append(f"prerequisite_unknown:{prereq_name}")
             components = {
                 name: model[action_id]
                 for name, model in component_models.items()
@@ -167,6 +187,7 @@ class RecommendationPacketBuilder:
                 "description": runbook.description,
                 "version": runbook.version,
                 "prerequisites": list(runbook.prerequisites),
+                "prerequisite_states": prereq_states,
                 "safety_constraints": list(runbook.safety_constraints),
                 "verification_action_ids": list(runbook.verification_action_ids),
                 "parameter_requirements": [
@@ -191,7 +212,13 @@ class RecommendationPacketBuilder:
                     "weighted_component_scores": weighted_components,
                     "risk_contribution": self.recommender.weights["risk"] * penalty,
                     "satisfied_gates": [
-                        item.name for item in requirements if item.source == "gate"
+                        name for name, state in prereq_states.items() if state == "satisfied"
+                    ],
+                    "unmet_gates": [
+                        name for name, state in prereq_states.items() if state == "unmet"
+                    ],
+                    "unknown_gates": [
+                        name for name, state in prereq_states.items() if state == "unknown"
                     ],
                 },
             })
@@ -304,18 +331,20 @@ class RecommendationPacketBuilder:
 
         Template defaults are recommendations, not hard prerequisites; they do
         not suppress ranking. Rendering remains downstream after safety/approval.
+        Operational gate evaluation is performed separately during recommendation
+        packet construction to yield explicit downstream blockers rather than
+        silently dropping candidates from the ranking pool.
         """
         known = {
             "service": str(getattr(context, "service", "")),
             "namespace": str(getattr(context, "namespace", "")),
-            "active_chaos_experiment": bool(getattr(context, "active_chaos_experiment", False)),
-            "deployment_recently_changed": bool(getattr(context, "deployment_recently_changed", False)),
-            "mitigation_in_progress": True,
-            "workload_kind": "deployment",
+            "workload_kind": str(getattr(context, "workload_kind", "deployment")),
             "severity": str(getattr(context, "severity", "")),
-            "recommendation_summary": "Top-K recommendation pending approval",
+            "recommendation_summary": str(
+                getattr(context, "recommendation_summary", "Top-K recommendation pending approval")
+            ),
         }
         return [
             name for name in RecommendationPacketBuilder._required_inputs(runbook)
-            if name not in template_values and name not in known
+            if name not in template_values and (name not in known or not known[name])
         ]

@@ -115,8 +115,15 @@ class CollaborativeSVDBaseline(BaseRecommender):
     """Small dense truncated SVD over an incident-by-action relevance matrix.
 
     The implementation uses seeded power iterations and deterministic Gram-Schmidt
-    orthogonalization. It is intentionally compact and dependency-free; G5 will
-    replace synthetic matrices only after legal source splits are assigned.
+    orthogonalization to compute the truncated SVD decomposition M approx U Sigma V^T.
+    It is intentionally compact and dependency-free:
+    - Intended for small candidate matrices and deterministic offline/synthetic validation fixtures.
+    - Computes exact low-rank reconstruction U Sigma V^T and singular values Sigma.
+    - Unseen incidents are scored from the training population mean row projection onto
+      the latent action subspace (m_bar V V^T), providing a stable cold-start baseline without personalization.
+    - Not intended as a scalable sparse matrix factorizer or production collaborative filtering engine.
+    - Treats unobserved interactions as zero rather than missing entries (unobserved matrix completion).
+    - Future G5 integration will assign legal source splits before real corpus use.
 
     Cold-start limitation: an unseen incident is scored from the training
     population mean projection, so it receives no incident-specific
@@ -162,14 +169,15 @@ class CollaborativeSVDBaseline(BaseRecommender):
     def singular_values(self) -> tuple[float, ...]:
         return tuple(self._singular_values)
 
-    def reconstruction_error(self) -> float:
+    def reconstructed_matrix(self) -> list[list[float]]:
         if not self._matrix:
-            return 0.0
+            return []
         rank = len(self._action_factors)
-        reconstructed = [
+        return [
             [
                 sum(
                     self._incident_factors[row_idx][dim]
+                    * self._singular_values[dim]
                     * self._action_factors[dim][col_idx]
                     for dim in range(rank)
                 )
@@ -177,6 +185,11 @@ class CollaborativeSVDBaseline(BaseRecommender):
             ]
             for row_idx, matrix_row in enumerate(self._matrix)
         ]
+
+    def reconstruction_error(self) -> float:
+        if not self._matrix:
+            return 0.0
+        reconstructed = self.reconstructed_matrix()
         return math.sqrt(sum(
             (original - estimate) ** 2
             for original_row, estimate_row in zip(self._matrix, reconstructed)

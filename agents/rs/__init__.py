@@ -15,7 +15,11 @@ from agents.rs.metrics import (
     ndcg_at_k,
     unsafe_recommendation_rate,
 )
-from agents.rs.ontology import derive_parameter_requirements, validate_parameter_contract
+from agents.rs.ontology import (
+    derive_parameter_requirements,
+    evaluate_prerequisites,
+    validate_parameter_contract,
+)
 from agents.rs.recommender import HybridRecommender
 from agents.rs.persistence import (
     build_corpus_manifest,
@@ -30,6 +34,7 @@ __all__ = [
     "RecommendationPacketBuilder",
     "HybridRecommender",
     "derive_parameter_requirements",
+    "evaluate_prerequisites",
     "validate_parameter_contract",
     "serialize_hybrid_model",
     "deserialize_hybrid_model",

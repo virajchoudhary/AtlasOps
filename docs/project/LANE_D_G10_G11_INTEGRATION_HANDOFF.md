@@ -1,7 +1,9 @@
 # Lane D G10/G11 integration handoff
 
 Status: `READY_FOR_FUTURE_INTEGRATION_HOLD` — this is not a G10/G11 PASS.
-Lane D SHA at handoff: `1c0496075fde94a3d4f504a95f91edae1cec7fcd`.
+Prior validation checkpoint SHA: `1c0496075fde94a3d4f504a95f91edae1cec7fcd`.
+Prior documentation successor head: `50ffc89b35a5c054cba5fa8a219f6f1010489096`.
+Branch: `research/g10-g11-rs`.
 
 ## Contract
 
@@ -11,6 +13,12 @@ Lane D SHA at handoff: `1c0496075fde94a3d4f504a95f91edae1cec7fcd`.
 - Corpus manifest: `rs-corpus-manifest-v1`.
 - G5 binding: `g5-rs-binding-v1`; unknown incidents and absent canonical split
   hashes fail closed.
+- Available-tools fail-closed: `None` uses canonical remediation ACL; explicit
+  empty `frozenset()` provides zero tools and recommends zero execution surface.
+- Operational prerequisite contract: gates evaluate to `satisfied`, `unmet`, or
+  `unknown`. Unmet/unknown gates become explicit `downstream_execution_blockers`.
+- Mathematical SVD contract: truncated SVD reconstruction is exact $U \Sigma V^T$.
+- Content tokenization: case-normalized before regex extraction.
 
 ## Integration assumptions
 
@@ -92,8 +100,16 @@ Block integration if:
 
 ## Validation record
 
-At SHA `1c0496075fde94a3d4f504a95f91edae1cec7fcd`: shadow merge into current
-main was clean; focused tests passed (`46 passed`); broader relevant offline
-suite passed (`82 passed`); targeted Ruff passed; canonical compileall passed;
-and Git diff checks passed. These are rehearsal checks, not scientific gate
-evidence.
+1. At prior validation checkpoint `1c0496075fde94a3d4f504a95f91edae1cec7fcd`:
+   focused tests passed (`46 passed`); broader relevant offline suite passed (`82 passed`).
+2. Successor documentation commit: `50ffc89b35a5c054cba5fa8a219f6f1010489096`.
+3. Final independent correction round on `research/g10-g11-rs`:
+   - Empty available-tools fail-closed verified with explicit `frozenset()`.
+   - Operational prerequisite states (`satisfied`, `unmet`, `unknown`) and downstream blockers verified.
+   - SVD reconstruction corrected to $U \Sigma V^T$ and verified on non-unit singular value ($\sigma_1 = \sqrt{1.25}$) and rank-truncated matrices.
+   - Content tokenization case normalization verified with mixed-case terms (`StressChaos`, `CPU`, `DNS`, `NetworkChaos`).
+   - Focused suite: `52 passed`.
+   - Targeted Ruff: clean (`All checks passed!`).
+   - `git diff --check`: clean.
+   - Broader offline suite: `82 passed`.
+   These are rehearsal checks, not scientific gate evidence.

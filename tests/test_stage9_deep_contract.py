@@ -9,12 +9,14 @@ import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from agents import coordinator
 from config.runtime import CurriculumManager
 from training.grpo import (
+    HarnessExecutionInvalid,
     InfrastructureInvalid,
     PolicyExecutionInvalid,
     OnlineRewardFunction,
@@ -405,7 +407,16 @@ def test_kubectl_always_carries_declared_context_and_never_gcloud_auth() -> None
 
     def fake_run(command, **kwargs):
         commands.append((command, kwargs))
-        return SimpleNamespace(returncode=0, stdout="kind-atlasops-local\n", stderr="")
+        cmd_str = " ".join(command)
+        if "get namespace kube-system" in cmd_str:
+            out = json.dumps({"metadata": {"uid": "uid-12345"}})
+        elif "version" in cmd_str:
+            out = json.dumps({"serverVersion": {"gitVersion": "v1.31.2"}})
+        elif "config view" in cmd_str:
+            out = json.dumps({"clusters": [{"cluster": {"server": "https://127.0.0.1:6443"}}]})
+        else:
+            out = "kind-atlasops-local\n"
+        return SimpleNamespace(returncode=0, stdout=out, stderr="")
 
     original = subprocess.run
     subprocess.run = fake_run
@@ -890,7 +901,7 @@ def test_harness_error_is_not_scored_as_policy_reward(
         reset_settle_seconds=0,
     )
 
-    with pytest.raises(PolicyExecutionInvalid, match="rollout_harness_error"):
+    with pytest.raises(HarnessExecutionInvalid, match="rollout_harness_error"):
         asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
 
 
@@ -932,7 +943,7 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
     )
     seen = []
 
-    async def fake_score(row, completion):
+    async def fake_score(row, completion, **_kwargs):
         seen.append((row["stage9_group_id"], completion))
         return {
             "episode": {
@@ -956,6 +967,10 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
             "model_visible_alert": {},
         }
 
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _id: {"status": "CONTEXT_VERIFIED"},
+    )
     monkeypatch.setattr(
         reward_fn,
         "_score_paired_rollout",
@@ -1003,9 +1018,13 @@ def test_infrastructure_invalidation_is_persisted_before_batch_abort(
         episodes_path=episodes_path,
     )
 
-    async def fail_rollout(_row, _completion):
+    async def fail_rollout(_row, _completion, **_kwargs):
         raise InfrastructureInvalid("pre_rollout_unhealthy")
 
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _id: {"status": "CONTEXT_VERIFIED"},
+    )
     monkeypatch.setattr(
         reward_fn,
         "_score_paired_rollout",
@@ -1733,3 +1752,477 @@ def test_pure_preflight_assembly_boundary(tmp_path: Path) -> None:
     dataset_file.write_text(json.dumps(row) + "\n", encoding="utf-8")
     loaded_rows = load_remediation_training_rows(dataset_file)
     assert len(loaded_rows) == 1
+
+
+def test_mandatory_fault_effect_confirmation_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement: Mandatory G5 fault-effect predicate required for rollout."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "mandatory-effect-gate")
+    policy_executed = False
+
+    active_chaos: list[dict[str, Any]] = []
+
+    def mock_detect(_id):
+        return list(active_chaos)
+
+    def mock_apply(_id, scenario_id, **_kw):
+        active_chaos.append({
+            "kind": "StressChaos",
+            "labels": {"scenario": "sf-002"},
+            "name": "sf-002-paymentservice-cpu",
+            "namespace": "chaos-mesh",
+        })
+        return {"phase": "FAULT_APPLIED"}
+
+    def mock_cleanup(_id, _plan):
+        active_chaos.clear()
+        return {"phase": "RESET"}
+
+    async def mock_handle_incident(*_args, **_kwargs):
+        nonlocal policy_executed
+        policy_executed = True
+        return {"env_resolved": True, "remediation": {}, "verification": {}}
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident)
+    monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {"status": "CONTEXT_VERIFIED"})
+    monkeypatch.setattr("training.grpo.cluster_healthy", lambda _id, **_kw: (True, {"ready_deployments": 12}))
+    monkeypatch.setattr("training.grpo.detect_active_chaos_resources", mock_detect)
+    monkeypatch.setattr("training.grpo.apply_fault", mock_apply)
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", mock_cleanup)
+
+    # 1. Missing predicate with require_effect_confirmation=True fails closed before policy execution
+    reward_fn_no_pred = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="d" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=None,
+        require_effect_confirmation=True,
+    )
+    policy_executed = False
+    active_chaos.clear()
+    with pytest.raises(InfrastructureInvalid, match="fault_effect_predicate_missing"):
+        asyncio.run(reward_fn_no_pred._score_paired_rollout(row, _policy_completion()))
+    assert policy_executed is False
+
+    # 2. Predicate returning False fails closed before policy execution
+    def failing_predicate(_id, _scenario):
+        return False, {"cpu_percent": 10.0, "threshold": 80.0}
+
+    reward_fn_failing_pred = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="d" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=failing_predicate,
+        require_effect_confirmation=True,
+    )
+    policy_executed = False
+    active_chaos.clear()
+    with pytest.raises(InfrastructureInvalid, match="fault_effect_not_confirmed"):
+        asyncio.run(reward_fn_failing_pred._score_paired_rollout(row, _policy_completion()))
+    assert policy_executed is False
+
+    # 3. Predicate returning True proceeds to policy execution
+    def passing_predicate(_id, _scenario):
+        return True, {"cpu_percent": 95.0, "threshold": 80.0}
+
+    reward_fn_passing = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="d" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=passing_predicate,
+        require_effect_confirmation=True,
+    )
+    policy_executed = False
+    active_chaos.clear()
+    result = asyncio.run(reward_fn_passing._score_paired_rollout(row, _policy_completion()))
+    assert policy_executed is True
+    est_phase = next(p for p in result["lifecycle"] if p.get("phase") == "FAULT_ESTABLISHED")
+    assert est_phase["injection_status"] == "INJECTION_RESOURCE_PRESENT"
+    assert est_phase["effect_status"] == "FAULT_EFFECT_CONFIRMED"
+
+
+def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement: Durably record pre-cleanup verifier facts before cleanup."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "pre-cleanup-persistence")
+    episodes_file = tmp_path / "episodes.jsonl"
+
+    async def mock_handle_incident(*_args, **_kwargs):
+        return {
+            "agent_claimed_resolved": True,
+            "comms": {},
+            "diagnosis": {},
+            "env_resolved": True,
+            "remediation": {
+                "final": {
+                    "action": {"name": "chaos_stop_experiment", "args": {"name": "sf-002-paymentservice-cpu"}},
+                    "executed_actions": [{
+                        "args": {"name": "sf-002-paymentservice-cpu"},
+                        "success": True,
+                        "tool": "chaos_stop_experiment",
+                    }],
+                    "mode": "policy_rollout",
+                    "outcome": "resolved",
+                    "policy_action_admitted": True,
+                    "policy_action_identity_match": True,
+                    "policy_completion_valid": True,
+                }
+            },
+            "triage": {},
+            "verification": {"env_resolved": True, "method": "metrics_and_pods"},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident)
+    monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {"status": "CONTEXT_VERIFIED"})
+    monkeypatch.setattr("training.grpo.cluster_healthy", lambda _id, **_kw: (True, {"ready_deployments": 12}))
+    monkeypatch.setattr("training.grpo.detect_active_chaos_resources", lambda _id: [])
+    monkeypatch.setattr("training.grpo.apply_fault", lambda _id, scenario_id, **_kw: {"phase": "FAULT_APPLIED"})
+    monkeypatch.setattr("training.grpo.fault_established", lambda _id, scenario_id, **_kw: {
+        "effect_status": "FAULT_EFFECT_CONFIRMED",
+        "injection_status": "INJECTION_RESOURCE_PRESENT",
+        "phase": "FAULT_ESTABLISHED",
+        "status": "FAULT_ESTABLISHED",
+    })
+
+    # Case A: Cleanup succeeds -> both PRE-CLEANUP and COMPLETED records present
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", lambda _id, _plan: {"phase": "RESET"})
+    reward_fn_success = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="e" * 64,
+        episodes_path=episodes_file,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+    completions = [_policy_completion()]
+    prompts = [build_trl_training_record(row)["prompt"]]
+    metadata = {
+        "hidden_metadata": [row["hidden_metadata"]],
+        "prompt_sha256": [row["prompt_sha256"]],
+        "provenance_hash": [row["provenance_hash"]],
+        "role": [row["role"]],
+        "row_id": [row["row_id"]],
+        "stage9_group_id": [row["stage9_group_id"]],
+    }
+
+    rewards = reward_fn_success(completions, prompts, **metadata)
+    assert len(rewards) == 1
+    assert rewards[0] > 0.0
+
+    records = [json.loads(line) for line in episodes_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(records) == 2
+    # Record 0 is pre-cleanup scientific verdict
+    rec0 = records[0]
+    assert rec0["status"] == "SCIENTIFIC_VERDICT_CAPTURED"
+    assert rec0["evidence_phase"] == "SCIENTIFIC_VERDICT_CAPTURED"
+    assert rec0["cleanup_status"] == "pending"
+    assert rec0["env_resolved"] is True
+    assert rec0["verifier_result"]["env_resolved"] is True
+    assert rec0["policy_action"]["name"] == "chaos_stop_experiment"
+    # Record 1 is finalized completed rollout
+    rec1 = records[1]
+    assert rec1["status"] == "COMPLETED"
+    assert rec1["evidence_phase"] == "EPISODE_FINALIZED"
+    assert rec1["cleanup_status"] == "completed"
+    assert rec1["reward"]["total"] == rewards[0]
+
+    # Validate log passes log validator
+    assert reward_fn_success.validate_existing_episode_log() == 2
+
+    # Case B: Cleanup fails -> PRE-CLEANUP record preserved, followed by CLEANUP_INVALID
+    episodes_fail_file = tmp_path / "episodes_fail.jsonl"
+    monkeypatch.setattr(
+        "training.grpo.cleanup_scenario_faults",
+        lambda _id, _plan: (_ for _ in ()).throw(InfrastructureInvalid("cleanup_timeout_deleting_crd")),
+    )
+    reward_fn_fail = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="e" * 64,
+        episodes_path=episodes_fail_file,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    with pytest.raises(InfrastructureInvalid, match="cleanup_timeout_deleting_crd"):
+        reward_fn_fail(completions, prompts, **metadata)
+
+    records_fail = [json.loads(line) for line in episodes_fail_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(records_fail) == 2
+    # Pre-cleanup record captured before cleanup crash
+    assert records_fail[0]["status"] == "SCIENTIFIC_VERDICT_CAPTURED"
+    assert records_fail[0]["verifier_result"]["env_resolved"] is True
+    assert records_fail[0]["cleanup_status"] == "pending"
+    # Cleanup invalidation record
+    assert records_fail[1]["status"] == "INFRASTRUCTURE_INVALID"
+    assert records_fail[1]["evidence_phase"] == "CLEANUP_INVALID"
+    assert records_fail[1]["cleanup_status"] == "failed"
+    assert "cleanup_timeout_deleting_crd" in records_fail[1]["invalidation_reason"]
+
+    assert reward_fn_fail.validate_existing_episode_log() == 2
+
+
+def test_cluster_fingerprint_fails_closed_on_incomplete_queries() -> None:
+    """Requirement: Fingerprint fails closed on incomplete or unknown fields."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    valid_uid_out = json.dumps({"metadata": {"uid": "uid-alpha-123"}})
+    valid_ver_out = json.dumps({"serverVersion": {"gitVersion": "v1.31.2"}})
+    valid_ep_out = json.dumps({"clusters": [{"cluster": {"server": "https://127.0.0.1:54321"}}]})
+
+    # 1. kube-system UID failure -> raises InfrastructureInvalid
+    def mock_fail_uid(_id, args, **_kw):
+        if "kube-system" in args:
+            return {"returncode": 1, "stderr": "namespace not found", "stdout": "", "success": False}
+        return {"returncode": 0, "stderr": "", "stdout": valid_ver_out if "version" in args else valid_ep_out, "success": True}
+
+    monkeypatch_run = observe_cluster_fingerprint.__globals__["_run_kubectl"]
+    observe_cluster_fingerprint.__globals__["_run_kubectl"] = mock_fail_uid
+    try:
+        with pytest.raises(InfrastructureInvalid, match="kube_system_uid_query_failed"):
+            observe_cluster_fingerprint(identity)
+    finally:
+        observe_cluster_fingerprint.__globals__["_run_kubectl"] = monkeypatch_run
+
+    # 2. server version failure -> raises InfrastructureInvalid
+    def mock_fail_ver(_id, args, **_kw):
+        if "version" in args:
+            return {"returncode": 1, "stderr": "server unreachable", "stdout": "", "success": False}
+        return {"returncode": 0, "stderr": "", "stdout": valid_uid_out if "kube-system" in args else valid_ep_out, "success": True}
+
+    observe_cluster_fingerprint.__globals__["_run_kubectl"] = mock_fail_ver
+    try:
+        with pytest.raises(InfrastructureInvalid, match="server_version_query_failed"):
+            observe_cluster_fingerprint(identity)
+    finally:
+        observe_cluster_fingerprint.__globals__["_run_kubectl"] = monkeypatch_run
+
+    # 3. endpoint failure -> raises InfrastructureInvalid
+    def mock_fail_ep(_id, args, **_kw):
+        if "config" in args:
+            return {"returncode": 1, "stderr": "config corrupt", "stdout": "", "success": False}
+        return {"returncode": 0, "stderr": "", "stdout": valid_uid_out if "kube-system" in args else valid_ver_out, "success": True}
+
+    observe_cluster_fingerprint.__globals__["_run_kubectl"] = mock_fail_ep
+    try:
+        with pytest.raises(InfrastructureInvalid, match="api_endpoint_query_failed"):
+            observe_cluster_fingerprint(identity)
+    finally:
+        observe_cluster_fingerprint.__globals__["_run_kubectl"] = monkeypatch_run
+
+
+def test_taxonomy_harness_vs_infrastructure_vs_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement: Thrown exceptions outside policy decision are harness/infra invalidations."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "taxonomy-test")
+    episodes_file = tmp_path / "taxonomy_episodes.jsonl"
+
+    monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {"status": "CONTEXT_VERIFIED"})
+    monkeypatch.setattr("training.grpo.cluster_healthy", lambda _id, **_kw: (True, {"ready_deployments": 12}))
+    monkeypatch.setattr("training.grpo.detect_active_chaos_resources", lambda _id: [])
+    monkeypatch.setattr("training.grpo.apply_fault", lambda _id, scenario_id, **_kw: {"phase": "FAULT_APPLIED"})
+    monkeypatch.setattr("training.grpo.fault_established", lambda _id, scenario_id, **_kw: {
+        "effect_status": "FAULT_EFFECT_CONFIRMED",
+        "injection_status": "INJECTION_RESOURCE_PRESENT",
+        "phase": "FAULT_ESTABLISHED",
+        "status": "FAULT_ESTABLISHED",
+    })
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", lambda _id, _plan: {"phase": "RESET"})
+
+    # 1. Normal model invalid completion -> scored normally under reward contract with penalty, no exception
+    async def mock_handle_incident_invalid_comp(*_args, **_kwargs):
+        return {
+            "agent_claimed_resolved": False,
+            "comms": {},
+            "diagnosis": {},
+            "env_resolved": False,
+            "remediation": {
+                "final": {
+                    "mode": "policy_rollout",
+                    "policy_action_admitted": False,
+                    "policy_completion_valid": False,
+                }
+            },
+            "triage": {},
+            "verification": {"env_resolved": False},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident_invalid_comp)
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="f" * 64,
+        episodes_path=episodes_file,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+    result = asyncio.run(reward_fn._score_paired_rollout(row, "malformed-json"))
+    breakdown = compute_reward_breakdown(result["episode"])
+    assert breakdown["penalties"]["invalid_policy_completion"] == 0.25
+    assert breakdown["total"] == -0.25
+
+    # 2. Coordinator crash (KeyError / TypeError inside multi-agent harness) -> HarnessExecutionInvalid
+    async def mock_handle_incident_crash(*_args, **_kwargs):
+        raise KeyError("unexpected_missing_internal_coordinator_key")
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident_crash)
+    with pytest.raises(HarnessExecutionInvalid, match="rollout_harness_error:.*unexpected_missing_internal_coordinator_key"):
+        asyncio.run(reward_fn._score_paired_rollout(row, _policy_completion()))
+
+    # 3. Kubectl / infra crash -> InfrastructureInvalid
+    monkeypatch.setattr(
+        "training.grpo.apply_fault",
+        lambda _id, _s, **_kw: (_ for _ in ()).throw(InfrastructureInvalid("kubectl_connection_refused")),
+    )
+    with pytest.raises(InfrastructureInvalid, match="kubectl_connection_refused"):
+        asyncio.run(reward_fn._score_paired_rollout(row, _policy_completion()))
+
+
+def test_composition_full_scientific_chain_and_fail_closed_branches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement 10: End-to-end composition regression covering valid chain and fail-closed branches."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "composition-full")
+    episodes_file = tmp_path / "composition_episodes.jsonl"
+    curriculum_file = tmp_path / "curriculum_state.json"
+
+    # Step 1: Valid TRL prompt conversion
+    trl_record = build_trl_training_record(row)
+    assert trl_record["prompt"] == row["model_visible_prompt"]
+
+    # Step 2: Exact Manifest Fault Plan
+    fault_plan = build_scenario_fault_plan(row["hidden_metadata"]["scenario_id"])
+    assert len(fault_plan.resources) == 1
+    assert fault_plan.resources[0].name == "sf-002-paymentservice-cpu"
+
+    active_chaos: list[dict[str, Any]] = []
+
+    def mock_detect(_id):
+        return list(active_chaos)
+
+    def mock_apply(_id, scenario_id, **_kw):
+        active_chaos.append({
+            "kind": "StressChaos",
+            "labels": {"scenario": "sf-002"},
+            "name": "sf-002-paymentservice-cpu",
+            "namespace": "chaos-mesh",
+        })
+        return {"phase": "FAULT_APPLIED"}
+
+    def mock_cleanup(_id, _plan):
+        active_chaos.clear()
+        return {"phase": "RESET"}
+
+    # Step 3: Lifecycle mocks
+    monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {
+        "fingerprint": {
+            "api_server_endpoint": "https://127.0.0.1:6443",
+            "cluster_uid": "uid-kind-valid",
+            "kubernetes_context": "kind-atlasops-local",
+            "provider": "local-kind",
+            "server_version": "v1.31.2",
+        },
+        "status": "CONTEXT_VERIFIED",
+    })
+    monkeypatch.setattr("training.grpo.cluster_healthy", lambda _id, **_kw: (True, {"ready_deployments": 12}))
+    monkeypatch.setattr("training.grpo.detect_active_chaos_resources", mock_detect)
+    monkeypatch.setattr("training.grpo.apply_fault", mock_apply)
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", mock_cleanup)
+
+    def valid_predicate(_id, _scenario):
+        return True, {"latency_ms": 4500, "threshold_ms": 500}
+
+    async def mock_handle_incident(alert, scenario_id, remediation_policy_completion, remediation_observation):
+        assert scenario_id == "single_fault/sf-002"
+        assert "single_fault" not in alert
+        assert remediation_observation == row["observation"]
+        return {
+            "agent_claimed_resolved": True,
+            "comms": {},
+            "diagnosis": {},
+            "env_resolved": True,
+            "remediation": {
+                "final": {
+                    "executed_actions": [{
+                        "args": {"name": "sf-002-paymentservice-cpu"},
+                        "success": True,
+                        "tool": "chaos_stop_experiment",
+                    }],
+                    "mode": "policy_rollout",
+                    "outcome": "resolved",
+                    "policy_action_admitted": True,
+                    "policy_action_identity_match": True,
+                    "policy_completion_valid": True,
+                }
+            },
+            "triage": {},
+            "verification": {"env_resolved": True, "method": "metrics_and_pods"},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident)
+
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="g" * 64,
+        episodes_path=episodes_file,
+        curriculum_state_path=curriculum_file,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=valid_predicate,
+        require_effect_confirmation=True,
+    )
+
+    completions = [_policy_completion()]
+    prompts = [trl_record["prompt"]]
+    metadata = {
+        "hidden_metadata": [row["hidden_metadata"]],
+        "prompt_sha256": [row["prompt_sha256"]],
+        "provenance_hash": [row["provenance_hash"]],
+        "role": [row["role"]],
+        "row_id": [row["row_id"]],
+        "stage9_group_id": [row["stage9_group_id"]],
+    }
+
+    # Execute full valid scientific batch
+    active_chaos.clear()
+    rewards = reward_fn(completions, prompts, **metadata)
+    assert len(rewards) == 1
+    assert rewards[0] == 0.85
+
+    # Check evidence file persistence: pre-cleanup verdict + finalized completed episode
+    records = [json.loads(line) for line in episodes_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(records) == 2
+    assert records[0]["status"] == "SCIENTIFIC_VERDICT_CAPTURED"
+    assert records[0]["cleanup_status"] == "pending"
+    assert records[0]["verifier_result"]["env_resolved"] is True
+    assert records[1]["status"] == "COMPLETED"
+    assert records[1]["cleanup_status"] == "completed"
+    assert records[1]["reward"]["total"] == 0.85
+
+    # Curriculum state written
+    assert curriculum_file.is_file()

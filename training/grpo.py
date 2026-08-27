@@ -55,8 +55,11 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 EPISODE_STATUSES = {
     "COMPLETED",
+    "SCIENTIFIC_VERDICT_CAPTURED",
     "INFRASTRUCTURE_INVALID",
+    "HARNESS_EXECUTION_INVALID",
     "POLICY_EXECUTION_INVALID",
+    "CLEANUP_INVALID",
     "ROLLOUT_EXCEPTION",
 }
 
@@ -108,6 +111,10 @@ class EnvironmentIdentity:
 
 class InfrastructureInvalid(RuntimeError):
     """An environment/setup/reset failure is never a policy reward of zero."""
+
+
+class HarnessExecutionInvalid(RuntimeError):
+    """The multi-agent coordinator/verifier harness failed outside the policy's causal decision."""
 
 
 class PolicyExecutionInvalid(RuntimeError):
@@ -177,43 +184,59 @@ def _approved_tool_context(identity: EnvironmentIdentity):
 
 
 def observe_cluster_fingerprint(identity: EnvironmentIdentity) -> dict[str, Any]:
-    """Capture a stable, read-only cluster fingerprint to verify cluster instance identity."""
+    """Capture a stable, read-only cluster fingerprint to verify cluster instance identity.
+
+    Fails closed if any essential cluster identity query cannot be observed.
+    """
     ns_result = _run_kubectl(
         identity,
         ["get", "namespace", "kube-system", "--output", "json"],
         timeout=10,
     )
-    cluster_uid = "unknown"
-    if ns_result.get("success"):
-        try:
-            ns_payload = json.loads(ns_result.get("stdout") or "{}")
-            cluster_uid = str(ns_payload.get("metadata", {}).get("uid", "unknown"))
-        except json.JSONDecodeError:
-            pass
+    if not ns_result.get("success"):
+        raise InfrastructureInvalid(
+            f"cluster_fingerprint_incomplete:kube_system_uid_query_failed:{ns_result.get('stderr')}"
+        )
+    try:
+        ns_payload = json.loads(ns_result.get("stdout") or "{}")
+        cluster_uid = str(ns_payload.get("metadata", {}).get("uid", "")).strip()
+    except json.JSONDecodeError as exc:
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:kube_system_json_invalid") from exc
+    if not cluster_uid or cluster_uid == "unknown":
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:kube_system_uid_empty")
 
     ver_result = _run_kubectl(identity, ["version", "--output", "json"], timeout=10)
-    server_version = "unknown"
-    if ver_result.get("success"):
-        try:
-            ver_payload = json.loads(ver_result.get("stdout") or "{}")
-            server_version = str(ver_payload.get("serverVersion", {}).get("gitVersion", "unknown"))
-        except json.JSONDecodeError:
-            pass
+    if not ver_result.get("success"):
+        raise InfrastructureInvalid(
+            f"cluster_fingerprint_incomplete:server_version_query_failed:{ver_result.get('stderr')}"
+        )
+    try:
+        ver_payload = json.loads(ver_result.get("stdout") or "{}")
+        server_version = str(ver_payload.get("serverVersion", {}).get("gitVersion", "")).strip()
+    except json.JSONDecodeError as exc:
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:server_version_json_invalid") from exc
+    if not server_version or server_version == "unknown":
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:server_version_empty")
 
     endpoint_result = _run_kubectl(
         identity,
         ["config", "view", "--minify", "--output", "json"],
         timeout=10,
     )
-    server_endpoint = "unknown"
-    if endpoint_result.get("success"):
-        try:
-            cfg_payload = json.loads(endpoint_result.get("stdout") or "{}")
-            clusters = cfg_payload.get("clusters", [])
-            if clusters and isinstance(clusters[0], dict):
-                server_endpoint = str(clusters[0].get("cluster", {}).get("server", "unknown"))
-        except json.JSONDecodeError:
-            pass
+    if not endpoint_result.get("success"):
+        raise InfrastructureInvalid(
+            f"cluster_fingerprint_incomplete:api_endpoint_query_failed:{endpoint_result.get('stderr')}"
+        )
+    try:
+        cfg_payload = json.loads(endpoint_result.get("stdout") or "{}")
+        clusters = cfg_payload.get("clusters", [])
+        server_endpoint = ""
+        if clusters and isinstance(clusters[0], dict):
+            server_endpoint = str(clusters[0].get("cluster", {}).get("server", "")).strip()
+    except json.JSONDecodeError as exc:
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:api_endpoint_json_invalid") from exc
+    if not server_endpoint or server_endpoint == "unknown":
+        raise InfrastructureInvalid("cluster_fingerprint_incomplete:api_endpoint_empty")
 
     return {
         "api_server_endpoint": server_endpoint,
@@ -597,6 +620,8 @@ class OnlineRewardFunction:
         curriculum_state_path: str | Path | None = None,
         fault_settle_seconds: int = 15,
         reset_settle_seconds: int = 10,
+        fault_effect_predicate: Any = None,
+        require_effect_confirmation: bool = True,
     ):
         self.rows = list(rows)
         self.rows_by_group = {row["stage9_group_id"]: row for row in rows}
@@ -610,6 +635,8 @@ class OnlineRewardFunction:
         self._loop = asyncio.new_event_loop()
         self.fault_settle_seconds = fault_settle_seconds
         self.reset_settle_seconds = reset_settle_seconds
+        self.fault_effect_predicate = fault_effect_predicate
+        self.require_effect_confirmation = require_effect_confirmation
 
     def __del__(self):
         if not self._loop.is_closed():
@@ -650,7 +677,7 @@ class OnlineRewardFunction:
                 row["stage9_group_id"],
             )
             try:
-                result = await self._score_paired_rollout(row, completion)
+                result = await self._score_paired_rollout(row, completion, rollout_index=index)
             except Exception as exc:
                 self._persist_invalidation(index, row, completion, exc)
                 raise
@@ -679,6 +706,7 @@ class OnlineRewardFunction:
         self,
         row: dict[str, Any],
         completion_text: str,
+        rollout_index: int = 0,
     ) -> dict[str, Any]:
         """Run strictly ordered healthy/safety/fault/action/verifier/cleanup/post-health lifecycle."""
         from agents.coordinator import handle_incident
@@ -719,8 +747,15 @@ class OnlineRewardFunction:
             # 5. Wait for fault onset settle
             await asyncio.sleep(self.fault_settle_seconds)
 
-            # 6. Objectively establish exact scenario fault
-            lifecycle.append(fault_established(self.environment, scenario_id, fault_plan=fault_plan))
+            # 6. Objectively establish exact scenario fault with mandatory effect confirmation
+            established_record = fault_established(
+                self.environment,
+                scenario_id,
+                fault_plan=fault_plan,
+                fault_effect_predicate=self.fault_effect_predicate,
+                require_effect_confirmation=self.require_effect_confirmation,
+            )
+            lifecycle.append(established_record)
 
             # 7. Policy execution through coordinator
             lifecycle.append({"phase": "POLICY_EXECUTION"})
@@ -734,14 +769,27 @@ class OnlineRewardFunction:
                         remediation_policy_completion=completion_text,
                         remediation_observation=row["observation"],
                     )
+            except InfrastructureInvalid:
+                raise
+            except HarnessExecutionInvalid:
+                raise
             except Exception as exc:
-                raise PolicyExecutionInvalid(f"rollout_harness_error:{exc}") from exc
+                raise HarnessExecutionInvalid(f"rollout_harness_error:{exc}") from exc
 
             # 8. Independent verifier (ran inside handle_incident before cleanup)
             lifecycle.append({
                 "phase": "VERIFIER_COMPLETED",
                 "verification": incident.get("verification", {}),
             })
+
+            # Durably persist pre-cleanup scientific verdict before environment mutation
+            self._persist_pre_cleanup_verdict(
+                rollout_index=rollout_index,
+                row=row,
+                completion=completion_text,
+                incident=incident,
+                lifecycle=lifecycle,
+            )
         finally:
             if fault_applied_flag:
                 await self._cleanup_and_verify(lifecycle, fault_plan)
@@ -804,6 +852,46 @@ class OnlineRewardFunction:
     async def _reset_settle(self) -> None:
         await asyncio.sleep(self.reset_settle_seconds)
 
+    def _persist_pre_cleanup_verdict(
+        self,
+        rollout_index: int,
+        row: dict[str, Any],
+        completion: str,
+        incident: dict[str, Any] | None,
+        lifecycle: list[dict[str, Any]],
+    ) -> None:
+        """Atomically persist pre-cleanup scientific verdict before environment mutation."""
+        if not self.episodes_path:
+            return
+        self.episodes_path.parent.mkdir(parents=True, exist_ok=True)
+        remediation = incident.get("remediation", {}).get("final", {}) if incident else {}
+        env_resolved = bool(incident.get("env_resolved") is True) if incident else False
+        agent_claimed_resolved = bool(incident.get("agent_claimed_resolved")) if incident else False
+        record = {
+            "agent_claimed_resolved": agent_claimed_resolved,
+            "cleanup_status": "pending",
+            "env_resolved": env_resolved,
+            "event_id": uuid.uuid4().hex,
+            "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
+            "hidden_metadata": row["hidden_metadata"],
+            "lifecycle": [dict(entry) for entry in lifecycle],
+            "policy_action": remediation.get("action") or remediation.get("tool_call") or {},
+            "policy_action_outcome": remediation.get("outcome", "unknown"),
+            "policy_completion": completion,
+            "policy_completion_sha256": hashlib.sha256(
+                completion.encode("utf-8")
+            ).hexdigest(),
+            "prompt_sha256": row["prompt_sha256"],
+            "rollout_index": rollout_index,
+            "row_id": row["row_id"],
+            "stage9_group_id": row["stage9_group_id"],
+            "status": "SCIENTIFIC_VERDICT_CAPTURED",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "verifier_result": incident.get("verification", {}) if incident else {},
+        }
+        with self.episodes_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+
     def _persist_episode(
         self,
         rollout_index: int,
@@ -816,13 +904,15 @@ class OnlineRewardFunction:
             return
         self.episodes_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
-            "event_id": uuid.uuid4().hex,
-            "episode": result["episode"],
-            "hidden_metadata": row["hidden_metadata"],
+            "cleanup_status": "completed",
             "curriculum_state": {
                 "sha256": _curriculum.export_state()["state_sha256"],
                 **_curriculum.stats(),
             },
+            "episode": result["episode"],
+            "event_id": uuid.uuid4().hex,
+            "evidence_phase": "EPISODE_FINALIZED",
+            "hidden_metadata": row["hidden_metadata"],
             "lifecycle": result["lifecycle"],
             "model_visible_alert": result["model_visible_alert"],
             "policy_completion": completion,
@@ -858,7 +948,7 @@ class OnlineRewardFunction:
                 missing = sorted(
                     key for key in (
                         "event_id", "hidden_metadata", "policy_completion_sha256",
-                        "prompt_sha256", "reward", "row_id", "stage9_group_id",
+                        "prompt_sha256", "row_id", "stage9_group_id",
                         "status",
                     )
                     if key not in record
@@ -874,9 +964,11 @@ class OnlineRewardFunction:
                     raise RuntimeError(f"episode_evidence_event_id_invalid:{line_number}")
                 seen_events.add(event_id)
                 if record["status"] == "COMPLETED":
-                    if not isinstance(record["reward"], dict):
+                    if not isinstance(record.get("reward"), dict):
                         raise RuntimeError(f"completed_episode_reward_missing:{line_number}")
-                elif record["reward"] is not None:
+                elif record["status"] == "SCIENTIFIC_VERDICT_CAPTURED":
+                    pass
+                elif record.get("reward") is not None:
                     raise RuntimeError(f"invalidated_episode_has_reward:{line_number}")
                 count += 1
         return count
@@ -894,16 +986,26 @@ class OnlineRewardFunction:
         status = (
             "INFRASTRUCTURE_INVALID"
             if isinstance(exc, InfrastructureInvalid)
+            else "HARNESS_EXECUTION_INVALID"
+            if isinstance(exc, HarnessExecutionInvalid)
             else "POLICY_EXECUTION_INVALID"
             if isinstance(exc, PolicyExecutionInvalid)
             else "ROLLOUT_EXCEPTION"
         )
+        is_cleanup_err = "cleanup" in str(exc) or "post_reset" in str(exc)
+        evidence_phase = "CLEANUP_INVALID" if is_cleanup_err else "ROLLOUT_INVALIDATED"
+        cleanup_status = "failed" if is_cleanup_err else "not_reached"
+
         self.episodes_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
+            "cleanup_status": cleanup_status,
             "completion_sha256": hashlib.sha256(completion.encode("utf-8")).hexdigest(),
+            "event_id": uuid.uuid4().hex,
+            "evidence_phase": evidence_phase,
             "hidden_metadata": row["hidden_metadata"],
             "invalidation_reason": str(exc),
             "policy_completion": completion,
+            "policy_completion_sha256": hashlib.sha256(completion.encode("utf-8")).hexdigest(),
             "prompt_sha256": row["prompt_sha256"],
             "reward": None,
             "rollout_index": rollout_index,
@@ -911,7 +1013,6 @@ class OnlineRewardFunction:
             "stage9_group_id": row["stage9_group_id"],
             "status": status,
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "event_id": uuid.uuid4().hex,
         }
         with self.episodes_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, sort_keys=True) + "\n")

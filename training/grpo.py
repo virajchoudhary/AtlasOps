@@ -31,6 +31,9 @@ from config.runtime import (
     evaluate_reward_contract,
 )
 from training.stage9_contract import (
+    ScenarioFaultPlan,
+    build_scenario_fault_plan,
+    build_trl_training_record,
     load_remediation_training_rows,
     remediation_dataset_catalogue,
 )
@@ -173,6 +176,54 @@ def _approved_tool_context(identity: EnvironmentIdentity):
                 os.environ[key] = value
 
 
+def observe_cluster_fingerprint(identity: EnvironmentIdentity) -> dict[str, Any]:
+    """Capture a stable, read-only cluster fingerprint to verify cluster instance identity."""
+    ns_result = _run_kubectl(
+        identity,
+        ["get", "namespace", "kube-system", "--output", "json"],
+        timeout=10,
+    )
+    cluster_uid = "unknown"
+    if ns_result.get("success"):
+        try:
+            ns_payload = json.loads(ns_result.get("stdout") or "{}")
+            cluster_uid = str(ns_payload.get("metadata", {}).get("uid", "unknown"))
+        except json.JSONDecodeError:
+            pass
+
+    ver_result = _run_kubectl(identity, ["version", "--output", "json"], timeout=10)
+    server_version = "unknown"
+    if ver_result.get("success"):
+        try:
+            ver_payload = json.loads(ver_result.get("stdout") or "{}")
+            server_version = str(ver_payload.get("serverVersion", {}).get("gitVersion", "unknown"))
+        except json.JSONDecodeError:
+            pass
+
+    endpoint_result = _run_kubectl(
+        identity,
+        ["config", "view", "--minify", "--output", "json"],
+        timeout=10,
+    )
+    server_endpoint = "unknown"
+    if endpoint_result.get("success"):
+        try:
+            cfg_payload = json.loads(endpoint_result.get("stdout") or "{}")
+            clusters = cfg_payload.get("clusters", [])
+            if clusters and isinstance(clusters[0], dict):
+                server_endpoint = str(clusters[0].get("cluster", {}).get("server", "unknown"))
+        except json.JSONDecodeError:
+            pass
+
+    return {
+        "api_server_endpoint": server_endpoint,
+        "cluster_uid": cluster_uid,
+        "kubernetes_context": identity.kubernetes_context,
+        "provider": identity.provider,
+        "server_version": server_version,
+    }
+
+
 def verify_kubernetes_environment(identity: EnvironmentIdentity) -> dict[str, Any]:
     if identity.provider != CANONICAL_LOCAL_ENVIRONMENT_PROVIDER:
         raise InfrastructureInvalid("environment_provider_invalid")
@@ -188,7 +239,12 @@ def verify_kubernetes_environment(identity: EnvironmentIdentity) -> dict[str, An
             f"kubernetes_context_mismatch:expected={identity.kubernetes_context},"
             f"observed={sorted(observed_contexts) or 'none'}"
         )
-    return {"status": "CONTEXT_VERIFIED", "identity": identity.to_dict()}
+    fingerprint = observe_cluster_fingerprint(identity)
+    return {
+        "fingerprint": fingerprint,
+        "identity": identity.to_dict(),
+        "status": "CONTEXT_VERIFIED",
+    }
 
 
 def cluster_healthy(
@@ -226,34 +282,8 @@ def cluster_healthy(
     )
 
 
-def apply_fault(identity: EnvironmentIdentity, scenario_id: str) -> dict[str, Any]:
-    scenario_parts = scenario_id.split("/")
-    if (
-        len(scenario_parts) != 2
-        or any(not part or part in {".", ".."} for part in scenario_parts)
-        or any(not _CONTEXT_RE.fullmatch(part) for part in scenario_parts)
-    ):
-        raise InfrastructureInvalid(f"fault_scenario_identity_invalid:{scenario_id}")
-    manifest = Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
-    resolved_manifest = manifest.resolve()
-    try:
-        resolved_manifest.relative_to((Path("bench/chaos_manifests")).resolve())
-    except ValueError as exc:
-        raise InfrastructureInvalid(f"fault_manifest_path_escape:{scenario_id}") from exc
-    if not resolved_manifest.is_file():
-        raise InfrastructureInvalid(f"fault_manifest_missing:{scenario_id}")
-    result = _run_kubectl(
-        identity,
-        ["apply", "--filename", str(resolved_manifest)],
-        timeout=60,
-    )
-    if not result["success"]:
-        raise InfrastructureInvalid(f"fault_apply_failed:{scenario_id}")
-    return {"status": "FAULT_APPLIED", "manifest": str(manifest)}
-
-
-def fault_established(identity: EnvironmentIdentity, scenario_id: str) -> dict[str, Any]:
-    scenario_name = scenario_id.rsplit("/", 1)[-1]
+def detect_active_chaos_resources(identity: EnvironmentIdentity) -> list[dict[str, Any]]:
+    """Query active Chaos Mesh CRDs in the chaos-mesh namespace."""
     result = _run_kubectl(
         identity,
         [
@@ -261,27 +291,161 @@ def fault_established(identity: EnvironmentIdentity, scenario_id: str) -> dict[s
             "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
             "--namespace", "chaos-mesh", "--output", "json",
         ],
+        timeout=15,
     )
     if not result["success"]:
-        raise InfrastructureInvalid("fault_state_query_failed")
+        raise InfrastructureInvalid(f"chaos_resource_query_failed:{result.get('stderr')}")
     try:
         payload = json.loads(result["stdout"] or "{}")
     except json.JSONDecodeError as exc:
-        raise InfrastructureInvalid("fault_state_payload_invalid") from exc
-    matches = [
-        item for item in payload.get("items", [])
-        if isinstance(item, dict)
-        and item.get("metadata", {}).get("name") == scenario_name
-        and item.get("metadata", {}).get("labels", {}).get("scenario") == scenario_name
-    ]
-    if len(matches) != 1:
-        raise InfrastructureInvalid(
-            f"fault_not_objectively_established:{scenario_id}:matches={len(matches)}"
+        raise InfrastructureInvalid("chaos_resource_payload_invalid") from exc
+
+    resources: list[dict[str, Any]] = []
+    for item in payload.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind", ""))
+        metadata = item.get("metadata", {})
+        name = str(metadata.get("name", ""))
+        namespace = str(metadata.get("namespace", "chaos-mesh"))
+        labels = metadata.get("labels", {})
+        resources.append({
+            "kind": kind,
+            "labels": labels,
+            "name": name,
+            "namespace": namespace,
+        })
+    return resources
+
+
+def apply_fault(
+    identity: EnvironmentIdentity,
+    scenario_id: str,
+    *,
+    fault_plan: ScenarioFaultPlan | None = None,
+) -> dict[str, Any]:
+    try:
+        plan = fault_plan or build_scenario_fault_plan(scenario_id)
+    except ValueError as exc:
+        raise InfrastructureInvalid(f"fault_scenario_identity_invalid:{scenario_id}:{exc}") from exc
+    result = _run_kubectl(
+        identity,
+        ["apply", "--filename", plan.manifest_path],
+        timeout=60,
+    )
+    if not result["success"]:
+        raise InfrastructureInvalid(f"fault_apply_failed:{scenario_id}")
+    return {
+        "manifest": plan.manifest_path,
+        "phase": "FAULT_APPLIED",
+        "resources": [r.to_dict() for r in plan.resources],
+        "scenario_id": scenario_id,
+        "status": "FAULT_APPLIED",
+    }
+
+
+def fault_established(
+    identity: EnvironmentIdentity,
+    scenario_id: str,
+    *,
+    fault_plan: ScenarioFaultPlan | None = None,
+    fault_effect_predicate: Any = None,
+    require_effect_confirmation: bool = False,
+) -> dict[str, Any]:
+    """Verify ALL expected scenario resources are present and confirm fault effect.
+
+    Distinguishes INJECTION_RESOURCE_PRESENT from FAULT_EFFECT_CONFIRMED.
+    """
+    try:
+        plan = fault_plan or build_scenario_fault_plan(scenario_id)
+    except ValueError as exc:
+        raise InfrastructureInvalid(f"fault_scenario_identity_invalid:{scenario_id}:{exc}") from exc
+    active_resources = detect_active_chaos_resources(identity)
+
+    missing: list[str] = []
+    for expected in plan.resources:
+        matched = any(
+            active.get("kind", "").lower() == expected.kind.lower()
+            and active.get("name") == expected.name
+            and active.get("namespace", "").lower() == expected.namespace.lower()
+            and active.get("labels", {}).get("scenario") == expected.scenario_label
+            for active in active_resources
         )
-    return {"status": "FAULT_ESTABLISHED", "matching_resources": len(matches)}
+        if not matched:
+            missing.append(f"{expected.kind}/{expected.name}")
+
+    if missing:
+        raise InfrastructureInvalid(
+            f"fault_not_objectively_established:{scenario_id}:missing={missing}"
+        )
+
+    injection_status = "INJECTION_RESOURCE_PRESENT"
+    effect_status = "FAULT_EFFECT_CONFIRMED"
+
+    if fault_effect_predicate is not None:
+        confirmed, details = fault_effect_predicate(identity, scenario_id)
+        if not confirmed:
+            raise InfrastructureInvalid(f"fault_effect_not_confirmed:{scenario_id}:{details}")
+    elif require_effect_confirmation:
+        raise InfrastructureInvalid(
+            f"fault_effect_predicate_missing:{scenario_id}; G5 canonical degradation predicate required"
+        )
+    else:
+        effect_status = "INJECTION_RESOURCE_PRESENT_ONLY"
+
+    return {
+        "effect_status": effect_status,
+        "injection_status": injection_status,
+        "matching_resources": len(plan.resources),
+        "phase": "FAULT_ESTABLISHED",
+        "status": "FAULT_ESTABLISHED",
+    }
+
+
+def cleanup_scenario_faults(
+    identity: EnvironmentIdentity,
+    fault_plan: ScenarioFaultPlan,
+) -> dict[str, Any]:
+    """Delete ONLY the exact resources declared in this scenario's fault plan."""
+    for resource in fault_plan.resources:
+        _run_kubectl(
+            identity,
+            [
+                "delete",
+                resource.kind.lower(),
+                resource.name,
+                "--namespace",
+                resource.namespace,
+                "--ignore-not-found=true",
+            ],
+            timeout=30,
+        )
+
+    # Verify those exact resources are gone
+    remaining_active = detect_active_chaos_resources(identity)
+    remaining: list[str] = []
+    for resource in fault_plan.resources:
+        still_present = any(
+            active.get("kind", "").lower() == resource.kind.lower()
+            and active.get("name") == resource.name
+            and active.get("namespace", "").lower() == resource.namespace.lower()
+            for active in remaining_active
+        )
+        if still_present:
+            remaining.append(f"{resource.kind}/{resource.name}")
+
+    if remaining:
+        raise InfrastructureInvalid(f"scenario_fault_cleanup_incomplete:{remaining}")
+
+    return {
+        "cleaned_resources": [r.to_dict() for r in fault_plan.resources],
+        "phase": "RESET",
+        "status": "RESET",
+    }
 
 
 def reset_faults(identity: EnvironmentIdentity) -> dict[str, Any]:
+    """Emergency/fallback reset that deletes all chaos resources across namespaces."""
     result = _run_kubectl(
         identity,
         [
@@ -293,7 +457,7 @@ def reset_faults(identity: EnvironmentIdentity) -> dict[str, Any]:
     )
     if not result["success"]:
         raise InfrastructureInvalid("fault_reset_failed")
-    return {"status": "FAULTS_RESET"}
+    return {"phase": "RESET", "status": "FAULTS_RESET"}
 
 
 def _policy_owned_action(final: dict[str, Any]) -> dict[str, Any] | None:
@@ -327,16 +491,12 @@ def compute_reward_breakdown(episode: dict) -> dict[str, Any]:
         and owned.get("tool") in CLUSTER_MUTATING_TOOLS
         and owned.get("success") is True
     )
-    # A successful read-only action is attributable but does not advance fault
-    # resolution. Keep it at zero so one-action rollouts cannot farm progress.
-    nonmutating_success = False
+    # Generic mutation success is NOT evidence of remediation progress.
+    # Set dense credit and ungrounded "partial" outcome to 0.0.
+    dense = 0.0
+    partial = 0.0
     resolution = 0.85 if env_resolved and mutating_success else 0.0
-    partial = 0.25 if (
-        not resolution
-        and str(episode.get("outcome")) == "partial"
-        and mutating_success
-    ) else 0.0
-    dense = 0.08 if mutating_success else 0.0
+
     penalties = {
         key: float(value)
         for key, value in audit.get("penalties", {}).items()
@@ -520,83 +680,126 @@ class OnlineRewardFunction:
         row: dict[str, Any],
         completion_text: str,
     ) -> dict[str, Any]:
-        """Run healthy/fault/action/verifier/reset/post-health lifecycle."""
+        """Run strictly ordered healthy/safety/fault/action/verifier/cleanup/post-health lifecycle."""
         from agents.coordinator import handle_incident
 
         hidden = row["hidden_metadata"]
         scenario_id = hidden["scenario_id"]
+        try:
+            fault_plan = build_scenario_fault_plan(scenario_id)
+        except ValueError as exc:
+            raise InfrastructureInvalid(f"scenario_fault_plan_invalid:{scenario_id}:{exc}") from exc
         lifecycle: list[dict[str, Any]] = []
+
+        # 1. Context verify
         verify_kubernetes_environment(self.environment)
-        lifecycle.append({"phase": "CONTEXT_VERIFIED", "passed": True})
+        lifecycle.append({"passed": True, "phase": "CONTEXT_VERIFIED"})
+
+        # 2. Pre-rollout healthy check
         pre_health, pre_details = cluster_healthy(self.environment)
-        lifecycle.append({"phase": "PRE_ROLLOUT_HEALTHY", "passed": pre_health, **pre_details})
+        lifecycle.append({"passed": pre_health, "phase": "PRE_ROLLOUT_HEALTHY", **pre_details})
         if not pre_health:
             raise InfrastructureInvalid("pre_rollout_unhealthy")
-        lifecycle.append(apply_fault(self.environment, scenario_id))
+
+        # 3. Preexisting-fault/chaos safety check
+        preexisting = detect_active_chaos_resources(self.environment)
+        if preexisting:
+            lifecycle.append({"phase": "PREEXISTING_CHAOS_DETECTED", "resources": preexisting})
+            raise InfrastructureInvalid(f"preexisting_chaos_resources_detected:{preexisting}")
+        lifecycle.append({"passed": True, "phase": "PREEXISTING_CHAOS_CHECKED"})
+
+        fault_applied_flag = False
+        incident = None
+        started = time.time()
         try:
+            # 4. Apply exact scenario
+            lifecycle.append(apply_fault(self.environment, scenario_id, fault_plan=fault_plan))
+            fault_applied_flag = True
+
+            # 5. Wait for fault onset settle
             await asyncio.sleep(self.fault_settle_seconds)
-            lifecycle.append(fault_established(self.environment, scenario_id))
-        finally:
-            await self._reset_and_verify(lifecycle)
 
-        try:
-            alert = row["observation"]["alert"]
-            started = time.time()
-            with _approved_tool_context(self.environment):
-                incident = await handle_incident(
-                    alert,
-                    scenario_id=scenario_id,
-                    remediation_policy_completion=completion_text,
-                    remediation_observation=row["observation"],
-                )
-        except Exception as exc:
-            raise PolicyExecutionInvalid(f"rollout_harness_error:{exc}") from exc
-        finally:
-            await self._reset_and_verify(lifecycle)
+            # 6. Objectively establish exact scenario fault
+            lifecycle.append(fault_established(self.environment, scenario_id, fault_plan=fault_plan))
 
-        remediation = incident.get("remediation", {}).get("final", {})
-        env_resolved = bool(incident.get("env_resolved") is True)
-        agent_claimed_resolved = bool(incident.get("agent_claimed_resolved"))
+            # 7. Policy execution through coordinator
+            lifecycle.append({"phase": "POLICY_EXECUTION"})
+            try:
+                alert = row["observation"]["alert"]
+                started = time.time()
+                with _approved_tool_context(self.environment):
+                    incident = await handle_incident(
+                        alert,
+                        scenario_id=scenario_id,
+                        remediation_policy_completion=completion_text,
+                        remediation_observation=row["observation"],
+                    )
+            except Exception as exc:
+                raise PolicyExecutionInvalid(f"rollout_harness_error:{exc}") from exc
+
+            # 8. Independent verifier (ran inside handle_incident before cleanup)
+            lifecycle.append({
+                "phase": "VERIFIER_COMPLETED",
+                "verification": incident.get("verification", {}),
+            })
+        finally:
+            if fault_applied_flag:
+                await self._cleanup_and_verify(lifecycle, fault_plan)
+
+        remediation = incident.get("remediation", {}).get("final", {}) if incident else {}
+        env_resolved = bool(incident.get("env_resolved") is True) if incident else False
+        agent_claimed_resolved = bool(incident.get("agent_claimed_resolved")) if incident else False
         return {
             "episode": {
                 "agent_claimed_resolved": agent_claimed_resolved,
-                "comms": incident.get("comms", {}),
-                "diagnosis": incident.get("diagnosis", {}),
+                "comms": incident.get("comms", {}) if incident else {},
+                "diagnosis": incident.get("diagnosis", {}) if incident else {},
                 "env_resolved": env_resolved,
                 "outcome": remediation.get("outcome", "unknown"),
-                "remediation": incident.get("remediation", {}),
+                "remediation": incident.get("remediation", {}) if incident else {},
                 "resolved": env_resolved,
                 "time_to_resolve_s": round(time.time() - started),
                 "tier": hidden["tier"],
                 "total_turns": sum(
                     len(incident.get(role, {}).get("trajectory", []))
                     for role in ("triage", "diagnosis", "remediation", "comms")
-                ),
-                "triage": incident.get("triage", {}),
-                "verification": incident.get("verification", {}),
+                ) if incident else 0,
+                "triage": incident.get("triage", {}) if incident else {},
+                "verification": incident.get("verification", {}) if incident else {},
             },
             "lifecycle": lifecycle,
-            "model_visible_alert": alert,
+            "model_visible_alert": row["observation"]["alert"],
         }
 
-    async def _reset_and_verify(self, lifecycle: list[dict[str, Any]]) -> None:
-        """Reset even after setup/harness failure and classify invalidity."""
-        reset_error: InfrastructureInvalid | None = None
+    async def _cleanup_and_verify(
+        self,
+        lifecycle: list[dict[str, Any]],
+        fault_plan: ScenarioFaultPlan | None = None,
+    ) -> None:
+        """Scoped cleanup of only the current rollout's faults followed by health verification."""
+        cleanup_error: InfrastructureInvalid | None = None
         try:
-            lifecycle.append(reset_faults(self.environment))
+            if fault_plan is not None:
+                lifecycle.append(cleanup_scenario_faults(self.environment, fault_plan))
+            else:
+                lifecycle.append(reset_faults(self.environment))
         except InfrastructureInvalid as exc:
-            reset_error = exc
+            cleanup_error = exc
         await self._reset_settle()
         post_health, post_details = cluster_healthy(self.environment)
         lifecycle.append({
-            "phase": "POST_RESET_HEALTHY",
             "passed": post_health,
+            "phase": "POST_RESET_HEALTHY",
             **post_details,
         })
-        if reset_error is not None:
-            raise reset_error
+        if cleanup_error is not None:
+            raise cleanup_error
         if not post_health:
             raise InfrastructureInvalid("post_reset_unhealthy")
+
+    async def _reset_and_verify(self, lifecycle: list[dict[str, Any]]) -> None:
+        """Backwards-compatible wrapper for fallback resets."""
+        await self._cleanup_and_verify(lifecycle, None)
 
     async def _reset_settle(self) -> None:
         await asyncio.sleep(self.reset_settle_seconds)
@@ -1225,23 +1428,13 @@ def main() -> None:
         len(rows),
         dataset_contract["unique_stage9_groups"],
     )
-
     model, tokenizer = load_model_and_tokenizer(args.model)
-
     from datasets import Dataset
-    metadata_columns = (
-        "prompt", "prompt_sha256", "provenance_hash", "role", "row_id",
-        "stage9_group_id", "hidden_metadata",
-    )
-    # The present standard-TRL boundary uses a deterministic fixed schedule.
-    # The ledger records outcomes for reproducibility and a future custom
-    # trainer; it does not falsely claim adaptive mid-run scenario selection.
     rows = sorted(rows, key=lambda row: (row["stage9_group_id"], row["row_id"]))
     dataset = Dataset.from_list([
-        {column: row[column] for column in metadata_columns}
+        build_trl_training_record(row)
         for row in rows
     ])
-
     grpo_args = GRPOConfig(
         output_dir=str(output_dir),
         learning_rate=lr,
@@ -1266,7 +1459,6 @@ def main() -> None:
         remove_unused_columns=False,
         shuffle_dataset=False,
     )
-
     trainer = GRPOTrainer(
         model=model,
         args=grpo_args,
@@ -1274,15 +1466,12 @@ def main() -> None:
         processing_class=tokenizer,
         reward_funcs=[reward_fn],
     )
-
     log.info("Starting local free-first GRPO; each completion gets an independently reset paired environment.")
     trainer.train(resume_from_checkpoint=resume_checkpoint or None)
-
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
-
     logs = trainer.state.log_history
-    rewards = [l.get("rewards/mean") for l in logs if "rewards/mean" in l]
+    rewards = [entry.get("rewards/mean") for entry in logs if "rewards/mean" in entry]
     summary = {
         "model": args.model,
         "total_steps": trainer.state.global_step,

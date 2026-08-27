@@ -1132,8 +1132,8 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
     result_narrations = {
         "kubectl_get":            "Got cluster state.",
         "kubectl_logs":           "Got pod logs — scanning for stack traces and errors.",
-        "promql_query":           f"Got metric data — analysing values.",
-        "jaeger_search":          f"Found traces — checking for slow spans.",
+        "promql_query":           "Got metric data — analysing values.",
+        "jaeger_search":          "Found traces — checking for slow spans.",
         "argocd_rollback":        "✅ Rollback executed.",
         "chaos_stop_experiment":  "✅ Chaos experiment stopped and cleared.",
         "kubectl_scale":          "✅ Scale applied.",
@@ -1558,17 +1558,29 @@ async def handle_incident(
                 )
                 thought_emit("remediation", "thinking", f"Approval granted by {approver}; executing plan.")
                 remediation_input["approval"] = approval_result
+                if remediation_policy_completion is not None:
+                    remediation = await call_agent(
+                        "remediation",
+                        remediation_input,
+                        policy_completion=remediation_policy_completion,
+                    )
+                else:
+                    remediation = await call_agent(
+                        "remediation",
+                        remediation_input,
+                    )
+        else:
+            if remediation_policy_completion is not None:
                 remediation = await call_agent(
                     "remediation",
                     remediation_input,
                     policy_completion=remediation_policy_completion,
                 )
-        else:
-            remediation = await call_agent(
-                "remediation",
-                remediation_input,
-                policy_completion=remediation_policy_completion,
-            )
+            else:
+                remediation = await call_agent(
+                    "remediation",
+                    remediation_input,
+                )
         # Remediation execution is complete. Now execute objective environment verification.
         remediation_final = remediation.get("final", {})
         scenario_id = str(

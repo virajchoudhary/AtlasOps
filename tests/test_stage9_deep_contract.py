@@ -15,15 +15,17 @@ import pytest
 from agents import coordinator
 from config.runtime import CurriculumManager
 from training.grpo import (
-    EnvironmentIdentity,
     InfrastructureInvalid,
     PolicyExecutionInvalid,
     OnlineRewardFunction,
     apply_fault,
+    cleanup_scenario_faults,
     compute_reward,
     compute_reward_breakdown,
     cluster_healthy,
+    detect_active_chaos_resources,
     fault_established,
+    observe_cluster_fingerprint,
     resolve_environment_identity,
     validate_resume_identity,
     validate_sft_checkpoint,
@@ -31,7 +33,11 @@ from training.grpo import (
     verify_kubernetes_environment,
 )
 from training.stage9_contract import (
+    ScenarioFaultPlan,
+    build_remediation_policy_prompt,
     build_remediation_training_row,
+    build_scenario_fault_plan,
+    build_trl_training_record,
     load_remediation_training_rows,
     validate_remediation_training_row,
 )
@@ -238,7 +244,7 @@ def test_false_resolution_penalizes_unverified_claim() -> None:
     breakdown = compute_reward_breakdown(episode)
 
     assert breakdown["penalties"]["false_resolution"] == pytest.approx(0.25)
-    assert breakdown["total"] == pytest.approx(-0.17)
+    assert breakdown["total"] == pytest.approx(-0.25)
 
 
 def test_reward_pairing_uses_hidden_row_metadata() -> None:
@@ -462,13 +468,13 @@ def test_fault_requires_exact_labelled_resource() -> None:
         raise AssertionError("invalid fault setup must not proceed")
 
     original = fault_established.__globals__["_run_kubectl"]
-    fault_established.__globals__["_run_kubectl"] = lambda *_: {
+    fault_established.__globals__["_run_kubectl"] = lambda *_, **__: {
         "success": True,
         "stdout": json.dumps({"items": []}),
     }
     try:
         with pytest.raises(InfrastructureInvalid, match="fault_not_objectively_established"):
-            fault_established(identity, "single_fault/sf-903")
+            fault_established(identity, "single_fault/sf-002")
     finally:
         fault_established.__globals__["_run_kubectl"] = original
 
@@ -515,16 +521,34 @@ def test_paired_rollout_keeps_scenario_out_of_model_visible_alert(
         lambda _identity, **_kwargs: (True, {"ready_deployments": 12}),
     )
     monkeypatch.setattr(
+        "training.grpo.detect_active_chaos_resources",
+        lambda _identity: [],
+    )
+    monkeypatch.setattr(
+        "training.grpo.build_scenario_fault_plan",
+        lambda scenario_id, **_kwargs: ScenarioFaultPlan(
+            scenario_id=scenario_id,
+            tier="single_fault",
+            manifest_path="bench/chaos_manifests/single_fault/sf-002.yaml",
+            manifest_sha256="a" * 64,
+            resources=(),
+        ),
+    )
+    monkeypatch.setattr(
         "training.grpo.apply_fault",
-        lambda _identity, scenario_id: {"status": "FAULT_APPLIED"},
+        lambda _identity, scenario_id, **_kwargs: {"phase": "FAULT_APPLIED", "status": "FAULT_APPLIED"},
     )
     monkeypatch.setattr(
         "training.grpo.fault_established",
-        lambda _identity, scenario_id: {"status": "FAULT_ESTABLISHED"},
+        lambda _identity, scenario_id, **_kwargs: {"phase": "FAULT_ESTABLISHED", "status": "FAULT_ESTABLISHED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cleanup_scenario_faults",
+        lambda _identity, _plan: {"phase": "RESET", "status": "RESET"},
     )
     monkeypatch.setattr(
         "training.grpo.reset_faults",
-        lambda _identity: {"status": "FAULTS_RESET"},
+        lambda _identity: {"phase": "RESET", "status": "FAULTS_RESET"},
     )
     reward_fn = OnlineRewardFunction(
         [_row()],
@@ -684,15 +708,16 @@ def test_pre_rollout_invalidity_never_applies_fault_or_scores_policy(
         "training.grpo.apply_fault",
         lambda _identity, _scenario_id: pytest.fail("fault applied after failed health gate"),
     )
+    row = _row("single_fault/sf-002")
     reward_fn = OnlineRewardFunction(
-        [_row()],
+        [row],
         identity,
         curriculum_seed=1,
         dataset_sha256="b" * 64,
     )
 
     with pytest.raises(InfrastructureInvalid, match="pre_rollout_unhealthy"):
-        asyncio.run(reward_fn._score_paired_rollout(_row(), "{}"))
+        asyncio.run(reward_fn._score_paired_rollout(row, "{}"))
 
 
 def test_fault_establishment_failure_always_resets_before_raising(
@@ -717,16 +742,34 @@ def test_fault_establishment_failure_always_resets_before_raising(
         lambda _identity, **_kwargs: (True, {}),
     )
     monkeypatch.setattr(
-        "training.grpo.apply_fault",
-        lambda _identity, scenario_id: calls.append(("apply", scenario_id)) or {},
+        "training.grpo.detect_active_chaos_resources",
+        lambda _identity: [],
     )
-    def fail_established(_identity, scenario_id):
+    monkeypatch.setattr(
+        "training.grpo.build_scenario_fault_plan",
+        lambda scenario_id, **_kwargs: ScenarioFaultPlan(
+            scenario_id=scenario_id,
+            tier="single_fault",
+            manifest_path="bench/chaos_manifests/single_fault/sf-002.yaml",
+            manifest_sha256="a" * 64,
+            resources=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "training.grpo.apply_fault",
+        lambda _identity, scenario_id, **_kwargs: calls.append(("apply", scenario_id)) or {},
+    )
+    def fail_established(_identity, scenario_id, **_kwargs):
         calls.append(("establish_failed", scenario_id))
         raise InfrastructureInvalid("fault_not_objectively_established")
     monkeypatch.setattr("training.grpo.fault_established", fail_established)
     monkeypatch.setattr(
+        "training.grpo.cleanup_scenario_faults",
+        lambda _identity, _plan: calls.append(("reset", "")) or {"phase": "RESET", "status": "RESET"},
+    )
+    monkeypatch.setattr(
         "training.grpo.reset_faults",
-        lambda _identity: calls.append(("reset", "")),
+        lambda _identity: calls.append(("reset", "")) or {"phase": "RESET", "status": "FAULTS_RESET"},
     )
     reward_fn = OnlineRewardFunction(
         [_row()],
@@ -767,11 +810,26 @@ def test_reset_failure_is_infrastructure_invalid_even_when_handler_succeeds(
         "training.grpo.cluster_healthy",
         lambda _identity, **_kwargs: (True, {}),
     )
-    monkeypatch.setattr("training.grpo.apply_fault", lambda *_: {})
-    monkeypatch.setattr("training.grpo.fault_established", lambda *_: {})
-    def fail_reset(_identity):
+    monkeypatch.setattr(
+        "training.grpo.detect_active_chaos_resources",
+        lambda _identity: [],
+    )
+    monkeypatch.setattr(
+        "training.grpo.build_scenario_fault_plan",
+        lambda scenario_id, **_kwargs: ScenarioFaultPlan(
+            scenario_id=scenario_id,
+            tier="single_fault",
+            manifest_path="bench/chaos_manifests/single_fault/sf-002.yaml",
+            manifest_sha256="a" * 64,
+            resources=(),
+        ),
+    )
+    monkeypatch.setattr("training.grpo.apply_fault", lambda *_, **__: {})
+    monkeypatch.setattr("training.grpo.fault_established", lambda *_, **__: {})
+    def fail_cleanup(_identity, _plan=None):
         raise InfrastructureInvalid("fault_reset_failed")
-    monkeypatch.setattr("training.grpo.reset_faults", fail_reset)
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", fail_cleanup)
+    monkeypatch.setattr("training.grpo.reset_faults", fail_cleanup)
     reward_fn = OnlineRewardFunction(
         [_row()],
         identity,
@@ -805,9 +863,24 @@ def test_harness_error_is_not_scored_as_policy_reward(
         "training.grpo.cluster_healthy",
         lambda _identity, **_kwargs: (True, {}),
     )
-    monkeypatch.setattr("training.grpo.apply_fault", lambda *_: {})
-    monkeypatch.setattr("training.grpo.fault_established", lambda *_: {})
-    monkeypatch.setattr("training.grpo.reset_faults", lambda *_: {})
+    monkeypatch.setattr(
+        "training.grpo.detect_active_chaos_resources",
+        lambda _identity: [],
+    )
+    monkeypatch.setattr(
+        "training.grpo.build_scenario_fault_plan",
+        lambda scenario_id, **_kwargs: ScenarioFaultPlan(
+            scenario_id=scenario_id,
+            tier="single_fault",
+            manifest_path="bench/chaos_manifests/single_fault/sf-002.yaml",
+            manifest_sha256="a" * 64,
+            resources=(),
+        ),
+    )
+    monkeypatch.setattr("training.grpo.apply_fault", lambda *_, **__: {})
+    monkeypatch.setattr("training.grpo.fault_established", lambda *_, **__: {})
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", lambda *_, **__: {})
+    monkeypatch.setattr("training.grpo.reset_faults", lambda *_, **__: {})
     reward_fn = OnlineRewardFunction(
         [_row()],
         identity,
@@ -902,7 +975,7 @@ def test_reward_callback_scores_each_completion_with_its_paired_row(
         stage9_group_id=[first["stage9_group_id"], second["stage9_group_id"]],
     )
 
-    assert rewards == pytest.approx([0.08, 0.08])
+    assert rewards == pytest.approx([0.0, 0.0])
     assert [group for group, _ in seen] == [
         first["stage9_group_id"],
         second["stage9_group_id"],
@@ -1121,3 +1194,542 @@ def test_adapter_only_checkpoint_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="adapter_only_checkpoint_rejected"):
         validate_sft_checkpoint(checkpoint)
+
+
+# ── Final Causal-Runtime Regression Tests ─────────────────────────────────────
+
+def test_trl_training_record_conversion_contract() -> None:
+    """Requirement 1: build_trl_training_record converts row to exact TRL dataset record."""
+    row = _row("single_fault/sf-900", "replay-trl")
+    record = build_trl_training_record(row)
+
+    assert "prompt" in record
+    assert record["prompt"] == row["model_visible_prompt"]
+    assert record["prompt_sha256"] == row["prompt_sha256"]
+    assert record["prompt_sha256"] == hashlib.sha256(record["prompt"].encode("utf-8")).hexdigest()
+    assert record["provenance_hash"] == row["provenance_hash"]
+    assert record["role"] == "remediation"
+    assert record["row_id"] == row["row_id"]
+    assert record["stage9_group_id"] == row["stage9_group_id"]
+    assert record["hidden_metadata"] == row["hidden_metadata"]
+
+    # Reward pairing succeeds with exact record
+    prompts = [record["prompt"]]
+    metadata = {
+        "hidden_metadata": [record["hidden_metadata"]],
+        "prompt_sha256": [record["prompt_sha256"]],
+        "provenance_hash": [record["provenance_hash"]],
+        "role": [record["role"]],
+        "row_id": [record["row_id"]],
+        "stage9_group_id": [record["stage9_group_id"]],
+    }
+    rows_by_group = {row["stage9_group_id"]: row}
+    paired = validate_reward_pairing(
+        prompts,
+        ['{"name":"promql_query","arguments":{}}'],
+        metadata,
+        rows_by_group,
+        ENVIRONMENT,
+    )
+    assert paired == [row]
+
+    # Tampering with prompt invalidates pairing immediately
+    with pytest.raises(RuntimeError, match="prompt_metadata_mismatch"):
+        validate_reward_pairing(
+            ["tampered prompt"],
+            ['{"name":"promql_query","arguments":{}}'],
+            metadata,
+            rows_by_group,
+            ENVIRONMENT,
+        )
+
+
+def test_ordered_fault_lifecycle_event_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement 2: FAULT_APPLIED < FAULT_ESTABLISHED < POLICY_EXECUTION < VERIFIER_COMPLETED < RESET < POST_RESET_HEALTHY."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "replay-order")
+    event_sequence: list[str] = []
+
+    async def mock_handle_incident(*_args, **_kwargs):
+        event_sequence.append("HANDLE_INCIDENT_CALLED")
+        return {
+            "agent_claimed_resolved": True,
+            "comms": {},
+            "diagnosis": {},
+            "env_resolved": True,
+            "remediation": {
+                "final": {
+                    "executed_actions": [{
+                        "args": {"kind": "StressChaos", "name": "sf-002-paymentservice-cpu", "namespace": "chaos-mesh"},
+                        "output": {"success": True},
+                        "success": True,
+                        "tool": "chaos_stop_experiment",
+                    }],
+                    "mode": "policy_rollout",
+                    "policy_action_admitted": True,
+                    "policy_action_identity_match": True,
+                    "policy_completion_valid": True,
+                }
+            },
+            "triage": {},
+            "verification": {"env_resolved": True},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident)
+    monkeypatch.setattr(
+        "training.grpo.verify_kubernetes_environment",
+        lambda _identity: {"fingerprint": {}, "status": "CONTEXT_VERIFIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cluster_healthy",
+        lambda _identity, **_kwargs: (True, {"ready_deployments": 12}),
+    )
+    monkeypatch.setattr(
+        "training.grpo.detect_active_chaos_resources",
+        lambda _identity: [],
+    )
+    monkeypatch.setattr(
+        "training.grpo.apply_fault",
+        lambda _identity, scenario_id, **_kwargs: {"manifest": "manifest.yaml", "phase": "FAULT_APPLIED", "status": "FAULT_APPLIED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.fault_established",
+        lambda _identity, scenario_id, **_kwargs: {"effect_status": "FAULT_EFFECT_CONFIRMED", "injection_status": "INJECTION_RESOURCE_PRESENT", "phase": "FAULT_ESTABLISHED", "status": "FAULT_ESTABLISHED"},
+    )
+    monkeypatch.setattr(
+        "training.grpo.cleanup_scenario_faults",
+        lambda _identity, _plan: {"cleaned_resources": [], "phase": "RESET", "status": "RESET"},
+    )
+
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="c" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    result = asyncio.run(reward_fn._score_paired_rollout(row, _policy_completion()))
+    lifecycle = result["lifecycle"]
+    phases = [entry["phase"] for entry in lifecycle]
+
+    idx_applied = phases.index("FAULT_APPLIED")
+    idx_established = phases.index("FAULT_ESTABLISHED")
+    idx_policy = phases.index("POLICY_EXECUTION")
+    idx_verifier = phases.index("VERIFIER_COMPLETED")
+    idx_reset = phases.index("RESET")
+    idx_post_healthy = phases.index("POST_RESET_HEALTHY")
+
+    assert idx_applied < idx_established < idx_policy < idx_verifier < idx_reset < idx_post_healthy
+    assert result["episode"]["env_resolved"] is True
+
+
+def test_manifest_derived_fault_plan_fixtures() -> None:
+    """Requirement 3: Deterministic fault plans for single_fault/sf-002 and multi_fault/mf-001."""
+    plan_sf002 = build_scenario_fault_plan("single_fault/sf-002")
+    assert plan_sf002.scenario_id == "single_fault/sf-002"
+    assert plan_sf002.tier == "single_fault"
+    assert len(plan_sf002.resources) == 1
+    r_sf = plan_sf002.resources[0]
+    assert r_sf.kind == "StressChaos"
+    assert r_sf.name == "sf-002-paymentservice-cpu"
+    assert r_sf.namespace == "chaos-mesh"
+    assert r_sf.scenario_label == "sf-002"
+
+    plan_mf001 = build_scenario_fault_plan("multi_fault/mf-001")
+    assert plan_mf001.scenario_id == "multi_fault/mf-001"
+    assert plan_mf001.tier == "multi_fault"
+    assert len(plan_mf001.resources) == 2
+
+    resource_names = {(r.kind, r.name, r.scenario_label) for r in plan_mf001.resources}
+    assert ("NetworkChaos", "mf-001-frontend-loss", "mf-001") in resource_names
+    assert ("StressChaos", "mf-001-checkout-cpu", "mf-001") in resource_names
+
+    # Non-chaos mutating manifest (e.g. ArgoCD Application / Deployment) fails closed
+    with pytest.raises(ValueError, match="unsupported_scenario_document_for_stage9"):
+        build_scenario_fault_plan("named_replays/hist-aws-s3-2017")
+
+
+def test_fault_establishment_requires_all_multi_fault_resources() -> None:
+    """Requirement 3 & 5: Multi-fault verification fails if any expected resource is absent."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    plan_mf001 = build_scenario_fault_plan("multi_fault/mf-001")
+
+    # Mock cluster returning only 1 of 2 resources
+    mock_active = [
+        {
+            "kind": "NetworkChaos",
+            "labels": {"scenario": "mf-001"},
+            "name": "mf-001-frontend-loss",
+            "namespace": "chaos-mesh",
+        }
+    ]
+
+    original_detect = fault_established.__globals__["detect_active_chaos_resources"]
+    fault_established.__globals__["detect_active_chaos_resources"] = lambda _id: mock_active
+    try:
+        with pytest.raises(InfrastructureInvalid, match="fault_not_objectively_established.*StressChaos/mf-001-checkout-cpu"):
+            fault_established(identity, "multi_fault/mf-001", fault_plan=plan_mf001)
+
+        # Both present succeeds
+        mock_active.append({
+            "kind": "StressChaos",
+            "labels": {"scenario": "mf-001"},
+            "name": "mf-001-checkout-cpu",
+            "namespace": "chaos-mesh",
+        })
+        res = fault_established(identity, "multi_fault/mf-001", fault_plan=plan_mf001)
+        assert res["status"] == "FAULT_ESTABLISHED"
+        assert res["matching_resources"] == 2
+        assert res["injection_status"] == "INJECTION_RESOURCE_PRESENT"
+    finally:
+        fault_established.__globals__["detect_active_chaos_resources"] = original_detect
+
+
+def test_scoped_cleanup_deletes_only_current_rollout_faults() -> None:
+    """Requirement 4: Cleanup deletes ONLY scenario resources and verifies they are gone."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    plan = build_scenario_fault_plan("single_fault/sf-002")
+    deleted_commands = []
+
+    # Mock active state: has sf-002 and an unrelated experiment
+    active_cluster = [
+        {"kind": "StressChaos", "name": "sf-002-paymentservice-cpu", "namespace": "chaos-mesh"},
+        {"kind": "PodChaos", "name": "unrelated-experiment", "namespace": "chaos-mesh"},
+    ]
+
+    def mock_run_kubectl(_id, args, **_kwargs):
+        deleted_commands.append(args)
+        if args[0] == "delete" and args[2] == "sf-002-paymentservice-cpu":
+            active_cluster.remove(active_cluster[0])
+        return {"returncode": 0, "stderr": "", "stdout": "deleted", "success": True}
+
+    original_run = cleanup_scenario_faults.__globals__["_run_kubectl"]
+    original_detect = cleanup_scenario_faults.__globals__["detect_active_chaos_resources"]
+    cleanup_scenario_faults.__globals__["_run_kubectl"] = mock_run_kubectl
+    cleanup_scenario_faults.__globals__["detect_active_chaos_resources"] = lambda _id: list(active_cluster)
+    try:
+        result = cleanup_scenario_faults(identity, plan)
+        assert result["status"] == "RESET"
+        assert len(result["cleaned_resources"]) == 1
+        assert result["cleaned_resources"][0]["name"] == "sf-002-paymentservice-cpu"
+        # Unrelated experiment is untouched
+        assert len(active_cluster) == 1
+        assert active_cluster[0]["name"] == "unrelated-experiment"
+    finally:
+        cleanup_scenario_faults.__globals__["_run_kubectl"] = original_run
+        cleanup_scenario_faults.__globals__["detect_active_chaos_resources"] = original_detect
+
+
+def test_preexisting_chaos_resources_fail_closed_before_rollout() -> None:
+    """Requirement 4: Detect unexpected active Chaos before rollout and fail closed."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "replay-pre")
+
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=1,
+        dataset_sha256="a" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+    )
+
+    original_detect = detect_active_chaos_resources
+    try:
+        OnlineRewardFunction._score_paired_rollout.__globals__["detect_active_chaos_resources"] = (
+            lambda _id: [{"kind": "PodChaos", "name": "stray-chaos", "namespace": "chaos-mesh"}]
+        )
+        OnlineRewardFunction._score_paired_rollout.__globals__["verify_kubernetes_environment"] = (
+            lambda _id: {"status": "CONTEXT_VERIFIED"}
+        )
+        OnlineRewardFunction._score_paired_rollout.__globals__["cluster_healthy"] = (
+            lambda _id, **_kwargs: (True, {"ready_deployments": 12})
+        )
+
+        with pytest.raises(InfrastructureInvalid, match="preexisting_chaos_resources_detected"):
+            asyncio.run(reward_fn._score_paired_rollout(row, _policy_completion()))
+    finally:
+        OnlineRewardFunction._score_paired_rollout.__globals__["detect_active_chaos_resources"] = original_detect
+
+
+def test_distinguish_injection_present_from_fault_effect_confirmed() -> None:
+    """Requirement 5: Distinguish INJECTION_RESOURCE_PRESENT from FAULT_EFFECT_CONFIRMED."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    plan = build_scenario_fault_plan("single_fault/sf-002")
+
+    mock_active = [{
+        "kind": "StressChaos",
+        "labels": {"scenario": "sf-002"},
+        "name": "sf-002-paymentservice-cpu",
+        "namespace": "chaos-mesh",
+    }]
+
+    original_detect = fault_established.__globals__["detect_active_chaos_resources"]
+    fault_established.__globals__["detect_active_chaos_resources"] = lambda _id: mock_active
+    try:
+        # 1. Without predicate: returns INJECTION_RESOURCE_PRESENT
+        res = fault_established(identity, "single_fault/sf-002", fault_plan=plan)
+        assert res["injection_status"] == "INJECTION_RESOURCE_PRESENT"
+        assert res["effect_status"] == "INJECTION_RESOURCE_PRESENT_ONLY"
+
+        # 2. With passing predicate: returns FAULT_EFFECT_CONFIRMED
+        def passing_pred(_id, _sc):
+            return True, {"cpu_percent": 92.5}
+
+        res_passing = fault_established(
+            identity,
+            "single_fault/sf-002",
+            fault_plan=plan,
+            fault_effect_predicate=passing_pred,
+        )
+        assert res_passing["effect_status"] == "FAULT_EFFECT_CONFIRMED"
+
+        # 3. With failing predicate: raises InfrastructureInvalid
+        def failing_pred(_id, _sc):
+            return False, {"cpu_percent": 5.0}
+
+        with pytest.raises(InfrastructureInvalid, match="fault_effect_not_confirmed"):
+            fault_established(
+                identity,
+                "single_fault/sf-002",
+                fault_plan=plan,
+                fault_effect_predicate=failing_pred,
+            )
+
+        # 4. With require_effect_confirmation=True but missing predicate: fails closed
+        with pytest.raises(InfrastructureInvalid, match="fault_effect_predicate_missing"):
+            fault_established(
+                identity,
+                "single_fault/sf-002",
+                fault_plan=plan,
+                require_effect_confirmation=True,
+            )
+    finally:
+        fault_established.__globals__["detect_active_chaos_resources"] = original_detect
+
+
+def test_hidden_identity_leak_rejection_across_entire_model_visible_payload() -> None:
+    """Requirement 6: Complete final model-visible payload rejects hidden keys and scenario aliases."""
+    scenario_id = "single_fault/sf-002"
+
+    # 1. Leak into diagnosis.root_cause
+    obs1 = _observation(scenario_id)
+    obs1["diagnosis"]["root_cause"] = "Fault in sf-002 paymentservice"
+    with pytest.raises(ValueError, match="hidden_scenario_value_leak"):
+        build_remediation_policy_prompt(obs1, scenario_id=scenario_id)
+
+    # 2. Leak into diagnosis evidence
+    obs2 = _observation(scenario_id)
+    obs2["diagnosis"]["evidence"] = ["Checked single_fault/sf-002 logs"]
+    with pytest.raises(ValueError, match="hidden_scenario_value_leak"):
+        build_remediation_policy_prompt(obs2, scenario_id=scenario_id)
+
+    # 3. Leak into incident_id
+    obs3 = _observation(scenario_id)
+    obs3["incident_id"] = "inc-sf-002-alert"
+    with pytest.raises(ValueError, match="hidden_scenario_value_leak"):
+        build_remediation_policy_prompt(obs3, scenario_id=scenario_id)
+
+    # 4. Leak into nested recommended actions
+    obs4 = _observation(scenario_id)
+    obs4["recommendations"] = [{"name": "chaos_stop", "target": "sf-002"}]
+    with pytest.raises(ValueError, match="hidden_scenario_value_leak"):
+        build_remediation_policy_prompt(obs4, scenario_id=scenario_id)
+
+    # 5. Hidden orchestration keys rejected
+    for key in ("scenario_id", "replay_id", "split_hash", "split_eligibility"):
+        obs_key = _observation(scenario_id)
+        obs_key["triage"][key] = "leak"
+        with pytest.raises(ValueError, match="hidden_scenario_leak"):
+            build_remediation_policy_prompt(obs_key, scenario_id=scenario_id)
+
+    # 6. Legitimate words in prose do not fail
+    obs_valid = _observation(scenario_id)
+    obs_valid["diagnosis"]["root_cause"] = "High CPU saturation in service container"
+    prompt = build_remediation_policy_prompt(obs_valid, scenario_id=scenario_id)
+    assert "High CPU saturation" in prompt
+
+
+def test_zero_mutation_success_dense_credit_and_safe_reward_attribution() -> None:
+    """Requirement 7: No reward for ungrounded mutation success, partial outcome, or read-only action."""
+    # 1. Successful unrelated mutation + env unresolved => 0.0 reward
+    unrelated_mutation = {
+        "args": {"kind": "StressChaos", "name": "unrelated", "namespace": "chaos-mesh"},
+        "output": {"success": True},
+        "success": True,
+        "tool": "chaos_stop_experiment",
+    }
+    ep1 = {
+        "env_resolved": False,
+        "outcome": "unresolved",
+        "remediation": {
+            "final": {
+                "executed_actions": [unrelated_mutation],
+                "mode": "policy_rollout",
+                "policy_action_admitted": True,
+                "policy_action_identity_match": True,
+                "policy_completion_valid": True,
+            }
+        },
+    }
+    b1 = compute_reward_breakdown(ep1)
+    assert b1["components"]["dense_policy_action"] == 0.0
+    assert b1["components"]["resolution"] == 0.0
+    assert b1["total"] == 0.0
+
+    # 2. Model prose outcome="partial" + env unresolved => 0.0 reward (no positive partial reward)
+    ep2 = {**ep1, "outcome": "partial"}
+    b2 = compute_reward_breakdown(ep2)
+    assert b2["components"]["partial_progress"] == 0.0
+    assert b2["total"] == 0.0
+
+    # 3. Successful read-only action => 0.0 reward
+    readonly_action = {
+        "args": {"query": "rate(http_requests_total[1m])"},
+        "output": {"success": True},
+        "success": True,
+        "tool": "promql_query",
+    }
+    ep3 = {
+        "env_resolved": False,
+        "outcome": "unresolved",
+        "remediation": {
+            "final": {
+                "executed_actions": [readonly_action],
+                "mode": "policy_rollout",
+                "policy_action_admitted": True,
+                "policy_action_identity_match": True,
+                "policy_completion_valid": True,
+            }
+        },
+    }
+    assert compute_reward(ep3) == 0.0
+
+    # 4. Verified recovery attributable to exact policy mutation => 0.85 resolution reward
+    ep4 = {
+        "agent_claimed_resolved": True,
+        "env_resolved": True,
+        "outcome": "resolved",
+        "remediation": {
+            "final": {
+                "executed_actions": [unrelated_mutation],
+                "mode": "policy_rollout",
+                "policy_action_admitted": True,
+                "policy_action_identity_match": True,
+                "policy_completion_valid": True,
+            }
+        },
+    }
+    b4 = compute_reward_breakdown(ep4)
+    assert b4["components"]["resolution"] == 0.85
+    assert b4["total"] == 0.85
+
+
+def test_observed_cluster_fingerprint_and_resume_identity_rejection() -> None:
+    """Requirement 8: Fingerprint cluster instance UID and reject resume on different cluster."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+
+    mock_outputs = {
+        "get namespace kube-system": json.dumps({"metadata": {"uid": "uid-cluster-alpha-12345"}}),
+        "version": json.dumps({"serverVersion": {"gitVersion": "v1.31.2"}}),
+        "config view": json.dumps({"clusters": [{"cluster": {"server": "https://127.0.0.1:51234"}}]}),
+    }
+
+    def mock_run(_id, args, **_kwargs):
+        for pattern, out in mock_outputs.items():
+            if all(p in args for p in pattern.split()):
+                return {"returncode": 0, "stderr": "", "stdout": out, "success": True}
+        return {"returncode": 0, "stderr": "", "stdout": "kind-atlasops-local", "success": True}
+
+    original_run = observe_cluster_fingerprint.__globals__["_run_kubectl"]
+    observe_cluster_fingerprint.__globals__["_run_kubectl"] = mock_run
+    try:
+        fingerprint = observe_cluster_fingerprint(identity)
+        assert fingerprint["cluster_uid"] == "uid-cluster-alpha-12345"
+        assert fingerprint["server_version"] == "v1.31.2"
+        assert fingerprint["api_server_endpoint"] == "https://127.0.0.1:51234"
+
+        # Resume validation on same cluster succeeds
+        manifest_prev = {
+            "code_commit": "a" * 40,
+            "contracts": {},
+            "curriculum_seed": 42,
+            "dataset": {},
+            "dependency_versions": {},
+            "environment_identity": identity.to_dict(),
+            "environment_observed": {
+                "fingerprint": fingerprint,
+                "identity": identity.to_dict(),
+                "status": "CONTEXT_VERIFIED",
+            },
+            "hyperparameters": {},
+            "model_path": "model",
+            "sft_manifest": {},
+        }
+        manifest_curr = dict(manifest_prev)
+        validate_resume_identity(manifest_prev, manifest_curr)
+
+        # Resume on recreated cluster with different UID fails closed
+        diff_fingerprint = dict(fingerprint, cluster_uid="uid-cluster-beta-recreated")
+        manifest_diff = dict(manifest_prev, environment_observed={
+            "fingerprint": diff_fingerprint,
+            "identity": identity.to_dict(),
+            "status": "CONTEXT_VERIFIED",
+        })
+        with pytest.raises(RuntimeError, match=r"incompatible_resume_identity:\['environment_observed'\]"):
+            validate_resume_identity(manifest_prev, manifest_diff)
+    finally:
+        observe_cluster_fingerprint.__globals__["_run_kubectl"] = original_run
+
+
+def test_pure_preflight_assembly_boundary(tmp_path: Path) -> None:
+    """Requirement 9: Assemble full chain offline without model or k8s."""
+    row = _row("single_fault/sf-002", "replay-preflight")
+
+    # 1. TRL record conversion
+    trl_record = build_trl_training_record(row)
+    assert trl_record["prompt"] == row["model_visible_prompt"]
+
+    # 2. Reward pairing validation
+    paired = validate_reward_pairing(
+        [trl_record["prompt"]],
+        ['{"name":"promql_query","arguments":{}}'],
+        {
+            "hidden_metadata": [trl_record["hidden_metadata"]],
+            "prompt_sha256": [trl_record["prompt_sha256"]],
+            "provenance_hash": [trl_record["provenance_hash"]],
+            "role": [trl_record["role"]],
+            "row_id": [trl_record["row_id"]],
+            "stage9_group_id": [trl_record["stage9_group_id"]],
+        },
+        {row["stage9_group_id"]: row},
+        ENVIRONMENT,
+    )
+    assert len(paired) == 1
+
+    # 3. Reward function setup
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="a" * 64,
+        episodes_path=tmp_path / "episodes.jsonl",
+    )
+    assert len(reward_fn.rows) == 1
+
+    # 4. Scenario fault plan construction
+    fault_plan = build_scenario_fault_plan("single_fault/sf-002")
+    assert len(fault_plan.resources) == 1
+    assert fault_plan.resources[0].name == "sf-002-paymentservice-cpu"
+
+    # 5. Training rows loading & validation
+    dataset_file = tmp_path / "train.jsonl"
+    dataset_file.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    loaded_rows = load_remediation_training_rows(dataset_file)
+    assert len(loaded_rows) == 1

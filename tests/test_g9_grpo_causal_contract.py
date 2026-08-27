@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -196,7 +195,7 @@ def test_reward_resolution_requires_verifier_and_attributed_policy_action() -> N
         "remediation": {"final": {"mode": "manual", "executed_actions": []}},
     }
 
-    assert compute_reward(attributed_episode) == pytest.approx(0.93)
+    assert compute_reward(attributed_episode) == pytest.approx(0.85)
     assert compute_reward(unattributed) == 0.0
 
 

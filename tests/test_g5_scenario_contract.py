@@ -420,3 +420,58 @@ def test_evaluation_falls_back_only_before_split_activation(monkeypatch):
 
     assert scenarios == ["cascade/cs-001"]
     assert consumer == "evaluation_subset"
+
+
+def test_curriculum_manager_fails_closed_on_empty_pool():
+    from config.runtime import CurriculumManager
+
+    cm = CurriculumManager()
+    with pytest.raises(ValueError, match="fail-closed"):
+        cm.next_scenario([])
+
+
+def test_curriculum_manager_selects_from_provided_pool():
+    from config.runtime import CurriculumManager
+
+    cm = CurriculumManager()
+    pool = [("single_fault/sf-001", "single_fault"), ("single_fault/sf-002", "single_fault")]
+    sid, tier = cm.next_scenario(pool)
+    assert (sid, tier) in pool
+    assert tier == "single_fault"
+
+    cm.record(sid, resolved=True, reward=0.95)
+    stats = cm.stats()
+    assert stats["total_episodes"] == 1
+    assert stats["scenarios_tried"] == 1
+
+
+def test_role_based_consumer_assertions_with_active_split(monkeypatch):
+    mock_split = {
+        "splits": {
+            "train": ["single_fault/sf-001", "single_fault/sf-002"],
+            "validation": ["single_fault/sf-003"],
+            "final_test": ["single_fault/sf-004"],
+        }
+    }
+    monkeypatch.setattr(contract, "load_active_split", lambda repo_root=contract.REPO_ROOT: mock_split)
+
+    # Train consumers: sft, grpo, rs_tuning, train
+    for role in ("sft", "grpo", "rs_tuning", "train"):
+        assert contract.assert_consumer_may_use_scenario(role, "single_fault/sf-001") is None
+        assert contract.assert_consumer_may_use_scenario(role, "single_fault/sf-002") is None
+        with pytest.raises(ValueError, match="outside active"):
+            contract.assert_consumer_may_use_scenario(role, "single_fault/sf-003")
+
+    # Validation consumer
+    assert contract.assert_consumer_may_use_scenario("validation", "single_fault/sf-003") is None
+    with pytest.raises(ValueError, match="outside active"):
+        contract.assert_consumer_may_use_scenario("validation", "single_fault/sf-001")
+
+    # Final test consumer
+    assert contract.assert_consumer_may_use_scenario("final_test", "single_fault/sf-004") is None
+    with pytest.raises(ValueError, match="outside active"):
+        contract.assert_consumer_may_use_scenario("final_test", "single_fault/sf-001")
+
+    # Unknown consumer
+    with pytest.raises(ValueError, match="unknown canonical scenario consumer"):
+        contract.assert_consumer_may_use_scenario("invalid_role", "single_fault/sf-001")

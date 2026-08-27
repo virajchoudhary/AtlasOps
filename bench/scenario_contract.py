@@ -59,6 +59,7 @@ _DERIVED_CONTRACT_ARTIFACT_PATHS = {
     "bench/g5/split.frozen.json",
 }
 ROLE_IDS_KEY = {
+    "train": "train",
     "sft": "train",
     "grpo": "train",
     "rs_tuning": "train",

@@ -284,7 +284,7 @@ class CurriculumManager:
         deterministic (avoids overfitting to the argmax scenario).
         """
         if not pool:
-            pool = [(s, s.split("/")[0]) for s in FROZEN_SCENARIOS]
+            raise ValueError("CurriculumManager: candidate pool must not be empty (fail-closed)")
 
         scored = sorted(
             ((self._priority_score(sid), sid, tier) for sid, tier in pool),

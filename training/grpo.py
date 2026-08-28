@@ -411,7 +411,7 @@ def fault_established(
             raise InfrastructureInvalid(f"fault_effect_not_confirmed:{scenario_id}:{details}")
     elif require_effect_confirmation:
         raise InfrastructureInvalid(
-            f"fault_effect_predicate_missing:{scenario_id}; G5 canonical degradation predicate required"
+            f"STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND:{scenario_id}; canonical G5 degradation predicate required"
         )
     else:
         effect_status = "INJECTION_RESOURCE_PRESENT_ONLY"
@@ -423,6 +423,55 @@ def fault_established(
         "phase": "FAULT_ESTABLISHED",
         "status": "FAULT_ESTABLISHED",
     }
+
+
+def resolve_scenario_fault_effect_predicate(
+    scenario_id: str,
+    *,
+    custom_bindings: dict[str, Any] | None = None,
+) -> Any:
+    """Resolve an objective canonical degradation predicate for a scenario.
+
+    Fails closed if the canonical G5 fault-effect contract is unbound.
+    """
+    if custom_bindings is not None:
+        if scenario_id not in custom_bindings:
+            raise InfrastructureInvalid(f"unknown_scenario_fault_effect_binding:{scenario_id}")
+        predicate = custom_bindings[scenario_id]
+        if not callable(predicate):
+            raise InfrastructureInvalid(f"invalid_scenario_fault_effect_predicate:{scenario_id}")
+        return predicate
+
+    # Canonical upstream G5 degradation predicate contract is currently unbound
+    raise InfrastructureInvalid(
+        f"STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND:{scenario_id}; canonical G5 "
+        "degradation predicate binding required before real execution"
+    )
+
+
+def validate_fault_effect_predicate_bindings(
+    rows: list[dict[str, Any]],
+    *,
+    custom_bindings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preflight validate that every scenario in the training set has a valid degradation predicate.
+
+    Fails closed before model loading, trainer construction, or cluster mutation.
+    """
+    resolved_predicates: dict[str, Any] = {}
+    for row in rows:
+        scenario_id = (
+            row.get("hidden_metadata", {}).get("scenario_id")
+            or row.get("scenario_id")
+        )
+        if not scenario_id:
+            raise InfrastructureInvalid("missing_scenario_id_in_training_row")
+        if scenario_id not in resolved_predicates:
+            resolved_predicates[scenario_id] = resolve_scenario_fault_effect_predicate(
+                scenario_id,
+                custom_bindings=custom_bindings,
+            )
+    return resolved_predicates
 
 
 def cleanup_scenario_faults(
@@ -483,17 +532,86 @@ def reset_faults(identity: EnvironmentIdentity) -> dict[str, Any]:
     return {"phase": "RESET", "status": "FAULTS_RESET"}
 
 
+def extract_policy_action_record(final: dict[str, Any]) -> dict[str, Any]:
+    """Extract canonical policy action record for evidence and attribution.
+
+    Guarantees that pre-cleanup evidence and reward attribution share the exact
+    same action identity, tool, arguments, and execution semantics.
+    """
+    if not isinstance(final, dict):
+        return {
+            "canonical_action_hash": None,
+            "executed_action": None,
+            "executed_arguments": None,
+            "executed_tool": None,
+            "outcome": "unknown",
+            "parsed_action": None,
+            "policy_action_admitted": False,
+            "policy_action_identity_match": False,
+            "policy_completion_valid": False,
+            "policy_denial_reason": "missing_final_remediation",
+            "success": False,
+        }
+
+    parsed = final.get("policy_parsed_action")
+    executed_action_meta = final.get("policy_executed_action")
+    executed_list = final.get("executed_actions")
+    executed_item = (
+        executed_list[0]
+        if isinstance(executed_list, list) and len(executed_list) == 1 and isinstance(executed_list[0], dict)
+        else None
+    )
+    admitted = bool(final.get("policy_action_admitted") is True)
+    identity_match = bool(final.get("policy_action_identity_match") is True)
+    valid_completion = bool(final.get("policy_completion_valid") is True)
+
+    canonical_hash = None
+    if executed_action_meta and isinstance(executed_action_meta, dict):
+        canonical_hash = executed_action_meta.get("sha256")
+    elif parsed and isinstance(parsed, dict):
+        canonical_hash = parsed.get("sha256")
+
+    # If unadmitted, do not fabricate executed action identity
+    executed_tool = executed_item.get("tool") if (admitted and executed_item) else None
+    executed_args = executed_item.get("args") if (admitted and executed_item) else None
+    success = bool(executed_item.get("success") is True) if (admitted and executed_item) else False
+
+    executed_action_record = (
+        {
+            "arguments": executed_args,
+            "sha256": canonical_hash,
+            "tool": executed_tool,
+        }
+        if (admitted and executed_tool is not None)
+        else None
+    )
+
+    return {
+        "canonical_action_hash": canonical_hash if admitted else None,
+        "executed_action": executed_action_record,
+        "executed_arguments": executed_args,
+        "executed_tool": executed_tool,
+        "outcome": final.get("outcome", "unknown"),
+        "parsed_action": parsed,
+        "policy_action_admitted": admitted,
+        "policy_action_identity_match": identity_match,
+        "policy_completion_valid": valid_completion,
+        "policy_denial_reason": final.get("policy_denial_reason"),
+        "success": success,
+    }
+
+
 def _policy_owned_action(final: dict[str, Any]) -> dict[str, Any] | None:
-    executed = final.get("executed_actions")
-    if (
-        final.get("mode") != "policy_rollout"
-        or final.get("policy_completion_valid") is not True
-        or final.get("policy_action_identity_match") is not True
-        or final.get("policy_action_admitted") is not True
-        or not isinstance(executed, list)
-        or len(executed) != 1
-        or not isinstance(executed[0], dict)
+    rec = extract_policy_action_record(final)
+    if not (
+        final.get("mode") == "policy_rollout"
+        and rec["policy_completion_valid"]
+        and rec["policy_action_identity_match"]
+        and rec["policy_action_admitted"]
     ):
+        return None
+    executed = final.get("executed_actions")
+    if not (isinstance(executed, list) and len(executed) == 1 and isinstance(executed[0], dict)):
         return None
     return executed[0]
 
@@ -748,11 +866,18 @@ class OnlineRewardFunction:
             await asyncio.sleep(self.fault_settle_seconds)
 
             # 6. Objectively establish exact scenario fault with mandatory effect confirmation
+            predicate = (
+                self.fault_effect_predicate
+                if callable(self.fault_effect_predicate)
+                else (self.fault_effect_predicate or {}).get(scenario_id)
+                if isinstance(self.fault_effect_predicate, dict)
+                else None
+            )
             established_record = fault_established(
                 self.environment,
                 scenario_id,
                 fault_plan=fault_plan,
-                fault_effect_predicate=self.fault_effect_predicate,
+                fault_effect_predicate=predicate,
                 require_effect_confirmation=self.require_effect_confirmation,
             )
             lifecycle.append(established_record)
@@ -867,20 +992,32 @@ class OnlineRewardFunction:
         remediation = incident.get("remediation", {}).get("final", {}) if incident else {}
         env_resolved = bool(incident.get("env_resolved") is True) if incident else False
         agent_claimed_resolved = bool(incident.get("agent_claimed_resolved")) if incident else False
+        policy_action_record = extract_policy_action_record(remediation)
         record = {
             "agent_claimed_resolved": agent_claimed_resolved,
+            "canonical_action_hash": policy_action_record["canonical_action_hash"],
             "cleanup_status": "pending",
             "env_resolved": env_resolved,
             "event_id": uuid.uuid4().hex,
             "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
             "hidden_metadata": row["hidden_metadata"],
             "lifecycle": [dict(entry) for entry in lifecycle],
-            "policy_action": remediation.get("action") or remediation.get("tool_call") or {},
-            "policy_action_outcome": remediation.get("outcome", "unknown"),
+            "policy_action": (
+                policy_action_record["executed_action"]
+                or policy_action_record["parsed_action"]
+                or {}
+            ),
+            "policy_action_admitted": policy_action_record["policy_action_admitted"],
+            "policy_action_identity_match": policy_action_record["policy_action_identity_match"],
+            "policy_action_outcome": policy_action_record["outcome"],
+            "policy_action_record": policy_action_record,
             "policy_completion": completion,
             "policy_completion_sha256": hashlib.sha256(
                 completion.encode("utf-8")
             ).hexdigest(),
+            "policy_completion_valid": policy_action_record["policy_completion_valid"],
+            "policy_executed_action": policy_action_record["executed_action"],
+            "policy_parsed_action": policy_action_record["parsed_action"],
             "prompt_sha256": row["prompt_sha256"],
             "rollout_index": rollout_index,
             "row_id": row["row_id"],
@@ -932,10 +1069,12 @@ class OnlineRewardFunction:
             stream.write(json.dumps(record, sort_keys=True) + "\n")
 
     def validate_existing_episode_log(self) -> int:
-        """Fail closed on corrupt or ambiguous prior evidence before resume."""
+        """Fail closed on corrupt, ambiguous, dangling, or illegal state transitions before resume."""
         if not self.episodes_path or not self.episodes_path.is_file():
             return 0
         seen_events: set[str] = set()
+        open_verdicts: dict[tuple[str, str, int, str], dict[str, Any]] = {}
+        finalized_rollouts: set[tuple[str, str, int, str]] = set()
         count = 0
         with self.episodes_path.open("r", encoding="utf-8") as stream:
             for line_number, line in enumerate(stream, 1):
@@ -957,20 +1096,79 @@ class OnlineRewardFunction:
                     raise RuntimeError(
                         f"episode_evidence_fields_missing:{line_number}:{','.join(missing)}"
                     )
-                if record["status"] not in EPISODE_STATUSES:
+                status = record["status"]
+                if status not in EPISODE_STATUSES:
                     raise RuntimeError(f"episode_evidence_status_invalid:{line_number}")
                 event_id = str(record["event_id"])
                 if not event_id or event_id in seen_events:
                     raise RuntimeError(f"episode_evidence_event_id_invalid:{line_number}")
                 seen_events.add(event_id)
-                if record["status"] == "COMPLETED":
+
+                rollout_key = (
+                    str(record["stage9_group_id"]),
+                    str(record["row_id"]),
+                    int(record.get("rollout_index", 0)),
+                    str(record["policy_completion_sha256"]),
+                )
+
+                if status == "SCIENTIFIC_VERDICT_CAPTURED":
+                    if record.get("cleanup_status") != "pending":
+                        raise RuntimeError(f"captured_verdict_cleanup_status_invalid:{line_number}")
+                    if rollout_key in open_verdicts:
+                        raise RuntimeError(f"duplicate_scientific_verdict_captured:{line_number}:{rollout_key}")
+                    if rollout_key in finalized_rollouts:
+                        raise RuntimeError(f"verdict_captured_after_rollout_finalized:{line_number}:{rollout_key}")
+                    open_verdicts[rollout_key] = record
+
+                elif status == "COMPLETED":
                     if not isinstance(record.get("reward"), dict):
                         raise RuntimeError(f"completed_episode_reward_missing:{line_number}")
-                elif record["status"] == "SCIENTIFIC_VERDICT_CAPTURED":
-                    pass
-                elif record.get("reward") is not None:
-                    raise RuntimeError(f"invalidated_episode_has_reward:{line_number}")
+                    if record.get("cleanup_status") != "completed":
+                        raise RuntimeError(f"completed_episode_cleanup_status_invalid:{line_number}")
+                    if rollout_key in finalized_rollouts:
+                        raise RuntimeError(f"duplicate_completed_rollout:{line_number}:{rollout_key}")
+                    if rollout_key not in open_verdicts:
+                        raise RuntimeError(f"terminal_completed_record_missing_captured_verdict:{line_number}:{rollout_key}")
+                    captured = open_verdicts.pop(rollout_key)
+                    # Enforce consistency between pre-cleanup verdict and finalized completed record
+                    if (
+                        captured["row_id"] != record["row_id"]
+                        or captured["stage9_group_id"] != record["stage9_group_id"]
+                        or captured["prompt_sha256"] != record["prompt_sha256"]
+                        or captured["policy_completion_sha256"] != record["policy_completion_sha256"]
+                        or captured.get("env_resolved") != record.get("episode", {}).get("env_resolved")
+                    ):
+                        raise RuntimeError(f"contradictory_verdict_terminal_mismatch:{line_number}:{rollout_key}")
+                    finalized_rollouts.add(rollout_key)
+
+                elif status in ("INFRASTRUCTURE_INVALID", "HARNESS_EXECUTION_INVALID", "POLICY_EXECUTION_INVALID", "ROLLOUT_EXCEPTION"):
+                    if record.get("reward") is not None:
+                        raise RuntimeError(f"invalidated_episode_has_reward:{line_number}")
+                    if record.get("evidence_phase") == "CLEANUP_INVALID" or record.get("cleanup_status") == "failed":
+                        if rollout_key in finalized_rollouts:
+                            raise RuntimeError(f"duplicate_terminal_invalidation:{line_number}:{rollout_key}")
+                        if rollout_key not in open_verdicts:
+                            raise RuntimeError(f"cleanup_invalidation_missing_captured_verdict:{line_number}:{rollout_key}")
+                        captured = open_verdicts.pop(rollout_key)
+                        if (
+                            captured["row_id"] != record["row_id"]
+                            or captured["stage9_group_id"] != record["stage9_group_id"]
+                            or captured["prompt_sha256"] != record["prompt_sha256"]
+                            or captured["policy_completion_sha256"] != record["policy_completion_sha256"]
+                        ):
+                            raise RuntimeError(f"contradictory_verdict_invalidation_mismatch:{line_number}:{rollout_key}")
+                        finalized_rollouts.add(rollout_key)
+                    else:
+                        # Pre-rollout / pre-verifier invalidation
+                        if rollout_key in open_verdicts:
+                            raise RuntimeError(f"early_invalidation_with_dangling_open_verdict:{line_number}:{rollout_key}")
+
                 count += 1
+
+        if open_verdicts:
+            dangling = sorted(f"group={k[0]},row={k[1]},idx={k[2]},sha={k[3][:8]}" for k in open_verdicts)
+            raise RuntimeError(f"dangling_verdict_detected:unfinalized_rollout_verdicts={dangling}; cleanup_status=pending; resume rejected")
+
         return count
 
     def _persist_invalidation(
@@ -1441,6 +1639,8 @@ def main() -> None:
     )
     raw_dataset_hash = _sha256_file(training_rows_path)
     dataset_contract = remediation_dataset_catalogue(rows)
+    # Preflight binding gate: fail closed before model loading, trainer construction, or cluster mutation
+    validate_fault_effect_predicate_bindings(rows)
     hyperparameters = {
         "beta": args.beta,
         "batch_size": args.batch_size,

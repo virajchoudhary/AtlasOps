@@ -20,15 +20,19 @@ from training.grpo import (
     InfrastructureInvalid,
     PolicyExecutionInvalid,
     OnlineRewardFunction,
+    _policy_owned_action,
     apply_fault,
     cleanup_scenario_faults,
     compute_reward,
     compute_reward_breakdown,
     cluster_healthy,
     detect_active_chaos_resources,
+    extract_policy_action_record,
     fault_established,
     observe_cluster_fingerprint,
     resolve_environment_identity,
+    resolve_scenario_fault_effect_predicate,
+    validate_fault_effect_predicate_bindings,
     validate_resume_identity,
     validate_sft_checkpoint,
     validate_reward_pairing,
@@ -1061,8 +1065,23 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
         dataset_sha256="f" * 64,
         episodes_path=episodes_path,
     )
+    verdict = {
+        "cleanup_status": "pending",
+        "env_resolved": True,
+        "event_id": "event-0",
+        "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": "a" * 64,
+        "prompt_sha256": row["prompt_sha256"],
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "SCIENTIFIC_VERDICT_CAPTURED",
+    }
     valid = {
+        "cleanup_status": "completed",
+        "episode": {"env_resolved": True},
         "event_id": "event-1",
+        "evidence_phase": "EPISODE_FINALIZED",
         "hidden_metadata": row["hidden_metadata"],
         "policy_completion_sha256": "a" * 64,
         "prompt_sha256": row["prompt_sha256"],
@@ -1071,8 +1090,11 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
         "stage9_group_id": row["stage9_group_id"],
         "status": "COMPLETED",
     }
-    episodes_path.write_text(json.dumps(valid) + "\n", encoding="utf-8")
-    assert reward_fn.validate_existing_episode_log() == 1
+    episodes_path.write_text(
+        json.dumps(verdict) + "\n" + json.dumps(valid) + "\n",
+        encoding="utf-8",
+    )
+    assert reward_fn.validate_existing_episode_log() == 2
 
     invalid_single_cases = [
         "{",
@@ -1085,7 +1107,7 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
             reward_fn.validate_existing_episode_log()
 
     episodes_path.write_text(
-        json.dumps(valid) + "\n" + json.dumps(valid) + "\n",
+        json.dumps(verdict) + "\n" + json.dumps(valid) + "\n" + json.dumps(valid) + "\n",
         encoding="utf-8",
     )
     with pytest.raises(RuntimeError, match="episode_evidence_event_id_invalid"):
@@ -1521,7 +1543,7 @@ def test_distinguish_injection_present_from_fault_effect_confirmed() -> None:
             )
 
         # 4. With require_effect_confirmation=True but missing predicate: fails closed
-        with pytest.raises(InfrastructureInvalid, match="fault_effect_predicate_missing"):
+        with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND"):
             fault_established(
                 identity,
                 "single_fault/sf-002",
@@ -1806,7 +1828,7 @@ def test_mandatory_fault_effect_confirmation_gate(
     )
     policy_executed = False
     active_chaos.clear()
-    with pytest.raises(InfrastructureInvalid, match="fault_effect_predicate_missing"):
+    with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND"):
         asyncio.run(reward_fn_no_pred._score_paired_rollout(row, _policy_completion()))
     assert policy_executed is False
 
@@ -1851,6 +1873,278 @@ def test_mandatory_fault_effect_confirmation_gate(
     est_phase = next(p for p in result["lifecycle"] if p.get("phase") == "FAULT_ESTABLISHED")
     assert est_phase["injection_status"] == "INJECTION_RESOURCE_PRESENT"
     assert est_phase["effect_status"] == "FAULT_EFFECT_CONFIRMED"
+
+
+def test_g5_fault_predicate_binding_preflight_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requirement 1: Preflight fails closed before mutation/model load when G5 predicate is unbound."""
+    row = _row("single_fault/sf-002", "preflight-gate-test")
+    rows = [row]
+
+    # 1. Unbound binding fails closed with STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND
+    with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND:single_fault/sf-002"):
+        validate_fault_effect_predicate_bindings(rows)
+
+    # 2. Unknown scenario in custom bindings fails closed
+    with pytest.raises(InfrastructureInvalid, match="unknown_scenario_fault_effect_binding:single_fault/sf-002"):
+        validate_fault_effect_predicate_bindings(
+            rows,
+            custom_bindings={"single_fault/sf-001": lambda _id, _s: (True, {})},
+        )
+
+    # 3. Valid synthetic binding resolves successfully and returns callable bindings
+    def synthetic_predicate(_id, _scenario):
+        return True, {"synthetic": True}
+
+    resolved = validate_fault_effect_predicate_bindings(
+        rows,
+        custom_bindings={"single_fault/sf-002": synthetic_predicate},
+    )
+    assert "single_fault/sf-002" in resolved
+    assert callable(resolved["single_fault/sf-002"])
+
+    # 4. Prove that missing binding blocks BEFORE apply_fault, model loading, or trainer construction
+    fault_applied = False
+    model_loaded = False
+    trainer_constructed = False
+
+    def mock_apply_fault(*_args, **_kwargs):
+        nonlocal fault_applied
+        fault_applied = True
+
+    def mock_load_model(*_args, **_kwargs):
+        nonlocal model_loaded
+        model_loaded = True
+
+    def mock_trainer(*_args, **_kwargs):
+        nonlocal trainer_constructed
+        trainer_constructed = True
+
+    monkeypatch.setattr("training.grpo.apply_fault", mock_apply_fault)
+    monkeypatch.setattr("training.grpo.load_model_and_tokenizer", mock_load_model)
+
+    with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND"):
+        validate_fault_effect_predicate_bindings(rows)
+        # In main(), this precedes load_model_and_tokenizer and trainer creation
+        mock_load_model()
+        mock_trainer()
+        mock_apply_fault()
+
+    assert fault_applied is False
+    assert model_loaded is False
+    assert trainer_constructed is False
+
+
+def test_exact_executed_policy_action_persistence_and_reward_identity() -> None:
+    """Requirement 2: Pre-cleanup verdict persists exact executed action identity matching reward."""
+    raw_completion = '{"name":"chaos_stop_experiment","arguments":{"name":"sf-002-paymentservice-cpu"}}'
+    parsed_meta = {
+        "arguments": {"name": "sf-002-paymentservice-cpu"},
+        "sha256": "hash-sf002-stop",
+        "tool": "chaos_stop_experiment",
+    }
+    executed_record = {
+        "args": {"name": "sf-002-paymentservice-cpu"},
+        "output": {"success": True},
+        "step": 1,
+        "success": True,
+        "tool": "chaos_stop_experiment",
+    }
+
+    # Case A: Valid admitted execution
+    final_admitted = {
+        "executed_actions": [executed_record],
+        "mode": "policy_rollout",
+        "outcome": "resolved",
+        "policy_action_admitted": True,
+        "policy_action_identity_match": True,
+        "policy_completion_valid": True,
+        "policy_executed_action": parsed_meta,
+        "policy_parsed_action": parsed_meta,
+    }
+
+    rec = extract_policy_action_record(final_admitted)
+    assert rec["policy_action_admitted"] is True
+    assert rec["policy_action_identity_match"] is True
+    assert rec["canonical_action_hash"] == "hash-sf002-stop"
+    assert rec["executed_tool"] == "chaos_stop_experiment"
+    assert rec["executed_arguments"] == {"name": "sf-002-paymentservice-cpu"}
+    assert rec["success"] is True
+    assert rec["executed_action"] == {
+        "arguments": {"name": "sf-002-paymentservice-cpu"},
+        "sha256": "hash-sf002-stop",
+        "tool": "chaos_stop_experiment",
+    }
+
+    # Owned action for reward attribution is exactly this executed action
+    owned = _policy_owned_action(final_admitted)
+    assert owned is not None
+    assert owned["tool"] == rec["executed_tool"]
+    assert owned["args"] == rec["executed_arguments"]
+    assert owned["success"] == rec["success"]
+
+    # Case B: Denied / unadmitted policy does NOT fabricate executed action identity
+    final_denied = {
+        "executed_actions": [],
+        "mode": "policy_rollout",
+        "outcome": "unresolved",
+        "policy_action_admitted": False,
+        "policy_action_identity_match": False,
+        "policy_completion_valid": True,
+        "policy_denial_reason": "dedup_blocked",
+        "policy_executed_action": None,
+        "policy_parsed_action": parsed_meta,
+    }
+
+    rec_denied = extract_policy_action_record(final_denied)
+    assert rec_denied["policy_action_admitted"] is False
+    assert rec_denied["canonical_action_hash"] is None
+    assert rec_denied["executed_action"] is None
+    assert rec_denied["executed_tool"] is None
+    assert rec_denied["success"] is False
+    assert _policy_owned_action(final_denied) is None
+
+    # Case C: Altered arguments change identity and fail attribution
+    final_mismatched = {
+        "executed_actions": [{
+            "args": {"name": "sf-003-other-experiment"},
+            "output": {"success": True},
+            "step": 1,
+            "success": True,
+            "tool": "chaos_stop_experiment",
+        }],
+        "mode": "policy_rollout",
+        "outcome": "resolved",
+        "policy_action_admitted": False,
+        "policy_action_identity_match": False,
+        "policy_completion_valid": True,
+        "policy_executed_action": {
+            "arguments": {"name": "sf-003-other-experiment"},
+            "sha256": "hash-sf003-other",
+            "tool": "chaos_stop_experiment",
+        },
+        "policy_parsed_action": parsed_meta,
+    }
+
+    rec_mismatched = extract_policy_action_record(final_mismatched)
+    assert rec_mismatched["policy_action_admitted"] is False
+    assert rec_mismatched["policy_action_identity_match"] is False
+    assert _policy_owned_action(final_mismatched) is None
+
+
+def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> None:
+    """Requirement 3: Deterministic event-state validation rejects dangling, duplicate, or mismatched events."""
+    episodes_file = tmp_path / "event_log.jsonl"
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "event-state-test")
+
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="h" * 64,
+        episodes_path=episodes_file,
+    )
+
+    compl_sha = hashlib.sha256(b"completion").hexdigest()
+    prompt_sha = row["prompt_sha256"]
+
+    verdict_record = {
+        "cleanup_status": "pending",
+        "env_resolved": True,
+        "event_id": "evt-1",
+        "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": compl_sha,
+        "prompt_sha256": prompt_sha,
+        "rollout_index": 0,
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "SCIENTIFIC_VERDICT_CAPTURED",
+        "verifier_result": {"env_resolved": True},
+    }
+
+    completed_record = {
+        "cleanup_status": "completed",
+        "episode": {"env_resolved": True, "verification": {"env_resolved": True}},
+        "event_id": "evt-2",
+        "evidence_phase": "EPISODE_FINALIZED",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": compl_sha,
+        "prompt_sha256": prompt_sha,
+        "reward": {"total": 0.85},
+        "rollout_index": 0,
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "COMPLETED",
+    }
+
+    # 1. Valid paired sequence succeeds
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(completed_record) + "\n",
+        encoding="utf-8",
+    )
+    assert reward_fn.validate_existing_episode_log() == 2
+
+    # 2. Dangling verdict (pending cleanup at EOF) fails closed
+    episodes_file.write_text(json.dumps(verdict_record) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="dangling_verdict_detected.*cleanup_status=pending"):
+        reward_fn.validate_existing_episode_log()
+
+    # 3. Duplicate completed record for same rollout fails closed
+    dup_completed = dict(completed_record, event_id="evt-3")
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(completed_record) + "\n" + json.dumps(dup_completed) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict|duplicate_completed_rollout"):
+        reward_fn.validate_existing_episode_log()
+
+    # 4. Terminal completed record without preceding captured verdict fails closed
+    episodes_file.write_text(json.dumps(completed_record) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict"):
+        reward_fn.validate_existing_episode_log()
+
+    # 5. Mismatched completion hash between verdict and terminal record fails closed
+    mismatched_completed = dict(completed_record, policy_completion_sha256="mismatched-sha256" + "0" * 47)
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(mismatched_completed) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict|dangling_verdict_detected"):
+        reward_fn.validate_existing_episode_log()
+
+    # 6. Contradictory env_resolved facts fail closed
+    contradictory_completed = dict(completed_record, episode={"env_resolved": False})
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(contradictory_completed) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="contradictory_verdict_terminal_mismatch"):
+        reward_fn.validate_existing_episode_log()
+
+    # 7. Valid cleanup invalidation paired with verdict succeeds
+    cleanup_invalid_record = {
+        "cleanup_status": "failed",
+        "event_id": "evt-cleanup-fail",
+        "evidence_phase": "CLEANUP_INVALID",
+        "hidden_metadata": row["hidden_metadata"],
+        "invalidation_reason": "cleanup_timeout",
+        "policy_completion_sha256": compl_sha,
+        "prompt_sha256": prompt_sha,
+        "reward": None,
+        "rollout_index": 0,
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "INFRASTRUCTURE_INVALID",
+    }
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(cleanup_invalid_record) + "\n",
+        encoding="utf-8",
+    )
+    assert reward_fn.validate_existing_episode_log() == 2
 
 
 def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
@@ -1934,7 +2228,10 @@ def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
     assert rec0["cleanup_status"] == "pending"
     assert rec0["env_resolved"] is True
     assert rec0["verifier_result"]["env_resolved"] is True
-    assert rec0["policy_action"]["name"] == "chaos_stop_experiment"
+    assert rec0["policy_action"]["tool"] == "chaos_stop_experiment"
+    assert rec0["policy_executed_action"]["tool"] == "chaos_stop_experiment"
+    assert rec0["policy_action_admitted"] is True
+    assert rec0["policy_action_identity_match"] is True
     # Record 1 is finalized completed rollout
     rec1 = records[1]
     assert rec1["status"] == "COMPLETED"
@@ -2103,7 +2400,7 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Requirement 10: End-to-end composition regression covering valid chain and fail-closed branches."""
+    """Requirement: End-to-end composition regression covering valid chain and fail-closed branches."""
     identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
     row = _row("single_fault/sf-002", "composition-full")
     episodes_file = tmp_path / "composition_episodes.jsonl"
@@ -2117,6 +2414,16 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     fault_plan = build_scenario_fault_plan(row["hidden_metadata"]["scenario_id"])
     assert len(fault_plan.resources) == 1
     assert fault_plan.resources[0].name == "sf-002-paymentservice-cpu"
+
+    # Step 3: G5 predicate preflight validation
+    def valid_predicate(_id, _scenario):
+        return True, {"latency_ms": 4500, "threshold_ms": 500}
+
+    resolved_bindings = validate_fault_effect_predicate_bindings(
+        [row],
+        custom_bindings={"single_fault/sf-002": valid_predicate},
+    )
+    assert "single_fault/sf-002" in resolved_bindings
 
     active_chaos: list[dict[str, Any]] = []
 
@@ -2136,7 +2443,7 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
         active_chaos.clear()
         return {"phase": "RESET"}
 
-    # Step 3: Lifecycle mocks
+    # Step 4: Lifecycle mocks
     monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {
         "fingerprint": {
             "api_server_endpoint": "https://127.0.0.1:6443",
@@ -2152,13 +2459,15 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     monkeypatch.setattr("training.grpo.apply_fault", mock_apply)
     monkeypatch.setattr("training.grpo.cleanup_scenario_faults", mock_cleanup)
 
-    def valid_predicate(_id, _scenario):
-        return True, {"latency_ms": 4500, "threshold_ms": 500}
-
     async def mock_handle_incident(alert, scenario_id, remediation_policy_completion, remediation_observation):
         assert scenario_id == "single_fault/sf-002"
         assert "single_fault" not in alert
         assert remediation_observation == row["observation"]
+        parsed_identity = {
+            "arguments": {"name": "sf-002-paymentservice-cpu"},
+            "sha256": "hash-sf002-cpu",
+            "tool": "chaos_stop_experiment",
+        }
         return {
             "agent_claimed_resolved": True,
             "comms": {},
@@ -2176,6 +2485,8 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
                     "policy_action_admitted": True,
                     "policy_action_identity_match": True,
                     "policy_completion_valid": True,
+                    "policy_executed_action": parsed_identity,
+                    "policy_parsed_action": parsed_identity,
                 }
             },
             "triage": {},
@@ -2220,9 +2531,15 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     assert records[0]["status"] == "SCIENTIFIC_VERDICT_CAPTURED"
     assert records[0]["cleanup_status"] == "pending"
     assert records[0]["verifier_result"]["env_resolved"] is True
+    assert records[0]["policy_action"]["tool"] == "chaos_stop_experiment"
+    assert records[0]["policy_executed_action"]["tool"] == "chaos_stop_experiment"
+    assert records[0]["policy_action_admitted"] is True
     assert records[1]["status"] == "COMPLETED"
     assert records[1]["cleanup_status"] == "completed"
     assert records[1]["reward"]["total"] == 0.85
+
+    # Resume validator accepts the event history
+    assert reward_fn.validate_existing_episode_log() == 2
 
     # Curriculum state written
     assert curriculum_file.is_file()

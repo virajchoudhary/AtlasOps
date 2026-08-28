@@ -755,6 +755,7 @@ class OnlineRewardFunction:
         self.reset_settle_seconds = reset_settle_seconds
         self.fault_effect_predicate = fault_effect_predicate
         self.require_effect_confirmation = require_effect_confirmation
+        self.latest_completed_curriculum_sha256: str | None = None
 
     def __del__(self):
         if not self._loop.is_closed():
@@ -788,16 +789,23 @@ class OnlineRewardFunction:
         )
         verify_kubernetes_environment(self.environment)
         for index, (completion, row) in enumerate(zip(completions, paired_rows)):
+            episode_id = f"ep_{uuid.uuid4().hex}"
             log.info(
-                "Rollout %d/%d — group %s",
+                "Rollout %d/%d — group %s (episode %s)",
                 index + 1,
                 len(completions),
                 row["stage9_group_id"],
+                episode_id,
             )
             try:
-                result = await self._score_paired_rollout(row, completion, rollout_index=index)
+                result = await self._score_paired_rollout(
+                    row,
+                    completion,
+                    rollout_index=index,
+                    episode_id=episode_id,
+                )
             except Exception as exc:
-                self._persist_invalidation(index, row, completion, exc)
+                self._persist_invalidation(index, row, completion, exc, episode_id=episode_id)
                 raise
             reward_breakdown = compute_reward_breakdown(result["episode"])
             reward = float(reward_breakdown["total"])
@@ -807,7 +815,7 @@ class OnlineRewardFunction:
                 resolved=bool(result["episode"].get("env_resolved") is True),
                 reward=reward,
             )
-            self._persist_episode(index, row, completion, reward_breakdown, result)
+            self._persist_episode(index, row, completion, reward_breakdown, result, episode_id=episode_id)
             self._persist_curriculum_state()
 
         cur_stats = _curriculum.stats()
@@ -825,9 +833,13 @@ class OnlineRewardFunction:
         row: dict[str, Any],
         completion_text: str,
         rollout_index: int = 0,
+        episode_id: str | None = None,
     ) -> dict[str, Any]:
         """Run strictly ordered healthy/safety/fault/action/verifier/cleanup/post-health lifecycle."""
         from agents.coordinator import handle_incident
+
+        if episode_id is None:
+            episode_id = f"ep_{uuid.uuid4().hex}"
 
         hidden = row["hidden_metadata"]
         scenario_id = hidden["scenario_id"]
@@ -914,6 +926,7 @@ class OnlineRewardFunction:
                 completion=completion_text,
                 incident=incident,
                 lifecycle=lifecycle,
+                episode_id=episode_id,
             )
         finally:
             if fault_applied_flag:
@@ -984,6 +997,7 @@ class OnlineRewardFunction:
         completion: str,
         incident: dict[str, Any] | None,
         lifecycle: list[dict[str, Any]],
+        episode_id: str | None = None,
     ) -> None:
         """Atomically persist pre-cleanup scientific verdict before environment mutation."""
         if not self.episodes_path:
@@ -998,6 +1012,7 @@ class OnlineRewardFunction:
             "canonical_action_hash": policy_action_record["canonical_action_hash"],
             "cleanup_status": "pending",
             "env_resolved": env_resolved,
+            "episode_id": episode_id or f"ep_{uuid.uuid4().hex}",
             "event_id": uuid.uuid4().hex,
             "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
             "hidden_metadata": row["hidden_metadata"],
@@ -1036,6 +1051,7 @@ class OnlineRewardFunction:
         completion: str,
         reward_breakdown: dict[str, Any],
         result: dict[str, Any],
+        episode_id: str | None = None,
     ) -> None:
         if not self.episodes_path:
             return
@@ -1047,6 +1063,7 @@ class OnlineRewardFunction:
                 **_curriculum.stats(),
             },
             "episode": result["episode"],
+            "episode_id": episode_id or f"ep_{uuid.uuid4().hex}",
             "event_id": uuid.uuid4().hex,
             "evidence_phase": "EPISODE_FINALIZED",
             "hidden_metadata": row["hidden_metadata"],
@@ -1065,6 +1082,7 @@ class OnlineRewardFunction:
             "status": "COMPLETED",
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         }
+        self.latest_completed_curriculum_sha256 = str(record["curriculum_state"]["sha256"])
         with self.episodes_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(record, sort_keys=True) + "\n")
 
@@ -1073,8 +1091,9 @@ class OnlineRewardFunction:
         if not self.episodes_path or not self.episodes_path.is_file():
             return 0
         seen_events: set[str] = set()
-        open_verdicts: dict[tuple[str, str, int, str], dict[str, Any]] = {}
-        finalized_rollouts: set[tuple[str, str, int, str]] = set()
+        open_verdicts: dict[str, dict[str, Any]] = {}
+        finalized_episodes: set[str] = set()
+        latest_completed_curriculum_sha: str | None = None
         count = 0
         with self.episodes_path.open("r", encoding="utf-8") as stream:
             for line_number, line in enumerate(stream, 1):
@@ -1086,7 +1105,7 @@ class OnlineRewardFunction:
                     raise RuntimeError(f"episode_evidence_not_object:{line_number}")
                 missing = sorted(
                     key for key in (
-                        "event_id", "hidden_metadata", "policy_completion_sha256",
+                        "episode_id", "event_id", "hidden_metadata", "policy_completion_sha256",
                         "prompt_sha256", "row_id", "stage9_group_id",
                         "status",
                     )
@@ -1104,32 +1123,36 @@ class OnlineRewardFunction:
                     raise RuntimeError(f"episode_evidence_event_id_invalid:{line_number}")
                 seen_events.add(event_id)
 
-                rollout_key = (
-                    str(record["stage9_group_id"]),
-                    str(record["row_id"]),
-                    int(record.get("rollout_index", 0)),
-                    str(record["policy_completion_sha256"]),
-                )
+                episode_id = str(record["episode_id"])
+                if not episode_id:
+                    raise RuntimeError(f"episode_evidence_episode_id_invalid:{line_number}")
 
                 if status == "SCIENTIFIC_VERDICT_CAPTURED":
                     if record.get("cleanup_status") != "pending":
                         raise RuntimeError(f"captured_verdict_cleanup_status_invalid:{line_number}")
-                    if rollout_key in open_verdicts:
-                        raise RuntimeError(f"duplicate_scientific_verdict_captured:{line_number}:{rollout_key}")
-                    if rollout_key in finalized_rollouts:
-                        raise RuntimeError(f"verdict_captured_after_rollout_finalized:{line_number}:{rollout_key}")
-                    open_verdicts[rollout_key] = record
+                    if episode_id in open_verdicts:
+                        raise RuntimeError(f"duplicate_scientific_verdict_captured:{line_number}:{episode_id}")
+                    if episode_id in finalized_episodes:
+                        raise RuntimeError(f"verdict_captured_after_episode_finalized:{line_number}:{episode_id}")
+                    open_verdicts[episode_id] = record
 
                 elif status == "COMPLETED":
                     if not isinstance(record.get("reward"), dict):
                         raise RuntimeError(f"completed_episode_reward_missing:{line_number}")
                     if record.get("cleanup_status") != "completed":
                         raise RuntimeError(f"completed_episode_cleanup_status_invalid:{line_number}")
-                    if rollout_key in finalized_rollouts:
-                        raise RuntimeError(f"duplicate_completed_rollout:{line_number}:{rollout_key}")
-                    if rollout_key not in open_verdicts:
-                        raise RuntimeError(f"terminal_completed_record_missing_captured_verdict:{line_number}:{rollout_key}")
-                    captured = open_verdicts.pop(rollout_key)
+                    curriculum_state = record.get("curriculum_state")
+                    if (
+                        not isinstance(curriculum_state, dict)
+                        or not isinstance(curriculum_state.get("sha256"), str)
+                        or not curriculum_state["sha256"].strip()
+                    ):
+                        raise RuntimeError(f"completed_episode_curriculum_state_invalid:{line_number}")
+                    if episode_id in finalized_episodes:
+                        raise RuntimeError(f"duplicate_completed_episode:{line_number}:{episode_id}")
+                    if episode_id not in open_verdicts:
+                        raise RuntimeError(f"terminal_completed_record_missing_captured_verdict:{line_number}:{episode_id}")
+                    captured = open_verdicts.pop(episode_id)
                     # Enforce consistency between pre-cleanup verdict and finalized completed record
                     if (
                         captured["row_id"] != record["row_id"]
@@ -1138,37 +1161,46 @@ class OnlineRewardFunction:
                         or captured["policy_completion_sha256"] != record["policy_completion_sha256"]
                         or captured.get("env_resolved") != record.get("episode", {}).get("env_resolved")
                     ):
-                        raise RuntimeError(f"contradictory_verdict_terminal_mismatch:{line_number}:{rollout_key}")
-                    finalized_rollouts.add(rollout_key)
+                        raise RuntimeError(f"contradictory_verdict_terminal_mismatch:{line_number}:{episode_id}")
+                    finalized_episodes.add(episode_id)
+                    latest_completed_curriculum_sha = str(curriculum_state["sha256"])
 
                 elif status in ("INFRASTRUCTURE_INVALID", "HARNESS_EXECUTION_INVALID", "POLICY_EXECUTION_INVALID", "ROLLOUT_EXCEPTION"):
                     if record.get("reward") is not None:
                         raise RuntimeError(f"invalidated_episode_has_reward:{line_number}")
                     if record.get("evidence_phase") == "CLEANUP_INVALID" or record.get("cleanup_status") == "failed":
-                        if rollout_key in finalized_rollouts:
-                            raise RuntimeError(f"duplicate_terminal_invalidation:{line_number}:{rollout_key}")
-                        if rollout_key not in open_verdicts:
-                            raise RuntimeError(f"cleanup_invalidation_missing_captured_verdict:{line_number}:{rollout_key}")
-                        captured = open_verdicts.pop(rollout_key)
+                        if episode_id in finalized_episodes:
+                            raise RuntimeError(f"duplicate_terminal_invalidation:{line_number}:{episode_id}")
+                        if episode_id not in open_verdicts:
+                            raise RuntimeError(f"cleanup_invalidation_missing_captured_verdict:{line_number}:{episode_id}")
+                        captured = open_verdicts.pop(episode_id)
                         if (
                             captured["row_id"] != record["row_id"]
                             or captured["stage9_group_id"] != record["stage9_group_id"]
                             or captured["prompt_sha256"] != record["prompt_sha256"]
                             or captured["policy_completion_sha256"] != record["policy_completion_sha256"]
                         ):
-                            raise RuntimeError(f"contradictory_verdict_invalidation_mismatch:{line_number}:{rollout_key}")
-                        finalized_rollouts.add(rollout_key)
+                            raise RuntimeError(f"contradictory_verdict_invalidation_mismatch:{line_number}:{episode_id}")
+                        finalized_episodes.add(episode_id)
                     else:
                         # Pre-rollout / pre-verifier invalidation
-                        if rollout_key in open_verdicts:
-                            raise RuntimeError(f"early_invalidation_with_dangling_open_verdict:{line_number}:{rollout_key}")
+                        if episode_id in open_verdicts:
+                            raise RuntimeError(f"early_invalidation_with_dangling_open_verdict:{line_number}:{episode_id}")
+                        finalized_episodes.add(episode_id)
 
                 count += 1
 
         if open_verdicts:
-            dangling = sorted(f"group={k[0]},row={k[1]},idx={k[2]},sha={k[3][:8]}" for k in open_verdicts)
-            raise RuntimeError(f"dangling_verdict_detected:unfinalized_rollout_verdicts={dangling}; cleanup_status=pending; resume rejected")
+            dangling = sorted(
+                f"ep={k},group={v.get('stage9_group_id')},row={v.get('row_id')}"
+                for k, v in open_verdicts.items()
+            )
+            raise RuntimeError(
+                f"dangling_verdict_detected:unfinalized_episode_verdicts={dangling}; "
+                "cleanup_status=pending; resume rejected"
+            )
 
+        self.latest_completed_curriculum_sha256 = latest_completed_curriculum_sha
         return count
 
     def _persist_invalidation(
@@ -1177,6 +1209,7 @@ class OnlineRewardFunction:
         row: dict[str, Any],
         completion: str,
         exc: Exception,
+        episode_id: str | None = None,
     ) -> None:
         """Persist why no policy reward exists before aborting the batch."""
         if not self.episodes_path:
@@ -1198,6 +1231,8 @@ class OnlineRewardFunction:
         record = {
             "cleanup_status": cleanup_status,
             "completion_sha256": hashlib.sha256(completion.encode("utf-8")).hexdigest(),
+            "curriculum_state": None,
+            "episode_id": episode_id or f"ep_{uuid.uuid4().hex}",
             "event_id": uuid.uuid4().hex,
             "evidence_phase": evidence_phase,
             "hidden_metadata": row["hidden_metadata"],
@@ -1570,6 +1605,22 @@ def restore_curriculum_payload(payload: dict[str, Any], seed: int, dataset_hash:
     _curriculum.restore_state(payload["curriculum"])
 
 
+def validate_curriculum_resume_integrity(
+    curriculum_exported_sha: str,
+    latest_episode_curriculum_sha: str | None,
+) -> None:
+    """Fail closed if restored curriculum state differs from the latest completed episode."""
+    if (
+        latest_episode_curriculum_sha is not None
+        and latest_episode_curriculum_sha != curriculum_exported_sha
+    ):
+        raise RuntimeError(
+            f"curriculum_episode_state_mismatch: "
+            f"latest_episode_sha={latest_episode_curriculum_sha} "
+            f"!= exported_state_sha={curriculum_exported_sha}"
+        )
+
+
 def write_curriculum_state(path: Path, seed: int, dataset_hash: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -1640,7 +1691,7 @@ def main() -> None:
     raw_dataset_hash = _sha256_file(training_rows_path)
     dataset_contract = remediation_dataset_catalogue(rows)
     # Preflight binding gate: fail closed before model loading, trainer construction, or cluster mutation
-    validate_fault_effect_predicate_bindings(rows)
+    resolved_fault_predicates = validate_fault_effect_predicate_bindings(rows)
     hyperparameters = {
         "beta": args.beta,
         "batch_size": args.batch_size,
@@ -1664,6 +1715,8 @@ def main() -> None:
         raw_dataset_hash,
         episodes_path=episodes_path,
         curriculum_state_path=curriculum_state_path,
+        fault_effect_predicate=resolved_fault_predicates,
+        require_effect_confirmation=True,
     )
     validate_sft_checkpoint(args.model, verify_files=True)
     if resume_checkpoint:
@@ -1680,6 +1733,10 @@ def main() -> None:
         if not episodes_path.is_file():
             raise RuntimeError("resume_episode_evidence_missing")
         reward_fn.validate_existing_episode_log()
+        validate_curriculum_resume_integrity(
+            _curriculum.export_state()["state_sha256"],
+            reward_fn.latest_completed_curriculum_sha256,
+        )
     else:
         if episodes_path.exists():
             raise RuntimeError("refusing_to_overwrite_existing_episode_evidence")

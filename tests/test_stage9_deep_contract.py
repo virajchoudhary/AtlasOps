@@ -20,6 +20,7 @@ from training.grpo import (
     InfrastructureInvalid,
     PolicyExecutionInvalid,
     OnlineRewardFunction,
+    _curriculum,
     _policy_owned_action,
     apply_fault,
     cleanup_scenario_faults,
@@ -32,6 +33,7 @@ from training.grpo import (
     observe_cluster_fingerprint,
     resolve_environment_identity,
     resolve_scenario_fault_effect_predicate,
+    validate_curriculum_resume_integrity,
     validate_fault_effect_predicate_bindings,
     validate_resume_identity,
     validate_sft_checkpoint,
@@ -1068,6 +1070,7 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
     verdict = {
         "cleanup_status": "pending",
         "env_resolved": True,
+        "episode_id": "ep-1",
         "event_id": "event-0",
         "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
         "hidden_metadata": row["hidden_metadata"],
@@ -1079,7 +1082,9 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
     }
     valid = {
         "cleanup_status": "completed",
+        "curriculum_state": {"sha256": "curr-sha-valid"},
         "episode": {"env_resolved": True},
+        "episode_id": "ep-1",
         "event_id": "event-1",
         "evidence_phase": "EPISODE_FINALIZED",
         "hidden_metadata": row["hidden_metadata"],
@@ -1100,6 +1105,8 @@ def test_existing_episode_log_validation_rejects_corrupt_resume_evidence(
         "{",
         json.dumps({**valid, "status": "UNKNOWN"}),
         json.dumps({**valid, "reward": None}),
+        json.dumps({**valid, "curriculum_state": None}),
+        json.dumps({**valid, "curriculum_state": {}}),
     ]
     for case in invalid_single_cases:
         episodes_path.write_text(case + "\n", encoding="utf-8")
@@ -1879,9 +1886,10 @@ def test_g5_fault_predicate_binding_preflight_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Requirement 1: Preflight fails closed before mutation/model load when G5 predicate is unbound."""
-    row = _row("single_fault/sf-002", "preflight-gate-test")
-    rows = [row]
+    """Requirement 1: Preflight fails closed when G5 predicate is unbound; valid mapping wires to reward_fn."""
+    row_sf002 = _row("single_fault/sf-002", "preflight-gate-test-2")
+    row_sf003 = _row("single_fault/sf-003", "preflight-gate-test-3")
+    rows = [row_sf002, row_sf003]
 
     # 1. Unbound binding fails closed with STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND
     with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND:single_fault/sf-002"):
@@ -1895,15 +1903,30 @@ def test_g5_fault_predicate_binding_preflight_contract(
         )
 
     # 3. Valid synthetic binding resolves successfully and returns callable bindings
-    def synthetic_predicate(_id, _scenario):
-        return True, {"synthetic": True}
+    called_sf002 = False
+    called_sf003 = False
 
-    resolved = validate_fault_effect_predicate_bindings(
+    def predicate_sf002(_id, scenario):
+        nonlocal called_sf002
+        called_sf002 = True
+        assert scenario == "single_fault/sf-002"
+        return True, {"sf002": True}
+
+    def predicate_sf003(_id, scenario):
+        nonlocal called_sf003
+        called_sf003 = True
+        assert scenario == "single_fault/sf-003"
+        return True, {"sf003": True}
+
+    resolved_bindings = validate_fault_effect_predicate_bindings(
         rows,
-        custom_bindings={"single_fault/sf-002": synthetic_predicate},
+        custom_bindings={
+            "single_fault/sf-002": predicate_sf002,
+            "single_fault/sf-003": predicate_sf003,
+        },
     )
-    assert "single_fault/sf-002" in resolved
-    assert callable(resolved["single_fault/sf-002"])
+    assert "single_fault/sf-002" in resolved_bindings
+    assert "single_fault/sf-003" in resolved_bindings
 
     # 4. Prove that missing binding blocks BEFORE apply_fault, model loading, or trainer construction
     fault_applied = False
@@ -1927,7 +1950,6 @@ def test_g5_fault_predicate_binding_preflight_contract(
 
     with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND"):
         validate_fault_effect_predicate_bindings(rows)
-        # In main(), this precedes load_model_and_tokenizer and trainer creation
         mock_load_model()
         mock_trainer()
         mock_apply_fault()
@@ -1935,6 +1957,98 @@ def test_g5_fault_predicate_binding_preflight_contract(
     assert fault_applied is False
     assert model_loaded is False
     assert trainer_constructed is False
+
+    # 5. Exact mapping reaches OnlineRewardFunction and selects per-scenario predicates
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    monkeypatch.setattr("training.grpo.verify_kubernetes_environment", lambda _id: {"status": "CONTEXT_VERIFIED"})
+    monkeypatch.setattr("training.grpo.cluster_healthy", lambda _id, **_kw: (True, {"ready_deployments": 12}))
+    active_chaos: list[dict[str, Any]] = []
+
+    def mock_detect(_id):
+        return list(active_chaos)
+
+    def mock_apply(_id, scenario_id, **_kw):
+        active_chaos.append({
+            "kind": "StressChaos",
+            "labels": {"scenario": "sf-002" if "sf-002" in scenario_id else "sf-003"},
+            "name": "sf-002-paymentservice-cpu" if "sf-002" in scenario_id else "sf-003-checkoutservice-memory",
+            "namespace": "chaos-mesh",
+        })
+        return {"phase": "FAULT_APPLIED"}
+
+    def mock_cleanup(_id, _plan):
+        active_chaos.clear()
+        return {"phase": "RESET"}
+
+    monkeypatch.setattr("training.grpo.detect_active_chaos_resources", mock_detect)
+    monkeypatch.setattr("training.grpo.apply_fault", mock_apply)
+    monkeypatch.setattr("training.grpo.cleanup_scenario_faults", mock_cleanup)
+
+    async def mock_handle_incident(*_args, **_kwargs):
+        return {
+            "agent_claimed_resolved": True,
+            "comms": {},
+            "diagnosis": {},
+            "env_resolved": True,
+            "remediation": {
+                "final": {
+                    "executed_actions": [{
+                        "args": {"name": "sf-002-paymentservice-cpu"},
+                        "success": True,
+                        "tool": "chaos_stop_experiment",
+                    }],
+                    "mode": "policy_rollout",
+                    "outcome": "resolved",
+                    "policy_action_admitted": True,
+                    "policy_action_identity_match": True,
+                    "policy_completion_valid": True,
+                }
+            },
+            "triage": {},
+            "verification": {"env_resolved": True},
+        }
+
+    monkeypatch.setattr("agents.coordinator.handle_incident", mock_handle_incident)
+
+    reward_fn = OnlineRewardFunction(
+        rows,
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="k" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=resolved_bindings,
+        require_effect_confirmation=True,
+    )
+
+    # Rollout SF002 uses predicate_sf002
+    called_sf002 = False
+    called_sf003 = False
+    res_sf002 = asyncio.run(reward_fn._score_paired_rollout(row_sf002, _policy_completion()))
+    assert called_sf002 is True
+    assert called_sf003 is False
+
+    # Rollout SF003 uses predicate_sf003
+    called_sf002 = False
+    called_sf003 = False
+    res_sf003 = asyncio.run(reward_fn._score_paired_rollout(row_sf003, _policy_completion()))
+    assert called_sf002 is False
+    assert called_sf003 is True
+
+    # Missing scenario in mapping fails closed
+    partial_bindings = {"single_fault/sf-002": predicate_sf002}
+    reward_fn_partial = OnlineRewardFunction(
+        rows,
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="k" * 64,
+        fault_settle_seconds=0,
+        reset_settle_seconds=0,
+        fault_effect_predicate=partial_bindings,
+        require_effect_confirmation=True,
+    )
+    with pytest.raises(InfrastructureInvalid, match="STAGE9_G5_FAULT_EFFECT_CONTRACT_UNBOUND:single_fault/sf-003"):
+        asyncio.run(reward_fn_partial._score_paired_rollout(row_sf003, _policy_completion()))
 
 
 def test_exact_executed_policy_action_persistence_and_reward_identity() -> None:
@@ -2035,7 +2149,7 @@ def test_exact_executed_policy_action_persistence_and_reward_identity() -> None:
 
 
 def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> None:
-    """Requirement 3: Deterministic event-state validation rejects dangling, duplicate, or mismatched events."""
+    """Requirement 2 & 3: Globally unique episode_id pairs transitions; identical repeats validate."""
     episodes_file = tmp_path / "event_log.jsonl"
     identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
     row = _row("single_fault/sf-002", "event-state-test")
@@ -2054,6 +2168,7 @@ def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> Non
     verdict_record = {
         "cleanup_status": "pending",
         "env_resolved": True,
+        "episode_id": "ep-alpha-001",
         "event_id": "evt-1",
         "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
         "hidden_metadata": row["hidden_metadata"],
@@ -2068,7 +2183,9 @@ def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> Non
 
     completed_record = {
         "cleanup_status": "completed",
+        "curriculum_state": {"sha256": "curr-sha-001"},
         "episode": {"env_resolved": True, "verification": {"env_resolved": True}},
+        "episode_id": "ep-alpha-001",
         "event_id": "evt-2",
         "evidence_phase": "EPISODE_FINALIZED",
         "hidden_metadata": row["hidden_metadata"],
@@ -2088,35 +2205,58 @@ def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> Non
     )
     assert reward_fn.validate_existing_episode_log() == 2
 
-    # 2. Dangling verdict (pending cleanup at EOF) fails closed
+    # 2. Key regression: Two legitimate later episodes with identical row/group/rollout_index/completion
+    # but DIFFERENT episode_id must both validate successfully!
+    verdict_record_2 = dict(
+        verdict_record,
+        episode_id="ep-beta-002",
+        event_id="evt-3",
+    )
+    completed_record_2 = dict(
+        completed_record,
+        curriculum_state={"sha256": "curr-sha-002"},
+        episode_id="ep-beta-002",
+        event_id="evt-4",
+    )
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n"
+        + json.dumps(completed_record) + "\n"
+        + json.dumps(verdict_record_2) + "\n"
+        + json.dumps(completed_record_2) + "\n",
+        encoding="utf-8",
+    )
+    assert reward_fn.validate_existing_episode_log() == 4
+    assert reward_fn.latest_completed_curriculum_sha256 == "curr-sha-002"
+
+    # 3. Dangling verdict (pending cleanup at EOF) fails closed
     episodes_file.write_text(json.dumps(verdict_record) + "\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="dangling_verdict_detected.*cleanup_status=pending"):
         reward_fn.validate_existing_episode_log()
 
-    # 3. Duplicate completed record for same rollout fails closed
-    dup_completed = dict(completed_record, event_id="evt-3")
+    # 4. Duplicate completed record for same episode_id fails closed
+    dup_completed = dict(completed_record, event_id="evt-dup")
     episodes_file.write_text(
         json.dumps(verdict_record) + "\n" + json.dumps(completed_record) + "\n" + json.dumps(dup_completed) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict|duplicate_completed_rollout"):
+    with pytest.raises(RuntimeError, match="duplicate_completed_episode"):
         reward_fn.validate_existing_episode_log()
 
-    # 4. Terminal completed record without preceding captured verdict fails closed
+    # 5. Terminal completed record without preceding captured verdict fails closed
     episodes_file.write_text(json.dumps(completed_record) + "\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict"):
         reward_fn.validate_existing_episode_log()
 
-    # 5. Mismatched completion hash between verdict and terminal record fails closed
+    # 6. Mismatched completion hash between verdict and terminal record fails closed
     mismatched_completed = dict(completed_record, policy_completion_sha256="mismatched-sha256" + "0" * 47)
     episodes_file.write_text(
         json.dumps(verdict_record) + "\n" + json.dumps(mismatched_completed) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(RuntimeError, match="terminal_completed_record_missing_captured_verdict|dangling_verdict_detected"):
+    with pytest.raises(RuntimeError, match="contradictory_verdict_terminal_mismatch"):
         reward_fn.validate_existing_episode_log()
 
-    # 6. Contradictory env_resolved facts fail closed
+    # 7. Contradictory env_resolved facts fail closed
     contradictory_completed = dict(completed_record, episode={"env_resolved": False})
     episodes_file.write_text(
         json.dumps(verdict_record) + "\n" + json.dumps(contradictory_completed) + "\n",
@@ -2125,9 +2265,11 @@ def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> Non
     with pytest.raises(RuntimeError, match="contradictory_verdict_terminal_mismatch"):
         reward_fn.validate_existing_episode_log()
 
-    # 7. Valid cleanup invalidation paired with verdict succeeds
+    # 8. Valid cleanup invalidation paired with verdict succeeds
     cleanup_invalid_record = {
         "cleanup_status": "failed",
+        "curriculum_state": None,
+        "episode_id": "ep-alpha-001",
         "event_id": "evt-cleanup-fail",
         "evidence_phase": "CLEANUP_INVALID",
         "hidden_metadata": row["hidden_metadata"],
@@ -2145,6 +2287,81 @@ def test_event_sourced_episode_state_validation_on_resume(tmp_path: Path) -> Non
         encoding="utf-8",
     )
     assert reward_fn.validate_existing_episode_log() == 2
+
+
+def test_curriculum_evidence_crash_window_drift_detection(tmp_path: Path) -> None:
+    """Requirement 3: Fail closed on curriculum/evidence crash-window drift on resume."""
+    identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
+    row = _row("single_fault/sf-002", "curriculum-drift-test")
+    episodes_file = tmp_path / "episodes.jsonl"
+    compl_sha = hashlib.sha256(b"completion").hexdigest()
+
+    reward_fn = OnlineRewardFunction(
+        [row],
+        identity,
+        curriculum_seed=42,
+        dataset_sha256="m" * 64,
+        episodes_path=episodes_file,
+    )
+
+    verdict_record = {
+        "cleanup_status": "pending",
+        "env_resolved": True,
+        "episode_id": "ep-drift-1",
+        "event_id": "evt-1",
+        "evidence_phase": "SCIENTIFIC_VERDICT_CAPTURED",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": compl_sha,
+        "prompt_sha256": row["prompt_sha256"],
+        "rollout_index": 0,
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "SCIENTIFIC_VERDICT_CAPTURED",
+        "verifier_result": {"env_resolved": True},
+    }
+
+    completed_record = {
+        "cleanup_status": "completed",
+        "curriculum_state": {"sha256": "hash-curriculum-step-1"},
+        "episode": {"env_resolved": True, "verification": {"env_resolved": True}},
+        "episode_id": "ep-drift-1",
+        "event_id": "evt-2",
+        "evidence_phase": "EPISODE_FINALIZED",
+        "hidden_metadata": row["hidden_metadata"],
+        "policy_completion_sha256": compl_sha,
+        "prompt_sha256": row["prompt_sha256"],
+        "reward": {"total": 0.85},
+        "rollout_index": 0,
+        "row_id": row["row_id"],
+        "stage9_group_id": row["stage9_group_id"],
+        "status": "COMPLETED",
+    }
+
+    # 1. Matching final episode/state hash -> resume accepted
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(completed_record) + "\n",
+        encoding="utf-8",
+    )
+    assert reward_fn.validate_existing_episode_log() == 2
+    validate_curriculum_resume_integrity("hash-curriculum-step-1", reward_fn.latest_completed_curriculum_sha256)
+
+    # 2. Stale curriculum file after valid COMPLETED event -> resume rejected
+    with pytest.raises(RuntimeError, match="curriculum_episode_state_mismatch"):
+        validate_curriculum_resume_integrity("hash-curriculum-STALE", reward_fn.latest_completed_curriculum_sha256)
+
+    # 3. Corrupt/missing COMPLETED curriculum hash -> rejected
+    corrupt_completed = dict(completed_record, curriculum_state={"sha256": ""}, event_id="evt-corrupt")
+    episodes_file.write_text(
+        json.dumps(verdict_record) + "\n" + json.dumps(corrupt_completed) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="completed_episode_curriculum_state_invalid"):
+        reward_fn.validate_existing_episode_log()
+
+    # 4. Dangling pre-cleanup verdict remains rejected independently
+    episodes_file.write_text(json.dumps(verdict_record) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="dangling_verdict_detected"):
+        reward_fn.validate_existing_episode_log()
 
 
 def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
@@ -2232,12 +2449,14 @@ def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
     assert rec0["policy_executed_action"]["tool"] == "chaos_stop_experiment"
     assert rec0["policy_action_admitted"] is True
     assert rec0["policy_action_identity_match"] is True
+    assert "episode_id" in rec0 and rec0["episode_id"].startswith("ep_")
     # Record 1 is finalized completed rollout
     rec1 = records[1]
     assert rec1["status"] == "COMPLETED"
     assert rec1["evidence_phase"] == "EPISODE_FINALIZED"
     assert rec1["cleanup_status"] == "completed"
     assert rec1["reward"]["total"] == rewards[0]
+    assert rec1["episode_id"] == rec0["episode_id"]
 
     # Validate log passes log validator
     assert reward_fn_success.validate_existing_episode_log() == 2
@@ -2271,6 +2490,7 @@ def test_pre_cleanup_verifier_evidence_persistence_lifecycle(
     assert records_fail[1]["status"] == "INFRASTRUCTURE_INVALID"
     assert records_fail[1]["evidence_phase"] == "CLEANUP_INVALID"
     assert records_fail[1]["cleanup_status"] == "failed"
+    assert records_fail[1]["episode_id"] == records_fail[0]["episode_id"]
     assert "cleanup_timeout_deleting_crd" in records_fail[1]["invalidation_reason"]
 
     assert reward_fn_fail.validate_existing_episode_log() == 2
@@ -2400,7 +2620,7 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Requirement: End-to-end composition regression covering valid chain and fail-closed branches."""
+    """Requirement: End-to-end composition regression covering valid chain, unique episode_id, and crash drift checks."""
     identity = resolve_environment_identity("local-kind", "kind-atlasops-local")
     row = _row("single_fault/sf-002", "composition-full")
     episodes_file = tmp_path / "composition_episodes.jsonl"
@@ -2504,7 +2724,7 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
         curriculum_state_path=curriculum_file,
         fault_settle_seconds=0,
         reset_settle_seconds=0,
-        fault_effect_predicate=valid_predicate,
+        fault_effect_predicate=resolved_bindings,
         require_effect_confirmation=True,
     )
 
@@ -2534,12 +2754,29 @@ def test_composition_full_scientific_chain_and_fail_closed_branches(
     assert records[0]["policy_action"]["tool"] == "chaos_stop_experiment"
     assert records[0]["policy_executed_action"]["tool"] == "chaos_stop_experiment"
     assert records[0]["policy_action_admitted"] is True
+    assert records[0]["episode_id"] == records[1]["episode_id"]
     assert records[1]["status"] == "COMPLETED"
     assert records[1]["cleanup_status"] == "completed"
     assert records[1]["reward"]["total"] == 0.85
+    assert records[1]["curriculum_state"]["sha256"] == reward_fn.latest_completed_curriculum_sha256
 
     # Resume validator accepts the event history
     assert reward_fn.validate_existing_episode_log() == 2
 
+    # Curriculum/evidence resume integrity passes
+    validate_curriculum_resume_integrity(
+        _curriculum.export_state()["state_sha256"],
+        reward_fn.latest_completed_curriculum_sha256,
+    )
+
     # Curriculum state written
     assert curriculum_file.is_file()
+
+    # Second identical episode with new episode_id validates cleanly
+    rewards_2 = reward_fn(completions, prompts, **metadata)
+    assert len(rewards_2) == 1
+    assert reward_fn.validate_existing_episode_log() == 4
+    validate_curriculum_resume_integrity(
+        _curriculum.export_state()["state_sha256"],
+        reward_fn.latest_completed_curriculum_sha256,
+    )

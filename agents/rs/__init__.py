@@ -5,6 +5,11 @@ and validate supported actions, but execution remains the responsibility of the
 approval gate, remediation policy, and coordinator.
 """
 
+from agents.rs.features import (
+    canonical_recommendation_input,
+    context_from_diagnosis,
+    recommendation_input_hash,
+)
 from agents.rs.catalogue import RUNBOOK_CATALOGUE
 from agents.rs.integration import RecommendationPacketBuilder
 from agents.rs.metrics import (
@@ -33,6 +38,9 @@ __all__ = [
     "RUNBOOK_CATALOGUE",
     "RecommendationPacketBuilder",
     "HybridRecommender",
+    "canonical_recommendation_input",
+    "context_from_diagnosis",
+    "recommendation_input_hash",
     "derive_parameter_requirements",
     "evaluate_prerequisites",
     "validate_parameter_contract",

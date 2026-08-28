@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from agents.rs.features import build_content_query
+from agents.rs.features import build_content_query, recommendation_input_hash
 from agents.rs.ontology import (
     derive_parameter_requirements,
     evaluate_prerequisites,
@@ -92,17 +92,22 @@ class RecommendationPacketBuilder:
             "service": getattr(context, "service", ""),
             "fault_types": list(getattr(context, "fault_types", ())),
         }
-        context_hash = stable_hash({
-            "incident_key": getattr(context, "incident_key", ""),
-            "profile": profile,
-            "diagnosis_text": getattr(context, "diagnosis_text", ""),
-            "symptoms": list(getattr(context, "symptoms", ())),
+        context_hash = recommendation_input_hash(context, template_values)
+        risk_penalties_payload = {
+            str(k): float(v) for k, v in sorted(risk_penalty_overrides.items())
+        } if risk_penalty_overrides else {}
+        configuration_hash = stable_hash({
+            "k": self.k,
+            "weights": dict(self.recommender.weights),
+            "available_tools": sorted(self.available_tools),
+            "risk_penalty_overrides": risk_penalties_payload,
         })
         base_packet: dict[str, Any] = {
             "contract_version": "rs-v0",
             "incident_key": getattr(context, "incident_key", ""),
             "profile": profile,
             "context_hash": context_hash,
+            "configuration_hash": configuration_hash,
             "toggle": {"enabled": toggle.enabled, "reason": toggle.reason},
             "top_k_requested": self.k if toggle.enabled else 0,
             "candidates": [],

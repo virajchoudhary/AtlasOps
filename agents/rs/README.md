@@ -44,6 +44,8 @@ evaluates operational prerequisites into deterministic states (`satisfied`,
 A successful parameter-contract validation is not approval or runtime-policy authorization.
 Unmet and unknown operational prerequisites become explicit downstream execution blockers
 in recommendation packets rather than silently dropping candidate actions from ranking.
+The diagnosis context adapter preserves `None` (unknown) for unobserved operational facts
+without converting them to false.
 
 ## Features And Baselines
 
@@ -51,8 +53,13 @@ Context and candidate text use one deterministic Blake2b-hashed sparse feature
 space. All text is case-normalized before regex tokenization to ensure terms like
 `StressChaos`, `CPU`, `DNS`, and `NetworkChaos` are extracted deterministically.
 Structured `fault_type=...` terms improve meaningful overlap without Python's
-randomized hash. There is no constant service bonus because current runbooks have
-wildcard service constraints.
+randomized hash.
+
+`recommendation_input_hash` produces a canonical deterministic Blake2b fingerprint
+binding every caller-controlled and context input (service, namespace, severity,
+fault types, symptoms, diagnosis text, operational gate states, mutation budget,
+approval state, and canonicalized template values). Two materially different
+recommendation inputs never share one context hash.
 
 The popularity/success baseline uses smoothed relevance and popularity. It fits only
 observable outcomes: synthetic complete labels, selected outcomes, and human overrides.

@@ -9,9 +9,11 @@ from agents.rs import RUNBOOK_CATALOGUE
 from agents.rs.catalogue import validate_catalogue as validate_catalogue_module
 from agents.rs.features import (
     build_content_query,
+    canonical_recommendation_input,
     content_vector,
     context_from_diagnosis,
     cosine_similarity,
+    recommendation_input_hash,
 )
 from agents.rs.integration import RecommendationPacketBuilder, RecommendationToggle
 from agents.rs.metrics import (
@@ -1014,6 +1016,272 @@ def test_tokenization_case_normalization_and_semantic_invariance():
     scores_lower = model.score(lower_query, RUNBOOK_CATALOGUE)
     assert scores_mixed == scores_lower
     assert rank_candidates(scores_mixed, 5) == rank_candidates(scores_lower, 5)
+
+
+def test_context_from_diagnosis_preserves_unknown_operational_gate_states():
+    """Prove through the REAL context_from_diagnosis path that absent gates remain unknown."""
+    rows = [row for row in synthetic_rows() if row.eligible_for_fit]
+    builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=10)
+    builder.recommender.fit(rows)
+
+    triage = {
+        "severity": "P1",
+        "affected_services": ["paymentservice"],
+        "labels": {"namespace": "default"},
+    }
+    diagnosis = {
+        "root_cause": {
+            "category": "resource",
+            "specific": "StressChaos injected on paymentservice causing CPU saturation.",
+            "evidence": [{"tool": "promql_query", "finding": "CPU high"}],
+        },
+        "recommended_actions": [
+            {"action": "stop_chaos", "kind": "StressChaos", "name": "paymentservice-cpu"}
+        ],
+    }
+
+    # 1. Omitted / absent operational facts default to None (unknown)
+    ctx_omitted = context_from_diagnosis(
+        incident_key="synthetic/gate-omitted",
+        triage=triage,
+        diagnosis=diagnosis,
+        # active_chaos_experiment and deployment_recently_changed omitted
+    )
+    assert ctx_omitted.active_chaos_experiment is None
+    assert ctx_omitted.deployment_recently_changed is None
+    assert ctx_omitted.revision_history_available is None
+    assert ctx_omitted.mitigation_in_progress is None
+    assert ctx_omitted.approval_granted is False
+
+    packet_omitted = builder.recommend_packet(
+        ctx_omitted,
+        template_values={"chaos_resource_name": "paymentservice-cpu"},
+    )
+    stop_chaos_omitted = next(
+        c for c in packet_omitted["candidates"] if c["action_id"] == "stop_stress_chaos"
+    )
+    assert stop_chaos_omitted["prerequisite_states"]["active_chaos_experiment"] == "unknown"
+    assert "prerequisite_unknown:active_chaos_experiment" in stop_chaos_omitted["downstream_execution_blockers"]
+    assert stop_chaos_omitted["execution_eligible_after_downstream_gates"] is False
+
+    # 2. Explicit False produces unmet
+    ctx_false = context_from_diagnosis(
+        incident_key="synthetic/gate-false",
+        triage=triage,
+        diagnosis=diagnosis,
+        active_chaos_experiment=False,
+        deployment_recently_changed=False,
+    )
+    assert ctx_false.active_chaos_experiment is False
+    assert ctx_false.deployment_recently_changed is False
+
+    packet_false = builder.recommend_packet(
+        ctx_false,
+        template_values={"chaos_resource_name": "paymentservice-cpu"},
+    )
+    stop_chaos_false = next(
+        c for c in packet_false["candidates"] if c["action_id"] == "stop_stress_chaos"
+    )
+    assert stop_chaos_false["prerequisite_states"]["active_chaos_experiment"] == "unmet"
+    assert "prerequisite_unmet:active_chaos_experiment" in stop_chaos_false["downstream_execution_blockers"]
+    assert stop_chaos_false["execution_eligible_after_downstream_gates"] is False
+
+    # 3. Explicit True produces satisfied
+    ctx_true = context_from_diagnosis(
+        incident_key="synthetic/gate-true",
+        triage=triage,
+        diagnosis=diagnosis,
+        active_chaos_experiment=True,
+        deployment_recently_changed=True,
+    )
+    assert ctx_true.active_chaos_experiment is True
+    assert ctx_true.deployment_recently_changed is True
+
+    packet_true = builder.recommend_packet(
+        ctx_true,
+        template_values={"chaos_resource_name": "paymentservice-cpu"},
+    )
+    stop_chaos_true = next(
+        c for c in packet_true["candidates"] if c["action_id"] == "stop_stress_chaos"
+    )
+    assert stop_chaos_true["prerequisite_states"]["active_chaos_experiment"] == "satisfied"
+    assert "prerequisite_unmet:active_chaos_experiment" not in stop_chaos_true["downstream_execution_blockers"]
+    assert "prerequisite_unknown:active_chaos_experiment" not in stop_chaos_true["downstream_execution_blockers"]
+
+    # 4. Rollout undo likewise: omitted -> unknown, False -> unmet, True -> satisfied
+    diag_config = {
+        "root_cause": {
+            "category": "configuration",
+            "specific": "Configuration regression after bad deployment.",
+            "evidence": [{"tool": "kubectl_get", "finding": "recent bad rollout"}],
+        },
+        "recommended_actions": [{"action": "rollout_undo", "name": "paymentservice"}],
+    }
+    ctx_rollout_omitted = context_from_diagnosis(
+        incident_key="synthetic/rollout-omitted",
+        triage=triage,
+        diagnosis=diag_config,
+    )
+    packet_rollout_omitted = builder.recommend_packet(ctx_rollout_omitted)
+    rollout_omitted = next(
+        c for c in packet_rollout_omitted["candidates"]
+        if c["action_id"] == "rollout_undo_configuration_regression"
+    )
+    assert rollout_omitted["prerequisite_states"]["deployment_recently_changed"] == "unknown"
+    assert "prerequisite_unknown:deployment_recently_changed" in rollout_omitted["downstream_execution_blockers"]
+    assert rollout_omitted["execution_eligible_after_downstream_gates"] is False
+
+    ctx_rollout_false = context_from_diagnosis(
+        incident_key="synthetic/rollout-false",
+        triage=triage,
+        diagnosis=diag_config,
+        deployment_recently_changed=False,
+    )
+    packet_rollout_false = builder.recommend_packet(ctx_rollout_false)
+    rollout_false = next(
+        c for c in packet_rollout_false["candidates"]
+        if c["action_id"] == "rollout_undo_configuration_regression"
+    )
+    assert rollout_false["prerequisite_states"]["deployment_recently_changed"] == "unmet"
+    assert "prerequisite_unmet:deployment_recently_changed" in rollout_false["downstream_execution_blockers"]
+    assert rollout_false["execution_eligible_after_downstream_gates"] is False
+
+    ctx_rollout_true = context_from_diagnosis(
+        incident_key="synthetic/rollout-true",
+        triage=triage,
+        diagnosis=diag_config,
+        deployment_recently_changed=True,
+    )
+    packet_rollout_true = builder.recommend_packet(ctx_rollout_true)
+    rollout_true = next(
+        c for c in packet_rollout_true["candidates"]
+        if c["action_id"] == "rollout_undo_configuration_regression"
+    )
+    assert rollout_true["prerequisite_states"]["deployment_recently_changed"] == "satisfied"
+    assert "prerequisite_unmet:deployment_recently_changed" not in rollout_true["downstream_execution_blockers"]
+    assert "prerequisite_unknown:deployment_recently_changed" not in rollout_true["downstream_execution_blockers"]
+
+
+def test_recommendation_input_hash_binds_all_inputs_and_preserves_reordering_invariance():
+    """Context hash must bind every recommendation-affecting field and be invariant to key ordering."""
+    rows = [row for row in synthetic_rows() if row.eligible_for_fit]
+    builder = RecommendationPacketBuilder(RUNBOOK_CATALOGUE, hybrid_model(), k=5)
+    builder.recommender.fit(rows)
+
+    base = ContextFeatures(
+        incident_key="synthetic/hash-test",
+        service="paymentservice",
+        namespace="default",
+        fault_types=("cpu_saturation",),
+        symptoms=("cpu", "latency"),
+        severity="P1",
+        diagnosis_text="Sustained CPU saturation on payment pipeline.",
+        deployment_recently_changed=True,
+        active_chaos_experiment=False,
+        mutation_budget_remaining=3,
+        approval_granted=False,
+        revision_history_available=None,
+        mitigation_in_progress=None,
+    )
+    base_template = {"chaos_resource_name": "payment-stress", "target_replicas": 4}
+    base_payload = canonical_recommendation_input(base, base_template)
+    assert base_payload["namespace"] == "default"
+    assert base_payload["template_values"]["target_replicas"] == 4
+    base_hash = recommendation_input_hash(base, base_template)
+    packet = builder.recommend_packet(base, template_values=base_template)
+    assert packet["context_hash"] == base_hash
+
+    # 1. namespace change changes hash
+    h_namespace = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "namespace": "staging"}),
+        base_template,
+    )
+    assert h_namespace != base_hash
+
+    # 2. mutation_budget_remaining change changes hash
+    h_budget = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "mutation_budget_remaining": 0}),
+        base_template,
+    )
+    assert h_budget != base_hash
+
+    # 3. active_chaos_experiment changes (None vs False vs True) change hash
+    h_chaos_none = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "active_chaos_experiment": None}),
+        base_template,
+    )
+    h_chaos_true = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "active_chaos_experiment": True}),
+        base_template,
+    )
+    assert h_chaos_none != base_hash
+    assert h_chaos_true != base_hash
+    assert h_chaos_none != h_chaos_true
+
+    # 4. deployment_recently_changed changes (None vs False vs True) change hash
+    h_deploy_none = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "deployment_recently_changed": None}),
+        base_template,
+    )
+    h_deploy_false = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "deployment_recently_changed": False}),
+        base_template,
+    )
+    assert h_deploy_none != base_hash
+    assert h_deploy_false != base_hash
+    assert h_deploy_none != h_deploy_false
+
+    # 5. revision_history_available changes (None vs False vs True) change hash
+    h_revision_false = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "revision_history_available": False}),
+        base_template,
+    )
+    h_revision_true = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "revision_history_available": True}),
+        base_template,
+    )
+    assert h_revision_false != base_hash
+    assert h_revision_true != base_hash
+    assert h_revision_false != h_revision_true
+
+    # 6. mitigation_in_progress changes (None vs False vs True) change hash
+    h_mitigation_false = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "mitigation_in_progress": False}),
+        base_template,
+    )
+    h_mitigation_true = recommendation_input_hash(
+        ContextFeatures(**{**base.__dict__, "mitigation_in_progress": True}),
+        base_template,
+    )
+    assert h_mitigation_false != base_hash
+    assert h_mitigation_true != base_hash
+    assert h_mitigation_false != h_mitigation_true
+
+    # 7. template_values change changes hash
+    h_template_diff = recommendation_input_hash(
+        base,
+        {"chaos_resource_name": "other-stress", "target_replicas": 4},
+    )
+    h_template_none = recommendation_input_hash(base, None)
+    assert h_template_diff != base_hash
+    assert h_template_none != base_hash
+
+    # 8. Reordered template_values and numeric_features keys produce identical hash
+    reordered_template = {"target_replicas": 4, "chaos_resource_name": "payment-stress"}
+    assert recommendation_input_hash(base, reordered_template) == base_hash
+
+    # 9. feedback_row preserves exact originating packet context_hash
+    top_action = packet["candidates"][0]["action_id"]
+    row = builder.feedback_row(
+        packet,
+        top_action,
+        selected=True,
+        relevance=1.0,
+        outcome="success",
+        split="train",
+    )
+    assert row.context_hash == packet["context_hash"]
+    assert row.context_hash == base_hash
 
 
 def test_rs_package_has_no_direct_tool_execution_path():

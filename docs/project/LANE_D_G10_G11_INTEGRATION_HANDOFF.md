@@ -3,7 +3,8 @@
 Status: `READY_FOR_FUTURE_INTEGRATION_HOLD` — this is not a G10/G11 PASS.
 Prior validation checkpoint SHA: `1c0496075fde94a3d4f504a95f91edae1cec7fcd`.
 Prior documentation successor head: `50ffc89b35a5c054cba5fa8a219f6f1010489096`.
-Branch: `research/g10-g11-rs`.
+Reviewed code correction predecessor SHA: `cc93a235d6d90452b5719a9417a9231a51f998d9`.
+Branch head ref: `research/g10-g11-rs`.
 
 ## Contract
 
@@ -15,8 +16,14 @@ Branch: `research/g10-g11-rs`.
   hashes fail closed.
 - Available-tools fail-closed: `None` uses canonical remediation ACL; explicit
   empty `frozenset()` provides zero tools and recommends zero execution surface.
-- Operational prerequisite contract: gates evaluate to `satisfied`, `unmet`, or
-  `unknown`. Unmet/unknown gates become explicit `downstream_execution_blockers`.
+- Operational prerequisite & epistemic contract: operational facts whose state
+  is unobserved evaluate to `unknown` (`None`), explicit `False` evaluates to
+  `unmet`, and explicit `True` evaluates to `satisfied`. The diagnosis context
+  adapter preserves `None` without boolean coercion. Unmet and unknown gates
+  become explicit `downstream_execution_blockers`.
+- Recommendation-input hash contract: canonical deterministic fingerprint
+  (`recommendation_input_hash`) binds every caller-controlled and context input
+  affecting candidate inclusion, prerequisites, blockers, and query vectors.
 - Mathematical SVD contract: truncated SVD reconstruction is exact $U \Sigma V^T$.
 - Content tokenization: case-normalized before regex extraction.
 
@@ -103,13 +110,18 @@ Block integration if:
 1. At prior validation checkpoint `1c0496075fde94a3d4f504a95f91edae1cec7fcd`:
    focused tests passed (`46 passed`); broader relevant offline suite passed (`82 passed`).
 2. Successor documentation commit: `50ffc89b35a5c054cba5fa8a219f6f1010489096`.
-3. Final independent correction round on `research/g10-g11-rs`:
+3. Reviewed code correction checkpoint `cc93a235d6d90452b5719a9417a9231a51f998d9`:
    - Empty available-tools fail-closed verified with explicit `frozenset()`.
    - Operational prerequisite states (`satisfied`, `unmet`, `unknown`) and downstream blockers verified.
    - SVD reconstruction corrected to $U \Sigma V^T$ and verified on non-unit singular value ($\sigma_1 = \sqrt{1.25}$) and rank-truncated matrices.
    - Content tokenization case normalization verified with mixed-case terms (`StressChaos`, `CPU`, `DNS`, `NetworkChaos`).
-   - Focused suite: `52 passed`.
+   - Focused suite at cc93: `52 passed`.
+   - Broader offline suite at cc93: `61 passed`.
+4. Final epistemic and provenance correction on `research/g10-g11-rs`:
+   - Preserved `None` (unknown) operational gate state through `context_from_diagnosis` without false coercion.
+   - Canonical recommendation-input hash (`recommendation_input_hash`) binding all recommendation-affecting fields.
+   - Focused suite: `55 passed in 2.18s`.
    - Targeted Ruff: clean (`All checks passed!`).
    - `git diff --check`: clean.
-   - Broader offline suite: `82 passed`.
+   - Broader offline suite: `61 passed in 92.96s`.
    These are rehearsal checks, not scientific gate evidence.

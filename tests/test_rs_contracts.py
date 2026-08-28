@@ -20,7 +20,7 @@ from agents.rs import (
     serialize_hybrid_model,
     unsafe_recommendation_rate,
 )
-from agents.rs.features import build_content_query
+from agents.rs.features import build_content_query, recommendation_input_hash
 from agents.rs.integration import RecommendationPacketBuilder
 from agents.rs.persistence import interaction_corpus_fingerprint
 from agents.rs.recommender import HybridRecommender, CollaborativeSVDBaseline, ContentBasedBaseline, PopularitySuccessBaseline, rank_candidates
@@ -254,6 +254,38 @@ def test_evaluate_prerequisites_contract_and_deterministic_states():
     assert silence_states["duration_minutes"] == "satisfied"
     assert silence_states["alertname"] == "unknown"
     assert silence_states["mitigation_in_progress"] == "unknown"
+
+
+def test_recommendation_input_hash_contract_and_epistemic_safety():
+    ctx_none = ContextFeatures(
+        incident_key="synthetic/contract-hash",
+        service="paymentservice",
+        namespace="default",
+        fault_types=("cpu_saturation",),
+        symptoms=("cpu",),
+        severity="P1",
+        diagnosis_text="CPU saturation.",
+        deployment_recently_changed=None,
+        active_chaos_experiment=None,
+        mutation_budget_remaining=3,
+        approval_granted=False,
+    )
+    ctx_false = replace(ctx_none, active_chaos_experiment=False)
+    ctx_true = replace(ctx_none, active_chaos_experiment=True)
+
+    h_none = recommendation_input_hash(ctx_none)
+    h_false = recommendation_input_hash(ctx_false)
+    h_true = recommendation_input_hash(ctx_true)
+
+    # Distinct epistemic states must produce distinct fingerprints
+    assert h_none != h_false
+    assert h_none != h_true
+    assert h_false != h_true
+
+    # Hashes are deterministic and 64 hex characters
+    assert len(h_none) == 64
+    assert int(h_none, 16) > 0
+    assert recommendation_input_hash(ctx_none) == h_none
 
 
 def test_side_effect_classification_and_unseen_action_cold_start():

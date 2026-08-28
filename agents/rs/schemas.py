@@ -109,9 +109,9 @@ class ContextFeatures:
     symptoms: tuple[str, ...]
     severity: str
     diagnosis_text: str
-    deployment_recently_changed: bool
-    active_chaos_experiment: bool
-    mutation_budget_remaining: int
+    deployment_recently_changed: bool | None = None
+    active_chaos_experiment: bool | None = None
+    mutation_budget_remaining: int = 3
     approval_granted: bool = False
     revision_history_available: bool | None = None
     mitigation_in_progress: bool | None = None
@@ -130,10 +130,16 @@ class ContextFeatures:
                 raise SchemaError(f"{attr} must be non-empty strings")
         if not isinstance(self.diagnosis_text, str):
             raise SchemaError("diagnosis_text must be text")
-        for attr in ("deployment_recently_changed", "active_chaos_experiment", "approval_granted"):
-            if not isinstance(getattr(self, attr), bool):
-                raise SchemaError(f"{attr} must be boolean")
-        for attr in ("revision_history_available", "mitigation_in_progress"):
+        # approval_granted is fail-closed False authority state by default
+        if not isinstance(self.approval_granted, bool):
+            raise SchemaError("approval_granted must be boolean")
+        # Operational facts whose observation may be absent use bool | None (None = unknown)
+        for attr in (
+            "deployment_recently_changed",
+            "active_chaos_experiment",
+            "revision_history_available",
+            "mitigation_in_progress",
+        ):
             value = getattr(self, attr)
             if value is not None and not isinstance(value, bool):
                 raise SchemaError(f"{attr} must be boolean or None")

@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from collections import Counter
-from typing import Any
+from typing import Any, Mapping
 
 from agents.rs.schemas import ContextFeatures, Runbook, SchemaError
+
+
+def stable_hash(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.blake2b(encoded, digest_size=32).hexdigest()
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 _STOPWORDS = frozenset({
@@ -24,8 +36,8 @@ def context_from_diagnosis(
     diagnosis: dict[str, Any],
     mutation_budget_remaining: int = 5,
     approval_granted: bool = False,
-    deployment_recently_changed: bool = False,
-    active_chaos_experiment: bool = False,
+    deployment_recently_changed: bool | None = None,
+    active_chaos_experiment: bool | None = None,
     revision_history_available: bool | None = None,
     mitigation_in_progress: bool | None = None,
 ) -> ContextFeatures:
@@ -34,7 +46,8 @@ def context_from_diagnosis(
     The canonical Diagnosis contract nests cause details under ``root_cause`` and
     proposals under ``recommended_actions``. Required canonical fields are checked
     explicitly; the adapter never invents missing evidence or recommendations.
-    Operational booleans remain caller-supplied policy state, not Diagnosis output.
+    Operational facts whose observation is absent default to None (unknown).
+    Approval state is fail-closed False authority policy unless explicitly granted.
     """
     if not isinstance(triage, dict) or not isinstance(diagnosis, dict):
         raise SchemaError("triage and diagnosis must be dictionaries")
@@ -93,6 +106,17 @@ def context_from_diagnosis(
         token for token in _TOKEN_RE.findall(f"{specific_text} {actions_text}".lower())
         if len(token) > 2 and token not in _STOPWORDS
     ))[:32]
+
+    def _coerce_optional_bool(value: Any, name: str) -> bool | None:
+        if value is None:
+            return None
+        if not isinstance(value, bool):
+            raise SchemaError(f"{name} must be boolean or None")
+        return value
+
+    if not isinstance(approval_granted, bool):
+        raise SchemaError("approval_granted must be boolean")
+
     return ContextFeatures(
         incident_key=incident_key,
         service=services[0],
@@ -101,13 +125,96 @@ def context_from_diagnosis(
         symptoms=symptoms,
         severity=severity,
         diagnosis_text=combined[:4000],
-        deployment_recently_changed=bool(deployment_recently_changed),
-        active_chaos_experiment=bool(active_chaos_experiment),
+        deployment_recently_changed=_coerce_optional_bool(
+            deployment_recently_changed, "deployment_recently_changed"
+        ),
+        active_chaos_experiment=_coerce_optional_bool(
+            active_chaos_experiment, "active_chaos_experiment"
+        ),
         mutation_budget_remaining=int(mutation_budget_remaining),
-        approval_granted=bool(approval_granted),
-        revision_history_available=revision_history_available,
-        mitigation_in_progress=mitigation_in_progress,
+        approval_granted=approval_granted,
+        revision_history_available=_coerce_optional_bool(
+            revision_history_available, "revision_history_available"
+        ),
+        mitigation_in_progress=_coerce_optional_bool(
+            mitigation_in_progress, "mitigation_in_progress"
+        ),
     )
+
+
+def canonical_recommendation_input(
+    context: Any,
+    template_values: Any = None,
+) -> dict[str, Any]:
+    """Extract a canonical deterministic dictionary of recommendation-affecting inputs.
+
+    Binds all context, gate, budget, and template fields that affect candidate
+    filtering, prerequisite evaluation, downstream blockers, or query vectors.
+    """
+    def _ctx_get(k: str, d: Any = None) -> Any:
+        if isinstance(context, dict):
+            return context.get(k, d)
+        return getattr(context, k, d)
+
+    def _str_val(val: Any) -> str:
+        return str(val) if val is not None else ""
+
+    def _str_list(val: Any) -> list[str]:
+        if val is None:
+            return []
+        if isinstance(val, (list, tuple, set, frozenset)):
+            return [str(v) for v in val]
+        return [str(val)]
+
+    def _opt_bool(val: Any) -> bool | None:
+        if val is None:
+            return None
+        return bool(val)
+
+    def _clean_numeric(val: Any) -> dict[str, float]:
+        if not isinstance(val, dict):
+            return {}
+        return {str(k): float(v) for k, v in sorted(val.items(), key=lambda item: str(item[0]))}
+
+    def _clean_templates(val: Any) -> dict[str, Any]:
+        if not isinstance(val, (dict, Mapping)):
+            return {}
+        cleaned: dict[str, Any] = {}
+        for k, v in sorted(val.items(), key=lambda item: str(item[0])):
+            if isinstance(v, (int, float, bool, str)) or v is None:
+                cleaned[str(k)] = v
+            else:
+                cleaned[str(k)] = str(v)
+        return cleaned
+
+    return {
+        "incident_key": _str_val(_ctx_get("incident_key")),
+        "service": _str_val(_ctx_get("service")),
+        "namespace": _str_val(_ctx_get("namespace")),
+        "severity": _str_val(_ctx_get("severity")),
+        "fault_types": _str_list(_ctx_get("fault_types")),
+        "symptoms": _str_list(_ctx_get("symptoms")),
+        "diagnosis_text": _str_val(_ctx_get("diagnosis_text")),
+        "deployment_recently_changed": _opt_bool(_ctx_get("deployment_recently_changed")),
+        "active_chaos_experiment": _opt_bool(_ctx_get("active_chaos_experiment")),
+        "revision_history_available": _opt_bool(_ctx_get("revision_history_available")),
+        "mitigation_in_progress": _opt_bool(_ctx_get("mitigation_in_progress")),
+        "mutation_budget_remaining": int(_ctx_get("mutation_budget_remaining", 0)),
+        "approval_granted": bool(_ctx_get("approval_granted", False)),
+        "workload_kind": _str_val(_ctx_get("workload_kind", "")),
+        "recommendation_summary": _str_val(_ctx_get("recommendation_summary", "")),
+        "numeric_features": _clean_numeric(_ctx_get("numeric_features")),
+        "template_values": _clean_templates(template_values),
+    }
+
+
+def recommendation_input_hash(
+    context: Any,
+    template_values: Any = None,
+) -> str:
+    """Generate a canonical deterministic Blake2b fingerprint for recommendation inputs."""
+    payload = canonical_recommendation_input(context, template_values)
+    return stable_hash(payload)
 
 
 def tokenize_for_matching(*values: Any) -> list[str]:

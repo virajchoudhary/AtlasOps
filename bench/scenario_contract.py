@@ -1072,8 +1072,10 @@ def freeze_split(
         ledger = exposure_ledger
     elif (catalog_path.parent / "exposure_ledger.json").exists():
         ledger = json.loads((catalog_path.parent / "exposure_ledger.json").read_text(encoding="utf-8"))
-    else:
+    elif (candidate_root / "bench" / "g5" / "exposure_ledger.json").exists():
         ledger = load_exposure_ledger(candidate_root, verify=False)
+    else:
+        ledger = load_exposure_ledger(REPO_ROOT, verify=False)
     validate_split(split, catalog, require_ready=True, exposure_ledger=ledger)
     if frozen_path.exists():
         raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")

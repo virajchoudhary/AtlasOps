@@ -74,7 +74,7 @@ def _write_candidate(tmp_path: Path, value: dict) -> tuple[Path, Path, Path]:
 
 def _prepare_freeze_mocks(monkeypatch):
     monkeypatch.setattr(contract, "validate_split", lambda *args, **kwargs: None)
-    monkeypatch.setattr(contract, "load_exposure_ledger", lambda repo_root=None: {})
+    monkeypatch.setattr(contract, "load_exposure_ledger", lambda *args, **kwargs: {})
     monkeypatch.setattr(contract, "repository_head", lambda repo_root: "head-sha")
     monkeypatch.setattr(
         contract,

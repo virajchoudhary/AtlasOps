@@ -769,7 +769,7 @@ def validate_exposure_ledger(
 
 
 def load_exposure_ledger(repo_root: Path = REPO_ROOT, *, verify: bool = True) -> dict[str, Any]:
-    path = repo_root / EXPOSURE_LEDGER_PATH
+    path = repo_root / "bench" / "g5" / "exposure_ledger.json"
     if not path.exists():
         raise RuntimeError(
             "EXPOSURE_LEDGER_NOT_FOUND: bench/g5/exposure_ledger.json is required"
@@ -949,12 +949,31 @@ def validate_split(
         "generator_version"
     ) != SPLIT_GENERATOR_VERSION:
         raise ValueError("split generator/algorithm version mismatch")
-    if split.get("status") == "FROZEN":
-        expected_activation = {"active": True, "authorized_at": split["activation"].get("authorized_at"), "frozen": True}
+
+    status = split.get("status")
+    if status not in {"PROPOSED_READY", "FROZEN"} and not (
+        isinstance(status, str) and status.startswith("PROPOSED_BLOCKED")
+    ):
+        raise ValueError(f"unsupported split status: {status}")
+
+    activation = split.get("activation")
+    if not isinstance(activation, dict):
+        raise ValueError("split activation is missing or not a dict")
+
+    if status == "FROZEN":
+        if activation.get("active") is not True or activation.get("frozen") is not True:
+            raise ValueError("frozen split activation must have active=True and frozen=True")
+        auth_keys = {"authorized_at", "authorized_by", "authorization_ref"}
+        if set(activation.keys()) != auth_keys | {"active", "frozen"}:
+            raise ValueError("frozen split activation contains invalid or missing keys")
+        for k in auth_keys:
+            val = activation.get(k)
+            if not isinstance(val, str) or not val.strip():
+                raise ValueError(f"frozen split authorization field '{k}' must be a non-empty string")
     else:
         expected_activation = {"active": False, "authorized_at": None, "frozen": False}
-    if split.get("activation") != expected_activation:
-        raise ValueError("split activation state is inconsistent")
+        if activation != expected_activation:
+            raise ValueError("inactive/proposed split activation state is inconsistent")
 
     splits = split.get("splits")
     if not isinstance(splits, dict) or set(splits) != {"train", "validation", "final_test", "ineligible_final_test_development_exposed"}:
@@ -981,7 +1000,6 @@ def validate_split(
             f"missing={sorted(expected_ids - assigned)}, extra={sorted(assigned - expected_ids)}"
         )
 
-    exposed = development_exposed_ids(catalog)
     expected_ledger_hash = split.get("exposure_ledger_sha256")
     if not isinstance(expected_ledger_hash, str):
         raise ValueError("split exposure ledger hash is missing")
@@ -989,6 +1007,7 @@ def validate_split(
     validate_exposure_ledger(selected_ledger, catalog)
     if selected_ledger["ledger_sha256"] != expected_ledger_hash:
         raise ValueError("split exposure ledger digest mismatch")
+    exposed = development_exposed_ids(catalog, selected_ledger)
     leaked = set(role_lists["final_test"]).intersection(exposed)
     if leaked:
         raise ValueError(f"final-test leakage: development-exposed scenarios present: {sorted(leaked)}")
@@ -999,24 +1018,26 @@ def validate_split(
     gates = split.get("gate_prerequisites")
     if not isinstance(gates, dict):
         raise ValueError("split gate prerequisites are missing")
-    if split.get("status") == "FROZEN":
+    if status == "FROZEN":
         if gates.get("G4") != "PASSED" or gates.get("explicit_freeze_authorization") is not True:
             raise ValueError("frozen split lacks G4 or explicit authorization prerequisites")
     elif gates.get("G4") != "OPEN" or gates.get("explicit_freeze_authorization") is not False:
         raise ValueError("inactive split gate prerequisites are inconsistent")
 
     if require_ready:
-        if split.get("status") != "PROPOSED_READY":
-            raise ValueError(f"split is not PROPOSED_READY: {split.get('status')}")
+        if status != "PROPOSED_READY":
+            raise ValueError(f"split is not PROPOSED_READY: {status}")
+
+    if status in {"PROPOSED_READY", "FROZEN"}:
         if not role_lists["final_test"]:
-            raise ValueError("freezable split must have final-test scenarios")
+            raise ValueError("freezable/frozen split must have final-test scenarios")
         if split.get("blockers"):
-            raise ValueError("freezable split still has blockers")
+            raise ValueError("freezable/frozen split still has blockers")
         if split.get("ready_for_freeze") is not True:
             raise ValueError("ready_for_freeze is not true")
         coverage = split.get("coverage", {}).get("final_test_by_tier", {})
         if any(int(coverage.get(tier, 0)) < 1 for tier in FROZEN_TIERS):
-            raise ValueError("ready split must cover every frozen tier in final test")
+            raise ValueError("ready/frozen split must cover every frozen tier in final test")
         unresolved_red_herrings = sorted(
             entry["scenario_id"]
             for entry in catalog_entries(catalog).values()
@@ -1028,6 +1049,11 @@ def validate_split(
                 + ", ".join(unresolved_red_herrings)
             )
         validate_family_boundaries(split, catalog)
+    else:
+        if split.get("ready_for_freeze") is not False:
+            raise ValueError("blocked split cannot be ready_for_freeze")
+        if not split.get("blockers"):
+            raise ValueError("blocked split must declare blockers")
 
 
 def freeze_split(
@@ -1037,23 +1063,30 @@ def freeze_split(
     authorization: dict[str, Any],
     catalog_path: Path = CATALOG_PATH,
     expected_repo_sha: str | None = None,
+    exposure_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     split = json.loads(candidate_path.read_text(encoding="utf-8"))
-    ledger = load_exposure_ledger()
+    candidate_root = candidate_path.resolve().parent.parent.parent
+    if exposure_ledger is not None:
+        ledger = exposure_ledger
+    elif (catalog_path.parent / "exposure_ledger.json").exists():
+        ledger = json.loads((catalog_path.parent / "exposure_ledger.json").read_text(encoding="utf-8"))
+    else:
+        ledger = load_exposure_ledger(candidate_root, verify=False)
     validate_split(split, catalog, require_ready=True, exposure_ledger=ledger)
     if frozen_path.exists():
         raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")
 
     required_keys = {"authorized_at", "authorized_by", "authorization_ref"}
     if not required_keys.issubset(authorization) or any(
-        not str(authorization[key]).strip() for key in required_keys
+        not isinstance(authorization.get(key), str) or not str(authorization[key]).strip()
+        for key in required_keys
     ):
         raise ValueError("freeze authorization record is incomplete")
     if authorization.get("g4_passed") is not True:
         raise ValueError("G4 must be passed before split freeze")
     source_repo_sha = str(split["contract_provenance"]["repo_sha"])
-    candidate_root = candidate_path.resolve().parent.parent.parent
     observed_repo_sha = repository_head(candidate_root)
     if expected_repo_sha is not None and expected_repo_sha != observed_repo_sha:
         raise RuntimeError(
@@ -1091,6 +1124,13 @@ def freeze_split(
         "G4": "PASSED",
         "explicit_freeze_authorization": True,
     }
+
+    # Validate prospective frozen object in memory BEFORE persisting to disk
+    validate_split(frozen, catalog, exposure_ledger=ledger)
+
+    if frozen_path.exists():
+        raise FileExistsError(f"refusing to replace an active frozen split: {frozen_path}")
+
     write_json_atomically(frozen_path, frozen)
     return frozen
 
@@ -1106,8 +1146,7 @@ def load_active_split(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     validate_split(
         split,
         catalog,
-        require_ready=True,
-        exposure_ledger=load_exposure_ledger(repo_root),
+        exposure_ledger=load_exposure_ledger(repo_root, verify=False),
     )
     if split.get("status") != "FROZEN" or split.get("activation", {}).get("active") is not True:
         raise RuntimeError("G5 split is present but not active")
@@ -1169,9 +1208,16 @@ def assert_consumer_may_use_scenario(
             raise ValueError(f"scenario is outside active {consumer} population: {scenario_id}")
         return
     if consumer == "demo_development":
-        from config.runtime import FROZEN_SCENARIOS
+        catalog_path = repo_root / "bench" / "g5" / "scenario_catalog.json"
+        if catalog_path.exists():
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            valid_catalog_ids = set(catalog_entries(catalog))
+        else:
+            from config.runtime import FROZEN_SCENARIOS
 
-        if scenario_id not in set(FROZEN_SCENARIOS):
+            valid_catalog_ids = set(FROZEN_SCENARIOS)
+
+        if scenario_id not in valid_catalog_ids:
             raise ValueError(f"scenario is outside the frozen scenario catalogue: {scenario_id}")
         try:
             split = load_active_split(repo_root)
@@ -1311,7 +1357,7 @@ def _verify_command(args: argparse.Namespace) -> int:
         raise ValueError("catalog does not reproduce byte-for-byte from current sources")
     load_exposure_ledger(verify=True)
     target = json.loads(Path(args.path).read_text(encoding="utf-8"))
-    validate_split(target, catalog, require_ready=target.get("status") in {"PROPOSED_READY", "FROZEN"})
+    validate_split(target, catalog, require_ready=target.get("status") == "PROPOSED_READY")
     print(f"verified: {args.path}")
     return 0
 

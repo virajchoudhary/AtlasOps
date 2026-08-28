@@ -1,4 +1,6 @@
+import copy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -445,33 +447,266 @@ def test_curriculum_manager_selects_from_provided_pool():
     assert stats["scenarios_tried"] == 1
 
 
-def test_role_based_consumer_assertions_with_active_split(monkeypatch):
-    mock_split = {
-        "splits": {
-            "train": ["single_fault/sf-001", "single_fault/sf-002"],
-            "validation": ["single_fault/sf-003"],
-            "final_test": ["single_fault/sf-004"],
-        }
+def _build_synthetic_environment(tmp_path: Path):
+    tiers = list(contract.FROZEN_TIERS)
+    train_ids = [f"{tier}/train-01" for tier in tiers]
+    val_ids = [f"{tier}/val-01" for tier in tiers]
+    final_ids = [f"{tier}/final-01" for tier in tiers]
+    all_ids = sorted(train_ids + val_ids + final_ids)
+
+    entries = []
+    for sid in all_ids:
+        tier = sid.split("/")[0]
+        entries.append({
+            "scenario_id": sid,
+            "tier": tier,
+            "fault_signatures": [f"sig-{sid}"],
+            "injected_fault_services": [f"svc-{sid.replace('/', '-').replace('_', '-')}"],
+            "source_incident_id": None,
+            "alert_semantic_hash": f"alert-hash-{sid}",
+            "model_visible_alert": {
+                "commonLabels": {"alertname": f"Alert-{sid}"},
+                "alerts": [{"labels": {"service": f"svc-{sid.replace('/', '-').replace('_', '-')}"}}],
+            },
+            "red_herring_review_status": "NO_CANDIDATES",
+            "success_predicates": {"workloads": []},
+        })
+
+    catalog_unsigned = {
+        "entries": entries,
+        "schema_version": contract.CATALOG_SCHEMA_VERSION,
     }
-    monkeypatch.setattr(contract, "load_active_split", lambda repo_root=contract.REPO_ROOT: mock_split)
+    catalog = {
+        **catalog_unsigned,
+        "catalog_sha256": contract.sha256_object(catalog_unsigned),
+    }
 
-    # Train consumers: sft, grpo, rs_tuning, train
-    for role in ("sft", "grpo", "rs_tuning", "train"):
-        assert contract.assert_consumer_may_use_scenario(role, "single_fault/sf-001") is None
-        assert contract.assert_consumer_may_use_scenario(role, "single_fault/sf-002") is None
+    ledger_unsigned = {
+        "classification_definitions": {},
+        "schema_version": contract.EXPOSURE_SCHEMA_VERSION,
+        "summary": {
+            "development_exposed_scenario_ids": [],
+            "eligible_final_test_candidates": all_ids,
+        },
+        "surfaces": [],
+    }
+    ledger = {
+        **ledger_unsigned,
+        "ledger_sha256": contract.sha256_object(ledger_unsigned),
+    }
+
+    candidate = {
+        "activation": {"active": False, "authorized_at": None, "frozen": False},
+        "blockers": [],
+        "catalog_sha256": catalog["catalog_sha256"],
+        "contract_provenance": {
+            "algorithm_version": contract.SPLIT_ALGORITHM_VERSION,
+            "generator_version": contract.SPLIT_GENERATOR_VERSION,
+            "repo_sha": "0123456789abcdef0123456789abcdef01234567",
+        },
+        "coverage": {
+            "final_test_by_tier": {tier: 1 for tier in tiers},
+            "final_test_causal_templates": [],
+        },
+        "exposure_ledger_sha256": ledger["ledger_sha256"],
+        "family_relation_count": 0,
+        "gate_prerequisites": {
+            "G4": "OPEN",
+            "explicit_freeze_authorization": False,
+            "no_seed_retry_policy": "One predeclared seed per reviewed candidate generation.",
+        },
+        "ready_for_freeze": True,
+        "schema_version": contract.SPLIT_SCHEMA_VERSION,
+        "seed": "unit-seed",
+        "split_fractions": {"train": 0.34, "validation": 0.33, "final_test": 0.33},
+        "splits": {
+            "train": train_ids,
+            "validation": val_ids,
+            "final_test": final_ids,
+            "ineligible_final_test_development_exposed": [],
+        },
+        "status": "PROPOSED_READY",
+        "usage_policy": {},
+    }
+
+    g5_dir = tmp_path / "bench" / "g5"
+    g5_dir.mkdir(parents=True, exist_ok=True)
+    catalog_path = g5_dir / "scenario_catalog.json"
+    ledger_path = g5_dir / "exposure_ledger.json"
+    candidate_path = g5_dir / "split.proposed.json"
+    frozen_path = g5_dir / "split.frozen.json"
+
+    contract.write_json_atomically(catalog_path, catalog)
+    contract.write_json_atomically(ledger_path, ledger)
+    contract.write_json_atomically(candidate_path, candidate)
+
+    return {
+        "catalog": catalog,
+        "catalog_path": catalog_path,
+        "candidate": candidate,
+        "candidate_path": candidate_path,
+        "exposure_ledger": ledger,
+        "exposure_ledger_path": ledger_path,
+        "final_ids": final_ids,
+        "frozen_path": frozen_path,
+        "g5_dir": g5_dir,
+        "train_ids": train_ids,
+        "val_ids": val_ids,
+    }
+
+
+def test_true_freeze_to_load_and_consumer_integration(tmp_path, monkeypatch):
+    env = _build_synthetic_environment(tmp_path)
+    monkeypatch.setattr(contract, "repository_head", lambda repo_root: "0123456789abcdef0123456789abcdef01234567")
+    monkeypatch.setattr(contract, "_unexpected_dirty_proposal_sources", lambda repo_root: [])
+    monkeypatch.setattr(contract, "_non_derived_source_drift_since", lambda repo_root, s_sha, h_sha: [])
+
+    # Validate PROPOSED_READY candidate passes readiness check
+    contract.validate_split(
+        env["candidate"],
+        env["catalog"],
+        require_ready=True,
+        exposure_ledger=env["exposure_ledger"],
+    )
+
+    valid_auth = {
+        "authorized_at": "2026-08-28T12:00:00Z",
+        "authorized_by": "operator-lead",
+        "authorization_ref": "AUTH-2026-08-28-001",
+        "g4_passed": True,
+    }
+
+    # Execute freeze
+    frozen = contract.freeze_split(
+        env["candidate_path"],
+        env["frozen_path"],
+        authorization=valid_auth,
+        catalog_path=env["catalog_path"],
+        exposure_ledger=env["exposure_ledger"],
+    )
+
+    assert env["frozen_path"].exists()
+    assert frozen["status"] == "FROZEN"
+    assert frozen["activation"]["active"] is True
+    assert frozen["activation"]["frozen"] is True
+    assert frozen["activation"]["authorized_by"] == "operator-lead"
+
+    # Second freeze must refuse overwrite
+    with pytest.raises(FileExistsError, match="refusing to replace"):
+        contract.freeze_split(
+            env["candidate_path"],
+            env["frozen_path"],
+            authorization=valid_auth,
+            catalog_path=env["catalog_path"],
+            exposure_ledger=env["exposure_ledger"],
+        )
+
+    # Load active split without monkeypatching validate_split
+    loaded = contract.load_active_split(tmp_path)
+    assert loaded["status"] == "FROZEN"
+    assert loaded["activation"]["active"] is True
+
+    # Check allowed_scenario_ids across all roles
+    train_expected = tuple(sorted(env["train_ids"]))
+    val_expected = tuple(sorted(env["val_ids"]))
+    final_expected = tuple(sorted(env["final_ids"]))
+
+    assert contract.allowed_scenario_ids("train", repo_root=tmp_path) == train_expected
+    assert contract.allowed_scenario_ids("sft", repo_root=tmp_path) == train_expected
+    assert contract.allowed_scenario_ids("grpo", repo_root=tmp_path) == train_expected
+    assert contract.allowed_scenario_ids("rs_tuning", repo_root=tmp_path) == train_expected
+    assert contract.allowed_scenario_ids("validation", repo_root=tmp_path) == val_expected
+    assert contract.allowed_scenario_ids("final_test", repo_root=tmp_path) == final_expected
+
+    # Cross-role consumer assertions:
+    train_sid = env["train_ids"][0]
+    val_sid = env["val_ids"][0]
+    final_sid = env["final_ids"][0]
+
+    # Train roles can only consume train
+    for role in ("train", "sft", "grpo", "rs_tuning"):
+        contract.assert_consumer_may_use_scenario(role, train_sid, repo_root=tmp_path)
         with pytest.raises(ValueError, match="outside active"):
-            contract.assert_consumer_may_use_scenario(role, "single_fault/sf-003")
+            contract.assert_consumer_may_use_scenario(role, val_sid, repo_root=tmp_path)
+        with pytest.raises(ValueError, match="outside active"):
+            contract.assert_consumer_may_use_scenario(role, final_sid, repo_root=tmp_path)
 
-    # Validation consumer
-    assert contract.assert_consumer_may_use_scenario("validation", "single_fault/sf-003") is None
+    # Validation role can only consume validation
+    contract.assert_consumer_may_use_scenario("validation", val_sid, repo_root=tmp_path)
     with pytest.raises(ValueError, match="outside active"):
-        contract.assert_consumer_may_use_scenario("validation", "single_fault/sf-001")
-
-    # Final test consumer
-    assert contract.assert_consumer_may_use_scenario("final_test", "single_fault/sf-004") is None
+        contract.assert_consumer_may_use_scenario("validation", train_sid, repo_root=tmp_path)
     with pytest.raises(ValueError, match="outside active"):
-        contract.assert_consumer_may_use_scenario("final_test", "single_fault/sf-001")
+        contract.assert_consumer_may_use_scenario("validation", final_sid, repo_root=tmp_path)
 
-    # Unknown consumer
-    with pytest.raises(ValueError, match="unknown canonical scenario consumer"):
-        contract.assert_consumer_may_use_scenario("invalid_role", "single_fault/sf-001")
+    # Final-test role can only consume final_test
+    contract.assert_consumer_may_use_scenario("final_test", final_sid, repo_root=tmp_path)
+    with pytest.raises(ValueError, match="outside active"):
+        contract.assert_consumer_may_use_scenario("final_test", train_sid, repo_root=tmp_path)
+    with pytest.raises(ValueError, match="outside active"):
+        contract.assert_consumer_may_use_scenario("final_test", val_sid, repo_root=tmp_path)
+
+    # Demo / development consumer cannot access final-test
+    with pytest.raises(ValueError, match="cannot use final-test scenario"):
+        contract.assert_consumer_may_use_scenario("demo_development", final_sid, repo_root=tmp_path)
+
+
+def test_frozen_activation_adversarial_rejections(tmp_path):
+    env = _build_synthetic_environment(tmp_path)
+    base_frozen = {
+        **env["candidate"],
+        "activation": {
+            "active": True,
+            "authorized_at": "2026-08-28T12:00:00Z",
+            "authorized_by": "operator",
+            "authorization_ref": "REF-001",
+            "frozen": True,
+        },
+        "gate_prerequisites": {
+            **env["candidate"]["gate_prerequisites"],
+            "G4": "PASSED",
+            "explicit_freeze_authorization": True,
+        },
+        "status": "FROZEN",
+    }
+
+    # Missing authorized_by
+    missing_by = copy.deepcopy(base_frozen)
+    del missing_by["activation"]["authorized_by"]
+    with pytest.raises(ValueError, match="invalid or missing keys"):
+        contract.validate_split(missing_by, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Empty authorized_ref
+    empty_ref = copy.deepcopy(base_frozen)
+    empty_ref["activation"]["authorization_ref"] = "   "
+    with pytest.raises(ValueError, match="must be a non-empty string"):
+        contract.validate_split(empty_ref, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Inactive FROZEN split
+    inactive_frozen = copy.deepcopy(base_frozen)
+    inactive_frozen["activation"]["active"] = False
+    with pytest.raises(ValueError, match="active=True and frozen=True"):
+        contract.validate_split(inactive_frozen, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Active PROPOSED_READY split
+    active_proposed = copy.deepcopy(env["candidate"])
+    active_proposed["activation"]["active"] = True
+    with pytest.raises(ValueError, match="activation state is inconsistent"):
+        contract.validate_split(active_proposed, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Fabricated authorization on PROPOSED_READY
+    fabricated_auth = copy.deepcopy(env["candidate"])
+    fabricated_auth["activation"]["authorized_by"] = "malicious-actor"
+    with pytest.raises(ValueError, match="activation state is inconsistent"):
+        contract.validate_split(fabricated_auth, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Inconsistent G4 on FROZEN
+    g4_open_frozen = copy.deepcopy(base_frozen)
+    g4_open_frozen["gate_prerequisites"]["G4"] = "OPEN"
+    with pytest.raises(ValueError, match="lacks G4 or explicit authorization"):
+        contract.validate_split(g4_open_frozen, env["catalog"], exposure_ledger=env["exposure_ledger"])
+
+    # Unsupported status fails closed
+    unsupported_status = copy.deepcopy(base_frozen)
+    unsupported_status["status"] = "ARBITRARY_STATUS"
+    with pytest.raises(ValueError, match="unsupported split status"):
+        contract.validate_split(unsupported_status, env["catalog"], exposure_ledger=env["exposure_ledger"])

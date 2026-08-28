@@ -6,6 +6,13 @@ import subprocess
 from typing import Any
 
 
+METRICS_API_UNAVAILABLE_SIGNATURE = "metrics api not available"
+METRICS_API_UNAVAILABLE_ERROR_CLASS = "metrics_api_unavailable"
+METRICS_API_UNAVAILABLE_ERROR = (
+    "metrics-server Metrics API is not available in this cluster"
+)
+
+
 def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
     ctx = os.getenv("KUBECONFIG_CONTEXT", "").strip()
     if ctx and len(cmd) > 1 and cmd[0] == "kubectl" and "--context" not in cmd:
@@ -56,6 +63,43 @@ def kubectl_logs(pod: str, namespace: str = "default", tail: int = 200,
     return _run(cmd, timeout=20)
 
 
+def _classify_metrics_api_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Deterministically classify a failed `kubectl top` call.
+
+    The Metrics API (metrics-server) is an optional cluster dependency. When it
+    is absent, `kubectl top` fails with a stable stderr signature; surface that
+    as a machine-differentiable ``metrics_api_unavailable`` class instead of raw
+    stderr so agents and evidence can distinguish "tool dependency missing"
+    from transient command failures.
+    """
+    err = str((result or {}).get("stderr") or "").casefold()
+    if METRICS_API_UNAVAILABLE_SIGNATURE in err:
+        return {
+            **result,
+            "success": False,
+            "error_class": METRICS_API_UNAVAILABLE_ERROR_CLASS,
+            "error": METRICS_API_UNAVAILABLE_ERROR,
+        }
+    return result
+
+
+def response_contract_profile() -> dict[str, Any]:
+    """Declare the model-visible Metrics API dependency contract."""
+    return {
+        "version": "g4-kubectl-top-response-v1",
+        "tools": ["kubectl_top_nodes", "kubectl_top_pods"],
+        "unavailable_signature": METRICS_API_UNAVAILABLE_SIGNATURE,
+        "signature_matching": "casefold-substring",
+        "unavailable_result": {
+            "success": False,
+            "error": METRICS_API_UNAVAILABLE_ERROR,
+            "error_class": METRICS_API_UNAVAILABLE_ERROR_CLASS,
+        },
+        "preserves_raw_stderr": True,
+        "unrelated_failures_passthrough": True,
+    }
+
+
 def kubectl_top_pods(namespace: str = "-A") -> dict[str, Any]:
     """Get CPU/memory usage for pods."""
     cmd = ["kubectl", "top", "pods"]
@@ -63,12 +107,12 @@ def kubectl_top_pods(namespace: str = "-A") -> dict[str, Any]:
         cmd.append("-A")
     else:
         cmd.extend(["-n", namespace])
-    return _run(cmd)
+    return _classify_metrics_api_result(_run(cmd))
 
 
 def kubectl_top_nodes() -> dict[str, Any]:
     """Get CPU/memory usage for nodes."""
-    return _run(["kubectl", "top", "nodes"])
+    return _classify_metrics_api_result(_run(["kubectl", "top", "nodes"]))
 
 
 def kubectl_rollout(action: str, resource: str, namespace: str = "default") -> dict[str, Any]:

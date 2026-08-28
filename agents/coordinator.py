@@ -33,6 +33,7 @@ from agents.tool_policy import (
     ROLE_ALLOWED_TOOLS,
 )
 from agents.tools import TOOL_REGISTRY
+from agents.grounding import build_grounding_reports
 from agents.tools.alertmanager import alertmanager_list_alerts
 from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES
 from config.runtime import StepRewardTracker
@@ -926,12 +927,18 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["kind", "name"],
         "additionalProperties": False,
     },
-    "gcloud_logs_read": {"type": "object", "properties": {"filter_query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["filter_query"], "additionalProperties": False},
-    "cloud_monitoring_query": {"type": "object", "properties": {"metric_type": {"type": "string"}, "lookback_seconds": {"type": "integer"}}, "required": ["metric_type"], "additionalProperties": False},
     "alertmanager_list_alerts": {"type": "object", "properties": {"active_only": {"type": "boolean"}}, "additionalProperties": False},
     "alertmanager_silence": {"type": "object", "properties": {"matchers": {"type": "array"}, "duration_minutes": {"type": "integer"}, "comment": {"type": "string"}}, "required": ["matchers"], "additionalProperties": False},
     "slack_post_update": {"type": "object", "properties": {"channel": {"type": "string"}, "severity": {"type": "string"}, "title": {"type": "string"}, "summary": {"type": "string"}, "action_items": {"type": "array"}}, "required": ["channel", "severity", "title", "summary"], "additionalProperties": False},
     "postmortem_draft": {"type": "object", "properties": {"incident": {"type": "object"}, "output_path": {"type": "string"}}, "required": ["incident"], "additionalProperties": False},
+}
+
+
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "kubectl_get": (
+        "Get a Kubernetes built-in or custom resource type. "
+        "Use customresourcedefinitions to discover installed custom resource types."
+    )
 }
 
 
@@ -941,7 +948,7 @@ def _tool_schema(name: str) -> dict[str, Any]:
         "type": "function",
         "function": {
             "name": name,
-            "description": f"Real SRE tool: {name}",
+            "description": _TOOL_DESCRIPTIONS.get(name, f"Real SRE tool: {name}"),
             "parameters": _TOOL_PARAMETER_SCHEMAS[name],
         },
     }
@@ -1305,6 +1312,9 @@ async def handle_incident(
             except Exception as e:
                 log.warning("closure notify failed: %s", e)
 
+        grounding_reports = build_grounding_reports(
+            {"triage": triage, "diagnosis": diagnosis, "remediation": remediation}
+        )
         full_record = {
             "incident_id": incident_id,
             "alert": alert,
@@ -1317,6 +1327,7 @@ async def handle_incident(
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
             "comms": comms,
+            "grounding_validation": grounding_reports,
         }
         TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
         (TRAJECTORIES_DIR / f"{incident_id}.json").write_text(

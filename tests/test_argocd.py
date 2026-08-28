@@ -35,10 +35,11 @@ def test_missing_url_fails_before_http(monkeypatch):
     ):
         result = argocd.argocd_list_apps()
 
-    assert result == {
-        "success": False,
-        "error": "argocd_configuration_error: missing required environment variable ARGOCD_URL",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: missing required environment variable ARGOCD_URL"
+    )
     auth_request.assert_not_called()
     api_request.assert_not_called()
 
@@ -57,10 +58,11 @@ def test_missing_user_fails_before_http(monkeypatch):
     ):
         result = argocd.argocd_app_get("example-app")
 
-    assert result == {
-        "success": False,
-        "error": "argocd_configuration_error: missing required environment variable ARGOCD_USER",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: missing required environment variable ARGOCD_USER"
+    )
     auth_request.assert_not_called()
     api_request.assert_not_called()
 
@@ -79,10 +81,11 @@ def test_missing_password_fails_before_http(monkeypatch):
     ):
         result = argocd.argocd_app_history("example-app")
 
-    assert result == {
-        "success": False,
-        "error": "argocd_configuration_error: missing required environment variable ARGOCD_PASS",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: missing required environment variable ARGOCD_PASS"
+    )
     auth_request.assert_not_called()
     api_request.assert_not_called()
 
@@ -105,10 +108,11 @@ def test_invalid_url_fails_before_http(monkeypatch, configured_url):
     ):
         result = argocd.argocd_app_get("example-app")
 
-    assert result == {
-        "success": False,
-        "error": "argocd_configuration_error: ARGOCD_URL must use http or https with a host",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: ARGOCD_URL must use http or https with a host"
+    )
     auth_request.assert_not_called()
     api_request.assert_not_called()
 
@@ -181,10 +185,11 @@ def test_authentication_failure_does_not_expose_password(monkeypatch):
     ):
         result = argocd.argocd_list_apps()
 
-    assert result == {
-        "success": False,
-        "error": "argocd_authentication_error: authentication request failed",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "authentication_failed"
+    assert result["error"] == (
+        "argocd_authentication_error: authentication request failed"
+    )
     assert test_password not in str(result)
     api_request.assert_not_called()
 
@@ -242,10 +247,11 @@ def test_invalid_tls_setting_fails_before_http(monkeypatch):
     ):
         result = argocd.argocd_app_get("example-app")
 
-    assert result == {
-        "success": False,
-        "error": "argocd_configuration_error: ARGOCD_VERIFY_TLS must be true or false",
-    }
+    assert result["success"] is False
+    assert result["error_class"] == "configuration_error"
+    assert result["error"] == (
+        "argocd_configuration_error: ARGOCD_VERIFY_TLS must be true or false"
+    )
     auth_request.assert_not_called()
     api_request.assert_not_called()
 

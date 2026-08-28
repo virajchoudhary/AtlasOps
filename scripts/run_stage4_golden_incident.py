@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -32,6 +33,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from config.g4_protocol import (
+    build_runtime_protocol_profile,
+    inspect_metrics_server_deployment,
+    protocol_fingerprint,
+    validate_runtime_protocol_profile,
+)
 from config.runtime import resolve_stage4_agent_model
 
 # Reconfigure standard UTF-8 stream handling on Windows
@@ -133,6 +140,14 @@ BASELINE_READINESS_TIMEOUT_SECONDS = 60
 ATTEMPT_STATE_RESERVED = "RESERVED"
 ATTEMPT_STATE_CONSUMED = "CONSUMED"
 ATTEMPT_STATE_COMPLETED = "COMPLETED"
+ATTEMPT_STATES = {
+    ATTEMPT_STATE_RESERVED,
+    ATTEMPT_STATE_CONSUMED,
+    ATTEMPT_STATE_COMPLETED,
+}
+G4_PLATFORM_HARDENING_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
+MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
+ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
 
 
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
@@ -147,6 +162,47 @@ def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "returncode": -1}
+
+
+def _query_ollama_model_identity(selected_model: str) -> dict[str, str]:
+    """Read the exact local model identity without exposing credentials."""
+    import requests
+
+    base_url = os.getenv("VLLM_BASE", "http://localhost:11434/v1").strip().rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3]
+    try:
+        response = requests.post(
+            f"{base_url}/api/show",
+            json={"model": selected_model},
+            timeout=10,
+        )
+        response.raise_for_status()
+        digest = response.json().get("digest")
+    except Exception as exc:
+        raise RuntimeError(
+            f"Unable to verify Stage 4 model identity for {selected_model}: {type(exc).__name__}"
+        ) from exc
+    if not isinstance(digest, str):
+        raise RuntimeError(f"Stage 4 model identity for {selected_model} has no digest")
+    return {
+        "provider": "ollama-local",
+        "name": selected_model,
+        "digest": digest.strip().lower().removeprefix("sha256:"),
+    }
+
+
+def _probe_metrics_server_contract() -> dict[str, Any]:
+    return inspect_metrics_server_deployment(run_kubectl)
+
+
+def _observe_protocol_profile(selected_model: str) -> dict[str, Any]:
+    observed = build_runtime_protocol_profile(
+        selected_model=selected_model,
+        model_digest=_query_ollama_model_identity(selected_model)["digest"],
+        metrics_observation=_probe_metrics_server_contract(),
+    )
+    return validate_runtime_protocol_profile(observed)
 
 
 def _experiment_evidence_dir(experiment_id: str, root: str | None = None) -> str:
@@ -187,6 +243,61 @@ def _read_json_file(path: str) -> dict[str, Any] | None:
         return None
 
 
+def _claimed_attempts_for_protocol_fingerprint(
+    protocol_fingerprint_value: str, attempt_root: str | None = None
+) -> int:
+    attempts_dir = os.path.join(
+        _experiment_evidence_dir("", attempt_root), ".attempts"
+    )
+    if not os.path.isdir(attempts_dir):
+        return 0
+
+    claimed_attempts = 0
+    for name in os.listdir(attempts_dir):
+        if not name.endswith(".attempt.json"):
+            continue
+        path = os.path.join(attempts_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                attempt = json.load(stream)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"Stage 4 attempt accounting record is invalid: {path}"
+            ) from exc
+        if not isinstance(attempt, dict):
+            raise RuntimeError(f"Stage 4 attempt accounting record is invalid: {path}")
+        if attempt.get("protocol_fingerprint") != protocol_fingerprint_value:
+            continue
+        if attempt.get("state") not in ATTEMPT_STATES:
+            raise RuntimeError(
+                f"Stage 4 attempt has an invalid state for accounting: {path}"
+            )
+        # An unused reservation occupies a slot until explicitly released.
+        claimed_attempts += 1
+    return claimed_attempts
+
+
+@contextmanager
+def _reservation_budget_lock(attempt_root: str | None = None):
+    attempts_dir = os.path.join(
+        _experiment_evidence_dir("", attempt_root), ".attempts"
+    )
+    os.makedirs(attempts_dir, exist_ok=True)
+    lock_path = os.path.join(attempts_dir, ATTEMPT_BUDGET_LOCK_FILENAME)
+    try:
+        lock_descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError(
+            "Stage 4 reservation budget is locked by another process; "
+            f"refusing ambiguous accounting: {lock_path}"
+        ) from exc
+    try:
+        yield
+    finally:
+        os.close(lock_descriptor)
+        os.unlink(lock_path)
+
+
 def reserve_experiment_attempt(
     experiment_id: str,
     *,
@@ -194,29 +305,43 @@ def reserve_experiment_attempt(
     main_sha: str,
     attempt_root: str | None = None,
 ) -> dict[str, Any]:
-    """Atomically reserve an experiment before any pre-T0 mutation."""
+    """Atomically reserve an experiment after exact protocol qualification."""
     evidence_dir = _experiment_evidence_dir(experiment_id)
     primary_path = os.path.join(evidence_dir, f"{experiment_id}.json")
     if os.path.exists(primary_path):
         raise RuntimeError(f"Stage 4 evidence already exists: {primary_path}")
 
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
-    if os.path.exists(marker_path):
-        existing = _read_json_file(marker_path) or {}
-        raise RuntimeError(
-            f"Stage 4 attempt already exists: {marker_path} "
-            f"(state={existing.get('state', 'UNKNOWN')})"
+    profile = _observe_protocol_profile(selected_model)
+    profile_fingerprint = protocol_fingerprint(profile)
+    with _reservation_budget_lock(attempt_root):
+        spent_attempts = _claimed_attempts_for_protocol_fingerprint(
+            profile_fingerprint, attempt_root
         )
+        if spent_attempts >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
+            raise RuntimeError(
+                "protocol attempt limit reached for "
+                f"profile {profile_fingerprint}: "
+                f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
+            )
+        if os.path.exists(marker_path):
+            existing = _read_json_file(marker_path) or {}
+            raise RuntimeError(
+                f"Stage 4 attempt already exists: {marker_path} "
+                f"(state={existing.get('state', 'UNKNOWN')})"
+            )
 
-    reservation = {
-        "experiment_id": experiment_id,
-        "state": ATTEMPT_STATE_RESERVED,
-        "reserved_at": datetime.now(timezone.utc).isoformat(),
-        "reservation_token": uuid.uuid4().hex,
-        "selected_model": selected_model,
-        "main_sha": main_sha,
-    }
-    _write_json_atomic(marker_path, reservation)
+        reservation = {
+            "experiment_id": experiment_id,
+            "state": ATTEMPT_STATE_RESERVED,
+            "reserved_at": datetime.now(timezone.utc).isoformat(),
+            "reservation_token": uuid.uuid4().hex,
+            "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+            "protocol_profile": profile,
+            "protocol_fingerprint": profile_fingerprint,
+            "main_sha": main_sha,
+        }
+        _write_json_atomic(marker_path, reservation)
     persisted = _read_json_file(marker_path) or {}
     if persisted.get("reservation_token") != reservation["reservation_token"]:
         raise RuntimeError(f"Concurrent Stage 4 reservation detected: {marker_path}")
@@ -353,10 +478,19 @@ def sf002_degradation_decision(
 
 
 def stage4_evidence_metadata() -> dict[str, Any]:
-    """Build the model-identity fields shared by output and evidence."""
+    """Build pending model-identity fields shared by output and evidence.
+
+    The runner overwrites ``protocol_profile`` with the reservation's exact
+    validated profile before fault injection and primary evidence persistence.
+    """
     return {
         "model": SELECTED_STAGE4_AGENT_MODEL,
         "inference_provider": "ollama-local",
+        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+        "protocol_profile": {
+            "protocol_fingerprint": None,
+            "validation_state": "PENDING_RESERVATION",
+        },
         "trigger_type": "manual coordinator trigger over a real independently observed cluster fault",
     }
 
@@ -907,6 +1041,8 @@ async def main() -> dict[str, Any]:
             selected_model=SELECTED_STAGE4_AGENT_MODEL,
             main_sha=_current_main_sha(),
         )
+        evidence["model"] = reservation["protocol_profile"]["model"]["name"]
+        evidence["protocol_profile"] = reservation["protocol_profile"]
 
         # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
         print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
@@ -1088,6 +1224,7 @@ async def main() -> dict[str, Any]:
             "triage": triage_res.get("final"),
             "diagnosis": diagnosis_res.get("final"),
             "approval": incident_result.get("approval"),
+            "grounding_validation": incident_result.get("grounding_validation", {}),
             "model_proposed_action": remediation_res.get("final"),
             "executed_tool_actions": executed_tools,
             "comms": comms_res.get("final"),

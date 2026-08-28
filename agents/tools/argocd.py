@@ -17,6 +17,78 @@ class _ArgoCDAuthenticationError(RuntimeError):
     """Raised when Argo CD authentication fails without exposing request data."""
 
 
+_ARGOCD_STATUS_ERROR_CLASSES = {
+    400: "invalid_request",
+    401: "authentication_failed",
+    403: "authorization_failed",
+    404: "not_found",
+    409: "conflict",
+    422: "unprocessable",
+}
+
+
+def response_contract_profile() -> dict[str, Any]:
+    """Declare the model-visible failure vocabulary added by G4 hardening."""
+    return {
+        "version": "g4-argocd-response-v1",
+        "http_status_classes": dict(sorted(_ARGOCD_STATUS_ERROR_CLASSES.items())),
+        "unknown_http_status_class_template": "http_{status}_error",
+        "http_error_template": "argocd_{error_class} (HTTP {status})",
+        "transport_errors": {
+            "timeout": {
+                "error": "argocd_error: request timeout",
+                "error_class": "timeout",
+            },
+            "connection_failed": {
+                "error": "argocd_error: connection failed",
+                "error_class": "connection_failed",
+            },
+        },
+        "authentication_error": {
+            "error": "argocd_authentication_error: authentication request failed",
+            "error_class": "authentication_failed",
+        },
+        "request_error": {
+            "error": "argocd_request_error: request failed",
+            "error_class": "request_failed",
+        },
+        "invalid_revision": {
+            "error": "argocd_invalid_revision: revision must be a non-negative integer",
+            "error_class": "invalid_revision",
+        },
+        "rollback_success_template": "Rollback of {app} to revision {revision} initiated.",
+        "response_body_echoed": False,
+    }
+
+
+def _classify_api_failure(exc: Exception) -> dict[str, Any]:
+    """Map an Argo CD API failure to a deterministic, secret-free error class.
+
+    The raw model-facing contract stays a flat ``{success, error}`` dict; the
+    ``error_class``/``status_code`` fields make failures machine-differentiable
+    (missing application vs bad revision vs transport/auth). Response bodies
+    are intentionally NOT echoed back — they may contain implementation or
+    operational data, and the class alone is what agents need to choose a next
+    action.
+    """
+    if isinstance(exc, requests.exceptions.Timeout):
+        return {"success": False, "error": "argocd_error: request timeout", "error_class": "timeout"}
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return {"success": False, "error": "argocd_error: connection failed", "error_class": "connection_failed"}
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if status is not None:
+        status = int(status)
+        error_class = _ARGOCD_STATUS_ERROR_CLASSES.get(status, f"http_{status}_error")
+        return {
+            "success": False,
+            "error": f"argocd_{error_class} (HTTP {status})",
+            "error_class": error_class,
+            "status_code": status,
+        }
+    return {"success": False, "error": "argocd_request_error: request failed", "error_class": "request_failed"}
+
+
 @dataclass(frozen=True)
 class _ArgoCDConfig:
     base_url: str
@@ -98,6 +170,8 @@ def _get_token(config: _ArgoCDConfig) -> str:
         _cached_token = response.json()["token"]
         _cached_token_identity = identity
         return _cached_token
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+        raise
     except Exception:
         raise _ArgoCDAuthenticationError(
             "argocd_authentication_error: authentication request failed"
@@ -108,33 +182,43 @@ def _api(method: str, path: str, **kwargs) -> dict[str, Any]:
     try:
         config = _get_argocd_config()
         token = _get_token(config)
-        response = requests.request(
-            method,
-            f"{config.base_url}/api/v1{path}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-            verify=config.verify_tls,
-            **kwargs,
-        )
+        def request_with_token(active_token: str):
+            return requests.request(
+                method,
+                f"{config.base_url}/api/v1{path}",
+                headers={"Authorization": f"Bearer {active_token}"},
+                timeout=30,
+                verify=config.verify_tls,
+                **kwargs,
+            )
+
+        response = request_with_token(token)
         if response.status_code == 401:
             global _cached_token, _cached_token_identity
             _cached_token = None
             _cached_token_identity = None
             token = _get_token(config)
-            response = requests.request(
-                method,
-                f"{config.base_url}/api/v1{path}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30,
-                verify=config.verify_tls,
-                **kwargs,
-            )
+            response = request_with_token(token)
         response.raise_for_status()
         return {"success": True, "data": response.json()}
-    except (_ArgoCDConfigurationError, _ArgoCDAuthenticationError) as exc:
-        return {"success": False, "error": str(exc)}
+    except _ArgoCDConfigurationError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_class": "configuration_error",
+        }
+    except _ArgoCDAuthenticationError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_class": "authentication_failed",
+        }
+    except requests.HTTPError as exc:
+        return _classify_api_failure(exc)
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+        return _classify_api_failure(exc)
     except Exception:
-        return {"success": False, "error": "argocd_request_error: request failed"}
+        return {"success": False, "error": "argocd_request_error: request failed", "error_class": "request_failed"}
 
 
 def argocd_list_apps() -> dict[str, Any]:
@@ -169,7 +253,14 @@ def argocd_app_history(app: str) -> dict[str, Any]:
 
 def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     """Roll back an Argo CD application to a previous revision."""
-    revision_id = int(revision) if str(revision).isdigit() else 0
+    revision_text = str(revision).strip()
+    if not (revision_text.isascii() and revision_text.isdigit()):
+        return {
+            "success": False,
+            "error": "argocd_invalid_revision: revision must be a non-negative integer",
+            "error_class": "invalid_revision",
+        }
+    revision_id = int(revision_text)
     result = _api("POST", f"/applications/{app}/rollback", json={"id": revision_id})
     if result.get("success"):
         result["message"] = f"Rollback of {app} to revision {revision} initiated."

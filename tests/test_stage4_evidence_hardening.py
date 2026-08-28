@@ -6,25 +6,37 @@ import asyncio
 import json
 import os
 import pathlib
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import scripts.run_stage4_golden_incident as runner
+from config.g4_protocol import (
+    APPROVED_G4_MODEL,
+    APPROVED_G4_PROTOCOL_PROFILE,
+    REQUIRED_METRICS_SERVER_ARGS,
+    protocol_fingerprint,
+)
 from scripts.run_stage4_golden_incident import (
     ATTEMPT_STATE_COMPLETED,
     ATTEMPT_STATE_CONSUMED,
+    ATTEMPT_STATE_RESERVED,
     DEGRADATION_QUERY,
     _attempt_marker_path,
     _paymentservice_baseline_check,
     collect_sf002_cpu_telemetry,
+    G4_PLATFORM_HARDENING_MARKER,
+    MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
     complete_experiment_attempt,
     consume_experiment_attempt,
     evaluate_causal_g4_predicate,
     release_experiment_reservation,
     reserve_experiment_attempt,
     sf002_degradation_decision,
+    stage4_evidence_metadata,
     _paymentservice_baseline_healthy,
 )
 
@@ -38,6 +50,300 @@ def _attempt_root() -> str:
     )
     root.mkdir(parents=True, exist_ok=True)
     return str(root)
+
+
+@pytest.fixture(autouse=True)
+def isolated_protocol_runtime(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "_query_ollama_model_identity",
+        lambda selected_model: {
+            "provider": "ollama-local",
+            "name": selected_model,
+            "digest": APPROVED_G4_PROTOCOL_PROFILE["model"]["digest"],
+        },
+    )
+    monkeypatch.setattr(
+        runner,
+        "_probe_metrics_server_contract",
+        lambda: APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
+    )
+
+
+def test_stage4_metadata_persists_protocol_marker():
+    metadata = stage4_evidence_metadata()
+    assert metadata["protocol_marker"] == G4_PLATFORM_HARDENING_MARKER
+
+
+def test_reservation_records_protocol_marker_and_spent_limit_is_two():
+    root = _attempt_root()
+    reservation = reserve_experiment_attempt(
+        "EXP-STAGE4-MARKER",
+        selected_model="qwen2.5:3b-instruct",
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert reservation["protocol_profile"] == APPROVED_G4_PROTOCOL_PROFILE
+    assert reservation["protocol_fingerprint"] == protocol_fingerprint(
+        APPROVED_G4_PROTOCOL_PROFILE
+    )
+    assert MAX_ATTEMPTS_PER_PROTOCOL_MARKER == 2
+
+
+def test_default_and_arbitrary_models_cannot_consume_approved_protocol_budget():
+    root = _attempt_root()
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-DEFAULT-MODEL",
+            selected_model="qwen2.5:1.5b",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts").glob("*.json"))
+
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-ARBITRARY-MODEL",
+            selected_model="qwen2.5:7b-instruct",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts").glob("*.json"))
+
+
+def test_metrics_api_absence_cannot_reserve_under_required_present_profile(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "_probe_metrics_server_contract",
+        lambda: {"state": "missing"},
+    )
+    root = _attempt_root()
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-METRICS-MISSING",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts").glob("*.json"))
+
+
+def test_metrics_api_drift_cannot_masquerade_under_same_profile(monkeypatch):
+    drifted_payload = {
+        "metadata": {"name": "metrics-server", "namespace": "kube-system"},
+        "spec": {"template": {"spec": {
+            "serviceAccountName": "metrics-server",
+            "priorityClassName": "system-cluster-critical",
+            "containers": [{
+                "name": "metrics-server",
+                "image": "registry.example.invalid/metrics-server:v0.7.2",
+                "args": list(REQUIRED_METRICS_SERVER_ARGS),
+                "ports": [{"containerPort": 10250, "name": "https", "protocol": "TCP"}],
+                "resources": {"requests": {"cpu": "100m", "memory": "200Mi"}},
+            }],
+        }}},
+    }
+    monkeypatch.setattr(
+        runner,
+        "_probe_metrics_server_contract",
+        lambda: __import__("config.g4_protocol", fromlist=["inspect_metrics_server_deployment"]).inspect_metrics_server_deployment(
+            lambda _args: {"success": True, "stdout": json.dumps(drifted_payload)}
+        ),
+    )
+    root = _attempt_root()
+    with pytest.raises(RuntimeError, match="Metrics API Deployment provenance mismatch"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-METRICS-DRIFT",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts").glob("*.json"))
+
+
+def test_prompt_or_tool_contract_drift_fails_closed_before_attempt_budget(
+    monkeypatch,
+):
+    root = _attempt_root()
+    original_builder = runner.build_runtime_protocol_profile
+
+    # Keep the live model/Metrics probes valid so this test isolates declared
+    # contract drift from unrelated runtime drift.
+
+    for field in ("diagnosis_prompt", "role_tool_contract"):
+        def build_with_drift(**kwargs):
+            profile = original_builder(**kwargs)
+            profile[field] = {**profile[field], "sha256": "0" * 64}
+            return profile
+
+        monkeypatch.setattr(runner, "build_runtime_protocol_profile", build_with_drift)
+        with pytest.raises(RuntimeError, match="approved protocol profile"):
+            reserve_experiment_attempt(
+                f"EXP-STAGE4-{field.upper()}-DRIFT",
+                selected_model=APPROVED_G4_MODEL,
+                main_sha="test-sha",
+                attempt_root=root,
+            )
+    assert not list(pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts").glob("*.json"))
+
+
+def test_historical_unmarked_attempts_are_not_retroactively_counted():
+    root = _attempt_root()
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    attempts_dir.mkdir(parents=True)
+    legacy = {
+        "experiment_id": "EXP-STAGE4-HISTORICAL",
+        "state": "COMPLETED",
+        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+    }
+    (attempts_dir / "EXP-STAGE4-HISTORICAL.attempt.json").write_text(
+        json.dumps(legacy), encoding="utf-8"
+    )
+
+    reservation = reserve_experiment_attempt(
+        "EXP-STAGE4-AFTER-HISTORY",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert reservation["protocol_fingerprint"] == protocol_fingerprint(
+        APPROVED_G4_PROTOCOL_PROFILE
+    )
+
+
+def test_third_spent_attempt_for_same_protocol_marker_fails_closed():
+    root = _attempt_root()
+    for experiment_id in ("EXP-STAGE4-MARKER-A", "EXP-STAGE4-MARKER-B"):
+        reservation = reserve_experiment_attempt(
+            experiment_id,
+            selected_model="qwen2.5:3b-instruct",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+        consume_experiment_attempt(reservation, attempt_root=root)
+
+    with pytest.raises(RuntimeError, match="protocol attempt limit reached"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-MARKER-C",
+            selected_model="qwen2.5:3b-instruct",
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+
+
+def test_corrupt_attempt_accounting_fails_closed():
+    root = _attempt_root()
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    attempts_dir.mkdir(parents=True)
+    (attempts_dir / "corrupt.attempt.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="attempt accounting record is invalid"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-CORRUPT-ACCOUNTING",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not list(attempts_dir.glob("EXP-STAGE4-CORRUPT-ACCOUNTING.*"))
+    assert not (attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME).exists()
+
+
+def test_stale_reservation_lock_fails_closed_without_creating_attempt():
+    root = _attempt_root()
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    lock_path = attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME
+    attempts_dir.mkdir(parents=True)
+    lock_path.write_text("stale", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="reservation budget is locked"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-STALE-LOCK",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+    assert not any(attempts_dir.glob("EXP-STAGE4-STALE-LOCK.*"))
+    assert lock_path.exists()
+    lock_path.unlink()
+
+
+def test_reserved_attempts_occupy_budget_slots_and_release_frees_a_slot():
+    root = _attempt_root()
+    spent = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-A",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    consume_experiment_attempt(spent, attempt_root=root)
+
+    reserved = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-B",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    with pytest.raises(RuntimeError, match="protocol attempt limit reached"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-SLOT-C",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=root,
+        )
+
+    assert release_experiment_reservation(reserved, attempt_root=root) is True
+    replacement = reserve_experiment_attempt(
+        "EXP-STAGE4-SLOT-D",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert replacement["state"] == ATTEMPT_STATE_RESERVED
+
+
+def test_concurrent_reservations_cannot_exceed_the_last_budget_slot():
+    root = _attempt_root()
+    first = reserve_experiment_attempt(
+        "EXP-STAGE4-RACE-SPENT",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    consume_experiment_attempt(first, attempt_root=root)
+
+    def reserve_slot(experiment_id):
+        try:
+            return reserve_experiment_attempt(
+                experiment_id,
+                selected_model=APPROVED_G4_MODEL,
+                main_sha="test-sha",
+                attempt_root=root,
+            )
+        except RuntimeError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                reserve_slot,
+                ("EXP-STAGE4-RACE-A", "EXP-STAGE4-RACE-B"),
+            )
+        )
+
+    successes = [result for result in results if isinstance(result, dict)]
+    failures = [result for result in results if isinstance(result, RuntimeError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert any(
+        marker in str(failures[0])
+        for marker in (
+            "protocol attempt limit reached",
+            "reservation budget is locked",
+        )
+    )
+    attempts_dir = pathlib.Path(root, "artifacts", "evidence", "stage4", ".attempts")
+    assert len(list(attempts_dir.glob("*.attempt.json"))) == 2
+    assert not (attempts_dir / runner.ATTEMPT_BUDGET_LOCK_FILENAME).exists()
 
 
 def _valid_incident() -> dict:
@@ -259,6 +565,14 @@ def test_unused_reservation_is_released_after_pre_fault_abort():
     )
     assert release_experiment_reservation(reservation, attempt_root=root) is True
     assert pathlib.Path(_attempt_marker_path("EXP-STAGE4-ABORT", root)).exists() is False
+
+    replacement = reserve_experiment_attempt(
+        "EXP-STAGE4-AFTER-RELEASE",
+        selected_model=APPROVED_G4_MODEL,
+        main_sha="test-sha",
+        attempt_root=root,
+    )
+    assert replacement["state"] == ATTEMPT_STATE_RESERVED
 
 
 def test_causal_predicate_requires_degradation_settling_and_primary_evidence():

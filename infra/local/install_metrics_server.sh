@@ -75,7 +75,7 @@ metrics_server_provenance() {
   local image args service_account priority_class cpu_request memory_request port
   local container_names port_names port_protocols container_count
   local deployment_path='spec.template.spec.containers[?(@.name=="metrics-server")]'
-  local base="deployment.metrics-server -n kube-system"
+  local base="deployment/metrics-server -n kube-system"
 
   container_names="$(kubectl --context "$CONTEXT" get $base -o jsonpath='{.spec.template.spec.containers[*].name}')"
   container_count="$(printf '%s\n' "$container_names" | wc -w)"

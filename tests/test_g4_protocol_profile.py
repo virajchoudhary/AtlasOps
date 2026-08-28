@@ -216,3 +216,122 @@ def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch():
     model_query.assert_called_once_with(APPROVED_G4_MODEL)
     metrics_probe.assert_called_once()
     assert not (root / "artifacts" / "evidence" / "stage4" / ".attempts").exists()
+
+
+def test_ollama_identity_exact_match_returns_normalized_digest():
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "models": [
+            {"name": "qwen2.5:1.5b", "digest": "sha256:" + "a" * 64},
+            {
+                "name": APPROVED_G4_MODEL,
+                "digest": "sha256:" + APPROVED_G4_MODEL_DIGEST.upper(),
+            },
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        identity = runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+    mock_get.assert_called_once_with("http://localhost:11434/api/tags", timeout=10)
+    assert identity == {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_MODEL,
+        "digest": APPROVED_G4_MODEL_DIGEST.lower(),
+    }
+
+
+def test_ollama_identity_missing_model_fails_closed():
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "models": [
+            {"name": "other-model:latest", "digest": "b" * 64},
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="not installed in local Ollama"):
+            runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+
+
+def test_ollama_identity_similarly_named_model_does_not_match():
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "models": [
+            {"name": "qwen2.5:3b", "digest": "c" * 64},
+            {"name": "qwen2.5:3b-instruct-v2", "digest": "d" * 64},
+            {"name": "qwen2.5:7b-instruct", "digest": "e" * 64},
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="not installed in local Ollama"):
+            runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+
+
+@pytest.mark.parametrize(
+    "invalid_digest",
+    [
+        "",
+        "not-a-sha256",
+        "12345",
+        "g" * 64,
+        "0" * 63,
+        "0" * 65,
+    ],
+)
+def test_ollama_identity_malformed_digest_fails_closed(invalid_digest):
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "models": [
+            {"name": APPROVED_G4_MODEL, "digest": invalid_digest},
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="(has no digest|has invalid SHA-256 digest)"):
+            runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+
+
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        None,
+        [],
+        "not-json",
+        {"models": "not-a-list"},
+        {"not_models": []},
+    ],
+)
+def test_ollama_identity_invalid_payload_shape_fails_closed(bad_payload):
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = bad_payload
+    with patch("requests.get", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="Unable to verify Stage 4 model identity"):
+            runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+
+
+def test_ollama_identity_transport_failure_fails_closed():
+    with patch("requests.get", side_effect=requests.ConnectionError("offline")):
+        with pytest.raises(RuntimeError, match="Unable to verify Stage 4 model identity"):
+            runner._query_ollama_model_identity(APPROVED_G4_MODEL)
+
+
+def test_observe_protocol_profile_with_corrected_ollama_identity():
+    mock_resp = Mock()
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "models": [
+            {
+                "name": APPROVED_G4_MODEL,
+                "digest": APPROVED_G4_MODEL_DIGEST,
+            },
+        ]
+    }
+    with patch("requests.get", return_value=mock_resp), patch.object(
+        runner,
+        "_probe_metrics_server_contract",
+        return_value=APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
+    ):
+        observed = runner._observe_protocol_profile(APPROVED_G4_MODEL)
+    assert observed == APPROVED_G4_PROTOCOL_PROFILE

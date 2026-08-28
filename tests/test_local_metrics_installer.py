@@ -60,3 +60,8 @@ def test_installer_rejects_unverified_existing_deployment_provenance():
     assert "service_account" in _SCRIPT
     assert "priority_class" in _SCRIPT
     assert "memory_request" in _SCRIPT
+
+
+def test_installer_uses_valid_kubectl_deployment_resource_syntax():
+    assert 'local base="deployment/metrics-server -n kube-system"' in _SCRIPT
+    assert 'local base="deployment.metrics-server' not in _SCRIPT

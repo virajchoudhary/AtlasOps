@@ -36,6 +36,7 @@ if REPO_ROOT not in sys.path:
 from config.g4_protocol import (
     build_runtime_protocol_profile,
     inspect_metrics_server_deployment,
+    metrics_server_declaration,
     protocol_fingerprint,
     validate_runtime_protocol_profile,
 )
@@ -172,28 +173,67 @@ def _query_ollama_model_identity(selected_model: str) -> dict[str, str]:
     if base_url.endswith("/v1"):
         base_url = base_url[:-3]
     try:
-        response = requests.post(
-            f"{base_url}/api/show",
-            json={"model": selected_model},
+        response = requests.get(
+            f"{base_url}/api/tags",
             timeout=10,
         )
         response.raise_for_status()
-        digest = response.json().get("digest")
+        payload = response.json()
     except Exception as exc:
         raise RuntimeError(
             f"Unable to verify Stage 4 model identity for {selected_model}: {type(exc).__name__}"
         ) from exc
-    if not isinstance(digest, str):
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"Unable to verify Stage 4 model identity for {selected_model}: response from /api/tags is not a JSON object"
+        )
+    models = payload.get("models")
+    if not isinstance(models, list):
+        raise RuntimeError(
+            f"Unable to verify Stage 4 model identity for {selected_model}: 'models' in /api/tags is not a list"
+        )
+
+    matching = [
+        m
+        for m in models
+        if isinstance(m, dict)
+        and (m.get("name") == selected_model or m.get("model") == selected_model)
+    ]
+    if len(matching) == 0:
+        raise RuntimeError(
+            f"Stage 4 model {selected_model} is not installed in local Ollama"
+        )
+    if len(matching) > 1:
+        raise RuntimeError(
+            f"Ambiguous model resolution for {selected_model} in local Ollama"
+        )
+
+    raw_digest = matching[0].get("digest")
+    if not isinstance(raw_digest, str) or not raw_digest.strip():
         raise RuntimeError(f"Stage 4 model identity for {selected_model} has no digest")
+    normalized_digest = raw_digest.strip().lower().removeprefix("sha256:")
+    if len(normalized_digest) != 64 or any(
+        c not in "0123456789abcdef" for c in normalized_digest
+    ):
+        raise RuntimeError(
+            f"Stage 4 model identity for {selected_model} has invalid SHA-256 digest"
+        )
     return {
         "provider": "ollama-local",
         "name": selected_model,
-        "digest": digest.strip().lower().removeprefix("sha256:"),
+        "digest": normalized_digest,
     }
 
 
 def _probe_metrics_server_contract() -> dict[str, Any]:
-    return inspect_metrics_server_deployment(run_kubectl)
+    observation = inspect_metrics_server_deployment(run_kubectl)
+    if observation.get("state") == "present":
+        return {
+            **metrics_server_declaration(),
+            "live_config_sha256": observation["live_config_sha256"],
+        }
+    return observation
+
 
 
 def _observe_protocol_profile(selected_model: str) -> dict[str, Any]:

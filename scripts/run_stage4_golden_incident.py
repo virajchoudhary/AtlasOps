@@ -27,7 +27,10 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
+
+import httpx
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -36,6 +39,7 @@ if REPO_ROOT not in sys.path:
 from config.g4_protocol import (
     G4_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
+    file_sha256,
     inspect_metrics_server_deployment,
     metrics_server_declaration,
     protocol_fingerprint,
@@ -950,9 +954,172 @@ def _persist_stage4_prefault_failure(evidence: dict[str, Any]) -> str:
     return path
 
 
+def _handle_post_t0_interruption(
+    *,
+    reservation: dict[str, Any],
+    evidence: dict[str, Any],
+    exc: Exception,
+    fault_observable: bool,
+    evidence_dir: str,
+) -> None:
+    """Safely persist forensic interruption evidence and perform cleanup after T0 crash."""
+    experiment_id = reservation.get("experiment_id") or EXPERIMENT_ID
+    attempt_file = _attempt_marker_path(experiment_id, REPO_ROOT)
+    attempt_data = _read_json_file(attempt_file) or {}
+    attempt_state_observed = attempt_data.get("state", ATTEMPT_STATE_CONSUMED)
+    attempt_sha = file_sha256(Path(attempt_file)) if os.path.exists(attempt_file) else None
+
+    # Check if a durable primary evidence file already exists on disk
+    primary_file = os.path.join(evidence_dir, f"{experiment_id}.json")
+    primary_record: dict[str, Any] | None = None
+    has_durable_primary = False
+    if os.path.exists(primary_file):
+        try:
+            with open(primary_file, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict) and "gate_g4_pass" in loaded:
+                primary_record = loaded
+                has_durable_primary = True
+        except Exception:
+            has_durable_primary = False
+
+    # Check for active leftover chaos in cluster
+    leftover_chaos_file = os.path.join(evidence_dir, f"{experiment_id}.leftover-chaos.yaml")
+    leftover_sha = None
+    chaos_get = run_kubectl(["get", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "-o", "yaml"])
+    if chaos_get.get("success") and chaos_get.get("stdout"):
+        stdout_text = str(chaos_get["stdout"])
+        if "apiVersion" in stdout_text and TARGET_CHAOS_NAME in stdout_text:
+            if not os.path.exists(leftover_chaos_file):
+                with open(leftover_chaos_file, "w", encoding="utf-8") as f:
+                    f.write(stdout_text)
+            leftover_sha = file_sha256(Path(leftover_chaos_file))
+
+    # Build evidence hashes
+    evidence_hashes: dict[str, Any] = {}
+    if attempt_sha:
+        evidence_hashes["attempt_json"] = {
+            "path": f"artifacts/evidence/stage4/.attempts/{experiment_id}.attempt.json",
+            "sha256": attempt_sha,
+        }
+    if leftover_sha:
+        evidence_hashes["leftover_chaos_yaml"] = {
+            "path": f"artifacts/evidence/stage4/{experiment_id}.leftover-chaos.yaml",
+            "sha256": leftover_sha,
+        }
+    if has_durable_primary:
+        evidence_hashes["primary_evidence_json"] = {
+            "path": f"artifacts/evidence/stage4/{experiment_id}.json",
+            "sha256": file_sha256(Path(primary_file)),
+        }
+
+    # Determine phase-aware classification and scientific status
+    if has_durable_primary and primary_record is not None:
+        classification = "POST_VERDICT_OPERATIONAL_INTERRUPTION"
+        scientific_status = "VERDICT_ALREADY_FROZEN"
+        gate_g4_pass = primary_record.get("gate_g4_pass")
+        env_resolved = primary_record.get("env_resolved")
+        if env_resolved is None:
+            env_resolved = primary_record.get("phases", {}).get("verification", {}).get("env_resolved")
+        verifier_completed = bool(primary_record.get("phases", {}).get("verification"))
+        model_capability_failure = primary_record.get("model_capability_failure", None)
+        root_cause_summary = (
+            f"Primary verdict is frozen and authoritative (gate_g4_pass={gate_g4_pass}); "
+            f"post-verdict operational exception occurred: {type(exc).__name__}: {str(exc)}"
+        )
+        extra_fields: dict[str, Any] = {
+            "primary_verdict_authoritative": True,
+            "primary_verdict_persisted": True,
+            "attempt_state_observed": attempt_state_observed,
+        }
+    else:
+        in_memory_phases = evidence.get("phases") if isinstance(evidence, dict) else {}
+        in_memory_verifier = (in_memory_phases or {}).get("verification")
+        verifier_completed = bool(
+            in_memory_verifier and in_memory_verifier.get("verification_report")
+        )
+        is_timeout = (
+            isinstance(exc, (httpx.TimeoutException, TimeoutError))
+            or "ReadTimeout" in type(exc).__name__
+            or "Timeout" in type(exc).__name__
+        )
+        classification = (
+            "MODEL_TIMEOUT_INTERRUPTION"
+            if is_timeout
+            else "POST_T0_EXECUTION_INTERRUPTION"
+        )
+        scientific_status = "INCONCLUSIVE"
+        gate_g4_pass = None
+        env_resolved = None
+        model_capability_failure = False
+        root_cause_summary = f"Unhandled {type(exc).__name__} after T0 fault injection: {str(exc)}"
+        extra_fields = {
+            "primary_verdict_authoritative": False,
+            "primary_verdict_persisted": False,
+            "attempt_state_observed": attempt_state_observed,
+        }
+        if verifier_completed and in_memory_verifier:
+            extra_fields["in_memory_verifier_summary"] = {
+                "env_resolved": in_memory_verifier.get("env_resolved"),
+                "agent_claimed_resolved": in_memory_verifier.get("agent_claimed_resolved"),
+            }
+
+    interruption_record = {
+        "classification": classification,
+        "scientific_status": scientific_status,
+        "attempt_state": attempt_state_observed,
+        "gate_g4_pass": gate_g4_pass,
+        "env_resolved": env_resolved,
+        "verifier_completed": verifier_completed,
+        "model_capability_failure": model_capability_failure,
+        "experiment_id": experiment_id,
+        "main_sha": reservation.get("main_sha", ""),
+        "protocol_fingerprint": reservation.get("protocol_fingerprint", ""),
+        "protocol_marker": reservation.get("protocol_marker", ""),
+        "reservation_timestamp": reservation.get("reserved_at", ""),
+        "consumed_timestamp": reservation.get("consumed_at", ""),
+        "interruption_timestamp": datetime.now(timezone.utc).isoformat(),
+        "observed_exception_class": type(exc).__name__,
+        "observed_exception_message": str(exc),
+        "t0_crossed": True,
+        "fault_observed_in_cluster": fault_observable,
+        "evidence_hashes": evidence_hashes,
+        "root_cause_summary": root_cause_summary,
+        **extra_fields,
+    }
+    interruption_file = os.path.join(evidence_dir, f"{experiment_id}.interruption.json")
+    if not os.path.exists(interruption_file):
+        _write_json_atomic(interruption_file, interruption_record)
+        print(f"  Persisted interruption record (sidecar): {interruption_file}")
+
+    # Perform post-interruption safety cleanup
+    clean_res = run_kubectl(["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+    cleanup_timing = (
+        "after_post_verdict_interruption"
+        if has_durable_primary
+        else "after_post_t0_interruption"
+    )
+    cleanup_record = {
+        "experiment_id": experiment_id,
+        "timing": cleanup_timing,
+        "affects_env_resolved": False,
+        "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
+        "result": clean_res,
+        "observed_leftover_chaos_sha256": leftover_sha,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    cleanup_file = os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")
+    if not os.path.exists(cleanup_file):
+        _write_json_atomic(cleanup_file, cleanup_record)
+        print(f"  Persisted safety cleanup record (sidecar): {cleanup_file}")
+
+
 async def main() -> dict[str, Any]:
     fault_crossed = False
+    fault_observable = False
     reservation: dict[str, Any] | None = None
+    evidence: dict[str, Any] = {}
+    evidence_dir = _experiment_evidence_dir(EXPERIMENT_ID)
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
     print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
@@ -1349,9 +1516,17 @@ async def main() -> dict[str, Any]:
 
         return evidence
 
-    except Exception:
+    except Exception as exc:
         if reservation is not None and not fault_crossed:
             release_experiment_reservation(reservation)
+        elif reservation is not None and fault_crossed:
+            _handle_post_t0_interruption(
+                reservation=reservation,
+                evidence=evidence,
+                exc=exc,
+                fault_observable=fault_observable,
+                evidence_dir=evidence_dir,
+            )
         raise
     finally:
         for p in pf_procs:

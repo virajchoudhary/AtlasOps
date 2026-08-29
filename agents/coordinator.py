@@ -73,6 +73,9 @@ _default_base, _default_model = _BACKEND_DEFAULTS.get(BACKEND, _BACKEND_DEFAULTS
 VLLM_BASE  = os.getenv("VLLM_BASE",    _default_base)
 MODEL_NAME = os.getenv("AGENT_MODEL",  _default_model)
 API_KEY    = os.getenv("LLM_API_KEY",  "")  # required for fireworks/openai, empty for local vllm
+LLM_REQUEST_TIMEOUT_SECONDS: float = 300.0
+LLM_MAX_ATTEMPTS: int = 2
+LLM_BASE_BACKOFF_SECONDS: float = 1.5
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
 TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
@@ -286,13 +289,16 @@ async def _force_json_conclusion(
     recent = [m for m in messages if m.get("role") != "system"][-8:]
     forced_msgs = system_msgs + recent + [{"role": "user", "content": prompt}]
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
+    timeout_cfg = httpx.Timeout(timeout=LLM_REQUEST_TIMEOUT_SECONDS, connect=10.0)
     try:
-        async with httpx.AsyncClient(timeout=60, headers=headers) as c:
+        async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as c:
             r = await post_with_retry(
                 c,
                 f"{VLLM_BASE}/chat/completions",
                 {"model": MODEL_NAME, "messages": forced_msgs, "temperature": 0.0},
                 context=f"forced_conclusion/{role}",
+                max_attempts=LLM_MAX_ATTEMPTS,
+                base_backoff=LLM_BASE_BACKOFF_SECONDS,
             )
             r.raise_for_status()
             choice = r.json()["choices"][0]
@@ -388,7 +394,8 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     _remediation_turn_record: dict[str, Any] | None = None
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
-    async with httpx.AsyncClient(timeout=120, headers=headers) as client:
+    timeout_cfg = httpx.Timeout(timeout=LLM_REQUEST_TIMEOUT_SECONDS, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as client:
         for turn in range(max_turns):
             turn_executed_names: list[str] = []
             tool_choice = (
@@ -407,6 +414,8 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     "tool_choice": tool_choice,
                 },
                 context=f"{role}/turn-{turn}",
+                max_attempts=LLM_MAX_ATTEMPTS,
+                base_backoff=LLM_BASE_BACKOFF_SECONDS,
             )
             r.raise_for_status()
             choice = r.json()["choices"][0]

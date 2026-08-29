@@ -110,12 +110,13 @@ async def test_call_agent_passes_transport_parameters():
         assert result.get("final", {}).get("severity") == "P1"
 
 
-def test_post_t0_interruption_handler_persists_evidence_and_cleans_up(tmp_path):
+# Case A: 011-style early post-T0 ReadTimeout (no primary verdict, verifier not completed)
+def test_post_t0_interruption_case_a_early_timeout_inconclusive(tmp_path):
     evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
     attempts_dir = evidence_dir / ".attempts"
     attempts_dir.mkdir(parents=True)
 
-    experiment_id = "EXP-STAGE4-TEST-INTR"
+    experiment_id = "EXP-STAGE4-TEST-CASE-A"
     attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
     reservation = {
         "experiment_id": experiment_id,
@@ -133,10 +134,8 @@ def test_post_t0_interruption_handler_persists_evidence_and_cleans_up(tmp_path):
     timeout_exc = httpx.ReadTimeout("ReadTimeout during triage turn-0")
 
     fake_chaos_yaml = "apiVersion: chaos-mesh.org/v1alpha1\nkind: StressChaos\nmetadata:\n  name: sf-002-paymentservice-cpu\n"
-    kubectl_calls = []
 
     def mock_run_kubectl(cmd):
-        kubectl_calls.append(cmd)
         if cmd[0] == "get":
             return {"success": True, "stdout": fake_chaos_yaml, "returncode": 0}
         elif cmd[0] == "delete":
@@ -166,6 +165,7 @@ def test_post_t0_interruption_handler_persists_evidence_and_cleans_up(tmp_path):
     assert intr["env_resolved"] is None
     assert intr["verifier_completed"] is False
     assert intr["model_capability_failure"] is False
+    assert intr["primary_verdict_authoritative"] is False
     assert intr["t0_crossed"] is True
     assert intr["fault_observed_in_cluster"] is True
     assert "attempt_json" in intr["evidence_hashes"]
@@ -189,6 +189,264 @@ def test_post_t0_interruption_handler_persists_evidence_and_cleans_up(tmp_path):
     assert current_attempt["state"] == runner.ATTEMPT_STATE_CONSUMED
 
 
+# Case B: In-memory verifier completed, but primary verdict not persisted
+def test_post_t0_interruption_case_b_in_memory_verifier_completed_no_primary(tmp_path):
+    evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
+    attempts_dir = evidence_dir / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    experiment_id = "EXP-STAGE4-TEST-CASE-B"
+    attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "reservation_token": "token-case-b",
+        "reserved_at": "2026-08-29T10:00:00+00:00",
+        "consumed_at": "2026-08-29T10:00:05+00:00",
+        "protocol_marker": protocol.G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "main_sha": "abc1234",
+    }
+    attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
+
+    evidence = {
+        "experiment_id": experiment_id,
+        "phases": {
+            "verification": {
+                "verification_report": {"status": "success"},
+                "env_resolved": True,
+                "agent_claimed_resolved": True,
+            }
+        },
+    }
+    disk_exc = OSError("Disk full before primary evidence was written")
+
+    def mock_run_kubectl(cmd):
+        return {"success": True, "stdout": "", "returncode": 0}
+
+    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+        runner, "REPO_ROOT", str(tmp_path)
+    ):
+        runner._handle_post_t0_interruption(
+            reservation=reservation,
+            evidence=evidence,
+            exc=disk_exc,
+            fault_observable=True,
+            evidence_dir=str(evidence_dir),
+        )
+
+    intr_file = evidence_dir / f"{experiment_id}.interruption.json"
+    assert intr_file.exists()
+    intr = json.loads(intr_file.read_text(encoding="utf-8"))
+
+    assert intr["classification"] == "POST_T0_EXECUTION_INTERRUPTION"
+    assert intr["scientific_status"] == "INCONCLUSIVE"
+    assert intr["verifier_completed"] is True
+    assert intr["gate_g4_pass"] is None
+    assert intr["env_resolved"] is None
+    assert intr["model_capability_failure"] is False
+    assert intr["primary_verdict_authoritative"] is False
+    assert intr["in_memory_verifier_summary"]["env_resolved"] is True
+    assert intr["in_memory_verifier_summary"]["agent_claimed_resolved"] is True
+
+
+# Case C: Primary PASS verdict already persisted on disk
+def test_post_t0_interruption_case_c_primary_pass_verdict_already_persisted(tmp_path):
+    evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
+    attempts_dir = evidence_dir / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    experiment_id = "EXP-STAGE4-TEST-CASE-C"
+    attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "reservation_token": "token-case-c",
+        "reserved_at": "2026-08-29T10:00:00+00:00",
+        "consumed_at": "2026-08-29T10:00:05+00:00",
+        "protocol_marker": protocol.G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "main_sha": "abc1234",
+    }
+    attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
+
+    # Persist authoritative primary evidence
+    primary_file = evidence_dir / f"{experiment_id}.json"
+    primary_data = {
+        "experiment_id": experiment_id,
+        "gate_g4_pass": True,
+        "env_resolved": True,
+        "completed_at": "2026-08-29T10:05:00+00:00",
+        "causal_criteria": {"objective_env_resolved": True, "f1_score_passing": True},
+        "phases": {
+            "verification": {
+                "verification_report": {"status": "success"},
+                "env_resolved": True,
+            }
+        },
+    }
+    primary_file.write_text(json.dumps(primary_data, indent=2), encoding="utf-8")
+    primary_sha_before = runner.file_sha256(primary_file)
+
+    bookkeeping_exc = RuntimeError("Failure during complete_experiment_attempt accounting lock")
+
+    def mock_run_kubectl(cmd):
+        return {"success": True, "stdout": "", "returncode": 0}
+
+    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+        runner, "REPO_ROOT", str(tmp_path)
+    ):
+        runner._handle_post_t0_interruption(
+            reservation=reservation,
+            evidence=primary_data,
+            exc=bookkeeping_exc,
+            fault_observable=True,
+            evidence_dir=str(evidence_dir),
+        )
+
+    # Primary evidence must remain 100% byte-for-byte immutable
+    primary_sha_after = runner.file_sha256(primary_file)
+    assert primary_sha_before == primary_sha_after
+
+    # Interruption record must preserve PASS and NOT declare INCONCLUSIVE
+    intr_file = evidence_dir / f"{experiment_id}.interruption.json"
+    assert intr_file.exists()
+    intr = json.loads(intr_file.read_text(encoding="utf-8"))
+
+    assert intr["classification"] == "POST_VERDICT_OPERATIONAL_INTERRUPTION"
+    assert intr["scientific_status"] == "VERDICT_ALREADY_FROZEN"
+    assert intr["gate_g4_pass"] is True
+    assert intr["env_resolved"] is True
+    assert intr["verifier_completed"] is True
+    assert intr["model_capability_failure"] is False
+    assert intr["primary_verdict_authoritative"] is True
+    assert intr["primary_verdict_persisted"] is True
+    assert intr["evidence_hashes"]["primary_evidence_json"]["sha256"] == primary_sha_before
+
+    # Cleanup timing indicates post-verdict
+    clean_file = evidence_dir / f"{experiment_id}.cleanup.json"
+    assert clean_file.exists()
+    clean = json.loads(clean_file.read_text(encoding="utf-8"))
+    assert clean["timing"] == "after_post_verdict_interruption"
+
+
+# Case D: Primary FAIL verdict already persisted on disk
+def test_post_t0_interruption_case_d_primary_fail_verdict_already_persisted(tmp_path):
+    evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
+    attempts_dir = evidence_dir / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    experiment_id = "EXP-STAGE4-TEST-CASE-D"
+    attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "reservation_token": "token-case-d",
+        "reserved_at": "2026-08-29T10:00:00+00:00",
+        "consumed_at": "2026-08-29T10:00:05+00:00",
+        "protocol_marker": protocol.G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "main_sha": "abc1234",
+    }
+    attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
+
+    # Persist authoritative primary FAIL evidence
+    primary_file = evidence_dir / f"{experiment_id}.json"
+    primary_data = {
+        "experiment_id": experiment_id,
+        "gate_g4_pass": False,
+        "env_resolved": False,
+        "completed_at": "2026-08-29T10:05:00+00:00",
+        "causal_criteria": {"objective_env_resolved": False, "f1_score_passing": False},
+        "phases": {
+            "verification": {
+                "verification_report": {"status": "failed"},
+                "env_resolved": False,
+            }
+        },
+    }
+    primary_file.write_text(json.dumps(primary_data, indent=2), encoding="utf-8")
+    primary_sha_before = runner.file_sha256(primary_file)
+
+    cleanup_exc = RuntimeError("Failure during cluster kubectl delete")
+
+    def mock_run_kubectl(cmd):
+        return {"success": True, "stdout": "", "returncode": 0}
+
+    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+        runner, "REPO_ROOT", str(tmp_path)
+    ):
+        runner._handle_post_t0_interruption(
+            reservation=reservation,
+            evidence=primary_data,
+            exc=cleanup_exc,
+            fault_observable=True,
+            evidence_dir=str(evidence_dir),
+        )
+
+    # Primary evidence must remain 100% byte-for-byte immutable
+    primary_sha_after = runner.file_sha256(primary_file)
+    assert primary_sha_before == primary_sha_after
+
+    # Interruption record must preserve FAIL and NOT declare INCONCLUSIVE
+    intr_file = evidence_dir / f"{experiment_id}.interruption.json"
+    assert intr_file.exists()
+    intr = json.loads(intr_file.read_text(encoding="utf-8"))
+
+    assert intr["classification"] == "POST_VERDICT_OPERATIONAL_INTERRUPTION"
+    assert intr["scientific_status"] == "VERDICT_ALREADY_FROZEN"
+    assert intr["gate_g4_pass"] is False
+    assert intr["env_resolved"] is False
+    assert intr["verifier_completed"] is True
+    assert intr["model_capability_failure"] is True
+    assert intr["primary_verdict_authoritative"] is True
+
+
+# Case E: Cleanup occurs only after sidecar persistence
+def test_post_t0_interruption_case_e_cleanup_order(tmp_path):
+    evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
+    attempts_dir = evidence_dir / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    experiment_id = "EXP-STAGE4-TEST-CASE-E"
+    attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "reservation_token": "token-case-e",
+        "reserved_at": "2026-08-29T10:00:00+00:00",
+        "consumed_at": "2026-08-29T10:00:05+00:00",
+        "protocol_marker": protocol.G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "main_sha": "abc1234",
+    }
+    attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
+
+    evidence = {"experiment_id": experiment_id}
+    intr_file = evidence_dir / f"{experiment_id}.interruption.json"
+
+    def mock_run_kubectl(cmd):
+        if cmd[0] == "delete":
+            # Assert interruption file exists before kubectl delete executes
+            assert intr_file.exists(), "Interruption sidecar must be persisted before cleanup executes"
+            return {"success": True, "stdout": "deleted", "returncode": 0}
+        return {"success": True, "stdout": "", "returncode": 0}
+
+    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+        runner, "REPO_ROOT", str(tmp_path)
+    ):
+        runner._handle_post_t0_interruption(
+            reservation=reservation,
+            evidence=evidence,
+            exc=RuntimeError("Generic runtime failure"),
+            fault_observable=True,
+            evidence_dir=str(evidence_dir),
+        )
+
+    assert (evidence_dir / f"{experiment_id}.cleanup.json").exists()
+
+
+# Case F: Pre-T0 exception releases reservation
 def test_pre_t0_exception_releases_reservation(tmp_path):
     attempts_dir = tmp_path / "artifacts" / "evidence" / "stage4" / ".attempts"
     attempts_dir.mkdir(parents=True)
@@ -208,6 +466,7 @@ def test_pre_t0_exception_releases_reservation(tmp_path):
     assert not marker_file.exists()
 
 
+# Case G: No automatic next attempt is created on interruption
 def test_interruption_does_not_create_automatic_next_attempt(tmp_path):
     evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
     attempts_dir = evidence_dir / ".attempts"

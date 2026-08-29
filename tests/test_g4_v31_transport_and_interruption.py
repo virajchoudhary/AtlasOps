@@ -318,7 +318,7 @@ def test_post_t0_interruption_case_c_primary_pass_verdict_already_persisted(tmp_
     assert intr["gate_g4_pass"] is True
     assert intr["env_resolved"] is True
     assert intr["verifier_completed"] is True
-    assert intr["model_capability_failure"] is False
+    assert intr["model_capability_failure"] is None
     assert intr["primary_verdict_authoritative"] is True
     assert intr["primary_verdict_persisted"] is True
     assert intr["evidence_hashes"]["primary_evidence_json"]["sha256"] == primary_sha_before
@@ -330,7 +330,7 @@ def test_post_t0_interruption_case_c_primary_pass_verdict_already_persisted(tmp_
     assert clean["timing"] == "after_post_verdict_interruption"
 
 
-# Case D: Primary FAIL verdict already persisted on disk
+# Case D: Primary FAIL verdict already persisted on disk without explicit model attribution
 def test_post_t0_interruption_case_d_primary_fail_verdict_already_persisted(tmp_path):
     evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
     attempts_dir = evidence_dir / ".attempts"
@@ -350,7 +350,7 @@ def test_post_t0_interruption_case_d_primary_fail_verdict_already_persisted(tmp_
     }
     attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
 
-    # Persist authoritative primary FAIL evidence
+    # Persist authoritative primary FAIL evidence (without explicit model attribution)
     primary_file = evidence_dir / f"{experiment_id}.json"
     primary_data = {
         "experiment_id": experiment_id,
@@ -388,7 +388,7 @@ def test_post_t0_interruption_case_d_primary_fail_verdict_already_persisted(tmp_
     primary_sha_after = runner.file_sha256(primary_file)
     assert primary_sha_before == primary_sha_after
 
-    # Interruption record must preserve FAIL and NOT declare INCONCLUSIVE
+    # Interruption record must preserve FAIL and NOT declare INCONCLUSIVE or guess model failure
     intr_file = evidence_dir / f"{experiment_id}.interruption.json"
     assert intr_file.exists()
     intr = json.loads(intr_file.read_text(encoding="utf-8"))
@@ -398,6 +398,77 @@ def test_post_t0_interruption_case_d_primary_fail_verdict_already_persisted(tmp_
     assert intr["gate_g4_pass"] is False
     assert intr["env_resolved"] is False
     assert intr["verifier_completed"] is True
+    # Critical regression test: Failed G4 does NOT automatically mean model capability failure
+    assert intr["model_capability_failure"] is None
+    assert intr["primary_verdict_authoritative"] is True
+
+
+# Case D2: Primary verdict with explicit adjudicated model_capability_failure preserved
+def test_post_t0_interruption_case_d2_explicit_model_capability_failure_preserved(tmp_path):
+    evidence_dir = tmp_path / "artifacts" / "evidence" / "stage4"
+    attempts_dir = evidence_dir / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    experiment_id = "EXP-STAGE4-TEST-CASE-D2"
+    attempt_file = attempts_dir / f"{experiment_id}.attempt.json"
+    reservation = {
+        "experiment_id": experiment_id,
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "reservation_token": "token-case-d2",
+        "reserved_at": "2026-08-29T10:00:00+00:00",
+        "consumed_at": "2026-08-29T10:00:05+00:00",
+        "protocol_marker": protocol.G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "main_sha": "abc1234",
+    }
+    attempt_file.write_text(json.dumps(reservation), encoding="utf-8")
+
+    # Persist authoritative primary evidence with explicit model_capability_failure
+    primary_file = evidence_dir / f"{experiment_id}.json"
+    primary_data = {
+        "experiment_id": experiment_id,
+        "gate_g4_pass": False,
+        "env_resolved": False,
+        "model_capability_failure": True,
+        "completed_at": "2026-08-29T10:05:00+00:00",
+        "causal_criteria": {"objective_env_resolved": False, "f1_score_passing": False},
+        "phases": {
+            "verification": {
+                "verification_report": {"status": "failed"},
+                "env_resolved": False,
+            }
+        },
+    }
+    primary_file.write_text(json.dumps(primary_data, indent=2), encoding="utf-8")
+    primary_sha_before = runner.file_sha256(primary_file)
+
+    cleanup_exc = RuntimeError("Failure during cluster kubectl delete")
+
+    def mock_run_kubectl(cmd):
+        return {"success": True, "stdout": "", "returncode": 0}
+
+    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+        runner, "REPO_ROOT", str(tmp_path)
+    ):
+        runner._handle_post_t0_interruption(
+            reservation=reservation,
+            evidence=primary_data,
+            exc=cleanup_exc,
+            fault_observable=True,
+            evidence_dir=str(evidence_dir),
+        )
+
+    # Primary evidence must remain 100% byte-for-byte immutable
+    primary_sha_after = runner.file_sha256(primary_file)
+    assert primary_sha_before == primary_sha_after
+
+    intr_file = evidence_dir / f"{experiment_id}.interruption.json"
+    assert intr_file.exists()
+    intr = json.loads(intr_file.read_text(encoding="utf-8"))
+
+    assert intr["classification"] == "POST_VERDICT_OPERATIONAL_INTERRUPTION"
+    assert intr["scientific_status"] == "VERDICT_ALREADY_FROZEN"
+    assert intr["gate_g4_pass"] is False
     assert intr["model_capability_failure"] is True
     assert intr["primary_verdict_authoritative"] is True
 

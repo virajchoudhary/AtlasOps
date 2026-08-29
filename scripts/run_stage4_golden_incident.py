@@ -1022,7 +1022,7 @@ def _handle_post_t0_interruption(
         if env_resolved is None:
             env_resolved = primary_record.get("phases", {}).get("verification", {}).get("env_resolved")
         verifier_completed = bool(primary_record.get("phases", {}).get("verification"))
-        model_capability_failure = bool(gate_g4_pass is False)
+        model_capability_failure = primary_record.get("model_capability_failure", None)
         root_cause_summary = (
             f"Primary verdict is frozen and authoritative (gate_g4_pass={gate_g4_pass}); "
             f"post-verdict operational exception occurred: {type(exc).__name__}: {str(exc)}"

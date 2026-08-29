@@ -27,7 +27,10 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
+
+import httpx
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -36,6 +39,7 @@ if REPO_ROOT not in sys.path:
 from config.g4_protocol import (
     G4_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
+    file_sha256,
     inspect_metrics_server_deployment,
     metrics_server_declaration,
     protocol_fingerprint,
@@ -950,9 +954,103 @@ def _persist_stage4_prefault_failure(evidence: dict[str, Any]) -> str:
     return path
 
 
+def _handle_post_t0_interruption(
+    *,
+    reservation: dict[str, Any],
+    evidence: dict[str, Any],
+    exc: Exception,
+    fault_observable: bool,
+    evidence_dir: str,
+) -> None:
+    """Safely persist forensic interruption evidence and perform cleanup after T0 crash."""
+    experiment_id = reservation.get("experiment_id") or EXPERIMENT_ID
+    attempt_file = _attempt_marker_path(experiment_id, REPO_ROOT)
+    attempt_sha = file_sha256(Path(attempt_file)) if os.path.exists(attempt_file) else None
+
+    # Check for active leftover chaos in cluster
+    leftover_chaos_file = os.path.join(evidence_dir, f"{experiment_id}.leftover-chaos.yaml")
+    leftover_sha = None
+    chaos_get = run_kubectl(["get", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "-o", "yaml"])
+    if chaos_get.get("success") and chaos_get.get("stdout"):
+        stdout_text = str(chaos_get["stdout"])
+        if "apiVersion" in stdout_text and TARGET_CHAOS_NAME in stdout_text:
+            if not os.path.exists(leftover_chaos_file):
+                with open(leftover_chaos_file, "w", encoding="utf-8") as f:
+                    f.write(stdout_text)
+            leftover_sha = file_sha256(Path(leftover_chaos_file))
+
+    # Persist interruption sidecar
+    interruption_file = os.path.join(evidence_dir, f"{experiment_id}.interruption.json")
+    evidence_hashes: dict[str, Any] = {}
+    if attempt_sha:
+        evidence_hashes["attempt_json"] = {
+            "path": f"artifacts/evidence/stage4/.attempts/{experiment_id}.attempt.json",
+            "sha256": attempt_sha,
+        }
+    if leftover_sha:
+        evidence_hashes["leftover_chaos_yaml"] = {
+            "path": f"artifacts/evidence/stage4/{experiment_id}.leftover-chaos.yaml",
+            "sha256": leftover_sha,
+        }
+
+    is_timeout = (
+        isinstance(exc, (httpx.TimeoutException, TimeoutError))
+        or "ReadTimeout" in type(exc).__name__
+        or "Timeout" in type(exc).__name__
+    )
+    interruption_record = {
+        "classification": (
+            "MODEL_TIMEOUT_INTERRUPTION"
+            if is_timeout
+            else "POST_T0_EXECUTION_INTERRUPTION"
+        ),
+        "scientific_status": "INCONCLUSIVE",
+        "attempt_state": ATTEMPT_STATE_CONSUMED,
+        "gate_g4_pass": None,
+        "env_resolved": None,
+        "verifier_completed": False,
+        "model_capability_failure": False,
+        "experiment_id": experiment_id,
+        "main_sha": reservation.get("main_sha", ""),
+        "protocol_fingerprint": reservation.get("protocol_fingerprint", ""),
+        "protocol_marker": reservation.get("protocol_marker", ""),
+        "reservation_timestamp": reservation.get("reserved_at", ""),
+        "consumed_timestamp": reservation.get("consumed_at", ""),
+        "interruption_timestamp": datetime.now(timezone.utc).isoformat(),
+        "observed_exception_class": type(exc).__name__,
+        "observed_exception_message": str(exc),
+        "t0_crossed": True,
+        "fault_observed_in_cluster": fault_observable,
+        "evidence_hashes": evidence_hashes,
+        "root_cause_summary": f"Unhandled {type(exc).__name__} after T0 fault injection: {str(exc)}",
+    }
+    if not os.path.exists(interruption_file):
+        _write_json_atomic(interruption_file, interruption_record)
+        print(f"  Persisted interruption record (sidecar): {interruption_file}")
+
+    # Perform post-interruption safety cleanup
+    clean_res = run_kubectl(["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
+    cleanup_record = {
+        "experiment_id": experiment_id,
+        "timing": "after_post_t0_interruption",
+        "affects_env_resolved": False,
+        "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
+        "result": clean_res,
+        "observed_leftover_chaos_sha256": leftover_sha,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    cleanup_file = os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")
+    if not os.path.exists(cleanup_file):
+        _write_json_atomic(cleanup_file, cleanup_record)
+        print(f"  Persisted safety cleanup record (sidecar): {cleanup_file}")
+
+
 async def main() -> dict[str, Any]:
     fault_crossed = False
+    fault_observable = False
     reservation: dict[str, Any] | None = None
+    evidence: dict[str, Any] = {}
+    evidence_dir = _experiment_evidence_dir(EXPERIMENT_ID)
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
     print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
@@ -1349,9 +1447,17 @@ async def main() -> dict[str, Any]:
 
         return evidence
 
-    except Exception:
+    except Exception as exc:
         if reservation is not None and not fault_crossed:
             release_experiment_reservation(reservation)
+        elif reservation is not None and fault_crossed:
+            _handle_post_t0_interruption(
+                reservation=reservation,
+                evidence=evidence,
+                exc=exc,
+                fault_observable=fault_observable,
+                evidence_dir=evidence_dir,
+            )
         raise
     finally:
         for p in pf_procs:

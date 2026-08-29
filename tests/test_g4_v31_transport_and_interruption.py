@@ -23,6 +23,24 @@ from config.g4_protocol import (
 import scripts.run_stage4_golden_incident as runner
 
 
+@pytest.fixture(autouse=True)
+def isolated_protocol_runtime(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "_query_ollama_model_identity",
+        lambda selected_model: {
+            "provider": "ollama-local",
+            "name": selected_model,
+            "digest": APPROVED_G4_V31_PROTOCOL_PROFILE["model"]["digest"],
+        },
+    )
+    monkeypatch.setattr(
+        runner,
+        "_probe_metrics_server_contract",
+        lambda: APPROVED_G4_V31_PROTOCOL_PROFILE["metrics_api"],
+    )
+
+
 def test_coordinator_declares_v31_transport_constants():
     assert coordinator.LLM_REQUEST_TIMEOUT_SECONDS == 300.0
     assert coordinator.LLM_MAX_ATTEMPTS == 2

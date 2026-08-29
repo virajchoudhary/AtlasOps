@@ -79,7 +79,7 @@ def test_reservation_records_protocol_marker_and_spent_limit_is_two():
     root = _attempt_root()
     reservation = reserve_experiment_attempt(
         "EXP-STAGE4-MARKER",
-        selected_model="qwen2.5:3b-instruct",
+        selected_model=APPROVED_G4_MODEL,
         main_sha="test-sha",
         attempt_root=root,
     )
@@ -104,7 +104,7 @@ def test_default_and_arbitrary_models_cannot_consume_approved_protocol_budget():
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         reserve_experiment_attempt(
             "EXP-STAGE4-ARBITRARY-MODEL",
-            selected_model="qwen2.5:7b-instruct",
+            selected_model="qwen2.5:3b-instruct",
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -216,7 +216,7 @@ def test_third_spent_attempt_for_same_protocol_marker_fails_closed():
     for experiment_id in ("EXP-STAGE4-MARKER-A", "EXP-STAGE4-MARKER-B"):
         reservation = reserve_experiment_attempt(
             experiment_id,
-            selected_model="qwen2.5:3b-instruct",
+            selected_model=APPROVED_G4_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -225,7 +225,7 @@ def test_third_spent_attempt_for_same_protocol_marker_fails_closed():
     with pytest.raises(RuntimeError, match="protocol attempt limit reached"):
         reserve_experiment_attempt(
             "EXP-STAGE4-MARKER-C",
-            selected_model="qwen2.5:3b-instruct",
+            selected_model=APPROVED_G4_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -518,7 +518,7 @@ def test_attempt_lifecycle_blocks_duplicate_and_crashed_attempts():
     root = _attempt_root()
     reservation = reserve_experiment_attempt(
         "EXP-STAGE4-TEST",
-        selected_model="qwen2.5:3b-instruct",
+        selected_model=APPROVED_G4_MODEL,
         main_sha="test-sha",
         attempt_root=root,
     )
@@ -527,7 +527,7 @@ def test_attempt_lifecycle_blocks_duplicate_and_crashed_attempts():
     with pytest.raises(RuntimeError, match="already exists"):
         reserve_experiment_attempt(
             "EXP-STAGE4-TEST",
-            selected_model="qwen2.5:3b-instruct",
+            selected_model=APPROVED_G4_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -538,7 +538,7 @@ def test_attempt_lifecycle_blocks_duplicate_and_crashed_attempts():
     with pytest.raises(RuntimeError, match="already exists"):
         reserve_experiment_attempt(
             "EXP-STAGE4-TEST",
-            selected_model="qwen2.5:3b-instruct",
+            selected_model=APPROVED_G4_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -549,7 +549,7 @@ def test_attempt_lifecycle_blocks_duplicate_and_crashed_attempts():
     with pytest.raises(RuntimeError, match="already exists"):
         reserve_experiment_attempt(
             "EXP-STAGE4-TEST",
-            selected_model="qwen2.5:3b-instruct",
+            selected_model=APPROVED_G4_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -559,7 +559,7 @@ def test_unused_reservation_is_released_after_pre_fault_abort():
     root = _attempt_root()
     reservation = reserve_experiment_attempt(
         "EXP-STAGE4-ABORT",
-        selected_model="qwen2.5:3b-instruct",
+        selected_model=APPROVED_G4_MODEL,
         main_sha="test-sha",
         attempt_root=root,
     )

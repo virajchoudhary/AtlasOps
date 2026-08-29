@@ -28,8 +28,8 @@ def _run_probe(probe: str, *, model: str | None = None) -> subprocess.CompletedP
     )
 
 
-def test_stage4_default_preserves_historical_model():
-    expected = "qwen2.5:1.5b"
+def test_stage4_default_matches_prospective_v3_model():
+    expected = "qwen2.5:7b-instruct"
     completed = _run_probe(
         "import config.runtime as runtime\n"
         "import scripts.run_stage4_golden_incident as runner\n"
@@ -88,7 +88,7 @@ def test_blank_override_preserves_deterministic_default():
         model=" \t\r\n ",
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "qwen2.5:1.5b"
+    assert completed.stdout.strip() == "qwen2.5:7b-instruct"
 
 
 def test_whitespace_around_explicit_override_is_normalized():
@@ -135,7 +135,7 @@ def test_runner_has_one_default_literal_and_no_independent_literals():
     runtime_source = (
         REPO_ROOT / "config" / "runtime.py"
     ).read_text(encoding="utf-8")
-    assert runtime_source.count('DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:1.5b"') == 1
+    assert runtime_source.count('DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:7b-instruct"') == 1
     assert runtime_source.count('"qwen2.5:3b-instruct"') == 0
 
 

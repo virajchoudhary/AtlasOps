@@ -41,6 +41,64 @@ class TestKubectlGet:
         assert "-n" in cmd and "default" in cmd
 
 
+class TestKubectlRollout:
+    def test_bare_deployment_name_canonicalized(self):
+        from agents.tools.kubectl import kubectl_rollout
+        mock_result = MagicMock(returncode=0, stdout="rollout undo successful", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = kubectl_rollout("undo", "paymentservice", namespace="default")
+        assert result["success"] is True
+        cmd = mock_run.call_args[0][0]
+        assert "rollout" in cmd and "undo" in cmd and "deployment/paymentservice" in cmd and "-n" in cmd and "default" in cmd
+
+    def test_qualified_deployment_name_preserved(self):
+        from agents.tools.kubectl import kubectl_rollout
+        mock_result = MagicMock(returncode=0, stdout="rollout undo successful", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = kubectl_rollout("undo", "deployment/paymentservice", namespace="default")
+        assert result["success"] is True
+        cmd = mock_run.call_args[0][0]
+        assert "rollout" in cmd and "undo" in cmd and "deployment/paymentservice" in cmd and "-n" in cmd and "default" in cmd
+
+    def test_qualified_statefulset_and_daemonset_supported(self):
+        from agents.tools.kubectl import kubectl_rollout
+        mock_result = MagicMock(returncode=0, stdout="rollout status", stderr="")
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            res_sts = kubectl_rollout("status", "statefulset/redis-cart", namespace="default")
+            res_ds = kubectl_rollout("history", "daemonset/fluentd", namespace="kube-system")
+        assert res_sts["success"] is True
+        assert res_ds["success"] is True
+
+    def test_unsupported_or_malformed_resource_fails_closed(self):
+        from agents.tools.kubectl import kubectl_rollout
+        for bad_res in [
+            "service/frontend",
+            "pod/mypod",
+            "--all",
+            "deployment/paymentservice; rm -rf /",
+            "deployment/paymentservice --all",
+            "",
+            "   ",
+            "Invalid_Name!",
+        ]:
+            result = kubectl_rollout("undo", bad_res, namespace="default")
+            assert result["success"] is False, f"Expected {bad_res!r} to fail closed"
+            assert "error" in result
+
+    def test_invalid_action_fails_closed(self):
+        from agents.tools.kubectl import kubectl_rollout
+        result = kubectl_rollout("restart", "deployment/paymentservice", namespace="default")
+        assert result["success"] is False
+        assert "Invalid rollout action" in result["error"]
+
+    def test_invalid_namespace_fails_closed(self):
+        from agents.tools.kubectl import kubectl_rollout
+        for bad_ns in ["-n default", "default; rm -rf /", "default --all", ""]:
+            result = kubectl_rollout("undo", "deployment/paymentservice", namespace=bad_ns)
+            assert result["success"] is False, f"Expected namespace {bad_ns!r} to fail closed"
+            assert "error" in result
+
+
 class TestKubectlScale:
     def test_valid_replicas(self):
         from agents.tools.kubectl import kubectl_scale

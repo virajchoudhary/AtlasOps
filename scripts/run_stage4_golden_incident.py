@@ -34,6 +34,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from config.g4_protocol import (
+    G4_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     inspect_metrics_server_deployment,
     metrics_server_declaration,
@@ -146,7 +147,7 @@ ATTEMPT_STATES = {
     ATTEMPT_STATE_CONSUMED,
     ATTEMPT_STATE_COMPLETED,
 }
-G4_PLATFORM_HARDENING_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
+G4_PLATFORM_HARDENING_MARKER = G4_PROTOCOL_MARKER
 MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
 ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
 

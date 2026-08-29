@@ -903,7 +903,29 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "kubectl_describe": {"type": "object", "properties": {"resource": {"type": "string"}, "name": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["resource", "name"], "additionalProperties": False},
     "kubectl_logs": {"type": "object", "properties": {"pod": {"type": "string"}, "namespace": {"type": "string"}, "tail": {"type": "integer"}, "container": {"type": "string"}}, "required": ["pod"], "additionalProperties": False},
     "kubectl_top_pods": {"type": "object", "properties": {"namespace": {"type": "string"}}, "additionalProperties": False},
-    "kubectl_rollout": {"type": "object", "properties": {"action": {"type": "string"}, "resource": {"type": "string"}, "namespace": {"type": "string"}}, "required": ["action", "resource"], "additionalProperties": False},
+    "kubectl_rollout": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["undo", "status", "history"],
+                "description": "Rollout action to execute: undo, status, or history.",
+            },
+            "resource": {
+                "type": "string",
+                "description": (
+                    "Target rollout resource, e.g. 'deployment/paymentservice', "
+                    "'statefulset/cartservice', 'daemonset/fluentd', or a bare deployment name like 'paymentservice'."
+                ),
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Target Kubernetes namespace (default: 'default').",
+            },
+        },
+        "required": ["action", "resource"],
+        "additionalProperties": False,
+    },
     "kubectl_scale": {"type": "object", "properties": {"deployment": {"type": "string"}, "replicas": {"type": "integer"}, "namespace": {"type": "string"}}, "required": ["deployment", "replicas"], "additionalProperties": False},
     "promql_query": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
     "promql_query_range": {"type": "object", "properties": {"query": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}, "step": {"type": "string"}}, "required": ["query"], "additionalProperties": False},
@@ -938,7 +960,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "kubectl_get": (
         "Get a Kubernetes built-in or custom resource type. "
         "Use customresourcedefinitions to discover installed custom resource types."
-    )
+    ),
+    "kubectl_rollout": (
+        "Manage the rollout of a deployment, statefulset, or daemonset (undo, status, history). "
+        "Accepts qualified resource names (deployment/name, statefulset/name, daemonset/name) "
+        "or bare deployment names (e.g. 'paymentservice')."
+    ),
 }
 
 

@@ -65,11 +65,35 @@ def test_v3_fingerprint_differs_from_v2_fingerprint():
     assert v2_fp == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
 
 
-def test_v3_accounting_sees_zero_claimed_attempts_before_authorization():
-    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
+def test_v3_accounting_sees_zero_claimed_attempts_before_authorization(tmp_path):
     v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
-    assert runner._claimed_attempts_for_protocol_fingerprint(v3_fp) == 0
-    assert runner._claimed_attempts_for_protocol_fingerprint(v2_fp) == 2
+    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
+    assert v2_fp == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
+
+    attempts_dir = tmp_path / "artifacts" / "evidence" / "stage4" / ".attempts"
+    attempts_dir.mkdir(parents=True)
+
+    record_001 = {
+        "experiment_id": "EXP-STAGE4-SYNTH-001",
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "protocol_marker": G4_V2_PROTOCOL_MARKER,
+        "protocol_fingerprint": v2_fp,
+    }
+    record_002 = {
+        "experiment_id": "EXP-STAGE4-SYNTH-002",
+        "state": runner.ATTEMPT_STATE_COMPLETED,
+        "protocol_marker": G4_V2_PROTOCOL_MARKER,
+        "protocol_fingerprint": v2_fp,
+    }
+    (attempts_dir / "EXP-STAGE4-SYNTH-001.attempt.json").write_text(
+        json.dumps(record_001), encoding="utf-8"
+    )
+    (attempts_dir / "EXP-STAGE4-SYNTH-002.attempt.json").write_text(
+        json.dumps(record_002), encoding="utf-8"
+    )
+
+    assert runner._claimed_attempts_for_protocol_fingerprint(v2_fp, attempt_root=str(tmp_path)) == 2
+    assert runner._claimed_attempts_for_protocol_fingerprint(v3_fp, attempt_root=str(tmp_path)) == 0
 
 
 def test_declared_prompt_and_tool_hashes_match_current_contract():

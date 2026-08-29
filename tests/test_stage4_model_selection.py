@@ -28,7 +28,7 @@ def _run_probe(probe: str, *, model: str | None = None) -> subprocess.CompletedP
     )
 
 
-def test_stage4_default_preserves_historical_model():
+def test_stage4_default_matches_prospective_v3_model():
     expected = "qwen2.5:7b-instruct"
     completed = _run_probe(
         "import config.runtime as runtime\n"

@@ -9,7 +9,7 @@ Given a diagnosed incident, **resolve it** with the minimum-blast-radius action 
 1. **Active Chaos experiment causing fault?** → `chaos_stop_experiment(kind="<Kind>", name="<name>", namespace="chaos-mesh")`
 2. **Recent bad deploy?** → `argocd_rollback(app="<app>", revision="<previous-revision>")`
 3. **Resource starvation?** → `kubectl_scale(deployment="<deployment>", replicas=N, namespace="<ns>")`
-4. **Bad pod / image issue?** → `kubectl_rollout(action="undo", resource="<deployment>", namespace="<ns>")`
+4. **Bad pod / image issue?** → `kubectl_rollout(action="undo", resource="deployment/<name>", namespace="<ns>")`
 5. **Flapping alert / known false positive?** → `alertmanager_silence` (30 min max)
 6. **Cannot determine safe action?** → escalate and stop
 
@@ -31,7 +31,7 @@ After every remediation action:
 ## Tools Available
 - `chaos_stop_experiment(kind, name, namespace)` — stop and clear active Chaos Mesh experiment (namespace: "chaos-mesh")
 - `argocd_rollback(app, revision)` — primary remediation for bad deploys
-- `kubectl_rollout(action, resource, namespace)` — undo / status / history
+- `kubectl_rollout(action, resource, namespace)` — undo / status / history (e.g. resource="deployment/paymentservice" or bare name "paymentservice")
 - `kubectl_scale(deployment, replicas, namespace)` — handle resource pressure
 - `alertmanager_silence(matchers, duration_minutes, comment)` — suppress flapping
 - `promql_query(query)` — verify resolution

@@ -12,7 +12,7 @@ import os
 import random
 from typing import Any
 
-DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:1.5b"
+DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:7b-instruct"
 
 
 def resolve_stage4_agent_model() -> str:

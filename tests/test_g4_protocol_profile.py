@@ -18,7 +18,17 @@ from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_MODEL_DIGEST,
     APPROVED_G4_PROTOCOL_PROFILE,
+    APPROVED_G4_V2_MODEL,
+    APPROVED_G4_V2_MODEL_DIGEST,
+    APPROVED_G4_V2_PROTOCOL_PROFILE,
+    APPROVED_G4_V2_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V3_MODEL,
+    APPROVED_G4_V3_MODEL_DIGEST,
+    APPROVED_G4_V3_PROTOCOL_PROFILE,
+    APPROVED_G4_V3_TOOL_CONTRACT_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
+    G4_V2_PROTOCOL_MARKER,
+    G4_V3_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -28,12 +38,38 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_profile_pins_exact_model_and_digest():
+def test_approved_v3_profile_pins_exact_model_and_digest():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
-        "name": APPROVED_G4_MODEL,
-        "digest": APPROVED_G4_MODEL_DIGEST,
+        "name": APPROVED_G4_V3_MODEL,
+        "digest": APPROVED_G4_V3_MODEL_DIGEST,
     }
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V3_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V3_TOOL_CONTRACT_SHA256
+
+
+def test_historical_v2_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V2_PROTOCOL_PROFILE["model"] == {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_V2_MODEL,
+        "digest": APPROVED_G4_V2_MODEL_DIGEST,
+    }
+    assert APPROVED_G4_V2_PROTOCOL_PROFILE["protocol_marker"] == G4_V2_PROTOCOL_MARKER
+    assert APPROVED_G4_V2_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V2_TOOL_CONTRACT_SHA256
+
+
+def test_v3_fingerprint_differs_from_v2_fingerprint():
+    v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
+    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
+    assert v2_fp != v3_fp
+    assert v2_fp == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
+
+
+def test_v3_accounting_sees_zero_claimed_attempts_before_authorization():
+    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
+    v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
+    assert runner._claimed_attempts_for_protocol_fingerprint(v3_fp) == 0
+    assert runner._claimed_attempts_for_protocol_fingerprint(v2_fp) == 2
 
 
 def test_declared_prompt_and_tool_hashes_match_current_contract():
@@ -258,9 +294,9 @@ def test_ollama_identity_similarly_named_model_does_not_match():
     mock_resp.raise_for_status.return_value = None
     mock_resp.json.return_value = {
         "models": [
-            {"name": "qwen2.5:3b", "digest": "c" * 64},
-            {"name": "qwen2.5:3b-instruct-v2", "digest": "d" * 64},
-            {"name": "qwen2.5:7b-instruct", "digest": "e" * 64},
+            {"name": "qwen2.5:7b", "digest": "c" * 64},
+            {"name": "qwen2.5:7b-instruct-v2", "digest": "d" * 64},
+            {"name": "qwen2.5:14b-instruct", "digest": "e" * 64},
         ]
     }
     with patch("requests.get", return_value=mock_resp):

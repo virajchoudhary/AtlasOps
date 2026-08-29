@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 from typing import Any
 
@@ -11,6 +12,59 @@ METRICS_API_UNAVAILABLE_ERROR_CLASS = "metrics_api_unavailable"
 METRICS_API_UNAVAILABLE_ERROR = (
     "metrics-server Metrics API is not available in this cluster"
 )
+
+VALID_ROLLOUT_ACTIONS = ("undo", "status", "history")
+VALID_ROLLOUT_KINDS = {
+    "deployment": "deployment",
+    "deployments": "deployment",
+    "deploy": "deployment",
+    "statefulset": "statefulset",
+    "statefulsets": "statefulset",
+    "sts": "statefulset",
+    "daemonset": "daemonset",
+    "daemonsets": "daemonset",
+    "ds": "daemonset",
+}
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+
+
+def canonicalize_rollout_resource(resource: str) -> tuple[str | None, str | None]:
+    """Validate and canonicalize a rollout resource reference.
+
+    Accepts:
+      - deployment/name, deploy/name, statefulset/name, sts/name, daemonset/name, ds/name
+      - bare name: canonicalized to deployment/<name>
+    Rejects:
+      - malformed strings, flags, shell metacharacters, unsupported resource kinds, empty names
+    Returns (canonical_resource, error_message).
+    """
+    if not isinstance(resource, str) or not resource.strip():
+        return None, "Resource must be a non-empty string"
+    resource = resource.strip()
+    if resource.startswith("-") or " " in resource or "\t" in resource or "\n" in resource:
+        return None, f"Invalid resource format or flag injection: {resource!r}"
+
+    if "/" in resource:
+        parts = resource.split("/", 1)
+        kind_raw = parts[0].strip().lower()
+        name = parts[1].strip()
+        if kind_raw not in VALID_ROLLOUT_KINDS:
+            return (
+                None,
+                f"Unsupported rollout resource kind '{parts[0]}'. Allowed kinds: deployment, statefulset, daemonset.",
+            )
+        kind = VALID_ROLLOUT_KINDS[kind_raw]
+    else:
+        kind = "deployment"
+        name = resource
+
+    if not _K8S_NAME_RE.match(name):
+        return (
+            None,
+            f"Invalid Kubernetes resource name: {name!r}. Must consist of lower-case alphanumeric characters or '-', and must start and end with an alphanumeric character.",
+        )
+
+    return f"{kind}/{name}", None
 
 
 def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
@@ -116,10 +170,24 @@ def kubectl_top_nodes() -> dict[str, Any]:
 
 
 def kubectl_rollout(action: str, resource: str, namespace: str = "default") -> dict[str, Any]:
-    """Rollout operations: undo, status, history. action in {undo, status, history}."""
-    if action not in ("undo", "status", "history"):
-        return {"error": f"Invalid rollout action: {action}", "success": False}
-    return _run(["kubectl", "rollout", action, resource, "-n", namespace], timeout=60)
+    """Rollout operations: undo, status, history. action in {undo, status, history}.
+
+    Resource can be deployment/name, statefulset/name, daemonset/name, or a bare name (canonicalized to deployment/name).
+    """
+    if action not in VALID_ROLLOUT_ACTIONS:
+        return {
+            "error": f"Invalid rollout action: {action}. Must be one of {list(VALID_ROLLOUT_ACTIONS)}",
+            "success": False,
+        }
+
+    canonical_res, err = canonicalize_rollout_resource(resource)
+    if err is not None:
+        return {"error": err, "success": False}
+
+    if not isinstance(namespace, str) or not _K8S_NAME_RE.match(namespace.strip()):
+        return {"error": f"Invalid namespace: {namespace!r}", "success": False}
+
+    return _run(["kubectl", "rollout", action, canonical_res, "-n", namespace.strip()], timeout=60)
 
 
 def kubectl_scale(deployment: str, replicas: int, namespace: str = "default") -> dict[str, Any]:

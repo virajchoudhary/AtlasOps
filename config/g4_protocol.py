@@ -28,12 +28,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DIAGNOSIS_PROMPT_PATH = REPO_ROOT / "agents" / "prompts" / "diagnosis.md"
 SF002_MANIFEST_PATH = REPO_ROOT / "bench" / "chaos_manifests" / "single_fault" / "sf-002.yaml"
 
-G4_PROTOCOL_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
-G4_PROTOCOL_PROFILE_VERSION = "g4-hardening-profile-v2"
-APPROVED_G4_MODEL = "qwen2.5:3b-instruct"
-APPROVED_G4_MODEL_DIGEST = "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
-APPROVED_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
-APPROVED_TOOL_CONTRACT_SHA256 = "47b309395c327dd3e7ca93d3e5f2c44c93ba35cc7f58bd5ad34c9bc0f6061926"
+G4_V2_PROTOCOL_MARKER = "G4-PLATFORM-HARDENING-2026-08-25"
+G4_V2_PROTOCOL_PROFILE_VERSION = "g4-hardening-profile-v2"
+APPROVED_G4_V2_MODEL = "qwen2.5:3b-instruct"
+APPROVED_G4_V2_MODEL_DIGEST = "357c53fb659c5076de1d65ccb0b397446227b71a42be9d1603d46168015c9e4b"
+APPROVED_G4_V2_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
+APPROVED_G4_V2_TOOL_CONTRACT_SHA256 = "47b309395c327dd3e7ca93d3e5f2c44c93ba35cc7f58bd5ad34c9bc0f6061926"
+
+G4_V3_PROTOCOL_MARKER = "G4-RECOVERY-V3-2026-08-29"
+G4_V3_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3"
+APPROVED_G4_V3_MODEL = "qwen2.5:7b-instruct"
+APPROVED_G4_V3_MODEL_DIGEST = "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e"
+APPROVED_G4_V3_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
+APPROVED_G4_V3_TOOL_CONTRACT_SHA256 = "cb824284bd9d9eaf5ddf1d57f2ea9f031a2d2863c194dfe94a85b2b31c915ae3"
+
+# Active approved protocol declaration (defaults to prospective v3 profile)
+G4_PROTOCOL_MARKER = G4_V3_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V3_PROTOCOL_PROFILE_VERSION
+APPROVED_G4_MODEL = APPROVED_G4_V3_MODEL
+APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V3_MODEL_DIGEST
+APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V3_DIAGNOSIS_PROMPT_SHA256
+APPROVED_TOOL_CONTRACT_SHA256 = APPROVED_G4_V3_TOOL_CONTRACT_SHA256
 EXPECTED_METRICS_API_STATE = "required-present"
 
 METRICS_SERVER_CONTEXT = "kind-atlasops-local"
@@ -202,22 +217,22 @@ def build_runtime_protocol_profile(
     }
 
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = {
-    "protocol_marker": G4_PROTOCOL_MARKER,
-    "profile_version": G4_PROTOCOL_PROFILE_VERSION,
+APPROVED_G4_V2_PROTOCOL_PROFILE: dict[str, Any] = {
+    "protocol_marker": G4_V2_PROTOCOL_MARKER,
+    "profile_version": G4_V2_PROTOCOL_PROFILE_VERSION,
     "model": {
         "provider": "ollama-local",
-        "name": APPROVED_G4_MODEL,
-        "digest": APPROVED_G4_MODEL_DIGEST,
+        "name": APPROVED_G4_V2_MODEL,
+        "digest": APPROVED_G4_V2_MODEL_DIGEST,
     },
     "diagnosis_prompt": {
         "path": "agents/prompts/diagnosis.md",
-        "version": G4_PROTOCOL_PROFILE_VERSION,
-        "sha256": APPROVED_DIAGNOSIS_PROMPT_SHA256,
+        "version": G4_V2_PROTOCOL_PROFILE_VERSION,
+        "sha256": APPROVED_G4_V2_DIAGNOSIS_PROMPT_SHA256,
     },
     "role_tool_contract": {
         "version": "g4-role-tool-contract-47b309395c32",
-        "sha256": APPROVED_TOOL_CONTRACT_SHA256,
+        "sha256": APPROVED_G4_V2_TOOL_CONTRACT_SHA256,
     },
     "f1_contract": _f1_contract(),
     "scenario_fault_contract": _scenario_fault_contract(),
@@ -226,6 +241,33 @@ APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = {
         "live_config_sha256": expected_live_metrics_config_fingerprint(),
     },
 }
+
+APPROVED_G4_V3_PROTOCOL_PROFILE: dict[str, Any] = {
+    "protocol_marker": G4_V3_PROTOCOL_MARKER,
+    "profile_version": G4_V3_PROTOCOL_PROFILE_VERSION,
+    "model": {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_V3_MODEL,
+        "digest": APPROVED_G4_V3_MODEL_DIGEST,
+    },
+    "diagnosis_prompt": {
+        "path": "agents/prompts/diagnosis.md",
+        "version": G4_V3_PROTOCOL_PROFILE_VERSION,
+        "sha256": APPROVED_G4_V3_DIAGNOSIS_PROMPT_SHA256,
+    },
+    "role_tool_contract": {
+        "version": "g4-role-tool-contract-cb824284bd9d",
+        "sha256": APPROVED_G4_V3_TOOL_CONTRACT_SHA256,
+    },
+    "f1_contract": _f1_contract(),
+    "scenario_fault_contract": _scenario_fault_contract(),
+    "metrics_api": {
+        **metrics_server_declaration(),
+        "live_config_sha256": expected_live_metrics_config_fingerprint(),
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V3_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

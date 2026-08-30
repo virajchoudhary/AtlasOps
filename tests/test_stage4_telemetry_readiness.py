@@ -6,6 +6,8 @@ import json
 import pathlib
 import subprocess
 
+import pytest
+
 from scripts.run_stage4_golden_incident import (
     DEGRADATION_MIN_ABSOLUTE_INCREASE_CORES,
     DEGRADATION_MIN_RATIO,
@@ -384,6 +386,18 @@ def test_runtime_attempt_markers_are_internal_and_ignored():
     assert not any(
         pattern.rstrip("/") == "artifacts/evidence/stage4" for pattern in patterns
     )
+    # Skip rather than fail when there is no git metadata: an exported copy of
+    # the tree (CI artifact, mutation-test sandbox) has nothing to ask git about,
+    # and a hard failure there is an environment result masquerading as a
+    # behavioural one.
+    probe = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        pytest.skip("not a git work tree; cannot inspect tracked evidence files")
     tracked = subprocess.run(
         ["git", "ls-files", "artifacts/evidence/stage4"],
         cwd=repo_root,

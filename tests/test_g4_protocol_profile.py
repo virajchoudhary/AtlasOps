@@ -30,10 +30,19 @@ from config.g4_protocol import (
     APPROVED_G4_V31_MODEL_DIGEST,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V31_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V2_DIAGNOSIS_PROMPT_SHA256,
+    APPROVED_G4_V3_DIAGNOSIS_PROMPT_SHA256,
+    APPROVED_G4_V31_DIAGNOSIS_PROMPT_SHA256,
+    APPROVED_G4_V4_DIAGNOSIS_PROMPT_SHA256,
+    APPROVED_G4_V4_MODEL,
+    APPROVED_G4_V4_MODEL_DIGEST,
+    APPROVED_G4_V4_PROTOCOL_PROFILE,
+    APPROVED_G4_V4_TOOL_CONTRACT_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
     G4_V31_PROTOCOL_MARKER,
+    G4_V4_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -43,19 +52,145 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_v31_profile_pins_exact_model_and_digest():
+def test_active_profile_is_v6_and_declares_the_safety_envelope():
+    """v6 supersedes v5 by reserving budget for the remediating role.
+
+    v5's completion ceiling stopped runaway generations but made the model take
+    more, shorter turns; against a sliding context the investigating agents
+    looped and spent the whole per-incident tool budget, so run 012's
+    remediation was refused every call. A limit that decides a run's outcome
+    belongs in the declared protocol.
+    """
+    from config.g4_protocol import G4_V6_PROTOCOL_MARKER as G4_V5_PROTOCOL_MARKER
+
+    assert APPROVED_G4_PROTOCOL_PROFILE["safety_envelope"] == {
+        "max_tool_calls_per_incident": 50,
+        "reserved_remediation_tool_calls": 12,
+        "max_cluster_mutating_actions_per_hour": 10,
+    }
+
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
-        "name": APPROVED_G4_V31_MODEL,
-        "digest": APPROVED_G4_V31_MODEL_DIGEST,
+        "name": APPROVED_G4_V4_MODEL,
+        "digest": APPROVED_G4_V4_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V31_PROTOCOL_MARKER
-    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_TOOL_CONTRACT_SHA256
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V5_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V4_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 300,
         "max_attempts": 2,
         "base_backoff_seconds": 1.5,
+        "max_completion_tokens": 1024,
     }
+
+
+def test_v6_changes_only_the_safety_envelope_relative_to_v5():
+    """Tool contract, prompts and transport must be identical across v5 and v6."""
+    from config.g4_protocol import (
+        APPROVED_G4_V5_PROTOCOL_PROFILE,
+        APPROVED_G4_V6_PROTOCOL_PROFILE,
+    )
+
+    v5, v6 = APPROVED_G4_V5_PROTOCOL_PROFILE, APPROVED_G4_V6_PROTOCOL_PROFILE
+    assert v6["role_tool_contract"] == v5["role_tool_contract"]
+    assert v6["llm_transport"] == v5["llm_transport"]
+    assert v6["diagnosis_prompt"]["sha256"] == v5["diagnosis_prompt"]["sha256"]
+    assert "safety_envelope" not in v5
+    assert protocol_fingerprint(v6) != protocol_fingerprint(v5)
+
+
+def test_declared_envelope_matches_the_live_circuit_breaker():
+    """The declaration is inert if the running breaker uses other numbers."""
+    from config.g4_protocol import safety_envelope_profile
+
+    assert safety_envelope_profile() == APPROVED_G4_PROTOCOL_PROFILE["safety_envelope"]
+
+
+def test_v5_changes_only_transport_relative_to_v4():
+    """The tool contract and prompt bytes must be identical across v4 and v5."""
+    from config.g4_protocol import APPROVED_G4_V5_PROTOCOL_PROFILE
+
+    v4, v5 = APPROVED_G4_V4_PROTOCOL_PROFILE, APPROVED_G4_V5_PROTOCOL_PROFILE
+    assert v5["role_tool_contract"] == v4["role_tool_contract"]
+    assert v5["diagnosis_prompt"]["sha256"] == v4["diagnosis_prompt"]["sha256"]
+    assert v5["remediation_prompt"]["sha256"] == v4["remediation_prompt"]["sha256"]
+    assert v5["llm_transport"] != v4["llm_transport"]
+    assert protocol_fingerprint(v5) != protocol_fingerprint(v4)
+
+
+def test_every_agent_call_declares_the_completion_ceiling():
+    """The declaration is worthless if the request does not carry it."""
+    import inspect
+
+    import agents.coordinator as coordinator
+
+    for fn in (coordinator.call_agent, coordinator._force_json_conclusion):
+        source = inspect.getsource(fn)
+        assert '"max_tokens": LLM_MAX_COMPLETION_TOKENS' in source, fn.__name__
+
+
+def test_v4_keeps_the_diagnosis_prompt_byte_identical_to_every_prior_profile():
+    """Root-cause accuracy must stay comparable across protocol versions.
+
+    v4 repairs remediation-side observability only. If it also altered the
+    Diagnosis prompt, no v4 result could be compared against runs 001-008.
+    """
+    assert (
+        APPROVED_G4_V4_DIAGNOSIS_PROMPT_SHA256
+        == APPROVED_G4_V31_DIAGNOSIS_PROMPT_SHA256
+        == APPROVED_G4_V3_DIAGNOSIS_PROMPT_SHA256
+        == APPROVED_G4_V2_DIAGNOSIS_PROMPT_SHA256
+    )
+    assert diagnosis_prompt_profile()["sha256"] == APPROVED_G4_V4_DIAGNOSIS_PROMPT_SHA256
+
+
+def test_v4_is_the_first_profile_to_pin_the_remediation_prompt():
+    """The prompt that selects the cluster-mutating call must be in the profile.
+
+    v2-v3.1 hashed only the Diagnosis prompt, so remediation-side behaviour could
+    change between attempts without invalidating the declared protocol.
+    """
+    from config.g4_protocol import remediation_prompt_profile
+
+    assert "remediation_prompt" in APPROVED_G4_V4_PROTOCOL_PROFILE
+    assert (
+        APPROVED_G4_V4_PROTOCOL_PROFILE["remediation_prompt"]["sha256"]
+        == remediation_prompt_profile()["sha256"]
+    )
+    for historical in (
+        APPROVED_G4_V2_PROTOCOL_PROFILE,
+        APPROVED_G4_V3_PROTOCOL_PROFILE,
+        APPROVED_G4_V31_PROTOCOL_PROFILE,
+    ):
+        assert "remediation_prompt" not in historical
+
+
+def test_v4_tool_contract_matches_the_live_contract_and_supersedes_v31():
+    """Comparing two literals could not detect drift in the real contract.
+
+    Hash the tool contract as it exists now: it must equal v4's declaration and
+    differ from v3.1's, which is what makes the added wrapper an explicit,
+    reviewed protocol change rather than a silent one.
+    """
+    live = tool_contract_profile()["sha256"]
+    assert live == APPROVED_G4_V4_TOOL_CONTRACT_SHA256
+    assert live != APPROVED_G4_V31_TOOL_CONTRACT_SHA256
+
+    # The added wrapper is the substantive difference.
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+
+    assert "chaos_list_experiments" in ROLE_ALLOWED_TOOLS["remediation"]
+
+
+def test_historical_v31_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["model"] == {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_V31_MODEL,
+        "digest": APPROVED_G4_V31_MODEL_DIGEST,
+    }
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["protocol_marker"] == G4_V31_PROTOCOL_MARKER
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_TOOL_CONTRACT_SHA256
+    assert protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE) == "94758f5b7a24242f8fbb00f89b5cd0d5aec23d95dc02f6f0202442791726b561"
 
 
 def test_historical_v3_profile_remains_exact_and_immutable():
@@ -80,14 +215,19 @@ def test_historical_v2_profile_remains_exact_and_immutable():
     assert protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE) == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
 
 
-def test_v31_fingerprint_differs_from_v3_and_v2():
-    v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
-    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
-    v31_fp = protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE)
-    assert v31_fp != v3_fp
-    assert v31_fp != v2_fp
-    assert v2_fp == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
-    assert v3_fp == "02ff4b95df55f3031d4e06d161f8b80393a6a508064c9b6172ffc4a205a210e0"
+def test_every_protocol_fingerprint_is_distinct():
+    fingerprints = {
+        "v2": protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE),
+        "v3": protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE),
+        "v31": protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE),
+        "v4": protocol_fingerprint(APPROVED_G4_V4_PROTOCOL_PROFILE),
+    }
+    # Distinct fingerprints keep each version's attempt budget separate.
+    assert len(set(fingerprints.values())) == len(fingerprints)
+    assert fingerprints["v2"] == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
+    assert fingerprints["v3"] == "02ff4b95df55f3031d4e06d161f8b80393a6a508064c9b6172ffc4a205a210e0"
+    assert fingerprints["v31"] == "94758f5b7a24242f8fbb00f89b5cd0d5aec23d95dc02f6f0202442791726b561"
+    assert fingerprints["v4"] == "9d42aeb35f397781b93841d64b58b18d5d7a05ac026b95883f17892ee6fca352"
 
 
 def test_v31_accounting_sees_zero_claimed_attempts_with_synthetic_historical_attempts(tmp_path):
@@ -430,3 +570,110 @@ def test_observe_protocol_profile_with_corrected_ollama_identity():
     ):
         observed = runner._observe_protocol_profile(APPROVED_G4_MODEL)
     assert observed == APPROVED_G4_PROTOCOL_PROFILE
+
+
+def test_both_qualified_models_have_distinct_declared_profiles():
+    """v4 and v4-3b share one tool contract but are separate protocol identities.
+
+    Runs 005-008 used qwen2.5:3b-instruct. Re-running v4 on that same model
+    binary makes the tool contract the only difference from run 008, so a
+    different outcome is attributable to the repair rather than to model
+    capacity. Distinct markers keep their attempt budgets separate.
+    """
+    from config.g4_protocol import (
+        APPROVED_G4_PROTOCOL_PROFILES_BY_MODEL,
+        APPROVED_G4_V2_MODEL_DIGEST,
+        APPROVED_G4_V4_3B_MODEL,
+        APPROVED_G4_V4_3B_PROTOCOL_PROFILE,
+    )
+
+    assert set(APPROVED_G4_PROTOCOL_PROFILES_BY_MODEL) == {
+        APPROVED_G4_V4_MODEL,
+        APPROVED_G4_V4_3B_MODEL,
+    }
+    seven_b = APPROVED_G4_V4_PROTOCOL_PROFILE
+    three_b = APPROVED_G4_V4_3B_PROTOCOL_PROFILE
+
+    # Same repaired tool contract; different model identity.
+    assert three_b["role_tool_contract"] == seven_b["role_tool_contract"]
+    assert three_b["model"]["name"] != seven_b["model"]["name"]
+    assert protocol_fingerprint(three_b) != protocol_fingerprint(seven_b)
+
+    # The 3B binary is byte-identical to the one protocol v2 declared, which is
+    # what makes comparison against runs 005-008 meaningful.
+    assert three_b["model"]["digest"] == APPROVED_G4_V2_MODEL_DIGEST
+
+
+def test_an_unqualified_model_cannot_borrow_a_profile():
+    from config.g4_protocol import approved_profile_for_model
+
+    with pytest.raises(RuntimeError, match="no explicitly approved protocol profile"):
+        approved_profile_for_model("qwen2.5:0.5b-instruct")
+
+
+def test_observed_profile_is_validated_against_its_own_model_declaration():
+    """Selecting by model must not let one model validate against another's profile."""
+    from config.g4_protocol import (
+        APPROVED_G4_V4_3B_MODEL,
+        APPROVED_G4_V6_3B_PROTOCOL_PROFILE,
+        APPROVED_G4_V6_PROTOCOL_PROFILE,
+        validate_runtime_protocol_profile,
+    )
+
+    for model, approved in (
+        (APPROVED_G4_V4_MODEL, APPROVED_G4_V6_PROTOCOL_PROFILE),
+        (APPROVED_G4_V4_3B_MODEL, APPROVED_G4_V6_3B_PROTOCOL_PROFILE),
+    ):
+        observed = build_runtime_protocol_profile(
+            selected_model=model,
+            model_digest=approved["model"]["digest"],
+            metrics_observation=approved["metrics_api"],
+        )
+        assert validate_runtime_protocol_profile(observed) == approved
+
+    # A 3B digest presented under the 7B name must be rejected outright.
+    mismatched = build_runtime_protocol_profile(
+        selected_model=APPROVED_G4_V4_MODEL,
+        model_digest=APPROVED_G4_V6_3B_PROTOCOL_PROFILE["model"]["digest"],
+        metrics_observation=APPROVED_G4_V6_PROTOCOL_PROFILE["metrics_api"],
+    )
+    with pytest.raises(RuntimeError, match="does not match the explicitly approved"):
+        validate_runtime_protocol_profile(mismatched)
+
+
+def test_attempt_marker_follows_the_selected_model(monkeypatch):
+    """A 3B run must not be labelled with the 7B protocol's marker.
+
+    Budget accounting keys on protocol_fingerprint and was always correct, but
+    the recorded marker came from the module default, so evidence for a 3B run
+    carried the 7B name.
+    """
+    import importlib
+
+    import config.runtime
+    import scripts.run_stage4_golden_incident as runner
+    from config.g4_protocol import (
+        APPROVED_G4_V4_3B_MODEL,
+        G4_V4_3B_PROTOCOL_MARKER,
+    )
+
+    from config.g4_protocol import (
+        G4_V6_3B_PROTOCOL_MARKER as G4_V5_3B_PROTOCOL_MARKER,
+        G4_V6_PROTOCOL_MARKER as G4_V5_PROTOCOL_MARKER,
+    )
+
+    monkeypatch.setenv("ATLASOPS_STAGE4_AGENT_MODEL", APPROVED_G4_V4_3B_MODEL)
+    importlib.reload(config.runtime)
+    importlib.reload(runner)
+    try:
+        assert runner._marker_for_selected_model() == G4_V5_3B_PROTOCOL_MARKER
+        assert runner.stage4_evidence_metadata()["protocol_marker"] == G4_V5_3B_PROTOCOL_MARKER
+
+        monkeypatch.setenv("ATLASOPS_STAGE4_AGENT_MODEL", APPROVED_G4_V4_MODEL)
+        importlib.reload(config.runtime)
+        importlib.reload(runner)
+        assert runner._marker_for_selected_model() == G4_V5_PROTOCOL_MARKER
+    finally:
+        monkeypatch.delenv("ATLASOPS_STAGE4_AGENT_MODEL", raising=False)
+        importlib.reload(config.runtime)
+        importlib.reload(runner)

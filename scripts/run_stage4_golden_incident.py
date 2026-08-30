@@ -1438,6 +1438,11 @@ async def main() -> dict[str, Any]:
             "comms": comms_res.get("final"),
         }
 
+        # Criterion 13 is computed from this report, so the evidence must contain
+        # it. Run 010 passed on a settling value the record did not preserve,
+        # leaving the verdict unauditable from the artifact alone.
+        evidence["phases"]["settling"] = incident_result.get("settling", {})
+
         evidence["phases"]["verification"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "verification_report": verifier_res,

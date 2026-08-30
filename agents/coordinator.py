@@ -1378,6 +1378,12 @@ async def handle_incident(
             "diagnosis": diagnosis,
             "remediation": remediation,
             "verification": verification_dict,
+            # The bounded-convergence observation is part of the incident record,
+            # not just context for the Comms agent. Gate G4's criterion 13 reads
+            # incident["settling"]["settled"]; omitting it made that criterion
+            # evaluate False on every run regardless of the environment, so the
+            # gate could not be passed even with a fully recovered cluster.
+            "settling": settling_report,
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
             "comms": comms,

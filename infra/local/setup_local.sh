@@ -133,8 +133,17 @@ validate_prerequisites() {
   require_command helm
   require_command "$PYTHON_BIN"
 
-  # Verify Docker daemon is running
-  docker info >/dev/null 2>&1 || fail "Docker daemon is not running. Start Docker Desktop first."
+  # Verify a container daemon is reachable. Docker Desktop is one option; a
+  # headless daemon such as Colima works identically and needs no GUI.
+  docker info >/dev/null 2>&1 || fail "No reachable Docker daemon. Start Docker Desktop, or run: colima start --cpu 6 --memory 9 --disk 60"
+
+  # Verify PYTHON_BIN can actually do the Argo CD credential derivation. Without
+  # this, provisioning dies ~10 minutes in on 'No module named bcrypt', after
+  # the cluster and half the stack already exist.
+  "$PYTHON_BIN" -c "import bcrypt" >/dev/null 2>&1 || fail "\
+'$PYTHON_BIN' cannot import bcrypt, which Argo CD credential derivation requires.
+Point PYTHON_BIN at an interpreter that has it, for example:
+  PYTHON_BIN=\"\$PWD/.venv/bin/python\" bash infra/local/setup_local.sh --apply"
 
   # Verify required files exist
   [[ -f "$KIND_CONFIG" ]] || fail "Kind config missing: $KIND_CONFIG"
@@ -241,12 +250,51 @@ deploy_online_boutique() {
   echo "ONLINE BOUTIQUE: deploying $BOUTIQUE_RELEASE at commit $BOUTIQUE_COMMIT..."
   kubectl_local apply -f "$BOUTIQUE_MANIFEST"
 
+  apply_arm64_boutique_deviation
+
   local deployment
   for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do
     echo "ONLINE BOUTIQUE: waiting for deployment/$deployment..."
     kubectl_local rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
   done
   echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} deployments are Available."
+}
+
+# The pinned Boutique manifest is tuned for amd64 GKE. On arm64 cartservice (.NET)
+# is OOMKilled at its 128Mi ceiling, then restarted by a 1s gRPC probe it cannot
+# answer under contention. Applied after the manifest, because `kubectl apply`
+# reverts it on every run. Documented in docs/project/LOCAL_ARM64_DEVIATIONS.md.
+apply_arm64_boutique_deviation() {
+  local node_arch
+  node_arch="$(kubectl_local get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}' 2>/dev/null || echo unknown)"
+  if [[ "$node_arch" != "arm64" ]]; then
+    echo "ONLINE BOUTIQUE: node architecture '$node_arch' — no deviation needed."
+    return 0
+  fi
+
+  # cartservice (.NET) and currencyservice (Node.js) exceed the manifest's 128Mi
+  # ceiling on arm64. The other 128Mi services (Go, Python, and paymentservice,
+  # also Node) stay within it, so only these two are raised.
+  echo "ONLINE BOUTIQUE: DEVIATION (arm64) — raising cartservice and currencyservice limits."
+  kubectl_local set resources deployment/cartservice --namespace=default \
+    --limits=cpu=600m,memory=384Mi --requests=cpu=200m,memory=128Mi >/dev/null
+  kubectl_local set resources deployment/currencyservice --namespace=default \
+    --limits=cpu=400m,memory=384Mi --requests=cpu=100m,memory=128Mi >/dev/null
+
+  # The pinned probes allow one second, which .NET and Node startup cannot meet
+  # on a contended arm64 node; the container then exits 0 on the liveness
+  # SIGTERM, which reads as a clean exit rather than a probe failure.
+  local svc
+  for svc in cartservice currencyservice; do
+    kubectl_local patch deployment "$svc" --namespace=default --type=json -p='[
+      {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/timeoutSeconds","value":5},
+      {"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/initialDelaySeconds","value":30},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/timeoutSeconds","value":5},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds","value":45},
+      {"op":"replace","path":"/spec/template/spec/containers/0/livenessProbe/failureThreshold","value":6}
+    ]' >/dev/null
+  done
+  echo "ONLINE BOUTIQUE: DEVIATION applied. Benchmark runs on arm64 must record it."
 }
 
 # ==============================================================================

@@ -56,8 +56,14 @@ ATLASOPS_ENABLE_CLOUD_BUILD="${ATLASOPS_ENABLE_CLOUD_BUILD:-false}"
 ATLASOPS_ENABLE_ARGOCD="${ATLASOPS_ENABLE_ARGOCD:-true}"
 ATLASOPS_BACKEND="${ATLASOPS_BACKEND:-vllm}"
 
+# An activated virtualenv is an explicit interpreter choice by the operator and
+# must outrank whatever `python3` PATH ordering happens to resolve to. Without
+# this, a Homebrew python3 ahead of the venv on PATH is selected instead, and
+# the bcrypt preflight below aborts an otherwise-valid --apply run.
 if [[ -n "${PYTHON_BIN:-}" ]]; then
   readonly PYTHON_BIN
+elif [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python3" ]]; then
+  readonly PYTHON_BIN="${VIRTUAL_ENV}/bin/python3"
 elif command -v python3 >/dev/null 2>&1; then
   readonly PYTHON_BIN="python3"
 elif command -v python >/dev/null 2>&1; then

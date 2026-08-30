@@ -93,10 +93,22 @@ _TIER_PERSONA = {
     "adversarial":   _RUBRIC_PRINCIPAL,
 }
 
+# A judge outage must never look like a mediocre-but-valid grade. The old 0.5
+# fallback cleared both the unsafe_shortcut (efficiency < 0.3) and
+# hallucinated_evidence (reasoning < 0.25) penalty thresholds and contributed
+# 0.5 to r_evidence and r_safety, so an unreachable judge scored strictly better
+# than a working strict one. Scores are zeroed and the episode is flagged so the
+# reward contract and benchmark summaries can exclude it instead of silently
+# averaging a fabricated grade.
 _FALLBACK = {
-    "correctness": 0.5, "efficiency": 0.5, "reasoning": 0.5,
-    "red_herring_handling": 0.5, "overall": 0.5, "critique": "judge_fallback",
+    "correctness": 0.0, "efficiency": 0.0, "reasoning": 0.0,
+    "red_herring_handling": 0.0, "overall": 0.0, "critique": "judge_fallback",
+    "judge_available": False,
 }
+
+
+def _fallback(reason: str) -> dict[str, Any]:
+    return {**_FALLBACK, "critique": f"judge_fallback: {reason}"[:200]}
 
 
 async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> dict[str, Any]:
@@ -143,19 +155,20 @@ async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> d
                     JUDGE_URL,
                     r.text[:500],
                 )
-                return _FALLBACK
+                return _fallback(f"http_{r.status_code}")
 
             content = r.json()["choices"][0]["message"]["content"]
 
         start = content.find("{")
         end   = content.rfind("}") + 1
         if start == -1 or end == 0:
-            return _FALLBACK
+            return _fallback("unparseable_response")
 
         result = json.loads(content[start:end])
         result.setdefault("red_herring_handling", 0.5)
+        result["judge_available"] = True
         return result
 
-    except Exception:
-        log.exception("judge_trajectory failed (using fallback scores)")
-        return _FALLBACK
+    except Exception as exc:
+        log.exception("judge_trajectory failed (scores marked unavailable)")
+        return _fallback(type(exc).__name__)

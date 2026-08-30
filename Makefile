@@ -101,3 +101,24 @@ release-gate:
 
 smoke-e2e-local:
 	pytest tests/test_app_endpoints.py tests/test_coordinator.py tests/test_tools.py tests/test_bench_runner.py -q
+
+# ── No cluster, no GPU required ───────────────────────────────────────────────
+
+rs-demo:                      ## Runbook recommender on the synthetic fixture
+	python scripts/demo_runbook_recommender.py
+
+probe-remediation:            ## Does the model reach the G4 goal state? (needs Ollama)
+	python scripts/probe_remediation_behaviour.py
+
+probe-remediation-control:    ## Negative control: no chaos experiment present
+	python scripts/probe_remediation_behaviour.py --no-chaos
+
+verify:                       ## Everything a reviewer can check without infrastructure
+	python -m pytest tests/ -q
+	ruff check . --select E9,F63,F7,F821
+	python scripts/release_gate.py
+	python scripts/demo_runbook_recommender.py
+
+mutation-sweep:               ## Revert each repair in a sandbox; confirm a test catches it
+	python scripts/mutation_sweep.py --control
+	python scripts/mutation_sweep.py

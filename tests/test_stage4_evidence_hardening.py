@@ -764,3 +764,21 @@ def test_settling_is_bounded_and_preserves_verifier_call_contract():
     assert len(report["observations"]) == 2
     assert report["timeout_seconds"] == 30
     sleep.assert_called_once_with(2)
+
+
+def test_evidence_records_the_settling_report_criterion_13_reads():
+    """A verdict must be auditable from the artifact alone.
+
+    Criterion 13 is `env_resolved and settling_completed`, where
+    settling_completed comes from incident["settling"]["settled"]. Run 010 passed
+    on a settling value that never reached the persisted evidence, so the record
+    could not be used to check the verdict it reported.
+    """
+    import inspect
+
+    import scripts.run_stage4_golden_incident as runner
+
+    source = inspect.getsource(runner.main)
+    assert 'evidence["phases"]["settling"]' in source
+    # And it must come from the incident record, not be recomputed.
+    assert 'incident_result.get("settling", {})' in source

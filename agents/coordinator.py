@@ -76,6 +76,12 @@ API_KEY    = os.getenv("LLM_API_KEY",  "")  # required for fireworks/openai, emp
 LLM_REQUEST_TIMEOUT_SECONDS: float = 300.0
 LLM_MAX_ATTEMPTS: int = 2
 LLM_BASE_BACKOFF_SECONDS: float = 1.5
+# Bound each agent turn. Without a ceiling, a small model that fails to emit a
+# stop token generates until the request timeout: an observed run reached 11,000+
+# tokens in one turn and burned the full 300s budget, then retried for another
+# 300s. Ten turns across four roles makes that a multi-hour incident that should
+# take minutes. A tool call plus a JSON conclusion needs a few hundred tokens.
+LLM_MAX_COMPLETION_TOKENS: int = 1024
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
 TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
@@ -205,6 +211,129 @@ _TERMINATION_MAX_TURNS = "max_turns_exhausted"
 SETTLE_POLL_INTERVAL_SECONDS = 2
 SETTLE_TIMEOUT_SECONDS = 30
 
+# A tool that returns the same error class this many times is treated as
+# structurally unavailable for the rest of the run. Argument-varying retry loops
+# (e.g. cycling argocd revisions against an Argo CD that owns no Applications)
+# are indistinguishable from progress to a small model, so the runtime — not the
+# prompt — has to end them.
+_REPEATED_FAILURE_LIMIT = 2
+
+
+# Raw `kubectl get -o json` output for a list resource is routinely megabytes
+# (a single CRD carries its full OpenAPI schema). Hard-truncating that to the
+# model budget leaves a fragment of one object's schema, which makes generic
+# resource discovery impossible rather than merely difficult. Project list
+# results to identity + health fields for the model; programmatic callers such
+# as agents.verifier keep reading the untouched `parsed` payload.
+_MODEL_TOOL_RESULT_CHAR_CAP = 8000
+_MAX_PROJECTED_ITEMS = 200
+
+
+def _project_k8s_item(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") or {}
+    spec = item.get("spec") or {}
+    status = item.get("status") or {}
+    projected: dict[str, Any] = {"name": metadata.get("name", "")}
+    if metadata.get("namespace"):
+        projected["namespace"] = metadata["namespace"]
+    if item.get("kind"):
+        projected["kind"] = item["kind"]
+
+    names = spec.get("names")
+    if isinstance(names, dict):  # CustomResourceDefinition
+        projected["resource_kind"] = names.get("kind", "")
+        projected["group"] = spec.get("group", "")
+        projected["scope"] = spec.get("scope", "")
+    if "readyReplicas" in status or "replicas" in status:
+        projected["ready"] = f"{status.get('readyReplicas', 0)}/{status.get('replicas', 0)}"
+    if status.get("phase"):
+        projected["phase"] = status["phase"]
+    container_statuses = status.get("containerStatuses")
+    if isinstance(container_statuses, list) and container_statuses:
+        projected["restarts"] = sum(int(cs.get("restartCount", 0)) for cs in container_statuses)
+        projected["containers_ready"] = all(cs.get("ready", False) for cs in container_statuses)
+    return projected
+
+
+def _model_facing_tool_output(tool_output: Any) -> Any:
+    """Compact a tool result for the model without altering the tool's contract.
+
+    The projection is also budget-aware. Projecting a fixed item count is not
+    enough: 200 projected pods still serialise to ~29 KB, so the caller's hard
+    slice produced truncated, unparseable JSON with no indication that anything
+    was dropped. Items are therefore dropped whole, and the drop is always
+    reported in-band so the model can narrow its query instead of silently
+    reasoning over a partial list.
+    """
+    if not isinstance(tool_output, dict):
+        return tool_output
+    parsed = tool_output.get("parsed")
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("items"), list):
+        return tool_output
+
+    items = [i for i in parsed["items"] if isinstance(i, dict)]
+    compacted = {
+        key: value
+        for key, value in tool_output.items()
+        # `stdout` is the same payload the projection replaces; `parsed` is for
+        # programmatic callers and would re-introduce the full schema dump.
+        if key not in ("parsed", "stdout")
+    }
+    compacted["item_count"] = len(items)
+
+    projected = [_project_k8s_item(i) for i in items[:_MAX_PROJECTED_ITEMS]]
+    # Shrink until the whole envelope fits the model budget, dropping whole
+    # items so the payload always stays valid JSON.
+    while projected:
+        compacted["items"] = projected
+        compacted["items_shown"] = len(projected)
+        if len(projected) < len(items):
+            compacted["items_truncated"] = True
+            compacted["truncation_note"] = (
+                f"showing {len(projected)} of {len(items)}; narrow the query "
+                "(for example by namespace) to see the rest"
+            )
+        else:
+            compacted.pop("items_truncated", None)
+            compacted.pop("truncation_note", None)
+        if len(json.dumps(compacted)) <= _MODEL_TOOL_RESULT_CHAR_CAP:
+            return compacted
+        projected = projected[: max(1, len(projected) // 2)]
+        if len(projected) == 1 and len(json.dumps(compacted)) > _MODEL_TOOL_RESULT_CHAR_CAP:
+            break
+
+    compacted["items"] = []
+    compacted["items_shown"] = 0
+    compacted["items_truncated"] = True
+    compacted["truncation_note"] = (
+        f"{len(items)} items did not fit the response budget; narrow the query"
+    )
+    return compacted
+
+
+def _tool_error_signature(tool_output: dict[str, Any]) -> str | None:
+    """Stable identity for a tool failure, ignoring the arguments that produced it.
+
+    The signature must distinguish *causes*, not merely detect failure. kubectl
+    wrappers return ``{stdout, stderr, returncode, success}`` with no ``error``
+    key, so falling back to a literal collapsed every kubectl failure to one
+    value — and the repeated-failure guard then disabled `kubectl_get` after two
+    entirely unrelated errors, removing the agent's main investigative tool
+    mid-incident. Prefer the structured class, then stderr, then the message.
+    """
+    if tool_output.get("success", True) and "error" not in tool_output:
+        return None
+    error_class = tool_output.get("error_class")
+    if error_class:
+        return str(error_class)
+    error = tool_output.get("error")
+    if error:
+        return str(error)[:120]
+    stderr = str(tool_output.get("stderr") or "").strip()
+    if stderr:
+        return f"stderr:{stderr[:120]}"
+    return f"returncode:{tool_output.get('returncode', 'unknown')}"
+
 
 def _model_turn_record(
     role: str,
@@ -295,7 +424,12 @@ async def _force_json_conclusion(
             r = await post_with_retry(
                 c,
                 f"{VLLM_BASE}/chat/completions",
-                {"model": MODEL_NAME, "messages": forced_msgs, "temperature": 0.0},
+                {
+                    "model": MODEL_NAME,
+                    "messages": forced_msgs,
+                    "temperature": 0.0,
+                    "max_tokens": LLM_MAX_COMPLETION_TOKENS,
+                },
                 context=f"forced_conclusion/{role}",
                 max_attempts=LLM_MAX_ATTEMPTS,
                 base_backoff=LLM_BASE_BACKOFF_SECONDS,
@@ -386,6 +520,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     step_tracker = StepRewardTracker()
     _seen_calls: dict[str, int] = {}   # (tool+args hash) → call count (exact-args dedup)
     _tool_counts: dict[str, int] = {}  # tool_name → total calls this run (per-tool cap)
+    _tool_failures: dict[str, dict[str, int]] = {}  # tool_name → error signature → count
     _mutating_tool_executed: bool = False
     _executed_actions: list[dict[str, Any]] = []
     _remediation_retry_given: bool = False
@@ -410,6 +545,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     "model": MODEL_NAME,
                     "messages": messages,
                     "temperature": 0.2,
+                    "max_tokens": LLM_MAX_COMPLETION_TOKENS,
                     "tools": _tool_schemas_for_role(role),
                     "tool_choice": tool_choice,
                 },
@@ -613,6 +749,45 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         }
                     )
                     continue
+                # Repeated-failure guard: this tool keeps failing the same way
+                # regardless of arguments. Checked before the circuit breaker so a
+                # zero-blast-radius retry loop cannot consume the safety quota.
+                _repeated = _tool_failures.get(fn_name, {})
+                _exhausted = [sig for sig, n in _repeated.items() if n >= _REPEATED_FAILURE_LIMIT]
+                if _exhausted:
+                    tool_output = {
+                        "success": False,
+                        "error": (
+                            f"`{fn_name}` is unavailable in this environment — it already failed "
+                            f"{_REPEATED_FAILURE_LIMIT}x with: {_exhausted[0]}. Changing the arguments "
+                            "will not help. Choose a different remediation branch or escalate."
+                        ),
+                        "tool_unavailable": True,
+                    }
+                    if _remediation_turn_record is not None:
+                        _remediation_turn_record["validation_state"] = "repeated_failure_blocked"
+                        _remediation_turn_record["tool_outcomes"].append(
+                            {"id": tc.get("id"), "name": fn_name, "validation": "allowed",
+                             "execution": "repeated_failure_blocked", "executed": False}
+                        )
+                    audit_log.record(
+                        incident_id=incident_id,
+                        agent_role=role,
+                        action_type="tool_result",
+                        tool_name=fn_name,
+                        tool_args=fn_args,
+                        result_summary=tool_output["error"],
+                        policy_check="repeated_failure_blocked",
+                    )
+                    thought_emit(role, "tool_result",
+                                 f"⛔ {fn_name} unavailable — halting retry loop.", tool=fn_name)
+                    messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                     "content": json.dumps(tool_output)})
+                    trajectory.append({"role": role, "turn": turn, "tool": fn_name,
+                                       "args": fn_args, "output": tool_output,
+                                       "repeated_failure_blocked": True})
+                    continue
+
                 # Narrate the tool call
                 thought_emit(role, "tool_call",
                              _narrate_tool_call(role, fn_name, fn_args),
@@ -630,6 +805,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         incident_id=incident_id,
                         tool_name=fn_name,
                         is_cluster_mutating=fn_name in CLUSTER_MUTATING_TOOLS,
+                        role=role,
                     )
                 except CircuitBreakerTripped as e:
                     tool_output = {"success": False, "error": str(e), "blocked_by_circuit_breaker": True}
@@ -670,6 +846,10 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 _call_key = f"{fn_name}:{json.dumps(fn_args, sort_keys=True)}"
                 _seen_calls[_call_key] = _seen_calls.get(_call_key, 0) + 1
                 if _seen_calls[_call_key] > 3:
+                    # The circuit breaker already reserved this mutation, but the
+                    # call is being skipped, so nothing will change the cluster.
+                    if fn_name in CLUSTER_MUTATING_TOOLS:
+                        circuit_breaker.release_cluster_mutation_reservation()
                     tool_output = {"error": f"Duplicate call blocked — {fn_name} already called with these exact args. Try different parameters or produce your conclusion."}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "dedup_blocked"
@@ -684,6 +864,8 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 _tool_counts[fn_name] = _tool_counts.get(fn_name, 0) + 1
                 _cap = _TOOL_CAPS.get(fn_name, 8)
                 if _tool_counts[fn_name] > _cap:
+                    if fn_name in CLUSTER_MUTATING_TOOLS:
+                        circuit_breaker.release_cluster_mutation_reservation()
                     tool_output = {"error": f"Tool cap reached — {fn_name} called {_tool_counts[fn_name]} times this run (limit {_cap}). You have enough data; produce your conclusion now."}
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "cap_blocked"
@@ -702,8 +884,17 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = fn(**fn_args)
                     except Exception as e:
                         tool_output = {"error": f"Tool execution failed: {e}"}
-                if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
-                    _mutating_tool_executed = True
+                _signature = _tool_error_signature(tool_output)
+                if _signature is not None:
+                    _tool_failures.setdefault(fn_name, {})
+                    _tool_failures[fn_name][_signature] = _tool_failures[fn_name].get(_signature, 0) + 1
+                if fn_name in CLUSTER_MUTATING_TOOLS:
+                    if bool(tool_output.get("success", False)):
+                        _mutating_tool_executed = True
+                    else:
+                        # The cluster was not changed, so refund the blast-radius
+                        # reservation taken before execution.
+                        circuit_breaker.release_cluster_mutation_reservation()
                 if fn is not None:
                     turn_executed_names.append(fn_name)
                 if _remediation_turn_record is not None:
@@ -755,7 +946,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(tool_output)[:8000],
+                    "content": json.dumps(_model_facing_tool_output(tool_output))[:_MODEL_TOOL_RESULT_CHAR_CAP],
                 })
 
     log.warning("%s exceeded %d turns", role, max_turns)
@@ -859,6 +1050,7 @@ def _narrate_tool_call(role: str, tool: str, args: dict) -> str:
         "argocd_list_apps":      lambda a: "Checking Argo CD for recent deployments...",
         "argocd_app_history":    lambda a: f"Checking deploy history for {a.get('app','')}...",
         "argocd_rollback":       lambda a: f"Rolling back {a.get('app','')} to revision {a.get('revision','')}...",
+        "chaos_list_experiments": lambda a: "Checking for active Chaos Mesh fault injections...",
         "chaos_stop_experiment": lambda a: f"Stopping Chaos Mesh experiment {a.get('kind','')} {a.get('name','')} in {a.get('namespace','chaos-mesh')}...",
         "gcloud_logs_read":      lambda a: f"Reading Cloud Logging: `{str(a.get('filter_query',''))[:80]}`",
         "cloud_monitoring_query":lambda a: f"Querying GCP metric: {a.get('metric_type','')}",
@@ -883,6 +1075,7 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
         "promql_query":           f"Got metric data — analysing values.",
         "jaeger_search":          f"Found traces — checking for slow spans.",
         "argocd_rollback":        "✅ Rollback executed.",
+        "chaos_list_experiments": "Enumerated active chaos experiments.",
         "chaos_stop_experiment":  "✅ Chaos experiment stopped and cleared.",
         "kubectl_scale":          "✅ Scale applied.",
         "postmortem_draft":       "✅ Postmortem saved.",
@@ -943,6 +1136,16 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
     "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
     "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
+    "chaos_list_experiments": {
+        "type": "object",
+        "properties": {
+            "namespace": {
+                "type": "string",
+                "description": "Namespace to scope the query, or '-A' for all namespaces (default).",
+            },
+        },
+        "additionalProperties": False,
+    },
     "chaos_stop_experiment": {
         "type": "object",
         "properties": {
@@ -969,6 +1172,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "kubectl_get": (
         "Get a Kubernetes built-in or custom resource type. "
         "Use customresourcedefinitions to discover installed custom resource types."
+    ),
+    "chaos_list_experiments": (
+        "List active Chaos Mesh fault-injection experiments with their exact kind, name, "
+        "namespace and target selector. Read-only. Call this whenever a workload is degraded "
+        "with no corresponding deploy or config change: an active experiment here IS the root "
+        "cause, and its `name` is the argument chaos_stop_experiment requires."
     ),
     "kubectl_rollout": (
         "Manage the rollout of a deployment, statefulset, or daemonset (undo, status, history). "
@@ -1360,6 +1569,12 @@ async def handle_incident(
             "diagnosis": diagnosis,
             "remediation": remediation,
             "verification": verification_dict,
+            # The bounded-convergence observation is part of the incident record,
+            # not just context for the Comms agent. Gate G4's criterion 13 reads
+            # incident["settling"]["settled"]; omitting it made that criterion
+            # evaluate False on every run regardless of the environment, so the
+            # gate could not be passed even with a fully recovered cluster.
+            "settling": settling_report,
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
             "comms": comms,

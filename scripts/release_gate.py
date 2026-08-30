@@ -33,18 +33,49 @@ def _read_text(path: Path) -> str:
 
 
 def check_artifact_presence() -> list[CheckResult]:
-    required = [
+    """Check tracked artifacts, and report run-produced ones separately.
+
+    `bench/results/` is gitignored, so benchmark output never exists on a clean
+    checkout. Treating its absence as a critical failure made this gate report
+    FAIL for every reviewer while the committed report claimed PASS — a state
+    that could not be reproduced from the repository.
+    """
+    tracked_required = [
         ROOT / "docs" / "AMD_FINAL_DELIVERY_SCORECARD_AND_REWARD_SPEC.md",
         ROOT / "docs" / "MI300X_EVIDENCE.md",
-        ROOT / "bench" / "results" / "comparison_table.md",
         ROOT / "tests" / "test_app_endpoints.py",
         ROOT / "tests" / "test_bench_runner.py",
         ROOT / "tests" / "test_chaos_manifests.py",
     ]
-    missing = [str(p.relative_to(ROOT)) for p in required if not _exists(p)]
-    if missing:
-        return [CheckResult("Required artifacts", "FAIL", f"Missing: {', '.join(missing)}", True)]
-    return [CheckResult("Required artifacts", "PASS", "All required docs/results/tests present.", True)]
+    missing = [str(p.relative_to(ROOT)) for p in tracked_required if not _exists(p)]
+    results = [
+        CheckResult("Required artifacts", "FAIL", f"Missing: {', '.join(missing)}", True)
+        if missing
+        else CheckResult("Required artifacts", "PASS", "All required docs/tests present.", True)
+    ]
+
+    # Advisory: produced by `python bench/runner.py`, never committed.
+    if _exists(ROOT / "bench" / "results" / "comparison_table.md"):
+        results.append(
+            CheckResult(
+                "Benchmark results present",
+                "PASS",
+                "bench/results/comparison_table.md found (local run output).",
+                False,
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "Benchmark results present",
+                "WARN",
+                "No benchmark output. bench/results/ is gitignored and requires a run; "
+                "this team publishes no resolution rate until Gate G5 freezes an "
+                "evaluation split, so absence here is expected.",
+                False,
+            )
+        )
+    return results
 
 
 def check_chaos_manifest_inventory() -> list[CheckResult]:
@@ -150,7 +181,17 @@ def check_ui_runtime_config() -> list[CheckResult]:
 def check_benchmark_columns() -> list[CheckResult]:
     table = _read_text(ROOT / "bench" / "results" / "comparison_table.md")
     if not table:
-        return [CheckResult("Benchmark output sanity", "FAIL", "comparison_table.md missing or empty.", True)]
+        # Advisory, not critical: this file is run output under a gitignored
+        # directory. Its absence says a benchmark has not been run here, which
+        # cannot be a shipping blocker on a clean checkout.
+        return [
+            CheckResult(
+                "Benchmark output sanity",
+                "WARN",
+                "No comparison_table.md to inspect (no benchmark run in this checkout).",
+                False,
+            )
+        ]
     expected_tokens = ["avg_reward_contract", "avg_penalty", "unsafe_actions", "false_resolution", "hallucinated_evidence"]
     missing = [t for t in expected_tokens if t not in table]
     if missing:

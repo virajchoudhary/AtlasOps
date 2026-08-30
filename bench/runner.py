@@ -87,10 +87,12 @@ async def run_scenario(scenario_id: str) -> dict:
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
 
     alert = wait_for_alert()
-    alert["scenario_id"] = scenario_id
-
+    # scenario_id is an evaluation-only channel. Placing it inside the alert put
+    # the frozen scenario's identity (e.g. "single_fault/sf-002") straight into
+    # the model-visible prompt, so measured resolution partly reflected the agent
+    # reading its own answer key.
     try:
-        incident = await handle_incident(alert)
+        incident = await handle_incident(alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
     except Exception as e:
         log.exception("scenario %s failed: %s", scenario_id, e)
@@ -145,7 +147,12 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         vals = [x.get(key, default) for x in xs if x.get(key) is not None]
         return round(sum(vals) / len(vals), 3) if vals else 0.0
 
-    judge_scores = [r.get("judge", {}).get("overall", 0) for r in valid if r.get("judge")]
+    # Episodes whose judge was unreachable carry no grade. Averaging their zeros
+    # would understate the model exactly as the old 0.5 fallback overstated it,
+    # so they are excluded from judge-derived means and reported separately.
+    judged = [r for r in valid if r.get("judge", {}).get("judge_available", True)]
+    judge_unavailable_count = len(valid) - len(judged)
+    judge_scores = [r.get("judge", {}).get("overall", 0) for r in judged if r.get("judge")]
     contract_scores = [r.get("reward_contract", {}).get("total", 0) for r in valid]
     penalties = [r.get("reward_contract", {}).get("penalty_total", 0) for r in valid]
 
@@ -163,16 +170,21 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
             ),
         }
 
+    # unsafe_shortcut and hallucinated_evidence are judge-derived, so they are
+    # counted only over episodes a judge actually graded. Counting them over all
+    # episodes reported "0 unsafe actions" for runs where the judge never ran,
+    # which reads as a safety result rather than an absence of measurement.
     unsafe_action_count = sum(
-        1 for r in valid if r.get("reward_contract", {}).get("penalties", {}).get("unsafe_shortcut", 0) > 0
-    )
-    false_resolution_count = sum(
-        1 for r in valid if r.get("reward_contract", {}).get("penalties", {}).get("false_resolution", 0) > 0
+        1 for r in judged if r.get("reward_contract", {}).get("penalties", {}).get("unsafe_shortcut", 0) > 0
     )
     hallucinated_evidence_count = sum(
         1
-        for r in valid
+        for r in judged
         if r.get("reward_contract", {}).get("penalties", {}).get("hallucinated_evidence", 0) > 0
+    )
+    # false_resolution comes from the objective verifier, not the judge.
+    false_resolution_count = sum(
+        1 for r in valid if r.get("reward_contract", {}).get("penalties", {}).get("false_resolution", 0) > 0
     )
 
     return {
@@ -181,7 +193,9 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         "run_date": datetime.now(timezone.utc).isoformat(),
         "total_scenarios": len(results),
         "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
-        "avg_reward": round(sum(judge_scores) / max(len(judge_scores), 1), 3),
+        # None, not 0.0: a mean over zero graded episodes is not a measurement,
+        # and 0.0 would be indistinguishable from a genuinely terrible run.
+        "avg_reward": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
         "avg_reward_contract": round(sum(contract_scores) / max(len(contract_scores), 1), 3),
         "avg_penalty": round(sum(penalties) / max(len(penalties), 1), 3),
         "avg_turns": mean(valid, "total_turns"),
@@ -195,11 +209,14 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         "unsafe_action_count": unsafe_action_count,
         "false_resolution_count": false_resolution_count,
         "hallucinated_evidence_count": hallucinated_evidence_count,
+        "judged_episode_count": len(judged),
+        "judge_unavailable_count": judge_unavailable_count,
         "per_tier": per_tier,
     }
 
 
 def write_comparison_table(summary: dict) -> None:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     table_path = RESULTS_DIR / "comparison_table.md"
     existing_runs: list[dict] = []
     if table_path.exists():
@@ -222,7 +239,7 @@ def write_comparison_table(summary: dict) -> None:
         rows += (
             f"| {r['tag']} | `{Path(r['model']).name}` "
             f"| {r['resolution_rate']:.0%} "
-            f"| {r['avg_reward']:.3f} "
+            f"| {r['avg_reward']:.3f} " if r.get("avg_reward") is not None else "| n/a "
             f"| {r.get('avg_reward_contract', 0):.3f} "
             f"| {r.get('avg_penalty', 0):.3f} "
             f"| {r['avg_turns']:.1f} "
@@ -311,7 +328,10 @@ async def main() -> None:
 
     log.info("=== Benchmark complete ===")
     log.info("  Resolution rate : %.1f%%", summary["resolution_rate"] * 100)
-    log.info("  Avg reward      : %.3f", summary["avg_reward"])
+    if summary["avg_reward"] is None:
+        log.info("  Avg reward      : n/a (no episode was graded by the judge)")
+    else:
+        log.info("  Avg reward      : %.3f", summary["avg_reward"])
     log.info("  Results         : %s", out_dir)
 
 

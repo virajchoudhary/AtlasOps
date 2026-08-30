@@ -47,14 +47,28 @@ def test_coordinator_declares_v31_transport_constants():
     assert coordinator.LLM_BASE_BACKOFF_SECONDS == 1.5
 
 
-def test_v31_profile_declares_llm_transport_matching_coordinator():
-    transport = protocol.llm_transport_profile()
-    assert transport == {
+def test_v31_transport_declaration_remains_immutable():
+    """v3.1 is historical: its declaration must not drift when v5 adds a field."""
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 300,
         "max_attempts": 2,
         "base_backoff_seconds": 1.5,
     }
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["llm_transport"] == transport
+
+
+def test_live_transport_matches_the_active_profile_not_v31():
+    """The observed transport tracks the active declaration, which is now v5.
+
+    v3.1 predates the completion ceiling, so the live profile deliberately no
+    longer equals it — that inequality is what keeps runs under the two
+    protocols separately budgeted.
+    """
+    from config.g4_protocol import APPROVED_G4_PROTOCOL_PROFILE
+
+    transport = protocol.llm_transport_profile()
+    assert transport == APPROVED_G4_PROTOCOL_PROFILE["llm_transport"]
+    assert transport["max_completion_tokens"] == 1024
+    assert transport != APPROVED_G4_V31_PROTOCOL_PROFILE["llm_transport"]
 
 
 def test_v31_preserves_7b_model_and_tool_contract():

@@ -288,14 +288,30 @@ def test_stage_output_does_not_claim_full_atlasops_ready() -> None:
     assert "LIVE VALIDATION STILL REQUIRED" in SETUP_IMPL
 
 
-def test_static_status_documents_keep_live_state_unverified() -> None:
+def test_status_documents_do_not_overclaim_unverified_state() -> None:
+    """Live status may only be claimed where live evidence exists.
+
+    This originally asserted that everything stayed LIVE UNVERIFIED, which was
+    correct while nothing had run. Gate G4 passed on a local Kind cluster
+    (`EXP-STAGE4-SF002-010`), so the claims that changed are exactly those the
+    run covers; the ones it does not cover must stay unverified.
+    """
     contract = read("docs/project/INFRASTRUCTURE_CONTRACT.md")
     status = read("docs/project/IMPLEMENTATION_STATUS.md")
+
+    # The GKE path was never exercised and must not inherit the local result.
     assert "STATICALLY WIRED / LIVE UNVERIFIED" in contract
-    assert "REPAIRED / STATICALLY VALIDATED" in status
     assert "Real GKE provisioning | UNVERIFIED" in status
-    assert "Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED" in status
-    assert "Environment verifier | IMPLEMENTED / CONTRACT VALIDATED / MOCKED/TESTED" in status
+
+    # Live claims must cite the run that justifies them.
+    assert "Gate G4 golden incident | **PASS**" in status
+    assert "EXP-STAGE4-SF002-010" in status
+
+    # Trace ingestion was never proven, only Jaeger's API reachability.
+    assert "TRACE INGESTION UNVERIFIED" in status
+
+    # Benchmark results remain unreproduced regardless of the gate result.
+    assert "Published benchmark/result claims | UNVERIFIED BY OUR TEAM" in status
 
 
 def test_jaeger_and_argocd_helm_values_render_statically() -> None:
@@ -345,3 +361,26 @@ def test_stage_3_operator_guide_and_secret_helper() -> None:
     gitignore = read(".gitignore")
     assert "*.secret" in gitignore
     assert "secrets/" in gitignore
+
+
+def test_activated_virtualenv_outranks_path_ordering_for_python_bin():
+    """An activated venv must win over whatever `python3` PATH resolves to.
+
+    A Homebrew python3 ahead of the venv on PATH selected an interpreter without
+    bcrypt, so the Argo CD credential preflight aborted a valid --apply run ten
+    minutes into provisioning. The operator activating a venv is an explicit
+    interpreter choice and must outrank PATH order.
+    """
+    import pathlib
+    import re
+
+    source = pathlib.Path("infra/setup_impl.sh").read_text(encoding="utf-8")
+    block = source.split("if [[ -n \"${PYTHON_BIN:-}\" ]]", 1)[1].split("usage()", 1)[0]
+    # The VIRTUAL_ENV branch must be evaluated before the bare `python3` lookup.
+    venv_at = block.find("VIRTUAL_ENV")
+    path_lookup_at = block.find("command -v python3")
+    assert venv_at != -1, "setup_impl.sh ignores an activated virtualenv"
+    assert venv_at < path_lookup_at, "PATH lookup shadows the activated virtualenv"
+    assert re.search(r'-x "\$\{VIRTUAL_ENV\}/bin/python3"', block), (
+        "the venv interpreter must be probed for executability before selection"
+    )

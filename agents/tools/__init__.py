@@ -15,7 +15,7 @@ from agents.tools.argocd import (
 )
 from agents.tools.gcloud_logging import gcloud_logs_read
 from agents.tools.alertmanager import alertmanager_silence, alertmanager_list_alerts
-from agents.tools.chaos import chaos_stop_experiment
+from agents.tools.chaos import chaos_list_experiments, chaos_stop_experiment
 from agents.tools.comms import slack_post_update, postmortem_draft
 
 # Keep tool imports resilient in local/dev test environments where optional
@@ -53,6 +53,7 @@ TOOL_REGISTRY = {
     "cloud_monitoring_query": cloud_monitoring_query,
     "alertmanager_silence": alertmanager_silence,
     "alertmanager_list_alerts": alertmanager_list_alerts,
+    "chaos_list_experiments": chaos_list_experiments,
     "chaos_stop_experiment": chaos_stop_experiment,
     "slack_post_update": slack_post_update,
     "postmortem_draft": postmortem_draft,

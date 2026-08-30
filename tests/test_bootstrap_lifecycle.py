@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import yaml
 
 from scripts.bcrypt_util import hash_bcrypt, format_iso_timestamp, verify_bcrypt
@@ -218,13 +219,20 @@ sys.exit(0)
 
     mock_runner = tmp_path / "mock_runner.py"
     with open(mock_runner, "w", encoding="utf-8", newline="\n") as f:
-        f.write(mock_runner_code)
+        # These tests deliberately mutate PATH, so `#!/usr/bin/env python3` would
+        # resolve against the mutated PATH and pick up an interpreter without
+        # pyyaml. Pin the mock CLI to the interpreter running the suite so the
+        # harness itself never depends on PATH ordering.
+        f.write(mock_runner_code.replace("#!/usr/bin/env python3", f"#!{sys.executable}", 1))
 
     wsl_mock_runner = f"/mnt/{drive_letter}{mock_runner.as_posix()[2:]}" if tmp_path.drive else mock_runner.as_posix()
     for cmd in ["gcloud", "kubectl", "helm"]:
         script_path = bin_dir / cmd
         with open(script_path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(f'#!/usr/bin/env bash\npython3 "{wsl_mock_runner}" "{cmd}" "$@"\n')
+            # Invoke the suite's own interpreter, not PATH's `python3`: these
+            # tests put a mock bin dir at the front of PATH, and the interpreter
+            # that ends up first may not have pyyaml.
+            f.write(f'#!/usr/bin/env bash\n"{sys.executable}" "{wsl_mock_runner}" "{cmd}" "$@"\n')
 
     # Ensure executable permissions inside bash/WSL
     subprocess.run(["bash", "-c", f'chmod +x "{wsl_bin_dir}"/*'], check=False)
@@ -253,6 +261,12 @@ def run_setup(mock_env: dict[str, str], extra_env: dict[str, str], args: list[st
         f'export PATH="{wsl_bin_dir}:$PATH"',
         f'export MOCK_STATE_DIR="{mock_env["MOCK_STATE_DIR"]}"',
         'export ATLASOPS_BCRYPT_COST="4"',
+        # Pin the interpreter so the suite tests bootstrap lifecycle rather than
+        # the host's PATH ordering. Interpreter *discovery* is covered separately
+        # by test_activated_virtualenv_outranks_path_ordering_for_python_bin.
+        # Exported before extra_env so a test can still override it — the bcrypt
+        # preflight test does exactly that.
+        f'export PYTHON_BIN="{sys.executable}"',
     ]
     for k, v in extra_env.items():
         env_exports.append(f'export {k}="{v}"')
@@ -410,7 +424,7 @@ class TestExecutableBootstrapLifecycle:
             "if [[ \"$*\" == *\"import bcrypt\"* ]]; then\n"
             "  exit 1\n"
             "fi\n"
-            "exec python3 \"$@\"\n",
+            f"exec \"{sys.executable}\" \"$@\"\n",
             encoding="utf-8"
         )
         fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)

@@ -17,6 +17,11 @@ ROLE_ALLOWED_TOOLS: dict[str, frozenset[str]] = {
         "alertmanager_list_alerts",
         "promql_query",
     }),
+    # Diagnosis is deliberately NOT given a chaos-specific wrapper. Naming the
+    # fault mechanism here would leak the benchmark's answer and make measured
+    # root-cause accuracy meaningless. Diagnosis discovers injected faults the
+    # same way it discovers anything else: generic `kubectl_get` inspection of
+    # installed resource types. See tests/test_diagnosis_prompt_contract.py.
     "diagnosis": frozenset({
         "promql_query",
         "promql_query_range",
@@ -34,6 +39,7 @@ ROLE_ALLOWED_TOOLS: dict[str, frozenset[str]] = {
         "kubectl_rollout",
         "kubectl_scale",
         "alertmanager_silence",
+        "chaos_list_experiments",
         "chaos_stop_experiment",
         "promql_query",
         "kubectl_get",

@@ -75,6 +75,12 @@ kube-state-metrics:
 prometheusOperator:
   admissionWebhooks:
     enabled: false
+  # Disabling admissionWebhooks removes the Job that provisions the operator's
+  # TLS material, but prometheusOperator.tls defaults to enabled, so the operator
+  # Deployment still mounts secret "prometheus-kube-prometheus-admission" and
+  # blocks in ContainerCreating with FailedMount forever. Both must be off.
+  tls:
+    enabled: false
   resources:
     requests:
       cpu: 50m

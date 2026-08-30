@@ -12,6 +12,8 @@ import os
 import random
 from typing import Any
 
+from agents.tool_policy import CLUSTER_MUTATING_TOOLS
+
 DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:7b-instruct"
 
 
@@ -157,6 +159,10 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
     correctness  = float(judge.get("correctness",          0.0))
     efficiency   = float(judge.get("efficiency",           0.0))
     red_herring  = float(judge.get("red_herring_handling", 0.5))
+    # An unreachable judge is an infrastructure failure, not agent misbehaviour.
+    # Judge-derived penalties are suppressed and the episode is flagged so
+    # summaries can exclude it rather than average a score nobody assigned.
+    judge_available = bool(judge.get("judge_available", True))
 
     r_resolve = 1.0 if resolved else (0.5 if outcome == "partial" else 0.0)
     r_speed   = bounded_speed_score(ttr, tier)
@@ -174,8 +180,10 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
     penalties = {
         "command_spam":          0.10 if turns > 40 else 0.0,
         "false_resolution":      0.25 if (agent_claimed_resolved and not env_resolved) else 0.0,
-        "unsafe_shortcut":       0.20 if efficiency < 0.3 else 0.0,
-        "hallucinated_evidence": 0.20 if (reasoning < 0.25 and correctness < 0.5) else 0.0,
+        "unsafe_shortcut":       0.20 if (judge_available and efficiency < 0.3) else 0.0,
+        "hallucinated_evidence": (
+            0.20 if (judge_available and reasoning < 0.25 and correctness < 0.5) else 0.0
+        ),
         "over_silence":          0.10 if ("silence" in json.dumps(episode).lower() and not resolved) else 0.0,
         # Phase ordering: too few turns without resolution = investigation was skipped
         "phase_skip":            0.20 if (turns < 4 and not resolved) else 0.0,
@@ -222,6 +230,7 @@ def evaluate_reward_contract(episode: dict[str, Any]) -> dict[str, Any]:
         "penalties":     {k: round(v, 4) for k, v in penalties.items()},
         "penalty_total": round(penalty_total, 4),
         "total":         round(total, 4),
+        "judge_available": judge_available,
     }
 
 
@@ -367,12 +376,15 @@ class StepRewardTracker:
     Partial progress = success_count / total_calls (monotonic — never decreases).
     """
 
-    _MUTATING = frozenset({
-        "argocd_rollback", "kubectl_rollout", "kubectl_scale", "alertmanager_silence",
-    })
+    # Single source of truth: a local copy drifted from the policy and omitted
+    # chaos_stop_experiment, so the one action able to satisfy any scenario's
+    # success predicate earned no remediation credit while its failures were
+    # still penalised.
+    _MUTATING = CLUSTER_MUTATING_TOOLS
     _INVESTIGATIVE = frozenset({
         "promql_query", "promql_query_range", "jaeger_search", "jaeger_get_trace",
         "kubectl_logs", "kubectl_describe", "alertmanager_list_alerts",
+        "chaos_list_experiments",
         "gcloud_logs_read", "cloud_monitoring_query",
     })
 

@@ -37,7 +37,7 @@ graph TB
     PROM -->|alert fires| AM
     AM -->|webhook| COORD
     COORD --> T --> D --> R --> C
-    T & D & R & C <-->|"19 role-authorized tools<br/>(22 registered wrappers)<br/>kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager"| GKE
+    T & D & R & C <-->|"19 role-authorized tools<br/>(24 registered wrappers)<br/>kubectl · promql · jaeger<br/>argocd · gcloud · alertmanager"| GKE
     T & D & R & C <-->|Cloud APIs| CSQL & PS & CMON & CLOG
     JUDGE -->|generates scenarios| CM
     JUDGE -->|scores actions| COORD
@@ -129,7 +129,7 @@ flowchart LR
 
 ---
 
-## 22 Registered Tool Wrappers, 19 Agent-Exposed
+## 24 Registered Tool Wrappers, 19 Agent-Exposed
 
 ```
 kubectl (8)          promql (2)          jaeger (2)
@@ -144,17 +144,23 @@ kubectl_scale        argocd_app_history  cloud_monitoring_query
 kubectl_exec         argocd_rollback
                      argocd_app_get
 
-alertmanager (2)     comms (2)
-────────────────     ──────────
-alertmanager_silence slack_post_update
-alertmanager_list_alerts
-                     postmortem_draft
+alertmanager (2)     chaos (2)           comms (2)
+────────────────     ─────────           ──────────
+alertmanager_silence chaos_list_experiments  slack_post_update
+alertmanager_list_alerts  chaos_stop_experiment  postmortem_draft
 ```
 
-AtlasOps registers 22 wrappers across Kubernetes, tracing, metrics, GitOps, and
-communications. Role ACLs expose 19 wrappers to autonomous agents.
-`argocd_app_get`, `kubectl_top_nodes`, and high-risk `kubectl_exec` remain
-registered for explicit administrative/library use but are not agent-exposed.
+AtlasOps registers 24 wrappers across Kubernetes, tracing, metrics, GitOps, chaos,
+and communications. Role ACLs expose 19 wrappers to autonomous agents. Five remain
+registered for explicit administrative/library use but are never agent-exposed:
+`argocd_app_get`, `cloud_monitoring_query`, `gcloud_logs_read`, `kubectl_top_nodes`,
+and high-risk `kubectl_exec`.
+
+Both chaos wrappers are **remediation-only**. Neither is offered to Triage or
+Diagnosis: every frozen scenario's success predicate is chaos clearance, so a
+chaos-named tool in an investigative role would hand those roles the benchmark's
+answer and make measured root-cause accuracy meaningless. Diagnosis reaches an
+injected fault through generic `kubectl_get` resource-type discovery instead.
 
 ---
 

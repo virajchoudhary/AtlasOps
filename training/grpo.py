@@ -27,9 +27,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from trl import GRPOConfig, GRPOTrainer
 from config.runtime import (
     SCENARIOS_BY_TIER, TIER_SAMPLING_WEIGHTS, evaluate_reward_contract,
     CurriculumManager,
@@ -39,23 +36,43 @@ log = logging.getLogger(__name__)
 
 
 # ── QLoRA config ──────────────────────────────────────────────────────────────
+#
+# torch/peft/trl are imported lazily. Importing them at module scope made the
+# reward contract and rollout accounting in this file unimportable — and so
+# untestable in CI — without the full ROCm training stack installed.
 
-LORA_CONFIG = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    r=16,
-    lora_alpha=32,
-    lora_dropout=0.05,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                    "gate_proj", "up_proj", "down_proj"],
-    bias="none",
-)
+LORA_R = 16
+LORA_ALPHA = 32
+LORA_DROPOUT = 0.05
+LORA_TARGET_MODULES = [
+    "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+]
 
-BNBCONFIG = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype="bfloat16",
-    bnb_4bit_use_double_quant=True,
-)
+
+def lora_config():
+    """Build the QLoRA adapter config (requires the `train` extra)."""
+    from peft import LoraConfig, TaskType
+
+    return LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=LORA_R,
+        lora_alpha=LORA_ALPHA,
+        lora_dropout=LORA_DROPOUT,
+        target_modules=list(LORA_TARGET_MODULES),
+        bias="none",
+    )
+
+
+def bnb_config():
+    """Build the 4-bit NF4 quantisation config (requires the `train` extra)."""
+    from transformers import BitsAndBytesConfig
+
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype="bfloat16",
+        bnb_4bit_use_double_quant=True,
+    )
 
 
 # ── Reward contract ───────────────────────────────────────────────────────────
@@ -116,24 +133,57 @@ def reset_chaos():
 
 # ── Online reward function for TRL GRPOTrainer ────────────────────────────────
 
-class OnlineRewardFunction:
-    """Wraps the real GKE environment as a TRL-compatible reward function.
+class UncoupledRewardError(RuntimeError):
+    """Raised when rollout behaviour is not produced by the completion being scored."""
 
-    For each batch of completions TRL generates, this class:
-    1. Parses the model's tool call sequence from the completion text
-    2. Executes it against the real GKE cluster (via coordinator)
-    3. Scores the outcome with the reward contract
-    4. Returns rewards for GRPO advantage computation
+
+class OnlineRewardFunction:
+    """Wraps the live cluster environment as a TRL-compatible reward function.
+
+    For each batch of completions TRL generates, this class runs one serialized
+    rollout per completion and scores the outcome with the reward contract.
+
+    KNOWN SCIENTIFIC DEFECT — completion/environment coupling
+    ---------------------------------------------------------
+    GRPO's gradient is ``grad log pi(completion | prompt) * advantage``, which is
+    only a valid policy-gradient estimate when the scored outcome was produced by
+    that completion. It is not, here. The coordinator drives the rollout by
+    issuing its own chat requests to whatever model ``VLLM_BASE`` serves, so the
+    behaviour being rewarded comes from a separate inference process rather than
+    from the sampled completion whose log-probabilities are being updated.
+
+    An earlier revision passed the completion as ``alert["triage_seed"]`` and
+    documented that as the coupling. Nothing in the repository ever read that
+    field, so the rewards were independent of the completions they were attached
+    to and the resulting gradient was noise.
+
+    Correcting this requires making the sampled trajectory itself the completion
+    (see the `research/g9-grpo-audit` lane). Until that lands, training is
+    refused rather than run on an invalid signal: silently producing checkpoints
+    and benchmark numbers from a broken estimator would be fabricated results.
+    Set ``ATLASOPS_ACK_UNCOUPLED_GRPO=1`` only for plumbing/smoke runs whose
+    checkpoints and metrics are never reported.
     """
 
+    COUPLING_ACK_ENV = "ATLASOPS_ACK_UNCOUPLED_GRPO"
+
     def __init__(self, tiers: list[str], coordinator_url: str = "http://localhost:9099"):
+        if os.getenv(self.COUPLING_ACK_ENV, "").strip().lower() not in ("1", "true", "yes"):
+            raise UncoupledRewardError(
+                "GRPO rollout behaviour is not produced by the completion being scored, so "
+                "the policy-gradient estimate is invalid and any resulting metric would be "
+                "unreportable. Correct the coupling (research/g9-grpo-audit) or set "
+                f"{self.COUPLING_ACK_ENV}=1 for a plumbing-only run whose outputs are not reported."
+            )
         self.tiers = tiers
         self.coordinator_url = coordinator_url
         self._loop = asyncio.new_event_loop()
 
     def __del__(self):
-        if not self._loop.is_closed():
-            self._loop.close()
+        # __init__ can reject the run before _loop exists.
+        loop = getattr(self, "_loop", None)
+        if loop is not None and not loop.is_closed():
+            loop.close()
 
     def __call__(self, completions: list[str], prompts: list[str],
                  **kwargs) -> list[float]:
@@ -204,41 +254,58 @@ class OnlineRewardFunction:
                                scenario_id: str, tier: str) -> dict:
         """Execute one full incident-response rollout and return a scored episode dict.
 
-        Architecture note: TRL generates G completions per step; we use those
-        completions as the triage agent's initial reasoning seed (injected into
-        the alert context below). The coordinator then continues the full agent
-        chain against the live cluster. Reward is episode-level: resolved/speed/
-        evidence/safety/comms. Group-relative advantages are computed across the
-        G rollouts, giving GRPO its learning signal.
+        TRL generates G completions per step and the coordinator runs the full
+        agent chain against the live cluster. Reward is episode-level:
+        resolved/speed/evidence/safety/comms, with group-relative advantages
+        computed across the G rollouts.
 
-        The completion_text therefore influences the rollout indirectly via the
-        triage seed, creating the completion↔reward coupling GRPO requires.
+        Resolution is taken from the objective environment verifier, never from
+        the agent's own ``outcome`` field. Reading the self-claim made
+        ``env_resolved`` absent from the episode, so evaluate_reward_contract's
+        fail-closed check scored r_resolve at 0.0 for every rollout while
+        charging the 0.25 false-resolution penalty whenever the agent did claim
+        success — a reward surface whose only reachable optimum is to never
+        claim resolution.
         """
         from agents.coordinator import handle_incident
         from agents.judge import judge_trajectory
 
-        # Seed the alert with the model's generated triage reasoning so that
-        # the reward IS conditioned on the specific completion TRL produced.
         alert = {
             "commonLabels": {"alertname": "GRPOTrainingAlert"},
-            "scenario_id": scenario_id,
             "alerts": [],
-            "triage_seed": completion_text[:512] if completion_text else "",
         }
 
         t0 = time.time()
-        incident = await handle_incident(alert)
+        # scenario_id travels out-of-band: inside the alert it is dumped into the
+        # model-visible prompt and identifies the frozen scenario outright.
+        incident = await handle_incident(alert, scenario_id=scenario_id)
         judge_score = await judge_trajectory(incident, tier=tier)
 
         remediation = incident.get("remediation", {}).get("final", {})
+        verification = incident.get("verification", {}) or {}
         total_turns = sum(
             len(incident.get(r, {}).get("trajectory", []))
             for r in ("triage", "diagnosis", "remediation", "comms")
         )
 
+        # compute_reward blends 70% episode contract with 30% dense step reward,
+        # reading episode[role]["step_reward_summary"]. Those keys were never
+        # carried across from the incident record, so the dense term evaluated to
+        # exactly 0.0 on every rollout and the blend was 0.7 x contract in fact.
+        role_step_rewards = {
+            role: {"step_reward_summary": incident.get(role, {}).get("step_reward_summary", {})}
+            for role in ("triage", "diagnosis", "remediation", "comms")
+        }
+
         return {
+            **role_step_rewards,
             "tier": tier,
-            "resolved": remediation.get("outcome") == "resolved",
+            "scenario_id": scenario_id,
+            "env_resolved": bool(verification.get("env_resolved", False)),
+            "agent_claimed_resolved": bool(
+                incident.get("agent_claimed_resolved", remediation.get("outcome") == "resolved")
+            ),
+            "resolved": bool(verification.get("env_resolved", False)),
             "outcome": remediation.get("outcome", "unknown"),
             "total_turns": total_turns,
             "time_to_resolve_s": round(time.time() - t0),
@@ -269,6 +336,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
 
         # Minimal dataset: GRPOTrainer needs a prompt dataset
         from datasets import Dataset
+        from trl import GRPOConfig, GRPOTrainer
         prompts = [{"prompt": "Respond as SRE triage agent."} for _ in range(20)]
         dataset = Dataset.from_list(prompts)
 
@@ -302,19 +370,22 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
 # ── Model loading ─────────────────────────────────────────────────────────────
 
 def load_model_and_tokenizer(model_path: str):
+    from peft import get_peft_model, prepare_model_for_kbit_training
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        quantization_config=BNBCONFIG,
+        quantization_config=bnb_config(),
         device_map="auto",
         trust_remote_code=True,
         attn_implementation="flash_attention_2" if _flash_attn_available() else "eager",
     )
     model = prepare_model_for_kbit_training(model)
-    model = get_peft_model(model, LORA_CONFIG)
+    model = get_peft_model(model, lora_config())
     model.print_trainable_parameters()
     return model, tokenizer
 
@@ -386,6 +457,8 @@ def main() -> None:
             {"prompt": f"You are the AtlasOps {role} agent responding to a real Kubernetes incident."}
             for role in ["triage", "diagnosis", "remediation", "comms"] * 250
         ])
+
+    from trl import GRPOConfig, GRPOTrainer
 
     grpo_args = GRPOConfig(
         output_dir=str(output_dir),

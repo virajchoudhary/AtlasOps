@@ -25,6 +25,7 @@ EXPECTED_ROLE_TOOLS = {
     "remediation": {
         "alertmanager_silence",
         "argocd_rollback",
+        "chaos_list_experiments",
         "chaos_stop_experiment",
         "kubectl_describe",
         "kubectl_get",
@@ -42,8 +43,8 @@ def test_registry_and_agent_exposure_counts_are_exact():
     from agents.tools import REGISTERED_TOOLS, TOOL_REGISTRY
 
     assert REGISTERED_TOOLS == frozenset(TOOL_REGISTRY)
-    assert len(REGISTERED_TOOLS) == 23
-    assert len(AGENT_EXPOSED_TOOLS) == 18
+    assert len(REGISTERED_TOOLS) == 24
+    assert len(AGENT_EXPOSED_TOOLS) == 19
 
 
 def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
@@ -51,9 +52,35 @@ def test_every_acl_tool_is_registered_and_role_names_are_deterministic():
     from agents.tools import REGISTERED_TOOLS
 
     assert set(ROLE_ALLOWED_TOOLS) == {"triage", "diagnosis", "remediation", "comms"}
-    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 10, "remediation": 9, "comms": 2}
+    assert ROLE_TOOL_COUNTS == {"triage": 4, "diagnosis": 10, "remediation": 10, "comms": 2}
     assert {role: set(tools) for role, tools in ROLE_ALLOWED_TOOLS.items()} == EXPECTED_ROLE_TOOLS
     assert all(tools <= REGISTERED_TOOLS for tools in ROLE_ALLOWED_TOOLS.values())
+
+
+def test_chaos_discovery_is_not_exposed_to_investigative_roles():
+    """Chaos-named wrappers must never reach triage or diagnosis.
+
+    Every frozen scenario's success predicate is chaos clearance, so a
+    chaos-named tool offered to an investigative role hands those roles the
+    benchmark's answer and makes measured root-cause accuracy meaningless.
+    Diagnosis must reach an injected fault through generic `kubectl_get`
+    resource-type discovery instead. Remediation may hold both wrappers: by
+    then diagnosis has already committed to a root cause.
+    """
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+
+    for role in ("triage", "diagnosis", "comms"):
+        assert not any(name.startswith("chaos_") for name in ROLE_ALLOWED_TOOLS[role])
+    assert "chaos_list_experiments" in ROLE_ALLOWED_TOOLS["remediation"]
+    assert "chaos_stop_experiment" in ROLE_ALLOWED_TOOLS["remediation"]
+
+
+def test_chaos_discovery_is_read_only():
+    """Listing experiments must not consume the cluster-mutation quota."""
+    from agents.tool_policy import CLUSTER_MUTATING_TOOLS, SIDE_EFFECTING_TOOLS
+
+    assert "chaos_list_experiments" not in CLUSTER_MUTATING_TOOLS
+    assert "chaos_list_experiments" not in SIDE_EFFECTING_TOOLS
 
 
 def test_unexposed_tools_are_explicit_and_not_role_reachable():
@@ -141,3 +168,43 @@ def test_policy_blocks_unexposed_high_risk_tool():
     for role in EXPECTED_ROLE_TOOLS:
         error = _check_tool_policy(role, "kubectl_exec", {}, {})
         assert error == f"tool `kubectl_exec` not allowed for role `{role}`"
+
+
+def test_documented_tool_counts_match_the_code():
+    """Six documents previously claimed four different, all-wrong tool counts.
+
+    Judges count these. Pin the published numbers to the registry so they cannot
+    drift again.
+    """
+    import re
+    from pathlib import Path
+
+    from agents.tool_policy import ADMIN_OR_UNEXPOSED_TOOLS, AGENT_EXPOSED_TOOLS
+    from agents.tools import REGISTERED_TOOLS
+
+    registered = len(REGISTERED_TOOLS)
+    exposed = len(AGENT_EXPOSED_TOOLS)
+    unexposed = len(ADMIN_OR_UNEXPOSED_TOOLS)
+    root = Path(__file__).resolve().parents[1]
+
+    # Any "<N> registered"/"registers <N>" claim must equal the real registry size.
+    # Count matches too: a regex that silently matches nothing would let this
+    # test pass while the documents carried the wrong numbers.
+    claims_checked = 0
+    for name in ("README.md", "ARCHITECTURE.md", "JUDGES_START_HERE.md", "CLAUDE.md"):
+        text = (root / name).read_text(encoding="utf-8")
+        for claimed in re.findall(r"(\d+)\s+registered", text):
+            claims_checked += 1
+            assert int(claimed) == registered, f"{name} claims {claimed} registered tools"
+        for claimed in re.findall(r"registers\s+\*?\*?(\d+)", text):
+            claims_checked += 1
+            assert int(claimed) == registered, f"{name} claims registering {claimed} tools"
+        for claimed in re.findall(r"(\d+)\s+agent-exposed", text):
+            claims_checked += 1
+            assert int(claimed) == exposed, f"{name} claims {claimed} agent-exposed tools"
+    assert claims_checked >= 6, f"only {claims_checked} documented counts were checked"
+
+    status = (root / "docs" / "project" / "IMPLEMENTATION_STATUS.md").read_text(encoding="utf-8")
+    assert f"{registered} wrappers are registered" in status
+    assert f"{exposed} are exposed" in status
+    assert f"{unexposed} are intentionally unexposed" in status

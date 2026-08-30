@@ -1,6 +1,37 @@
 # Judges: Start Here — AtlasOps
 
-> 60-second proof it's real. Everything below hits a live GKE cluster.
+## One command, no infrastructure
+
+```bash
+python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+PATH="$PWD/.venv/bin:$PATH" make verify
+```
+
+Runs the full test suite, the CI lint gate, the release-readiness gate, and a
+live recommender demo. No cluster, no GPU, no cloud account, no API key.
+
+Two more that need only a local Ollama (`ollama pull qwen2.5:7b-instruct`):
+
+```bash
+make probe-remediation          # does the model reach the Gate G4 goal state?
+make probe-remediation-control  # negative control: no fault injected
+```
+
+**Read this first:** [`docs/project/MASTER_PIPELINE_STATUS.md`](docs/project/MASTER_PIPELINE_STATUS.md)
+is the authority on what is and is not verified. We report **no incident-resolution
+rate**; the inherited 82% figure has not been reproduced and every document
+carrying it says so. Gates G0–G3 pass with reproducible evidence; G4 is in
+progress. Findings from the current audit are in
+[`docs/project/G4_V4_BEHAVIOUR_PROBE.md`](docs/project/G4_V4_BEHAVIOUR_PROBE.md)
+and [`docs/project/STRANDED_LANE_INTEGRATION_PLAN.md`](docs/project/STRANDED_LANE_INTEGRATION_PLAN.md).
+
+---
+
+## Live cluster walkthrough
+
+> The sections below describe the optional GKE deployment. The canonical
+> environment is a local Kind cluster at $0 cost (`infra/local/setup_local.sh`);
+> endpoints come from environment variables, never from source.
 
 ---
 
@@ -136,7 +167,7 @@ Full delivery scorecard:
 | Fault injection | Scripted mock | **Chaos Mesh CRDs — 6 fault types** |
 | Observability | None / stubbed | **Prometheus + Grafana + Jaeger + OTel** |
 | Agents | 1 generic agent | **4 specialized + coordinator** |
-| Tools | `kubectl` only (7 cmds) | **22 registered wrappers; 19 agent-exposed** |
+| Tools | `kubectl` only (7 cmds) | **24 registered wrappers; 19 agent-exposed** |
 | Scenarios | Static list | **28 frozen + up to 10 generated in a default benchmark run** |
 | Training RL | Offline / pre-collected | **Online GRPO — live GKE rollouts** |
 | Reward | Simple success/fail | **Anti-gaming contract: 5 components, 5 penalties, tier-weighted** |

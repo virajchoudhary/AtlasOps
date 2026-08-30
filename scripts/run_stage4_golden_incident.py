@@ -152,6 +152,18 @@ ATTEMPT_STATES = {
     ATTEMPT_STATE_COMPLETED,
 }
 G4_PLATFORM_HARDENING_MARKER = G4_PROTOCOL_MARKER
+
+
+def _marker_for_selected_model() -> str:
+    """Protocol marker for the model actually selected, not the module default."""
+    from config.g4_protocol import approved_profile_for_model
+
+    try:
+        return approved_profile_for_model(SELECTED_STAGE4_AGENT_MODEL)["protocol_marker"]
+    except RuntimeError:
+        # An unqualified model is rejected later by profile validation; keep the
+        # metadata helper total so the failure surfaces there with full context.
+        return G4_PLATFORM_HARDENING_MARKER
 MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
 ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
 
@@ -381,7 +393,11 @@ def reserve_experiment_attempt(
             "state": ATTEMPT_STATE_RESERVED,
             "reserved_at": datetime.now(timezone.utc).isoformat(),
             "reservation_token": uuid.uuid4().hex,
-            "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+            # Derive from the validated profile, not the module default: with
+            # more than one qualified model, the default marker labels a 3B run
+            # with the 7B protocol's name. Budget accounting keys on
+            # protocol_fingerprint and was always correct; this fixes the label.
+            "protocol_marker": profile.get("protocol_marker", G4_PLATFORM_HARDENING_MARKER),
             "protocol_profile": profile,
             "protocol_fingerprint": profile_fingerprint,
             "main_sha": main_sha,
@@ -531,7 +547,7 @@ def stage4_evidence_metadata() -> dict[str, Any]:
     return {
         "model": SELECTED_STAGE4_AGENT_MODEL,
         "inference_provider": "ollama-local",
-        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+        "protocol_marker": _marker_for_selected_model(),
         "protocol_profile": {
             "protocol_fingerprint": None,
             "validation_state": "PENDING_RESERVATION",
@@ -1437,6 +1453,11 @@ async def main() -> dict[str, Any]:
             "executed_tool_actions": executed_tools,
             "comms": comms_res.get("final"),
         }
+
+        # Criterion 13 is computed from this report, so the evidence must contain
+        # it. Run 010 passed on a settling value the record did not preserve,
+        # leaving the verdict unauditable from the artifact alone.
+        evidence["phases"]["settling"] = incident_result.get("settling", {})
 
         evidence["phases"]["verification"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),

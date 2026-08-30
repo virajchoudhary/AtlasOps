@@ -225,10 +225,14 @@ class TestMaxTurnsPersistence:
             for i in range(10)
         ]
         responses.append(_response(CONCLUSION))  # forced-conclusion call
+        # Patch the registry entry, not the module attribute: TOOL_REGISTRY binds
+        # the function object at import, so patching agents.tools.prometheus
+        # leaves the real wrapper in place and every call fails against a
+        # non-existent Prometheus.
         with patch("agents.coordinator.post_with_retry", side_effect=responses) as mock_post:
             with patch("agents.coordinator.require_audit_log"):
-                with patch("agents.tools.prometheus.promql_query",
-                           return_value={"success": True, "result": []}):
+                with patch.dict("agents.coordinator.TOOL_REGISTRY",
+                                {"promql_query": MagicMock(return_value={"success": True, "result": []})}):
                     result = asyncio.run(call_agent("remediation", {"incident_id": "inc-obs-6"}))
 
         # Behavior equivalence: same number of model calls as before the change.

@@ -132,12 +132,16 @@ class TestRunScenario:
 
         # 1. Chaos applied for scenario
         apply_chaos_mock.assert_called_once_with(scenario_id)
-        # 2. Alert ingested and enriched with scenario_id
+        # 2. Alert ingested
         wait_for_alert_mock.assert_called_once_with()
-        # 3. Incident handled by multi-agent coordinator flow with enriched alert
+        # 3. Incident handled by multi-agent coordinator flow.
+        #    scenario_id travels out-of-band as a keyword argument: the alert is
+        #    dumped verbatim into the model-visible prompt, so carrying it there
+        #    would hand the agent the frozen scenario's identity.
         handle_incident_mock.assert_awaited_once()
         passed_alert = handle_incident_mock.call_args[0][0]
-        assert passed_alert["scenario_id"] == scenario_id
+        assert "scenario_id" not in passed_alert
+        assert handle_incident_mock.call_args.kwargs["scenario_id"] == scenario_id
         assert passed_alert["commonLabels"]["alertname"] == "AtlasOpsOnlineBoutiqueDeploymentUnavailable"
         assert passed_alert["commonLabels"]["service"] == "cartservice"
         assert len(passed_alert["alerts"]) == 1

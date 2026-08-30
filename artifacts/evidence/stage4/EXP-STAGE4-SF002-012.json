@@ -1,10 +1,10 @@
 {
   "attempt_state": "CONSUMED",
   "causal_criteria": {
-    "10_remediation_tool_success": true,
-    "11_remediation_target_match": true,
+    "10_remediation_tool_success": false,
+    "11_remediation_target_match": false,
     "12_no_harness_repair_pre_verification": true,
-    "13_objective_env_resolved": true,
+    "13_objective_env_resolved": false,
     "14_comms_executed": true,
     "15_evidence_persisted": true,
     "1_baseline_healthy": true,
@@ -12,15 +12,15 @@
     "3_fault_observed_pre_trigger": true,
     "4_trigger_delivered": true,
     "5_triage_valid": true,
-    "6_diagnosis_valid": true,
-    "7_diagnosis_truth_match": true,
+    "6_diagnosis_valid": false,
+    "7_diagnosis_truth_match": false,
     "8_approval_satisfied": true,
-    "9_remediation_mutating_tool_executed": true
+    "9_remediation_mutating_tool_executed": false
   },
-  "completed_at": "2026-08-30T09:06:05.791279+00:00",
-  "duration_seconds": 281.4,
-  "experiment_id": "EXP-STAGE4-SF002-014",
-  "gate_g4_pass": true,
+  "completed_at": "2026-08-30T08:53:23.373930+00:00",
+  "duration_seconds": 348.73,
+  "experiment_id": "EXP-STAGE4-SF002-012",
+  "gate_g4_pass": false,
   "inference_provider": "ollama-local",
   "model": "qwen2.5:3b-instruct",
   "phases": {
@@ -28,19 +28,19 @@
       "attempts": 2,
       "baseline_healthy": true,
       "cpu_telemetry": {
-        "max_cores": 0.003251299208422916,
+        "max_cores": 0.0015452425398177717,
         "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
         "query_error": null,
         "query_success": true,
         "samples_cores": [
-          0.003251299208422916
+          0.0015452425398177717
         ],
-        "timestamp": "2026-08-30T09:02:02.699426+00:00"
+        "timestamp": "2026-08-30T08:48:12.988720+00:00"
       },
       "required_stable_probes": null,
       "stable_probes": 2,
       "target_deployments": "{\n    \"apiVersion\": \"v1\",\n    \"items\": [\n        {\n            \"apiVersion\": \"apps/v1\",\n            \"kind\": \"Deployment\",\n            \"metadata\": {\n                \"annotations\": {\n                    \"deployment.kubernetes.io/revision\": \"1\",\n                    \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"apps/v1\\\",\\\"kind\\\":\\\"Deployment\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"app\\\":\\\"paymentservice\\\"},\\\"name\\\":\\\"paymentservice\\\",\\\"namespace\\\":\\\"default\\\"},\\\"sp",
-      "timestamp": "2026-08-30T09:02:02.704101+00:00"
+      "timestamp": "2026-08-30T08:48:12.993268+00:00"
     },
     "coordinator_execution": {
       "approval": {
@@ -49,104 +49,116 @@
         "severity": "P1"
       },
       "comms": {
-        "incident_id": "inc-1788080619-9a0bba",
-        "postmortem_path": "docs/postmortems/2026-08-30-checkout-service-degradation.md",
-        "slack_posted": true,
-        "summary_for_dashboard": "The checkout service experienced a high request rate, leading to a 12.4% blast radius impact. The root cause was identified as a high request rate, which was mitigated by applying a stress chaos experiment."
+        "incident_id": "inc-1788079789-1813d6",
+        "lessons_learned": [
+          "Escalate the incident to the appropriate teams",
+          "Continue monitoring the checkoutservice for any further issues",
+          "Review and adjust the alerting strategy for high CPU usage"
+        ],
+        "postmortem_path": "docs/postmortems/2026-08-30-cloudflare-2019-replay.md",
+        "slack_posted": false,
+        "summary_for_dashboard": "The checkoutservice experienced high CPU usage, impacting the checkout functionality. The alert `HighCpuUsage` was correlated with this issue."
       },
       "diagnosis": {
-        "blast_radius_update": "The high request rate is observed across all services in the namespace.",
-        "incident_id": "inc-1788080619-9a0bba",
-        "next_agent": "diagnosis_agent",
-        "recommended_actions": [],
-        "root_cause": {
-          "category": "unknown",
-          "evidence": [
-            {
-              "finding": "The rate of requests to the checkoutservice is high.",
-              "query": "rate(checkoutservice_requests_total[5m])",
-              "tool": "promql_query"
-            }
-          ],
-          "specific": "The symptom could be due to a variety of issues such as high request rate, latency, or resource contention."
-        }
+        "lookback": "1h",
+        "min_duration": "1s",
+        "service": "checkoutservice",
+        "tool": "jaeger_search"
       },
       "executed_tool_actions": [
         {
           "args": {},
           "blocked_by_policy": false,
           "output": {
-            "count": 1,
-            "experiments": [
-              {
-                "action": "",
-                "created": "2026-08-30T09:02:05Z",
-                "desired_phase": "Run",
-                "duration": "10m",
-                "kind": "StressChaos",
-                "name": "sf-002-paymentservice-cpu",
-                "namespace": "chaos-mesh",
-                "stressors": {
-                  "cpu": {
-                    "load": 90,
-                    "workers": 4
-                  }
-                },
-                "target": {
-                  "app": "paymentservice",
-                  "mode": "one",
-                  "namespaces": [
-                    "default"
-                  ]
-                }
-              }
-            ],
-            "success": true,
-            "truncated": false
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
           },
           "tool": "chaos_list_experiments"
         },
         {
           "args": {
-            "kind": "StressChaos",
-            "name": "sf-002-paymentservice-cpu",
+            "app": "checkoutservice",
+            "revision": "latest"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
+          },
+          "tool": "argocd_rollback"
+        },
+        {
+          "args": {
+            "deployment": "checkoutservice",
+            "replicas": 0
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
+          },
+          "tool": "kubectl_scale"
+        },
+        {
+          "args": {
+            "deployment": "checkoutservice",
+            "namespace": "default",
+            "replicas": 0
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
+          },
+          "tool": "kubectl_scale"
+        },
+        {
+          "args": {
+            "kind": "PodChaos",
+            "name": "high-cpu-impact",
             "namespace": "chaos-mesh"
           },
           "blocked_by_policy": false,
           "output": {
-            "action": "stopped_chaos_experiment",
-            "kind": "StressChaos",
-            "name": "sf-002-paymentservice-cpu",
-            "namespace": "chaos-mesh",
-            "stdout": "stresschaos.chaos-mesh.org \"sf-002-paymentservice-cpu\" deleted from chaos-mesh namespace",
-            "success": true
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
           },
           "tool": "chaos_stop_experiment"
         },
         {
           "args": {
-            "query": "rate(checkoutservice_requests_total[5m])"
+            "comment": "High CPU usage on checkoutservice",
+            "duration_minutes": 30,
+            "matchers": [
+              "severity=high,component=HighCpuUsage"
+            ]
           },
           "blocked_by_policy": false,
           "output": {
-            "result": [],
-            "resultType": "vector",
-            "success": true
+            "blocked_by_circuit_breaker": true,
+            "error": "Tool call limit (50) exceeded for inc-1788079789-1813d6",
+            "success": false
           },
-          "tool": "promql_query"
+          "tool": "alertmanager_silence"
         }
       ],
       "grounding_validation": {
         "diagnosis": {
-          "citation_count": 1,
-          "cited_tools": [
-            "promql_query"
-          ],
+          "citation_count": 0,
+          "cited_tools": [],
           "executed_tools": [
+            "argocd_app_history",
+            "argocd_list_apps",
             "jaeger_search",
             "kubectl_get",
             "kubectl_logs",
-            "promql_query"
+            "promql_query",
+            "promql_query_range"
           ],
           "grounded": true,
           "violations": []
@@ -154,11 +166,7 @@
         "remediation": {
           "citation_count": 0,
           "cited_tools": [],
-          "executed_tools": [
-            "chaos_list_experiments",
-            "chaos_stop_experiment",
-            "promql_query"
-          ],
+          "executed_tools": [],
           "grounded": true,
           "violations": []
         },
@@ -175,171 +183,38 @@
           "violations": []
         }
       },
-      "incident_id": "inc-1788080619-9a0bba",
+      "incident_id": "inc-1788079789-1813d6",
       "model_proposed_action": {
-        "actions_taken": [
-          {
-            "args": {},
-            "output": {
-              "count": 1,
-              "experiments": [
-                {
-                  "action": "",
-                  "created": "2026-08-30T09:02:05Z",
-                  "desired_phase": "Run",
-                  "duration": "10m",
-                  "kind": "StressChaos",
-                  "name": "sf-002-paymentservice-cpu",
-                  "namespace": "chaos-mesh",
-                  "stressors": {
-                    "cpu": {
-                      "load": 90,
-                      "workers": 4
-                    }
-                  },
-                  "target": {
-                    "app": "paymentservice",
-                    "mode": "one",
-                    "namespaces": [
-                      "default"
-                    ]
-                  }
-                }
-              ],
-              "success": true,
-              "truncated": false
-            },
-            "step": 1,
-            "success": true,
-            "tool": "chaos_list_experiments"
-          },
-          {
-            "args": {
-              "kind": "StressChaos",
-              "name": "sf-002-paymentservice-cpu",
-              "namespace": "chaos-mesh"
-            },
-            "output": {
-              "action": "stopped_chaos_experiment",
-              "kind": "StressChaos",
-              "name": "sf-002-paymentservice-cpu",
-              "namespace": "chaos-mesh",
-              "stdout": "stresschaos.chaos-mesh.org \"sf-002-paymentservice-cpu\" deleted from chaos-mesh namespace",
-              "success": true
-            },
-            "step": 2,
-            "success": true,
-            "tool": "chaos_stop_experiment"
-          },
-          {
-            "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
-            },
-            "output": {
-              "result": [],
-              "resultType": "vector",
-              "success": true
-            },
-            "step": 3,
-            "success": true,
-            "tool": "promql_query"
-          }
-        ],
-        "executed_actions": [
-          {
-            "args": {},
-            "output": {
-              "count": 1,
-              "experiments": [
-                {
-                  "action": "",
-                  "created": "2026-08-30T09:02:05Z",
-                  "desired_phase": "Run",
-                  "duration": "10m",
-                  "kind": "StressChaos",
-                  "name": "sf-002-paymentservice-cpu",
-                  "namespace": "chaos-mesh",
-                  "stressors": {
-                    "cpu": {
-                      "load": 90,
-                      "workers": 4
-                    }
-                  },
-                  "target": {
-                    "app": "paymentservice",
-                    "mode": "one",
-                    "namespaces": [
-                      "default"
-                    ]
-                  }
-                }
-              ],
-              "success": true,
-              "truncated": false
-            },
-            "step": 1,
-            "success": true,
-            "tool": "chaos_list_experiments"
-          },
-          {
-            "args": {
-              "kind": "StressChaos",
-              "name": "sf-002-paymentservice-cpu",
-              "namespace": "chaos-mesh"
-            },
-            "output": {
-              "action": "stopped_chaos_experiment",
-              "kind": "StressChaos",
-              "name": "sf-002-paymentservice-cpu",
-              "namespace": "chaos-mesh",
-              "stdout": "stresschaos.chaos-mesh.org \"sf-002-paymentservice-cpu\" deleted from chaos-mesh namespace",
-              "success": true
-            },
-            "step": 2,
-            "success": true,
-            "tool": "chaos_stop_experiment"
-          },
-          {
-            "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
-            },
-            "output": {
-              "result": [],
-              "resultType": "vector",
-              "success": true
-            },
-            "step": 3,
-            "success": true,
-            "tool": "promql_query"
-          }
-        ],
-        "outcome": "resolved",
+        "actions_taken": [],
+        "executed_actions": [],
+        "handoff_notes": "Escalated due to no actionable remediation steps found. The incident is now escalated.",
+        "incident_id": "inc-1788079789-1813d6",
+        "next_agent": "comms",
+        "outcome": "escalated",
         "proposed_actions": [
           {
             "args": {
-              "kind": "StressChaos",
-              "name": "sf-002-paymentservice-cpu",
+              "kind": "PodChaos",
+              "name": "high-cpu-impact",
               "namespace": "chaos-mesh"
             },
             "tool": "chaos_stop_experiment"
           },
           {
             "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
+              "comment": "High CPU usage on checkoutservice",
+              "duration_minutes": 30,
+              "matchers": [
+                "severity=high,component=HighCpuUsage"
+              ]
             },
-            "tool": "promql_query"
+            "tool": "alertmanager_silence"
           }
         ],
-        "verified_by": [
-          "chaos_stop_experiment",
-          "promql_query"
-        ]
+        "time_to_resolve_seconds": 0
       },
-      "timestamp": "2026-08-30T09:06:05.781572+00:00",
+      "timestamp": "2026-08-30T08:53:23.367600+00:00",
       "triage": {
-        "affected_services": [
-          "checkoutservice"
-        ],
         "blast_radius": {
           "namespaces": [
             "default"
@@ -350,338 +225,343 @@
           ],
           "user_impact_pct": 12.4
         },
-        "incident_id": "inc-20231010-123456",
+        "correlated_alerts": [
+          "HighCpuUsage"
+        ],
+        "handoff_notes": "The `checkoutservice` is experiencing high CPU usage, impacting the checkout functionality. The alert `HighCpuUsage` is correlated with this issue.",
+        "incident_id": "inc-1788079789-1813d6",
+        "next_agent": "diagnosis",
         "severity": "P1",
-        "title": "Checkout Service Degradation"
+        "title": "High CPU usage on checkoutservice"
       }
     },
     "degradation_proof": {
       "decision": {
-        "absolute_increase_cores": 0.1763429465300735,
-        "baseline_max_cores": 0.003251299208422916,
+        "absolute_increase_cores": 0.15845861335660777,
+        "baseline_max_cores": 0.0015452425398177717,
         "measured": true,
         "min_absolute_increase_cores": 0.15,
         "min_ratio": 2.0,
         "passed": true,
-        "post_fault_max_cores": 0.17959424573849642,
-        "post_to_baseline_ratio": 55.237686298829104
+        "post_fault_max_cores": 0.16000385589642555,
+        "post_to_baseline_ratio": 103.54611122425776
       },
       "passed": true,
       "poll_interval_seconds": 3,
       "post_fault_observations": [
         {
-          "max_cores": 0.003251299208422916,
+          "max_cores": 0.0017268237539727416,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.003251299208422916
+            0.0017268237539727416
           ],
-          "timestamp": "2026-08-30T09:02:09.227218+00:00"
+          "timestamp": "2026-08-30T08:48:19.512987+00:00"
         },
         {
-          "max_cores": 0.0034002000252905513,
+          "max_cores": 0.0017268237539727416,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.0034002000252905513
+            0.0017268237539727416
           ],
-          "timestamp": "2026-08-30T09:02:12.232117+00:00"
+          "timestamp": "2026-08-30T08:48:22.519654+00:00"
         },
         {
-          "max_cores": 0.0030921674044994164,
+          "max_cores": 0.0016376014027378765,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.0030921674044994164
+            0.0016376014027378765
           ],
-          "timestamp": "2026-08-30T09:02:15.243426+00:00"
+          "timestamp": "2026-08-30T08:48:25.523708+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.018053549905838046,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.018053549905838046
           ],
-          "timestamp": "2026-08-30T09:02:18.248440+00:00"
+          "timestamp": "2026-08-30T08:48:28.527914+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.018053549905838046,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.018053549905838046
           ],
-          "timestamp": "2026-08-30T09:02:21.256035+00:00"
+          "timestamp": "2026-08-30T08:48:31.533528+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.018053549905838046,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.018053549905838046
           ],
-          "timestamp": "2026-08-30T09:02:24.270961+00:00"
+          "timestamp": "2026-08-30T08:48:34.539837+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.018053549905838046,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.018053549905838046
           ],
-          "timestamp": "2026-08-30T09:02:27.278717+00:00"
+          "timestamp": "2026-08-30T08:48:37.546650+00:00"
         },
         {
-          "max_cores": 0.025924767724297183,
+          "max_cores": 0.03710836327284454,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.025924767724297183
+            0.03710836327284454
           ],
-          "timestamp": "2026-08-30T09:02:30.288080+00:00"
+          "timestamp": "2026-08-30T08:48:40.552019+00:00"
         },
         {
-          "max_cores": 0.025924767724297183,
+          "max_cores": 0.04024352554894316,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.025924767724297183
+            0.04024352554894316
           ],
-          "timestamp": "2026-08-30T09:02:33.302608+00:00"
+          "timestamp": "2026-08-30T08:48:43.559921+00:00"
         },
         {
-          "max_cores": 0.02343099950497772,
+          "max_cores": 0.04024352554894316,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02343099950497772
+            0.04024352554894316
           ],
-          "timestamp": "2026-08-30T09:02:36.307456+00:00"
+          "timestamp": "2026-08-30T08:48:46.569135+00:00"
         },
         {
-          "max_cores": 0.04823196399920252,
+          "max_cores": 0.04024352554894316,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.04823196399920252
+            0.04024352554894316
           ],
-          "timestamp": "2026-08-30T09:02:39.313880+00:00"
+          "timestamp": "2026-08-30T08:48:49.582928+00:00"
         },
         {
-          "max_cores": 0.04823196399920252,
+          "max_cores": 0.036449710904693504,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.04823196399920252
+            0.036449710904693504
           ],
-          "timestamp": "2026-08-30T09:02:42.327777+00:00"
+          "timestamp": "2026-08-30T08:48:52.595385+00:00"
         },
         {
-          "max_cores": 0.057574906712120524,
+          "max_cores": 0.035440269138840845,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.057574906712120524
+            0.035440269138840845
           ],
-          "timestamp": "2026-08-30T09:02:45.342658+00:00"
+          "timestamp": "2026-08-30T08:48:55.604036+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.06791583265701863,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.06791583265701863
           ],
-          "timestamp": "2026-08-30T09:02:48.346978+00:00"
+          "timestamp": "2026-08-30T08:48:58.613434+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.07478682795986193,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.07478682795986193
           ],
-          "timestamp": "2026-08-30T09:02:51.353401+00:00"
+          "timestamp": "2026-08-30T08:49:01.626633+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.0697724156611222,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.0697724156611222
           ],
-          "timestamp": "2026-08-30T09:02:54.359389+00:00"
+          "timestamp": "2026-08-30T08:49:04.634748+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.06789464305576334,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.06789464305576334
           ],
-          "timestamp": "2026-08-30T09:02:57.366949+00:00"
+          "timestamp": "2026-08-30T08:49:07.641404+00:00"
         },
         {
-          "max_cores": 0.09051583181246346,
+          "max_cores": 0.09348639214616852,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.09051583181246346
+            0.09348639214616852
           ],
-          "timestamp": "2026-08-30T09:03:00.374465+00:00"
+          "timestamp": "2026-08-30T08:49:10.654937+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.09348639214616852,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.09348639214616852
           ],
-          "timestamp": "2026-08-30T09:03:03.380245+00:00"
+          "timestamp": "2026-08-30T08:49:13.666997+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.10500163806871697,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.10500163806871697
           ],
-          "timestamp": "2026-08-30T09:03:06.385198+00:00"
+          "timestamp": "2026-08-30T08:49:16.680442+00:00"
         },
         {
-          "max_cores": 0.10708030687307282,
+          "max_cores": 0.10500163806871697,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307282
+            0.10500163806871697
           ],
-          "timestamp": "2026-08-30T09:03:09.390668+00:00"
+          "timestamp": "2026-08-30T08:49:19.694021+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.09678250984693805,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.09678250984693805
           ],
-          "timestamp": "2026-08-30T09:03:12.398095+00:00"
+          "timestamp": "2026-08-30T08:49:22.704664+00:00"
         },
         {
-          "max_cores": 0.09607118718400925,
+          "max_cores": 0.09414871875871442,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.09607118718400925
+            0.09414871875871442
           ],
-          "timestamp": "2026-08-30T09:03:15.406151+00:00"
+          "timestamp": "2026-08-30T08:49:25.714514+00:00"
         },
         {
-          "max_cores": 0.1212330304840536,
+          "max_cores": 0.13398310331089297,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.1212330304840536
+            0.13398310331089297
           ],
-          "timestamp": "2026-08-30T09:03:18.412670+00:00"
+          "timestamp": "2026-08-30T08:49:28.725172+00:00"
         },
         {
-          "max_cores": 0.13340144198434506,
+          "max_cores": 0.13398310331089297,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.13340144198434506
+            0.13398310331089297
           ],
-          "timestamp": "2026-08-30T09:03:21.418446+00:00"
+          "timestamp": "2026-08-30T08:49:31.735477+00:00"
         },
         {
-          "max_cores": 0.14480624071957354,
+          "max_cores": 0.13398310331089294,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.14480624071957354
+            0.13398310331089294
           ],
-          "timestamp": "2026-08-30T09:03:24.428037+00:00"
+          "timestamp": "2026-08-30T08:49:34.741492+00:00"
         },
         {
-          "max_cores": 0.14480624071957354,
+          "max_cores": 0.12281345835005536,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.14480624071957354
+            0.12281345835005536
           ],
-          "timestamp": "2026-08-30T09:03:27.435540+00:00"
+          "timestamp": "2026-08-30T08:49:37.749421+00:00"
         },
         {
-          "max_cores": 0.15226334687096177,
+          "max_cores": 0.11945159898281288,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.15226334687096177
+            0.11945159898281288
           ],
-          "timestamp": "2026-08-30T09:03:30.449796+00:00"
+          "timestamp": "2026-08-30T08:49:40.755423+00:00"
         },
         {
-          "max_cores": 0.15226334687096177,
+          "max_cores": 0.1310741663095531,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.15226334687096177
+            0.1310741663095531
           ],
-          "timestamp": "2026-08-30T09:03:33.457020+00:00"
+          "timestamp": "2026-08-30T08:49:43.767016+00:00"
         },
         {
-          "max_cores": 0.15226334687096177,
+          "max_cores": 0.12728704916003403,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.15226334687096177
+            0.12728704916003403
           ],
-          "timestamp": "2026-08-30T09:03:36.462916+00:00"
+          "timestamp": "2026-08-30T08:49:46.777862+00:00"
         },
         {
-          "max_cores": 0.17959424573849642,
+          "max_cores": 0.16000385589642555,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.17959424573849642
+            0.16000385589642555
           ],
-          "timestamp": "2026-08-30T09:03:39.469500+00:00"
+          "timestamp": "2026-08-30T08:49:49.791688+00:00"
         }
       ],
       "timeout_seconds": 150,
-      "timestamp": "2026-08-30T09:03:39.476387+00:00"
+      "timestamp": "2026-08-30T08:49:49.801546+00:00"
     },
     "injection": {
       "manifest": "/Users/dhruvaambhaikar/atlasops/bench/chaos_manifests/single_fault/sf-002.yaml",
@@ -691,28 +571,165 @@
         "stdout": "stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created",
         "success": true
       },
-      "timestamp": "2026-08-30T09:02:05.187182+00:00"
+      "timestamp": "2026-08-30T08:48:15.454916+00:00"
     },
     "observable_fault": {
       "chaos_status": "{\n    \"apiVersion\": \"chaos-mesh.org/v1alpha1\",\n    \"kind\": \"StressChaos\",\n    \"metadata\": {\n        \"annotations\": {\n            \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"chaos-mesh.org/v1alpha1\\\",\\\"kind\\\":\\\"StressChaos\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"scenario\\\":\\\"sf-002\\\",\\\"tier\\\":\\\"single_fault\\\"},\\\"name\\\":\\\"sf-002-paymentservice-cpu\\\",\\\"namespace\\\":\\\"chaos-mesh\\\"},\\\"spec\\\":{\\\"duration\\\":\\\"10m\\\",\\\"mode\\\":\\\"one\\\",\\\"selector\\\":{\\\"labelSelectors\\\":{\\\"",
       "stresschaos_observed": true,
-      "timestamp": "2026-08-30T09:02:09.227129+00:00"
+      "timestamp": "2026-08-30T08:48:19.512875+00:00"
     },
     "settling": {
-      "completed_at": "2026-08-30T09:05:03.727638+00:00",
-      "duration_seconds": 0.112,
+      "completed_at": "2026-08-30T08:52:13.470579+00:00",
+      "duration_seconds": 30.082,
       "observations": [
         {
-          "elapsed_seconds": 0.112,
-          "env_resolved": true,
-          "failed_checks": [],
-          "timestamp": "2026-08-30T09:05:03.727608+00:00",
-          "verification_status": "passed"
+          "elapsed_seconds": 0.097,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:43.485916+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 2.195,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:45.583850+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 4.287,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:47.676026+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 6.4,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:49.788933+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 8.508,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:51.896272+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 10.601,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:53.989755+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 12.712,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:56.101187+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 14.812,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:51:58.200923+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 16.922,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:00.311113+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 19.035,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:02.423610+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 21.124,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:04.512260+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 23.221,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:06.610156+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 25.334,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:08.722730+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 27.441,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:10.829376+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 29.534,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:12.922383+00:00",
+          "verification_status": "failed"
+        },
+        {
+          "elapsed_seconds": 30.082,
+          "env_resolved": false,
+          "failed_checks": [
+            "chaos_mesh_cleared"
+          ],
+          "timestamp": "2026-08-30T08:52:13.470549+00:00",
+          "verification_status": "failed"
         }
       ],
       "poll_interval_seconds": 2,
-      "settled": true,
-      "started_at": "2026-08-30T09:05:03.615869+00:00",
+      "settled": false,
+      "started_at": "2026-08-30T08:51:43.388732+00:00",
       "timeout_seconds": 30
     },
     "telemetry_readiness": {
@@ -720,14 +737,14 @@
       "ready": true,
       "required_stable_probes": 2,
       "stable_probes": 2,
-      "timestamp": "2026-08-30T09:01:57.589184+00:00"
+      "timestamp": "2026-08-30T08:48:07.879462+00:00"
     },
     "verification": {
-      "agent_claimed_resolved": true,
-      "env_resolved": true,
-      "timestamp": "2026-08-30T09:06:05.781607+00:00",
+      "agent_claimed_resolved": false,
+      "env_resolved": false,
+      "timestamp": "2026-08-30T08:53:23.367622+00:00",
       "verification_report": {
-        "agent_claimed_resolved": true,
+        "agent_claimed_resolved": false,
         "checks": [
           {
             "details": "Ready replicas: 1/1 (available: 1)",
@@ -741,36 +758,47 @@
             "target": "default/paymentservice"
           },
           {
-            "details": "Zero active Chaos Mesh experiment resources present in cluster",
+            "details": "Active scenario chaos experiments remain: StressChaos/sf-002-paymentservice-cpu",
             "name": "chaos_mesh_cleared",
-            "observed": null,
-            "passed": true,
+            "observed": {
+              "active_chaos_count": 1,
+              "active_experiments": [
+                "StressChaos/sf-002-paymentservice-cpu"
+              ],
+              "matching_experiments": [
+                "StressChaos/sf-002-paymentservice-cpu"
+              ],
+              "scenario_matching_count": 1
+            },
+            "passed": false,
             "required": true,
             "target": "chaos-mesh"
           }
         ],
-        "env_resolved": true,
+        "env_resolved": false,
         "error": null,
         "evidence": [
           "Workload default/paymentservice (deployment): Ready replicas: 1/1 (available: 1)",
-          "Chaos clearance: Zero active Chaos Mesh experiment resources present in cluster"
+          "FAILED Chaos clearance: Active scenario chaos experiments remain: StressChaos/sf-002-paymentservice-cpu"
         ],
-        "failed_checks": [],
+        "failed_checks": [
+          "chaos_mesh_cleared"
+        ],
         "is_false_negative": false,
         "is_false_resolution": false,
         "observed_metrics": {},
         "scenario_id": "single_fault/sf-002",
-        "verification_status": "passed",
-        "verification_timestamp": 1788080703.827513
+        "verification_status": "failed",
+        "verification_timestamp": 1788079933.548745
       }
     }
   },
-  "protocol_marker": "G4-RESERVED-REMEDIATION-V6-3B-2026-08-30",
+  "protocol_marker": "G4-BOUNDED-COMPLETION-V5-3B-2026-08-30",
   "protocol_profile": {
     "diagnosis_prompt": {
       "path": "agents/prompts/diagnosis.md",
       "sha256": "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b",
-      "version": "g4-reserved-remediation-profile-v6-3b"
+      "version": "g4-bounded-completion-profile-v5-3b"
     },
     "f1_contract": {
       "min_absolute_increase_cores": 0.15,
@@ -806,21 +834,16 @@
       "name": "qwen2.5:3b-instruct",
       "provider": "ollama-local"
     },
-    "profile_version": "g4-reserved-remediation-profile-v6-3b",
-    "protocol_marker": "G4-RESERVED-REMEDIATION-V6-3B-2026-08-30",
+    "profile_version": "g4-bounded-completion-profile-v5-3b",
+    "protocol_marker": "G4-BOUNDED-COMPLETION-V5-3B-2026-08-30",
     "remediation_prompt": {
       "path": "agents/prompts/remediation.md",
       "sha256": "313c5d753c48628b268d7ffcdbf1c90046acd731e67763f39ab8504e455b8a21",
-      "version": "g4-reserved-remediation-profile-v6-3b"
+      "version": "g4-bounded-completion-profile-v5-3b"
     },
     "role_tool_contract": {
       "sha256": "30fa4cb43a47c40d26b9ff6f83f712563f936cbd8eb0c5c798bad4f5f5e4da4a",
       "version": "g4-role-tool-contract-30fa4cb43a47"
-    },
-    "safety_envelope": {
-      "max_cluster_mutating_actions_per_hour": 10,
-      "max_tool_calls_per_incident": 50,
-      "reserved_remediation_tool_calls": 12
     },
     "scenario_fault_contract": {
       "chaos_kind": "StressChaos",
@@ -838,7 +861,7 @@
     }
   },
   "scenario_id": "single_fault/sf-002",
-  "started_at": "2026-08-30T09:01:24.387111+00:00",
+  "started_at": "2026-08-30T08:47:34.648703+00:00",
   "tier": "single_fault",
   "trigger_type": "manual coordinator trigger over a real independently observed cluster fault"
 }

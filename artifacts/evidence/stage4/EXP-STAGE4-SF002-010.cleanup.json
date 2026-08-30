@@ -1,0 +1,12 @@
+{
+  "affects_env_resolved": false,
+  "command": "kubectl delete stresschaos sf-002-paymentservice-cpu -n chaos-mesh --ignore-not-found=true",
+  "experiment_id": "EXP-STAGE4-SF002-010",
+  "result": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "",
+    "success": true
+  },
+  "timing": "after_verdict_persisted"
+}

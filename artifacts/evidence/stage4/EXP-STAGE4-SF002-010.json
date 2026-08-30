@@ -17,9 +17,9 @@
     "8_approval_satisfied": true,
     "9_remediation_mutating_tool_executed": true
   },
-  "completed_at": "2026-08-30T09:06:05.791279+00:00",
-  "duration_seconds": 281.4,
-  "experiment_id": "EXP-STAGE4-SF002-014",
+  "completed_at": "2026-08-30T08:29:05.831012+00:00",
+  "duration_seconds": 670.57,
+  "experiment_id": "EXP-STAGE4-SF002-010",
   "gate_g4_pass": true,
   "inference_provider": "ollama-local",
   "model": "qwen2.5:3b-instruct",
@@ -28,19 +28,19 @@
       "attempts": 2,
       "baseline_healthy": true,
       "cpu_telemetry": {
-        "max_cores": 0.003251299208422916,
+        "max_cores": 0.004254790485959546,
         "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
         "query_error": null,
         "query_success": true,
         "samples_cores": [
-          0.003251299208422916
+          0.004254790485959546
         ],
-        "timestamp": "2026-08-30T09:02:02.699426+00:00"
+        "timestamp": "2026-08-30T08:18:33.701825+00:00"
       },
       "required_stable_probes": null,
       "stable_probes": 2,
       "target_deployments": "{\n    \"apiVersion\": \"v1\",\n    \"items\": [\n        {\n            \"apiVersion\": \"apps/v1\",\n            \"kind\": \"Deployment\",\n            \"metadata\": {\n                \"annotations\": {\n                    \"deployment.kubernetes.io/revision\": \"1\",\n                    \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"apps/v1\\\",\\\"kind\\\":\\\"Deployment\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"app\\\":\\\"paymentservice\\\"},\\\"name\\\":\\\"paymentservice\\\",\\\"namespace\\\":\\\"default\\\"},\\\"sp",
-      "timestamp": "2026-08-30T09:02:02.704101+00:00"
+      "timestamp": "2026-08-30T08:18:33.706067+00:00"
     },
     "coordinator_execution": {
       "approval": {
@@ -49,26 +49,26 @@
         "severity": "P1"
       },
       "comms": {
-        "incident_id": "inc-1788080619-9a0bba",
-        "postmortem_path": "docs/postmortems/2026-08-30-checkout-service-degradation.md",
+        "incident_id": "inc-1788078001-70d1df",
+        "postmortem_path": "docs/postmortems/2026-09-01-paymentservice-high-cpu-resolved.md",
         "slack_posted": true,
-        "summary_for_dashboard": "The checkout service experienced a high request rate, leading to a 12.4% blast radius impact. The root cause was identified as a high request rate, which was mitigated by applying a stress chaos experiment."
+        "summary_for_dashboard": "High CPU usage in the `paymentservice` was resolved after a stress experiment. The issue was not reflected in the rate of requests, but other metrics should be checked."
       },
       "diagnosis": {
-        "blast_radius_update": "The high request rate is observed across all services in the namespace.",
-        "incident_id": "inc-1788080619-9a0bba",
+        "blast_radius_update": "The high CPU usage is not indicated by the rate of requests, but other metrics should be checked.",
+        "incident_id": "inc-1788078001-70d1df",
         "next_agent": "diagnosis_agent",
         "recommended_actions": [],
         "root_cause": {
           "category": "unknown",
           "evidence": [
             {
-              "finding": "The rate of requests to the checkoutservice is high.",
-              "query": "rate(checkoutservice_requests_total[5m])",
+              "finding": "The rate of requests is within normal limits.",
+              "query": "sum(rate(paymentservice_requests_total{service=\"paymentservice\"}[5m])) by (job)",
               "tool": "promql_query"
             }
           ],
-          "specific": "The symptom could be due to a variety of issues such as high request rate, latency, or resource contention."
+          "specific": "The high CPU usage in the `paymentservice` is not directly reflected in the metrics, as the rate of requests is within normal limits."
         }
       },
       "executed_tool_actions": [
@@ -80,7 +80,7 @@
             "experiments": [
               {
                 "action": "",
-                "created": "2026-08-30T09:02:05Z",
+                "created": "2026-08-30T08:18:36Z",
                 "desired_phase": "Run",
                 "duration": "10m",
                 "kind": "StressChaos",
@@ -125,7 +125,7 @@
         },
         {
           "args": {
-            "query": "rate(checkoutservice_requests_total[5m])"
+            "query": "sum(rate(paymentservice_requests_total{service=\"paymentservice\"}[5m])) by (job)"
           },
           "blocked_by_policy": false,
           "output": {
@@ -134,6 +134,35 @@
             "success": true
           },
           "tool": "promql_query"
+        },
+        {
+          "args": {
+            "deployment": "paymentservice",
+            "replicas": 1
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "deployment.apps/paymentservice scaled\n",
+            "success": true
+          },
+          "tool": "kubectl_scale"
+        },
+        {
+          "args": {
+            "action": "status",
+            "namespace": "default",
+            "resource": "deployment/paymentservice"
+          },
+          "blocked_by_policy": false,
+          "output": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "deployment \"paymentservice\" successfully rolled out\n",
+            "success": true
+          },
+          "tool": "kubectl_rollout"
         }
       ],
       "grounding_validation": {
@@ -143,9 +172,7 @@
             "promql_query"
           ],
           "executed_tools": [
-            "jaeger_search",
             "kubectl_get",
-            "kubectl_logs",
             "promql_query"
           ],
           "grounded": true,
@@ -157,6 +184,8 @@
           "executed_tools": [
             "chaos_list_experiments",
             "chaos_stop_experiment",
+            "kubectl_rollout",
+            "kubectl_scale",
             "promql_query"
           ],
           "grounded": true,
@@ -168,14 +197,13 @@
           "executed_tools": [
             "alertmanager_list_alerts",
             "kubectl_get",
-            "kubectl_top_pods",
-            "promql_query"
+            "kubectl_top_pods"
           ],
           "grounded": true,
           "violations": []
         }
       },
-      "incident_id": "inc-1788080619-9a0bba",
+      "incident_id": "inc-1788078001-70d1df",
       "model_proposed_action": {
         "actions_taken": [
           {
@@ -185,7 +213,7 @@
               "experiments": [
                 {
                   "action": "",
-                  "created": "2026-08-30T09:02:05Z",
+                  "created": "2026-08-30T08:18:36Z",
                   "desired_phase": "Run",
                   "duration": "10m",
                   "kind": "StressChaos",
@@ -233,7 +261,7 @@
           },
           {
             "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
+              "query": "sum(rate(paymentservice_requests_total{service=\"paymentservice\"}[5m])) by (job)"
             },
             "output": {
               "result": [],
@@ -243,6 +271,37 @@
             "step": 3,
             "success": true,
             "tool": "promql_query"
+          },
+          {
+            "args": {
+              "deployment": "paymentservice",
+              "replicas": 1
+            },
+            "output": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": "deployment.apps/paymentservice scaled\n",
+              "success": true
+            },
+            "step": 4,
+            "success": true,
+            "tool": "kubectl_scale"
+          },
+          {
+            "args": {
+              "action": "status",
+              "namespace": "default",
+              "resource": "deployment/paymentservice"
+            },
+            "output": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": "deployment \"paymentservice\" successfully rolled out\n",
+              "success": true
+            },
+            "step": 5,
+            "success": true,
+            "tool": "kubectl_rollout"
           }
         ],
         "executed_actions": [
@@ -253,7 +312,7 @@
               "experiments": [
                 {
                   "action": "",
-                  "created": "2026-08-30T09:02:05Z",
+                  "created": "2026-08-30T08:18:36Z",
                   "desired_phase": "Run",
                   "duration": "10m",
                   "kind": "StressChaos",
@@ -301,7 +360,7 @@
           },
           {
             "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
+              "query": "sum(rate(paymentservice_requests_total{service=\"paymentservice\"}[5m])) by (job)"
             },
             "output": {
               "result": [],
@@ -311,6 +370,37 @@
             "step": 3,
             "success": true,
             "tool": "promql_query"
+          },
+          {
+            "args": {
+              "deployment": "paymentservice",
+              "replicas": 1
+            },
+            "output": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": "deployment.apps/paymentservice scaled\n",
+              "success": true
+            },
+            "step": 4,
+            "success": true,
+            "tool": "kubectl_scale"
+          },
+          {
+            "args": {
+              "action": "status",
+              "namespace": "default",
+              "resource": "deployment/paymentservice"
+            },
+            "output": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": "deployment \"paymentservice\" successfully rolled out\n",
+              "success": true
+            },
+            "step": 5,
+            "success": true,
+            "tool": "kubectl_rollout"
           }
         ],
         "outcome": "resolved",
@@ -325,363 +415,333 @@
           },
           {
             "args": {
-              "query": "rate(checkoutservice_requests_total[5m])"
+              "deployment": "paymentservice",
+              "namespace": "default",
+              "replicas": 1
+            },
+            "tool": "kubectl_scale"
+          },
+          {
+            "args": {
+              "query": "sum(rate(paymentservice_requests_total[5m])) by (pod)"
             },
             "tool": "promql_query"
           }
         ],
-        "verified_by": [
-          "chaos_stop_experiment",
-          "promql_query"
-        ]
+        "verified_by": "promql_query"
       },
-      "timestamp": "2026-08-30T09:06:05.781572+00:00",
+      "timestamp": "2026-08-30T08:29:05.810446+00:00",
       "triage": {
-        "affected_services": [
-          "checkoutservice"
-        ],
         "blast_radius": {
           "namespaces": [
             "default"
           ],
-          "revenue_path_affected": true,
           "services": [
-            "checkoutservice"
-          ],
-          "user_impact_pct": 12.4
+            "paymentservice"
+          ]
         },
-        "incident_id": "inc-20231010-123456",
+        "incident_id": "inc-20260901-123456",
         "severity": "P1",
-        "title": "Checkout Service Degradation"
+        "title": "High CPU usage in paymentservice causing service degradation"
       }
     },
     "degradation_proof": {
       "decision": {
-        "absolute_increase_cores": 0.1763429465300735,
-        "baseline_max_cores": 0.003251299208422916,
+        "absolute_increase_cores": 0.15364789988694527,
+        "baseline_max_cores": 0.004254790485959546,
         "measured": true,
         "min_absolute_increase_cores": 0.15,
         "min_ratio": 2.0,
         "passed": true,
-        "post_fault_max_cores": 0.17959424573849642,
-        "post_to_baseline_ratio": 55.237686298829104
+        "post_fault_max_cores": 0.15790269037290483,
+        "post_to_baseline_ratio": 37.11174284467603
       },
       "passed": true,
       "poll_interval_seconds": 3,
       "post_fault_observations": [
         {
-          "max_cores": 0.003251299208422916,
+          "max_cores": 0.004740415945546086,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.003251299208422916
+            0.004740415945546086
           ],
-          "timestamp": "2026-08-30T09:02:09.227218+00:00"
+          "timestamp": "2026-08-30T08:18:40.241593+00:00"
         },
         {
-          "max_cores": 0.0034002000252905513,
+          "max_cores": 0.004740415945546086,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.0034002000252905513
+            0.004740415945546086
           ],
-          "timestamp": "2026-08-30T09:02:12.232117+00:00"
+          "timestamp": "2026-08-30T08:18:43.245958+00:00"
         },
         {
-          "max_cores": 0.0030921674044994164,
+          "max_cores": 0.004740415945546086,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.0030921674044994164
+            0.004740415945546086
           ],
-          "timestamp": "2026-08-30T09:02:15.243426+00:00"
+          "timestamp": "2026-08-30T08:18:46.250963+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.021306703921055596,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.021306703921055596
           ],
-          "timestamp": "2026-08-30T09:02:18.248440+00:00"
+          "timestamp": "2026-08-30T08:18:49.257951+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.021306703921055596,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.021306703921055596
           ],
-          "timestamp": "2026-08-30T09:02:21.256035+00:00"
+          "timestamp": "2026-08-30T08:18:52.263351+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.021306703921055596,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.021306703921055596
           ],
-          "timestamp": "2026-08-30T09:02:24.270961+00:00"
+          "timestamp": "2026-08-30T08:18:55.269201+00:00"
         },
         {
-          "max_cores": 0.02263200778304755,
+          "max_cores": 0.021306703921055596,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02263200778304755
+            0.021306703921055596
           ],
-          "timestamp": "2026-08-30T09:02:27.278717+00:00"
+          "timestamp": "2026-08-30T08:18:58.281876+00:00"
         },
         {
-          "max_cores": 0.025924767724297183,
+          "max_cores": 0.02394180978960925,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.025924767724297183
+            0.02394180978960925
           ],
-          "timestamp": "2026-08-30T09:02:30.288080+00:00"
+          "timestamp": "2026-08-30T08:19:01.308714+00:00"
         },
         {
-          "max_cores": 0.025924767724297183,
+          "max_cores": 0.021748407487745078,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.025924767724297183
+            0.021748407487745078
           ],
-          "timestamp": "2026-08-30T09:02:33.302608+00:00"
+          "timestamp": "2026-08-30T08:19:04.322174+00:00"
         },
         {
-          "max_cores": 0.02343099950497772,
+          "max_cores": 0.02114786709218905,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.02343099950497772
+            0.02114786709218905
           ],
-          "timestamp": "2026-08-30T09:02:36.307456+00:00"
+          "timestamp": "2026-08-30T08:19:07.335574+00:00"
         },
         {
-          "max_cores": 0.04823196399920252,
+          "max_cores": 0.04865115570934254,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.04823196399920252
+            0.04865115570934254
           ],
-          "timestamp": "2026-08-30T09:02:39.313880+00:00"
+          "timestamp": "2026-08-30T08:19:10.343556+00:00"
         },
         {
-          "max_cores": 0.04823196399920252,
+          "max_cores": 0.05648702173913038,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.04823196399920252
+            0.05648702173913038
           ],
-          "timestamp": "2026-08-30T09:02:42.327777+00:00"
+          "timestamp": "2026-08-30T08:19:13.350573+00:00"
         },
         {
-          "max_cores": 0.057574906712120524,
+          "max_cores": 0.05648702173913038,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.057574906712120524
+            0.05648702173913038
           ],
-          "timestamp": "2026-08-30T09:02:45.342658+00:00"
+          "timestamp": "2026-08-30T08:19:16.357690+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.0513512531042874,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.0513512531042874
           ],
-          "timestamp": "2026-08-30T09:02:48.346978+00:00"
+          "timestamp": "2026-08-30T08:19:19.363109+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.049935782484541016,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.049935782484541016
           ],
-          "timestamp": "2026-08-30T09:02:51.353401+00:00"
+          "timestamp": "2026-08-30T08:19:22.370270+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.048520782589975796,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.048520782589975796
           ],
-          "timestamp": "2026-08-30T09:02:54.359389+00:00"
+          "timestamp": "2026-08-30T08:19:25.377274+00:00"
         },
         {
-          "max_cores": 0.075211913579624,
+          "max_cores": 0.0799914789520111,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.075211913579624
+            0.0799914789520111
           ],
-          "timestamp": "2026-08-30T09:02:57.366949+00:00"
+          "timestamp": "2026-08-30T08:19:28.381190+00:00"
         },
         {
-          "max_cores": 0.09051583181246346,
+          "max_cores": 0.08846286012267904,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.09051583181246346
+            0.08846286012267904
           ],
-          "timestamp": "2026-08-30T09:03:00.374465+00:00"
+          "timestamp": "2026-08-30T08:19:31.386126+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.09593196286472148,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.09593196286472148
           ],
-          "timestamp": "2026-08-30T09:03:03.380245+00:00"
+          "timestamp": "2026-08-30T08:19:34.391222+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.08705186083554377,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.08705186083554377
           ],
-          "timestamp": "2026-08-30T09:03:06.385198+00:00"
+          "timestamp": "2026-08-30T08:19:37.396563+00:00"
         },
         {
-          "max_cores": 0.10708030687307282,
+          "max_cores": 0.11278822363791255,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307282
+            0.11278822363791255
           ],
-          "timestamp": "2026-08-30T09:03:09.390668+00:00"
+          "timestamp": "2026-08-30T08:19:40.403610+00:00"
         },
         {
-          "max_cores": 0.10708030687307284,
+          "max_cores": 0.11278822363791254,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.10708030687307284
+            0.11278822363791254
           ],
-          "timestamp": "2026-08-30T09:03:12.398095+00:00"
+          "timestamp": "2026-08-30T08:19:43.409525+00:00"
         },
         {
-          "max_cores": 0.09607118718400925,
+          "max_cores": 0.11278822363791255,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.09607118718400925
+            0.11278822363791255
           ],
-          "timestamp": "2026-08-30T09:03:15.406151+00:00"
+          "timestamp": "2026-08-30T08:19:46.417000+00:00"
         },
         {
-          "max_cores": 0.1212330304840536,
+          "max_cores": 0.12658813234436206,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.1212330304840536
+            0.12658813234436206
           ],
-          "timestamp": "2026-08-30T09:03:18.412670+00:00"
+          "timestamp": "2026-08-30T08:19:49.424301+00:00"
         },
         {
-          "max_cores": 0.13340144198434506,
+          "max_cores": 0.12658813234436206,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.13340144198434506
+            0.12658813234436206
           ],
-          "timestamp": "2026-08-30T09:03:21.418446+00:00"
+          "timestamp": "2026-08-30T08:19:52.431914+00:00"
         },
         {
-          "max_cores": 0.14480624071957354,
+          "max_cores": 0.11479996415349432,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.14480624071957354
+            0.11479996415349432
           ],
-          "timestamp": "2026-08-30T09:03:24.428037+00:00"
+          "timestamp": "2026-08-30T08:19:55.438994+00:00"
         },
         {
-          "max_cores": 0.14480624071957354,
+          "max_cores": 0.13761005927629832,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.14480624071957354
+            0.13761005927629832
           ],
-          "timestamp": "2026-08-30T09:03:27.435540+00:00"
+          "timestamp": "2026-08-30T08:19:58.446301+00:00"
         },
         {
-          "max_cores": 0.15226334687096177,
+          "max_cores": 0.15790269037290483,
           "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
           "query_error": null,
           "query_success": true,
           "samples_cores": [
-            0.15226334687096177
+            0.15790269037290483
           ],
-          "timestamp": "2026-08-30T09:03:30.449796+00:00"
-        },
-        {
-          "max_cores": 0.15226334687096177,
-          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
-          "query_error": null,
-          "query_success": true,
-          "samples_cores": [
-            0.15226334687096177
-          ],
-          "timestamp": "2026-08-30T09:03:33.457020+00:00"
-        },
-        {
-          "max_cores": 0.15226334687096177,
-          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
-          "query_error": null,
-          "query_success": true,
-          "samples_cores": [
-            0.15226334687096177
-          ],
-          "timestamp": "2026-08-30T09:03:36.462916+00:00"
-        },
-        {
-          "max_cores": 0.17959424573849642,
-          "query": "max(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod=~\"paymentservice-.*\",container=\"server\"}[2m]))",
-          "query_error": null,
-          "query_success": true,
-          "samples_cores": [
-            0.17959424573849642
-          ],
-          "timestamp": "2026-08-30T09:03:39.469500+00:00"
+          "timestamp": "2026-08-30T08:20:01.455260+00:00"
         }
       ],
       "timeout_seconds": 150,
-      "timestamp": "2026-08-30T09:03:39.476387+00:00"
+      "timestamp": "2026-08-30T08:20:01.462881+00:00"
     },
     "injection": {
       "manifest": "/Users/dhruvaambhaikar/atlasops/bench/chaos_manifests/single_fault/sf-002.yaml",
@@ -691,41 +751,24 @@
         "stdout": "stresschaos.chaos-mesh.org/sf-002-paymentservice-cpu created",
         "success": true
       },
-      "timestamp": "2026-08-30T09:02:05.187182+00:00"
+      "timestamp": "2026-08-30T08:18:36.206811+00:00"
     },
     "observable_fault": {
       "chaos_status": "{\n    \"apiVersion\": \"chaos-mesh.org/v1alpha1\",\n    \"kind\": \"StressChaos\",\n    \"metadata\": {\n        \"annotations\": {\n            \"kubectl.kubernetes.io/last-applied-configuration\": \"{\\\"apiVersion\\\":\\\"chaos-mesh.org/v1alpha1\\\",\\\"kind\\\":\\\"StressChaos\\\",\\\"metadata\\\":{\\\"annotations\\\":{},\\\"labels\\\":{\\\"scenario\\\":\\\"sf-002\\\",\\\"tier\\\":\\\"single_fault\\\"},\\\"name\\\":\\\"sf-002-paymentservice-cpu\\\",\\\"namespace\\\":\\\"chaos-mesh\\\"},\\\"spec\\\":{\\\"duration\\\":\\\"10m\\\",\\\"mode\\\":\\\"one\\\",\\\"selector\\\":{\\\"labelSelectors\\\":{\\\"",
       "stresschaos_observed": true,
-      "timestamp": "2026-08-30T09:02:09.227129+00:00"
-    },
-    "settling": {
-      "completed_at": "2026-08-30T09:05:03.727638+00:00",
-      "duration_seconds": 0.112,
-      "observations": [
-        {
-          "elapsed_seconds": 0.112,
-          "env_resolved": true,
-          "failed_checks": [],
-          "timestamp": "2026-08-30T09:05:03.727608+00:00",
-          "verification_status": "passed"
-        }
-      ],
-      "poll_interval_seconds": 2,
-      "settled": true,
-      "started_at": "2026-08-30T09:05:03.615869+00:00",
-      "timeout_seconds": 30
+      "timestamp": "2026-08-30T08:18:40.241482+00:00"
     },
     "telemetry_readiness": {
       "attempts": 2,
       "ready": true,
       "required_stable_probes": 2,
       "stable_probes": 2,
-      "timestamp": "2026-08-30T09:01:57.589184+00:00"
+      "timestamp": "2026-08-30T08:18:28.594325+00:00"
     },
     "verification": {
       "agent_claimed_resolved": true,
       "env_resolved": true,
-      "timestamp": "2026-08-30T09:06:05.781607+00:00",
+      "timestamp": "2026-08-30T08:29:05.810600+00:00",
       "verification_report": {
         "agent_claimed_resolved": true,
         "checks": [
@@ -761,16 +804,16 @@
         "observed_metrics": {},
         "scenario_id": "single_fault/sf-002",
         "verification_status": "passed",
-        "verification_timestamp": 1788080703.827513
+        "verification_timestamp": 1788078422.596471
       }
     }
   },
-  "protocol_marker": "G4-RESERVED-REMEDIATION-V6-3B-2026-08-30",
+  "protocol_marker": "G4-OBSERVABILITY-V4-3B-2026-08-30",
   "protocol_profile": {
     "diagnosis_prompt": {
       "path": "agents/prompts/diagnosis.md",
       "sha256": "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b",
-      "version": "g4-reserved-remediation-profile-v6-3b"
+      "version": "g4-observability-profile-v4-3b"
     },
     "f1_contract": {
       "min_absolute_increase_cores": 0.15,
@@ -787,7 +830,6 @@
     "llm_transport": {
       "base_backoff_seconds": 1.5,
       "max_attempts": 2,
-      "max_completion_tokens": 1024,
       "request_timeout_seconds": 300
     },
     "metrics_api": {
@@ -806,21 +848,16 @@
       "name": "qwen2.5:3b-instruct",
       "provider": "ollama-local"
     },
-    "profile_version": "g4-reserved-remediation-profile-v6-3b",
-    "protocol_marker": "G4-RESERVED-REMEDIATION-V6-3B-2026-08-30",
+    "profile_version": "g4-observability-profile-v4-3b",
+    "protocol_marker": "G4-OBSERVABILITY-V4-3B-2026-08-30",
     "remediation_prompt": {
       "path": "agents/prompts/remediation.md",
       "sha256": "313c5d753c48628b268d7ffcdbf1c90046acd731e67763f39ab8504e455b8a21",
-      "version": "g4-reserved-remediation-profile-v6-3b"
+      "version": "g4-observability-profile-v4-3b"
     },
     "role_tool_contract": {
       "sha256": "30fa4cb43a47c40d26b9ff6f83f712563f936cbd8eb0c5c798bad4f5f5e4da4a",
       "version": "g4-role-tool-contract-30fa4cb43a47"
-    },
-    "safety_envelope": {
-      "max_cluster_mutating_actions_per_hour": 10,
-      "max_tool_calls_per_incident": 50,
-      "reserved_remediation_tool_calls": 12
     },
     "scenario_fault_contract": {
       "chaos_kind": "StressChaos",
@@ -838,7 +875,7 @@
     }
   },
   "scenario_id": "single_fault/sf-002",
-  "started_at": "2026-08-30T09:01:24.387111+00:00",
+  "started_at": "2026-08-30T08:17:55.265387+00:00",
   "tier": "single_fault",
   "trigger_type": "manual coordinator trigger over a real independently observed cluster fault"
 }

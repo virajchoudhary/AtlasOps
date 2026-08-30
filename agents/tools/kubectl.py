@@ -27,6 +27,42 @@ VALID_ROLLOUT_KINDS = {
 }
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
+# Model-supplied strings reach kubectl as argv elements. There is no shell, so
+# shell metacharacters are inert, but a value beginning with '-' is still parsed
+# by kubectl as a flag (`--raw=...`, `--kubeconfig=...`, `--as=...`), which would
+# let a tool argument reach resources and identities the role ACL never granted.
+# Constrain each argument to the grammar its position actually accepts.
+_RESOURCE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9.-]*(,[a-z0-9][a-z0-9.-]*)*(/[a-z0-9][a-z0-9.-]*)?$"
+)
+# Object names are DNS *subdomains*: dots are legal and common. Custom resource
+# definitions are named `stresschaos.chaos-mesh.org`, so a DNS-1123 *label*
+# pattern rejects the very names cluster inspection surfaces.
+_K8S_OBJECT_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+# `kubectl logs` accepts a qualified workload reference as well as a pod name.
+_K8S_LOG_TARGET_RE = re.compile(
+    r"^([a-z]+/)?[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+)
+_ALLOWED_OUTPUT_FORMATS = frozenset({"json", "yaml", "wide", "name"})
+
+
+def _validate_resource(resource: str) -> str | None:
+    if not isinstance(resource, str) or not _RESOURCE_RE.match(resource.strip()):
+        return (
+            f"Invalid resource {resource!r}. Use lower-case resource types, "
+            "optionally comma-separated or as type/name."
+        )
+    return None
+
+
+def _validate_namespace(namespace: str, *, allow_all: bool = True) -> str | None:
+    text = str(namespace).strip()
+    if allow_all and text == "-A":
+        return None
+    if not _K8S_NAME_RE.match(text):
+        return f"Invalid namespace {namespace!r}."
+    return None
+
 
 def canonicalize_rollout_resource(resource: str) -> tuple[str | None, str | None]:
     """Validate and canonicalize a rollout resource reference.
@@ -89,11 +125,22 @@ def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
 
 def kubectl_get(resource: str, namespace: str = "-A", output: str = "json") -> dict[str, Any]:
     """Get Kubernetes resources. resource examples: 'pods', 'deployments', 'services'."""
-    cmd = ["kubectl", "get", resource, "-o", output]
-    if namespace == "-A":
+    error = _validate_resource(resource)
+    if error:
+        return {"error": error, "success": False}
+    error = _validate_namespace(namespace)
+    if error:
+        return {"error": error, "success": False}
+    if output not in _ALLOWED_OUTPUT_FORMATS:
+        return {
+            "error": f"Invalid output format {output!r}. Allowed: {sorted(_ALLOWED_OUTPUT_FORMATS)}.",
+            "success": False,
+        }
+    cmd = ["kubectl", "get", resource.strip(), "-o", output]
+    if str(namespace).strip() == "-A":
         cmd.append("-A")
     else:
-        cmd.extend(["-n", namespace])
+        cmd.extend(["-n", str(namespace).strip()])
     result = _run(cmd)
     if result.get("success") and output == "json":
         try:
@@ -105,15 +152,41 @@ def kubectl_get(resource: str, namespace: str = "-A", output: str = "json") -> d
 
 def kubectl_describe(resource: str, name: str, namespace: str = "default") -> dict[str, Any]:
     """Describe a specific Kubernetes resource."""
-    return _run(["kubectl", "describe", resource, name, "-n", namespace])
+    error = _validate_resource(resource) or _validate_namespace(namespace, allow_all=False)
+    if error:
+        return {"error": error, "success": False}
+    if not _K8S_OBJECT_NAME_RE.match(str(name).strip()):
+        return {"error": f"Invalid resource name {name!r}.", "success": False}
+    return _run(
+        ["kubectl", "describe", resource.strip(), str(name).strip(), "-n", str(namespace).strip()]
+    )
 
 
 def kubectl_logs(pod: str, namespace: str = "default", tail: int = 200,
                  container: str = "") -> dict[str, Any]:
     """Get pod logs."""
-    cmd = ["kubectl", "logs", pod, "-n", namespace, f"--tail={tail}"]
+    error = _validate_namespace(namespace, allow_all=False)
+    if error:
+        return {"error": error, "success": False}
+    if not _K8S_LOG_TARGET_RE.match(str(pod).strip()):
+        return {
+            "error": f"Invalid log target {pod!r}. Use a pod name or deployment/<name>.",
+            "success": False,
+        }
+    try:
+        tail_lines = int(tail)
+    except (TypeError, ValueError):
+        return {"error": f"Invalid tail value {tail!r}.", "success": False}
+    if not 1 <= tail_lines <= 5000:
+        return {"error": "tail must be between 1 and 5000", "success": False}
+    cmd = [
+        "kubectl", "logs", str(pod).strip(), "-n", str(namespace).strip(),
+        f"--tail={tail_lines}",
+    ]
     if container:
-        cmd.extend(["-c", container])
+        if not _K8S_OBJECT_NAME_RE.match(str(container).strip()):
+            return {"error": f"Invalid container name {container!r}.", "success": False}
+        cmd.extend(["-c", str(container).strip()])
     return _run(cmd, timeout=20)
 
 
@@ -192,11 +265,20 @@ def kubectl_rollout(action: str, resource: str, namespace: str = "default") -> d
 
 def kubectl_scale(deployment: str, replicas: int, namespace: str = "default") -> dict[str, Any]:
     """Scale a deployment to the given replica count."""
-    if not (0 <= replicas <= 20):
+    try:
+        replica_count = int(replicas)
+    except (TypeError, ValueError):
+        return {"error": f"Invalid replicas value {replicas!r}.", "success": False}
+    if not (0 <= replica_count <= 20):
         return {"error": "replicas must be 0–20", "success": False}
+    if not _K8S_NAME_RE.match(str(deployment).strip()):
+        return {"error": f"Invalid deployment name {deployment!r}.", "success": False}
+    error = _validate_namespace(namespace, allow_all=False)
+    if error:
+        return {"error": error, "success": False}
     return _run(
-        ["kubectl", "scale", "deployment", deployment,
-         f"--replicas={replicas}", "-n", namespace],
+        ["kubectl", "scale", "deployment", str(deployment).strip(),
+         f"--replicas={replica_count}", "-n", str(namespace).strip()],
         timeout=30,
     )
 

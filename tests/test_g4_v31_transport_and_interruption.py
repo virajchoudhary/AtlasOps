@@ -13,10 +13,15 @@ import agents.coordinator as coordinator
 from agents._http_retry import post_with_retry
 import config.g4_protocol as protocol
 from config.g4_protocol import (
+    APPROVED_G4_PROTOCOL_PROFILE,
     APPROVED_G4_V31_MODEL,
     APPROVED_G4_V31_MODEL_DIGEST,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V31_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V32_MODEL,
+    APPROVED_G4_V32_MODEL_DIGEST,
+    APPROVED_G4_V32_PROTOCOL_PROFILE,
+    APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
     APPROVED_G4_V3_PROTOCOL_PROFILE,
     protocol_fingerprint,
 )
@@ -31,44 +36,53 @@ def isolated_protocol_runtime(monkeypatch):
         lambda selected_model: {
             "provider": "ollama-local",
             "name": selected_model,
-            "digest": APPROVED_G4_V31_PROTOCOL_PROFILE["model"]["digest"],
+            "digest": APPROVED_G4_PROTOCOL_PROFILE["model"]["digest"],
         },
     )
     monkeypatch.setattr(
         runner,
         "_probe_metrics_server_contract",
-        lambda: APPROVED_G4_V31_PROTOCOL_PROFILE["metrics_api"],
+        lambda: APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
     )
 
 
-def test_coordinator_declares_v31_transport_constants():
-    assert coordinator.LLM_REQUEST_TIMEOUT_SECONDS == 300.0
+def test_coordinator_declares_v32_transport_constants():
+    assert coordinator.LLM_REQUEST_TIMEOUT_SECONDS == 600.0
     assert coordinator.LLM_MAX_ATTEMPTS == 2
     assert coordinator.LLM_BASE_BACKOFF_SECONDS == 1.5
 
 
-def test_v31_profile_declares_llm_transport_matching_coordinator():
+def test_v32_profile_declares_llm_transport_matching_coordinator():
     transport = protocol.llm_transport_profile()
     assert transport == {
+        "request_timeout_seconds": 600,
+        "max_attempts": 2,
+        "base_backoff_seconds": 1.5,
+    }
+    assert APPROVED_G4_V32_PROTOCOL_PROFILE["llm_transport"] == transport
+    assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == transport
+
+
+def test_historical_v31_profile_preserves_300s_transport():
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 300,
         "max_attempts": 2,
         "base_backoff_seconds": 1.5,
     }
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["llm_transport"] == transport
 
 
-def test_v31_preserves_7b_model_and_tool_contract():
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["model"]["name"] == "qwen2.5:7b-instruct"
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["model"]["digest"] == "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e"
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_TOOL_CONTRACT_SHA256
-    assert APPROVED_G4_V31_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V3_PROTOCOL_PROFILE["role_tool_contract"]["sha256"]
+def test_v32_preserves_7b_model_and_tool_contract():
+    assert APPROVED_G4_V32_PROTOCOL_PROFILE["model"]["name"] == "qwen2.5:7b-instruct"
+    assert APPROVED_G4_V32_PROTOCOL_PROFILE["model"]["digest"] == "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e"
+    assert APPROVED_G4_V32_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V32_TOOL_CONTRACT_SHA256
+    assert APPROVED_G4_V32_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_PROTOCOL_PROFILE["role_tool_contract"]["sha256"]
 
 
-def test_v3_fingerprint_immutable_and_differs_from_v31():
-    v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
+def test_v31_fingerprint_immutable_and_differs_from_v32():
     v31_fp = protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE)
-    assert v3_fp == "02ff4b95df55f3031d4e06d161f8b80393a6a508064c9b6172ffc4a205a210e0"
-    assert v31_fp != v3_fp
+    v32_fp = protocol_fingerprint(APPROVED_G4_V32_PROTOCOL_PROFILE)
+    assert v31_fp == "94758f5b7a24242f8fbb00f89b5cd0d5aec23d95dc02f6f0202442791726b561"
+    assert v32_fp != v31_fp
 
 
 @pytest.mark.asyncio

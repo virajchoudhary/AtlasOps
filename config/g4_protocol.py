@@ -54,13 +54,25 @@ APPROVED_G4_V31_LLM_TRANSPORT = {
     "base_backoff_seconds": 1.5,
 }
 
-# Active approved protocol declaration (defaults to prospective v3.1 profile)
-G4_PROTOCOL_MARKER = G4_V31_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V31_PROTOCOL_PROFILE_VERSION
-APPROVED_G4_MODEL = APPROVED_G4_V31_MODEL
-APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V31_MODEL_DIGEST
-APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V31_DIAGNOSIS_PROMPT_SHA256
-APPROVED_TOOL_CONTRACT_SHA256 = APPROVED_G4_V31_TOOL_CONTRACT_SHA256
+G4_V32_PROTOCOL_MARKER = "G4-RECOVERY-V3.2-2026-08-30"
+G4_V32_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.2"
+APPROVED_G4_V32_MODEL = "qwen2.5:7b-instruct"
+APPROVED_G4_V32_MODEL_DIGEST = "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e"
+APPROVED_G4_V32_DIAGNOSIS_PROMPT_SHA256 = "c9af943dff7b9b7b0d39a299a202a6c51bc0ce65c9f8f11680172f58cd457c1b"
+APPROVED_G4_V32_TOOL_CONTRACT_SHA256 = "cb824284bd9d9eaf5ddf1d57f2ea9f031a2d2863c194dfe94a85b2b31c915ae3"
+APPROVED_G4_V32_LLM_TRANSPORT = {
+    "request_timeout_seconds": 600,
+    "max_attempts": 2,
+    "base_backoff_seconds": 1.5,
+}
+
+# Active approved protocol declaration (defaults to prospective v3.2 profile)
+G4_PROTOCOL_MARKER = G4_V32_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V32_PROTOCOL_PROFILE_VERSION
+APPROVED_G4_MODEL = APPROVED_G4_V32_MODEL
+APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V32_MODEL_DIGEST
+APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V32_DIAGNOSIS_PROMPT_SHA256
+APPROVED_TOOL_CONTRACT_SHA256 = APPROVED_G4_V32_TOOL_CONTRACT_SHA256
 EXPECTED_METRICS_API_STATE = "required-present"
 
 METRICS_SERVER_CONTEXT = "kind-atlasops-local"
@@ -324,7 +336,37 @@ APPROVED_G4_V31_PROTOCOL_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V31_PROTOCOL_PROFILE
+APPROVED_G4_V32_PROTOCOL_PROFILE: dict[str, Any] = {
+    "protocol_marker": G4_V32_PROTOCOL_MARKER,
+    "profile_version": G4_V32_PROTOCOL_PROFILE_VERSION,
+    "model": {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_V32_MODEL,
+        "digest": APPROVED_G4_V32_MODEL_DIGEST,
+    },
+    "diagnosis_prompt": {
+        "path": "agents/prompts/diagnosis.md",
+        "version": G4_V32_PROTOCOL_PROFILE_VERSION,
+        "sha256": APPROVED_G4_V32_DIAGNOSIS_PROMPT_SHA256,
+    },
+    "role_tool_contract": {
+        "version": "g4-role-tool-contract-cb824284bd9d",
+        "sha256": APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
+    },
+    "llm_transport": {
+        "request_timeout_seconds": 600,
+        "max_attempts": 2,
+        "base_backoff_seconds": 1.5,
+    },
+    "f1_contract": _f1_contract(),
+    "scenario_fault_contract": _scenario_fault_contract(),
+    "metrics_api": {
+        **metrics_server_declaration(),
+        "live_config_sha256": expected_live_metrics_config_fingerprint(),
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V32_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

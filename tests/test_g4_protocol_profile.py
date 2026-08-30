@@ -30,10 +30,15 @@ from config.g4_protocol import (
     APPROVED_G4_V31_MODEL_DIGEST,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V31_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V32_MODEL,
+    APPROVED_G4_V32_MODEL_DIGEST,
+    APPROVED_G4_V32_PROTOCOL_PROFILE,
+    APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
     G4_V31_PROTOCOL_MARKER,
+    G4_V32_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -43,19 +48,30 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_v31_profile_pins_exact_model_and_digest():
+def test_approved_v32_profile_pins_exact_model_and_digest():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
+        "provider": "ollama-local",
+        "name": APPROVED_G4_V32_MODEL,
+        "digest": APPROVED_G4_V32_MODEL_DIGEST,
+    }
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V32_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V32_TOOL_CONTRACT_SHA256
+    assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
+        "request_timeout_seconds": 600,
+        "max_attempts": 2,
+        "base_backoff_seconds": 1.5,
+    }
+
+
+def test_historical_v31_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
         "name": APPROVED_G4_V31_MODEL,
         "digest": APPROVED_G4_V31_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V31_PROTOCOL_MARKER
-    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_TOOL_CONTRACT_SHA256
-    assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
-        "request_timeout_seconds": 300,
-        "max_attempts": 2,
-        "base_backoff_seconds": 1.5,
-    }
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["protocol_marker"] == G4_V31_PROTOCOL_MARKER
+    assert APPROVED_G4_V31_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V31_TOOL_CONTRACT_SHA256
+    assert protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE) == "94758f5b7a24242f8fbb00f89b5cd0d5aec23d95dc02f6f0202442791726b561"
 
 
 def test_historical_v3_profile_remains_exact_and_immutable():
@@ -80,20 +96,24 @@ def test_historical_v2_profile_remains_exact_and_immutable():
     assert protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE) == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
 
 
-def test_v31_fingerprint_differs_from_v3_and_v2():
+def test_v32_fingerprint_differs_from_v31_v3_and_v2():
     v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
     v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
     v31_fp = protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE)
-    assert v31_fp != v3_fp
-    assert v31_fp != v2_fp
+    v32_fp = protocol_fingerprint(APPROVED_G4_V32_PROTOCOL_PROFILE)
+    assert v32_fp != v31_fp
+    assert v32_fp != v3_fp
+    assert v32_fp != v2_fp
     assert v2_fp == "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3"
     assert v3_fp == "02ff4b95df55f3031d4e06d161f8b80393a6a508064c9b6172ffc4a205a210e0"
+    assert v31_fp == "94758f5b7a24242f8fbb00f89b5cd0d5aec23d95dc02f6f0202442791726b561"
 
 
-def test_v31_accounting_sees_zero_claimed_attempts_with_synthetic_historical_attempts(tmp_path):
+def test_v32_accounting_sees_zero_claimed_attempts_with_synthetic_historical_attempts(tmp_path):
     v2_fp = protocol_fingerprint(APPROVED_G4_V2_PROTOCOL_PROFILE)
     v3_fp = protocol_fingerprint(APPROVED_G4_V3_PROTOCOL_PROFILE)
     v31_fp = protocol_fingerprint(APPROVED_G4_V31_PROTOCOL_PROFILE)
+    v32_fp = protocol_fingerprint(APPROVED_G4_V32_PROTOCOL_PROFILE)
 
     attempts_dir = tmp_path / "artifacts" / "evidence" / "stage4" / ".attempts"
     attempts_dir.mkdir(parents=True)
@@ -116,6 +136,12 @@ def test_v31_accounting_sees_zero_claimed_attempts_with_synthetic_historical_att
         "protocol_marker": G4_V3_PROTOCOL_MARKER,
         "protocol_fingerprint": v3_fp,
     }
+    record_004 = {
+        "experiment_id": "EXP-STAGE4-SYNTH-004",
+        "state": runner.ATTEMPT_STATE_CONSUMED,
+        "protocol_marker": G4_V31_PROTOCOL_MARKER,
+        "protocol_fingerprint": v31_fp,
+    }
     (attempts_dir / "EXP-STAGE4-SYNTH-001.attempt.json").write_text(
         json.dumps(record_001), encoding="utf-8"
     )
@@ -125,10 +151,14 @@ def test_v31_accounting_sees_zero_claimed_attempts_with_synthetic_historical_att
     (attempts_dir / "EXP-STAGE4-SYNTH-003.attempt.json").write_text(
         json.dumps(record_003), encoding="utf-8"
     )
+    (attempts_dir / "EXP-STAGE4-SYNTH-004.attempt.json").write_text(
+        json.dumps(record_004), encoding="utf-8"
+    )
 
     assert runner._claimed_attempts_for_protocol_fingerprint(v2_fp, attempt_root=str(tmp_path)) == 2
     assert runner._claimed_attempts_for_protocol_fingerprint(v3_fp, attempt_root=str(tmp_path)) == 1
-    assert runner._claimed_attempts_for_protocol_fingerprint(v31_fp, attempt_root=str(tmp_path)) == 0
+    assert runner._claimed_attempts_for_protocol_fingerprint(v31_fp, attempt_root=str(tmp_path)) == 1
+    assert runner._claimed_attempts_for_protocol_fingerprint(v32_fp, attempt_root=str(tmp_path)) == 0
 
 
 def test_declared_prompt_and_tool_hashes_match_current_contract():

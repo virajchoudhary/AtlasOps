@@ -859,6 +859,7 @@ def _narrate_tool_call(role: str, tool: str, args: dict) -> str:
         "argocd_list_apps":      lambda a: "Checking Argo CD for recent deployments...",
         "argocd_app_history":    lambda a: f"Checking deploy history for {a.get('app','')}...",
         "argocd_rollback":       lambda a: f"Rolling back {a.get('app','')} to revision {a.get('revision','')}...",
+        "chaos_list_experiments": lambda a: "Checking for active Chaos Mesh fault injections...",
         "chaos_stop_experiment": lambda a: f"Stopping Chaos Mesh experiment {a.get('kind','')} {a.get('name','')} in {a.get('namespace','chaos-mesh')}...",
         "gcloud_logs_read":      lambda a: f"Reading Cloud Logging: `{str(a.get('filter_query',''))[:80]}`",
         "cloud_monitoring_query":lambda a: f"Querying GCP metric: {a.get('metric_type','')}",
@@ -883,6 +884,7 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
         "promql_query":           f"Got metric data — analysing values.",
         "jaeger_search":          f"Found traces — checking for slow spans.",
         "argocd_rollback":        "✅ Rollback executed.",
+        "chaos_list_experiments": "Enumerated active chaos experiments.",
         "chaos_stop_experiment":  "✅ Chaos experiment stopped and cleared.",
         "kubectl_scale":          "✅ Scale applied.",
         "postmortem_draft":       "✅ Postmortem saved.",
@@ -943,6 +945,16 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
     "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
     "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
+    "chaos_list_experiments": {
+        "type": "object",
+        "properties": {
+            "namespace": {
+                "type": "string",
+                "description": "Namespace to scope the query, or '-A' for all namespaces (default).",
+            },
+        },
+        "additionalProperties": False,
+    },
     "chaos_stop_experiment": {
         "type": "object",
         "properties": {
@@ -969,6 +981,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "kubectl_get": (
         "Get a Kubernetes built-in or custom resource type. "
         "Use customresourcedefinitions to discover installed custom resource types."
+    ),
+    "chaos_list_experiments": (
+        "List active Chaos Mesh fault-injection experiments with their exact kind, name, "
+        "namespace and target selector. Read-only. Call this whenever a workload is degraded "
+        "with no corresponding deploy or config change: an active experiment here IS the root "
+        "cause, and its `name` is the argument chaos_stop_experiment requires."
     ),
     "kubectl_rollout": (
         "Manage the rollout of a deployment, statefulset, or daemonset (undo, status, history). "

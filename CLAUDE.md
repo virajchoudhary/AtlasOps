@@ -4,17 +4,23 @@
 Multi-agent SRE incident response platform for the **AMD Developer Hackathon (lablab.ai)**.
 Submission deadline: **May 10, 2026 — 7:00 PM UTC (12:30 AM IST May 11)**
 
-## GCP Infrastructure (LIVE — costs money)
-- **Project:** `cloudsre-v3-amd`
-- **Cluster:** `atlasops` (was `cloudsre-v3`), GKE Standard, `us-central1`, 3× e2-standard-4
-- **Grafana:** `http://136.119.60.129` (admin / cloudsre-admin)
-- **Online Boutique:** `http://34.132.118.204`
-- **Argo CD:** `https://34.122.132.237`
-- **Cloud SQL:** `cloudsre-cart-db` (Postgres 15, `34.60.234.86`)
-- **PubSub topics:** `cloudsre-checkout-events`, `cloudsre-alerts`
-- **Prometheus:** `http://34.31.150.33:9090` (LoadBalancer — exposed May 9)
-- **Alertmanager:** `http://34.135.158.165:9093` (LoadBalancer — exposed May 9)
-- **Jaeger:** `http://104.198.218.251:16686` (LoadBalancer `jaeger-ui` service — exposed May 9)
+## GCP Infrastructure — inherited, NOT the canonical environment
+
+> **Credential redaction.** This section previously published a Grafana admin
+> password and the public IPs of seven internet-exposed upstream services. Those
+> values are inherited from the upstream baseline and remain in this repository's
+> public Git history, so deleting them here does **not** revoke anything — the
+> owner of `cloudsre-v3-amd` must rotate the Grafana credential and reconsider
+> the LoadBalancer exposure. Endpoints now come from environment variables only.
+
+Pipeline v1.1 is free-first: the canonical Stage 3 environment is a **local Kind
+cluster** (`infra/local/setup_local.sh`), not GKE. The GKE path is retained as
+optional portability code and is not required to reproduce any result here.
+
+Endpoints are supplied at runtime, never committed:
+`GRAFANA_URL`, `ARGOCD_URL`, `PROMETHEUS_URL`, `ALERTMANAGER_URL`, `JAEGER_URL`.
+Credentials come from `ARGOCD_USER` / `ARGOCD_PASS` / `ATLASOPS_API_KEY` /
+`ATLASOPS_AUDIT_SECRET` via the secret store described in `SECURITY.md`.
 
 ## kubectl / gcloud
 ```powershell
@@ -47,7 +53,7 @@ $helm    = "C:\Users\NSEIT\AppData\Local\Microsoft\WinGet\Packages\Helm.Helm_Mic
 - `agents/stream.py` — real-time thought streaming (SSE + 3s poll in dashboard)
 - `agents/adversarial_designer.py` — 72B judge generates dynamic chaos scenarios
 - `agents/judge.py` — scores agent trajectories
-- `agents/tools/` — 22 registered SRE tool wrappers; 19 agent-exposed
+- `agents/tools/` — 24 registered SRE tool wrappers; 19 agent-exposed
 - `agents/prompts/` — triage / diagnosis / remediation / comms system prompts
 - `bench/runner.py` — benchmark harness, generates adversarial scenarios before run
 - `bench/chaos_manifests/` — sf-001..008, cs-001..005, mf-001..005, named_replays/

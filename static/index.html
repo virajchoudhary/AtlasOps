@@ -1301,13 +1301,13 @@
       <span style="font-size:24px">🐙</span>
       <div><div style="font-size:12px;font-weight:700;color:var(--text)">GitHub Repository</div><div style="font-size:10px;color:var(--textdim)">Harikishanth/AtlasOps · MIT License</div></div>
     </a>
-    <a href="http://136.119.60.129" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(11,17,32,0.8);border:1px solid var(--border);border-radius:10px;padding:16px;text-decoration:none;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'">
+    <a id="links-grafana" href="#" data-requires-config="grafana_url" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(11,17,32,0.8);border:1px solid var(--border);border-radius:10px;padding:16px;text-decoration:none;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--yellow)'" onmouseout="this.style.borderColor='var(--border)'">
       <span style="font-size:24px">📊</span>
-      <div><div style="font-size:12px;font-weight:700;color:var(--text)">Live Grafana</div><div style="font-size:10px;color:var(--textdim)">Real GKE metrics · us-central1</div></div>
+      <div><div style="font-size:12px;font-weight:700;color:var(--text)">Grafana</div><div style="font-size:10px;color:var(--textdim)" id="links-grafana-sub">Set GRAFANA_URL to enable</div></div>
     </a>
-    <a href="http://34.132.118.204" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(11,17,32,0.8);border:1px solid var(--border);border-radius:10px;padding:16px;text-decoration:none;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'">
+    <a id="links-boutique" href="#" data-requires-config="boutique_url" target="_blank" style="display:flex;align-items:center;gap:12px;background:rgba(11,17,32,0.8);border:1px solid var(--border);border-radius:10px;padding:16px;text-decoration:none;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'">
       <span style="font-size:24px">🛍</span>
-      <div><div style="font-size:12px;font-weight:700;color:var(--text)">Online Boutique</div><div style="font-size:10px;color:var(--textdim)">Live target application · GKE</div></div>
+      <div><div style="font-size:12px;font-weight:700;color:var(--text)">Online Boutique</div><div style="font-size:10px;color:var(--textdim)" id="links-boutique-sub">Set BOUTIQUE_URL to enable</div></div>
     </a>
   </div>
 
@@ -1673,6 +1673,18 @@ async function loadRuntimeConfig() {
       gfLink.href = cfg.grafana_url;
       gfLink.textContent = 'Grafana ↗';
     }
+    // Endpoint links are resolved at runtime; addresses are never baked into the page.
+    document.querySelectorAll('[data-requires-config]').forEach(el => {
+      const url = cfg[el.dataset.requiresConfig];
+      const sub = document.getElementById(el.id + '-sub');
+      if (url) {
+        el.href = url;
+        if (sub) sub.textContent = url;
+      } else {
+        el.removeAttribute('href');
+        el.style.opacity = '0.45';
+      }
+    });
     // Prometheus polling uses GET /metrics (FastAPI proxy) — no browser CORS issues
   } catch (_) {}
 }

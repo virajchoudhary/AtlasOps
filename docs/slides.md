@@ -113,6 +113,19 @@ style: |
 
 ---
 
+<!-- INHERITED-CLAIMS-NOTICE -->
+> [!WARNING]
+> **These slides carry inherited upstream figures that this team has NOT reproduced.**
+> The 54% / 68% / 82% resolution rates, 0.729 judge reward, and MI300X training curves
+> were produced by the original authors of Harikishanth/AtlasOps on hardware this team has
+> not run. Several defects found since — an unobservable benchmark goal state, a GRPO
+> reward that could never award resolution, an uncoupled policy gradient, a judge outage
+> that outscored a working judge, and `scenario_id` leaking into the model-visible prompt
+> — mean these figures cannot be read as measurements of the current system.
+> Do not present them as our results. Current verified status:
+> `docs/project/MASTER_PIPELINE_STATUS.md`.
+
+
 <!-- _paginate: false -->
 <!-- _backgroundColor: #060A12 -->
 

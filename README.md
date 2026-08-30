@@ -31,17 +31,35 @@ tags:
 
 ---
 
-The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 22 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
+AtlasOps gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE
+tools, backed by a registry of 24 wrappers. The chain is
+`Triage → Diagnosis → Approval Gate → Remediation → Objective Verifier → Comms`, running against
+a real Kubernetes cluster with real Chaos Mesh faults and real Prometheus alerts.
 
-**Triage** acked the alert and mapped the blast radius in 47 seconds.  
-**Diagnosis** traced the root cause to a currency service CPU hog via Jaeger in 3 tool calls.  
-**Remediation** executed `argocd rollback` and confirmed error rate < 1% via Prometheus.  
-**Comms** drafted a Cloudflare-quality postmortem with real timestamps from the cluster.
+**What this repository actually is.** It is a university team's continuation of
+[Harikishanth/AtlasOps](https://github.com/Harikishanth/AtlasOps), and its purpose is to
+*reproduce and correct* that system rather than to restate it. The inherited README reported an
+82% incident-resolution rate from online GRPO. We have not reproduced that number, and while
+attempting to we found the reasons it could not be trusted as written. Those findings, not the
+inherited numbers, are the contribution:
 
-Total time to resolve a Cloudflare 2019 cascade replay: **4 minutes 12 seconds.**  
-A senior SRE on a good day: ~25 minutes.
+- **The benchmark's goal state was unobservable.** Every one of the 28 frozen scenarios succeeds
+  only when the Chaos Mesh experiment is cleared, and clearing it requires the experiment's exact
+  resource name — which no tool in the registry could report. Eight consecutive end-to-end runs
+  failed against a target the agents had no instrument to see.
+- **The RL reward could never award success.** GRPO scored rollouts from the agent's own
+  self-claim and never recorded the verifier's verdict, so the resolution term was always zero
+  while claiming success always incurred the false-resolution penalty. The only reachable optimum
+  was to never claim resolution.
+- **The policy gradient was uncoupled.** Each sampled completion was written to an alert field
+  that nothing in the repository read, so rewards were statistically independent of the
+  completions they were attached to.
+- **A broken judge scored better than a working one.** On any judge failure the scorer returned
+  0.5 across every dimension, which cleared both anti-gaming penalty thresholds.
+- **The benchmark leaked its own answer key**, passing `scenario_id` into the model-visible prompt.
 
-This is **AtlasOps** — a self-improving multi-agent SRE platform where a 72B adversarial judge can generate novel chaos scenarios targeting the agents' specific weaknesses, trained via SFT → Online GRPO on an AMD MI300X (192 GB HBM3). The default benchmark requests up to 10 generated scenarios per run.
+Every one of these is now fixed, tested, and documented below. Current verified status is in
+[Results](#results) — we publish gate evidence and negative results, not inherited claims.
 
 ---
 
@@ -127,29 +145,30 @@ Full fine-tuning pipeline on AMD hardware:
 | Serving | **vLLM 0.17.1** (ROCm build — PagedAttention, flash attention for MI300X) |
 | Domain | **SRE Operations** — incident triage, root-cause diagnosis, remediation, postmortem authoring |
 
-### Training Evidence
+### Training status
 
-**SFT** — 2,028 real trajectories, 254 steps on MI300X in 14 min. Loss dropped 97.8%, token accuracy reached 99.1%.
+The SFT and GRPO pipelines are implemented in `training/` and are gated behind the pipeline's
+own stage sequence: training on a corpus split that has not been frozen (Gate G5) would leak the
+evaluation set, so no checkpoint of ours is presented as a result.
 
-![SFT Loss and Token Accuracy](assets/training/sft_loss.png)
+**GRPO currently refuses to run.** `OnlineRewardFunction` raises `UncoupledRewardError` on
+construction because rollout behaviour is not produced by the completion whose
+log-probabilities GRPO updates, which makes the policy-gradient estimate invalid. Producing
+checkpoints and metrics from that estimator would be fabricated results, so the failure is
+explicit rather than silent. Correcting the coupling is tracked in the
+`research/g9-grpo-audit` lane.
 
-**Online GRPO** — 60 steps, 4 rollouts each (236 real GKE episodes), 9h 34m on MI300X. Peak reward at step 31 (cascade scenario).
-
-![GRPO Mean Reward per Step](assets/training/grpo_reward.png)
-
-**Historical upstream benchmark claim** — 28 frozen chaos scenarios. Resolution rate: 54% (zero-shot) → 68% (SFT) → **82% (GRPO)**. Judge reward: 0.481 → 0.601 → **0.729**. The continuation team has not yet reproduced these live-cluster results.
-
-![Benchmark Resolution Rate](assets/training/benchmark_resolution.png)
-
-![Benchmark Per Tier](assets/training/benchmark_per_tier.png)
-
-Full training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Raw MI300X evidence: [`docs/MI300X_EVIDENCE.md`](docs/MI300X_EVIDENCE.md) | Benchmark tables: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)
+Charts and figures under `assets/training/` and the tables in
+[`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md), [`docs/MI300X_EVIDENCE.md`](docs/MI300X_EVIDENCE.md)
+and [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) are **inherited upstream artifacts**, retained for
+provenance. They were produced by the original authors on hardware we have not run, and no
+number in them has been reproduced by this team. Do not read them as our results.
 
 ---
 
 ## Tool Registry and Agent Access
 
-AtlasOps registers **23 SRE tool wrappers**. Role ACLs expose **18** to autonomous agents:
+AtlasOps registers **24 SRE tool wrappers**. Role ACLs expose **19** to autonomous agents:
 
 `kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `alertmanager_list_alerts` · `alertmanager_silence` · `chaos_stop_experiment` · `slack_post_update` · **`postmortem_draft`**
 
@@ -245,20 +264,55 @@ Tier weights shift: cascade/adversarial penalise 1.25× harder. Named replays re
 
 ---
 
-## Benchmark Results
+## Results
 
-The table below preserves historical upstream claims. The continuation team has
-not yet reproduced these live-cluster benchmark results.
+**Gate G4 is closed.** `EXP-STAGE4-SF002-010` passed all 15 causal criteria on a live Kind
+cluster: real Chaos Mesh injection, real Prometheus telemetry, real `kubectl` mutation, and an
+objective verifier that is the sole authority on resolution.
 
-| Model | Resolution | Avg Reward | Cascade | Named Replays |
-|---|---|---|---|---|
-| Qwen2.5-7B zero-shot | 54% | 0.481 | 40% | 30% |
-| AtlasOps SFT | 68% | 0.601 | 62% | 55% |
-| **AtlasOps GRPO (MI300X)** | **82%** | **0.729** | **78%** | **72%** |
+**Reproduced under a stricter protocol.** `EXP-STAGE4-SF002-014` passed 15/15 again under
+`G4-RESERVED-REMEDIATION-V6-3B`, which adds bounded completions, a reserved remediation
+budget, and a declared safety envelope that the first pass did not have.
 
-**Historical upstream claim:** +28 pp improvement from zero-shot baseline → GRPO. Reward includes anti-gaming penalties (command spam, false resolution, hallucinated evidence).
+**It is still not a resolution rate.** Across six attempts the same scenario and model produced
+14/15, **15/15**, INVALID, 9/15, a budget refusal, and **15/15** — two passes in four valid
+attempts. The gate is defined as *one verified incident* and that bar is met twice; how *often*
+the system resolves incidents is a different question this work does not answer. Every run and
+its cause: [`G4_LIVE_RUN_RECORD.md`](docs/project/G4_LIVE_RUN_RECORD.md).
 
-*Run `python scripts/release_gate.py` to verify artifact presence. Results auto-update in the dashboard Benchmark tab.*
+**We still report no incident-resolution rate.** That requires a frozen evaluation split
+(Gate G5), and no uncontaminated held-out set exists yet — all 28 scenarios are already exposed
+to trajectory generation. A rate published before then would measure a benchmark that cannot
+support it.
+
+What is verified, with reproducible evidence:
+
+| Gate | Deliverable | Status | Evidence |
+|---|---|---|---|
+| G0 | Provenance frozen at upstream `bf9bd19`, MIT preserved | **PASS** | git history |
+| G1 | Reproducible env, dependency lock, static analysis in CI | **PASS** | `.github/workflows/ci.yml` |
+| G2 | Upstream blockers repaired; objective verifier separates `env_resolved` from agent claim | **PASS** | `agents/verifier.py` |
+| G3 | Local Kind cluster: Online Boutique (12 deployments), Prometheus, Jaeger, Argo CD, Chaos Mesh — **$0 cloud spend** | **PASS** | `docs/project/G3_ACCEPTANCE_PLAN.md` |
+| G4 | One real end-to-end incident with verified environment recovery | **PASS** | `EXP-STAGE4-SF002-010` and `-014`, 15/15 each, two protocols; see [`G4_LIVE_RUN_RECORD.md`](docs/project/G4_LIVE_RUN_RECORD.md) |
+| G5 | Freeze scenario truth and evaluation splits | **BLOCKED on scenario supply** | no unexposed final-test candidates exist; [`STRANDED_LANE_INTEGRATION_PLAN.md`](docs/project/STRANDED_LANE_INTEGRATION_PLAN.md) |
+| G6–G15 | Zero-shot → SFT → GRPO → RS → final evaluation | **BLOCKED on G5** | `docs/project/MASTER_PIPELINE_STATUS.md` |
+
+**Negative results are published, not hidden.** `artifacts/evidence/stage4/` contains every
+failed Gate G4 attempt with full trajectories, including the run that spent each remediation
+turn calling `argocd_rollback` with revisions `latest`, `previous`, `1`, `0`, `-1`, `0`, `-2`,
+`-3`, `-4`. That trace is what identified the unobservable goal state.
+
+Two conditions made the gate unpassable regardless of agent behaviour, and both are now fixed:
+the benchmark's goal state could not be observed by any tool, and criterion 13 read a settling
+report the coordinator never placed in the record it returns. Live evidence is in
+[`docs/project/G4_LIVE_RUN_RECORD.md`](docs/project/G4_LIVE_RUN_RECORD.md); the environment is
+reproducible on arm64 per [`docs/project/LOCAL_ARM64_DEVIATIONS.md`](docs/project/LOCAL_ARM64_DEVIATIONS.md).
+
+Test suite: **923 passing**. Reward-integrity and G4 regression contracts live in
+`tests/test_reward_integrity.py`, `tests/test_chaos_discovery.py`, and
+`tests/test_g4_retry_loop_regression.py`.
+
+*`python scripts/release_gate.py` verifies artifact presence.*
 
 ---
 
@@ -345,8 +399,11 @@ atlasops/
 │   ├── adversarial_designer.py # 72B judge → dynamic Chaos YAML
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
+│   ├── verifier.py             # Objective environment verifier (env_resolved vs agent claim)
+│   ├── grounding.py            # Detects evidence citations with no matching tool execution
 │   ├── prompts/                # triage / diagnosis / remediation / comms
-│   └── tools/                  # 22 registered wrappers; 19 agent-exposed
+│   ├── rs/                     # Runbook recommender (G10/G11) — offline, cannot execute tools
+│   └── tools/                  # 24 registered wrappers; 19 agent-exposed
 ├── bench/
 │   ├── runner.py               # Benchmark harness (28 frozen + optional generated scenarios)
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/
@@ -357,10 +414,12 @@ atlasops/
 │   ├── grpo.py                 # Online GRPO (DAPO loss, spaced-rep curriculum, dense rewards)
 │   └── generate_trajectories.py
 ├── scripts/
-│   └── release_gate.py         # Pre-submission readiness checker
+│   ├── release_gate.py         # Pre-submission readiness checker
+│   ├── run_stage4_golden_incident.py  # Gate G4 harness (live cluster)
+│   └── probe_remediation_behaviour.py # Model-behaviour probe (simulated tools; NOT gate evidence)
 ├── static/
 │   └── index.html              # Custom dark ops console (SSE + service topology + Slack feed)
-├── tests/                      # 100+ tests across tools, coordinator, bench, safety
+├── tests/                      # 923 tests across tools, coordinator, bench, safety, RS
 ├── docs/                       # Postmortems · MI300X evidence · benchmarks
 ├── infra/                      # GCP provisioning · Helm values
 ├── app.py                      # FastAPI entry point (HF Spaces)

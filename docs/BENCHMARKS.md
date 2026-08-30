@@ -1,5 +1,17 @@
 # AtlasOps — Benchmark Results
 
+> [!WARNING]
+> **Inherited upstream artifact — not reproduced by this team.**
+> Every figure below was produced by the original authors of
+> [Harikishanth/AtlasOps](https://github.com/Harikishanth/AtlasOps) on hardware this team
+> has not run. None of it has been reproduced here, and several defects found since —
+> an unobservable benchmark goal state, a GRPO reward that could never award resolution,
+> an uncoupled policy gradient, a judge outage that scored better than a working judge,
+> and `scenario_id` leaking into the model-visible prompt — mean these numbers cannot be
+> read as measurements of the current system. Retained for provenance only.
+> Current verified status: [`docs/project/MASTER_PIPELINE_STATUS.md`](project/MASTER_PIPELINE_STATUS.md).
+
+
 > Historical upstream result record. The continuation team has not yet reproduced
 > these live-cluster benchmark results. The active static catalogue contract is 28
 > frozen scenarios; the runner separately requests up to 10 dynamically generated

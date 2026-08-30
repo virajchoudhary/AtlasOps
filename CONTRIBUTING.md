@@ -67,3 +67,37 @@ fixtures.
 
 Never commit credentials, tokens, kubeconfigs, service-account material, provider keys,
 or other secrets. Use environment variables and approved secret stores.
+
+## Local validation
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/ruff check . --select E9,F63,F7,F821
+```
+
+The full suite must be green before a pull request. GRPO and SFT contract tests run
+without the `train` extra: `training/grpo.py` imports torch/peft/trl lazily so its reward
+and rollout accounting stay testable on a machine with no GPU stack.
+
+### macOS
+
+Two host defaults make `tests/test_bootstrap_lifecycle.py` fail for reasons unrelated to
+the code — the provisioning scripts shell out to `bash` and to `python`:
+
+```bash
+brew install bash          # macOS ships bash 3.2; infra/setup_impl.sh needs 4+
+PATH="$PWD/.venv/bin:/opt/homebrew/bin:$PATH" .venv/bin/python -m pytest tests/ -q
+```
+
+Putting `.venv/bin` first is what lets the subprocess find `bcrypt`, which the Argo CD
+credential derivation requires before any cloud mutation. With both in place the suite is
+green on macOS; without them six bootstrap tests fail on environment, not behaviour.
+
+## Live cluster work
+
+Provisioning, Chaos Mesh injection, and Stage 4 golden-incident runs mutate a real
+cluster and require explicit authorization per `AGENTS.md`. The canonical environment is
+a local Kind cluster (`infra/local/setup_local.sh`) at **$0 external cost**; GKE is
+optional portability code.

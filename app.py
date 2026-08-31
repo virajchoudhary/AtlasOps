@@ -259,6 +259,74 @@ async def comparison_table_markdown():
     return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
+@coordinator_app.get("/scenarios")
+@app.get("/api/scenarios")
+async def get_scenarios_list():
+    from config.scenario_catalog import SCENARIO_CATALOG
+    scenarios = [
+        {
+            "scenario_id": s.scenario_id,
+            "tier": s.tier,
+            "expected_alert": s.expected_alert,
+            "target_services": list(s.target_services),
+            "description": s.description,
+        }
+        for s in SCENARIO_CATALOG.values()
+    ]
+    return JSONResponse({"scenarios": scenarios})
+
+
+class RecommenderQueryRequest(BaseModel):
+    alert_name: str
+    service: str
+    symptoms: str = ""
+    top_k: int = 3
+
+
+@coordinator_app.post("/recommender/recommend")
+@app.post("/api/recommender/recommend")
+async def query_recommender_endpoint(body: RecommenderQueryRequest):
+    from recommender.dataset import load_interactions
+    from recommender.hybrid import HybridRecommender
+    ckpt_path = Path("artifacts/models/hybrid_recommender.json")
+    if ckpt_path.exists():
+        recommender = HybridRecommender.load_checkpoint(ckpt_path)
+    else:
+        recommender = HybridRecommender().fit(load_interactions())
+
+    query = {
+        "alertname": body.alert_name,
+        "affected_services": [body.service],
+        "symptoms_text": body.symptoms,
+        "tier": "single_fault",
+    }
+    recs = recommender.recommend_runbooks(query, k=body.top_k)
+    return JSONResponse({
+        "query": {"alert_name": body.alert_name, "service": body.service, "symptoms": body.symptoms},
+        "recommendations": [
+            {
+                "runbook_id": r.runbook_id,
+                "title": r.title,
+                "category": r.category,
+                "score": round(r.score, 4),
+                "explanation": r.explanation,
+                "suggested_tools": r.suggested_tools,
+                "action_sequence": r.actions,
+            }
+            for r in recs
+        ],
+    })
+
+
+@coordinator_app.get("/ablation-matrix")
+@app.get("/api/ablation-matrix")
+async def get_ablation_matrix_endpoint():
+    p = Path("artifacts/evidence/stage13/ablation_benchmark_results.json")
+    if p.exists():
+        return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+    return JSONResponse({"error": "Ablation results not found"}, 404)
+
+
 @app.get("/health")
 async def health():
     from agents.coordinator import _live_judge_requested

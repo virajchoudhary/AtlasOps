@@ -1171,10 +1171,41 @@ async def handle_incident(
         severity = _extract_severity({"triage": triage.get("final", {})})
         approval_mode = approval_mode_for_severity(severity)
         approval_record = {"mode": approval_mode, "severity": severity}
+
+        # ── Stage 12: Integrated Recommender System Step ──────────────────────
+        recommended_runbooks: list[dict[str, Any]] = []
+        try:
+            from recommender.dataset import load_interactions
+            from recommender.hybrid import HybridRecommender
+
+            ckpt_path = Path("artifacts/models/hybrid_recommender.json")
+            if ckpt_path.exists():
+                recommender_model = HybridRecommender.load_checkpoint(ckpt_path)
+            else:
+                recommender_model = HybridRecommender().fit(load_interactions())
+
+            rec_query = {
+                "alertname": alert.get("commonLabels", {}).get("alertname", ""),
+                "affected_services": triage.get("final", {}).get("affected_services", []),
+                "symptoms_text": diagnosis.get("final", {}).get("root_cause", ""),
+                "tier": alert.get("tier", "single_fault"),
+            }
+            recs = recommender_model.recommend_runbooks(rec_query, k=3)
+            recommended_runbooks = [rec.to_dict() for rec in recs]
+            thought_emit(
+                "remediation",
+                "tool_call",
+                f"Recommender System recommended {len(recommended_runbooks)} runbooks: {', '.join(r['runbook_id'] for r in recommended_runbooks)}",
+                tool="runbook_recommender",
+            )
+        except Exception as e:
+            log.warning("Runbook recommender execution failed: %s", e)
+
         remediation_input = {
             "incident_id": incident_id,
             "triage": triage["final"],
             "diagnosis": diagnosis["final"],
+            "recommended_runbooks": recommended_runbooks,
             "approval_mode": approval_mode,
         }
         if approval_mode == "manual":
@@ -1359,6 +1390,7 @@ async def handle_incident(
             "approval": approval_record,
             "triage": triage,
             "diagnosis": diagnosis,
+            "recommender": {"recommended_runbooks": recommended_runbooks},
             "remediation": remediation,
             "verification": verification_dict,
             "agent_claimed_resolved": agent_claimed_resolved,

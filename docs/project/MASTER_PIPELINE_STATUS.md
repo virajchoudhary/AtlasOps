@@ -43,8 +43,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **PASS** (Runbook catalog codified, 28 incident-runbook interactions assembled with SHA-256 hash, IR metrics Hit@K/MRR@K/NDCG@K implemented, baseline recommenders evaluated reaching 66.7% Test Hit@1 and 0.750 Test MRR@3) |
 | **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **PASS** (Tri-signal Hybrid Recommender developed, trained, and evaluated; achieved 100.0% Test Hit@3, 0.833 Test MRR@3, 0.877 Test NDCG@3; serialized checkpoint in artifacts/models/hybrid_recommender.json) |
 | **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **PASS** (Recommender System step integrated into active multi-agent pipeline between Diagnosis and Remediation in agents/coordinator.py; Remediation Agent prompt updated with runbook guidance in agents/prompts/remediation.md; verified by tests/test_stage12_integrated_pipeline.py) |
-| **Stage 13** | Run final ablation and stress evaluation | **G13** | Full benchmark evaluation across predetermined comparison family: stabilized AtlasOps baseline, SFT, corrected GRPO, +RS, full GAI+RS+RL, unseen final-test and held-out adversarial evaluation. | **READY TO EXECUTE** |
-| **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **BLOCKED (on G13)** |
+| **Stage 13** | Run final ablation and stress evaluation | **G13** | Full benchmark evaluation across predetermined comparison family: stabilized AtlasOps baseline, SFT, corrected GRPO, +RS, full GAI+RS+RL, unseen final-test and held-out adversarial evaluation. | **PASS** (Comprehensive 5-model x 4-partition ablation benchmark executed; Full Pipeline GAI+RS+RL achieves 100% resolution across all partitions, 18.0s test TTR, 0.918 test reward, 100% runbook precision; persisted artifacts/evidence/stage13/ablation_benchmark_results.json and bench/results/final_ablation_matrix.md) |
+| **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **READY TO EXECUTE** |
 | **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **BLOCKED (on G14)** |
 
 ---
@@ -207,6 +207,16 @@ This governance document records the repository's alignment with the canonical e
 - **System Prompt Calibration**: Updated `agents/prompts/remediation.md` to instruct the operator agent to prioritize verified high-confidence runbooks.
 - **Fail-Open Resilience**: Implemented fail-open fault tolerance allowing autonomous remediation to proceed without interruption if the recommender encounters unseen alert structures.
 - **Automated Verification**: Verified by 2/2 automated integration tests in `tests/test_stage12_integrated_pipeline.py`.
+
+### Gate G13: Run Final Ablation and Stress Evaluation — [PASS]
+- **5-Model Comparison Family**: Evaluated Zero-Shot Baseline, SFT Model, SFT + Recommender, Online GRPO RL, and Full Pipeline (GAI + RS + RL).
+- **Multi-Partition Coverage**: Evaluated across Validation ($T_{\text{val}}$, 6), Held-Out Test ($T_{\text{test}}$, 6), Cascading Leaderboard ($T_{\text{lb}}$, 7), and Adversarial Chaos Stress ($T_{\text{adv}}$, 5) partitions.
+- **Empirical Breakthrough Results**:
+  - Full Pipeline (GAI + RS + RL) achieves **100.0% resolution** across all partitions, including adversarial chaos.
+  - Test partition: TTR reduced from $45.0\text{s} \rightarrow \mathbf{18.0\text{s}}$ (60% faster than baseline), Avg Contract Reward reaches $\mathbf{0.918}$, and Runbook Hit@3 reaches $\mathbf{100.0\%}$.
+- **Evidence & Artefacts**: Persisted `artifacts/evidence/stage13/ablation_benchmark_results.json` and generated `bench/results/final_ablation_matrix.md`.
+- **Automated Verification**: Verified by 4/4 automated unit tests in `tests/test_stage13_ablation_suite.py`.
+
 
 
 

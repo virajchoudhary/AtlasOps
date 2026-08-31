@@ -27,35 +27,67 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from trl import GRPOConfig, GRPOTrainer
+try:
+    from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from trl import GRPOConfig, GRPOTrainer
+    _HAS_TORCH_RL = True
+except ImportError:
+    LoraConfig = Any  # type: ignore
+    TaskType = Any  # type: ignore
+    get_peft_model = None  # type: ignore
+    prepare_model_for_kbit_training = None  # type: ignore
+    AutoModelForCausalLM = None  # type: ignore
+    AutoTokenizer = None  # type: ignore
+    BitsAndBytesConfig = None  # type: ignore
+    GRPOConfig = None  # type: ignore
+    GRPOTrainer = None  # type: ignore
+    _HAS_TORCH_RL = False
+
 from config.runtime import (
     SCENARIOS_BY_TIER, TIER_SAMPLING_WEIGHTS, evaluate_reward_contract,
     CurriculumManager,
 )
+from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
 
 log = logging.getLogger(__name__)
 
 
+def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[float]:
+    """Compute group-relative advantages across G rollouts: A_i = (r_i - mean) / (std + eps)."""
+    if not rewards:
+        return []
+    n = len(rewards)
+    if n == 1:
+        return [0.0]
+    mean = sum(rewards) / n
+    variance = sum((r - mean) ** 2 for r in rewards) / n
+    std = variance ** 0.5
+    return [round((r - mean) / (std + eps), 4) for r in rewards]
+
+
 # ── QLoRA config ──────────────────────────────────────────────────────────────
 
-LORA_CONFIG = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    r=16,
-    lora_alpha=32,
-    lora_dropout=0.05,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                    "gate_proj", "up_proj", "down_proj"],
-    bias="none",
-)
+if _HAS_TORCH_RL:
+    LORA_CONFIG = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=16,
+        lora_alpha=32,
+        lora_dropout=0.05,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                        "gate_proj", "up_proj", "down_proj"],
+        bias="none",
+    )
 
-BNBCONFIG = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype="bfloat16",
-    bnb_4bit_use_double_quant=True,
-)
+    BNBCONFIG = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype="bfloat16",
+        bnb_4bit_use_double_quant=True,
+    )
+else:
+    LORA_CONFIG = None
+    BNBCONFIG = None
 
 
 # ── Reward contract ───────────────────────────────────────────────────────────
@@ -82,13 +114,24 @@ def compute_reward(episode: dict) -> float:
 
 
 def sample_scenario(tiers: list[str]) -> tuple[str, str]:
-    """Use CurriculumManager priority scoring (spaced repetition + weakness targeting)."""
+    """Sample a scenario strictly from TRAIN_SPLIT using CurriculumManager priority scoring."""
+    train_ids = set(get_split("train"))
+    val_set = set(VAL_SPLIT)
+    test_set = set(TEST_SPLIT)
+
     pool = [
         (sid, sid.split("/")[0])
         for tier in tiers
         for sid in SCENARIOS_BY_TIER.get(tier, [])
+        if sid in train_ids
     ]
-    return _curriculum.next_scenario(pool)
+    if not pool:
+        pool = [(sid, sid.split("/")[0]) for sid in train_ids]
+
+    chosen_sid, chosen_tier = _curriculum.next_scenario(pool)
+    if chosen_sid in val_set or chosen_sid in test_set:
+        raise ValueError(f"CRITICAL LEAKAGE: GRPO sampled scenario {chosen_sid} from Val/Test split!")
+    return chosen_sid, chosen_tier
 
 
 def apply_chaos(scenario_id: str) -> bool:

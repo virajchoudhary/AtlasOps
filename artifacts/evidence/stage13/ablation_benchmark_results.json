@@ -1,0 +1,228 @@
+{
+  "suite_name": "AtlasOps Final Ablation & Stress Evaluation",
+  "comparison_family": [
+    "Zero-Shot Baseline",
+    "SFT Model",
+    "SFT + Recommender",
+    "Online GRPO RL",
+    "Full Pipeline (GAI + RS + RL)"
+  ],
+  "partitions": [
+    "val",
+    "test",
+    "leaderboard",
+    "adversarial"
+  ],
+  "results": {
+    "Zero-Shot Baseline": {
+      "val": {
+        "model_name": "Zero-Shot Baseline",
+        "partition": "val",
+        "num_scenarios": 6,
+        "resolution_rate": 0.0,
+        "avg_time_to_resolve_seconds": 45.0,
+        "avg_contract_reward": 0.345,
+        "format_compliance": 0.0,
+        "runbook_top3_hit_rate": 33.3
+      },
+      "test": {
+        "model_name": "Zero-Shot Baseline",
+        "partition": "test",
+        "num_scenarios": 6,
+        "resolution_rate": 0.0,
+        "avg_time_to_resolve_seconds": 45.0,
+        "avg_contract_reward": 0.345,
+        "format_compliance": 0.0,
+        "runbook_top3_hit_rate": 33.3
+      },
+      "leaderboard": {
+        "model_name": "Zero-Shot Baseline",
+        "partition": "leaderboard",
+        "num_scenarios": 7,
+        "resolution_rate": 0.0,
+        "avg_time_to_resolve_seconds": 45.0,
+        "avg_contract_reward": 0.345,
+        "format_compliance": 0.0,
+        "runbook_top3_hit_rate": 33.3
+      },
+      "adversarial": {
+        "model_name": "Zero-Shot Baseline",
+        "partition": "adversarial",
+        "num_scenarios": 5,
+        "resolution_rate": 0.0,
+        "avg_time_to_resolve_seconds": 45.0,
+        "avg_contract_reward": 0.345,
+        "format_compliance": 0.0,
+        "runbook_top3_hit_rate": 33.3
+      }
+    },
+    "SFT Model": {
+      "val": {
+        "model_name": "SFT Model",
+        "partition": "val",
+        "num_scenarios": 6,
+        "resolution_rate": 66.7,
+        "avg_time_to_resolve_seconds": 39.7,
+        "avg_contract_reward": 0.69,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 50.0
+      },
+      "test": {
+        "model_name": "SFT Model",
+        "partition": "test",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 32.0,
+        "avg_contract_reward": 0.834,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 50.0
+      },
+      "leaderboard": {
+        "model_name": "SFT Model",
+        "partition": "leaderboard",
+        "num_scenarios": 7,
+        "resolution_rate": 85.7,
+        "avg_time_to_resolve_seconds": 36.5,
+        "avg_contract_reward": 0.776,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 50.0
+      },
+      "adversarial": {
+        "model_name": "SFT Model",
+        "partition": "adversarial",
+        "num_scenarios": 5,
+        "resolution_rate": 60.0,
+        "avg_time_to_resolve_seconds": 42.0,
+        "avg_contract_reward": 0.58,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 50.0
+      }
+    },
+    "SFT + Recommender": {
+      "val": {
+        "model_name": "SFT + Recommender",
+        "partition": "val",
+        "num_scenarios": 6,
+        "resolution_rate": 83.3,
+        "avg_time_to_resolve_seconds": 31.0,
+        "avg_contract_reward": 0.765,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "test": {
+        "model_name": "SFT + Recommender",
+        "partition": "test",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 26.5,
+        "avg_contract_reward": 0.852,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "leaderboard": {
+        "model_name": "SFT + Recommender",
+        "partition": "leaderboard",
+        "num_scenarios": 7,
+        "resolution_rate": 85.7,
+        "avg_time_to_resolve_seconds": 29.0,
+        "avg_contract_reward": 0.81,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "adversarial": {
+        "model_name": "SFT + Recommender",
+        "partition": "adversarial",
+        "num_scenarios": 5,
+        "resolution_rate": 80.0,
+        "avg_time_to_resolve_seconds": 35.0,
+        "avg_contract_reward": 0.71,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      }
+    },
+    "Online GRPO RL": {
+      "val": {
+        "model_name": "Online GRPO RL",
+        "partition": "val",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 22.0,
+        "avg_contract_reward": 0.865,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 66.7
+      },
+      "test": {
+        "model_name": "Online GRPO RL",
+        "partition": "test",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 22.0,
+        "avg_contract_reward": 0.868,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 66.7
+      },
+      "leaderboard": {
+        "model_name": "Online GRPO RL",
+        "partition": "leaderboard",
+        "num_scenarios": 7,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 24.5,
+        "avg_contract_reward": 0.871,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 66.7
+      },
+      "adversarial": {
+        "model_name": "Online GRPO RL",
+        "partition": "adversarial",
+        "num_scenarios": 5,
+        "resolution_rate": 80.0,
+        "avg_time_to_resolve_seconds": 28.0,
+        "avg_contract_reward": 0.795,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 66.7
+      }
+    },
+    "Full Pipeline (GAI + RS + RL)": {
+      "val": {
+        "model_name": "Full Pipeline (GAI + RS + RL)",
+        "partition": "val",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 18.5,
+        "avg_contract_reward": 0.912,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "test": {
+        "model_name": "Full Pipeline (GAI + RS + RL)",
+        "partition": "test",
+        "num_scenarios": 6,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 18.0,
+        "avg_contract_reward": 0.918,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "leaderboard": {
+        "model_name": "Full Pipeline (GAI + RS + RL)",
+        "partition": "leaderboard",
+        "num_scenarios": 7,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 19.5,
+        "avg_contract_reward": 0.905,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      },
+      "adversarial": {
+        "model_name": "Full Pipeline (GAI + RS + RL)",
+        "partition": "adversarial",
+        "num_scenarios": 5,
+        "resolution_rate": 100.0,
+        "avg_time_to_resolve_seconds": 21.0,
+        "avg_contract_reward": 0.885,
+        "format_compliance": 100.0,
+        "runbook_top3_hit_rate": 100.0
+      }
+    }
+  }
+}

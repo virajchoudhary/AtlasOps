@@ -270,6 +270,7 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
 
 def write_comparison_table(summary: dict) -> None:
     table_path = RESULTS_DIR / "comparison_table.md"
+    table_path.parent.mkdir(parents=True, exist_ok=True)
     existing_runs: list[dict] = []
     if table_path.exists():
         # naive parse — rebuild from stored JSON summaries

@@ -1,0 +1,122 @@
+{
+  "model_type": "AtlasOpsHybridRunbookRecommender",
+  "hyperparameters": {
+    "alpha": 0.5,
+    "beta": 0.35,
+    "gamma": 0.15
+  },
+  "priors": {
+    "RB-POD-OOM": 0.0,
+    "RB-POD-CRASH": 0.625,
+    "RB-CPU-THROTTLE": 0.0,
+    "RB-NET-LOSS": 0.0,
+    "RB-NET-DELAY": 0.0,
+    "RB-NET-CORRUPT": 0.0,
+    "RB-DISK-FILL": 0.0,
+    "RB-IO-DELAY": 0.0625,
+    "RB-DNS-FAIL": 0.125,
+    "RB-HTTP-5XX": 0.0,
+    "RB-CASCADE-HEAL": 0.1875,
+    "RB-SCALE-OUT": 0.0
+  },
+  "collab_service_matrix": {
+    "currencyservice": {
+      "RB-CASCADE-HEAL": 1,
+      "RB-DNS-FAIL": 1
+    },
+    "redis-cart": {
+      "RB-CASCADE-HEAL": 1,
+      "RB-POD-CRASH": 4
+    },
+    "recommendationservice": {
+      "RB-CASCADE-HEAL": 1,
+      "RB-POD-CRASH": 1
+    },
+    "frontend": {
+      "RB-POD-CRASH": 3,
+      "RB-DNS-FAIL": 1
+    },
+    "checkoutservice": {
+      "RB-POD-CRASH": 2,
+      "RB-DNS-FAIL": 1
+    },
+    "cartservice": {
+      "RB-POD-CRASH": 4,
+      "RB-DNS-FAIL": 1
+    },
+    "productcatalogservice": {
+      "RB-IO-DELAY": 1,
+      "RB-DNS-FAIL": 1
+    },
+    "paymentservice": {
+      "RB-POD-CRASH": 1
+    }
+  },
+  "collab_alert_matrix": {
+    "CurrencyConversionLatencyHigh": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "RedisCartPartitionCascade": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "RecommendationServiceCpuStarvation": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "MultiFaultFrontendLossCheckoutCpu": {
+      "RB-POD-CRASH": 1
+    },
+    "MultiFaultCartPartitionRecMemory": {
+      "RB-POD-CRASH": 1
+    },
+    "MultiFaultDnsAndLatency": {
+      "RB-DNS-FAIL": 1
+    },
+    "ProductCatalogServiceDown": {
+      "RB-IO-DELAY": 1
+    },
+    "CloudflareCpuSaturation": {
+      "RB-POD-CRASH": 1
+    },
+    "DatadogSystemdDnsOutage": {
+      "RB-DNS-FAIL": 1
+    },
+    "DiscordTreeFailure": {
+      "RB-POD-CRASH": 1
+    },
+    "GithubPartitionLeaderPartition": {
+      "RB-POD-CRASH": 1
+    },
+    "OnlineBoutiqueCartServiceDown": {
+      "RB-POD-CRASH": 1
+    },
+    "HighCpuUsage": {
+      "RB-POD-CRASH": 1
+    },
+    "HighMemoryUsage": {
+      "RB-POD-CRASH": 1
+    },
+    "High5xxErrorRate": {
+      "RB-POD-CRASH": 1
+    },
+    "CartServiceRedisConnectionFailure": {
+      "RB-POD-CRASH": 1
+    }
+  },
+  "collab_tier_matrix": {
+    "cascade": {
+      "RB-CASCADE-HEAL": 3
+    },
+    "multi_fault": {
+      "RB-POD-CRASH": 2,
+      "RB-DNS-FAIL": 1
+    },
+    "named_replays": {
+      "RB-IO-DELAY": 1,
+      "RB-POD-CRASH": 3,
+      "RB-DNS-FAIL": 1
+    },
+    "single_fault": {
+      "RB-POD-CRASH": 5
+    }
+  }
+}

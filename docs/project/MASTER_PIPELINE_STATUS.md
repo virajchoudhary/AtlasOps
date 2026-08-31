@@ -41,8 +41,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **PASS** (SFT evaluated across Val(6), Test(6), Leaderboard(7) splits; resolution rate 0.0% $\rightarrow$ 66.7% Val, 100% format compliance, contract reward 0.348 $\rightarrow$ 0.690) |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **PASS** (Online GRPO implemented with group advantage normalization, training split isolation, and objective verifier reward; evaluated across Val(6), Test(6), Leaderboard(7) reaching 100% resolution, 0.865 avg contract reward, and 22.0s TTR) |
 | **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **PASS** (Runbook catalog codified, 28 incident-runbook interactions assembled with SHA-256 hash, IR metrics Hit@K/MRR@K/NDCG@K implemented, baseline recommenders evaluated reaching 66.7% Test Hit@1 and 0.750 Test MRR@3) |
-| **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **READY TO EXECUTE** |
-| **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **BLOCKED (on G11)** |
+| **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **PASS** (Tri-signal Hybrid Recommender developed, trained, and evaluated; achieved 100.0% Test Hit@3, 0.833 Test MRR@3, 0.877 Test NDCG@3; serialized checkpoint in artifacts/models/hybrid_recommender.json) |
+| **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **READY TO EXECUTE** |
 | **Stage 13** | Run final ablation and stress evaluation | **G13** | Full benchmark evaluation across predetermined comparison family: stabilized AtlasOps baseline, SFT, corrected GRPO, +RS, full GAI+RS+RL, unseen final-test and held-out adversarial evaluation. | **BLOCKED (on G12)** |
 | **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **BLOCKED (on G13)** |
 | **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **BLOCKED (on G14)** |
@@ -188,6 +188,19 @@ This governance document records the repository's alignment with the canonical e
   - Random Recommender: Test Hit@1 = 16.7%, Test Hit@3 = 33.3%, Test MRR@3 = 0.250.
 - **Evidence Record**: Persisted `artifacts/evidence/stage10/rs_dataset_manifest.json` and `artifacts/evidence/stage10/rs_baseline_eval.json`.
 - **Automated Verification**: Verified by 7/7 automated unit tests in `tests/test_stage10_rs_data_and_baselines.py`.
+
+### Gate G11: Train Hybrid Recommender — [PASS]
+- **Tri-Signal Hybrid Recommender**: Developed `HybridRecommender` in `recommender/hybrid.py` blending normalized BM25 content matching ($\alpha=0.50$), collaborative transition graph affinities ($\beta=0.35$), and tier-weighted priors ($\gamma=0.15$).
+- **Structured Recommendation Engine**: Generates top-$K$ scored recommendations with executable action sequences and suggested tools for the Remediation Agent.
+- **Empirical Multi-Model Superiority (Held-Out Test Split)**:
+  - Hybrid Recommender: Test Hit@1 = **66.7%**, Test Hit@3 = **100.0%**, Test MRR@3 = **0.833**, Test NDCG@3 = **0.877**, Test Hit@5 = **100.0%**.
+  - BM25 Content Recommender: Test Hit@3 = 83.3%, Test MRR@3 = 0.750, Test NDCG@3 = 0.772.
+  - Global Popularity Recommender: Test Hit@3 = 83.3%, Test MRR@3 = 0.639, Test NDCG@3 = 0.689.
+  - Random Recommender: Test Hit@3 = 33.3%, Test MRR@3 = 0.250, Test NDCG@3 = 0.272.
+- **Artifact & Checkpoint Persistence**: Model serialized to `artifacts/models/hybrid_recommender.json` and evidence metrics recorded in `artifacts/evidence/stage11/rs_hybrid_eval.json`.
+- **Cloud GPU Training Package**: Added ready-to-run Kaggle/Colab notebooks in `notebooks/kaggle_sft_training.ipynb` and `notebooks/kaggle_grpo_training.ipynb`.
+- **Automated Verification**: Verified by 6/6 automated unit tests in `tests/test_stage11_hybrid_recommender.py`.
+
 
 
 

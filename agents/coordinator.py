@@ -76,6 +76,7 @@ API_KEY    = os.getenv("LLM_API_KEY",  "")  # required for fireworks/openai, emp
 LLM_REQUEST_TIMEOUT_SECONDS: float = 600.0
 LLM_MAX_ATTEMPTS: int = 2
 LLM_BASE_BACKOFF_SECONDS: float = 1.5
+TOOL_OUTPUT_MAX_CHARS: int = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
 TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
@@ -755,7 +756,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(tool_output)[:8000],
+                    "content": json.dumps(tool_output)[:TOOL_OUTPUT_MAX_CHARS],
                 })
 
     log.warning("%s exceeded %d turns", role, max_turns)

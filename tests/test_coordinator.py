@@ -409,3 +409,8 @@ class TestCoordinatorExecutionAndVerificationTruth:
         assert persisted_data["env_resolved"] is False
         assert persisted_data["agent_claimed_resolved"] is True
         assert persisted_data["verification"]["verification_status"] == "failed"
+
+    def test_tool_output_max_chars_limits_message_buffer(self):
+        import agents.coordinator as coord
+        assert coord.TOOL_OUTPUT_MAX_CHARS == 2000
+

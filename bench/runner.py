@@ -32,6 +32,8 @@ from config.runtime import (
     evaluate_reward_contract,
     bounded_speed_score as _bounded_speed_score,
 )
+from config.scenario_catalog import SCENARIO_CATALOG
+from config.splits import get_split
 
 # Backwards-compatible alias — tests import this name from bench.runner
 _evaluate_episode_reward = evaluate_reward_contract
@@ -79,9 +81,76 @@ def wait_for_alert(timeout_s: int = 300) -> dict | None:
             "scenario": "unknown", "synthetic": True}
 
 
-async def run_scenario(scenario_id: str) -> dict:
+async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
     t0 = time.time()
     tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
+    is_mock = mock or os.getenv("ATLASOPS_MOCK_EVAL", "").lower() in ("1", "true", "yes")
+
+    if is_mock:
+        meta = SCENARIO_CATALOG.get(scenario_id)
+        expected_alert = meta.expected_alert if meta else f"Alert-{scenario_id}"
+        expected_root_cause = meta.expected_root_cause if meta else f"Root cause for {scenario_id}"
+        incident = {
+            "triage": {
+                "final": {
+                    "severity": "P1",
+                    "impact": "Service degradation",
+                    "affected_services": list(meta.target_services if meta else ["frontend"]),
+                },
+                "trajectory": [{"role": "triage", "content": f"Alert {expected_alert} triaged as P1"}],
+            },
+            "diagnosis": {
+                "final": {"root_cause": expected_root_cause, "confidence": 0.85},
+                "trajectory": [{"role": "diagnosis", "content": f"Investigated services, identified: {expected_root_cause}"}],
+            },
+            "remediation": {
+                "final": {
+                    "outcome": "unresolved",
+                    "actions_taken": [
+                        {"action": "restart_pod", "target": meta.target_services[0] if meta and meta.target_services else "frontend"}
+                    ],
+                },
+                "trajectory": [{"role": "remediation", "content": "Attempted unfinetuned baseline remediation"}],
+            },
+            "comms": {
+                "final": {"postmortem_path": None},
+                "trajectory": [{"role": "comms", "content": "Broadcasted incident update to stakeholders"}],
+            },
+            "verification": {
+                "env_resolved": False,
+                "agent_claimed_resolved": False,
+                "chaos_mesh_cleared": False,
+                "workload_checks": {
+                    wl: {"healthy": False} for wl in (meta.verification_workloads if meta else ["frontend"])
+                },
+            },
+        }
+        judge_score = {
+            "correctness": 0.5,
+            "efficiency": 0.5,
+            "reasoning": 0.5,
+            "red_herring_handling": 0.5,
+            "overall": 0.5,
+            "critique": "mock_baseline_judge",
+        }
+        episode = {
+            "scenario_id": scenario_id,
+            "tier": tier,
+            "status": "ok",
+            "outcome": "unresolved",
+            "agent_claimed_resolved": False,
+            "env_resolved": False,
+            "resolved": False,
+            "verification": incident["verification"],
+            "time_to_resolve_s": 45.0,
+            "severity": "P1",
+            "total_turns": 4,
+            "judge": judge_score,
+            "postmortem_path": None,
+        }
+        episode["reward_contract"] = evaluate_reward_contract(episode)
+        return episode
+
     ok = apply_chaos(scenario_id)
     if not ok:
         return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
@@ -257,22 +326,36 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Model path or HF ID")
     parser.add_argument("--tag", default="", help="Run label (e.g. grpo_v3, baseline_v2)")
+    parser.add_argument("--split", choices=["train", "val", "test", "leaderboard", "all"], default=None,
+                        help="Benchmark split to evaluate (from config.splits)")
     parser.add_argument("--scenarios", nargs="*", help="Override scenario list")
+    parser.add_argument("--mock", action="store_true", help="Run in mock/offline baseline replay mode")
     parser.add_argument("--output", default="", help="Override output dir")
     parser.add_argument("--adversarial", type=int, default=DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
                         help="Number of dynamic adversarial scenarios to generate (0 to skip)")
     args = parser.parse_args()
 
     os.environ["AGENT_MODEL"] = args.model
+    if args.mock:
+        os.environ["ATLASOPS_MOCK_EVAL"] = "1"
+
     tag = args.tag or f"run-{int(time.time())}"
     run_id = f"{tag}-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     out_dir = Path(args.output) if args.output else (RESULTS_DIR / run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    scenarios = list(args.scenarios or FROZEN_SCENARIOS)
+    if args.split:
+        if args.split == "all":
+            scenarios = list(FROZEN_SCENARIOS)
+        else:
+            scenarios = list(get_split(args.split))
+    elif args.scenarios:
+        scenarios = list(args.scenarios)
+    else:
+        scenarios = list(FROZEN_SCENARIOS)
 
     # Generate fresh adversarial scenarios from 72B judge before running frozen set
-    if args.adversarial > 0:
+    if args.adversarial > 0 and not args.mock:
         log.info("generating %d dynamic adversarial scenarios via 72B judge...", args.adversarial)
         # Seed with any existing failure history from prior runs
         prior_failures = []
@@ -293,14 +376,14 @@ async def main() -> None:
             rel = rel.replace("\\", "/").removesuffix(".yaml")
             scenarios.append(rel)
         log.info("added %d adversarial scenarios to run", len(adv_results))
-    log.info("running %d scenarios for tag=%s model=%s", len(scenarios), tag, args.model)
+    log.info("running %d scenarios for tag=%s model=%s (mock=%s)", len(scenarios), tag, args.model, args.mock)
 
     results = []
     episodes_file = out_dir / "results_per_episode.jsonl"
     with episodes_file.open("w", encoding="utf-8") as f:
         for i, s in enumerate(scenarios, 1):
             log.info("[%d/%d] %s", i, len(scenarios), s)
-            r = await run_scenario(s)
+            r = await run_scenario(s, mock=args.mock)
             results.append(r)
             f.write(json.dumps(r) + "\n")
             f.flush()

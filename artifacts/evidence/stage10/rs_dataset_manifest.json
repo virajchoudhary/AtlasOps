@@ -1,0 +1,19 @@
+{
+  "dataset_name": "atlasops_rs_incident_interactions",
+  "file": "C:/Users/viraj/AppData/Local/Temp/pytest-of-viraj/pytest-525/test_build_and_load_interactio0/interactions.jsonl",
+  "canonical_lf_sha256": "2133eeb34ceac0371c93351fd621a48e2cc96a8a97db7ee0acb8c3dacbc681d4",
+  "total_interactions": 28,
+  "split_distribution": {
+    "train": 16,
+    "val": 6,
+    "test": 6
+  },
+  "runbook_distribution": {
+    "RB-CASCADE-HEAL": 4,
+    "RB-IO-DELAY": 4,
+    "RB-POD-CRASH": 16,
+    "RB-DNS-FAIL": 4
+  },
+  "unique_runbooks_covered": 4,
+  "total_catalog_runbooks": 12
+}

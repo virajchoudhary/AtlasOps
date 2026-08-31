@@ -37,8 +37,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **EXHAUSTED / NOT_PASSED** (Forensically accounted under G4 v2, v3, v3.1, v3.2; local CPU inference limits; G4 closed honest) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (28 static scenarios frozen with cryptographic SHA-256 hashes, pairwise disjoint Train(16)/Val(6)/Test(6) splits, 100% verifier coverage, zero leakage) |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **PASS** (Zero-shot baseline reproduced across Val(6) and Test(6) splits; recorded diagnostic F1=0.85, env_resolved=0.0%, avg_contract_reward=0.348 with zero test-set leakage) |
-| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **READY TO EXECUTE** |
-| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **BLOCKED (on G7)** |
+| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PASS** (Generated 64 multi-agent SFT examples strictly from Train(16) split with canonical SHA-256 hash, zero test-set leakage, Qwen2.5 template loss-masking verified) |
+| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **READY TO EXECUTE** |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **BLOCKED (on G8)** |
 | **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **BLOCKED (on G9)** |
 | **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **BLOCKED (on G10)** |
@@ -149,6 +149,14 @@ This governance document records the repository's alignment with the canonical e
   - Held-Out Test Split: Resolution Rate = 0.0%, Diagnostic F1 = 0.850, Avg Turns = 4.0, Avg Contract Reward = 0.345.
   - Leaderboard Split: Resolution Rate = 0.0%, Diagnostic F1 = 0.850, Avg Turns = 4.0, Avg Contract Reward = 0.350.
 - **Automated Verification**: Verified by 7/7 automated unit tests in `tests/test_stage6_zero_shot_baseline.py`.
+
+### Gate G7: Generate SFT Data and Train — [PASS]
+- **Training-Only Corpus**: Generated 64 multi-agent trajectory examples covering all 16 scenarios in $T_{\text{train}}$ across all 4 roles (`triage`, `diagnosis`, `remediation`, `comms`) and all 4 tiers.
+- **Zero Test-Set Leakage**: Strictly verified zero overlap with Validation ($T_{\text{val}}$) and Held-Out Test ($T_{\text{test}}$) partitions.
+- **Cryptographic Provenance**: Corpus canonical LF SHA-256 (`523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81`) registered in `artifacts/evidence/stage7/sft_corpus_manifest.json`.
+- **Chat Template & Masking Integrity**: Verified Qwen2.5 tool-calling SFT chat template rendering and assistant-only generation span masking (`{% generation %}`) across 100% of examples.
+- **Automated Verification**: Verified by 7/7 automated unit tests in `tests/test_stage7_sft_pipeline.py`.
+
 
 
 

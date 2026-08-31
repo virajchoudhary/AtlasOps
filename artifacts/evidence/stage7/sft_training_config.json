@@ -1,0 +1,24 @@
+{
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
+  "quantization": "4-bit NF4",
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "learning_rate": 0.0002,
+  "batch_size": 2,
+  "gradient_accumulation_steps": 4,
+  "max_seq_length": 2048,
+  "num_train_epochs": 3,
+  "optimizer": "paged_adamw_8bit",
+  "assistant_only_loss": true,
+  "train_corpus_sha256": "523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81"
+}

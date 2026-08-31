@@ -26,6 +26,8 @@ from pathlib import Path
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from config.runtime import evaluate_reward_contract
+from config.scenario_catalog import SCENARIO_CATALOG
+from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -185,25 +187,31 @@ def trajectory_to_sft_examples(
 
 async def run() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifests", default="bench/chaos_manifests")
-    parser.add_argument("--output", default="data/sft_corpus.jsonl")
+    parser.add_argument("--split", default="train", choices=["train"],
+                        help="Split to generate trajectories for (strictly isolated to train)")
+    parser.add_argument("--output", default="data/sft_corpus_train.jsonl")
     parser.add_argument("--max-scenarios", type=int, default=0, help="0 = all")
     parser.add_argument("--repeats", type=int, default=10, help="repeats per scenario for variance")
     args = parser.parse_args()
 
-    scenarios = list_scenarios(Path(args.manifests))
+    scenario_ids = list(get_split(args.split))
+    # Test-set isolation verification
+    for sid in scenario_ids:
+        if sid in VAL_SPLIT or sid in TEST_SPLIT:
+            raise ValueError(f"CRITICAL LEAKAGE: Scenario {sid} from Val/Test split found in SFT training generation!")
+
     if args.max_scenarios:
-        scenarios = scenarios[: args.max_scenarios]
-    log.info("found %d scenarios; %d repeats each = %d trajectories",
-             len(scenarios), args.repeats, len(scenarios) * args.repeats)
+        scenario_ids = scenario_ids[: args.max_scenarios]
+    log.info("Generating trajectories for %d train scenarios; %d repeats each = %d episodes",
+             len(scenario_ids), args.repeats, len(scenario_ids) * args.repeats)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     written = 0
-    with output.open("a", encoding="utf-8") as f:
-        for manifest in scenarios:
-            tier = manifest.parent.name
-            scenario_id = f"{tier}/{manifest.stem}"
+    with output.open("w", encoding="utf-8") as f:
+        for scenario_id in scenario_ids:
+            tier = scenario_id.split("/", 1)[0]
+            manifest = Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
             for repeat in range(args.repeats):
                 if not apply_chaos(manifest):
                     continue
@@ -213,7 +221,7 @@ async def run() -> None:
                     continue
                 t0 = time.time()
                 incident = await handle_incident(alert)
-                judge_score = await judge_trajectory(incident)
+                judge_score = await judge_trajectory(incident, tier=tier)
                 remediation = incident.get("remediation", {}).get("final", {})
                 episode = {
                     "scenario_id": scenario_id,

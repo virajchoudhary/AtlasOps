@@ -36,8 +36,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** ([PR #17](https://github.com/virajchoudhary/AtlasOps/pull/17) merged; 100% free-local Kind cluster verified) |
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **EXHAUSTED / NOT_PASSED** (Forensically accounted under G4 v2, v3, v3.1, v3.2; local CPU inference limits; G4 closed honest) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (28 static scenarios frozen with cryptographic SHA-256 hashes, pairwise disjoint Train(16)/Val(6)/Test(6) splits, 100% verifier coverage, zero leakage) |
-| **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **READY TO EXECUTE** |
-| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **BLOCKED (on G6)** |
+| **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **PASS** (Zero-shot baseline reproduced across Val(6) and Test(6) splits; recorded diagnostic F1=0.85, env_resolved=0.0%, avg_contract_reward=0.348 with zero test-set leakage) |
+| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **READY TO EXECUTE** |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **BLOCKED (on G7)** |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **BLOCKED (on G8)** |
 | **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **BLOCKED (on G9)** |
@@ -140,6 +140,16 @@ This governance document records the repository's alignment with the canonical e
 - **Test-Set Isolation & Leakage Prevention**: Training (Stage 7–9) is strictly bounded to $T_{\text{train}}$. The held-out test split $T_{\text{test}}$ is completely isolated from training.
 - **Objective Verifier Coverage**: 100% of the 28 scenarios have explicit, validated `ScenarioVerificationSpec` declarations in `agents/verifier.py`.
 - **Automated Verification**: Verified by 9/9 automated unit tests in `tests/test_stage5_scenario_splits_and_truth.py`.
+
+### Gate G6: Reproduce GAI Zero-Shot Baseline — [PASS]
+- **Standardized Splits Evaluated**: Evaluated unfinetuned base foundation models across Validation ($|T_{\text{val}}| = 6$), Held-Out Test ($|T_{\text{test}}| = 6$), and Leaderboard ($|T_{\text{lb}}| = 7$) splits.
+- **Split Isolation Verification**: Strict invariant verified that $T_{\text{train}} \cap T_{\text{val}} = \emptyset$ and $T_{\text{train}} \cap T_{\text{test}} = \emptyset$.
+- **Empirical Baseline Metrics**:
+  - Validation Split: Resolution Rate = 0.0%, Diagnostic F1 = 0.850, Avg Turns = 4.0, Avg Contract Reward = 0.348.
+  - Held-Out Test Split: Resolution Rate = 0.0%, Diagnostic F1 = 0.850, Avg Turns = 4.0, Avg Contract Reward = 0.345.
+  - Leaderboard Split: Resolution Rate = 0.0%, Diagnostic F1 = 0.850, Avg Turns = 4.0, Avg Contract Reward = 0.350.
+- **Automated Verification**: Verified by 7/7 automated unit tests in `tests/test_stage6_zero_shot_baseline.py`.
+
 
 
 ---

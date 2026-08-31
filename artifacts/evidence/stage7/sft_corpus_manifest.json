@@ -1,0 +1,28 @@
+{
+  "dataset_name": "atlasops_sft_corpus_train",
+  "format": "openai-tool-messages-v1",
+  "corpus_file": "data/sft_corpus_train.jsonl",
+  "corpus_sha256_canonical_lf": "523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81",
+  "total_examples": 64,
+  "total_scenarios": 16,
+  "split": "train",
+  "quarantined_splits": [
+    "val",
+    "test"
+  ],
+  "leakage_verified": true,
+  "role_distribution": {
+    "triage": 16,
+    "diagnosis": 16,
+    "remediation": 16,
+    "comms": 16
+  },
+  "tier_distribution": {
+    "single_fault": 20,
+    "cascade": 12,
+    "multi_fault": 12,
+    "named_replays": 20
+  },
+  "total_tool_turns": 80,
+  "template_render_validated": true
+}

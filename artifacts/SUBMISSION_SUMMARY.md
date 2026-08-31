@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Pipeline Certification**: **15 / 15 (100%) Gates Certified PASS**
-- **Timestamp**: `2026-08-31T13:10:50.692245+00:00`
+- **Timestamp**: `2026-08-31T13:20:29.418971+00:00`
 
 ## Key Performance Breakthroughs
 
@@ -18,7 +18,7 @@
 
 | Asset Path | SHA-256 Digest | Size (Bytes) |
 | :--- | :--- | :---: |
-| `artifacts/evidence/stage10/rs_dataset_manifest.json` | `c8b751b59a23c2dc...` | 587 |
+| `artifacts/evidence/stage10/rs_dataset_manifest.json` | `404833c611b41df6...` | 587 |
 | `artifacts/evidence/stage11/rs_hybrid_eval.json` | `2ff967237a7bf21c...` | 3234 |
 | `artifacts/evidence/stage13/ablation_benchmark_results.json` | `3b7f1f88e6e37a96...` | 7156 |
 | `artifacts/models/hybrid_recommender.json` | `53d0a4fb640b4691...` | 2646 |

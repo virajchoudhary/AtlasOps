@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "completion_date": "2026-08-31T13:10:50.692245+00:00",
+  "completion_date": "2026-08-31T13:20:29.418971+00:00",
   "stages_completed": "15 / 15 (100%)",
   "status": "CERTIFIED_PASS",
   "academic_workstreams": [
@@ -97,9 +97,9 @@
       "last_modified": "2026-08-31T10:01:58.758452+00:00"
     },
     "artifacts/evidence/stage10/rs_dataset_manifest.json": {
-      "sha256": "c8b751b59a23c2dc7068a4579297b3a1ecf4eebd5814794f4e425a7552a98dc2",
+      "sha256": "404833c611b41df6b7d5f132564f7a46afe796ebcf1985424f876036ebfe9d4f",
       "size_bytes": 587,
-      "last_modified": "2026-08-31T12:06:40.848077+00:00"
+      "last_modified": "2026-08-31T13:20:09.633889+00:00"
     },
     "artifacts/evidence/stage11/rs_hybrid_eval.json": {
       "sha256": "2ff967237a7bf21ca0fe339135073602db7b3c8569f9ee78e471c09c243d364d",
@@ -109,7 +109,7 @@
     "artifacts/evidence/stage13/ablation_benchmark_results.json": {
       "sha256": "3b7f1f88e6e37a969593f816855d5c38532327f852f7370ba04925f1c8d9801f",
       "size_bytes": 7156,
-      "last_modified": "2026-08-31T12:06:41.006560+00:00"
+      "last_modified": "2026-08-31T13:20:09.774444+00:00"
     },
     "dashboard.py": {
       "sha256": "b005cfb9ea910bf6ecfb868a86a67f3e3b5077dc0c74a40c31b2b3b7d9740779",

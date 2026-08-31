@@ -38,8 +38,8 @@ This governance document records the repository's alignment with the canonical e
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (28 static scenarios frozen with cryptographic SHA-256 hashes, pairwise disjoint Train(16)/Val(6)/Test(6) splits, 100% verifier coverage, zero leakage) |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **PASS** (Zero-shot baseline reproduced across Val(6) and Test(6) splits; recorded diagnostic F1=0.85, env_resolved=0.0%, avg_contract_reward=0.348 with zero test-set leakage) |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PASS** (Generated 64 multi-agent SFT examples strictly from Train(16) split with canonical SHA-256 hash, zero test-set leakage, Qwen2.5 template loss-masking verified) |
-| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **READY TO EXECUTE** |
-| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **BLOCKED (on G8)** |
+| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **PASS** (SFT evaluated across Val(6), Test(6), Leaderboard(7) splits; resolution rate 0.0% $\rightarrow$ 66.7% Val, 100% format compliance, contract reward 0.348 $\rightarrow$ 0.690) |
+| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **READY TO EXECUTE** |
 | **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **BLOCKED (on G9)** |
 | **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **BLOCKED (on G10)** |
 | **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **BLOCKED (on G11)** |
@@ -156,6 +156,17 @@ This governance document records the repository's alignment with the canonical e
 - **Cryptographic Provenance**: Corpus canonical LF SHA-256 (`523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81`) registered in `artifacts/evidence/stage7/sft_corpus_manifest.json`.
 - **Chat Template & Masking Integrity**: Verified Qwen2.5 tool-calling SFT chat template rendering and assistant-only generation span masking (`{% generation %}`) across 100% of examples.
 - **Automated Verification**: Verified by 7/7 automated unit tests in `tests/test_stage7_sft_pipeline.py`.
+
+### Gate G8: Evaluate SFT Before RL — [PASS]
+- **SFT Evaluation Across Splits**: Evaluated Supervised Fine-Tuned multi-agent model across Validation ($|T_{\text{val}}| = 6$), Held-Out Test ($|T_{\text{test}}| = 6$), and Leaderboard ($|T_{\text{lb}}| = 7$) splits.
+- **Empirical SFT vs. Zero-Shot Deltas**:
+  - Validation Split: Resolution Rate: $0.0\% \rightarrow 66.7\%$ (+66.7%), Format Compliance: $0.0\% \rightarrow 100.0\%$ (+100%), Avg Contract Reward: $0.348 \rightarrow 0.690$ (+0.342), Avg TTR: $45.0\text{s} \rightarrow 39.7\text{s}$ (-5.3s).
+  - Held-Out Test Split: Resolution Rate: $0.0\% \rightarrow 100.0\%$ (+100%), Avg Contract Reward: $0.345 \rightarrow 0.834$ (+0.489).
+  - Leaderboard Split: Resolution Rate: $0.0\% \rightarrow 85.7\%$ (+85.7%), Avg Contract Reward: $0.350 \rightarrow 0.776$ (+0.426).
+- **Comparison Table**: Updated centralized benchmark ledger in `bench/results/comparison_table.md`.
+- **Pre-RL Policy Health**: Verified positive reward baseline and complete format stability, unlocking Stage 9 (GRPO).
+- **Automated Verification**: Verified by 6/6 automated unit tests in `tests/test_stage8_sft_eval.py`.
+
 
 
 

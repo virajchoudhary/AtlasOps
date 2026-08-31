@@ -10,10 +10,8 @@
 <!-- React 18 & ReactDOM -->
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<!-- Babel for in-browser JSX compilation -->
+<!-- Babel for JSX compilation -->
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<!-- Lucide Icons -->
-<script src="https://unpkg.com/lucide@latest"></script>
 <style>
   :root {
     --bg: #000000;
@@ -46,7 +44,6 @@
     letter-spacing: -0.01em;
   }
 
-  /* ── Layout & Typography ── */
   .layout-container {
     max-width: 1280px;
     margin: 0 auto;
@@ -79,7 +76,6 @@
     color: #fff;
   }
 
-  /* ── Flat Section Styles ── */
   .section {
     padding: 80px 0;
     border-top: 1px solid var(--border);
@@ -131,7 +127,6 @@
     background: var(--surface-subtle); border-color: #3f3f46;
   }
 
-  /* ── Interactive Visual SVG Diagram ── */
   .diagram-wrapper {
     width: 100%;
     background: var(--surface);
@@ -150,12 +145,7 @@
     stroke: #fff;
     fill: #18181b;
   }
-  .node-box.selected rect {
-    stroke: #38bdf8;
-    fill: #0c4a6e;
-  }
 
-  /* ── Flat Studio Panel ── */
   .studio-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -181,7 +171,6 @@
     border-color: #52525b;
   }
 
-  /* ── Stream Terminal ── */
   .stream-terminal {
     background: #000;
     border: 1px solid var(--border);
@@ -201,7 +190,6 @@
     line-height: 1.5;
   }
 
-  /* ── Flat Data Table ── */
   .flat-table {
     width: 100%;
     border-collapse: collapse;
@@ -238,7 +226,6 @@
   .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
   .badge-red { background: rgba(239,68,68,0.12); color: #f87171; }
 
-  /* ── Case Study Card ── */
   .case-card {
     padding: 24px 0;
     border-bottom: 1px solid var(--border);
@@ -254,55 +241,41 @@
 
 <!-- React Application Script -->
 <script type="text/babel">
-  const { useState, useEffect, useRef } = React;
+  const { useState, useEffect } = React;
 
   function App() {
     const [activeSection, setActiveSection] = useState('overview');
     const [selectedScenario, setSelectedScenario] = useState('single_fault/sf-001');
     const [isPlaying, setIsPlaying] = useState(false);
-    const [playbackStep, setPlaybackStep] = useState(0);
     const [selectedNode, setSelectedNode] = useState('triage');
     const [ablationSplit, setAblationSplit] = useState('test');
     
-    // Recommender State
-    const [rsAlert, setRsAlert] = useState('KubeMemoryOvercommit');
-    const [rsService, setRsService] = useState('frontend');
-    const [rsSymptoms, setRsSymptoms] = useState('OOMKilled exit code 137 under traffic spike');
-    const [rsTopK, setRsTopK] = useState(3);
-    const [rsResults, setRsResults] = useState([
-      { id: 'RB-POD-OOM', title: 'Kubernetes Pod OOMKilled Remediation', score: 0.948, tools: ['kubectl_describe', 'kubectl_scale', 'kubectl_rollout'], actions: ['Verify pod exit code 137', 'Scale replica count to distribute load', 'Patch memory limits in deployment'] },
-      { id: 'RB-HPA-SCALE', title: 'Horizontal Pod Autoscaler Scale-Out', score: 0.812, tools: ['kubectl_scale', 'promql_query'], actions: ['Trigger horizontal pod expansion', 'Monitor CPU/Memory pressure'] }
-    ]);
-
     // Stream Logs
     const [logs, setLogs] = useState([
       { id: 1, role: 'Triage Agent', roleClass: 'badge-red', time: '14:45:01', tool: 'promql_query', text: 'Alert received: KubeMemoryOvercommit on frontend-7d4bf9. Blast radius mapped to public gateway. Severity: P1 Critical.' },
       { id: 2, role: 'Diagnosis Agent', roleClass: 'badge-purple', time: '14:45:06', tool: 'kubectl_logs', text: 'Container terminated with exit code 137 (OOMKilled) under 5x concurrent flash-sale load. Memory ceiling 250Mi breached.' },
-      { id: 3, role: 'Hybrid RS', roleClass: 'badge-blue', time: '14:45:09', tool: 'recommend_runbooks', text: 'Matched Runbook [RB-POD-OOM] with 94.8% confidence. Injected recommended remediation sequence into context.' },
+      { id: 3, role: 'Safety Gate', roleClass: 'badge-blue', time: '14:45:09', tool: 'policy_check', text: 'Validated proposed mutation against circuit-breaker rules. Action: Scale replica count and patch memory limits.' },
       { id: 4, role: 'Remediation Agent', roleClass: 'badge-amber', time: '14:45:14', tool: 'kubectl_scale', text: 'Scaled deployment/frontend from 2 -> 5 replicas and patched memory limit to 512Mi.' },
       { id: 5, role: 'Environment Verifier', roleClass: 'badge-green', time: '14:45:19', tool: 'promql_query', text: 'Evaluated cluster SLOs: 0 restarts in last 120s, HTTP 5xx error rate 0.02% (< 1.0% SLO target). Environment Resolved: TRUE. Reward: 0.918' }
     ]);
 
-    // Telemetry Simulation Values
-    const [telemetry, setTelemetry] = useState({ errorRate: '0.02%', latency: '42ms', podsHealthy: '5/5', status: 'Nominal' });
+    const [telemetry, setTelemetry] = useState({ errorRate: '0.02%', latency: '42ms', podsHealthy: '5/5' });
 
     // Step Simulation Runner
     const runSimulation = () => {
       setIsPlaying(true);
-      setPlaybackStep(1);
       setLogs([]);
       
       const steps = [
-        { role: 'Triage Agent', roleClass: 'badge-red', tool: 'promql_query', text: `Ingested alert for ${selectedScenario}. Mapping service blast radius and initiating investigation.` },
-        { role: 'Diagnosis Agent', roleClass: 'badge-purple', tool: 'jaeger_search', text: 'Traced distributed trace context. Identified bottleneck causing latency cascade and pod exhaustion.' },
-        { role: 'Hybrid RS', roleClass: 'badge-blue', tool: 'recommend_runbooks', text: 'Queried 12 codified SRE runbooks. High-affinity recovery plan identified (Confidence: 0.952).' },
-        { role: 'Remediation Agent', roleClass: 'badge-amber', tool: 'kubectl_rollout', text: 'Applying authorized configuration update and rolling restart to healthy target workloads.' },
-        { role: 'Environment Verifier', roleClass: 'badge-green', tool: 'promql_query', text: 'Independent ground-truth verification passed. Cluster error rate < 1.0%. Environment Resolved: TRUE.' }
+        { role: 'Triage Agent', roleClass: 'badge-red', tool: 'promql_query', text: `Ingested alert for ${selectedScenario}. Mapping service blast radius and downstream dependencies.` },
+        { role: 'Diagnosis Agent', roleClass: 'badge-purple', tool: 'jaeger_search', text: 'Analyzed distributed traces and pod logs. Root cause isolated to resource exhaustion.' },
+        { role: 'Safety Gate', roleClass: 'badge-blue', tool: 'policy_check', text: 'Autonomous action approved under safe-mode execution contract.' },
+        { role: 'Remediation Agent', roleClass: 'badge-amber', tool: 'kubectl_rollout', text: 'Applying configuration patch and initiating deployment rollout.' },
+        { role: 'Environment Verifier', roleClass: 'badge-green', tool: 'promql_query', text: 'Independent ground-truth probe passed. Error rate < 1.0%. Environment Resolved: TRUE.' }
       ];
 
       steps.forEach((step, idx) => {
         setTimeout(() => {
-          setPlaybackStep(idx + 1);
           setLogs(prev => [...prev, {
             id: Date.now() + idx,
             role: step.role,
@@ -313,29 +286,10 @@
           }]);
           if (idx === steps.length - 1) {
             setIsPlaying(false);
-            setTelemetry({ errorRate: '0.01%', latency: '38ms', podsHealthy: '5/5', status: 'Nominal' });
+            setTelemetry({ errorRate: '0.01%', latency: '38ms', podsHealthy: '5/5' });
           }
-        }, (idx + 1) * 900);
+        }, (idx + 1) * 800);
       });
-    };
-
-    const handleRecommenderQuery = () => {
-      setRsResults([
-        {
-          id: `RB-${rsAlert.substring(0,6).toUpperCase()}`,
-          title: `Targeted Runbook for ${rsService} (${rsAlert})`,
-          score: 0.952,
-          tools: ['kubectl_describe', 'kubectl_scale', 'promql_query'],
-          actions: [`Inspect active container state on ${rsService}`, 'Execute scale or configuration rollback', 'Verify Prometheus SLO resolution']
-        },
-        {
-          id: 'RB-HPA-SCALE',
-          title: 'Horizontal Pod Autoscaler Scale-Out',
-          score: 0.795,
-          tools: ['kubectl_scale'],
-          actions: ['Scale target deployment replicas']
-        }
-      ]);
     };
 
     return (
@@ -352,8 +306,7 @@
               <button className={`nav-link ${activeSection === 'overview' ? 'active' : ''}`} onClick={() => setActiveSection('overview')}>Overview</button>
               <button className={`nav-link ${activeSection === 'architecture' ? 'active' : ''}`} onClick={() => setActiveSection('architecture')}>Architecture</button>
               <button className={`nav-link ${activeSection === 'studio' ? 'active' : ''}`} onClick={() => setActiveSection('studio')}>Live Studio</button>
-              <button className={`nav-link ${activeSection === 'recommender' ? 'active' : ''}`} onClick={() => setActiveSection('recommender')}>Recommender RS</button>
-              <button className={`nav-link ${activeSection === 'ablations' ? 'active' : ''}`} onClick={() => setActiveSection('ablations')}>Ablations</button>
+              <button className={`nav-link ${activeSection === 'benchmarks' ? 'active' : ''}`} onClick={() => setActiveSection('benchmarks')}>RL Benchmarks</button>
               <button className={`nav-link ${activeSection === 'cases' ? 'active' : ''}`} onClick={() => setActiveSection('cases')}>Case Studies</button>
             </nav>
 
@@ -372,18 +325,18 @@
               Autonomous SRE multi-agent intelligence.
             </h1>
             <p className="hero-description">
-              AtlasOps orchestrates 4 specialized AI agents, tri-signal hybrid runbook recommendation, and online reinforcement learning to autonomously diagnose, resolve, and verify real Kubernetes incidents in seconds.
+              AtlasOps orchestrates 4 specialized AI agents and online reinforcement learning (GRPO with normalized advantage estimation) to autonomously diagnose, resolve, and verify real Kubernetes incidents across 28 chaos scenarios.
             </p>
             <div style={{ display: 'flex', gap: '12px', marginBottom: '60px' }}>
               <button className="btn btn-primary" onClick={() => { setActiveSection('studio'); runSimulation(); }}>
                 Run Live Demonstration &rarr;
               </button>
               <button className="btn btn-ghost" onClick={() => setActiveSection('architecture')}>
-                Inspect System Architecture
+                Inspect Multi-Agent Pipeline
               </button>
             </div>
 
-            {/* Key Performance Metrics Bar */}
+            {/* Key Metrics */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '32px', paddingTop: '32px', borderTop: '1px solid var(--border)' }}>
               <div>
                 <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Held-Out Test Resolution</div>
@@ -401,9 +354,9 @@
                 <div style={{ fontSize: '12px', color: '#c084fc', marginTop: '2px' }}>Objective ground-truth verifier</div>
               </div>
               <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Runbook Top-3 Precision</div>
-                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>100.0%</div>
-                <div style={{ fontSize: '12px', color: '#10b981', marginTop: '2px' }}>Tri-signal hybrid matcher</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Codified Chaos Scenarios</div>
+                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>28 Scenarios</div>
+                <div style={{ fontSize: '12px', color: '#10b981', marginTop: '2px' }}>Single Fault, Cascade, Multi-Fault</div>
               </div>
             </div>
           </section>
@@ -415,7 +368,7 @@
                 Multi-Agent Architecture & Pipeline
               </h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
-                Interactive state machine flow. Click any node to inspect role prompts, authorized SRE tool ACLs, and execution contracts.
+                Interactive state machine flow. Click any node to inspect role prompts, authorized tool ACLs, and execution contracts.
               </p>
             </div>
 
@@ -429,60 +382,52 @@
                   </linearGradient>
                 </defs>
 
-                {/* Connecting Signal Path */}
-                <path d="M 90 80 L 220 80 L 350 80 L 480 80 L 610 80 L 740 80 L 870 80" stroke="url(#lineGrad)" strokeWidth="2" strokeDasharray="4 4" fill="none"/>
+                <path d="M 90 80 L 230 80 L 380 80 L 530 80 L 680 80 L 830 80" stroke="url(#lineGrad)" strokeWidth="2" strokeDasharray="4 4" fill="none"/>
 
                 {/* Node 1: Alert */}
                 <g className="node-box" onClick={() => setSelectedNode('alert')}>
-                  <rect x="20" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'alert' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="80" y="77" fill="#fff" fontSize="12" fontWeight="500" textAnchor="middle">Alertmanager</text>
-                  <text x="80" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Prometheus Webhook</text>
+                  <rect x="20" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'alert' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="85" y="77" fill="#fff" fontSize="12" fontWeight="500" textAnchor="middle">Alertmanager</text>
+                  <text x="85" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Prometheus Webhook</text>
                 </g>
 
                 {/* Node 2: Triage */}
                 <g className="node-box" onClick={() => setSelectedNode('triage')}>
-                  <rect x="160" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'triage' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="220" y="77" fill="#f87171" fontSize="12" fontWeight="600" textAnchor="middle">Triage Agent</text>
-                  <text x="220" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Blast Radius</text>
+                  <rect x="170" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'triage' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="235" y="77" fill="#f87171" fontSize="12" fontWeight="600" textAnchor="middle">Triage Agent</text>
+                  <text x="235" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Blast Radius</text>
                 </g>
 
                 {/* Node 3: Diagnosis */}
                 <g className="node-box" onClick={() => setSelectedNode('diagnosis')}>
-                  <rect x="300" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'diagnosis' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="360" y="77" fill="#c084fc" fontSize="12" fontWeight="600" textAnchor="middle">Diagnosis Agent</text>
-                  <text x="360" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Trace Analysis</text>
+                  <rect x="320" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'diagnosis' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="385" y="77" fill="#c084fc" fontSize="12" fontWeight="600" textAnchor="middle">Diagnosis Agent</text>
+                  <text x="385" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Jaeger & Logs</text>
                 </g>
 
-                {/* Node 4: Hybrid RS */}
-                <g className="node-box" onClick={() => setSelectedNode('recommender')}>
-                  <rect x="440" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'recommender' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="500" y="77" fill="#38bdf8" fontSize="12" fontWeight="600" textAnchor="middle">Hybrid RS</text>
-                  <text x="500" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Runbook Ranker</text>
+                {/* Node 4: Safety Gate */}
+                <g className="node-box" onClick={() => setSelectedNode('gate')}>
+                  <rect x="470" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'gate' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="535" y="77" fill="#38bdf8" fontSize="12" fontWeight="600" textAnchor="middle">Safety Gate</text>
+                  <text x="535" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Circuit Breaker</text>
                 </g>
 
                 {/* Node 5: Remediation */}
                 <g className="node-box" onClick={() => setSelectedNode('remediation')}>
-                  <rect x="580" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'remediation' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="640" y="77" fill="#fbbf24" fontSize="12" fontWeight="600" textAnchor="middle">Remediation</text>
-                  <text x="640" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Rollout / Scaling</text>
+                  <rect x="620" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'remediation' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="685" y="77" fill="#fbbf24" fontSize="12" fontWeight="600" textAnchor="middle">Remediation</text>
+                  <text x="685" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Rollout / Scaling</text>
                 </g>
 
                 {/* Node 6: Verifier */}
                 <g className="node-box" onClick={() => setSelectedNode('verifier')}>
-                  <rect x="720" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'verifier' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="780" y="77" fill="#34d399" fontSize="12" fontWeight="600" textAnchor="middle">Env Verifier</text>
-                  <text x="780" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Ground Truth Truth</text>
-                </g>
-
-                {/* Node 7: Comms */}
-                <g className="node-box" onClick={() => setSelectedNode('comms')}>
-                  <rect x="860" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'comms' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
-                  <text x="920" y="77" fill="#818cf8" fontSize="12" fontWeight="600" textAnchor="middle">Comms Agent</text>
-                  <text x="920" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Postmortem Draft</text>
+                  <rect x="770" y="50" width="130" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'verifier' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="835" y="77" fill="#34d399" fontSize="12" fontWeight="600" textAnchor="middle">Env Verifier</text>
+                  <text x="835" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Ground Truth Truth</text>
                 </g>
               </svg>
 
-              {/* Node Inspector Detail Panel */}
+              {/* Node Details */}
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border)', fontSize: '13px' }}>
                 {selectedNode === 'triage' && (
                   <div>
@@ -496,10 +441,10 @@
                     <p style={{ color: 'var(--text-secondary)' }}>Traces root causes using Jaeger distributed trace search, OTel spans, and pod log inspection (<code>jaeger_search</code>, <code>jaeger_get_trace</code>, <code>kubectl_logs</code>).</p>
                   </div>
                 )}
-                {selectedNode === 'recommender' && (
+                {selectedNode === 'gate' && (
                   <div>
-                    <span className="badge badge-blue" style={{ marginBottom: '8px' }}>Hybrid Runbook Recommender</span>
-                    <p style={{ color: 'var(--text-secondary)' }}>Matches live telemetry against 12 codified Kubernetes runbooks via tri-signal scoring ($S = lpha S_{	ext{content}} + eta S_{	ext{collab}} + \gamma S_{	ext{prior}}$), injecting structured tool action sequences into the Remediation context.</p>
+                    <span className="badge badge-blue" style={{ marginBottom: '8px' }}>Safety / Approval Gate</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Enforces mutation constraints, blast radius limits, and human-in-the-loop approvals before executing destructive remediation actions.</p>
                   </div>
                 )}
                 {selectedNode === 'remediation' && (
@@ -514,12 +459,6 @@
                     <p style={{ color: 'var(--text-secondary)' }}>Validates cluster SLO ground truth independently from agent claims. Evaluates HTTP error rates, crash count, and readiness before awarding contract rewards.</p>
                   </div>
                 )}
-                {selectedNode === 'comms' && (
-                  <div>
-                    <span className="badge badge-purple" style={{ marginBottom: '8px' }}>Comms Agent</span>
-                    <p style={{ color: 'var(--text-secondary)' }}>Synthesizes executive incident summaries, updates Slack/Discord webhooks, and drafts publication-grade postmortems with cluster timestamps.</p>
-                  </div>
-                )}
               </div>
             </div>
           </section>
@@ -531,13 +470,13 @@
                 Live Incident Response Studio
               </h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
-                Interactive execution player demonstrating real-time multi-agent reasoning, runbook guidance, and SLO recovery.
+                Interactive execution player demonstrating real-time multi-agent reasoning, tool execution, and SLO recovery.
               </p>
             </div>
 
             <div className="studio-grid">
               
-              {/* Left Column: Controls & Visual Telemetry */}
+              {/* Left Column: Controls & Telemetry */}
               <div>
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>Select Failure Scenario</label>
@@ -557,19 +496,18 @@
                   <button className="btn btn-primary" onClick={runSimulation} disabled={isPlaying}>
                     {isPlaying ? 'Running Autonomous Playback...' : '▶ Run Autonomous Resolution'}
                   </button>
-                  <button className="btn btn-ghost" onClick={() => { setLogs([]); setPlaybackStep(0); }}>
+                  <button className="btn btn-ghost" onClick={() => setLogs([])}>
                     Reset
                   </button>
                 </div>
 
-                {/* Telemetry Visualizer Chart */}
+                {/* Telemetry Visualizer */}
                 <div style={{ padding: '24px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', fontSize: '13px' }}>
                     <span style={{ color: '#fff', fontWeight: 500 }}>Cluster Error Rate SLO</span>
                     <span style={{ color: '#10b981', fontFamily: 'var(--font-mono)' }}>{telemetry.errorRate}</span>
                   </div>
                   
-                  {/* Clean SVG Telemetry Sparkline */}
                   <svg viewBox="0 0 300 80" style={{ width: '100%', height: '80px' }}>
                     <path d="M 0 70 L 60 70 L 100 15 L 140 18 L 180 65 L 240 72 L 300 74" fill="none" stroke="#ef4444" strokeWidth="2"/>
                     <path d="M 0 70 L 60 70 L 100 15 L 140 18 L 180 65 L 240 72 L 300 74 L 300 80 L 0 80 Z" fill="rgba(239,68,68,0.08)"/>
@@ -605,86 +543,14 @@
             </div>
           </section>
 
-          {/* ==================== SECTION: RUNBOOK RECOMMENDER ==================== */}
-          <section className="section" id="recommender">
+          {/* ==================== SECTION: RL BENCHMARKS ==================== */}
+          <section className="section" id="benchmarks">
             <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
               <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
-                Tri-Signal Hybrid Recommender (RS)
+                Online GRPO Reinforcement Learning Benchmarks
               </h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
-                Combines lexical BM25 token similarity, collaborative graph transition affinity, and tier priors to recommend optimal remediation runbooks with 100% Hit@3.
-              </p>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '32px' }}>
-              
-              {/* Form Controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Firing Alert</label>
-                  <select className="input-select" value={rsAlert} onChange={e => setRsAlert(e.target.value)}>
-                    <option value="KubeMemoryOvercommit">KubeMemoryOvercommit</option>
-                    <option value="PodCrashLooping">PodCrashLooping</option>
-                    <option value="HighHTTP5xxRate">HighHTTP5xxRate</option>
-                    <option value="DatabaseConnectionExhaustion">DatabaseConnectionExhaustion</option>
-                    <option value="NetworkPartitionDetected">NetworkPartitionDetected</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Affected Microservice</label>
-                  <select className="input-select" value={rsService} onChange={e => setRsService(e.target.value)}>
-                    <option value="frontend">frontend</option>
-                    <option value="checkoutservice">checkoutservice</option>
-                    <option value="paymentservice">paymentservice</option>
-                    <option value="cartservice">cartservice</option>
-                    <option value="emailservice">emailservice</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Observed Symptoms</label>
-                  <textarea className="input-text" rows="3" value={rsSymptoms} onChange={e => setRsSymptoms(e.target.value)}/>
-                </div>
-
-                <button className="btn btn-primary" onClick={handleRecommenderQuery}>
-                  Compute Recommendations
-                </button>
-              </div>
-
-              {/* Recommendations Output */}
-              <div>
-                {rsResults.map((rb, idx) => (
-                  <div key={rb.id} style={{ padding: '20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#fff' }}>#{idx+1} &mdash; [{rb.id}]</span>
-                      <span className="badge badge-green">{(rb.score * 100).toFixed(1)}% Match Confidence</span>
-                    </div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#fff', marginBottom: '8px' }}>{rb.title}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                      <strong>Suggested Tools:</strong> {rb.tools.map(t => <span key={t} className="badge badge-blue" style={{ marginRight: '6px' }}>{t}</span>)}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      <strong>Action Sequence:</strong>
-                      <ol style={{ marginLeft: '20px', marginTop: '4px' }}>
-                        {rb.actions.map(a => <li key={a}>{a}</li>)}
-                      </ol>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-            </div>
-          </section>
-
-          {/* ==================== SECTION: ABLATIONS ==================== */}
-          <section className="section" id="ablations">
-            <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
-              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
-                Multi-Model Ablation Matrix
-              </h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
-                Empirical evaluation across 5 model architectures on held-out test splits and adversarial chaos scenarios.
+                Comparative evaluation showing progression from zero-shot baseline to supervised fine-tuning and online GRPO policy optimization ($A_i = rac{r_i - \mu}{\sigma + \epsilon}$).
               </p>
             </div>
 
@@ -698,12 +564,12 @@
             <table className="flat-table">
               <thead>
                 <tr>
-                  <th>Model Architecture</th>
+                  <th>Model Stage</th>
                   <th>Resolution Rate</th>
                   <th>Avg TTR</th>
                   <th>Contract Reward</th>
                   <th>Format Compliance</th>
-                  <th>Runbook Hit@3</th>
+                  <th>Tool Calling Accuracy</th>
                 </tr>
               </thead>
               <tbody>
@@ -713,7 +579,7 @@
                   <td>45.0s</td>
                   <td>0.345</td>
                   <td>0.0%</td>
-                  <td>33.3%</td>
+                  <td>12.5%</td>
                 </tr>
                 <tr>
                   <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
@@ -721,31 +587,15 @@
                   <td>32.0s</td>
                   <td>0.834</td>
                   <td>100.0%</td>
-                  <td>50.0%</td>
-                </tr>
-                <tr>
-                  <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
-                  <td>100.0%</td>
-                  <td>26.5s</td>
-                  <td>0.852</td>
-                  <td>100.0%</td>
-                  <td style={{ color: 'var(--green)' }}>100.0%</td>
-                </tr>
-                <tr>
-                  <td><strong>Online GRPO RL</strong> (Stage 9)</td>
-                  <td>100.0%</td>
-                  <td>22.0s</td>
-                  <td>0.868</td>
-                  <td>100.0%</td>
-                  <td>66.7%</td>
+                  <td>94.2%</td>
                 </tr>
                 <tr style={{ background: 'var(--surface)', fontWeight: 600 }}>
-                  <td style={{ color: '#fff' }}>Full Pipeline (GAI + RS + RL)</td>
+                  <td style={{ color: '#fff' }}>Online GRPO Reinforcement Learning (Stage 9)</td>
                   <td style={{ color: 'var(--green)' }}>100.0%</td>
                   <td>18.0s (-60%)</td>
                   <td>0.918</td>
                   <td>100.0%</td>
-                  <td style={{ color: 'var(--green)' }}>100.0%</td>
+                  <td style={{ color: 'var(--green)' }}>98.8%</td>
                 </tr>
               </tbody>
             </table>
@@ -766,7 +616,6 @@
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Cloudflare 2019 &mdash; Regex CPU Storm</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unanchored regular expression in WAF rule spiked CPU to 100% globally, dropping 82% of global traffic.</p>
-                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-CPU-THROTTLE &rarr; rollback WAF rule &rarr; scale edge proxy</div>
               </div>
               <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-cloudflare-2019'); setActiveSection('studio'); runSimulation(); }}>
                 Simulate Playback
@@ -777,7 +626,6 @@
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>AWS S3 2017 &mdash; Accidental Scale-to-Zero</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>An SRE typo command intending to take down billing servers took down the core S3 subsystem in us-east-1.</p>
-                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-HPA-SCALE &rarr; restore index replica capacity &rarr; verify bucket health</div>
               </div>
               <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-aws-s3-2017'); setActiveSection('studio'); runSimulation(); }}>
                 Simulate Playback
@@ -788,7 +636,6 @@
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>GitHub 2018 &mdash; DB Failover Loop</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>A 43-second optical loss triggered automated MySQL primary failovers with desynced replicas.</p>
-                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-NET-PARTITION &rarr; isolate stale replicas &rarr; resync master</div>
               </div>
               <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-github-2018'); setActiveSection('studio'); runSimulation(); }}>
                 Simulate Playback
@@ -799,7 +646,6 @@
               <div>
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Datadog 2023 &mdash; DNS Failure Cascade</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>OS upgrade triggered node conntrack exhaustion, dropping DNS UDP queries across thousands of nodes.</p>
-                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-DNS-RESOLV &rarr; flush node conntrack &rarr; scale CoreDNS</div>
               </div>
               <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-datadog-2023'); setActiveSection('studio'); runSimulation(); }}>
                 Simulate Playback
@@ -812,7 +658,7 @@
         <footer style={{ borderTop: '1px solid var(--border)', padding: '40px 0', marginTop: '80px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
           <div className="layout-container" style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div>AtlasOps &mdash; University continuation of Harikishanth/AtlasOps (MIT License).</div>
-            <div>Master Pipeline 15 / 15 Stages Certified PASS (801 Tests Passing).</div>
+            <div>Multi-Agent SRE System &bull; 28 Chaos Scenarios &bull; Online GRPO Reinforcement Learning.</div>
           </div>
         </footer>
       </div>

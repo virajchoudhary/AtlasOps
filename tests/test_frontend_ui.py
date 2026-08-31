@@ -32,7 +32,7 @@ class TestFrontendUIAndAPIs:
         assert "svg viewBox" in content
         assert "diagram-wrapper" in content
         assert "Autonomous SRE multi-agent intelligence" in content
-        assert "Hybrid RS" in content
+        assert "Safety Gate" in content
         assert "Environment Verifier" in content
 
     def test_root_endpoint_serves_html(self):

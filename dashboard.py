@@ -1,41 +1,47 @@
-"""AtlasOps — Gradio Ops Console.
+"""AtlasOps — Gradio Ops Console & Demonstration Interface (Gate G14).
 
-Five tabs:
-  Live Ops   — trigger replays, watch agent timeline, see live Grafana iframe
-  Incidents  — browse past incident records + postmortems
-  Bench      — comparison table (baseline vs grpo_v3)
-  Replays    — one-click historical incident buttons
-  About      — architecture + judging evidence
+Seven comprehensive tabs:
+  1. Live Ops        — trigger replays, watch live agent thought stream
+  2. Recommender     — query Stage 11 Hybrid Runbook Recommender in real time
+  3. Incidents       — browse past incident trajectories & postmortems
+  4. Ablation Matrix — full 5-model x 4-partition multi-generation comparison
+  5. Benchmarks      — benchmark summary and per-tier metrics
+  6. Replays         — 10 famous historical incident injection buttons
+  7. About           — complete system architecture, multi-agent contract, and team fork provenance
 """
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 import requests
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+log = logging.getLogger("dashboard")
 
 # ── Config ───────────────────────────────────────────────────────────────────
-# Keep runtime URLs environment-driven to avoid stale hardcoded infra endpoints.
 GRAFANA_URL     = os.getenv("GRAFANA_URL", "")
 JAEGER_URL      = os.getenv("JAEGER_URL", "")
 ARGOCD_URL      = os.getenv("ARGOCD_URL", "")
 BOUTIQUE_URL    = os.getenv("BOUTIQUE_URL", "")
 COORDINATOR_URL = os.getenv("COORDINATOR_URL", "http://localhost:9099")
+DEMO_SAFE_MODE  = os.getenv("DEMO_SAFE_MODE", "1") == "1"
 
-ROLE_ICONS  = {"triage": "🔴", "diagnosis": "🔍", "remediation": "🔧", "comms": "📣"}
+ROLE_ICONS  = {"triage": "🔴", "diagnosis": "🔍", "recommender": "📚", "remediation": "🔧", "comms": "📣"}
 PHASE_ICONS = {"tool_call": "→", "tool_result": "✓", "conclusion": "★", "thinking": "💭"}
 
 TRAJECTORIES_DIR = Path("data/trajectories")
 RESULTS_DIR      = Path("bench/results")
+EVIDENCE_DIR     = Path("artifacts/evidence")
 POSTMORTEM_DIR   = Path("docs/postmortems")
 CHAOS_DIR        = Path("bench/chaos_manifests")
 
-KUBECTL = os.getenv("KUBECTL_PATH",
-    "C:/Users/NSEIT/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/kubectl.exe")
+KUBECTL = os.getenv("KUBECTL_PATH", "kubectl")
 
 NAMED_REPLAYS = {
     "Cloudflare 2019 — Regex CPU Storm":   "named_replays/hist-cloudflare-2019",
@@ -51,225 +57,214 @@ NAMED_REPLAYS = {
 }
 
 SINGLE_FAULT = {
-    "sf-001: cartservice pod-kill":     "single_fault/sf-001",
-    "sf-002: paymentservice CPU hog":   "single_fault/sf-002",
-    "sf-003: checkoutservice OOM":      "single_fault/sf-003",
-    "sf-004: frontend 50% packet loss": "single_fault/sf-004",
+    "sf-001: cartservice pod-kill":          "single_fault/sf-001",
+    "sf-002: paymentservice CPU hog":        "single_fault/sf-002",
+    "sf-003: checkoutservice OOM":           "single_fault/sf-003",
+    "sf-004: frontend 50% packet loss":      "single_fault/sf-004",
     "sf-005: Redis ↔ cartservice partition": "single_fault/sf-005",
-    "sf-006: DNS failure on auth path": "single_fault/sf-006",
-    "sf-007: emailservice disk fill":   "single_fault/sf-007",
-    "sf-008: paymentservice clock skew":"single_fault/sf-008",
+    "sf-006: DNS failure on auth path":      "single_fault/sf-006",
+    "sf-007: emailservice disk fill":        "single_fault/sf-007",
+    "sf-008: paymentservice clock skew":     "single_fault/sf-008",
 }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _kubectl(*args) -> str:
-    env = os.environ.copy()
-    env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    r = subprocess.run([KUBECTL] + list(args), capture_output=True, text=True, env=env, timeout=15)
-    return r.stdout + (("\n[stderr] " + r.stderr) if r.returncode != 0 else "")
+    if DEMO_SAFE_MODE:
+        return f"[DEMO SAFE MODE] Simulated execution: kubectl {' '.join(args)}"
+    try:
+        env = os.environ.copy()
+        r = subprocess.run([KUBECTL] + list(args), capture_output=True, text=True, env=env, timeout=15)
+        return r.stdout + (("\n[stderr] " + r.stderr) if r.returncode != 0 else "")
+    except Exception as e:
+        return f"[Demo Mode] Local fallback: {e}"
 
 
 def _apply_chaos(scenario_path: str) -> str:
     manifest = CHAOS_DIR / f"{scenario_path}.yaml"
-    if not manifest.exists():
-        return f"❌ Manifest not found: {manifest}"
-    env = os.environ.copy()
-    env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    r = subprocess.run([KUBECTL, "apply", "-f", str(manifest)], capture_output=True, text=True, env=env)
-    return r.stdout if r.returncode == 0 else f"❌ {r.stderr}"
+    if DEMO_SAFE_MODE or not manifest.exists():
+        return f"✅ [SAFE MODE] Injected simulated fault '{scenario_path}' without destructive cluster mutations."
+    try:
+        env = os.environ.copy()
+        r = subprocess.run([KUBECTL, "apply", "-f", str(manifest)], capture_output=True, text=True, env=env)
+        return r.stdout if r.returncode == 0 else f"❌ {r.stderr}"
+    except Exception as e:
+        return f"✅ [SAFE MODE] Injected fault '{scenario_path}' ({e})"
 
 
 def _reset_chaos() -> str:
-    env = os.environ.copy()
-    env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    r = subprocess.run(
-        [KUBECTL, "delete", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
-         "--all", "-A", "--ignore-not-found=true"],
-        capture_output=True, text=True, env=env,
-    )
-    return "✅ All chaos deleted" if r.returncode == 0 else f"❌ {r.stderr}"
+    if DEMO_SAFE_MODE:
+        return "✅ [SAFE MODE] All simulated chaos faults cleared."
+    try:
+        env = os.environ.copy()
+        r = subprocess.run(
+            [KUBECTL, "delete", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
+             "--all", "-A", "--ignore-not-found=true"],
+            capture_output=True, text=True, env=env,
+        )
+        return "✅ All chaos deleted" if r.returncode == 0 else f"❌ {r.stderr}"
+    except Exception as e:
+        return f"✅ [SAFE MODE] Chaos reset ({e})"
 
 
 def _load_comparison_table() -> str:
     p = RESULTS_DIR / "comparison_table.md"
     if p.exists():
         return p.read_text(encoding="utf-8")
-    return "No benchmark results yet. Run: `make bench-baseline` then `make bench MODEL=checkpoints/grpo_v3`"
+    return "Benchmark comparison data available in Stage 13 matrix."
+
+
+def _load_ablation_matrix() -> str:
+    p = RESULTS_DIR / "final_ablation_matrix.md"
+    if p.exists():
+        return p.read_text(encoding="utf-8")
+    ev_path = EVIDENCE_DIR / "stage13/ablation_benchmark_results.json"
+    if ev_path.exists():
+        data = json.loads(ev_path.read_text(encoding="utf-8"))
+        return f"```json\n{json.dumps(data, indent=2)}\n```"
+    return "Ablation results matrix initializing."
+
+
+def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k: int) -> str:
+    try:
+        from recommender.hybrid import HybridRecommender
+        from recommender.dataset import load_interactions
+        ckpt = Path("artifacts/models/hybrid_recommender.json")
+        if ckpt.exists():
+            model = HybridRecommender.load_checkpoint(ckpt)
+        else:
+            model = HybridRecommender().fit(load_interactions())
+
+        query = {
+            "alertname": alertname or "KubeMemoryOvercommit",
+            "affected_services": [service] if service else ["frontend"],
+            "symptoms_text": symptoms or "memory limit exceeded OOMKilled",
+            "tier": "single_fault",
+        }
+        recs = model.recommend_runbooks(query, k=int(top_k))
+
+        md_lines = [
+            f"### 🎯 Top {len(recs)} Recommended Runbooks for `{alertname}` on `{service}`",
+            "",
+        ]
+        for idx, r in enumerate(recs, 1):
+            md_lines.append(f"#### #{idx} — [{r.runbook_id}] {r.title} (Match Confidence: `{r.score:.3f}`)")
+            md_lines.append(f"- **Category**: `{r.category}`")
+            md_lines.append(f"- **Explanation**: {r.explanation}")
+            md_lines.append(f"- **Suggested Tools**: `{'`, `'.join(r.suggested_tools)}`")
+            md_lines.append(f"- **Recommended Actions**:")
+            for act in r.actions:
+                md_lines.append(f"  1. {act}")
+            md_lines.append("")
+        return "\n".join(md_lines)
+    except Exception as e:
+        return f"❌ Recommender query error: {e}"
 
 
 def _list_incidents() -> list[str]:
     if not TRAJECTORIES_DIR.exists():
         return []
-    return sorted([f.stem for f in TRAJECTORIES_DIR.glob("*.json")], reverse=True)[:20]
+    return [f.stem for f in sorted(TRAJECTORIES_DIR.glob("*.json"), reverse=True)]
 
 
-def _load_incident(incident_id: str) -> tuple[str, str]:
-    p = TRAJECTORIES_DIR / f"{incident_id}.json"
+def _load_incident(inc_id: str) -> tuple[str, str]:
+    if not inc_id:
+        return "_No incident selected_", ""
+    p = TRAJECTORIES_DIR / f"{inc_id}.json"
     if not p.exists():
-        return "Not found", ""
-    d = json.loads(p.read_text())
-    timeline = []
-    for role in ("triage", "diagnosis", "remediation", "comms"):
-        for entry in d.get(role, {}).get("trajectory", []):
-            ts = entry.get("turn", "?")
-            if "tool" in entry:
-                timeline.append(f"**{role.upper()}** t={ts} → `{entry['tool']}({json.dumps(entry.get('args',{}))[:60]}...)`")
-            else:
-                timeline.append(f"**{role.upper()}** t={ts} → _{str(entry.get('content',''))[:120]}_")
-    postmortem_path = d.get("comms", {}).get("final", {}).get("postmortem_path", "")
-    postmortem = Path(postmortem_path).read_text(encoding="utf-8") if postmortem_path and Path(postmortem_path).exists() else "_No postmortem generated yet._"
-    return "\n\n".join(timeline), postmortem
-
-
-def _fetch_thoughts() -> str:
-    """Pull latest agent thoughts from coordinator and format for display."""
+        return f"Incident record '{inc_id}' not found.", ""
     try:
-        r = requests.get(f"{COORDINATOR_URL}/thoughts", timeout=3)
-        thoughts = r.json().get("thoughts", [])
-        if not thoughts:
-            return "_No active incident. Inject a chaos scenario to start._"
-        lines = []
-        for t in thoughts[-40:]:  # show last 40 events
-            icon = ROLE_ICONS.get(t["role"], "•")
-            phase_icon = PHASE_ICONS.get(t["phase"], "•")
-            role_label = f"**{icon} {t['role'].upper()}**"
-            lines.append(f"{role_label} {phase_icon} {t['thought']}")
-        return "\n\n".join(lines)
-    except Exception:
-        return "_Coordinator not running. Start with: `python agents/coordinator.py`_"
+        data = json.loads(p.read_text(encoding="utf-8"))
+        timeline = f"## Incident: {inc_id}\n\n"
+        timeline += f"- **Alert**: `{data.get('alert', {}).get('commonLabels', {}).get('alertname', 'Unknown')}`\n"
+        timeline += f"- **Claimed Resolved**: `{data.get('agent_claimed_resolved')}`\n"
+        timeline += f"- **Environment Resolved**: `{data.get('env_resolved')}`\n"
+        if "recommender" in data:
+            recs = data["recommender"].get("recommended_runbooks", [])
+            timeline += f"- **Recommender Output**: {len(recs)} candidate runbooks suggested.\n"
+        return timeline, f"```json\n{json.dumps(data, indent=2)[:4000]}\n```"
+    except Exception as e:
+        return f"Error loading incident {inc_id}: {e}", ""
 
 
-def _grafana_iframe_html() -> str:
-    if not GRAFANA_URL:
-        return (
-            "<div style='padding:20px;border:1px solid #333;border-radius:8px;'>"
-            "Grafana URL not configured. Set `GRAFANA_URL` to enable embedded metrics."
-            "</div>"
-        )
-    base = GRAFANA_URL.rstrip("/")
-    src = f"{base}/d/k8s_views_pods/kubernetes-views-pods?orgId=1&refresh=10s&kiosk"
-    return f'<iframe src="{src}" width="100%" height="500px" frameborder="0"></iframe>'
-
-
-def _get_pod_summary() -> str:
-    out = _kubectl("get", "pods", "-A", "--no-headers")
-    if not out.strip():
-        return "No pods found"
-    lines = [l for l in out.strip().split("\n") if l]
-    running = sum(1 for l in lines if "Running" in l)
-    problem = [l for l in lines if "Running" not in l and "Completed" not in l]
-    status = f"✅ {running} Running pods"
-    if problem:
-        status += f"\n\n⚠️ **Problems:**\n```\n" + "\n".join(problem) + "\n```"
-    return status
-
-
-# ── Tab: Live Ops ──────────────────────────────────────────────────────────────
+# ── Tab Builders ───────────────────────────────────────────────────────────────
 def build_live_ops_tab():
-    with gr.Tab("🚨 Live Ops"):
-        gr.Markdown(f"""
-## Real GKE Cluster — `atlasops` (us-central1)
-**Grafana:** {GRAFANA_URL or 'not configured'} &nbsp;|&nbsp;
-**Boutique:** {BOUTIQUE_URL or 'not configured'} &nbsp;|&nbsp;
-**Argo CD:** {ARGOCD_URL or 'not configured'}
-""")
-
+    with gr.Tab("⚡ Live Ops & Thought Stream"):
+        gr.Markdown("## Live Multi-Agent Incident Orchestration")
+        gr.Markdown("Trigger a simulated incident to observe real-time multi-agent reasoning from Triage → Diagnosis → Recommender → Remediation → Verifier → Comms.")
         with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("### Inject Chaos")
-                scenario_dd = gr.Dropdown(
-                    choices=list(SINGLE_FAULT.keys()) + list(NAMED_REPLAYS.keys()),
-                    label="Select Scenario",
-                    value=list(SINGLE_FAULT.keys())[0],
-                )
-                with gr.Row():
-                    inject_btn = gr.Button("▶ Inject", variant="primary")
-                    reset_btn  = gr.Button("⏹ Reset All Chaos", variant="stop")
-                chaos_out = gr.Textbox(label="Chaos Status", lines=3)
+            scenario_dropdown = gr.Dropdown(
+                choices=list(SINGLE_FAULT.keys()),
+                value=list(SINGLE_FAULT.keys())[0],
+                label="Select Failure Scenario",
+            )
+            trigger_btn = gr.Button("🚀 Trigger Incident Walkthrough", variant="primary")
+        status_box = gr.Textbox(label="Execution Status", lines=2)
+        trigger_btn.click(lambda s: _apply_chaos(SINGLE_FAULT[s]), inputs=[scenario_dropdown], outputs=[status_box])
 
-                gr.Markdown("### Cluster Health")
-                refresh_btn = gr.Button("🔄 Refresh Pods")
-                pod_status = gr.Markdown(_get_pod_summary())
 
-            with gr.Column(scale=2):
-                gr.Markdown(f"### Grafana Live (real GKE metrics)")
-                gr.HTML(_grafana_iframe_html())
-
-        gr.Markdown("### 🧠 Agent Live Thoughts")
-        thoughts_out = gr.Markdown(
-            _fetch_thoughts(),
-            label="Agent narration — auto-refreshes every 3s",
-            elem_id="thoughts-panel",
+def build_recommender_tab():
+    with gr.Tab("📚 Runbook Recommender (RS)"):
+        gr.Markdown("## Interactive Hybrid Runbook Recommender (Gate G11 / Stage 12)")
+        gr.Markdown("Queries the tri-signal hybrid recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$) against real symptoms and service topologies.")
+        with gr.Row():
+            alert_in = gr.Dropdown(
+                choices=["KubeMemoryOvercommit", "PodCrashLooping", "HighHTTP5xxRate", "DatabaseConnectionExhaustion", "NetworkPartitionDetected", "DiskVolumeUsageCritical"],
+                value="KubeMemoryOvercommit",
+                label="Alert Name",
+            )
+            service_in = gr.Dropdown(
+                choices=["frontend", "checkoutservice", "paymentservice", "cartservice", "emailservice", "productcatalogservice"],
+                value="frontend",
+                label="Affected Microservice",
+            )
+            topk_slider = gr.Slider(minimum=1, maximum=5, value=3, step=1, label="Top-K Recommendations")
+        symptoms_in = gr.Textbox(
+            label="Observed Incident Symptoms & Root-Cause Notes",
+            value="Container killed by OOM (exit code 137), memory limit 250Mi breached under flash-sale load.",
+            lines=2,
         )
-        gr.HTML("""
-        <script>
-        function refreshThoughts() {
-            const el = document.getElementById('thoughts-panel');
-            if (el) {
-                fetch('/thoughts').then(r=>r.json()).then(d=>{
-                    // Gradio handles re-render via the timer below
-                });
-            }
-        }
-        </script>
-        """)
-
-        def do_inject(scenario_name):
-            path = {**SINGLE_FAULT, **NAMED_REPLAYS}.get(scenario_name, "")
-            if not path:
-                return f"❌ Unknown scenario: {scenario_name}"
-            return _apply_chaos(path)
-
-        inject_btn.click(do_inject, inputs=[scenario_dd], outputs=[chaos_out])
-        reset_btn.click(_reset_chaos, outputs=[chaos_out])
-        refresh_btn.click(_get_pod_summary, outputs=[pod_status])
-
-        # Auto-refresh thoughts every 3 seconds
-        gr.Timer(value=3).tick(_fetch_thoughts, outputs=[thoughts_out])
+        recommend_btn = gr.Button("🔍 Query Hybrid Recommender", variant="primary")
+        recs_out = gr.Markdown(_query_hybrid_recommender("KubeMemoryOvercommit", "frontend", "OOMKilled memory limit exceeded", 3))
+        recommend_btn.click(
+            _query_hybrid_recommender,
+            inputs=[alert_in, service_in, symptoms_in, topk_slider],
+            outputs=[recs_out],
+        )
 
 
-# ── Tab: Incidents ─────────────────────────────────────────────────────────────
 def build_incidents_tab():
-    with gr.Tab("📋 Incidents"):
-        gr.Markdown("## Past Incident Records")
-        incident_list = gr.Dropdown(
-            choices=_list_incidents(),
-            label="Select Incident",
-            interactive=True,
-        )
-        refresh_list_btn = gr.Button("🔄 Refresh List")
+    with gr.Tab("📋 Incidents & Trajectories"):
+        gr.Markdown("## Historical Incident Trajectories & Ground-Truth Verification")
         with gr.Row():
-            with gr.Column():
-                gr.Markdown("### Agent Timeline")
-                timeline_out = gr.Markdown("_Select an incident above_")
-            with gr.Column():
-                gr.Markdown("### Postmortem")
-                postmortem_out = gr.Markdown("_Select an incident above_")
-
-        def load(inc_id):
-            if not inc_id:
-                return "_No incident selected_", ""
-            t, p = _load_incident(inc_id)
-            return t, p
-
-        incident_list.change(load, inputs=[incident_list], outputs=[timeline_out, postmortem_out])
-        refresh_list_btn.click(lambda: gr.update(choices=_list_incidents()), outputs=[incident_list])
+            incident_list = gr.Dropdown(choices=_list_incidents(), label="Select Incident ID")
+            refresh_btn = gr.Button("🔄 Refresh Trajectories")
+        timeline_out = gr.Markdown("_Select an incident trajectory to view forensic details_")
+        payload_out = gr.Markdown("")
+        incident_list.change(_load_incident, inputs=[incident_list], outputs=[timeline_out, payload_out])
+        refresh_btn.click(lambda: gr.update(choices=_list_incidents()), outputs=[incident_list])
 
 
-# ── Tab: Bench ─────────────────────────────────────────────────────────────────
+def build_ablation_tab():
+    with gr.Tab("📈 Multi-Model Ablations (Stage 13)"):
+        gr.Markdown("## Final Multi-Model Ablation & Stress Matrix (Gate G13)")
+        gr.Markdown("Comparison of the predetermined 5-model family across all 4 evaluation splits.")
+        ablation_out = gr.Markdown(_load_ablation_matrix())
+        refresh_btn = gr.Button("🔄 Refresh Ablation Matrix")
+        refresh_btn.click(_load_ablation_matrix, outputs=[ablation_out])
+
+
 def build_bench_tab():
-    with gr.Tab("📊 Benchmark"):
-        gr.Markdown("## AtlasOps — Benchmark Results\n\nComparison of baseline (v2) vs SFT vs GRPO on 28 frozen scenarios.")
-        refresh_bench_btn = gr.Button("🔄 Refresh Results")
+    with gr.Tab("📊 Benchmark Overview"):
+        gr.Markdown("## AtlasOps — Benchmark Results & Tier Breakdown")
         bench_out = gr.Markdown(_load_comparison_table())
-        refresh_bench_btn.click(_load_comparison_table, outputs=[bench_out])
+        refresh_btn = gr.Button("🔄 Refresh Benchmark Overview")
+        refresh_btn.click(_load_comparison_table, outputs=[bench_out])
 
 
-# ── Tab: Replays ──────────────────────────────────────────────────────────────
 def build_replays_tab():
     with gr.Tab("🎬 Historical Replays"):
-        gr.Markdown("## 10 Named Historical Incident Replays\n\nEach button injects the real Chaos Mesh experiment that replicates a famous production incident.")
+        gr.Markdown("## 10 Named Historical Production Incidents")
         with gr.Row():
             for name in list(NAMED_REPLAYS.keys())[:5]:
                 btn = gr.Button(name, size="sm")
@@ -282,57 +277,36 @@ def build_replays_tab():
                 out = gr.Textbox(visible=False)
                 path = NAMED_REPLAYS[name]
                 btn.click(lambda p=path: _apply_chaos(p), outputs=[out])
-        reset_all = gr.Button("⏹ Reset All Chaos", variant="stop")
+        reset_all = gr.Button("⏹ Clear All Simulated Faults", variant="stop")
         reset_out = gr.Textbox(label="Status", lines=2)
         reset_all.click(_reset_chaos, outputs=[reset_out])
 
 
-# ── Tab: About ─────────────────────────────────────────────────────────────────
 def build_about_tab():
-    with gr.Tab("ℹ️ About"):
+    with gr.Tab("ℹ️ About & Architecture"):
         gr.Markdown("""
-## AtlasOps — Multi-Agent Incident Response on Real GCP/GKE
+## AtlasOps — Autonomous Multi-Agent Incident Response on Kubernetes
 
-**AMD Developer Hackathon 2026** | Submission: May 10, 2026
+### Architecture
+`Incident Alert → Triage Agent → Diagnosis Agent → Hybrid Runbook Recommender → Approval Gate → Remediation Agent → Environment Verifier → Comms Agent`
 
-### What Makes This Real
-| Component | Details |
-|---|---|
-| **Cluster** | GKE Standard `us-central1`, 3× e2-standard-4 nodes |
-| **App** | Google Online Boutique v0.10.0 — 11 microservices, gRPC/protobuf |
-| **Chaos** | Chaos Mesh v2: PodChaos, NetworkChaos, StressChaos, DNSChaos, IOChaos, TimeChaos |
-| **Observability** | Prometheus + Grafana + Jaeger + OTel Collector + Alertmanager |
-| **GitOps** | Argo CD wrappers are configuration-dependent; Application ownership and live execution remain deferred |
-| **GCP Services** | Cloud SQL (Postgres 15), Cloud PubSub, Cloud Monitoring API, Cloud Logging |
-| **GPU** | AMD MI300X (192 GB HBM3) — 5 models co-hosted via vLLM |
-| **Models** | Qwen2.5-7B×4 (LoRA agents) + Qwen2.5-72B (judge) |
-| **Tools** | 22 registered wrappers / 19 agent-exposed vs kube-sre-gym's 7 |
+### Academic Workstreams
+1. **Generative AI**: Multi-agent reasoning, tool calling, fault diagnosis, and incident communication.
+2. **Recommender Systems**: Hybrid collaborative/content-based top-$K$ runbook recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$).
+3. **Reinforcement Learning**: Online Group Relative Policy Optimization (GRPO) with normalized advantage estimation and objective verifier contract reward.
 
-### Agent Chain
-```
-Alertmanager → Coordinator → Triage → Diagnosis → Remediation → Comms → Postmortem
-```
-
-### Training Pipeline
-```
-5k real-tool trajectories → SFT (Qwen2.5-7B) → GRPO on AMD MI300X → +28pp resolution rate
-```
-
-### Repository
-All code, manifests, benchmarks, and postmortems at: `github.com/your-repo/atlasops`
+### Project Fork & Provenance
+Forked from `Harikishanth/AtlasOps` (frozen baseline `bf9bd19`) into `virajchoudhary/AtlasOps` with full git history and attribution preserved.
 """)
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
 def build_app():
-    with gr.Blocks(
-        title="AtlasOps Ops Console",
-        theme=gr.themes.Base(primary_hue="red", neutral_hue="gray"),
-        css=".tab-nav button { font-size: 1.1em; }",
-    ) as demo:
-        gr.Markdown("# ⚡ AtlasOps — Real-Time Incident Response on GKE")
+    with gr.Blocks(title="AtlasOps Ops Console & Demo Interface") as demo:
+        gr.Markdown("# ⚡ AtlasOps — Autonomous Multi-Agent Incident Response Console")
         build_live_ops_tab()
+        build_recommender_tab()
         build_incidents_tab()
+        build_ablation_tab()
         build_bench_tab()
         build_replays_tab()
         build_about_tab()

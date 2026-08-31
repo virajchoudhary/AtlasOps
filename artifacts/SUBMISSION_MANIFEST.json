@@ -1,0 +1,150 @@
+{
+  "project_name": "AtlasOps",
+  "project_repository": "virajchoudhary/AtlasOps",
+  "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
+  "pipeline_version": "v1.1",
+  "completion_date": "2026-08-31T09:40:24.353258+00:00",
+  "stages_completed": "15 / 15 (100%)",
+  "status": "CERTIFIED_PASS",
+  "academic_workstreams": [
+    "Generative AI: Multi-Agent Incident Response & Trajectory Synthesis",
+    "Recommender Systems: Hybrid Top-K Runbook Recommendation",
+    "Reinforcement Learning: Online Group Relative Policy Optimization (GRPO)"
+  ],
+  "key_metrics": {
+    "test_resolution_rate": "100.0%",
+    "adversarial_resolution_rate": "100.0%",
+    "test_avg_ttr_seconds": 18.0,
+    "test_contract_reward": 0.918,
+    "recommender_test_hit_at_3": "100.0%",
+    "recommender_test_mrr_at_3": 0.833
+  },
+  "asset_count": 25,
+  "assets": {
+    "docs/AtlasOps_Technical_Report.md": {
+      "sha256": "0ce69e67af893eaa45036a6a710cebef3e734c4bfe743e7f4617689412a79861",
+      "size_bytes": 9505,
+      "last_modified": "2026-08-31T09:36:35.099111+00:00"
+    },
+    "docs/project/MASTER_PIPELINE_STATUS.md": {
+      "sha256": "55216c27b1fa2a43155fa0b2718a2f438119d1df57b24130322c605de4d7f4a0",
+      "size_bytes": 33998,
+      "last_modified": "2026-08-31T09:37:37.854321+00:00"
+    },
+    "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
+      "sha256": "86c90ccf90abe922fe450b8ae4a12d972ea378de0e75cf9470d8cfccd223c29e",
+      "size_bytes": 4991,
+      "last_modified": "2026-08-31T06:20:26.834579+00:00"
+    },
+    "docs/project/STAGE_11_HYBRID_RECOMMENDER.md": {
+      "sha256": "17927e909426bd4d048ec89a43efa4e65be61ebc7ece8dee783489c1ac167e1f",
+      "size_bytes": 4252,
+      "last_modified": "2026-08-31T09:01:12.895818+00:00"
+    },
+    "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
+      "sha256": "c95fc2de5a3736a2c3be92ff235b0769215b345821c837e27cfb6e88b5ea1767",
+      "size_bytes": 4040,
+      "last_modified": "2026-08-31T09:15:35.776156+00:00"
+    },
+    "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
+      "sha256": "93fc724c1e489c7295599f2d811560e14f823d5570221e36708228a68f44e3ce",
+      "size_bytes": 5506,
+      "last_modified": "2026-08-31T09:25:02.258968+00:00"
+    },
+    "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
+      "sha256": "7142dcac2d66f00e694dd584a4f33eba3df9ae66824ea6e7af0bedf7725a72aa",
+      "size_bytes": 3257,
+      "last_modified": "2026-08-31T09:35:08.134859+00:00"
+    },
+    "docs/project/STAGE_15_FINAL_SUBMISSION.md": {
+      "sha256": "e68819439b2efcf088d7e79c32d4efa969fee9274c3f00ce2ba2cbbdbc0789d2",
+      "size_bytes": 3318,
+      "last_modified": "2026-08-31T09:37:23.066451+00:00"
+    },
+    "docs/project/STAGE_3_OPERATOR_GUIDE.md": {
+      "sha256": "a21f1dd34f26ad73312edc2430705fe508258e74d30b9ec22f5215d0978b60bf",
+      "size_bytes": 11922,
+      "last_modified": "2026-08-16T13:32:37.237910+00:00"
+    },
+    "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md": {
+      "sha256": "cd9bca6b5062f47e94713b464fe937587df31cbc9ddfb506714c7b0d5a2d3c60",
+      "size_bytes": 9110,
+      "last_modified": "2026-08-31T05:16:41.340790+00:00"
+    },
+    "docs/project/STAGE_6_ZERO_SHOT_BASELINE.md": {
+      "sha256": "70b7fb9b2031c299b11f3cdd65c7c7737f38d6e7f893e44b9719ba3642818ed8",
+      "size_bytes": 4555,
+      "last_modified": "2026-08-31T05:31:44.094773+00:00"
+    },
+    "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
+      "sha256": "5238071e80e85d943e38484d215ca680c4c7fbd88fbe3727ae7e21167e9c658f",
+      "size_bytes": 4484,
+      "last_modified": "2026-08-31T05:51:37.284531+00:00"
+    },
+    "docs/project/STAGE_8_SFT_EVALUATION.md": {
+      "sha256": "2db1e39bd3251eb36727c199f69b360b7faa2c8c97d3b10a4a5fa465243a8680",
+      "size_bytes": 3259,
+      "last_modified": "2026-08-31T06:00:44.214781+00:00"
+    },
+    "docs/project/STAGE_9_ONLINE_GRPO.md": {
+      "sha256": "045ad8b6207d16540364eb9acde7f82be225ef6eb1c2045eadf0504e2958dc7d",
+      "size_bytes": 4210,
+      "last_modified": "2026-08-31T06:10:07.152969+00:00"
+    },
+    "artifacts/models/hybrid_recommender.json": {
+      "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
+      "size_bytes": 2646,
+      "last_modified": "2026-08-31T09:01:12.893722+00:00"
+    },
+    "artifacts/evidence/stage10/rs_dataset_manifest.json": {
+      "sha256": "2bd3c682232ba8431af06b382384b10b9ef571ae8c2e455b3da12b8c6466cd90",
+      "size_bytes": 587,
+      "last_modified": "2026-08-31T09:40:23.818923+00:00"
+    },
+    "artifacts/evidence/stage11/rs_hybrid_eval.json": {
+      "sha256": "2ff967237a7bf21ca0fe339135073602db7b3c8569f9ee78e471c09c243d364d",
+      "size_bytes": 3234,
+      "last_modified": "2026-08-31T09:01:12.892094+00:00"
+    },
+    "artifacts/evidence/stage13/ablation_benchmark_results.json": {
+      "sha256": "3b7f1f88e6e37a969593f816855d5c38532327f852f7370ba04925f1c8d9801f",
+      "size_bytes": 7156,
+      "last_modified": "2026-08-31T09:40:23.956112+00:00"
+    },
+    "dashboard.py": {
+      "sha256": "b005cfb9ea910bf6ecfb868a86a67f3e3b5077dc0c74a40c31b2b3b7d9740779",
+      "size_bytes": 15530,
+      "last_modified": "2026-08-31T09:35:08.132150+00:00"
+    },
+    "demo/launcher.py": {
+      "sha256": "1b3f79ae025abb60dcbe2684421f53f86194081a34b1e2b9220f980abfbbe8e1",
+      "size_bytes": 1848,
+      "last_modified": "2026-08-31T09:35:08.133240+00:00"
+    },
+    "recommender/hybrid.py": {
+      "sha256": "66f7e661a445ff085ca5991b8018a20419ef4cef0b0237ce94e43ed078da355d",
+      "size_bytes": 9969,
+      "last_modified": "2026-08-31T09:01:12.899619+00:00"
+    },
+    "recommender/dataset.py": {
+      "sha256": "50dc2997f1071c9c553b0cfe540a2a4131f565236f9f6c75ab445791a0876307",
+      "size_bytes": 7488,
+      "last_modified": "2026-08-31T06:20:26.836749+00:00"
+    },
+    "training/sft.py": {
+      "sha256": "3ae2f28c042c372d75c1deda1d1d07b54747a0cd799bfc004ffd45dc8e9df96c",
+      "size_bytes": 4080,
+      "last_modified": "2026-08-11T15:08:49.423895+00:00"
+    },
+    "training/grpo.py": {
+      "sha256": "316ec6696468f35fefa65819edbc6730ad3762884993287de88d914d3b79be33",
+      "size_bytes": 20100,
+      "last_modified": "2026-08-31T06:10:07.155250+00:00"
+    },
+    "bench/ablation_suite.py": {
+      "sha256": "e38d305511c7ca25ace38e04d3a3212bd6c1e3d40ca43eb0a55f2a7d00c41950",
+      "size_bytes": 8537,
+      "last_modified": "2026-08-31T09:25:02.257383+00:00"
+    }
+  }
+}

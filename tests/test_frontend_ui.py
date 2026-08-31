@@ -22,18 +22,16 @@ class TestFrontendUIAndAPIs:
         # Check document metadata and title
         assert "<title>AtlasOps" in content
 
-        # Check React 18 & ReactDOM & Babel script dependencies
-        assert "react@18" in content
-        assert "react-dom@18" in content
-        assert "@babel/standalone" in content
-        assert 'id="root"' in content
-
-        # Check visual SVG diagram and OpenAI editorial components
+        # Check pre-rendered HTML DOM and OpenAI editorial components
+        assert "Autonomous SRE multi-agent intelligence" in content
         assert "svg viewBox" in content
         assert "diagram-wrapper" in content
-        assert "Autonomous SRE multi-agent intelligence" in content
+        assert "Triage Agent" in content
         assert "Safety Gate" in content
         assert "Environment Verifier" in content
+        assert 'id="stream-logs"' in content
+        assert 'id="scenario-selector"' in content
+        assert 'id="ablation-tbody"' in content
 
     def test_root_endpoint_serves_html(self):
         """Verify GET / returns HTTP 200 and serves HTML content."""

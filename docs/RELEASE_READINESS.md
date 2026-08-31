@@ -2,7 +2,7 @@
 
 - Overall: **PASS**
 - Critical failures: **0**
-- Warnings: **0**
+- Warnings: **1**
 
 ## Checks
 - [PASS] `Required artifacts` (critical) - All required docs/results/tests present.
@@ -14,5 +14,5 @@
 - [PASS] `Tier scenario pool coverage` (advisory) - Scenario pools include all required tiers or intentionally map tiers elsewhere.
 - [PASS] `/config endpoint` (critical) - Configured correctly.
 - [PASS] `Static UI dynamic config` (critical) - Configured correctly.
-- [PASS] `Benchmark output sanity` (advisory) - Anti-gaming benchmark columns present.
+- [WARN] `Benchmark output sanity` (advisory) - Missing newer anti-gaming columns: avg_reward_contract, avg_penalty, unsafe_actions, false_resolution, hallucinated_evidence
 

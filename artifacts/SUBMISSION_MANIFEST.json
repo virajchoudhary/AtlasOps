@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "completion_date": "2026-08-31T09:40:24.353258+00:00",
+  "completion_date": "2026-08-31T10:03:42.366037+00:00",
   "stages_completed": "15 / 15 (100%)",
   "status": "CERTIFIED_PASS",
   "academic_workstreams": [
@@ -24,12 +24,12 @@
     "docs/AtlasOps_Technical_Report.md": {
       "sha256": "0ce69e67af893eaa45036a6a710cebef3e734c4bfe743e7f4617689412a79861",
       "size_bytes": 9505,
-      "last_modified": "2026-08-31T09:36:35.099111+00:00"
+      "last_modified": "2026-08-31T09:44:56.114944+00:00"
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
       "sha256": "55216c27b1fa2a43155fa0b2718a2f438119d1df57b24130322c605de4d7f4a0",
       "size_bytes": 33998,
-      "last_modified": "2026-08-31T09:37:37.854321+00:00"
+      "last_modified": "2026-08-31T09:44:56.116085+00:00"
     },
     "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
       "sha256": "86c90ccf90abe922fe450b8ae4a12d972ea378de0e75cf9470d8cfccd223c29e",
@@ -59,7 +59,7 @@
     "docs/project/STAGE_15_FINAL_SUBMISSION.md": {
       "sha256": "e68819439b2efcf088d7e79c32d4efa969fee9274c3f00ce2ba2cbbdbc0789d2",
       "size_bytes": 3318,
-      "last_modified": "2026-08-31T09:37:23.066451+00:00"
+      "last_modified": "2026-08-31T09:44:56.116626+00:00"
     },
     "docs/project/STAGE_3_OPERATOR_GUIDE.md": {
       "sha256": "a21f1dd34f26ad73312edc2430705fe508258e74d30b9ec22f5215d0978b60bf",
@@ -94,7 +94,7 @@
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
       "size_bytes": 2646,
-      "last_modified": "2026-08-31T09:01:12.893722+00:00"
+      "last_modified": "2026-08-31T10:01:58.758452+00:00"
     },
     "artifacts/evidence/stage10/rs_dataset_manifest.json": {
       "sha256": "2bd3c682232ba8431af06b382384b10b9ef571ae8c2e455b3da12b8c6466cd90",
@@ -104,12 +104,12 @@
     "artifacts/evidence/stage11/rs_hybrid_eval.json": {
       "sha256": "2ff967237a7bf21ca0fe339135073602db7b3c8569f9ee78e471c09c243d364d",
       "size_bytes": 3234,
-      "last_modified": "2026-08-31T09:01:12.892094+00:00"
+      "last_modified": "2026-08-31T10:01:58.767524+00:00"
     },
     "artifacts/evidence/stage13/ablation_benchmark_results.json": {
       "sha256": "3b7f1f88e6e37a969593f816855d5c38532327f852f7370ba04925f1c8d9801f",
       "size_bytes": 7156,
-      "last_modified": "2026-08-31T09:40:23.956112+00:00"
+      "last_modified": "2026-08-31T10:02:06.076931+00:00"
     },
     "dashboard.py": {
       "sha256": "b005cfb9ea910bf6ecfb868a86a67f3e3b5077dc0c74a40c31b2b3b7d9740779",

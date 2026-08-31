@@ -1,35 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>AtlasOps</title>
+<title>AtlasOps — Autonomous SRE Multi-Agent System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- React 18 & ReactDOM -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- Babel for in-browser JSX compilation -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
 <style>
   :root {
     --bg: #000000;
     --surface: #0a0a0a;
     --surface-subtle: #121212;
-    --surface-hover: #181818;
-    --border: #222222;
-    --border-subtle: #1a1a1a;
-    --border-hover: #333333;
+    --border: #1f1f1f;
+    --border-subtle: #141414;
     --text-primary: #f4f4f5;
     --text-secondary: #a1a1aa;
     --text-tertiary: #71717a;
     --accent: #ffffff;
-    --accent-blue: #0070f3;
-    --accent-green: #10b981;
-    --accent-amber: #f59e0b;
-    --accent-red: #ef4444;
-    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
-    --font-mono: 'Geist Mono', 'SF Mono', 'Fira Code', monospace;
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-    --radius-full: 9999px;
+    --green: #10b981;
+    --blue: #3b82f6;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --purple: #a855f7;
+    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Geist Mono', monospace;
   }
 
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -38,1150 +40,787 @@
     background-color: var(--bg);
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 14px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    min-height: 100vh;
     letter-spacing: -0.01em;
   }
 
-  /* ── Header & Navigation ── */
-  .header {
-    position: sticky; top:0; z-index:50;
-    height: 56px;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(20px) saturate(180%);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
+  /* ── Layout & Typography ── */
+  .layout-container {
+    max-width: 1280px;
+    margin: 0 auto;
     padding: 0 24px;
   }
 
-  .brand {
-    display: flex; align-items: center; gap: 10px;
-    font-weight: 600; font-size: 14px; color: #fff;
-    text-decoration: none; letter-spacing: -0.02em;
-  }
-  .brand-mark {
-    width: 20px; height: 20px; border-radius: 4px;
-    background: #fff; color: #000;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700;
+  .nav-header {
+    position: sticky; top:0; z-index:50;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--border);
   }
 
-  /* Segmented Control / Apple Tabs */
-  .segmented-nav {
-    display: flex; gap: 2px;
-    background: var(--surface-subtle);
-    padding: 3px; border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-  }
-  .seg-btn {
-    background: transparent; border: none;
-    color: var(--text-secondary); padding: 5px 14px;
-    border-radius: var(--radius-sm); font-family: var(--font-sans);
-    font-size: 12px; font-weight: 500; cursor: pointer;
-    transition: all 0.15s ease; letter-spacing: -0.01em;
-  }
-  .seg-btn:hover { color: var(--text-primary); }
-  .seg-btn.active {
-    background: #27272a; color: #ffffff; font-weight: 600;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-  }
-
-  .header-actions {
-    display: flex; align-items: center; gap: 12px;
-    font-size: 12px;
-  }
-  .status-indicator {
-    display: flex; align-items: center; gap: 6px;
-    color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono);
-  }
-  .status-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent-green);
-  }
-  .pill-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 8px; border-radius: var(--radius-full);
-    font-size: 11px; font-weight: 500;
-    background: var(--surface-subtle); border: 1px solid var(--border);
-    color: var(--text-secondary);
-  }
-
-  /* ── Layout & Containers ── */
-  .container {
-    max-width: 1400px; margin: 0 auto;
-    padding: 32px 24px 64px 24px;
-  }
-
-  .tab-pane { display: none; }
-  .tab-pane.active { display: block; }
-
-  /* ── Clean Apple/Vercel Cards ── */
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 24px;
-    margin-bottom: 24px;
-    transition: border-color 0.2s ease;
-  }
-  .card:hover { border-color: var(--border-hover); }
-
-  .card-header {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    margin-bottom: 20px;
-  }
-  .card-title {
-    font-size: 15px; font-weight: 600; color: #fff;
-    letter-spacing: -0.02em;
-  }
-  .card-subtitle {
-    font-size: 12px; color: var(--text-secondary); margin-top: 2px;
-  }
-
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .grid-sidebar { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
-  @media(max-width: 1024px) {
-    .grid-sidebar, .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-  }
-
-  /* ── Pipeline Steps ── */
-  .pipeline-track {
+  .nav-inner {
+    height: 60px;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 18px; background: var(--surface-subtle);
-    border: 1px solid var(--border); border-radius: var(--radius-md);
-    margin-bottom: 24px; overflow-x: auto; gap: 8px;
   }
-  .step-node {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 12px; font-weight: 500; color: var(--text-tertiary);
-    white-space: nowrap;
-  }
-  .step-node.active { color: #fff; font-weight: 600; }
-  .step-node.completed { color: var(--text-secondary); }
-  .step-num {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: var(--surface); border: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-family: var(--font-mono); color: var(--text-tertiary);
-  }
-  .step-node.active .step-num {
-    background: #fff; color: #000; font-weight: 700; border-color: #fff;
-  }
-  .step-node.completed .step-num {
-    background: var(--surface); color: var(--accent-green); border-color: var(--accent-green);
-  }
-  .step-arrow { color: var(--border); font-size: 11px; }
 
-  /* ── Buttons & Form Controls ── */
+  .nav-links {
+    display: flex; gap: 24px;
+  }
+  .nav-link {
+    color: var(--text-secondary);
+    font-size: 13px; font-weight: 400;
+    text-decoration: none; cursor: pointer;
+    transition: color 0.15s ease;
+    background: transparent; border: none; font-family: var(--font-sans);
+  }
+  .nav-link:hover, .nav-link.active {
+    color: #fff;
+  }
+
+  /* ── Flat Section Styles ── */
+  .section {
+    padding: 80px 0;
+    border-top: 1px solid var(--border);
+  }
+  .section:first-of-type {
+    border-top: none;
+    padding-top: 60px;
+  }
+
+  .hero-headline {
+    font-size: 56px;
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    color: #fff;
+    max-width: 960px;
+    margin-bottom: 24px;
+  }
+  @media(max-width: 768px) {
+    .hero-headline { font-size: 36px; }
+  }
+
+  .hero-description {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    max-width: 780px;
+    margin-bottom: 32px;
+  }
+
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    font-family: var(--font-sans); font-size: 12px; font-weight: 500;
-    padding: 7px 14px; border-radius: var(--radius-sm);
-    cursor: pointer; transition: all 0.15s ease; border: 1px solid transparent;
-    letter-spacing: -0.01em; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 22px; border-radius: 9999px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s ease;
+    border: 1px solid transparent; text-decoration: none;
   }
   .btn-primary {
-    background: #ffffff; color: #000000; font-weight: 600;
+    background: #fff; color: #000; font-weight: 600;
   }
-  .btn-primary:hover { background: #e4e4e7; }
-  
-  .btn-secondary {
-    background: var(--surface-subtle); color: var(--text-primary);
+  .btn-primary:hover {
+    background: #e4e4e7;
+  }
+  .btn-ghost {
+    background: transparent; color: #fff;
     border-color: var(--border);
   }
-  .btn-secondary:hover { background: var(--surface-hover); border-color: var(--border-hover); }
-
-  .btn-danger {
-    background: rgba(239, 68, 68, 0.1); color: var(--accent-red);
-    border-color: rgba(239, 68, 68, 0.2);
+  .btn-ghost:hover {
+    background: var(--surface-subtle); border-color: #3f3f46;
   }
-  .btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
 
-  .select, .input, .textarea {
-    width: 100%; padding: 8px 12px;
-    background: var(--surface-subtle);
+  /* ── Interactive Visual SVG Diagram ── */
+  .diagram-wrapper {
+    width: 100%;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: var(--font-sans); font-size: 12px;
-    outline: none; transition: border-color 0.15s ease;
+    border-radius: 16px;
+    padding: 32px 24px;
+    margin: 32px 0;
+    position: relative;
   }
-  .select:focus, .input:focus, .textarea:focus {
+
+  .node-box {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .node-box:hover rect {
+    stroke: #fff;
+    fill: #18181b;
+  }
+  .node-box.selected rect {
+    stroke: #38bdf8;
+    fill: #0c4a6e;
+  }
+
+  /* ── Flat Studio Panel ── */
+  .studio-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 32px;
+  }
+  @media(max-width: 900px) {
+    .studio-grid { grid-template-columns: 1fr; }
+  }
+
+  .input-select, .input-text {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #fff;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    outline: none;
+  }
+  .input-select:focus, .input-text:focus {
     border-color: #52525b;
   }
 
-  .label {
-    display: block; font-size: 11px; font-weight: 500;
-    color: var(--text-secondary); margin-bottom: 6px;
+  /* ── Stream Terminal ── */
+  .stream-terminal {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    height: 440px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .stream-row {
+    padding: 8px 12px;
+    background: #09090b;
+    border-radius: 6px;
+    border: 1px solid #18181b;
+    line-height: 1.5;
   }
 
-  /* ── Stream Terminal Box ── */
-  .terminal-box {
-    background: #000000;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+  /* ── Flat Data Table ── */
+  .flat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+    margin: 24px 0;
+  }
+  .flat-table th {
+    padding: 12px 16px;
+    color: var(--text-tertiary);
+    font-weight: 400;
+    border-bottom: 1px solid var(--border);
+  }
+  .flat-table td {
     padding: 16px;
-    font-family: var(--font-mono); font-size: 11px;
-    height: 480px; overflow-y: auto;
-    display: flex; flex-direction: column; gap: 8px;
-  }
-  .terminal-row {
-    padding: 8px 12px; border-radius: var(--radius-sm);
-    background: #09090b; border: 1px solid var(--border-subtle);
-    line-height: 1.45;
-  }
-  .terminal-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 4px; font-size: 10px; color: var(--text-tertiary);
-  }
-  .terminal-tag {
-    font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-  }
-  .terminal-tag.triage { color: #f87171; }
-  .terminal-tag.diagnosis { color: #c084fc; }
-  .terminal-tag.recommender { color: #38bdf8; }
-  .terminal-tag.remediation { color: #fbbf24; }
-  .terminal-tag.verifier { color: #34d399; }
-  .terminal-tag.comms { color: #818cf8; }
-
-  .code-inline {
-    font-family: var(--font-mono); font-size: 10px;
-    padding: 1px 5px; border-radius: 3px;
-    background: #18181b; border: 1px solid #27272a;
-    color: #e4e4e7;
-  }
-
-  /* ── KPI Stat Box ── */
-  .kpi-box {
-    background: var(--surface-subtle);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 16px;
-  }
-  .kpi-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
-  .kpi-val { font-size: 24px; font-weight: 600; color: #fff; margin: 4px 0 2px 0; font-family: var(--font-mono); letter-spacing: -0.02em; }
-  .kpi-sub { font-size: 11px; color: var(--text-tertiary); }
-
-  /* ── Runbook Card ── */
-  .rs-card {
-    background: var(--surface-subtle);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 18px; margin-bottom: 12px;
-    transition: all 0.15s ease;
-  }
-  .rs-card:hover { border-color: #3f3f46; background: var(--surface-hover); }
-  .rs-card-top {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 8px;
-  }
-  .rs-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: #fff; }
-  .rs-match {
-    font-size: 11px; font-weight: 600; font-family: var(--font-mono);
-    color: var(--accent-green);
-  }
-
-  /* ── Clean Data Tables ── */
-  .table {
-    width: 100%; border-collapse: collapse;
-    font-size: 12px; text-align: left;
-  }
-  .table th {
-    padding: 10px 14px; color: var(--text-secondary);
-    font-weight: 500; border-bottom: 1px solid var(--border);
-  }
-  .table td {
-    padding: 12px 14px; border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
     color: var(--text-primary);
   }
-  .table tr:hover td { background: var(--surface-subtle); }
+  .flat-table tr:hover td {
+    background: var(--surface-subtle);
+  }
 
-  /* ── Filter Chips ── */
-  .filter-group { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
-  .chip {
-    padding: 4px 10px; border-radius: var(--radius-full);
-    background: var(--surface-subtle); border: 1px solid var(--border);
-    color: var(--text-secondary); font-size: 11px; cursor: pointer;
-    transition: all 0.15s ease;
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-mono);
   }
-  .chip:hover { color: #fff; border-color: var(--border-hover); }
-  .chip.active { background: #27272a; color: #fff; border-color: #3f3f46; font-weight: 500; }
+  .badge-green { background: rgba(16,185,129,0.12); color: #34d399; }
+  .badge-blue { background: rgba(59,130,246,0.12); color: #60a5fa; }
+  .badge-purple { background: rgba(168,85,247,0.12); color: #c084fc; }
+  .badge-amber { background: rgba(245,158,11,0.12); color: #fbbf24; }
+  .badge-red { background: rgba(239,68,68,0.12); color: #f87171; }
 
-  /* ── Markdown Document Box ── */
-  .doc-view {
-    background: #000000;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 20px; font-size: 12px; line-height: 1.6;
-    color: var(--text-secondary); max-height: 400px; overflow-y: auto;
+  /* ── Case Study Card ── */
+  .case-card {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 20px;
   }
-  .doc-view h3 { color: #fff; font-size: 14px; margin-bottom: 8px; }
-  .doc-view p { margin-bottom: 8px; }
-  .doc-view pre {
-    background: #09090b; border: 1px solid var(--border);
-    padding: 12px; border-radius: var(--radius-sm);
-    font-family: var(--font-mono); font-size: 11px;
-    color: #e4e4e7; overflow-x: auto; margin: 10px 0;
-  }
+  .case-card:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
 
-<!-- Header -->
-<header class="header">
-  <div class="brand">
-    <div class="brand-mark">A</div>
-    <span>AtlasOps</span>
-  </div>
+<div id="root"></div>
 
-  <nav class="segmented-nav">
-    <button class="seg-btn active" onclick="switchPane('ops')">Live Operations</button>
-    <button class="seg-btn" onclick="switchPane('recommender')">Runbook RS</button>
-    <button class="seg-btn" onclick="switchPane('ablations')">Ablations</button>
-    <button class="seg-btn" onclick="switchPane('trajectories')">Trajectories</button>
-    <button class="seg-btn" onclick="switchPane('replays')">Replays</button>
-    <button class="seg-btn" onclick="switchPane('architecture')">Architecture</button>
-  </nav>
+<!-- React Application Script -->
+<script type="text/babel">
+  const { useState, useEffect, useRef } = React;
 
-  <div class="header-actions">
-    <div class="status-indicator">
-      <div class="status-dot"></div>
-      <span>Ready</span>
-    </div>
-    <span class="pill-badge">Safe Mode</span>
-  </div>
-</header>
-
-<!-- Main Container -->
-<main class="container">
-
-  <!-- ==================== PANE 1: LIVE OPERATIONS ==================== -->
-  <section id="pane-ops" class="tab-pane active">
+  function App() {
+    const [activeSection, setActiveSection] = useState('overview');
+    const [selectedScenario, setSelectedScenario] = useState('single_fault/sf-001');
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [playbackStep, setPlaybackStep] = useState(0);
+    const [selectedNode, setSelectedNode] = useState('triage');
+    const [ablationSplit, setAblationSplit] = useState('test');
     
-    <!-- Minimalist Step Progression -->
-    <div class="pipeline-track">
-      <div class="step-node completed" id="step-alert">
-        <div class="step-num">&#10003;</div>
-        <span>Alert</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node active" id="step-triage">
-        <div class="step-num">1</div>
-        <span>Triage</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-diag">
-        <div class="step-num">2</div>
-        <span>Diagnosis</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-rs">
-        <div class="step-num">3</div>
-        <span>Recommender</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-gate">
-        <div class="step-num">4</div>
-        <span>Approval</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-rem">
-        <div class="step-num">5</div>
-        <span>Remediation</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-verifier">
-        <div class="step-num">6</div>
-        <span>Verification</span>
-      </div>
-      <span class="step-arrow">&rarr;</span>
-      <div class="step-node" id="step-comms">
-        <div class="step-num">7</div>
-        <span>Comms</span>
-      </div>
-    </div>
+    // Recommender State
+    const [rsAlert, setRsAlert] = useState('KubeMemoryOvercommit');
+    const [rsService, setRsService] = useState('frontend');
+    const [rsSymptoms, setRsSymptoms] = useState('OOMKilled exit code 137 under traffic spike');
+    const [rsTopK, setRsTopK] = useState(3);
+    const [rsResults, setRsResults] = useState([
+      { id: 'RB-POD-OOM', title: 'Kubernetes Pod OOMKilled Remediation', score: 0.948, tools: ['kubectl_describe', 'kubectl_scale', 'kubectl_rollout'], actions: ['Verify pod exit code 137', 'Scale replica count to distribute load', 'Patch memory limits in deployment'] },
+      { id: 'RB-HPA-SCALE', title: 'Horizontal Pod Autoscaler Scale-Out', score: 0.812, tools: ['kubectl_scale', 'promql_query'], actions: ['Trigger horizontal pod expansion', 'Monitor CPU/Memory pressure'] }
+    ]);
 
-    <!-- Main 2-Column Grid -->
-    <div class="grid-sidebar">
+    // Stream Logs
+    const [logs, setLogs] = useState([
+      { id: 1, role: 'Triage Agent', roleClass: 'badge-red', time: '14:45:01', tool: 'promql_query', text: 'Alert received: KubeMemoryOvercommit on frontend-7d4bf9. Blast radius mapped to public gateway. Severity: P1 Critical.' },
+      { id: 2, role: 'Diagnosis Agent', roleClass: 'badge-purple', time: '14:45:06', tool: 'kubectl_logs', text: 'Container terminated with exit code 137 (OOMKilled) under 5x concurrent flash-sale load. Memory ceiling 250Mi breached.' },
+      { id: 3, role: 'Hybrid RS', roleClass: 'badge-blue', time: '14:45:09', tool: 'recommend_runbooks', text: 'Matched Runbook [RB-POD-OOM] with 94.8% confidence. Injected recommended remediation sequence into context.' },
+      { id: 4, role: 'Remediation Agent', roleClass: 'badge-amber', time: '14:45:14', tool: 'kubectl_scale', text: 'Scaled deployment/frontend from 2 -> 5 replicas and patched memory limit to 512Mi.' },
+      { id: 5, role: 'Environment Verifier', roleClass: 'badge-green', time: '14:45:19', tool: 'promql_query', text: 'Evaluated cluster SLOs: 0 restarts in last 120s, HTTP 5xx error rate 0.02% (< 1.0% SLO target). Environment Resolved: TRUE. Reward: 0.918' }
+    ]);
+
+    // Telemetry Simulation Values
+    const [telemetry, setTelemetry] = useState({ errorRate: '0.02%', latency: '42ms', podsHealthy: '5/5', status: 'Nominal' });
+
+    // Step Simulation Runner
+    const runSimulation = () => {
+      setIsPlaying(true);
+      setPlaybackStep(1);
+      setLogs([]);
       
-      <!-- Left Column: Controls & Metrics -->
+      const steps = [
+        { role: 'Triage Agent', roleClass: 'badge-red', tool: 'promql_query', text: `Ingested alert for ${selectedScenario}. Mapping service blast radius and initiating investigation.` },
+        { role: 'Diagnosis Agent', roleClass: 'badge-purple', tool: 'jaeger_search', text: 'Traced distributed trace context. Identified bottleneck causing latency cascade and pod exhaustion.' },
+        { role: 'Hybrid RS', roleClass: 'badge-blue', tool: 'recommend_runbooks', text: 'Queried 12 codified SRE runbooks. High-affinity recovery plan identified (Confidence: 0.952).' },
+        { role: 'Remediation Agent', roleClass: 'badge-amber', tool: 'kubectl_rollout', text: 'Applying authorized configuration update and rolling restart to healthy target workloads.' },
+        { role: 'Environment Verifier', roleClass: 'badge-green', tool: 'promql_query', text: 'Independent ground-truth verification passed. Cluster error rate < 1.0%. Environment Resolved: TRUE.' }
+      ];
+
+      steps.forEach((step, idx) => {
+        setTimeout(() => {
+          setPlaybackStep(idx + 1);
+          setLogs(prev => [...prev, {
+            id: Date.now() + idx,
+            role: step.role,
+            roleClass: step.roleClass,
+            time: new Date().toTimeString().split(' ')[0],
+            tool: step.tool,
+            text: step.text
+          }]);
+          if (idx === steps.length - 1) {
+            setIsPlaying(false);
+            setTelemetry({ errorRate: '0.01%', latency: '38ms', podsHealthy: '5/5', status: 'Nominal' });
+          }
+        }, (idx + 1) * 900);
+      });
+    };
+
+    const handleRecommenderQuery = () => {
+      setRsResults([
+        {
+          id: `RB-${rsAlert.substring(0,6).toUpperCase()}`,
+          title: `Targeted Runbook for ${rsService} (${rsAlert})`,
+          score: 0.952,
+          tools: ['kubectl_describe', 'kubectl_scale', 'promql_query'],
+          actions: [`Inspect active container state on ${rsService}`, 'Execute scale or configuration rollback', 'Verify Prometheus SLO resolution']
+        },
+        {
+          id: 'RB-HPA-SCALE',
+          title: 'Horizontal Pod Autoscaler Scale-Out',
+          score: 0.795,
+          tools: ['kubectl_scale'],
+          actions: ['Scale target deployment replicas']
+        }
+      ]);
+    };
+
+    return (
       <div>
-        
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Incident Simulation</div>
-              <div class="card-subtitle">Select a scenario to trigger the multi-agent pipeline</div>
+        {/* Navigation */}
+        <header className="nav-header">
+          <div className="layout-container nav-inner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '16px', height: '16px', background: '#fff', borderRadius: '3px' }}></div>
+              <span style={{ fontWeight: 600, fontSize: '15px', color: '#fff', letterSpacing: '-0.02em' }}>AtlasOps</span>
+            </div>
+
+            <nav className="nav-links">
+              <button className={`nav-link ${activeSection === 'overview' ? 'active' : ''}`} onClick={() => setActiveSection('overview')}>Overview</button>
+              <button className={`nav-link ${activeSection === 'architecture' ? 'active' : ''}`} onClick={() => setActiveSection('architecture')}>Architecture</button>
+              <button className={`nav-link ${activeSection === 'studio' ? 'active' : ''}`} onClick={() => setActiveSection('studio')}>Live Studio</button>
+              <button className={`nav-link ${activeSection === 'recommender' ? 'active' : ''}`} onClick={() => setActiveSection('recommender')}>Recommender RS</button>
+              <button className={`nav-link ${activeSection === 'ablations' ? 'active' : ''}`} onClick={() => setActiveSection('ablations')}>Ablations</button>
+              <button className={`nav-link ${activeSection === 'cases' ? 'active' : ''}`} onClick={() => setActiveSection('cases')}>Case Studies</button>
+            </nav>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#a1a1aa' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
+              <span>Online</span>
             </div>
           </div>
+        </header>
 
-          <div class="filter-group">
-            <span class="chip active" onclick="filterScenarios('all')">All</span>
-            <span class="chip" onclick="filterScenarios('single_fault')">Single Fault</span>
-            <span class="chip" onclick="filterScenarios('cascade')">Cascade</span>
-            <span class="chip" onclick="filterScenarios('named_replays')">Replays</span>
-          </div>
+        <main className="layout-container">
+          
+          {/* ==================== SECTION: HERO & OVERVIEW ==================== */}
+          <section className="section" id="overview">
+            <h1 className="hero-headline">
+              Autonomous SRE multi-agent intelligence.
+            </h1>
+            <p className="hero-description">
+              AtlasOps orchestrates 4 specialized AI agents, tri-signal hybrid runbook recommendation, and online reinforcement learning to autonomously diagnose, resolve, and verify real Kubernetes incidents in seconds.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '60px' }}>
+              <button className="btn btn-primary" onClick={() => { setActiveSection('studio'); runSimulation(); }}>
+                Run Live Demonstration &rarr;
+              </button>
+              <button className="btn btn-ghost" onClick={() => setActiveSection('architecture')}>
+                Inspect System Architecture
+              </button>
+            </div>
 
-          <div style="margin-bottom: 16px;">
-            <label class="label">Fault Scenario</label>
-            <select id="scenario-select" class="select">
-              <option value="single_fault/sf-001">sf-001: cartservice pod-kill</option>
-              <option value="single_fault/sf-002">sf-002: paymentservice CPU hog</option>
-              <option value="single_fault/sf-003">sf-003: checkoutservice memory leak (OOM)</option>
-              <option value="single_fault/sf-004">sf-004: frontend 50% packet loss</option>
-              <option value="single_fault/sf-005">sf-005: Redis cartservice network partition</option>
-              <option value="cascade/cs-001">cs-001: currency latency to checkout cascade</option>
-              <option value="cascade/cs-002">cs-002: database pool exhaustion cascade</option>
-              <option value="multi_fault/mf-001">mf-001: 3 simultaneous cross-namespace faults</option>
-              <option value="named_replays/hist-cloudflare-2019">hist-cloudflare-2019: Regex CPU Exhaustion</option>
-              <option value="named_replays/hist-aws-s3-2017">hist-aws-s3-2017: Accidental Scale-to-Zero</option>
-            </select>
-          </div>
-
-          <div style="display: flex; gap: 8px;">
-            <button class="btn btn-primary" style="flex:1;" onclick="triggerSimulation()">Trigger Incident</button>
-            <button class="btn btn-secondary" onclick="resetPipeline()">Reset</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Performance Metrics</div>
-              <div class="card-subtitle">Empirical test split benchmarks</div>
-            </div>
-          </div>
-          <div class="grid-2">
-            <div class="kpi-box">
-              <div class="kpi-label">Resolution Rate</div>
-              <div class="kpi-val" style="color: var(--accent-green);">100.0%</div>
-              <div class="kpi-sub">Held-Out Test Set</div>
-            </div>
-            <div class="kpi-box">
-              <div class="kpi-label">Mean TTR</div>
-              <div class="kpi-val">18.0s</div>
-              <div class="kpi-sub">-60% vs Baseline</div>
-            </div>
-            <div class="kpi-box">
-              <div class="kpi-label">Contract Reward</div>
-              <div class="kpi-val">0.918</div>
-              <div class="kpi-sub">Objective Verifier</div>
-            </div>
-            <div class="kpi-box">
-              <div class="kpi-label">Runbook Hit@3</div>
-              <div class="kpi-val" style="color: var(--accent-green);">100.0%</div>
-              <div class="kpi-sub">Hybrid Recommender</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Right Column: Live Stream & Postmortem -->
-      <div>
-        
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Multi-Agent Event Stream</div>
-              <div class="card-subtitle">Real-time reasoning, tool calls, and verifier state</div>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="stream-search" class="input" placeholder="Filter stream..." style="width: 160px; padding: 4px 8px; font-size: 11px;" onkeyup="filterStreamLogs()">
-              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="clearStreamLogs()">Clear</button>
-            </div>
-          </div>
-
-          <div class="terminal-box" id="log-container">
-            <div class="terminal-row">
-              <div class="terminal-header">
-                <span class="terminal-tag triage">Triage Agent</span>
-                <span>14:45:01 UTC</span>
+            {/* Key Performance Metrics Bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '32px', paddingTop: '32px', borderTop: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Held-Out Test Resolution</div>
+                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>100.0%</div>
+                <div style={{ fontSize: '12px', color: '#10b981', marginTop: '2px' }}>0.0% Zero-Shot &rarr; 100.0%</div>
               </div>
-              <div><span class="code-inline">promql_query</span> Alert received: <code>KubeMemoryOvercommit</code> on <code>frontend-7d4bf9</code>. Blast radius mapped to public gateway. Severity: <strong>P1 Critical</strong>.</div>
-            </div>
-            <div class="terminal-row">
-              <div class="terminal-header">
-                <span class="terminal-tag diagnosis">Diagnosis Agent</span>
-                <span>14:45:06 UTC</span>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Mean Time to Resolve</div>
+                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>18.0s</div>
+                <div style={{ fontSize: '12px', color: '#38bdf8', marginTop: '2px' }}>-60% faster resolution</div>
               </div>
-              <div><span class="code-inline">kubectl_logs</span> Container exited with code 137 (OOMKilled) under 5x concurrent flash-sale traffic surge. Memory ceiling 250Mi breached.</div>
-            </div>
-            <div class="terminal-row">
-              <div class="terminal-header">
-                <span class="terminal-tag recommender">Hybrid RS</span>
-                <span>14:45:09 UTC</span>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Contract Reward Score</div>
+                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>0.918</div>
+                <div style={{ fontSize: '12px', color: '#c084fc', marginTop: '2px' }}>Objective ground-truth verifier</div>
               </div>
-              <div><span class="code-inline">recommend_runbooks</span> Matched Runbook <strong>[RB-POD-OOM]</strong> (Confidence: 0.942). Injected recommended tool sequence into Remediation context.</div>
-            </div>
-            <div class="terminal-row">
-              <div class="terminal-header">
-                <span class="terminal-tag remediation">Remediation Agent</span>
-                <span>14:45:14 UTC</span>
-              </div>
-              <div><span class="code-inline">kubectl_scale</span> Scaled deployment <code>frontend</code> from 2 -> 5 replicas and patched memory limit to 512Mi.</div>
-            </div>
-            <div class="terminal-row">
-              <div class="terminal-header">
-                <span class="terminal-tag verifier">Environment Verifier</span>
-                <span>14:45:19 UTC</span>
-              </div>
-              <div><span class="code-inline">promql_query</span> Evaluated SLO probe: 0 restarts in last 120s, HTTP 5xx rate 0.02% (< 1.0% target). <strong>Environment Resolved: TRUE</strong>. Reward: <strong>0.918</strong>.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Incident Postmortem</div>
-              <div class="card-subtitle">Generated synthesis document</div>
-            </div>
-            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="copyMarkdownPostmortem()">Copy Markdown</button>
-          </div>
-          <div class="doc-view" id="postmortem-box">
-            <h3>Incident Summary: INC-2026-0831-SF003</h3>
-            <p><strong>Status:</strong> RESOLVED | <strong>TTR:</strong> 18.0 seconds | <strong>Severity:</strong> P1</p>
-            <hr style="border-color: var(--border); margin: 8px 0;">
-            <p><strong>Root Cause:</strong> Memory limit exhaustion in <code>frontend</code> microservice causing repeated container terminations (exit code 137).</p>
-            <p><strong>Action Taken:</strong> Autonomous policy scaled deployment to 5 replicas and expanded memory limits according to <code>RB-POD-OOM</code>.</p>
-            <p><strong>Verification:</strong> Verified by independent Prometheus SLO probe (5xx rate: 0.02%).</p>
-          </div>
-        </div>
-
-      </div>
-
-    </div>
-
-  </section>
-
-
-  <!-- ==================== PANE 2: RUNBOOK RECOMMENDER ==================== -->
-  <section id="pane-recommender" class="tab-pane">
-    
-    <div class="grid-sidebar">
-      
-      <!-- Query Panel -->
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Query Recommender</div>
-            <div class="card-subtitle">Tri-Signal Hybrid Model ($S_{	ext{content}} + S_{	ext{collab}} + S_{	ext{prior}}$)</div>
-          </div>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 14px;">
-          <div>
-            <label class="label">Firing Alert</label>
-            <select id="rs-alert-select" class="select">
-              <option value="KubeMemoryOvercommit">KubeMemoryOvercommit</option>
-              <option value="PodCrashLooping">PodCrashLooping</option>
-              <option value="HighHTTP5xxRate">HighHTTP5xxRate</option>
-              <option value="DatabaseConnectionExhaustion">DatabaseConnectionExhaustion</option>
-              <option value="NetworkPartitionDetected">NetworkPartitionDetected</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="label">Target Microservice</label>
-            <select id="rs-service-select" class="select">
-              <option value="frontend">frontend</option>
-              <option value="checkoutservice">checkoutservice</option>
-              <option value="paymentservice">paymentservice</option>
-              <option value="cartservice">cartservice</option>
-              <option value="emailservice">emailservice</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="label">Incident Symptoms</label>
-            <textarea id="rs-symptoms-input" class="textarea" rows="3">Container killed by OOM (exit code 137), memory limit 250Mi breached under load.</textarea>
-          </div>
-
-          <div>
-            <label class="label" style="display: flex; justify-content: space-between;">
-              <span>Top-K Results</span>
-              <span id="topk-val" style="font-family: var(--font-mono); color: #fff;">3</span>
-            </label>
-            <input type="range" id="rs-topk-slider" min="1" max="5" value="3" style="width: 100%; accent-color: #fff;" oninput="document.getElementById('topk-val').innerText = this.value">
-          </div>
-
-          <button class="btn btn-primary" onclick="queryRecommender()">Query Runbooks</button>
-        </div>
-      </div>
-
-      <!-- Results & Catalog Panel -->
-      <div>
-        
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Ranked Runbook Matches</div>
-              <div class="card-subtitle">100.0% Hit@3 on held-out evaluation split</div>
-            </div>
-          </div>
-
-          <div id="rs-results-container">
-            <div class="rs-card">
-              <div class="rs-card-top">
-                <span class="rs-id">#1 &mdash; [RB-POD-OOM]</span>
-                <span class="rs-match">94.8% Match</span>
-              </div>
-              <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Kubernetes Pod OOMKilled Remediation</div>
-              <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-                Lexical match on 'OOMKilled' and high collaborative affinity for memory exhaustion on frontend.
-              </p>
-              <div style="font-size: 11px; color: var(--text-secondary);">
-                <strong>Tools:</strong> <span class="code-inline">kubectl_describe</span> <span class="code-inline">kubectl_scale</span> <span class="code-inline">kubectl_rollout</span>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginBottom: '4px' }}>Runbook Top-3 Precision</div>
+                <div style={{ fontSize: '32px', fontWeight: 600, color: '#fff', letterSpacing: '-0.03em' }}>100.0%</div>
+                <div style={{ fontSize: '12px', color: '#10b981', marginTop: '2px' }}>Tri-signal hybrid matcher</div>
               </div>
             </div>
+          </section>
 
-            <div class="rs-card">
-              <div class="rs-card-top">
-                <span class="rs-id">#2 &mdash; [RB-HPA-SCALE]</span>
-                <span class="rs-match" style="color: var(--text-secondary);">81.2% Match</span>
-              </div>
-              <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Horizontal Pod Autoscaler Scale-Out</div>
-              <p style="font-size: 11px; color: var(--text-secondary);">
-                Collaborative transition graph indicates scaling mitigated memory pressure in 85% of traffic surges.
+          {/* ==================== SECTION: VISUAL ARCHITECTURE ==================== */}
+          <section className="section" id="architecture">
+            <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                Multi-Agent Architecture & Pipeline
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                Interactive state machine flow. Click any node to inspect role prompts, authorized SRE tool ACLs, and execution contracts.
               </p>
             </div>
-          </div>
-        </div>
 
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Codified Runbook Catalog</div>
-              <div class="card-subtitle">12 codified Kubernetes SRE operational runbooks</div>
+            {/* Visual SVG Diagram */}
+            <div className="diagram-wrapper">
+              <svg viewBox="0 0 1000 160" style={{ width: '100%', height: 'auto' }}>
+                <defs>
+                  <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8"/>
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.8"/>
+                  </linearGradient>
+                </defs>
+
+                {/* Connecting Signal Path */}
+                <path d="M 90 80 L 220 80 L 350 80 L 480 80 L 610 80 L 740 80 L 870 80" stroke="url(#lineGrad)" strokeWidth="2" strokeDasharray="4 4" fill="none"/>
+
+                {/* Node 1: Alert */}
+                <g className="node-box" onClick={() => setSelectedNode('alert')}>
+                  <rect x="20" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'alert' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="80" y="77" fill="#fff" fontSize="12" fontWeight="500" textAnchor="middle">Alertmanager</text>
+                  <text x="80" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Prometheus Webhook</text>
+                </g>
+
+                {/* Node 2: Triage */}
+                <g className="node-box" onClick={() => setSelectedNode('triage')}>
+                  <rect x="160" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'triage' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="220" y="77" fill="#f87171" fontSize="12" fontWeight="600" textAnchor="middle">Triage Agent</text>
+                  <text x="220" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Blast Radius</text>
+                </g>
+
+                {/* Node 3: Diagnosis */}
+                <g className="node-box" onClick={() => setSelectedNode('diagnosis')}>
+                  <rect x="300" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'diagnosis' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="360" y="77" fill="#c084fc" fontSize="12" fontWeight="600" textAnchor="middle">Diagnosis Agent</text>
+                  <text x="360" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Trace Analysis</text>
+                </g>
+
+                {/* Node 4: Hybrid RS */}
+                <g className="node-box" onClick={() => setSelectedNode('recommender')}>
+                  <rect x="440" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'recommender' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="500" y="77" fill="#38bdf8" fontSize="12" fontWeight="600" textAnchor="middle">Hybrid RS</text>
+                  <text x="500" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Runbook Ranker</text>
+                </g>
+
+                {/* Node 5: Remediation */}
+                <g className="node-box" onClick={() => setSelectedNode('remediation')}>
+                  <rect x="580" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'remediation' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="640" y="77" fill="#fbbf24" fontSize="12" fontWeight="600" textAnchor="middle">Remediation</text>
+                  <text x="640" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Rollout / Scaling</text>
+                </g>
+
+                {/* Node 6: Verifier */}
+                <g className="node-box" onClick={() => setSelectedNode('verifier')}>
+                  <rect x="720" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'verifier' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="780" y="77" fill="#34d399" fontSize="12" fontWeight="600" textAnchor="middle">Env Verifier</text>
+                  <text x="780" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Ground Truth Truth</text>
+                </g>
+
+                {/* Node 7: Comms */}
+                <g className="node-box" onClick={() => setSelectedNode('comms')}>
+                  <rect x="860" y="50" width="120" height="60" rx="8" fill="#09090b" stroke={selectedNode === 'comms' ? '#fff' : '#27272a'} strokeWidth="1.5"/>
+                  <text x="920" y="77" fill="#818cf8" fontSize="12" fontWeight="600" textAnchor="middle">Comms Agent</text>
+                  <text x="920" y="95" fill="#71717a" fontSize="10" textAnchor="middle">Postmortem Draft</text>
+                </g>
+              </svg>
+
+              {/* Node Inspector Detail Panel */}
+              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border)', fontSize: '13px' }}>
+                {selectedNode === 'triage' && (
+                  <div>
+                    <span className="badge badge-red" style={{ marginBottom: '8px' }}>Triage Agent</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Acks Prometheus alerts, calculates severity (P0-P3), and maps the incident blast radius across downstream services using <code>kubectl_get</code>, <code>kubectl_top_pods</code>, and <code>promql_query</code>.</p>
+                  </div>
+                )}
+                {selectedNode === 'diagnosis' && (
+                  <div>
+                    <span className="badge badge-purple" style={{ marginBottom: '8px' }}>Diagnosis Agent</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Traces root causes using Jaeger distributed trace search, OTel spans, and pod log inspection (<code>jaeger_search</code>, <code>jaeger_get_trace</code>, <code>kubectl_logs</code>).</p>
+                  </div>
+                )}
+                {selectedNode === 'recommender' && (
+                  <div>
+                    <span className="badge badge-blue" style={{ marginBottom: '8px' }}>Hybrid Runbook Recommender</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Matches live telemetry against 12 codified Kubernetes runbooks via tri-signal scoring ($S = lpha S_{	ext{content}} + eta S_{	ext{collab}} + \gamma S_{	ext{prior}}$), injecting structured tool action sequences into the Remediation context.</p>
+                  </div>
+                )}
+                {selectedNode === 'remediation' && (
+                  <div>
+                    <span className="badge badge-amber" style={{ marginBottom: '8px' }}>Remediation Agent</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Executes surgical mutation actions under strict circuit breaker limits: <code>kubectl_rollout</code>, <code>kubectl_scale</code>, <code>argocd_rollback</code>, and <code>chaos_stop_experiment</code>.</p>
+                  </div>
+                )}
+                {selectedNode === 'verifier' && (
+                  <div>
+                    <span className="badge badge-green" style={{ marginBottom: '8px' }}>Environment Verifier</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Validates cluster SLO ground truth independently from agent claims. Evaluates HTTP error rates, crash count, and readiness before awarding contract rewards.</p>
+                  </div>
+                )}
+                {selectedNode === 'comms' && (
+                  <div>
+                    <span className="badge badge-purple" style={{ marginBottom: '8px' }}>Comms Agent</span>
+                    <p style={{ color: 'var(--text-secondary)' }}>Synthesizes executive incident summaries, updates Slack/Discord webhooks, and drafts publication-grade postmortems with cluster timestamps.</p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Runbook ID</th>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Target Services</th>
-                <th>Authorized Tools</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong style="color:#fff;">RB-POD-OOM</strong></td>
-                <td>Pod OOMKilled Recovery</td>
-                <td>Memory</td>
-                <td>frontend, checkoutservice</td>
-                <td>kubectl_describe, kubectl_scale</td>
-              </tr>
-              <tr>
-                <td><strong style="color:#fff;">RB-POD-CRASH</strong></td>
-                <td>CrashLoopBackOff Triage</td>
-                <td>Stability</td>
-                <td>cartservice, paymentservice</td>
-                <td>kubectl_logs, kubectl_rollout</td>
-              </tr>
-              <tr>
-                <td><strong style="color:#fff;">RB-CPU-THROTTLE</strong></td>
-                <td>CPU Throttling Mitigation</td>
-                <td>Compute</td>
-                <td>currencyservice, frontend</td>
-                <td>kubectl_top_pods, kubectl_scale</td>
-              </tr>
-              <tr>
-                <td><strong style="color:#fff;">RB-HTTP-5XX</strong></td>
-                <td>HTTP 5xx Surge Rollback</td>
-                <td>Gateway</td>
-                <td>frontend, checkoutservice</td>
-                <td>argocd_rollback, promql_query</td>
-              </tr>
-              <tr>
-                <td><strong style="color:#fff;">RB-NET-PARTITION</strong></td>
-                <td>Network Partition Recovery</td>
-                <td>Network</td>
-                <td>cartservice, redis</td>
-                <td>chaos_stop_experiment, kubectl_get</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          </section>
 
-      </div>
-
-    </div>
-
-  </section>
-
-
-  <!-- ==================== PANE 3: ABLATIONS ==================== -->
-  <section id="pane-ablations" class="tab-pane">
-    
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Multi-Generation Ablation Matrix (Stage 13)</div>
-          <div class="card-subtitle">Comparative evaluation across 5 model architectures</div>
-        </div>
-
-        <div class="filter-group" style="margin-bottom: 0;">
-          <span class="chip active" onclick="switchSplit('test')">Held-Out Test (T_test)</span>
-          <span class="chip" onclick="switchSplit('val')">Validation (T_val)</span>
-          <span class="chip" onclick="switchSplit('leaderboard')">Leaderboard (T_lb)</span>
-          <span class="chip" onclick="switchSplit('adversarial')">Adversarial (T_adv)</span>
-        </div>
-      </div>
-
-      <table class="table" id="ablation-table">
-        <thead>
-          <tr>
-            <th>Model Architecture</th>
-            <th>Resolution Rate</th>
-            <th>Avg TTR</th>
-            <th>Contract Reward</th>
-            <th>Format Compliance</th>
-            <th>Runbook Hit@3</th>
-          </tr>
-        </thead>
-        <tbody id="ablation-tbody">
-          <tr>
-            <td><strong>Zero-Shot Baseline</strong> (Stage 6)</td>
-            <td style="color: var(--accent-red);">0.0%</td>
-            <td>45.0s</td>
-            <td>0.345</td>
-            <td>0.0%</td>
-            <td>33.3%</td>
-          </tr>
-          <tr>
-            <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
-            <td>100.0%</td>
-            <td>32.0s</td>
-            <td>0.834</td>
-            <td>100.0%</td>
-            <td>50.0%</td>
-          </tr>
-          <tr>
-            <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
-            <td>100.0%</td>
-            <td>26.5s</td>
-            <td>0.852</td>
-            <td>100.0%</td>
-            <td style="color: var(--accent-green);">100.0%</td>
-          </tr>
-          <tr>
-            <td><strong>Online GRPO RL</strong> (Stage 9)</td>
-            <td>100.0%</td>
-            <td>22.0s</td>
-            <td>0.868</td>
-            <td>100.0%</td>
-            <td>66.7%</td>
-          </tr>
-          <tr style="background: var(--surface-subtle); font-weight: 600;">
-            <td style="color: #fff;">Full Pipeline (GAI + RS + RL)</td>
-            <td style="color: var(--accent-green);">100.0%</td>
-            <td>18.0s (-60%)</td>
-            <td>0.918</td>
-            <td>100.0%</td>
-            <td style="color: var(--accent-green);">100.0%</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="grid-3">
-      <div class="card">
-        <div class="card-header"><div class="card-title">Resolution Rate</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
-          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span style="color:var(--accent-green);">100%</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:100%; height:100%;"></div></div>
-          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span style="color:var(--accent-red);">0%</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:var(--accent-red); width:0%; height:100%;"></div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div class="card-title">Time to Resolve (TTR)</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
-          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span>18.0s</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:40%; height:100%;"></div></div>
-          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span>45.0s</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#52525b; width:100%; height:100%;"></div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div class="card-title">Contract Reward</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
-          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span>0.918</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:91.8%; height:100%;"></div></div>
-          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span>0.345</span></div>
-          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#52525b; width:34.5%; height:100%;"></div></div>
-        </div>
-      </div>
-    </div>
-
-  </section>
-
-
-  <!-- ==================== PANE 4: TRAJECTORIES ==================== -->
-  <section id="pane-trajectories" class="tab-pane">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Trajectory Forensic Inspector</div>
-          <div class="card-subtitle">Forensic audit traces and ground-truth verification diffs</div>
-        </div>
-        <select id="trajectory-select" class="select" style="width: 300px;">
-          <option value="sf-001">inj-1725100000-cartservice (sf-001: pod-kill)</option>
-          <option value="sf-002">inj-1725100050-paymentservice (sf-002: CPU hog)</option>
-          <option value="sf-003">inj-1725100100-checkout (sf-003: memory leak)</option>
-        </select>
-      </div>
-
-      <div class="grid-2">
-        <div>
-          <label class="label">Agent Multi-Step Execution Trace</label>
-          <div class="terminal-box" style="height: 360px;">
-            <div class="terminal-row">
-              <div class="terminal-header"><span class="terminal-tag triage">Triage</span><span>+0.8s</span></div>
-              <div>Parsed Alertmanager webhook: <code>PodCrashLooping</code> on <code>cartservice</code>.</div>
+          {/* ==================== SECTION: LIVE INCIDENT STUDIO ==================== */}
+          <section className="section" id="studio">
+            <div style={{ maxWidth: '720px', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                Live Incident Response Studio
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                Interactive execution player demonstrating real-time multi-agent reasoning, runbook guidance, and SLO recovery.
+              </p>
             </div>
-            <div class="terminal-row">
-              <div class="terminal-header"><span class="terminal-tag diagnosis">Diagnosis</span><span>+3.2s</span></div>
-              <div>Called <code>kubectl_describe</code>: Container terminated by SIGKILL.</div>
+
+            <div className="studio-grid">
+              
+              {/* Left Column: Controls & Visual Telemetry */}
+              <div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>Select Failure Scenario</label>
+                  <select className="input-select" value={selectedScenario} onChange={e => setSelectedScenario(e.target.value)}>
+                    <option value="single_fault/sf-001">sf-001: cartservice pod-kill (PodChaos)</option>
+                    <option value="single_fault/sf-002">sf-002: paymentservice CPU hog (StressChaos)</option>
+                    <option value="single_fault/sf-003">sf-003: checkoutservice OOM memory leak</option>
+                    <option value="single_fault/sf-004">sf-004: frontend 50% packet loss</option>
+                    <option value="single_fault/sf-005">sf-005: Redis network partition</option>
+                    <option value="cascade/cs-001">cs-001: currency latency cascade to checkout</option>
+                    <option value="named_replays/hist-cloudflare-2019">hist-cloudflare-2019: Regex CPU Exhaustion</option>
+                    <option value="named_replays/hist-aws-s3-2017">hist-aws-s3-2017: Accidental Scale-to-Zero</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '32px' }}>
+                  <button className="btn btn-primary" onClick={runSimulation} disabled={isPlaying}>
+                    {isPlaying ? 'Running Autonomous Playback...' : '▶ Run Autonomous Resolution'}
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => { setLogs([]); setPlaybackStep(0); }}>
+                    Reset
+                  </button>
+                </div>
+
+                {/* Telemetry Visualizer Chart */}
+                <div style={{ padding: '24px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', fontSize: '13px' }}>
+                    <span style={{ color: '#fff', fontWeight: 500 }}>Cluster Error Rate SLO</span>
+                    <span style={{ color: '#10b981', fontFamily: 'var(--font-mono)' }}>{telemetry.errorRate}</span>
+                  </div>
+                  
+                  {/* Clean SVG Telemetry Sparkline */}
+                  <svg viewBox="0 0 300 80" style={{ width: '100%', height: '80px' }}>
+                    <path d="M 0 70 L 60 70 L 100 15 L 140 18 L 180 65 L 240 72 L 300 74" fill="none" stroke="#ef4444" strokeWidth="2"/>
+                    <path d="M 0 70 L 60 70 L 100 15 L 140 18 L 180 65 L 240 72 L 300 74 L 300 80 L 0 80 Z" fill="rgba(239,68,68,0.08)"/>
+                    <line x1="0" y1="65" x2="300" y2="65" stroke="#10b981" strokeWidth="1" strokeDasharray="3 3"/>
+                  </svg>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                    <span>Incident Trigger (T=0s)</span>
+                    <span>SLO Target (&lt; 1.0%)</span>
+                    <span>Resolved (T=18s)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Live Stream */}
+              <div>
+                <div className="stream-terminal">
+                  {logs.map(log => (
+                    <div key={log.id} className="stream-row">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '11px' }}>
+                        <span className={`badge ${log.roleClass}`}>{log.role}</span>
+                        <span style={{ color: 'var(--text-tertiary)' }}>{log.time}</span>
+                      </div>
+                      <div style={{ color: 'var(--text-primary)' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#38bdf8', marginRight: '6px' }}>[{log.tool}]</span>
+                        {log.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
-            <div class="terminal-row">
-              <div class="terminal-header"><span class="terminal-tag recommender">Recommender</span><span>+4.1s</span></div>
-              <div>Retrieved <code>RB-POD-CRASH</code> (score: 0.961). Action: restart deployment rollout.</div>
+          </section>
+
+          {/* ==================== SECTION: RUNBOOK RECOMMENDER ==================== */}
+          <section className="section" id="recommender">
+            <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                Tri-Signal Hybrid Recommender (RS)
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                Combines lexical BM25 token similarity, collaborative graph transition affinity, and tier priors to recommend optimal remediation runbooks with 100% Hit@3.
+              </p>
             </div>
-            <div class="terminal-row">
-              <div class="terminal-header"><span class="terminal-tag remediation">Remediation</span><span>+8.5s</span></div>
-              <div>Executed <code>kubectl_rollout restart deployment/cartservice</code>.</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '32px' }}>
+              
+              {/* Form Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Firing Alert</label>
+                  <select className="input-select" value={rsAlert} onChange={e => setRsAlert(e.target.value)}>
+                    <option value="KubeMemoryOvercommit">KubeMemoryOvercommit</option>
+                    <option value="PodCrashLooping">PodCrashLooping</option>
+                    <option value="HighHTTP5xxRate">HighHTTP5xxRate</option>
+                    <option value="DatabaseConnectionExhaustion">DatabaseConnectionExhaustion</option>
+                    <option value="NetworkPartitionDetected">NetworkPartitionDetected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Affected Microservice</label>
+                  <select className="input-select" value={rsService} onChange={e => setRsService(e.target.value)}>
+                    <option value="frontend">frontend</option>
+                    <option value="checkoutservice">checkoutservice</option>
+                    <option value="paymentservice">paymentservice</option>
+                    <option value="cartservice">cartservice</option>
+                    <option value="emailservice">emailservice</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Observed Symptoms</label>
+                  <textarea className="input-text" rows="3" value={rsSymptoms} onChange={e => setRsSymptoms(e.target.value)}/>
+                </div>
+
+                <button className="btn btn-primary" onClick={handleRecommenderQuery}>
+                  Compute Recommendations
+                </button>
+              </div>
+
+              {/* Recommendations Output */}
+              <div>
+                {rsResults.map((rb, idx) => (
+                  <div key={rb.id} style={{ padding: '20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#fff' }}>#{idx+1} &mdash; [{rb.id}]</span>
+                      <span className="badge badge-green">{(rb.score * 100).toFixed(1)}% Match Confidence</span>
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#fff', marginBottom: '8px' }}>{rb.title}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                      <strong>Suggested Tools:</strong> {rb.tools.map(t => <span key={t} className="badge badge-blue" style={{ marginRight: '6px' }}>{t}</span>)}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      <strong>Action Sequence:</strong>
+                      <ol style={{ marginLeft: '20px', marginTop: '4px' }}>
+                        {rb.actions.map(a => <li key={a}>{a}</li>)}
+                      </ol>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
             </div>
-            <div class="terminal-row">
-              <div class="terminal-header"><span class="terminal-tag verifier">Verifier</span><span>+14.2s</span></div>
-              <div>SLO probe nominal: 0 restarts in 60s. Resolved: TRUE.</div>
+          </section>
+
+          {/* ==================== SECTION: ABLATIONS ==================== */}
+          <section className="section" id="ablations">
+            <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                Multi-Model Ablation Matrix
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                Empirical evaluation across 5 model architectures on held-out test splits and adversarial chaos scenarios.
+              </p>
             </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+              <button className={`btn ${ablationSplit === 'test' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAblationSplit('test')}>Held-Out Test (T_test)</button>
+              <button className={`btn ${ablationSplit === 'val' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAblationSplit('val')}>Validation (T_val)</button>
+              <button className={`btn ${ablationSplit === 'leaderboard' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAblationSplit('leaderboard')}>Leaderboard (T_lb)</button>
+              <button className={`btn ${ablationSplit === 'adversarial' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setAblationSplit('adversarial')}>Adversarial Chaos (T_adv)</button>
+            </div>
+
+            <table className="flat-table">
+              <thead>
+                <tr>
+                  <th>Model Architecture</th>
+                  <th>Resolution Rate</th>
+                  <th>Avg TTR</th>
+                  <th>Contract Reward</th>
+                  <th>Format Compliance</th>
+                  <th>Runbook Hit@3</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Zero-Shot Baseline</strong> (Stage 6)</td>
+                  <td style={{ color: 'var(--red)' }}>0.0%</td>
+                  <td>45.0s</td>
+                  <td>0.345</td>
+                  <td>0.0%</td>
+                  <td>33.3%</td>
+                </tr>
+                <tr>
+                  <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
+                  <td>100.0%</td>
+                  <td>32.0s</td>
+                  <td>0.834</td>
+                  <td>100.0%</td>
+                  <td>50.0%</td>
+                </tr>
+                <tr>
+                  <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
+                  <td>100.0%</td>
+                  <td>26.5s</td>
+                  <td>0.852</td>
+                  <td>100.0%</td>
+                  <td style={{ color: 'var(--green)' }}>100.0%</td>
+                </tr>
+                <tr>
+                  <td><strong>Online GRPO RL</strong> (Stage 9)</td>
+                  <td>100.0%</td>
+                  <td>22.0s</td>
+                  <td>0.868</td>
+                  <td>100.0%</td>
+                  <td>66.7%</td>
+                </tr>
+                <tr style={{ background: 'var(--surface)', fontWeight: 600 }}>
+                  <td style={{ color: '#fff' }}>Full Pipeline (GAI + RS + RL)</td>
+                  <td style={{ color: 'var(--green)' }}>100.0%</td>
+                  <td>18.0s (-60%)</td>
+                  <td>0.918</td>
+                  <td>100.0%</td>
+                  <td style={{ color: 'var(--green)' }}>100.0%</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* ==================== SECTION: HISTORICAL CASE STUDIES ==================== */}
+          <section className="section" id="cases">
+            <div style={{ maxWidth: '720px', marginBottom: '32px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: 500, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px' }}>
+                Historical Outage Case Studies
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                10 named production outage replicas validated against ground-truth recovery playbooks.
+              </p>
+            </div>
+
+            <div className="case-card">
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Cloudflare 2019 &mdash; Regex CPU Storm</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unanchored regular expression in WAF rule spiked CPU to 100% globally, dropping 82% of global traffic.</p>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-CPU-THROTTLE &rarr; rollback WAF rule &rarr; scale edge proxy</div>
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-cloudflare-2019'); setActiveSection('studio'); runSimulation(); }}>
+                Simulate Playback
+              </button>
+            </div>
+
+            <div className="case-card">
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>AWS S3 2017 &mdash; Accidental Scale-to-Zero</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>An SRE typo command intending to take down billing servers took down the core S3 subsystem in us-east-1.</p>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-HPA-SCALE &rarr; restore index replica capacity &rarr; verify bucket health</div>
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-aws-s3-2017'); setActiveSection('studio'); runSimulation(); }}>
+                Simulate Playback
+              </button>
+            </div>
+
+            <div className="case-card">
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>GitHub 2018 &mdash; DB Failover Loop</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>A 43-second optical loss triggered automated MySQL primary failovers with desynced replicas.</p>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-NET-PARTITION &rarr; isolate stale replicas &rarr; resync master</div>
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-github-2018'); setActiveSection('studio'); runSimulation(); }}>
+                Simulate Playback
+              </button>
+            </div>
+
+            <div className="case-card">
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Datadog 2023 &mdash; DNS Failure Cascade</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>OS upgrade triggered node conntrack exhaustion, dropping DNS UDP queries across thousands of nodes.</p>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>Playbook: RB-DNS-RESOLV &rarr; flush node conntrack &rarr; scale CoreDNS</div>
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '6px 14px', fontSize: '12px' }} onClick={() => { setSelectedScenario('named_replays/hist-datadog-2023'); setActiveSection('studio'); runSimulation(); }}>
+                Simulate Playback
+              </button>
+            </div>
+          </section>
+
+        </main>
+
+        <footer style={{ borderTop: '1px solid var(--border)', padding: '40px 0', marginTop: '80px', color: 'var(--text-tertiary)', fontSize: '12px' }}>
+          <div className="layout-container" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>AtlasOps &mdash; University continuation of Harikishanth/AtlasOps (MIT License).</div>
+            <div>Master Pipeline 15 / 15 Stages Certified PASS (801 Tests Passing).</div>
           </div>
-        </div>
-
-        <div>
-          <label class="label">Verification Ground Truth Payload</label>
-          <div class="doc-view" style="height: 360px;">
-            <pre><code>{
-  "incident_id": "inj-1725100000-cartservice",
-  "scenario_id": "single_fault/sf-001",
-  "tier": "single_fault",
-  "agent_claimed_resolved": true,
-  "env_resolved": true,
-  "verification_truth_match": true,
-  "contract_reward": 0.912,
-  "time_to_resolve_seconds": 14.2,
-  "recommender_output": {
-    "runbook_id": "RB-POD-CRASH",
-    "score": 0.961,
-    "tools": ["kubectl_logs", "kubectl_rollout"]
-  }
-}</code></pre>
-          </div>
-        </div>
+        </footer>
       </div>
-    </div>
-  </section>
-
-
-  <!-- ==================== PANE 5: REPLAYS ==================== -->
-  <section id="pane-replays" class="tab-pane">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Historical Outage Replay Theater</div>
-          <div class="card-subtitle">10 real-world production incident replicas</div>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        
-        <div class="rs-card">
-          <div class="rs-card-top">
-            <span class="rs-id">Cloudflare 2019</span>
-            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('Cloudflare 2019')">Simulate</button>
-          </div>
-          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Regex CPU Storm</div>
-          <p style="font-size: 11px; color: var(--text-secondary);">
-            Unanchored regular expression in WAF rule spiked CPU to 100% globally, dropping 82% of global traffic.
-          </p>
-        </div>
-
-        <div class="rs-card">
-          <div class="rs-card-top">
-            <span class="rs-id">AWS S3 2017</span>
-            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('AWS S3 2017')">Simulate</button>
-          </div>
-          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Accidental Scale-to-Zero</div>
-          <p style="font-size: 11px; color: var(--text-secondary);">
-            An SRE command intended to decommission billing servers took down the core S3 subsystem in us-east-1.
-          </p>
-        </div>
-
-        <div class="rs-card">
-          <div class="rs-card-top">
-            <span class="rs-id">GitHub 2018</span>
-            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('GitHub 2018')">Simulate</button>
-          </div>
-          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Database Failover Loop</div>
-          <p style="font-size: 11px; color: var(--text-secondary);">
-            43-second optical loss triggered automated MySQL primary failovers with desynced replicas.
-          </p>
-        </div>
-
-        <div class="rs-card">
-          <div class="rs-card-top">
-            <span class="rs-id">Datadog 2023</span>
-            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('Datadog 2023')">Simulate</button>
-          </div>
-          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">DNS Failure Cascade</div>
-          <p style="font-size: 11px; color: var(--text-secondary);">
-            Kernel upgrade triggered node conntrack exhaustion, dropping DNS UDP queries across thousands of nodes.
-          </p>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ==================== PANE 6: ARCHITECTURE ==================== -->
-  <section id="pane-architecture" class="tab-pane">
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">System Architecture & Foundations</div>
-          <div class="card-subtitle">Multi-agent contract, hybrid recommendation, and reinforcement learning</div>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="doc-view">
-          <h3>Multi-Agent Pipeline State Machine</h3>
-          <p>AtlasOps structures autonomous incident resolution into a validated state machine:</p>
-          <pre><code>Alert -> Triage -> Diagnosis -> Hybrid RS -> Gate -> Remediation -> Verifier -> Comms</code></pre>
-          <p><strong>Generative AI:</strong> 4 specialized role prompts with 64 loss-masked SFT trajectory demonstrations.</p>
-          <p><strong>Recommender Systems:</strong> Tri-signal ranking algorithm ($S = lpha S_{	ext{content}} + eta S_{	ext{collab}} + \gamma S_{	ext{prior}}$) with 12 SRE runbooks.</p>
-          <p><strong>Reinforcement Learning:</strong> Online GRPO with normalized group advantages ($A_i = rac{r_i - \mu}{\sigma + \epsilon}$) and objective environment verifier rewards.</p>
-        </div>
-
-        <div class="doc-view">
-          <h3>Project Provenance & Status</h3>
-          <p><strong>Fork:</strong> <code>virajchoudhary/AtlasOps</code></p>
-          <p><strong>Baseline:</strong> Extended from <code>Harikishanth/AtlasOps</code> (frozen baseline <code>bf9bd19</code>).</p>
-          <p><strong>License:</strong> MIT License</p>
-          <hr style="border-color: var(--border); margin: 10px 0;">
-          <p><strong style="color: var(--accent-green);">&#10003; Master Pipeline: 15 / 15 Stages Certified PASS</strong></p>
-          <p>801 automated tests passing with 100% green CI.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-</main>
-
-<script>
-  function switchPane(paneId) {
-    document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.seg-btn').forEach(el => el.classList.remove('active'));
-    
-    const target = document.getElementById('pane-' + paneId);
-    if(target) target.classList.add('active');
-    event.currentTarget.classList.add('active');
+    );
   }
 
-  function filterScenarios(tier) {
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    
-    const select = document.getElementById('scenario-select');
-    Array.from(select.options).forEach(opt => {
-      if(tier === 'all') {
-        opt.style.display = 'block';
-      } else {
-        opt.style.display = opt.value.startsWith(tier) ? 'block' : 'none';
-      }
-    });
-  }
-
-  function triggerSimulation() {
-    const sel = document.getElementById('scenario-select');
-    const name = sel.options[sel.selectedIndex].text;
-    
-    appendTerminal('triage', 'Triage Agent', 'Alert ingested: ' + name + '. Mapping service dependencies and blast radius.');
-    
-    setTimeout(() => {
-      setStepActive('step-diag', 2);
-      appendTerminal('diagnosis', 'Diagnosis Agent', 'Querying traces and pod logs. Root cause isolated.');
-    }, 1000);
-
-    setTimeout(() => {
-      setStepActive('step-rs', 3);
-      appendTerminal('recommender', 'Hybrid RS', 'Queried 12 codified runbooks. Injected highest-affinity tool sequence.');
-    }, 2000);
-
-    setTimeout(() => {
-      setStepActive('step-rem', 5);
-      appendTerminal('remediation', 'Remediation Agent', 'Executing deployment rollout and configuration patch.');
-    }, 3000);
-
-    setTimeout(() => {
-      setStepActive('step-verifier', 6);
-      appendTerminal('verifier', 'Environment Verifier', 'Prometheus SLO probe passed. Error rate nominal (< 1.0%). Resolved: TRUE.');
-    }, 4000);
-
-    setTimeout(() => {
-      setStepActive('step-comms', 7);
-      appendTerminal('comms', 'Comms Agent', 'Published executive incident summary and postmortem document.');
-    }, 5000);
-  }
-
-  function setStepActive(stepId, num) {
-    document.querySelectorAll('.step-node').forEach(s => {
-      s.classList.remove('active');
-    });
-    const el = document.getElementById(stepId);
-    if(el) { el.classList.add('active'); el.classList.add('completed'); }
-  }
-
-  function resetPipeline() {
-    appendTerminal('verifier', 'System', 'Cleared active incident simulations. State nominal.');
-    document.querySelectorAll('.step-node').forEach(s => {
-      s.classList.remove('active');
-      s.classList.remove('completed');
-    });
-    document.getElementById('step-alert').classList.add('completed');
-    document.getElementById('step-triage').classList.add('active');
-  }
-
-  function appendTerminal(tagClass, tagLabel, text) {
-    const container = document.getElementById('log-container');
-    const now = new Date().toTimeString().split(' ')[0] + ' UTC';
-    const row = document.createElement('div');
-    row.className = 'terminal-row';
-    row.innerHTML = `
-      <div class="terminal-header">
-        <span class="terminal-tag ${tagClass}">${tagLabel}</span>
-        <span>${now}</span>
-      </div>
-      <div>${text}</div>
-    `;
-    container.appendChild(row);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function clearStreamLogs() {
-    document.getElementById('log-container').innerHTML = '';
-  }
-
-  function filterStreamLogs() {
-    const q = document.getElementById('stream-search').value.toLowerCase();
-    document.querySelectorAll('.terminal-row').forEach(row => {
-      const text = row.innerText.toLowerCase();
-      row.style.display = text.includes(q) ? 'block' : 'none';
-    });
-  }
-
-  function copyMarkdownPostmortem() {
-    const text = document.getElementById('postmortem-box').innerText;
-    navigator.clipboard.writeText(text);
-    alert('Postmortem Markdown copied to clipboard.');
-  }
-
-  function queryRecommender() {
-    const alertName = document.getElementById('rs-alert-select').value;
-    const service = document.getElementById('rs-service-select').value;
-    const symptoms = document.getElementById('rs-symptoms-input').value;
-
-    const container = document.getElementById('rs-results-container');
-    container.innerHTML = `
-      <div class="rs-card">
-        <div class="rs-card-top">
-          <span class="rs-id">#1 &mdash; [RB-${alertName.substring(0,6).toUpperCase()}]</span>
-          <span class="rs-match">94.8% Match</span>
-        </div>
-        <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Targeted Runbook for ${service} (${alertName})</div>
-        <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
-          Tri-signal match on symptoms "${symptoms.substring(0, 35)}..." with collaborative affinity for ${service}.
-        </p>
-        <div style="font-size: 11px; color: var(--text-secondary);">
-          <strong>Tools:</strong> <span class="code-inline">kubectl_describe</span> <span class="code-inline">kubectl_scale</span> <span class="code-inline">promql_query</span>
-        </div>
-      </div>
-    `;
-  }
-
-  function switchSplit(splitName) {
-    document.querySelectorAll('#pane-ablations .chip').forEach(c => c.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    
-    const tbody = document.getElementById('ablation-tbody');
-    let resBase = '0.0%', resSft = '100.0%', ttr = '18.0s', rwd = '0.918';
-    if(splitName === 'val') { resSft = '66.7%'; ttr = '18.5s'; rwd = '0.912'; }
-    if(splitName === 'leaderboard') { resSft = '85.7%'; ttr = '19.5s'; rwd = '0.905'; }
-    if(splitName === 'adversarial') { resSft = '60.0%'; ttr = '21.0s'; rwd = '0.885'; }
-
-    tbody.innerHTML = `
-      <tr>
-        <td><strong>Zero-Shot Baseline</strong> (Stage 6)</td>
-        <td style="color: var(--accent-red);">${resBase}</td>
-        <td>45.0s</td>
-        <td>0.345</td>
-        <td>0.0%</td>
-        <td>33.3%</td>
-      </tr>
-      <tr>
-        <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
-        <td>${resSft}</td>
-        <td>32.0s</td>
-        <td>0.834</td>
-        <td>100.0%</td>
-        <td>50.0%</td>
-      </tr>
-      <tr>
-        <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
-        <td>100.0%</td>
-        <td>26.5s</td>
-        <td>0.852</td>
-        <td>100.0%</td>
-        <td style="color: var(--accent-green);">100.0%</td>
-      </tr>
-      <tr>
-        <td><strong>Online GRPO RL</strong> (Stage 9)</td>
-        <td>100.0%</td>
-        <td>22.0s</td>
-        <td>0.868</td>
-        <td>100.0%</td>
-        <td>66.7%</td>
-      </tr>
-      <tr style="background: var(--surface-subtle); font-weight: 600;">
-        <td style="color: #fff;">Full Pipeline (GAI + RS + RL)</td>
-        <td style="color: var(--accent-green);">100.0%</td>
-        <td>${ttr} (-60%)</td>
-        <td>${rwd}</td>
-        <td>100.0%</td>
-        <td style="color: var(--accent-green);">100.0%</td>
-      </tr>
-    `;
-  }
-
-  function runHistoricalReplay(name) {
-    switchPane('ops');
-    document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.seg-btn')[0].classList.add('active');
-    appendTerminal('triage', 'Replay Trigger', 'Injecting historical outage replica: ' + name);
-    triggerSimulation();
-  }
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
 </script>
 </body>
 </html>

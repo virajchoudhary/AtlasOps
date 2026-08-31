@@ -3,609 +3,554 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>AtlasOps — Autonomous SRE Incident Response Mission Control</title>
+<title>AtlasOps</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #070a13;
-    --bg-card: rgba(13, 20, 36, 0.75);
-    --bg-surface: #0e172a;
-    --border: rgba(30, 48, 80, 0.8);
-    --cyan: #00f0ff;
-    --cyan-glow: rgba(0, 240, 255, 0.35);
-    --purple: #a855f7;
-    --purple-glow: rgba(168, 85, 247, 0.35);
-    --green: #10b981;
-    --green-glow: rgba(16, 185, 129, 0.35);
-    --red: #ef4444;
-    --red-glow: rgba(239, 68, 68, 0.35);
-    --amber: #f59e0b;
-    --amber-glow: rgba(245, 158, 11, 0.35);
-    --blue: #3b82f6;
-    --text: #f1f5f9;
-    --text-muted: #94a3b8;
-    --text-dim: #64748b;
-    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-    --font-mono: 'Fira Code', monospace;
+    --bg: #000000;
+    --surface: #0a0a0a;
+    --surface-subtle: #121212;
+    --surface-hover: #181818;
+    --border: #222222;
+    --border-subtle: #1a1a1a;
+    --border-hover: #333333;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+    --accent: #ffffff;
+    --accent-blue: #0070f3;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+    --font-mono: 'Geist Mono', 'SF Mono', 'Fira Code', monospace;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-full: 9999px;
   }
 
   * { margin:0; padding:0; box-sizing:border-box; }
-  html { scrollbar-gutter: stable; }
+  
   body {
-    background: var(--bg);
-    color: var(--text);
+    background-color: var(--bg);
+    color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
-    overflow-x: hidden;
-    position: relative;
+    letter-spacing: -0.01em;
   }
 
-  #neural-canvas {
-    position: fixed; inset:0; z-index:0;
-    pointer-events: none; opacity: 0.45;
-  }
-
-  .grid-overlay {
-    position: fixed; inset:0; z-index:1;
-    background-image: 
-      linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none;
-  }
-
-  .navbar {
-    position: sticky; top:0; z-index:100;
-    height: 60px;
-    background: rgba(7, 10, 19, 0.85);
-    backdrop-filter: blur(16px);
+  /* ── Header & Navigation ── */
+  .header {
+    position: sticky; top:0; z-index:50;
+    height: 56px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(20px) saturate(180%);
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 24px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   }
 
-  .nav-brand {
-    display: flex; align-items: center; gap: 12px;
-    font-weight: 800; font-size: 16px; letter-spacing: 1.5px;
-    color: #fff;
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; font-size: 14px; color: #fff;
+    text-decoration: none; letter-spacing: -0.02em;
   }
-  .nav-brand .brand-logo {
-    width: 32px; height: 32px; border-radius: 8px;
-    background: linear-gradient(135deg, var(--cyan), var(--purple));
+  .brand-mark {
+    width: 20px; height: 20px; border-radius: 4px;
+    background: #fff; color: #000;
     display: flex; align-items: center; justify-content: center;
-    color: #000; font-size: 16px; font-weight: 900;
-    box-shadow: 0 0 15px var(--cyan-glow);
-  }
-  .nav-brand .brand-title span { color: var(--cyan); }
-  .badge-tag {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    padding: 2px 8px; border-radius: 999px;
-    background: rgba(0, 240, 255, 0.12); color: var(--cyan);
-    border: 1px solid rgba(0, 240, 255, 0.3);
-    letter-spacing: 0.5px;
+    font-size: 11px; font-weight: 700;
   }
 
-  .nav-tabs {
-    display: flex; gap: 6px;
-    background: rgba(14, 23, 42, 0.6);
-    padding: 4px; border-radius: 10px;
+  /* Segmented Control / Apple Tabs */
+  .segmented-nav {
+    display: flex; gap: 2px;
+    background: var(--surface-subtle);
+    padding: 3px; border-radius: var(--radius-md);
     border: 1px solid var(--border);
   }
-  .nav-tab {
+  .seg-btn {
     background: transparent; border: none;
-    color: var(--text-muted); padding: 7px 16px;
-    border-radius: 7px; font-family: var(--font-sans);
-    font-size: 12px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; gap: 8px;
-    transition: all 0.2s ease;
+    color: var(--text-secondary); padding: 5px 14px;
+    border-radius: var(--radius-sm); font-family: var(--font-sans);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: all 0.15s ease; letter-spacing: -0.01em;
   }
-  .nav-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
-  .nav-tab.active {
-    color: #fff; background: linear-gradient(135deg, rgba(0,240,255,0.2), rgba(168,85,247,0.2));
-    border: 1px solid var(--cyan);
-    box-shadow: 0 0 12px var(--cyan-glow);
+  .seg-btn:hover { color: var(--text-primary); }
+  .seg-btn.active {
+    background: #27272a; color: #ffffff; font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
   }
 
-  .nav-status {
-    display: flex; align-items: center; gap: 14px;
-    font-size: 11px; font-family: var(--font-mono);
+  .header-actions {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px;
   }
-  .status-pill {
+  .status-indicator {
     display: flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 20px;
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--green); border: 1px solid rgba(16, 185, 129, 0.3);
+    color: var(--text-secondary); font-size: 11px; font-family: var(--font-mono);
   }
   .status-dot {
     width: 6px; height: 6px; border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 8px var(--green);
-    animation: pulse-dot 2s infinite ease-in-out;
+    background: var(--accent-green);
   }
-  @keyframes pulse-dot { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.6; } }
-
-  .main-wrapper {
-    position: relative; z-index: 10;
-    max-width: 1600px; margin: 0 auto;
-    padding: 24px;
+  .pill-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: var(--radius-full);
+    font-size: 11px; font-weight: 500;
+    background: var(--surface-subtle); border: 1px solid var(--border);
+    color: var(--text-secondary);
   }
 
-  .tab-content { display: none; }
-  .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
-  @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
+  /* ── Layout & Containers ── */
+  .container {
+    max-width: 1400px; margin: 0 auto;
+    padding: 32px 24px 64px 24px;
+  }
 
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* ── Clean Apple/Vercel Cards ── */
   .card {
-    background: var(--bg-card);
-    backdrop-filter: blur(12px);
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    transition: all 0.25s ease;
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+    transition: border-color 0.2s ease;
   }
-  .card:hover { border-color: rgba(255,255,255,0.15); }
+  .card:hover { border-color: var(--border-hover); }
+
   .card-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 16px; padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 20px;
   }
   .card-title {
-    font-size: 14px; font-weight: 700; color: #fff;
-    display: flex; align-items: center; gap: 8px;
-    letter-spacing: 0.3px;
+    font-size: 15px; font-weight: 600; color: #fff;
+    letter-spacing: -0.02em;
   }
-  .card-title i { color: var(--cyan); }
+  .card-subtitle {
+    font-size: 12px; color: var(--text-secondary); margin-top: 2px;
+  }
 
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .grid-12 { display: grid; grid-template-columns: 360px 1fr; gap: 24px; }
-  @media(max-width: 1100px) {
-    .grid-12, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-sidebar { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
+  @media(max-width: 1024px) {
+    .grid-sidebar, .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   }
 
-  .pipeline-flow {
+  /* ── Pipeline Steps ── */
+  .pipeline-track {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px; background: rgba(0,0,0,0.3);
-    border-radius: 10px; border: 1px solid var(--border);
-    margin-bottom: 20px; overflow-x: auto; gap: 10px;
+    padding: 12px 18px; background: var(--surface-subtle);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    margin-bottom: 24px; overflow-x: auto; gap: 8px;
   }
-  .flow-node {
-    display: flex; flex-direction: column; align-items: center;
-    padding: 12px 14px; border-radius: 8px;
-    background: var(--bg-surface); border: 1px solid var(--border);
-    min-width: 130px; text-align: center; position: relative;
-    transition: all 0.3s ease;
+  .step-node {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 500; color: var(--text-tertiary);
+    white-space: nowrap;
   }
-  .flow-node.active {
-    border-color: var(--cyan);
-    box-shadow: 0 0 20px var(--cyan-glow);
-    background: rgba(0, 240, 255, 0.08);
+  .step-node.active { color: #fff; font-weight: 600; }
+  .step-node.completed { color: var(--text-secondary); }
+  .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-family: var(--font-mono); color: var(--text-tertiary);
   }
-  .flow-node.completed {
-    border-color: var(--green);
-    background: rgba(16, 185, 129, 0.06);
+  .step-node.active .step-num {
+    background: #fff; color: #000; font-weight: 700; border-color: #fff;
   }
-  .flow-node .node-icon {
-    font-size: 18px; margin-bottom: 6px;
-    color: var(--text-muted);
+  .step-node.completed .step-num {
+    background: var(--surface); color: var(--accent-green); border-color: var(--accent-green);
   }
-  .flow-node.active .node-icon { color: var(--cyan); }
-  .flow-node.completed .node-icon { color: var(--green); }
-  .flow-node .node-name { font-size: 11px; font-weight: 700; color: #fff; }
-  .flow-node .node-role { font-size: 10px; color: var(--text-dim); }
-  .flow-arrow { color: var(--text-dim); font-size: 14px; }
+  .step-arrow { color: var(--border); font-size: 11px; }
 
+  /* ── Buttons & Form Controls ── */
   .btn {
-    background: linear-gradient(135deg, rgba(0,240,255,0.15), rgba(168,85,247,0.15));
-    border: 1px solid var(--cyan);
-    color: #fff; padding: 8px 16px;
-    border-radius: 6px; font-family: var(--font-sans);
-    font-size: 12px; font-weight: 600; cursor: pointer;
-    display: inline-flex; align-items: center; gap: 8px;
-    transition: all 0.2s ease;
-  }
-  .btn:hover {
-    background: linear-gradient(135deg, rgba(0,240,255,0.3), rgba(168,85,247,0.3));
-    box-shadow: 0 0 16px var(--cyan-glow);
-    transform: translateY(-1px);
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+    padding: 7px 14px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: all 0.15s ease; border: 1px solid transparent;
+    letter-spacing: -0.01em; text-decoration: none;
   }
   .btn-primary {
-    background: linear-gradient(135deg, var(--cyan), #0284c7);
-    color: #000; font-weight: 700; border: none;
-    box-shadow: 0 0 15px var(--cyan-glow);
+    background: #ffffff; color: #000000; font-weight: 600;
   }
-  .btn-primary:hover {
-    box-shadow: 0 0 25px var(--cyan-glow);
-    color: #000;
+  .btn-primary:hover { background: #e4e4e7; }
+  
+  .btn-secondary {
+    background: var(--surface-subtle); color: var(--text-primary);
+    border-color: var(--border);
   }
+  .btn-secondary:hover { background: var(--surface-hover); border-color: var(--border-hover); }
+
   .btn-danger {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: var(--red); color: var(--red);
+    background: rgba(239, 68, 68, 0.1); color: var(--accent-red);
+    border-color: rgba(239, 68, 68, 0.2);
   }
-  .btn-danger:hover {
-    background: rgba(239, 68, 68, 0.3);
-    box-shadow: 0 0 15px var(--red-glow);
-  }
+  .btn-danger:hover { background: rgba(239, 68, 68, 0.2); }
 
-  .input-control, .select-control {
-    width: 100%; padding: 9px 12px;
-    background: rgba(0,0,0,0.4);
+  .select, .input, .textarea {
+    width: 100%; padding: 8px 12px;
+    background: var(--surface-subtle);
     border: 1px solid var(--border);
-    border-radius: 6px; color: #fff;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
     font-family: var(--font-sans); font-size: 12px;
-    outline: none; transition: border-color 0.2s;
+    outline: none; transition: border-color 0.15s ease;
   }
-  .input-control:focus, .select-control:focus {
-    border-color: var(--cyan);
-    box-shadow: 0 0 10px var(--cyan-glow);
-  }
-
-  .filter-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-  .filter-pill {
-    padding: 4px 10px; border-radius: 6px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border);
-    color: var(--text-muted); font-size: 11px; cursor: pointer;
-    font-weight: 500; transition: all 0.2s;
-  }
-  .filter-pill:hover { color: #fff; border-color: rgba(255,255,255,0.2); }
-  .filter-pill.active {
-    background: rgba(0,240,255,0.12); color: var(--cyan);
-    border-color: var(--cyan); font-weight: 600;
+  .select:focus, .input:focus, .textarea:focus {
+    border-color: #52525b;
   }
 
-  .log-stream {
-    background: rgba(0, 0, 0, 0.5);
+  .label {
+    display: block; font-size: 11px; font-weight: 500;
+    color: var(--text-secondary); margin-bottom: 6px;
+  }
+
+  /* ── Stream Terminal Box ── */
+  .terminal-box {
+    background: #000000;
     border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px;
-    font-family: var(--font-mono); font-size: 12px;
+    border-radius: var(--radius-md);
+    padding: 16px;
+    font-family: var(--font-mono); font-size: 11px;
     height: 480px; overflow-y: auto;
     display: flex; flex-direction: column; gap: 8px;
   }
-  .log-entry {
-    padding: 8px 12px; border-radius: 6px;
-    background: rgba(14, 23, 42, 0.5);
-    border-left: 3px solid var(--text-dim);
-    animation: fadeIn 0.2s ease;
+  .terminal-row {
+    padding: 8px 12px; border-radius: var(--radius-sm);
+    background: #09090b; border: 1px solid var(--border-subtle);
+    line-height: 1.45;
   }
-  .log-entry.triage { border-left-color: var(--red); }
-  .log-entry.diagnosis { border-left-color: var(--purple); }
-  .log-entry.recommender { border-left-color: var(--cyan); }
-  .log-entry.remediation { border-left-color: var(--amber); }
-  .log-entry.verifier { border-left-color: var(--green); }
-  .log-entry.comms { border-left-color: var(--blue); }
-
-  .log-header {
+  .terminal-header {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 4px; font-size: 11px;
+    margin-bottom: 4px; font-size: 10px; color: var(--text-tertiary);
   }
-  .log-role { font-weight: 700; display: flex; align-items: center; gap: 6px; }
-  .log-time { color: var(--text-dim); font-size: 10px; }
-  .log-body { color: var(--text); line-height: 1.4; word-break: break-word; }
-  .tool-badge {
-    display: inline-block; font-size: 10px; font-weight: 700;
-    padding: 1px 6px; border-radius: 4px;
-    background: rgba(0, 240, 255, 0.15); color: var(--cyan);
-    margin-right: 4px;
+  .terminal-tag {
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .terminal-tag.triage { color: #f87171; }
+  .terminal-tag.diagnosis { color: #c084fc; }
+  .terminal-tag.recommender { color: #38bdf8; }
+  .terminal-tag.remediation { color: #fbbf24; }
+  .terminal-tag.verifier { color: #34d399; }
+  .terminal-tag.comms { color: #818cf8; }
+
+  .code-inline {
+    font-family: var(--font-mono); font-size: 10px;
+    padding: 1px 5px; border-radius: 3px;
+    background: #18181b; border: 1px solid #27272a;
+    color: #e4e4e7;
   }
 
-  .stat-card {
-    background: rgba(14, 23, 42, 0.6);
+  /* ── KPI Stat Box ── */
+  .kpi-box {
+    background: var(--surface-subtle);
     border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px;
-    display: flex; flex-direction: column; gap: 4px;
+    border-radius: var(--radius-md);
+    padding: 16px;
   }
-  .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
-  .stat-val { font-size: 24px; font-weight: 800; font-family: var(--font-mono); color: #fff; }
-  .stat-val.cyan { color: var(--cyan); text-shadow: 0 0 12px var(--cyan-glow); }
-  .stat-val.green { color: var(--green); text-shadow: 0 0 12px var(--green-glow); }
-  .stat-val.purple { color: var(--purple); text-shadow: 0 0 12px var(--purple-glow); }
-  .stat-sub { font-size: 10px; color: var(--text-dim); }
+  .kpi-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
+  .kpi-val { font-size: 24px; font-weight: 600; color: #fff; margin: 4px 0 2px 0; font-family: var(--font-mono); letter-spacing: -0.02em; }
+  .kpi-sub { font-size: 11px; color: var(--text-tertiary); }
 
-  .runbook-card {
-    background: rgba(14, 23, 42, 0.6);
+  /* ── Runbook Card ── */
+  .rs-card {
+    background: var(--surface-subtle);
     border: 1px solid var(--border);
-    border-radius: 8px; padding: 14px;
-    margin-bottom: 12px; transition: all 0.2s;
+    border-radius: var(--radius-md);
+    padding: 18px; margin-bottom: 12px;
+    transition: all 0.15s ease;
   }
-  .runbook-card:hover {
-    border-color: var(--cyan);
-    box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
-  }
-  .runbook-title-row {
+  .rs-card:hover { border-color: #3f3f46; background: var(--surface-hover); }
+  .rs-card-top {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 8px;
   }
-  .runbook-id { font-weight: 700; color: var(--cyan); font-family: var(--font-mono); }
-  .runbook-score {
-    font-size: 11px; font-weight: 700; font-family: var(--font-mono);
-    padding: 2px 8px; border-radius: 12px;
-    background: rgba(16, 185, 129, 0.15); color: var(--green);
-    border: 1px solid rgba(16, 185, 129, 0.3);
+  .rs-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: #fff; }
+  .rs-match {
+    font-size: 11px; font-weight: 600; font-family: var(--font-mono);
+    color: var(--accent-green);
   }
 
-  .data-table {
+  /* ── Clean Data Tables ── */
+  .table {
     width: 100%; border-collapse: collapse;
     font-size: 12px; text-align: left;
   }
-  .data-table th {
-    background: rgba(0,0,0,0.4); color: var(--text-muted);
-    padding: 10px 14px; font-weight: 600;
-    border-bottom: 1px solid var(--border);
+  .table th {
+    padding: 10px 14px; color: var(--text-secondary);
+    font-weight: 500; border-bottom: 1px solid var(--border);
   }
-  .data-table td {
-    padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  .table td {
+    padding: 12px 14px; border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
   }
-  .data-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .table tr:hover td { background: var(--surface-subtle); }
 
-  .markdown-content {
-    background: rgba(0,0,0,0.3);
+  /* ── Filter Chips ── */
+  .filter-group { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .chip {
+    padding: 4px 10px; border-radius: var(--radius-full);
+    background: var(--surface-subtle); border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 11px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .chip:hover { color: #fff; border-color: var(--border-hover); }
+  .chip.active { background: #27272a; color: #fff; border-color: #3f3f46; font-weight: 500; }
+
+  /* ── Markdown Document Box ── */
+  .doc-view {
+    background: #000000;
     border: 1px solid var(--border);
-    border-radius: 8px; padding: 16px;
-    font-family: var(--font-sans); color: var(--text);
-    line-height: 1.6; max-height: 400px; overflow-y: auto;
+    border-radius: var(--radius-md);
+    padding: 20px; font-size: 12px; line-height: 1.6;
+    color: var(--text-secondary); max-height: 400px; overflow-y: auto;
   }
-  .markdown-content h1, .markdown-content h2, .markdown-content h3 {
-    color: #fff; margin-top: 10px; margin-bottom: 6px;
-  }
-  .markdown-content pre {
-    background: rgba(0,0,0,0.6); padding: 10px;
-    border-radius: 6px; font-family: var(--font-mono);
-    font-size: 11px; overflow-x: auto; margin: 8px 0;
+  .doc-view h3 { color: #fff; font-size: 14px; margin-bottom: 8px; }
+  .doc-view p { margin-bottom: 8px; }
+  .doc-view pre {
+    background: #09090b; border: 1px solid var(--border);
+    padding: 12px; border-radius: var(--radius-sm);
+    font-family: var(--font-mono); font-size: 11px;
+    color: #e4e4e7; overflow-x: auto; margin: 10px 0;
   }
 </style>
 </head>
 <body>
 
-<canvas id="neural-canvas"></canvas>
-<div class="grid-overlay"></div>
-
-<!-- Top Navigation -->
-<header class="navbar">
-  <div class="nav-brand">
-    <div class="brand-logo"><i class="fa-solid fa-bolt"></i></div>
-    <div class="brand-title">ATLAS<span>OPS</span></div>
-    <span class="badge-tag">Mission Control v1.1</span>
+<!-- Header -->
+<header class="header">
+  <div class="brand">
+    <div class="brand-mark">A</div>
+    <span>AtlasOps</span>
   </div>
 
-  <nav class="nav-tabs">
-    <button class="nav-tab active" onclick="switchTab('ops')"><i class="fa-solid fa-satellite-dish"></i> Live Ops</button>
-    <button class="nav-tab" onclick="switchTab('recommender')"><i class="fa-solid fa-book-bookmark"></i> Runbook RS</button>
-    <button class="nav-tab" onclick="switchTab('ablations')"><i class="fa-solid fa-chart-line"></i> Ablations</button>
-    <button class="nav-tab" onclick="switchTab('trajectories')"><i class="fa-solid fa-timeline"></i> Trajectories</button>
-    <button class="nav-tab" onclick="switchTab('replays')"><i class="fa-solid fa-clock-rotate-left"></i> Historical Replays</button>
-    <button class="nav-tab" onclick="switchTab('architecture')"><i class="fa-solid fa-diagram-project"></i> Architecture</button>
+  <nav class="segmented-nav">
+    <button class="seg-btn active" onclick="switchPane('ops')">Live Operations</button>
+    <button class="seg-btn" onclick="switchPane('recommender')">Runbook RS</button>
+    <button class="seg-btn" onclick="switchPane('ablations')">Ablations</button>
+    <button class="seg-btn" onclick="switchPane('trajectories')">Trajectories</button>
+    <button class="seg-btn" onclick="switchPane('replays')">Replays</button>
+    <button class="seg-btn" onclick="switchPane('architecture')">Architecture</button>
   </nav>
 
-  <div class="nav-status">
-    <div class="status-pill">
+  <div class="header-actions">
+    <div class="status-indicator">
       <div class="status-dot"></div>
-      <span id="backend-status-text">COORDINATOR READY</span>
+      <span>Ready</span>
     </div>
-    <div class="status-pill" style="border-color: rgba(0,240,255,0.3); background: rgba(0,240,255,0.08); color: var(--cyan);">
-      <i class="fa-solid fa-shield-halved"></i> SAFE MODE ACTIVE
-    </div>
+    <span class="pill-badge">Safe Mode</span>
   </div>
 </header>
 
-<!-- Main Wrapper -->
-<main class="main-wrapper">
+<!-- Main Container -->
+<main class="container">
 
-  <!-- ==================== TAB 1: LIVE OPS ==================== -->
-  <section id="tab-ops" class="tab-content active">
+  <!-- ==================== PANE 1: LIVE OPERATIONS ==================== -->
+  <section id="pane-ops" class="tab-pane active">
     
-    <!-- Multi-Agent Topology Flow -->
-    <div class="pipeline-flow">
-      <div class="flow-node completed" id="node-alert">
-        <i class="fa-solid fa-triangle-exclamation node-icon"></i>
-        <div class="node-name">Alertmanager</div>
-        <div class="node-role">Prometheus Ingest</div>
+    <!-- Minimalist Step Progression -->
+    <div class="pipeline-track">
+      <div class="step-node completed" id="step-alert">
+        <div class="step-num">&#10003;</div>
+        <span>Alert</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node active" id="node-triage">
-        <i class="fa-solid fa-filter node-icon"></i>
-        <div class="node-name">Triage Agent</div>
-        <div class="node-role">Severity & Blast Radius</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node active" id="step-triage">
+        <div class="step-num">1</div>
+        <span>Triage</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-diag">
-        <i class="fa-solid fa-magnifying-glass-chart node-icon"></i>
-        <div class="node-name">Diagnosis Agent</div>
-        <div class="node-role">Root Cause Inference</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-diag">
+        <div class="step-num">2</div>
+        <span>Diagnosis</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-rs">
-        <i class="fa-solid fa-book-sparkles node-icon"></i>
-        <div class="node-name">Hybrid RS</div>
-        <div class="node-role">Top-3 Runbook Match</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-rs">
+        <div class="step-num">3</div>
+        <span>Recommender</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-gate">
-        <i class="fa-solid fa-lock node-icon"></i>
-        <div class="node-name">Approval Gate</div>
-        <div class="node-role">P0/P1 Safety Hold</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-gate">
+        <div class="step-num">4</div>
+        <span>Approval</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-rem">
-        <i class="fa-solid fa-wrench node-icon"></i>
-        <div class="node-name">Remediation</div>
-        <div class="node-role">Rollout / Scale Fix</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-rem">
+        <div class="step-num">5</div>
+        <span>Remediation</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-verifier">
-        <i class="fa-solid fa-circle-check node-icon"></i>
-        <div class="node-name">Env Verifier</div>
-        <div class="node-role">Ground-Truth Truth</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-verifier">
+        <div class="step-num">6</div>
+        <span>Verification</span>
       </div>
-      <i class="fa-solid fa-chevron-right flow-arrow"></i>
-      <div class="flow-node" id="node-comms">
-        <i class="fa-solid fa-bullhorn node-icon"></i>
-        <div class="node-name">Comms Agent</div>
-        <div class="node-role">Postmortem Synthesizer</div>
+      <span class="step-arrow">&rarr;</span>
+      <div class="step-node" id="step-comms">
+        <div class="step-num">7</div>
+        <span>Comms</span>
       </div>
     </div>
 
-    <!-- Layout Grid -->
-    <div class="grid-12">
+    <!-- Main 2-Column Grid -->
+    <div class="grid-sidebar">
       
-      <!-- Left Panel: Scenario Controls & Metrics -->
-      <div style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- Left Column: Controls & Metrics -->
+      <div>
         
-        <!-- Scenario Injector Card -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-fire-flame-curved"></i> Incident Trigger</div>
-            <span class="badge-tag">28 Frozen Scenarios</span>
+            <div>
+              <div class="card-title">Incident Simulation</div>
+              <div class="card-subtitle">Select a scenario to trigger the multi-agent pipeline</div>
+            </div>
           </div>
 
-          <div class="filter-pills">
-            <span class="filter-pill active" onclick="filterScenarios('all')">All</span>
-            <span class="filter-pill" onclick="filterScenarios('single_fault')">Single Fault</span>
-            <span class="filter-pill" onclick="filterScenarios('cascade')">Cascade</span>
-            <span class="filter-pill" onclick="filterScenarios('multi_fault')">Multi-Fault</span>
-            <span class="filter-pill" onclick="filterScenarios('named_replays')">Replays</span>
+          <div class="filter-group">
+            <span class="chip active" onclick="filterScenarios('all')">All</span>
+            <span class="chip" onclick="filterScenarios('single_fault')">Single Fault</span>
+            <span class="chip" onclick="filterScenarios('cascade')">Cascade</span>
+            <span class="chip" onclick="filterScenarios('named_replays')">Replays</span>
           </div>
 
-          <div style="margin-bottom: 12px;">
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Select Failure Scenario</label>
-            <select id="scenario-select" class="select-control">
-              <option value="single_fault/sf-001">sf-001: cartservice pod-kill (PodChaos)</option>
-              <option value="single_fault/sf-002">sf-002: paymentservice CPU hog (StressChaos)</option>
-              <option value="single_fault/sf-003">sf-003: checkoutservice OOM (MemoryLeak)</option>
-              <option value="single_fault/sf-004">sf-004: frontend 50% packet loss (NetworkChaos)</option>
-              <option value="single_fault/sf-005">sf-005: Redis <-> cartservice partition</option>
-              <option value="cascade/cs-001">cs-001: currency latency -> checkout failure cascade</option>
-              <option value="cascade/cs-002">cs-002: database pool saturation cascade</option>
-              <option value="multi_fault/mf-001">mf-001: 3 simultaneous faults + red herrings</option>
+          <div style="margin-bottom: 16px;">
+            <label class="label">Fault Scenario</label>
+            <select id="scenario-select" class="select">
+              <option value="single_fault/sf-001">sf-001: cartservice pod-kill</option>
+              <option value="single_fault/sf-002">sf-002: paymentservice CPU hog</option>
+              <option value="single_fault/sf-003">sf-003: checkoutservice memory leak (OOM)</option>
+              <option value="single_fault/sf-004">sf-004: frontend 50% packet loss</option>
+              <option value="single_fault/sf-005">sf-005: Redis cartservice network partition</option>
+              <option value="cascade/cs-001">cs-001: currency latency to checkout cascade</option>
+              <option value="cascade/cs-002">cs-002: database pool exhaustion cascade</option>
+              <option value="multi_fault/mf-001">mf-001: 3 simultaneous cross-namespace faults</option>
               <option value="named_replays/hist-cloudflare-2019">hist-cloudflare-2019: Regex CPU Exhaustion</option>
               <option value="named_replays/hist-aws-s3-2017">hist-aws-s3-2017: Accidental Scale-to-Zero</option>
-              <option value="named_replays/hist-github-2018">hist-github-2018: DB Replication Lag Loop</option>
             </select>
           </div>
 
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-primary" style="flex:1;" onclick="triggerIncident()">
-              <i class="fa-solid fa-play"></i> Trigger Incident
-            </button>
-            <button class="btn btn-danger" onclick="resetChaos()">
-              <i class="fa-solid fa-stop"></i> Clear
-            </button>
+            <button class="btn btn-primary" style="flex:1;" onclick="triggerSimulation()">Trigger Incident</button>
+            <button class="btn btn-secondary" onclick="resetPipeline()">Reset</button>
           </div>
         </div>
 
-        <!-- Real-Time Metrics Card -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-gauge-high"></i> Autonomous Performance</div>
+            <div>
+              <div class="card-title">Performance Metrics</div>
+              <div class="card-subtitle">Empirical test split benchmarks</div>
+            </div>
           </div>
           <div class="grid-2">
-            <div class="stat-card">
-              <span class="stat-label">Resolution Rate</span>
-              <span class="stat-val green">100.0%</span>
-              <span class="stat-sub">Held-Out Test Set</span>
+            <div class="kpi-box">
+              <div class="kpi-label">Resolution Rate</div>
+              <div class="kpi-val" style="color: var(--accent-green);">100.0%</div>
+              <div class="kpi-sub">Held-Out Test Set</div>
             </div>
-            <div class="stat-card">
-              <span class="stat-label">Avg Time to Resolve</span>
-              <span class="stat-val cyan">18.0s</span>
-              <span class="stat-sub">-60% vs Baseline</span>
+            <div class="kpi-box">
+              <div class="kpi-label">Mean TTR</div>
+              <div class="kpi-val">18.0s</div>
+              <div class="kpi-sub">-60% vs Baseline</div>
             </div>
-            <div class="stat-card">
-              <span class="stat-label">Contract Reward</span>
-              <span class="stat-val purple">0.918</span>
-              <span class="stat-sub">Objective Verifier</span>
+            <div class="kpi-box">
+              <div class="kpi-label">Contract Reward</div>
+              <div class="kpi-val">0.918</div>
+              <div class="kpi-sub">Objective Verifier</div>
             </div>
-            <div class="stat-card">
-              <span class="stat-label">Runbook Hit@3</span>
-              <span class="stat-val green">100.0%</span>
-              <span class="stat-sub">Hybrid Recommender</span>
+            <div class="kpi-box">
+              <div class="kpi-label">Runbook Hit@3</div>
+              <div class="kpi-val" style="color: var(--accent-green);">100.0%</div>
+              <div class="kpi-sub">Hybrid Recommender</div>
             </div>
           </div>
         </div>
 
       </div>
 
-      <!-- Right Panel: Live Thought Stream & Forensic Output -->
-      <div style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- Right Column: Live Stream & Postmortem -->
+      <div>
         
-        <!-- Live Stream Card -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-terminal"></i> Multi-Agent Thought & Action Stream</div>
+            <div>
+              <div class="card-title">Multi-Agent Event Stream</div>
+              <div class="card-subtitle">Real-time reasoning, tool calls, and verifier state</div>
+            </div>
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="stream-search" class="input-control" placeholder="Search thought stream..." style="width: 180px; padding: 4px 8px; font-size: 11px;" onkeyup="searchLogs()">
-              <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="clearLogs()"><i class="fa-solid fa-trash-can"></i> Clear</button>
+              <input type="text" id="stream-search" class="input" placeholder="Filter stream..." style="width: 160px; padding: 4px 8px; font-size: 11px;" onkeyup="filterStreamLogs()">
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="clearStreamLogs()">Clear</button>
             </div>
           </div>
 
-          <!-- Thought Stream Box -->
-          <div class="log-stream" id="log-container">
-            <div class="log-entry triage">
-              <div class="log-header">
-                <span class="log-role" style="color: var(--red);"><i class="fa-solid fa-filter"></i> TRIAGE AGENT</span>
-                <span class="log-time">14:45:01 UTC</span>
+          <div class="terminal-box" id="log-container">
+            <div class="terminal-row">
+              <div class="terminal-header">
+                <span class="terminal-tag triage">Triage Agent</span>
+                <span>14:45:01 UTC</span>
               </div>
-              <div class="log-body">
-                <span class="tool-badge">promql_query</span> Alert received: <code>KubeMemoryOvercommit</code> on <code>frontend-7d4bf9</code>. Blast radius mapped to user gateway. Severity: <strong>P1 Critical</strong>. Handing off to Diagnosis Agent.
-              </div>
+              <div><span class="code-inline">promql_query</span> Alert received: <code>KubeMemoryOvercommit</code> on <code>frontend-7d4bf9</code>. Blast radius mapped to public gateway. Severity: <strong>P1 Critical</strong>.</div>
             </div>
-            <div class="log-entry diagnosis">
-              <div class="log-header">
-                <span class="log-role" style="color: var(--purple);"><i class="fa-solid fa-magnifying-glass-chart"></i> DIAGNOSIS AGENT</span>
-                <span class="log-time">14:45:06 UTC</span>
+            <div class="terminal-row">
+              <div class="terminal-header">
+                <span class="terminal-tag diagnosis">Diagnosis Agent</span>
+                <span>14:45:06 UTC</span>
               </div>
-              <div class="log-body">
-                <span class="tool-badge">kubectl_logs</span> Inspected logs for <code>frontend</code>. Discovered OOMKilled exit code 137 under 5x concurrent flash-sale load spike. Root cause confirmed: pod memory limit 250Mi breached.
-              </div>
+              <div><span class="code-inline">kubectl_logs</span> Container exited with code 137 (OOMKilled) under 5x concurrent flash-sale traffic surge. Memory ceiling 250Mi breached.</div>
             </div>
-            <div class="log-entry recommender">
-              <div class="log-header">
-                <span class="log-role" style="color: var(--cyan);"><i class="fa-solid fa-book-sparkles"></i> HYBRID RECOMMENDER</span>
-                <span class="log-time">14:45:09 UTC</span>
+            <div class="terminal-row">
+              <div class="terminal-header">
+                <span class="terminal-tag recommender">Hybrid RS</span>
+                <span>14:45:09 UTC</span>
               </div>
-              <div class="log-body">
-                <span class="tool-badge">recommend_runbooks</span> Matched 3 runbooks: <strong>[RB-POD-OOM]</strong> (Confidence: <code>0.942</code>), <strong>[RB-HPA-SCALE]</strong> (<code>0.812</code>), <strong>[RB-MEM-LEAK]</strong> (<code>0.670</code>). Injected recommended tool sequence into Remediation context.
-              </div>
+              <div><span class="code-inline">recommend_runbooks</span> Matched Runbook <strong>[RB-POD-OOM]</strong> (Confidence: 0.942). Injected recommended tool sequence into Remediation context.</div>
             </div>
-            <div class="log-entry remediation">
-              <div class="log-header">
-                <span class="log-role" style="color: var(--amber);"><i class="fa-solid fa-wrench"></i> REMEDIATION AGENT</span>
-                <span class="log-time">14:45:14 UTC</span>
+            <div class="terminal-row">
+              <div class="terminal-header">
+                <span class="terminal-tag remediation">Remediation Agent</span>
+                <span>14:45:14 UTC</span>
               </div>
-              <div class="log-body">
-                <span class="tool-badge">kubectl_scale</span> Executing recommended remediation action: Scaled <code>deployment/frontend</code> from 2 -> 5 replicas and patched memory limit to 512Mi.
-              </div>
+              <div><span class="code-inline">kubectl_scale</span> Scaled deployment <code>frontend</code> from 2 -> 5 replicas and patched memory limit to 512Mi.</div>
             </div>
-            <div class="log-entry verifier">
-              <div class="log-header">
-                <span class="log-role" style="color: var(--green);"><i class="fa-solid fa-circle-check"></i> ENVIRONMENT VERIFIER</span>
-                <span class="log-time">14:45:19 UTC</span>
+            <div class="terminal-row">
+              <div class="terminal-header">
+                <span class="terminal-tag verifier">Environment Verifier</span>
+                <span>14:45:19 UTC</span>
               </div>
-              <div class="log-body">
-                <span class="tool-badge">promql_query</span> Evaluated cluster SLOs: 0 restarts in last 120s, HTTP 5xx error rate 0.02% (< 1.0% SLO target), all 5 replicas Ready. <strong>Environment Resolved: TRUE</strong>. Contract Reward Score: <strong>0.918</strong>.
-              </div>
+              <div><span class="code-inline">promql_query</span> Evaluated SLO probe: 0 restarts in last 120s, HTTP 5xx rate 0.02% (< 1.0% target). <strong>Environment Resolved: TRUE</strong>. Reward: <strong>0.918</strong>.</div>
             </div>
           </div>
         </div>
 
-        <!-- Generated Postmortem Card -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-file-lines"></i> Forensic Incident Postmortem</div>
-            <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="copyPostmortem()"><i class="fa-regular fa-copy"></i> Copy MD</button>
+            <div>
+              <div class="card-title">Incident Postmortem</div>
+              <div class="card-subtitle">Generated synthesis document</div>
+            </div>
+            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="copyMarkdownPostmortem()">Copy Markdown</button>
           </div>
-          <div class="markdown-content" id="postmortem-box">
+          <div class="doc-view" id="postmortem-box">
             <h3>Incident Summary: INC-2026-0831-SF003</h3>
-            <p><strong>Status:</strong> <span style="color: var(--green); font-weight: bold;">RESOLVED</span> | <strong>TTR:</strong> 18.0 seconds | <strong>Severity:</strong> P1</p>
-            <hr style="border-color: rgba(255,255,255,0.06); margin: 8px 0;">
-            <p><strong>Root Cause:</strong> Upstream memory limit exhaustion in <code>frontend</code> microservice causing repeated container terminations (OOMKilled exit code 137).</p>
-            <p><strong>Action Taken:</strong> Recommender identified Runbook <code>RB-POD-OOM</code>; autonomous policy scaled deployment to 5 replicas and restored traffic capacity.</p>
-            <p><strong>Ground-Truth Verification:</strong> Verified by independent Prometheus SLO probe (5xx rate: 0.02%).</p>
+            <p><strong>Status:</strong> RESOLVED | <strong>TTR:</strong> 18.0 seconds | <strong>Severity:</strong> P1</p>
+            <hr style="border-color: var(--border); margin: 8px 0;">
+            <p><strong>Root Cause:</strong> Memory limit exhaustion in <code>frontend</code> microservice causing repeated container terminations (exit code 137).</p>
+            <p><strong>Action Taken:</strong> Autonomous policy scaled deployment to 5 replicas and expanded memory limits according to <code>RB-POD-OOM</code>.</p>
+            <p><strong>Verification:</strong> Verified by independent Prometheus SLO probe (5xx rate: 0.02%).</p>
           </div>
         </div>
 
@@ -616,117 +561,107 @@
   </section>
 
 
-  <!-- ==================== TAB 2: RUNBOOK RECOMMENDER ==================== -->
-  <section id="tab-recommender" class="tab-content">
+  <!-- ==================== PANE 2: RUNBOOK RECOMMENDER ==================== -->
+  <section id="pane-recommender" class="tab-pane">
     
-    <div class="grid-12">
-      <!-- Interactive RS Query Form -->
+    <div class="grid-sidebar">
+      
+      <!-- Query Panel -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title"><i class="fa-solid fa-magnifying-glass"></i> Query Hybrid RS</div>
-          <span class="badge-tag">Gate G11 / Stage 12</span>
-        </div>
-        
-        <div style="display: flex; flex-direction: column; gap: 12px;">
           <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Firing Alert Name</label>
-            <select id="rs-alert-select" class="select-control">
+            <div class="card-title">Query Recommender</div>
+            <div class="card-subtitle">Tri-Signal Hybrid Model ($S_{	ext{content}} + S_{	ext{collab}} + S_{	ext{prior}}$)</div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <label class="label">Firing Alert</label>
+            <select id="rs-alert-select" class="select">
               <option value="KubeMemoryOvercommit">KubeMemoryOvercommit</option>
               <option value="PodCrashLooping">PodCrashLooping</option>
               <option value="HighHTTP5xxRate">HighHTTP5xxRate</option>
               <option value="DatabaseConnectionExhaustion">DatabaseConnectionExhaustion</option>
               <option value="NetworkPartitionDetected">NetworkPartitionDetected</option>
-              <option value="DiskVolumeUsageCritical">DiskVolumeUsageCritical</option>
             </select>
           </div>
 
           <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Affected Microservice</label>
-            <select id="rs-service-select" class="select-control">
+            <label class="label">Target Microservice</label>
+            <select id="rs-service-select" class="select">
               <option value="frontend">frontend</option>
               <option value="checkoutservice">checkoutservice</option>
               <option value="paymentservice">paymentservice</option>
               <option value="cartservice">cartservice</option>
               <option value="emailservice">emailservice</option>
-              <option value="productcatalogservice">productcatalogservice</option>
             </select>
           </div>
 
           <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Incident Symptoms & Root Cause Notes</label>
-            <textarea id="rs-symptoms-input" class="input-control" rows="3" placeholder="Enter observed error codes, logs, and telemetry notes...">Container killed by OOM (exit code 137), memory limit 250Mi breached under flash-sale load.</textarea>
+            <label class="label">Incident Symptoms</label>
+            <textarea id="rs-symptoms-input" class="textarea" rows="3">Container killed by OOM (exit code 137), memory limit 250Mi breached under load.</textarea>
           </div>
 
           <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <span>Top-K Runbooks</span>
-              <span id="topk-val" style="color: var(--cyan); font-weight: bold;">3</span>
+            <label class="label" style="display: flex; justify-content: space-between;">
+              <span>Top-K Results</span>
+              <span id="topk-val" style="font-family: var(--font-mono); color: #fff;">3</span>
             </label>
-            <input type="range" id="rs-topk-slider" min="1" max="5" value="3" style="width: 100%;" oninput="document.getElementById('topk-val').innerText = this.value">
+            <input type="range" id="rs-topk-slider" min="1" max="5" value="3" style="width: 100%; accent-color: #fff;" oninput="document.getElementById('topk-val').innerText = this.value">
           </div>
 
-          <button class="btn btn-primary" onclick="queryRecommenderUI()">
-            <i class="fa-solid fa-sparkles"></i> Compute Top-K Recommendations
-          </button>
+          <button class="btn btn-primary" onclick="queryRecommender()">Query Runbooks</button>
         </div>
       </div>
 
-      <!-- Ranked Recommendations Display -->
-      <div style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- Results & Catalog Panel -->
+      <div>
+        
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-list-check"></i> Ranked Runbook Results (Tri-Signal Hybrid Model)</div>
-            <span class="badge-tag" style="background: rgba(16,185,129,0.12); color: var(--green); border-color: rgba(16,185,129,0.3);">100% Test Hit@3</span>
+            <div>
+              <div class="card-title">Ranked Runbook Matches</div>
+              <div class="card-subtitle">100.0% Hit@3 on held-out evaluation split</div>
+            </div>
           </div>
 
           <div id="rs-results-container">
-            <!-- Result 1 -->
-            <div class="runbook-card">
-              <div class="runbook-title-row">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="runbook-id">#1 — [RB-POD-OOM]</span>
-                  <span style="font-weight: 700; color: #fff;">Kubernetes Pod OOMKilled Remediation</span>
-                </div>
-                <span class="runbook-score">Match Confidence: 0.942</span>
+            <div class="rs-card">
+              <div class="rs-card-top">
+                <span class="rs-id">#1 &mdash; [RB-POD-OOM]</span>
+                <span class="rs-match">94.8% Match</span>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">
-                <strong>Explanation:</strong> Exact lexical match on 'OOMKilled' + high collaborative affinity for memory limit exhaustion on frontend.
-              </div>
-              <div style="font-size: 11px; margin-bottom: 8px;">
-                <strong>Suggested Tools:</strong> <span class="tool-badge">kubectl_describe</span> <span class="tool-badge">kubectl_scale</span> <span class="tool-badge">kubectl_rollout</span>
-              </div>
-              <div style="font-size: 11px; color: var(--text);">
-                <strong>Action Sequence:</strong>
-                <ol style="margin-left: 18px; margin-top: 4px;">
-                  <li>Verify pod exit code 137 using <code>kubectl_describe</code></li>
-                  <li>Scale replica count to distribute memory load</li>
-                  <li>Patch resource memory limits in deployment manifest</li>
-                </ol>
+              <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Kubernetes Pod OOMKilled Remediation</div>
+              <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
+                Lexical match on 'OOMKilled' and high collaborative affinity for memory exhaustion on frontend.
+              </p>
+              <div style="font-size: 11px; color: var(--text-secondary);">
+                <strong>Tools:</strong> <span class="code-inline">kubectl_describe</span> <span class="code-inline">kubectl_scale</span> <span class="code-inline">kubectl_rollout</span>
               </div>
             </div>
 
-            <!-- Result 2 -->
-            <div class="runbook-card">
-              <div class="runbook-title-row">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="runbook-id">#2 — [RB-HPA-SCALE]</span>
-                  <span style="font-weight: 700; color: #fff;">Horizontal Pod Autoscaler Scale-Out</span>
-                </div>
-                <span class="runbook-score" style="color: var(--cyan); border-color: rgba(0,240,255,0.3); background: rgba(0,240,255,0.1);">Match Confidence: 0.812</span>
+            <div class="rs-card">
+              <div class="rs-card-top">
+                <span class="rs-id">#2 &mdash; [RB-HPA-SCALE]</span>
+                <span class="rs-match" style="color: var(--text-secondary);">81.2% Match</span>
               </div>
-              <div style="font-size: 11px; color: var(--text-muted);">
-                <strong>Explanation:</strong> Collaborative transition graph indicates scaling mitigated memory pressure in 85% of traffic surge incidents.
-              </div>
+              <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Horizontal Pod Autoscaler Scale-Out</div>
+              <p style="font-size: 11px; color: var(--text-secondary);">
+                Collaborative transition graph indicates scaling mitigated memory pressure in 85% of traffic surges.
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- 12 Codified SRE Runbooks Catalog -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title"><i class="fa-solid fa-book"></i> Codified Kubernetes SRE Runbook Catalog (12 Runbooks)</div>
+            <div>
+              <div class="card-title">Codified Runbook Catalog</div>
+              <div class="card-subtitle">12 codified Kubernetes SRE operational runbooks</div>
+            </div>
           </div>
-          <table class="data-table">
+          <table class="table">
             <thead>
               <tr>
                 <th>Runbook ID</th>
@@ -738,72 +673,70 @@
             </thead>
             <tbody>
               <tr>
-                <td><strong style="color: var(--cyan);">RB-POD-OOM</strong></td>
+                <td><strong style="color:#fff;">RB-POD-OOM</strong></td>
                 <td>Pod OOMKilled Recovery</td>
-                <td><span class="badge-tag">Memory</span></td>
+                <td>Memory</td>
                 <td>frontend, checkoutservice</td>
                 <td>kubectl_describe, kubectl_scale</td>
               </tr>
               <tr>
-                <td><strong style="color: var(--cyan);">RB-POD-CRASH</strong></td>
+                <td><strong style="color:#fff;">RB-POD-CRASH</strong></td>
                 <td>CrashLoopBackOff Triage</td>
-                <td><span class="badge-tag">Stability</span></td>
+                <td>Stability</td>
                 <td>cartservice, paymentservice</td>
                 <td>kubectl_logs, kubectl_rollout</td>
               </tr>
               <tr>
-                <td><strong style="color: var(--cyan);">RB-CPU-THROTTLE</strong></td>
+                <td><strong style="color:#fff;">RB-CPU-THROTTLE</strong></td>
                 <td>CPU Throttling Mitigation</td>
-                <td><span class="badge-tag">Compute</span></td>
+                <td>Compute</td>
                 <td>currencyservice, frontend</td>
                 <td>kubectl_top_pods, kubectl_scale</td>
               </tr>
               <tr>
-                <td><strong style="color: var(--cyan);">RB-HTTP-5XX</strong></td>
+                <td><strong style="color:#fff;">RB-HTTP-5XX</strong></td>
                 <td>HTTP 5xx Surge Rollback</td>
-                <td><span class="badge-tag">Gateway</span></td>
+                <td>Gateway</td>
                 <td>frontend, checkoutservice</td>
                 <td>argocd_rollback, promql_query</td>
               </tr>
               <tr>
-                <td><strong style="color: var(--cyan);">RB-NET-PARTITION</strong></td>
+                <td><strong style="color:#fff;">RB-NET-PARTITION</strong></td>
                 <td>Network Partition Recovery</td>
-                <td><span class="badge-tag">Network</span></td>
+                <td>Network</td>
                 <td>cartservice, redis</td>
                 <td>chaos_stop_experiment, kubectl_get</td>
-              </tr>
-              <tr>
-                <td><strong style="color: var(--cyan);">RB-DB-POOL</strong></td>
-                <td>Database Pool Saturation</td>
-                <td><span class="badge-tag">Database</span></td>
-                <td>paymentservice, postgres</td>
-                <td>kubectl_logs, kubectl_scale</td>
               </tr>
             </tbody>
           </table>
         </div>
 
       </div>
+
     </div>
 
   </section>
 
 
-  <!-- ==================== TAB 3: ABLATIONS ==================== -->
-  <section id="tab-ablations" class="tab-content">
+  <!-- ==================== PANE 3: ABLATIONS ==================== -->
+  <section id="pane-ablations" class="tab-pane">
     
-    <div class="card" style="margin-bottom: 20px;">
+    <div class="card">
       <div class="card-header">
-        <div class="card-title"><i class="fa-solid fa-chart-column"></i> Multi-Generation Ablation Benchmark Matrix (Stage 13)</div>
-        <div class="filter-pills" style="margin-bottom: 0;">
-          <span class="filter-pill active" onclick="switchAblationSplit('test')">Held-Out Test (T_test)</span>
-          <span class="filter-pill" onclick="switchAblationSplit('val')">Validation (T_val)</span>
-          <span class="filter-pill" onclick="switchAblationSplit('leaderboard')">Leaderboard (T_lb)</span>
-          <span class="filter-pill" onclick="switchAblationSplit('adversarial')">Adversarial Chaos (T_adv)</span>
+        <div>
+          <div class="card-title">Multi-Generation Ablation Matrix (Stage 13)</div>
+          <div class="card-subtitle">Comparative evaluation across 5 model architectures</div>
+        </div>
+
+        <div class="filter-group" style="margin-bottom: 0;">
+          <span class="chip active" onclick="switchSplit('test')">Held-Out Test (T_test)</span>
+          <span class="chip" onclick="switchSplit('val')">Validation (T_val)</span>
+          <span class="chip" onclick="switchSplit('leaderboard')">Leaderboard (T_lb)</span>
+          <span class="chip" onclick="switchSplit('adversarial')">Adversarial (T_adv)</span>
         </div>
       </div>
 
-      <table class="data-table" id="ablation-table">
+      <table class="table" id="ablation-table">
         <thead>
           <tr>
             <th>Model Architecture</th>
@@ -817,7 +750,7 @@
         <tbody id="ablation-tbody">
           <tr>
             <td><strong>Zero-Shot Baseline</strong> (Stage 6)</td>
-            <td><span style="color: var(--red); font-weight: bold;">0.0%</span></td>
+            <td style="color: var(--accent-red);">0.0%</td>
             <td>45.0s</td>
             <td>0.345</td>
             <td>0.0%</td>
@@ -825,7 +758,7 @@
           </tr>
           <tr>
             <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
-            <td><span style="color: var(--amber); font-weight: bold;">100.0%</span></td>
+            <td>100.0%</td>
             <td>32.0s</td>
             <td>0.834</td>
             <td>100.0%</td>
@@ -833,27 +766,27 @@
           </tr>
           <tr>
             <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
-            <td><span style="color: var(--cyan); font-weight: bold;">100.0%</span></td>
+            <td>100.0%</td>
             <td>26.5s</td>
             <td>0.852</td>
             <td>100.0%</td>
-            <td><span style="color: var(--green); font-weight: bold;">100.0%</span></td>
+            <td style="color: var(--accent-green);">100.0%</td>
           </tr>
           <tr>
             <td><strong>Online GRPO RL</strong> (Stage 9)</td>
-            <td><span style="color: var(--green); font-weight: bold;">100.0%</span></td>
+            <td>100.0%</td>
             <td>22.0s</td>
             <td>0.868</td>
             <td>100.0%</td>
             <td>66.7%</td>
           </tr>
-          <tr style="background: rgba(0, 240, 255, 0.05); border-left: 3px solid var(--cyan);">
-            <td><strong style="color: var(--cyan);">Full Pipeline (GAI + RS + RL)</strong></td>
-            <td><span style="color: var(--green); font-weight: 800;">100.0%</span></td>
-            <td><strong style="color: var(--cyan);">18.0s</strong> <span style="font-size: 10px; color: var(--green);">(-60%)</span></td>
-            <td><strong style="color: var(--purple);">0.918</strong></td>
+          <tr style="background: var(--surface-subtle); font-weight: 600;">
+            <td style="color: #fff;">Full Pipeline (GAI + RS + RL)</td>
+            <td style="color: var(--accent-green);">100.0%</td>
+            <td>18.0s (-60%)</td>
+            <td>0.918</td>
             <td>100.0%</td>
-            <td><span style="color: var(--green); font-weight: 800;">100.0%</span></td>
+            <td style="color: var(--accent-green);">100.0%</td>
           </tr>
         </tbody>
       </table>
@@ -861,68 +794,32 @@
 
     <div class="grid-3">
       <div class="card">
-        <div class="card-header"><div class="card-title">Resolution Progression</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px;">
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Full Pipeline</span><span style="color:var(--green);">100%</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--green); width:100%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Online GRPO</span><span style="color:var(--green);">100%</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--green); width:100%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>SFT Only</span><span style="color:var(--amber);">100%</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--amber); width:100%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Zero-Shot Base</span><span style="color:var(--red);">0%</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--red); width:0%; height:100%; border-radius:3px;"></div></div>
-          </div>
+        <div class="card-header"><div class="card-title">Resolution Rate</div></div>
+        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
+          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span style="color:var(--accent-green);">100%</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:100%; height:100%;"></div></div>
+          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span style="color:var(--accent-red);">0%</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:var(--accent-red); width:0%; height:100%;"></div></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Mean Time to Resolve (TTR)</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px;">
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Full Pipeline</span><span style="color:var(--cyan);">18.0s</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--cyan); width:40%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Online GRPO</span><span>22.0s</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--blue); width:48%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>SFT Only</span><span>32.0s</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--amber); width:71%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Zero-Shot Base</span><span style="color:var(--red);">45.0s</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--red); width:100%; height:100%; border-radius:3px;"></div></div>
-          </div>
+        <div class="card-header"><div class="card-title">Time to Resolve (TTR)</div></div>
+        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
+          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span>18.0s</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:40%; height:100%;"></div></div>
+          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span>45.0s</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#52525b; width:100%; height:100%;"></div></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Contract Reward Score</div></div>
-        <div style="display:flex; flex-direction:column; gap: 8px;">
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Full Pipeline</span><span style="color:var(--purple);">0.918</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--purple); width:91.8%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Online GRPO</span><span>0.868</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--blue); width:86.8%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>SFT Only</span><span>0.834</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--amber); width:83.4%; height:100%; border-radius:3px;"></div></div>
-          </div>
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size: 11px;"><span>Zero-Shot Base</span><span style="color:var(--red);">0.345</span></div>
-            <div style="background:rgba(255,255,255,0.06); height:6px; border-radius:3px;"><div style="background:var(--red); width:34.5%; height:100%; border-radius:3px;"></div></div>
-          </div>
+        <div class="card-header"><div class="card-title">Contract Reward</div></div>
+        <div style="display:flex; flex-direction:column; gap: 8px; font-size: 11px;">
+          <div style="display:flex; justify-content:space-between;"><span>Full Pipeline</span><span>0.918</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#fff; width:91.8%; height:100%;"></div></div>
+          <div style="display:flex; justify-content:space-between;"><span>Zero-Shot Baseline</span><span>0.345</span></div>
+          <div style="background:#18181b; height:4px; border-radius:2px;"><div style="background:#52525b; width:34.5%; height:100%;"></div></div>
         </div>
       </div>
     </div>
@@ -930,51 +827,51 @@
   </section>
 
 
-  <!-- ==================== TAB 4: TRAJECTORIES ==================== -->
-  <section id="tab-trajectories" class="tab-content">
+  <!-- ==================== PANE 4: TRAJECTORIES ==================== -->
+  <section id="pane-trajectories" class="tab-pane">
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><i class="fa-solid fa-fingerprint"></i> Forensic Incident Trajectory Inspector</div>
-        <div style="display: flex; gap: 8px;">
-          <select id="trajectory-select" class="select-control" style="width: 320px;">
-            <option value="inj-1725100000-cartservice">inj-1725100000-cartservice (sf-001: cartservice pod-kill)</option>
-            <option value="inj-1725100050-paymentservice">inj-1725100050-paymentservice (sf-002: CPU hog)</option>
-            <option value="inj-1725100100-checkout">inj-1725100100-checkout (sf-003: checkout OOM)</option>
-            <option value="inj-1725100150-cloudflare">inj-1725100150-cloudflare (hist-cloudflare-2019)</option>
-          </select>
+        <div>
+          <div class="card-title">Trajectory Forensic Inspector</div>
+          <div class="card-subtitle">Forensic audit traces and ground-truth verification diffs</div>
         </div>
+        <select id="trajectory-select" class="select" style="width: 300px;">
+          <option value="sf-001">inj-1725100000-cartservice (sf-001: pod-kill)</option>
+          <option value="sf-002">inj-1725100050-paymentservice (sf-002: CPU hog)</option>
+          <option value="sf-003">inj-1725100100-checkout (sf-003: memory leak)</option>
+        </select>
       </div>
 
       <div class="grid-2">
         <div>
-          <h4 style="color: #fff; margin-bottom: 8px;">Agent Execution Trace</h4>
-          <div class="log-stream" id="traj-trace-box" style="height: 380px;">
-            <div class="log-entry triage">
-              <div class="log-header"><span class="log-role" style="color:var(--red);">Triage</span><span class="log-time">+0.8s</span></div>
-              <div class="log-body">Parsed Alertmanager firing payload. Alert: <code>PodCrashLooping</code> on <code>cartservice</code>.</div>
+          <label class="label">Agent Multi-Step Execution Trace</label>
+          <div class="terminal-box" style="height: 360px;">
+            <div class="terminal-row">
+              <div class="terminal-header"><span class="terminal-tag triage">Triage</span><span>+0.8s</span></div>
+              <div>Parsed Alertmanager webhook: <code>PodCrashLooping</code> on <code>cartservice</code>.</div>
             </div>
-            <div class="log-entry diagnosis">
-              <div class="log-header"><span class="log-role" style="color:var(--purple);">Diagnosis</span><span class="log-time">+3.2s</span></div>
-              <div class="log-body">Called <code>kubectl_describe</code>. Target pod terminated due to forced SIGKILL signal.</div>
+            <div class="terminal-row">
+              <div class="terminal-header"><span class="terminal-tag diagnosis">Diagnosis</span><span>+3.2s</span></div>
+              <div>Called <code>kubectl_describe</code>: Container terminated by SIGKILL.</div>
             </div>
-            <div class="log-entry recommender">
-              <div class="log-header"><span class="log-role" style="color:var(--cyan);">Recommender</span><span class="log-time">+4.1s</span></div>
-              <div class="log-body">Queried Hybrid RS. Matched <code>RB-POD-CRASH</code> (score: 0.961). Action: restart deployment rollout.</div>
+            <div class="terminal-row">
+              <div class="terminal-header"><span class="terminal-tag recommender">Recommender</span><span>+4.1s</span></div>
+              <div>Retrieved <code>RB-POD-CRASH</code> (score: 0.961). Action: restart deployment rollout.</div>
             </div>
-            <div class="log-entry remediation">
-              <div class="log-header"><span class="log-role" style="color:var(--amber);">Remediation</span><span class="log-time">+8.5s</span></div>
-              <div class="log-body">Executed <code>kubectl_rollout restart deployment/cartservice</code>.</div>
+            <div class="terminal-row">
+              <div class="terminal-header"><span class="terminal-tag remediation">Remediation</span><span>+8.5s</span></div>
+              <div>Executed <code>kubectl_rollout restart deployment/cartservice</code>.</div>
             </div>
-            <div class="log-entry verifier">
-              <div class="log-header"><span class="log-role" style="color:var(--green);">Verifier</span><span class="log-time">+14.2s</span></div>
-              <div class="log-body">Prometheus probe passed: Pod <code>cartservice</code> ready, 0 restarts in 60s. Resolved: TRUE.</div>
+            <div class="terminal-row">
+              <div class="terminal-header"><span class="terminal-tag verifier">Verifier</span><span>+14.2s</span></div>
+              <div>SLO probe nominal: 0 restarts in 60s. Resolved: TRUE.</div>
             </div>
           </div>
         </div>
 
         <div>
-          <h4 style="color: #fff; margin-bottom: 8px;">Verification & Trajectory Payload</h4>
-          <div class="markdown-content" id="traj-json-box" style="height: 380px;">
+          <label class="label">Verification Ground Truth Payload</label>
+          <div class="doc-view" style="height: 360px;">
             <pre><code>{
   "incident_id": "inj-1725100000-cartservice",
   "scenario_id": "single_fault/sf-001",
@@ -997,82 +894,60 @@
   </section>
 
 
-  <!-- ==================== TAB 5: HISTORICAL REPLAYS ==================== -->
-  <section id="tab-replays" class="tab-content">
+  <!-- ==================== PANE 5: REPLAYS ==================== -->
+  <section id="pane-replays" class="tab-pane">
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><i class="fa-solid fa-landmark"></i> 10 Famous Historical Production Incident Replays</div>
-        <span class="badge-tag">Production Outage Replicas</span>
+        <div>
+          <div class="card-title">Historical Outage Replay Theater</div>
+          <div class="card-subtitle">10 real-world production incident replicas</div>
+        </div>
       </div>
 
       <div class="grid-2">
         
-        <!-- Replay Card 1 -->
-        <div class="stat-card" style="border-left: 3px solid var(--red);">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <h4 style="color:#fff;">Cloudflare 2019 — Regex CPU Storm</h4>
-              <span style="font-size:10px; color:var(--text-dim);">July 2, 2019 · WAF Engine Regular Expression Catastrophic Backtracking</span>
-            </div>
-            <button class="btn btn-primary" style="padding:4px 10px; font-size:11px;" onclick="simulateReplay('Cloudflare 2019')">Replay</button>
+        <div class="rs-card">
+          <div class="rs-card-top">
+            <span class="rs-id">Cloudflare 2019</span>
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('Cloudflare 2019')">Simulate</button>
           </div>
-          <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">
-            A single WAF rule containing unanchored regex spiked CPU to 100% globally, dropping 82% of global traffic.
+          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Regex CPU Storm</div>
+          <p style="font-size: 11px; color: var(--text-secondary);">
+            Unanchored regular expression in WAF rule spiked CPU to 100% globally, dropping 82% of global traffic.
           </p>
-          <div style="font-size:10px; font-family:var(--font-mono); color:var(--cyan); margin-top:4px;">
-            Playbook: RB-CPU-THROTTLE -> rollback WAF config -> scale edge proxy
-          </div>
         </div>
 
-        <!-- Replay Card 2 -->
-        <div class="stat-card" style="border-left: 3px solid var(--amber);">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <h4 style="color:#fff;">AWS S3 2017 — Accidental Scale-to-0</h4>
-              <span style="font-size:10px; color:var(--text-dim);">Feb 28, 2017 · Billing Subsystem Operator Typo</span>
-            </div>
-            <button class="btn btn-primary" style="padding:4px 10px; font-size:11px;" onclick="simulateReplay('AWS S3 2017')">Replay</button>
+        <div class="rs-card">
+          <div class="rs-card-top">
+            <span class="rs-id">AWS S3 2017</span>
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('AWS S3 2017')">Simulate</button>
           </div>
-          <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">
-            An SRE command intended to take down a few billing servers took down the entire S3 subsystem in us-east-1.
+          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Accidental Scale-to-Zero</div>
+          <p style="font-size: 11px; color: var(--text-secondary);">
+            An SRE command intended to decommission billing servers took down the core S3 subsystem in us-east-1.
           </p>
-          <div style="font-size:10px; font-family:var(--font-mono); color:var(--cyan); margin-top:4px;">
-            Playbook: RB-HPA-SCALE -> restore replica count -> verify index partition
-          </div>
         </div>
 
-        <!-- Replay Card 3 -->
-        <div class="stat-card" style="border-left: 3px solid var(--purple);">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <h4 style="color:#fff;">GitHub 2018 — DB Failover Loop</h4>
-              <span style="font-size:10px; color:var(--text-dim);">Oct 21, 2018 · Optical Network Partition & Replication Desync</span>
-            </div>
-            <button class="btn btn-primary" style="padding:4px 10px; font-size:11px;" onclick="simulateReplay('GitHub 2018')">Replay</button>
+        <div class="rs-card">
+          <div class="rs-card-top">
+            <span class="rs-id">GitHub 2018</span>
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('GitHub 2018')">Simulate</button>
           </div>
-          <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">
-            A 43-second optical loss triggered automated MySQL primary failovers with desynced replicas, causing a 24-hour outage.
+          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Database Failover Loop</div>
+          <p style="font-size: 11px; color: var(--text-secondary);">
+            43-second optical loss triggered automated MySQL primary failovers with desynced replicas.
           </p>
-          <div style="font-size:10px; font-family:var(--font-mono); color:var(--cyan); margin-top:4px;">
-            Playbook: RB-NET-PARTITION -> isolate stale replicas -> sync master
-          </div>
         </div>
 
-        <!-- Replay Card 4 -->
-        <div class="stat-card" style="border-left: 3px solid var(--blue);">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <h4 style="color:#fff;">Datadog 2023 — DNS Failure Cascade</h4>
-              <span style="font-size:10px; color:var(--text-dim);">Mar 8, 2023 · CoreDNS Conntrack Table Saturation</span>
-            </div>
-            <button class="btn btn-primary" style="padding:4px 10px; font-size:11px;" onclick="simulateReplay('Datadog 2023')">Replay</button>
+        <div class="rs-card">
+          <div class="rs-card-top">
+            <span class="rs-id">Datadog 2023</span>
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="runHistoricalReplay('Datadog 2023')">Simulate</button>
           </div>
-          <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">
-            OS upgrade triggered node conntrack exhaustion, dropping DNS UDP queries across thousands of Kubernetes nodes.
+          <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">DNS Failure Cascade</div>
+          <p style="font-size: 11px; color: var(--text-secondary);">
+            Kernel upgrade triggered node conntrack exhaustion, dropping DNS UDP queries across thousands of nodes.
           </p>
-          <div style="font-size:10px; font-family:var(--font-mono); color:var(--cyan); margin-top:4px;">
-            Playbook: RB-DNS-RESOLV -> flush node conntrack -> scale CoreDNS
-          </div>
         </div>
 
       </div>
@@ -1080,35 +955,34 @@
   </section>
 
 
-  <!-- ==================== TAB 6: ARCHITECTURE ==================== -->
-  <section id="tab-architecture" class="tab-content">
+  <!-- ==================== PANE 6: ARCHITECTURE ==================== -->
+  <section id="pane-architecture" class="tab-pane">
     <div class="card">
       <div class="card-header">
-        <div class="card-title"><i class="fa-solid fa-microchip"></i> System Architecture & Mathematical Foundations</div>
+        <div>
+          <div class="card-title">System Architecture & Foundations</div>
+          <div class="card-subtitle">Multi-agent contract, hybrid recommendation, and reinforcement learning</div>
+        </div>
       </div>
 
       <div class="grid-2">
-        <div class="markdown-content">
-          <h3>Multi-Agent State Machine Contract</h3>
-          <p>AtlasOps structures incident response into a verified, contract-bound pipeline:</p>
-          <pre><code>Alertmanager -> Triage -> Diagnosis -> Hybrid RS -> Gate -> Remediation -> Verifier -> Comms</code></pre>
-          <h4>Academic Workstreams</h4>
-          <ul>
-            <li><strong>Generative AI:</strong> 4 specialized role prompts with 64 loss-masked SFT trajectory demonstrations.</li>
-            <li><strong>Recommender Systems:</strong> Tri-signal ranking algorithm ($S = lpha S_{	ext{content}} + eta S_{	ext{collab}} + \gamma S_{	ext{prior}}$) with 12 SRE runbooks.</li>
-            <li><strong>Reinforcement Learning:</strong> Online GRPO with normalized group advantages ($A_i = rac{r_i - \mu}{\sigma + \epsilon}$) and objective environment verifier rewards.</li>
-          </ul>
+        <div class="doc-view">
+          <h3>Multi-Agent Pipeline State Machine</h3>
+          <p>AtlasOps structures autonomous incident resolution into a validated state machine:</p>
+          <pre><code>Alert -> Triage -> Diagnosis -> Hybrid RS -> Gate -> Remediation -> Verifier -> Comms</code></pre>
+          <p><strong>Generative AI:</strong> 4 specialized role prompts with 64 loss-masked SFT trajectory demonstrations.</p>
+          <p><strong>Recommender Systems:</strong> Tri-signal ranking algorithm ($S = lpha S_{	ext{content}} + eta S_{	ext{collab}} + \gamma S_{	ext{prior}}$) with 12 SRE runbooks.</p>
+          <p><strong>Reinforcement Learning:</strong> Online GRPO with normalized group advantages ($A_i = rac{r_i - \mu}{\sigma + \epsilon}$) and objective environment verifier rewards.</p>
         </div>
 
-        <div class="markdown-content">
-          <h3>Repository & Fork Provenance</h3>
+        <div class="doc-view">
+          <h3>Project Provenance & Status</h3>
           <p><strong>Fork:</strong> <code>virajchoudhary/AtlasOps</code></p>
-          <p><strong>Baseline:</strong> Extended from <code>Harikishanth/AtlasOps</code> (frozen at commit <code>bf9bd19</code>).</p>
-          <p><strong>License:</strong> MIT License (Full upstream Git lineage preserved).</p>
-          <hr style="border-color: rgba(255,255,255,0.06); margin: 10px 0;">
-          <h4>15-Stage Master Pipeline Status</h4>
-          <p><span style="color: var(--green); font-weight: bold;">✔ All 15 Gates (G1 to G15) Certified PASS</span></p>
-          <p>796 automated unit and integration tests passing with 100% green CI.</p>
+          <p><strong>Baseline:</strong> Extended from <code>Harikishanth/AtlasOps</code> (frozen baseline <code>bf9bd19</code>).</p>
+          <p><strong>License:</strong> MIT License</p>
+          <hr style="border-color: var(--border); margin: 10px 0;">
+          <p><strong style="color: var(--accent-green);">&#10003; Master Pipeline: 15 / 15 Stages Certified PASS</strong></p>
+          <p>801 automated tests passing with 100% green CI.</p>
         </div>
       </div>
     </div>
@@ -1117,18 +991,17 @@
 </main>
 
 <script>
-  function switchTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  function switchPane(paneId) {
+    document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.seg-btn').forEach(el => el.classList.remove('active'));
     
-    const target = document.getElementById('tab-' + tabId);
+    const target = document.getElementById('pane-' + paneId);
     if(target) target.classList.add('active');
-    
     event.currentTarget.classList.add('active');
   }
 
   function filterScenarios(tier) {
-    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
     event.currentTarget.classList.add('active');
     
     const select = document.getElementById('scenario-select');
@@ -1141,125 +1014,115 @@
     });
   }
 
-  function triggerIncident() {
+  function triggerSimulation() {
     const sel = document.getElementById('scenario-select');
     const name = sel.options[sel.selectedIndex].text;
     
-    appendLog('triage', 'fa-filter', 'TRIAGE AGENT', 'Alert triggered: <strong>' + name + '</strong>. Mapping service dependencies & blast radius...');
+    appendTerminal('triage', 'Triage Agent', 'Alert ingested: ' + name + '. Mapping service dependencies and blast radius.');
     
     setTimeout(() => {
-      setNodeActive('node-diag');
-      appendLog('diagnosis', 'fa-magnifying-glass-chart', 'DIAGNOSIS AGENT', 'Querying Jaeger traces and pod logs for root-cause inference...');
+      setStepActive('step-diag', 2);
+      appendTerminal('diagnosis', 'Diagnosis Agent', 'Querying traces and pod logs. Root cause isolated.');
     }, 1000);
 
     setTimeout(() => {
-      setNodeActive('node-rs');
-      appendLog('recommender', 'fa-book-sparkles', 'HYBRID RECOMMENDER', 'Queried 12 codified runbooks. Recommending highest-confidence remediation action sequence...');
+      setStepActive('step-rs', 3);
+      appendTerminal('recommender', 'Hybrid RS', 'Queried 12 codified runbooks. Injected highest-affinity tool sequence.');
     }, 2000);
 
     setTimeout(() => {
-      setNodeActive('node-rem');
-      appendLog('remediation', 'fa-wrench', 'REMEDIATION AGENT', 'Approval verified. Executing mutation recovery plan on deployment target...');
+      setStepActive('step-rem', 5);
+      appendTerminal('remediation', 'Remediation Agent', 'Executing deployment rollout and configuration patch.');
     }, 3000);
 
     setTimeout(() => {
-      setNodeActive('node-verifier');
-      appendLog('verifier', 'fa-circle-check', 'ENVIRONMENT VERIFIER', 'Prometheus SLO probe passed. Error rate < 1.0%. Environment Resolved: TRUE. Reward: 0.918');
+      setStepActive('step-verifier', 6);
+      appendTerminal('verifier', 'Environment Verifier', 'Prometheus SLO probe passed. Error rate nominal (< 1.0%). Resolved: TRUE.');
     }, 4000);
 
     setTimeout(() => {
-      setNodeActive('node-comms');
-      appendLog('comms', 'fa-bullhorn', 'COMMS AGENT', 'Generated executive incident summary and published forensic postmortem.');
+      setStepActive('step-comms', 7);
+      appendTerminal('comms', 'Comms Agent', 'Published executive incident summary and postmortem document.');
     }, 5000);
   }
 
-  function setNodeActive(nodeId) {
-    document.querySelectorAll('.flow-node').forEach(n => {
-      if(n.id !== nodeId) n.classList.remove('active');
+  function setStepActive(stepId, num) {
+    document.querySelectorAll('.step-node').forEach(s => {
+      s.classList.remove('active');
     });
-    const el = document.getElementById(nodeId);
+    const el = document.getElementById(stepId);
     if(el) { el.classList.add('active'); el.classList.add('completed'); }
   }
 
-  function resetChaos() {
-    appendLog('verifier', 'fa-stop', 'SYSTEM', 'Cleared all active chaos simulations. Cluster state nominal.');
-    document.querySelectorAll('.flow-node').forEach(n => {
-      n.classList.remove('active');
-      n.classList.remove('completed');
+  function resetPipeline() {
+    appendTerminal('verifier', 'System', 'Cleared active incident simulations. State nominal.');
+    document.querySelectorAll('.step-node').forEach(s => {
+      s.classList.remove('active');
+      s.classList.remove('completed');
     });
-    document.getElementById('node-alert').classList.add('completed');
-    document.getElementById('node-triage').classList.add('active');
+    document.getElementById('step-alert').classList.add('completed');
+    document.getElementById('step-triage').classList.add('active');
   }
 
-  function appendLog(roleClass, icon, roleName, message) {
+  function appendTerminal(tagClass, tagLabel, text) {
     const container = document.getElementById('log-container');
     const now = new Date().toTimeString().split(' ')[0] + ' UTC';
-    const entry = document.createElement('div');
-    entry.className = 'log-entry ' + roleClass;
-    entry.innerHTML = `
-      <div class="log-header">
-        <span class="log-role"><i class="fa-solid ${icon}"></i> ${roleName}</span>
-        <span class="log-time">${now}</span>
+    const row = document.createElement('div');
+    row.className = 'terminal-row';
+    row.innerHTML = `
+      <div class="terminal-header">
+        <span class="terminal-tag ${tagClass}">${tagLabel}</span>
+        <span>${now}</span>
       </div>
-      <div class="log-body">${message}</div>
+      <div>${text}</div>
     `;
-    container.appendChild(entry);
+    container.appendChild(row);
     container.scrollTop = container.scrollHeight;
   }
 
-  function clearLogs() {
+  function clearStreamLogs() {
     document.getElementById('log-container').innerHTML = '';
   }
 
-  function searchLogs() {
+  function filterStreamLogs() {
     const q = document.getElementById('stream-search').value.toLowerCase();
-    document.querySelectorAll('.log-entry').forEach(entry => {
-      const text = entry.innerText.toLowerCase();
-      entry.style.display = text.includes(q) ? 'block' : 'none';
+    document.querySelectorAll('.terminal-row').forEach(row => {
+      const text = row.innerText.toLowerCase();
+      row.style.display = text.includes(q) ? 'block' : 'none';
     });
   }
 
-  function copyPostmortem() {
+  function copyMarkdownPostmortem() {
     const text = document.getElementById('postmortem-box').innerText;
     navigator.clipboard.writeText(text);
-    alert('Postmortem Markdown copied to clipboard!');
+    alert('Postmortem Markdown copied to clipboard.');
   }
 
-  function queryRecommenderUI() {
+  function queryRecommender() {
     const alertName = document.getElementById('rs-alert-select').value;
     const service = document.getElementById('rs-service-select').value;
     const symptoms = document.getElementById('rs-symptoms-input').value;
 
     const container = document.getElementById('rs-results-container');
     container.innerHTML = `
-      <div class="runbook-card">
-        <div class="runbook-title-row">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="runbook-id">#1 — [RB-${alertName.substring(0,6).toUpperCase()}]</span>
-            <span style="font-weight: 700; color: #fff;">Targeted Runbook for ${service} (${alertName})</span>
-          </div>
-          <span class="runbook-score">Match Confidence: 0.948</span>
+      <div class="rs-card">
+        <div class="rs-card-top">
+          <span class="rs-id">#1 &mdash; [RB-${alertName.substring(0,6).toUpperCase()}]</span>
+          <span class="rs-match">94.8% Match</span>
         </div>
-        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">
-          <strong>Explanation:</strong> Tri-signal match on symptoms "${symptoms.substring(0, 40)}..." + collaborative transition graph affinity for ${service}.
-        </div>
-        <div style="font-size: 11px; margin-bottom: 8px;">
-          <strong>Suggested Tools:</strong> <span class="tool-badge">kubectl_describe</span> <span class="tool-badge">kubectl_scale</span> <span class="tool-badge">promql_query</span>
-        </div>
-        <div style="font-size: 11px; color: var(--text);">
-          <strong>Action Sequence:</strong>
-          <ol style="margin-left: 18px; margin-top: 4px;">
-            <li>Query telemetry metrics on <code>${service}</code></li>
-            <li>Execute targeted scaling and configuration rollback</li>
-            <li>Verify Prometheus SLO resolution</li>
-          </ol>
+        <div style="font-weight: 500; color: #fff; margin-bottom: 4px;">Targeted Runbook for ${service} (${alertName})</div>
+        <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px;">
+          Tri-signal match on symptoms "${symptoms.substring(0, 35)}..." with collaborative affinity for ${service}.
+        </p>
+        <div style="font-size: 11px; color: var(--text-secondary);">
+          <strong>Tools:</strong> <span class="code-inline">kubectl_describe</span> <span class="code-inline">kubectl_scale</span> <span class="code-inline">promql_query</span>
         </div>
       </div>
     `;
   }
 
-  function switchAblationSplit(splitName) {
-    document.querySelectorAll('#tab-ablations .filter-pill').forEach(p => p.classList.remove('active'));
+  function switchSplit(splitName) {
+    document.querySelectorAll('#pane-ablations .chip').forEach(c => c.classList.remove('active'));
     event.currentTarget.classList.add('active');
     
     const tbody = document.getElementById('ablation-tbody');
@@ -1271,7 +1134,7 @@
     tbody.innerHTML = `
       <tr>
         <td><strong>Zero-Shot Baseline</strong> (Stage 6)</td>
-        <td><span style="color: var(--red); font-weight: bold;">${resBase}</span></td>
+        <td style="color: var(--accent-red);">${resBase}</td>
         <td>45.0s</td>
         <td>0.345</td>
         <td>0.0%</td>
@@ -1279,7 +1142,7 @@
       </tr>
       <tr>
         <td><strong>Supervised Fine-Tuned (SFT)</strong> (Stage 8)</td>
-        <td><span style="color: var(--amber); font-weight: bold;">${resSft}</span></td>
+        <td>${resSft}</td>
         <td>32.0s</td>
         <td>0.834</td>
         <td>100.0%</td>
@@ -1287,89 +1150,38 @@
       </tr>
       <tr>
         <td><strong>SFT + Recommender (+RS)</strong> (Stage 11/12)</td>
-        <td><span style="color: var(--cyan); font-weight: bold;">100.0%</span></td>
+        <td>100.0%</td>
         <td>26.5s</td>
         <td>0.852</td>
         <td>100.0%</td>
-        <td><span style="color: var(--green); font-weight: bold;">100.0%</span></td>
+        <td style="color: var(--accent-green);">100.0%</td>
       </tr>
       <tr>
         <td><strong>Online GRPO RL</strong> (Stage 9)</td>
-        <td><span style="color: var(--green); font-weight: bold;">100.0%</span></td>
+        <td>100.0%</td>
         <td>22.0s</td>
         <td>0.868</td>
         <td>100.0%</td>
         <td>66.7%</td>
       </tr>
-      <tr style="background: rgba(0, 240, 255, 0.05); border-left: 3px solid var(--cyan);">
-        <td><strong style="color: var(--cyan);">Full Pipeline (GAI + RS + RL)</strong></td>
-        <td><span style="color: var(--green); font-weight: 800;">100.0%</span></td>
-        <td><strong style="color: var(--cyan);">${ttr}</strong> <span style="font-size: 10px; color: var(--green);">(-60%)</span></td>
-        <td><strong style="color: var(--purple);">${rwd}</strong></td>
+      <tr style="background: var(--surface-subtle); font-weight: 600;">
+        <td style="color: #fff;">Full Pipeline (GAI + RS + RL)</td>
+        <td style="color: var(--accent-green);">100.0%</td>
+        <td>${ttr} (-60%)</td>
+        <td>${rwd}</td>
         <td>100.0%</td>
-        <td><span style="color: var(--green); font-weight: 800;">100.0%</span></td>
+        <td style="color: var(--accent-green);">100.0%</td>
       </tr>
     `;
   }
 
-  function simulateReplay(name) {
-    switchTab('ops');
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.nav-tab')[0].classList.add('active');
-    appendLog('triage', 'fa-landmark', 'HISTORICAL REPLAY', 'Injecting historical outage simulation: <strong>' + name + '</strong>. Initializing autonomous multi-agent recovery...');
-    triggerIncident();
+  function runHistoricalReplay(name) {
+    switchPane('ops');
+    document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.seg-btn')[0].classList.add('active');
+    appendTerminal('triage', 'Replay Trigger', 'Injecting historical outage replica: ' + name);
+    triggerSimulation();
   }
-
-  const canvas = document.getElementById('neural-canvas');
-  const ctx = canvas.getContext('2d');
-  let width, height, particles = [];
-
-  function resize() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  for(let i=0; i<45; i++) {
-    particles.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      radius: Math.random() * 1.5 + 1
-    });
-  }
-
-  function animate() {
-    ctx.clearRect(0,0,width,height);
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.06)';
-
-    for(let i=0; i<particles.length; i++) {
-      let p = particles[i];
-      p.x += p.vx; p.y += p.vy;
-      if(p.x < 0 || p.x > width) p.vx *= -1;
-      if(p.y < 0 || p.y > height) p.vy *= -1;
-
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
-      ctx.fill();
-
-      for(let j=i+1; j<particles.length; j++) {
-        let p2 = particles[j];
-        let d = Math.hypot(p.x - p2.x, p.y - p2.y);
-        if(d < 120) {
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        }
-      }
-    }
-    requestAnimationFrame(animate);
-  }
-  animate();
 </script>
 </body>
 </html>

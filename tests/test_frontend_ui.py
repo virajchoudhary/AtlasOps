@@ -21,16 +21,14 @@ class TestFrontendUIAndAPIs:
 
         # Check document metadata and title
         assert "<title>AtlasOps" in content
-        assert "neural-canvas" in content
-        assert "grid-overlay" in content
 
-        # Check all 6 tabs
-        assert 'id="tab-ops"' in content
-        assert 'id="tab-recommender"' in content
-        assert 'id="tab-ablations"' in content
-        assert 'id="tab-trajectories"' in content
-        assert 'id="tab-replays"' in content
-        assert 'id="tab-architecture"' in content
+        # Check all 6 panes
+        assert 'id="pane-ops"' in content
+        assert 'id="pane-recommender"' in content
+        assert 'id="pane-ablations"' in content
+        assert 'id="pane-trajectories"' in content
+        assert 'id="pane-replays"' in content
+        assert 'id="pane-architecture"' in content
 
         # Check essential interactive elements
         assert 'id="scenario-select"' in content
@@ -45,8 +43,7 @@ class TestFrontendUIAndAPIs:
         response = self.client.get("/")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert "ATLAS" in response.text
-        assert "Mission Control" in response.text
+        assert "AtlasOps" in response.text
 
     def test_api_scenarios_endpoint(self):
         """Verify GET /api/scenarios returns the codified scenario catalog."""

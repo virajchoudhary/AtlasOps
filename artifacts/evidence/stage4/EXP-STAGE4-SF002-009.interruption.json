@@ -1,0 +1,39 @@
+{
+  "classification": "HOST_INFRASTRUCTURE_INTERRUPTION",
+  "scientific_status": "INCONCLUSIVE",
+  "attempt_state": "CONSUMED",
+  "gate_g4_pass": null,
+  "env_resolved": null,
+  "verifier_completed": false,
+  "model_capability_failure": false,
+  "experiment_id": "EXP-STAGE4-SF002-009",
+  "main_sha": "9d040e9723e18acb767b3d5a304cb3efcec30d77",
+  "protocol_fingerprint": "f4ddad6d4a0c26f6c0b124693d9cfa59aad33a3acc795068a3d6d604382672d3",
+  "protocol_marker": "G4-PLATFORM-HARDENING-2026-08-25",
+  "reservation_timestamp": "2026-08-28T18:14:21.662196+00:00",
+  "consumed_timestamp": "2026-08-28T18:14:26.486155+00:00",
+  "interruption_timestamp": "2026-08-28T18:19:20.537484+00:00",
+  "observed_exception_class": "httpx.RemoteProtocolError",
+  "observed_exception_message": "Server disconnected without sending a response.",
+  "underlying_exception_class": "httpcore.RemoteProtocolError",
+  "underlying_exception_message": "Server disconnected without sending a response.",
+  "t0_crossed": true,
+  "fault_observed_in_cluster": true,
+  "model_turns_begun": true,
+  "model_turn_status": "2 model turns completed with HTTP 200 OK before host disconnection",
+  "evidence_hashes": {
+    "attempt_json": {
+      "path": "artifacts/evidence/stage4/.attempts/EXP-STAGE4-SF002-009.attempt.json",
+      "sha256": "86143f5313f38e320397ca9c474f062b86ca320c3bae9c9ea61aac47aebc22ae"
+    },
+    "runner_task_log": {
+      "path": "C:\\Users\\viraj\\.gemini\\antigravity\\brain\\ea50f300-257a-42e4-931c-b57a2979d368\\.system_generated\\tasks\\task-588.log",
+      "sha256": "f0e0fcb5e514a53c7721dde0f3a50b4bcc1fe532fb45f5ee71c915dab43c1b69"
+    },
+    "docker_backend_log": {
+      "path": "C:\\Users\\viraj\\AppData\\Local\\Docker\\log\\host\\com.docker.backend.exe.log",
+      "sha256": "7d09959a8e8cbac221a3b51f9bd416ab848ac502bc65a6de8ba0e05121bc2ee6"
+    }
+  },
+  "root_cause_summary": "Windows shell/userinit session restart at 23:49:14 IST triggered clean Docker Desktop user-mode shutdown (ExitHealthyState) which severed kind-atlasops-local Kubernetes port-forward bridge during Phase 4 multi-agent coordinator execution."
+}

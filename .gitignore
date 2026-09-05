@@ -41,3 +41,7 @@ artifacts/trajectories/
 
 # Runtime Stage4 attempt-lifecycle markers are internal-only; never publish.
 artifacts/evidence/stage4/.attempts/
+
+# SETUP-03: retain unapproved local uv resolution; canonical Windows dev lock is
+# requirements/dev-win-py312.lock. This does not adopt uv or discard its local copy.
+/uv.lock

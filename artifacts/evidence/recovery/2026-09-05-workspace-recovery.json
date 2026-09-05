@@ -1,0 +1,351 @@
+{
+  "task_id": "SETUP-03",
+  "timestamp": "2026-09-05T14:04:04.0935827Z",
+  "source_head": "5b4922660c1acc56dd4d2cb1d65f88b87cb3ed7f",
+  "source_branch": "main",
+  "recovery_branch": "chore/evidence-reconciliation",
+  "initial_status": [
+    " M artifacts/evidence/stage10/rs_dataset_manifest.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-009.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-009.interruption.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-009.leftover-chaos.yaml",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-010.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-011.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-011.interruption.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-011.leftover-chaos.yaml",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-012.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-012.interruption.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-013.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-013.interruption.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-014.cleanup.json",
+    "?? artifacts/evidence/stage4/EXP-STAGE4-SF002-014.interruption.json",
+    "?? artifacts/evidence/stage6/zero_shot_test_summary.json",
+    "?? artifacts/evidence/stage6/zero_shot_val_summary.json",
+    "?? artifacts/evidence/stage8/sft_test_episodes.jsonl",
+    "?? artifacts/evidence/stage8/sft_test_summary.json",
+    "?? artifacts/evidence/stage8/sft_val_episodes.jsonl",
+    "?? artifacts/evidence/stage8/sft_val_summary.json",
+    "?? artifacts/evidence/stage9/grpo_test_episodes.jsonl",
+    "?? artifacts/evidence/stage9/grpo_test_summary.json",
+    "?? artifacts/evidence/stage9/grpo_val_episodes.jsonl",
+    "?? artifacts/evidence/stage9/grpo_val_summary.json",
+    "?? uv.lock"
+  ],
+  "scope": "Evidence preservation only; no empirical gate closure, runtime changes, evidence regeneration, infrastructure operations, push, or PR.",
+  "verification_status": "worktree_preservation_verified",
+  "inventory_limits": [
+    "Git reported access denied for the global ignore file and .pytest-tmp-codex-main/ and .tmp-pytest/. The snapshot enumerates every path reported by Git; inaccessible temporary directories were not modified."
+  ],
+  "files": [
+    {
+      "original_path": "artifacts/evidence/stage10/rs_dataset_manifest.json",
+      "original_sha256": "404833c611b41df6b7d5f132564f7a46afe796ebcf1985424f876036ebfe9d4f",
+      "original_size_bytes": 587,
+      "classification": "TEST_TEMPORARY_PATH_CONTAMINATION",
+      "final_path": "artifacts/evidence/stage10/rs_dataset_manifest.json",
+      "final_disposition": "Restore source HEAD version after recording original SHA-256, size and exact diff; discard only the dirty temporary-path change",
+      "final_sha256": "69d7bfa78cccda00297c7e4611cdca01a3857f4dd709d30f5be4ec4df00c5357",
+      "final_size_bytes": 587
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.cleanup.json",
+      "original_sha256": "dfe8f4fbf5cb13afa354381361f299b5c719006d47b1b363b7c4d837725eb00f",
+      "original_size_bytes": 613,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "dfe8f4fbf5cb13afa354381361f299b5c719006d47b1b363b7c4d837725eb00f",
+      "final_size_bytes": 613
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.interruption.json",
+      "original_sha256": "ff23c36e8bb96bfc9b296f051f34d14469cf87a4e3942194854ca41959a3591e",
+      "original_size_bytes": 2158,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.interruption.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "ff23c36e8bb96bfc9b296f051f34d14469cf87a4e3942194854ca41959a3591e",
+      "final_size_bytes": 2158
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.leftover-chaos.yaml",
+      "original_sha256": "1285e7e175eba956de1394a132841ca2c1d8dec3be7a420044b2b60ecfb6f4de",
+      "original_size_bytes": 4145,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-009.leftover-chaos.yaml",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "1285e7e175eba956de1394a132841ca2c1d8dec3be7a420044b2b60ecfb6f4de",
+      "final_size_bytes": 4145
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.cleanup.json",
+      "original_sha256": "0ab5c3251e550925db735abd5537c9d293ab35fbef1468969f226a9364493a9f",
+      "original_size_bytes": 423,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "0ab5c3251e550925db735abd5537c9d293ab35fbef1468969f226a9364493a9f",
+      "final_size_bytes": 423
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json",
+      "original_sha256": "a405a33b379cfb12a83b7ffe004ccb568d783469ee7b38192ec16ec67ec09817",
+      "original_size_bytes": 754655,
+      "classification": "COMPLETED_NEGATIVE_G4_RESULT",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "a405a33b379cfb12a83b7ffe004ccb568d783469ee7b38192ec16ec67ec09817",
+      "final_size_bytes": 754655
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.cleanup.json",
+      "original_sha256": "f3687e70173da6471723d4d37c49e1543c766f74de127bbadca5d99de5c924ec",
+      "original_size_bytes": 617,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "f3687e70173da6471723d4d37c49e1543c766f74de127bbadca5d99de5c924ec",
+      "final_size_bytes": 617
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.interruption.json",
+      "original_sha256": "d41eb45edc07169da5b9d7afecb5d42e5e61d754ca2a68c84c4d8f9338c6dee9",
+      "original_size_bytes": 1750,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.interruption.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "d41eb45edc07169da5b9d7afecb5d42e5e61d754ca2a68c84c4d8f9338c6dee9",
+      "final_size_bytes": 1750
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.leftover-chaos.yaml",
+      "original_sha256": "6fdd5f42893b4b1d722ec8968c495707dbbc99f5276265a0ea9cd37d2e1bf0b4",
+      "original_size_bytes": 1609,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.leftover-chaos.yaml",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "6fdd5f42893b4b1d722ec8968c495707dbbc99f5276265a0ea9cd37d2e1bf0b4",
+      "final_size_bytes": 1609
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-012.cleanup.json",
+      "original_sha256": "240b747d453fb6ae7428b9cf40b175bec8aa9f78e821f8522f5f97dbdc120d74",
+      "original_size_bytes": 496,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-012.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "240b747d453fb6ae7428b9cf40b175bec8aa9f78e821f8522f5f97dbdc120d74",
+      "final_size_bytes": 496
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-012.interruption.json",
+      "original_sha256": "3e9ca8a1ff31c52d230ecab0a22e62b95fb7084662dfcfc6b5892eacf902f874",
+      "original_size_bytes": 1233,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-012.interruption.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "3e9ca8a1ff31c52d230ecab0a22e62b95fb7084662dfcfc6b5892eacf902f874",
+      "final_size_bytes": 1233
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-013.cleanup.json",
+      "original_sha256": "e1e17c2aa2be4abf7a6e5c159a6fba18bf4fa85ea4799781bb6cddf343e3b336",
+      "original_size_bytes": 496,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-013.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "e1e17c2aa2be4abf7a6e5c159a6fba18bf4fa85ea4799781bb6cddf343e3b336",
+      "final_size_bytes": 496
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-013.interruption.json",
+      "original_sha256": "77dadcb96e26f3d3cd5d5cac49bfc709707ea89311ad0b18e1b597d6e5cdd58b",
+      "original_size_bytes": 1233,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-013.interruption.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "77dadcb96e26f3d3cd5d5cac49bfc709707ea89311ad0b18e1b597d6e5cdd58b",
+      "final_size_bytes": 1233
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.cleanup.json",
+      "original_sha256": "e8c2b8771a0c06fd14faa40d77a1e48ec4fa7a8aeea1a7efd3afd2112e4273e7",
+      "original_size_bytes": 496,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.cleanup.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "e8c2b8771a0c06fd14faa40d77a1e48ec4fa7a8aeea1a7efd3afd2112e4273e7",
+      "final_size_bytes": 496
+    },
+    {
+      "original_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.interruption.json",
+      "original_sha256": "da24200124f0b92e078a250c520295dbd38f78a6c7e8085aa597bd1efa7cf210",
+      "original_size_bytes": 1233,
+      "classification": "INTERRUPTION_OR_CLEANUP_SIDECAR",
+      "final_path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.interruption.json",
+      "final_disposition": "Preserve exact bytes in place and commit as historical negative/interruption evidence; not G4 PASS",
+      "final_sha256": "da24200124f0b92e078a250c520295dbd38f78a6c7e8085aa597bd1efa7cf210",
+      "final_size_bytes": 1233
+    },
+    {
+      "original_path": "artifacts/evidence/stage6/zero_shot_test_summary.json",
+      "original_sha256": "82e2243ab29c06a41220d93075dbca4dc139e0f2ff47205659a7903556336fa5",
+      "original_size_bytes": 1206,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage6/zero_shot_test_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "82e2243ab29c06a41220d93075dbca4dc139e0f2ff47205659a7903556336fa5",
+      "final_size_bytes": 1206
+    },
+    {
+      "original_path": "artifacts/evidence/stage6/zero_shot_val_summary.json",
+      "original_sha256": "c14a6d3ca1dc407cc8e8748aaaeaa37f10fbe0a6719c91a80b47efc5e80d1b3c",
+      "original_size_bytes": 1204,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage6/zero_shot_val_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "c14a6d3ca1dc407cc8e8748aaaeaa37f10fbe0a6719c91a80b47efc5e80d1b3c",
+      "final_size_bytes": 1204
+    },
+    {
+      "original_path": "artifacts/evidence/stage8/sft_test_episodes.jsonl",
+      "original_sha256": "855b02c430858a52b871ed7a16e8de4e62d75e1d77dd74b2dda4573d634f0878",
+      "original_size_bytes": 4552,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage8/sft_test_episodes.jsonl",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "855b02c430858a52b871ed7a16e8de4e62d75e1d77dd74b2dda4573d634f0878",
+      "final_size_bytes": 4552
+    },
+    {
+      "original_path": "artifacts/evidence/stage8/sft_test_summary.json",
+      "original_sha256": "636fdf601191da8a7a2a601c2e54fa2359b2cb61deaab14c49ae8a9d9bbc9740",
+      "original_size_bytes": 1257,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage8/sft_test_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "636fdf601191da8a7a2a601c2e54fa2359b2cb61deaab14c49ae8a9d9bbc9740",
+      "final_size_bytes": 1257
+    },
+    {
+      "original_path": "artifacts/evidence/stage8/sft_val_episodes.jsonl",
+      "original_sha256": "008781c0bdf4c6d2a103091a79415424444f08b94d345b35e6c11dbe21df80d6",
+      "original_size_bytes": 4493,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage8/sft_val_episodes.jsonl",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "008781c0bdf4c6d2a103091a79415424444f08b94d345b35e6c11dbe21df80d6",
+      "final_size_bytes": 4493
+    },
+    {
+      "original_path": "artifacts/evidence/stage8/sft_val_summary.json",
+      "original_sha256": "110337387f0d700014fc22b8f19548abba288fe9fc9a8bf8fa4e66a94bd844be",
+      "original_size_bytes": 1259,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage8/sft_val_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "110337387f0d700014fc22b8f19548abba288fe9fc9a8bf8fa4e66a94bd844be",
+      "final_size_bytes": 1259
+    },
+    {
+      "original_path": "artifacts/evidence/stage9/grpo_test_episodes.jsonl",
+      "original_sha256": "c57fb5f08f89c40c7dd1d7737e477ed49c34ae3f2e988b8d863fa9040751246b",
+      "original_size_bytes": 4669,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage9/grpo_test_episodes.jsonl",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "c57fb5f08f89c40c7dd1d7737e477ed49c34ae3f2e988b8d863fa9040751246b",
+      "final_size_bytes": 4669
+    },
+    {
+      "original_path": "artifacts/evidence/stage9/grpo_test_summary.json",
+      "original_sha256": "7da1d40c9ea3c1a0cfe9ac01d179af576d722f57822b0667c088b9914932a1ea",
+      "original_size_bytes": 1259,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage9/grpo_test_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "7da1d40c9ea3c1a0cfe9ac01d179af576d722f57822b0667c088b9914932a1ea",
+      "final_size_bytes": 1259
+    },
+    {
+      "original_path": "artifacts/evidence/stage9/grpo_val_episodes.jsonl",
+      "original_sha256": "92e5cd77b922536ec90c97bc9d0378822a0a33795010cdf4737c097b42860718",
+      "original_size_bytes": 4662,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage9/grpo_val_episodes.jsonl",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "92e5cd77b922536ec90c97bc9d0378822a0a33795010cdf4737c097b42860718",
+      "final_size_bytes": 4662
+    },
+    {
+      "original_path": "artifacts/evidence/stage9/grpo_val_summary.json",
+      "original_sha256": "6c407f8f300b89f67260064425be883478ab9f2879b7008e7b25be51e8b95162",
+      "original_size_bytes": 1258,
+      "classification": "MOCK_DETERMINISTIC_OUTPUT",
+      "final_path": "artifacts/evidence/mock_archive/stage9/grpo_val_summary.json",
+      "final_disposition": "Move exact bytes to mock_archive and commit for provenance/test use only; prohibited as G6/G8/G9 empirical gate evidence",
+      "final_sha256": "6c407f8f300b89f67260064425be883478ab9f2879b7008e7b25be51e8b95162",
+      "final_size_bytes": 1258
+    },
+    {
+      "original_path": "uv.lock",
+      "original_sha256": "20620d8c86b9f0dd44b3da16d581d7bdecd86b88b68d4fa51a52afba95b43a3a",
+      "original_size_bytes": 1465903,
+      "classification": "UNAPPROVED_LOCAL_DEPENDENCY_RESOLUTION",
+      "final_path": "uv.lock",
+      "final_disposition": "Retain original file locally, untracked and ignored by narrow /uv.lock rule; do not adopt or commit",
+      "final_sha256": "20620d8c86b9f0dd44b3da16d581d7bdecd86b88b68d4fa51a52afba95b43a3a",
+      "final_size_bytes": 1465903
+    }
+  ],
+  "stage10_restore": {
+    "source_head_blob": "81ab65ba9224a3b8ccb9821cef9ccb5243ce03b6",
+    "exact_diff": "diff --git a/artifacts/evidence/stage10/rs_dataset_manifest.json b/artifacts/evidence/stage10/rs_dataset_manifest.json\nindex 81ab65b..ca973b0 100644\n--- a/artifacts/evidence/stage10/rs_dataset_manifest.json\n+++ b/artifacts/evidence/stage10/rs_dataset_manifest.json\n@@ -1,6 +1,6 @@\n {\n   \"dataset_name\": \"atlasops_rs_incident_interactions\",\n-  \"file\": \"C:/Users/viraj/AppData/Local/Temp/pytest-of-viraj/pytest-525/test_build_and_load_interactio0/interactions.jsonl\",\n+  \"file\": \"C:/Users/viraj/AppData/Local/Temp/pytest-of-viraj/pytest-536/test_build_and_load_interactio0/interactions.jsonl\",\n   \"canonical_lf_sha256\": \"2133eeb34ceac0371c93351fd621a48e2cc96a8a97db7ee0acb8c3dacbc681d4\",\n   \"total_interactions\": 28,\n   \"split_distribution\": {",
+    "summary": "Only file field changes from pytest-525 to pytest-536; dataset counts and canonical LF SHA-256 unchanged. Restore HEAD metadata without fixing the generator; HEAD still contains the historical temporary path.",
+    "dataset_canonical_lf_sha256": "2133eeb34ceac0371c93351fd621a48e2cc96a8a97db7ee0acb8c3dacbc681d4"
+  },
+  "mock_reference_review": {
+    "findings": "Tracked references identify evaluator output directories and tests using tmp_path; no required checked-in input fixture at any of the ten original paths. Comparison-table fallback tests may regenerate mock outputs, so they are not run in SETUP-03.",
+    "inspected_files": [
+      "bench/zero_shot_baseline.py",
+      "bench/sft_eval.py",
+      "bench/grpo_eval.py",
+      "tests/test_stage6_zero_shot_baseline.py",
+      "tests/test_stage8_sft_eval.py",
+      "tests/test_stage9_grpo_pipeline.py",
+      "scripts/package_submission.py",
+      "tests/test_stage15_submission_package.py"
+    ]
+  },
+  "uv_lock_policy": {
+    "basis": "requirements/README.md defines pyproject.toml dependency intent and requirements/dev-win-py312.lock as the reproducible Windows development resolution without adopting a dependency-manager-specific workflow. .gitignore already excludes local runtime/generated artifacts. SETUP-03 retains this unapproved root resolver output locally with an explicit, narrow ignore rule.",
+    "canonical_lock": "requirements/dev-win-py312.lock",
+    "ignore_rule": "/uv.lock",
+    "adopted": false,
+    "original_copy_retained": true
+  },
+  "byte_preservation": {
+    "git_core_autocrlf_at_snapshot": "true",
+    "mechanism": "Scoped -text attributes for Stage 4 attempts 009-014 and raw mock archive outputs; verify working-file SHA-256 and raw-file Git blob identity against staged/committed content."
+  },
+  "unresolved": [
+    "G4 remains NOT_PASSED; 012-014 cleanup records report failure/unresolved cleanup; current environment state was not inspected.",
+    "G6/G8/G9 empirical gates are not established by the archived mock outputs.",
+    "Stage 10 generator side effect and the source HEAD temporary path require a separate implementation task.",
+    "Existing pipeline/academic PASS assertions and future mock-generator default output paths are outside SETUP-03.",
+    "uv.lock origin and dependency compatibility are unverified; retained local ignored file is not backed up by this commit."
+  ],
+  "verification": {
+    "verified_at": "2026-09-05T14:11:23.1471089Z",
+    "stage4_raw_files_sha256_and_size_matched": 14,
+    "mock_raw_files_sha256_and_size_matched": 10,
+    "old_mock_paths_absent": true,
+    "stage10_matches_source_head": true,
+    "uv_lock_original_bytes_retained_locally": true,
+    "runtime_code_changed": false,
+    "experimental_outputs_regenerated": false,
+    "infrastructure_operations_performed": false,
+    "tests_run": "No application tests; read-only hash, path, diff, and ignore checks only. Staged/committed blob checks and independent review follow."
+  }
+}

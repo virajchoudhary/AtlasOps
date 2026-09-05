@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-STAGE4-SF002-011",
+  "timing": "after_model_timeout_interruption",
+  "affects_env_resolved": false,
+  "command": "kubectl --context kind-atlasops-local delete stresschaos sf-002-paymentservice-cpu -n chaos-mesh --ignore-not-found=true",
+  "result": {
+    "success": true,
+    "stdout": "stresschaos.chaos-mesh.org \"sf-002-paymentservice-cpu\" deleted from chaos-mesh namespace",
+    "stderr": "",
+    "returncode": 0
+  },
+  "observed_leftover_chaos_sha256": "6fdd5f42893b4b1d722ec8968c495707dbbc99f5276265a0ea9cd37d2e1bf0b4",
+  "timestamp": "2026-08-29T08:55:27.157852+00:00"
+}

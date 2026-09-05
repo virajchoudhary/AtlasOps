@@ -1,0 +1,14 @@
+{
+  "affects_env_resolved": false,
+  "command": "kubectl delete stresschaos sf-002-paymentservice-cpu -n chaos-mesh --ignore-not-found=true",
+  "experiment_id": "EXP-STAGE4-SF002-014",
+  "observed_leftover_chaos_sha256": null,
+  "result": {
+    "returncode": 1,
+    "stderr": "Unable to connect to the server: net/http: TLS handshake timeout",
+    "stdout": "",
+    "success": false
+  },
+  "timestamp": "2026-08-31T04:46:30.628696+00:00",
+  "timing": "after_post_t0_interruption"
+}

@@ -1,0 +1,47 @@
+{
+  "tag": "grpo-test-qwen2.5-7b-instruct-grpo",
+  "model": "qwen2.5:7b-instruct-grpo",
+  "run_date": "2026-08-31T06:03:23.143243+00:00",
+  "total_scenarios": 6,
+  "resolution_rate": 1.0,
+  "avg_reward": 0.92,
+  "avg_reward_contract": 0.868,
+  "avg_penalty": 0.0,
+  "avg_turns": 0.0,
+  "avg_time_to_resolve_s": 22.0,
+  "cascade_resolution_rate": 1.0,
+  "named_replay_resolution_rate": 1.0,
+  "unsafe_action_count": 0,
+  "false_resolution_count": 0,
+  "hallucinated_evidence_count": 0,
+  "per_tier": {
+    "cascade": {
+      "count": 1,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 22.0,
+      "avg_reward_contract": 0.877
+    },
+    "multi_fault": {
+      "count": 1,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 22.0,
+      "avg_reward_contract": 0.875
+    },
+    "named_replays": {
+      "count": 3,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 22.0,
+      "avg_reward_contract": 0.862
+    },
+    "single_fault": {
+      "count": 1,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 22.0,
+      "avg_reward_contract": 0.87
+    }
+  },
+  "avg_diagnostic_f1": 0.706,
+  "format_compliance_rate": 1.0,
+  "tool_arguments_valid_rate": 1.0,
+  "split": "test"
+}

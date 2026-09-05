@@ -1,0 +1,10 @@
+# SETUP-03: preserve immutable recovered evidence bytes, including line endings.
+stage4/EXP-STAGE4-SF002-009.* -text
+stage4/EXP-STAGE4-SF002-010.* -text
+stage4/EXP-STAGE4-SF002-011.* -text
+stage4/EXP-STAGE4-SF002-012.* -text
+stage4/EXP-STAGE4-SF002-013.* -text
+stage4/EXP-STAGE4-SF002-014.* -text
+mock_archive/stage6/* -text
+mock_archive/stage8/* -text
+mock_archive/stage9/* -text

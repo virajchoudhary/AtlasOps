@@ -1,0 +1,35 @@
+{
+  "classification": "MODEL_TIMEOUT_INTERRUPTION",
+  "scientific_status": "INCONCLUSIVE",
+  "attempt_state": "CONSUMED",
+  "gate_g4_pass": null,
+  "env_resolved": null,
+  "verifier_completed": false,
+  "model_capability_failure": false,
+  "experiment_id": "EXP-STAGE4-SF002-011",
+  "main_sha": "8ee792662977b08257433b9a4c222fd771c1b02f",
+  "protocol_fingerprint": "02ff4b95df55f3031d4e06d161f8b80393a6a508064c9b6172ffc4a205a210e0",
+  "protocol_marker": "G4-RECOVERY-V3-2026-08-29",
+  "reservation_timestamp": "2026-08-29T08:40:12.421257+00:00",
+  "consumed_timestamp": "2026-08-29T08:40:15.686243+00:00",
+  "interruption_timestamp": "2026-08-29T08:52:24+00:00",
+  "observed_exception_class": "httpx.ReadTimeout",
+  "observed_exception_message": "ReadTimeout",
+  "underlying_exception_class": "httpcore.ReadTimeout",
+  "underlying_exception_message": "ReadTimeout",
+  "t0_crossed": true,
+  "fault_observed_in_cluster": true,
+  "model_turns_begun": true,
+  "model_turn_status": "Prompt evaluation on CPU exceeded 120s HTTP timeout across 5 retries during triage/turn-0",
+  "evidence_hashes": {
+    "attempt_json": {
+      "path": "artifacts/evidence/stage4/.attempts/EXP-STAGE4-SF002-011.attempt.json",
+      "sha256": "08dbf32a131d580d0dcbcb852f29b11c998e5685935c114031c0567b71782c21"
+    },
+    "leftover_chaos_yaml": {
+      "path": "artifacts/evidence/stage4/EXP-STAGE4-SF002-011.leftover-chaos.yaml",
+      "sha256": "6fdd5f42893b4b1d722ec8968c495707dbbc99f5276265a0ea9cd37d2e1bf0b4"
+    }
+  },
+  "root_cause_summary": "During triage/turn-0, local Ollama 7B prompt evaluation on CPU took ~124s, which exceeded the 120s HTTP client request timeout on each of the 5 retries, raising unhandled httpx.ReadTimeout."
+}

@@ -1,0 +1,30 @@
+{
+  "attempt_state": "CONSUMED",
+  "attempt_state_observed": "CONSUMED",
+  "classification": "MODEL_TIMEOUT_INTERRUPTION",
+  "consumed_timestamp": "",
+  "env_resolved": null,
+  "evidence_hashes": {
+    "attempt_json": {
+      "path": "artifacts/evidence/stage4/.attempts/EXP-STAGE4-SF002-014.attempt.json",
+      "sha256": "52f20d65b76bf0b371e0901cd020fb2304ad1b87e60908c63c1c6b1fc408c5b9"
+    }
+  },
+  "experiment_id": "EXP-STAGE4-SF002-014",
+  "fault_observed_in_cluster": true,
+  "gate_g4_pass": null,
+  "interruption_timestamp": "2026-08-31T04:46:17.687928+00:00",
+  "main_sha": "24e6e8b8bda08eea5b03eb217bf3ec3da160a491",
+  "model_capability_failure": false,
+  "observed_exception_class": "ReadTimeout",
+  "observed_exception_message": "",
+  "primary_verdict_authoritative": false,
+  "primary_verdict_persisted": false,
+  "protocol_fingerprint": "2517fbd8de1afa260c3f79eeb585309fd50cf516f098012b04d59b44ae2c31b8",
+  "protocol_marker": "G4-RECOVERY-V3.2-2026-08-30",
+  "reservation_timestamp": "2026-08-31T04:24:15.951008+00:00",
+  "root_cause_summary": "Unhandled ReadTimeout after T0 fault injection: ",
+  "scientific_status": "INCONCLUSIVE",
+  "t0_crossed": true,
+  "verifier_completed": false
+}

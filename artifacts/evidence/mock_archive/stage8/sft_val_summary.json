@@ -1,0 +1,47 @@
+{
+  "tag": "sft-val-qwen2.5-7b-instruct-sft",
+  "model": "qwen2.5:7b-instruct-sft",
+  "run_date": "2026-08-31T05:53:47.122461+00:00",
+  "total_scenarios": 6,
+  "resolution_rate": 0.667,
+  "avg_reward": 0.787,
+  "avg_reward_contract": 0.69,
+  "avg_penalty": 0.0,
+  "avg_turns": 0.0,
+  "avg_time_to_resolve_s": 39.667,
+  "cascade_resolution_rate": 1.0,
+  "named_replay_resolution_rate": 1.0,
+  "unsafe_action_count": 0,
+  "false_resolution_count": 0,
+  "hallucinated_evidence_count": 0,
+  "per_tier": {
+    "cascade": {
+      "count": 1,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 32.0,
+      "avg_reward_contract": 0.832
+    },
+    "multi_fault": {
+      "count": 1,
+      "resolution_rate": 0.0,
+      "avg_time_to_resolve_s": 55.0,
+      "avg_reward_contract": 0.411
+    },
+    "named_replays": {
+      "count": 2,
+      "resolution_rate": 1.0,
+      "avg_time_to_resolve_s": 32.0,
+      "avg_reward_contract": 0.831
+    },
+    "single_fault": {
+      "count": 2,
+      "resolution_rate": 0.5,
+      "avg_time_to_resolve_s": 43.5,
+      "avg_reward_contract": 0.616
+    }
+  },
+  "avg_diagnostic_f1": 0.692,
+  "format_compliance_rate": 1.0,
+  "tool_arguments_valid_rate": 1.0,
+  "split": "val"
+}

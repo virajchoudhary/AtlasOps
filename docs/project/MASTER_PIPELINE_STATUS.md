@@ -97,7 +97,7 @@ The research pipeline is not scientifically complete.
 ### Gate G2: Stabilize Upstream Blockers — [PASS]
 - `bench/runner.py` derives `tier` before `judge_trajectory`; the old ordering defect is resolved. Scenario/tool contracts and the offline runner-to-judge test exist in `config/scenario_catalog.py`, `agents/tool_policy.py`, and `tests/test_bench_runner.py`.
 - `agents/coordinator.py` verifies the environment before Comms and persists verification fields. `config/runtime.py` requires explicit `env_resolved=True` for full resolution reward. This does not prove every training adapter forwards those fields (see G9).
-- Static/local infrastructure work is retained. P1 approval is a separate unresolved safety issue: the coordinator skips remediation only for `rejected`; `timeout` continues and is logged as approved. This is not fail-closed approval.
+- Static/local infrastructure work is retained. SAFETY-01 fixes P1 approval control flow: only `approved` permits remediation; `rejected`, `timeout`, and missing decisions fail closed with distinct persisted outcomes. Blocked runs use deterministic Comms reporting remediation not executed. Mock/unit dispatch-boundary tests establish this control-flow property, not empirical G4 evidence or safe deployment.
 
 ### Gate G3: Controlled SRE Environment — [PASS]
 - `artifacts/evidence/stage3/acceptance_report.json` (2026-08-17) records a real `kind-atlasops-local` node, running workloads, coordinator and Online Boutique HTTP 200 responses, and reachable Prometheus, Alertmanager, Jaeger and Argo CD APIs.
@@ -154,7 +154,7 @@ The research pipeline is not scientifically complete.
 
 ### Gate G14: Deploy Final Demo Safely — [PARTIAL]
 - UI/demo implementations in `dashboard.py` and `demo/launcher.py` remain; default `DEMO_SAFE_MODE=1` makes the dashboard's kubectl/apply/reset helpers simulate their actions.
-- These local helper guards do not certify every coordinator path, an actual safe deployment, or universal zero risk. P1 timeout continuation remains open (G2). Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
+- These local helper guards do not certify every coordinator path, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]
 - `docs/AtlasOps_Technical_Report.md`, `scripts/package_submission.py`, and existing submission artifacts preserve report/packaging implementation.
@@ -169,7 +169,7 @@ The research pipeline is not scientifically complete.
 - Do **not** automatically extract or copy `argocd-initial-admin-secret` into coordinator application configuration.
 - Use explicit operator-provisioned credentials (`ARGOCD_URL`, `ARGOCD_USER`, `ARGOCD_PASS`) backed by `atlasops-coordinator-secrets` SecretKeyRefs with least-privilege read permissions for the non-destructive G3 tool query contract (`argocd_list_apps`, `argocd_app_get`). Secret presence is validated fail-closed before deployment.
 - Transport contract: In-cluster HTTP over ClusterIP with `--insecure` and `ARGOCD_VERIFY_TLS: "false"`. Classified explicitly as a development-cluster exception with credentials traversing only the private in-cluster network path.
-- Mutating operations (`argocd_rollback`) enter the remediation approval path, but P1 timeout currently continues execution; this is not a fail-closed human-approval guarantee.
+- Mutating operations (`argocd_rollback`) enter the remediation approval path. SAFETY-01 requires explicit P1 approval and blocks timeout/rejection before remediation dispatch; validation is mock/unit control-flow evidence only.
 
 ### 2. Jaeger Backend Reachability vs. Online Boutique Trace Ingestion [STATICALLY RESOLVED]
 - Distinguish:

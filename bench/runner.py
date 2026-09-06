@@ -191,7 +191,7 @@ async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
         "outcome": remediation.get("outcome", "unknown"),
         "agent_claimed_resolved": agent_claimed_resolved,
         "env_resolved": env_resolved,
-        "resolved": env_resolved,
+        "resolved": env_resolved and incident.get("resolved", True) is True,
         "verification": verification,
         "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
         "severity": triage.get("severity", "unknown"),

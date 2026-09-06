@@ -41,8 +41,11 @@ Use this order:
 4. Saved experiment and evaluation evidence.
 5. Upstream documentation for historical intent.
 
-When documentation and executable behavior disagree, record the discrepancy; do not
-silently choose one.
+For factual status and gate closure, executable behavior and preserved evidence outrank
+prose claims, including this contract and the Master Pipeline status. Record discrepancies;
+implementation, mock outputs, and predetermined metrics do not establish empirical PASS.
+Environment verification is authoritative for incident resolution. Preserve negative results.
+Downstream implementation does not close an upstream empirical gate.
 
 ## Development orchestration
 
@@ -91,8 +94,19 @@ authorization. Estimate storage before any multi-GB operation.
 
 ## Known review items (do not fix without a scoped task)
 
-- The benchmark runner has a runtime ordering bug involving `tier`.
-- GRPO completion-to-environment coupling needs scientific correction and validation.
-- Resolution reward needs independent environment-ground-truth verification.
-- Recommender Systems is absent upstream and will be a new extension.
-- Infrastructure scripts require validation before any real provisioning.
+- G4 remains NOT_PASSED: attempt 010 is the latest completed negative result among
+  009-014; 009 and 011-014 are interrupted/inconclusive. Cleanup failures remain recorded.
+- GRPO still passes completion text through `triage_seed` to the coordinator rather than
+  directly executing the trained policy's actions; rollout reward/curriculum plumbing
+  also needs correction to carry authoritative environment-verification fields.
+- SFT corpus/configuration exists, but successful training and usable checkpoint provenance
+  are unverified. Archived Stage 6/8/9 mock outputs cannot close empirical gates.
+- Stage 13 uses hardcoded metric profiles; actual variant ablation/stress evaluation is missing.
+- Stage 10 dataset generation writes the default evidence manifest even with a custom
+  dataset output path; isolate evidence output in a separate scoped fix.
+- P1 approval timeout currently continues remediation unless explicitly rejected; this
+  is not fail-closed approval and must not be described as safely resolved.
+- Recommender implementation/evaluation exists, but its 28 scenario-derived interactions
+  cover only 4 of 12 runbooks and are not genuine historical interaction feedback.
+- Infrastructure scripts have static/local validation; real provisioning or portability
+  claims require target-specific verification and explicit authorization.

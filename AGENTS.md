@@ -104,8 +104,9 @@ authorization. Estimate storage before any multi-GB operation.
 - Stage 13 uses hardcoded metric profiles; actual variant ablation/stress evaluation is missing.
 - Stage 10 dataset generation writes the default evidence manifest even with a custom
   dataset output path; isolate evidence output in a separate scoped fix.
-- P1 approval timeout currently continues remediation unless explicitly rejected; this
-  is not fail-closed approval and must not be described as safely resolved.
+- SAFETY-01 makes P1 approval fail closed: only explicit approval permits remediation;
+  timeout/rejection remain blocked with distinct persisted outcomes. Mock/unit control-flow
+  coverage is not empirical G4 evidence or a certification of safe deployment.
 - Recommender implementation/evaluation exists, but its 28 scenario-derived interactions
   cover only 4 of 12 runbooks and are not genuine historical interaction feedback.
 - Infrastructure scripts have static/local validation; real provisioning or portability

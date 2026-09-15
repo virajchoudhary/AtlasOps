@@ -1164,6 +1164,7 @@ async def handle_incident(
     run_error: str | None = None
     finish_reason = ""
     approval_record: dict[str, Any] | None = None
+    approval_blocked = False
     try:
         triage = await call_agent("triage", {"incident_id": incident_id, "alert": alert})
         tri_snap = triage.get("final") or {}
@@ -1246,7 +1247,7 @@ async def handle_incident(
                     action_items=[
                         f"Approve: POST {approve_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"approved\",\"approved_by\":\"<name>\"}}",
                         f"Reject: POST {reject_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"rejected\",\"approved_by\":\"<name>\",\"reason\":\"...\"}}",
-                        "If no response, auto-timeout policy may proceed per config.",
+                        "If no response, approval times out and remediation remains blocked.",
                     ],
                 )
                 thought_emit(
@@ -1261,10 +1262,10 @@ async def handle_incident(
             approval_record["decision"] = approval_result.get("status")
             if approval_result.get("approved_by"):
                 approval_record["approved_by"] = approval_result.get("approved_by")
-            status = approval_result["status"]
-            # "timeout" auto-approves so demos/unattended runs still complete.
-            # Only an explicit "rejected" decision skips remediation.
-            if status == "rejected":
+            status = approval_result.get("status", "missing")
+            # Only explicit approval authorizes remediation; timeout fails closed.
+            if status != "approved":
+                approval_blocked = True
                 audit_log.record(
                     incident_id=incident_id,
                     agent_role="remediation",
@@ -1273,21 +1274,20 @@ async def handle_incident(
                     approved_by=approval_result.get("approved_by", ""),
                     policy_check="approval_denied",
                 )
-                thought_emit("remediation", "conclusion", "Remediation skipped — approval rejected by operator.")
+                thought_emit("remediation", "conclusion", f"Remediation blocked — approval outcome: {status}.")
                 remediation = {
                     "role": "remediation",
                     "trajectory": [],
                     "final": {
                         "incident_id": incident_id,
                         "mode": "approve",
-                        "status": "approval_rejected",
+                        "status": f"approval_{status}",
+                        "executed_actions": [],
                         "approval": approval_result,
                     },
                 }
             else:
-                approver = approval_result.get("approved_by") or (
-                    "auto-timeout" if status == "timeout" else "human-operator"
-                )
+                approver = approval_result.get("approved_by") or "human-operator"
                 audit_log.record(
                     incident_id=incident_id,
                     agent_role="remediation",
@@ -1330,18 +1330,34 @@ async def handle_incident(
         )
         env_resolved = bool(verification_result.env_resolved)
         verification_dict = verification_result.to_dict()
+        operational_resolved = env_resolved and not approval_blocked
 
         # Comms agent runs after environment verification and receives objective truth
-        comms = await call_agent("comms", {
-            "incident_id": incident_id,
-            "triage": triage.get("final", {}),
-            "diagnosis": diagnosis.get("final", {}),
-            "remediation": remediation_final,
-            "verification": verification_dict,
-            "settling": settling_report,
-            "env_resolved": env_resolved,
-            "agent_claimed_resolved": agent_claimed_resolved,
-        })
+        if approval_blocked:
+            # Do not let generated Comms text claim execution or publish resolution
+            # for a plan that was never authorized. Preserve verifier truth separately.
+            comms = {
+                "role": "comms",
+                "trajectory": [],
+                "final": {
+                    "status": remediation_final["status"],
+                    "summary": (
+                        "Remediation blocked / not executed — approval outcome: "
+                        f"{status}. Human review required."
+                    ),
+                },
+            }
+        else:
+            comms = await call_agent("comms", {
+                "incident_id": incident_id,
+                "triage": triage.get("final", {}),
+                "diagnosis": diagnosis.get("final", {}),
+                "remediation": remediation_final,
+                "verification": verification_dict,
+                "settling": settling_report,
+                "env_resolved": env_resolved,
+                "agent_claimed_resolved": agent_claimed_resolved,
+            })
 
         # If the LLM skipped webhooks, still deliver a closure/status message (judges expect Discord/Slack pings).
         _webhook_out = bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip() or os.getenv("SLACK_WEBHOOK_URL", "").strip())
@@ -1357,7 +1373,7 @@ async def handle_incident(
                 if not isinstance(summ, str):
                     summ = json.dumps(summ)
                 title = (triage.get("final") or {}).get("title") or incident_id
-                status_label = "Resolved" if env_resolved else "Unresolved"
+                status_label = "Blocked" if approval_blocked else ("Resolved" if env_resolved else "Unresolved")
                 out = TOOL_REGISTRY["slack_post_update"](
                     channel="#incident-response",
                     severity=sev,
@@ -1395,6 +1411,7 @@ async def handle_incident(
             "verification": verification_dict,
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
+            "resolved": operational_resolved,
             "comms": comms,
             "grounding_validation": grounding_reports,
         }
@@ -1427,8 +1444,8 @@ async def handle_incident(
                     tool="judge_trajectory",
                 )
 
-        # Fail-closed operational resolution: environment verifier is authoritative
-        resolved = env_resolved
+        # Operational resolution also requires that approval did not block execution.
+        resolved = operational_resolved
         # Classify the outcome so the circuit breaker can distinguish
         # designed human decisions from real system failures.
         rem_status = str(remediation_final.get("status", ""))

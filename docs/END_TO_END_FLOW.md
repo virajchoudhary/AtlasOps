@@ -59,7 +59,7 @@ sequenceDiagram
         App->>Coord: approval callback
     end
 
-    alt Approved or auto-timeout
+    alt Explicitly approved (P1) or automatic P2/P3
         rect rgb(30,40,60)
             Note over Coord,LLM: Remediation Agent
             Coord->>LLM: chat/completions (remediation prompt)
@@ -69,8 +69,8 @@ sequenceDiagram
             Coord->>UI: SSE thoughts
             LLM-->>Coord: conclusion {outcome: resolved}
         end
-    else Rejected
-        Note over Coord: Skip remediation, record approval_rejected
+    else Rejected or timed out (P1)
+        Note over Coord: Skip remediation; record approval outcome and block execution
     end
 
     rect rgb(30,40,60)

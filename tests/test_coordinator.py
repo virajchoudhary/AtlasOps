@@ -185,7 +185,8 @@ class TestApprovalFlow:
         result = asyncio.run(coord.handle_incident({"commonLabels": {"alertname": "TestAlert"}}))
         assert result["remediation"]["final"]["status"] == "approval_rejected"
         roles = [c.args[0] for c in mock_call.call_args_list]
-        assert roles == ["triage", "diagnosis", "comms"]
+        assert roles == ["triage", "diagnosis"]
+        assert result["comms"]["final"]["status"] == "approval_rejected"
 
 
 class TestCoordinatorExecutionAndVerificationTruth:

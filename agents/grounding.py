@@ -35,6 +35,10 @@ _BLOCKED_EXECUTION_MARKERS = (
     "blocked_by_circuit_breaker",
     "dedup_blocked",
     "cap_blocked",
+    "blocked_by_action_observation",
+    "blocked_by_terminal_error",
+    "blocked_by_verifier",
+    "blocked_by_evidence",
 )
 
 _CITATION_IDENTIFIER_KEYS = (

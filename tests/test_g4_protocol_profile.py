@@ -30,15 +30,15 @@ from config.g4_protocol import (
     APPROVED_G4_V31_MODEL_DIGEST,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V31_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V32_MODEL,
-    APPROVED_G4_V32_MODEL_DIGEST,
     APPROVED_G4_V32_PROTOCOL_PROFILE,
-    APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V33_MODEL,
+    APPROVED_G4_V33_MODEL_DIGEST,
+    APPROVED_G4_V33_TOOL_CONTRACT_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
     G4_V31_PROTOCOL_MARKER,
-    G4_V32_PROTOCOL_MARKER,
+    G4_V33_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -48,14 +48,14 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_v32_profile_pins_exact_model_and_digest():
+def test_approved_v33_profile_pins_exact_model_and_digest():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
-        "name": APPROVED_G4_V32_MODEL,
-        "digest": APPROVED_G4_V32_MODEL_DIGEST,
+        "name": APPROVED_G4_V33_MODEL,
+        "digest": APPROVED_G4_V33_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V32_PROTOCOL_MARKER
-    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V32_TOOL_CONTRACT_SHA256
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V33_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
         "max_attempts": 2,

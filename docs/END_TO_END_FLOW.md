@@ -62,12 +62,17 @@ sequenceDiagram
     alt Explicitly approved (P1) or automatic P2/P3
         rect rgb(30,40,60)
             Note over Coord,LLM: Remediation Agent
-            Coord->>LLM: chat/completions (remediation prompt)
-            LLM-->>Coord: tool_call: argocd_rollback
-            Coord->>Tools: argocd_rollback(app, revision)
-            Tools-->>Coord: rollback result
-            Coord->>UI: SSE thoughts
-            LLM-->>Coord: conclusion {outcome: resolved}
+            loop One bounded mutation per decision
+                Coord->>LLM: chat/completions (anchors + provenance + environment observations)
+                LLM-->>Coord: one proposed tool call
+                Coord->>Coord: ACL + evidence-precondition validation
+                Coord->>Tools: one mutating tool call
+                Tools-->>Coord: tool result
+                Coord->>Coord: authoritative verifier observation
+                Coord-->>LLM: structured action + verifier observation
+                Coord->>UI: SSE thoughts
+            end
+            Coord-->>LLM: conclusion {outcome: resolved/unresolved/escalated}
         end
     else Rejected or timed out (P1)
         Note over Coord: Skip remediation; record approval outcome and block execution
@@ -95,5 +100,22 @@ sequenceDiagram
 **Circuit breaker semantics** — Only `system_error` and `agent_error` outcomes count toward the consecutive failure threshold. Designed outcomes like `approval_rejected`, `manual_runbook`, and `approval_timeout` do not trip the breaker, so judges can reject remediation freely without locking the system. The hourly action quota applies only to cluster-mutating remediation tools; external communications and local postmortem writes remain subject to the general per-incident call limit but do not consume cluster-mutation capacity.
 
 **HTTP retry on LLM calls** — The coordinator retries `chat/completions` on HTTP 429 (HF Router rate limit) and 5xx with exponential backoff, preventing transient inference hiccups from failing entire scenarios.
+
+**Alert-anchor and provenance contract** — The incoming alert's primary service,
+namespace, alert name, labels, and description remain explicit downstream. Triage
+may add correlated services, but an unsupported target switch becomes an explicit
+review/escalation state. Diagnosis and Remediation receive the original operational
+context plus structured tool observations; evaluation-only scenario metadata is
+removed before model serialization.
+
+**Evidence semantics** — Prometheus transport success is separate from metric
+evidence. A successful empty vector is reported as `no_series`, while a non-empty
+vector is `series_present`. Active supported Chaos Mesh resources are exposed by a
+read-only generic observation tool.
+
+**Remediation action boundary** — Mutating actions are serialized one at a time.
+After each action, the runtime records the tool result and invokes the objective
+environment verifier before another mutation can execute. Known-terminal errors
+such as authorization failure or invalid revision block cosmetic retries.
 
 **POST /reset clears everything** — Resets chaos manifests, circuit breaker state, and correlator incident tracking. The UI Reset button is a true panic switch for demos.

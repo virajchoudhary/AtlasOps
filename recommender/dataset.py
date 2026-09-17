@@ -1,6 +1,6 @@
 """AtlasOps Incident-Runbook Interaction Dataset Builder (Gate G10).
 
-Builds historical incident-runbook interaction logs across the 28 benchmark scenarios,
+Builds scenario-derived synthetic interactions, not historical user feedback,
 with ground-truth relevance annotations, split partitioning, and manifest persistence.
 """
 
@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
-from recommender.runbook_catalog import RUNBOOK_CATALOG, Runbook
+from config.splits import TRAIN_SPLIT, VAL_SPLIT
+from recommender.runbook_catalog import RUNBOOK_CATALOG
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("rs_dataset")
@@ -102,18 +102,21 @@ def build_incident_interactions(
     scenarios: dict[str, ScenarioMetadata] | None = None,
     output_path: Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    """Build historical incident-runbook interactions for all 28 scenarios across splits."""
+    """Build synthetic benchmark interactions with an isolated manifest sidecar."""
     catalog = scenarios or SCENARIO_CATALOG
     out_file = output_path or (DATA_DIR / "rs_incident_interactions.jsonl")
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    default_output = DATA_DIR / "rs_incident_interactions.jsonl"
+    manifest_path = (
+        EVIDENCE_DIR / "rs_dataset_manifest.json"
+        if out_file.resolve() == default_output.resolve()
+        else out_file.with_suffix(".manifest.json")
+    )
 
     interactions: list[IncidentInteraction] = []
     
-    # Track split memberships
     train_ids = set(TRAIN_SPLIT)
     val_ids = set(VAL_SPLIT)
-    test_ids = set(TEST_SPLIT)
 
     for sid, meta in sorted(catalog.items()):
         split_name = "train" if sid in train_ids else ("val" if sid in val_ids else "test")
@@ -122,7 +125,7 @@ def build_incident_interactions(
 
         symptoms = (
             f"Alert {meta.expected_alert} firing on service {target_svc}. "
-            f"Workload exhibits {meta.expected_root_cause}. Tier: {meta.tier}."
+            f"Tier: {meta.tier}."
         )
 
         interaction = IncidentInteraction(
@@ -159,6 +162,9 @@ def build_incident_interactions(
 
     manifest = {
         "dataset_name": "atlasops_rs_incident_interactions",
+        "data_origin": "scenario_derived_synthetic_benchmark",
+        "historical_user_feedback": False,
+        "generator_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "file": str(out_file.as_posix()),
         "canonical_lf_sha256": canonical_sha256,
         "total_interactions": len(interactions),
@@ -168,7 +174,7 @@ def build_incident_interactions(
         "total_catalog_runbooks": len(RUNBOOK_CATALOG),
     }
 
-    manifest_path = EVIDENCE_DIR / "rs_dataset_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     log.info("Built %d incident-runbook interactions in %s (SHA-256: %s)",

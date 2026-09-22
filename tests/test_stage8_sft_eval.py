@@ -11,12 +11,10 @@ Validates:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import pytest
 
 from bench.sft_eval import evaluate_sft_mock_episode, evaluate_sft_split
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
+from config.splits import get_split
 
 
 class TestStage8SFTEvaluation:
@@ -82,11 +80,13 @@ class TestStage8SFTEvaluation:
         assert sft_summary["avg_reward_contract"] > zero_shot_summary["avg_reward_contract"]
 
     @pytest.mark.asyncio
-    async def test_comparison_table_renders_sft_entry(self):
-        table_path = Path("bench/results/comparison_table.md")
-        if not table_path.exists():
-            await evaluate_sft_split("val", model_name="qwen2.5:7b-instruct-sft", mock=True)
-        assert table_path.exists()
-        content = table_path.read_text(encoding="utf-8")
-        assert "sft" in content.lower()
-        assert "qwen2.5:7b-instruct-sft" in content
+    async def test_mock_summary_has_sft_identity_without_shared_artifact_write(self, tmp_path):
+        summary = await evaluate_sft_split(
+            "val",
+            model_name="qwen2.5:7b-instruct-sft",
+            mock=True,
+            output_dir=tmp_path,
+        )
+        assert summary["tag"].startswith("sft-val-")
+        assert summary["model"] == "qwen2.5:7b-instruct-sft"
+        assert summary["non_empirical"] is True

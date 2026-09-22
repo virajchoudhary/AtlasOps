@@ -21,11 +21,11 @@ import asyncio
 import json
 import logging
 import os
-import random
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:
     from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
@@ -45,10 +45,13 @@ except ImportError:
     _HAS_TORCH_RL = False
 
 from config.runtime import (
-    SCENARIOS_BY_TIER, TIER_SAMPLING_WEIGHTS, evaluate_reward_contract,
+    SCENARIOS_BY_TIER,
     CurriculumManager,
+    evaluate_reward_contract,
 )
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
+from config.scenario_catalog import SCENARIO_CATALOG
+from config.splits import TEST_SPLIT, VAL_SPLIT, get_split
+from training.grpo_environment import DirectPolicyEnvironment
 
 log = logging.getLogger(__name__)
 
@@ -140,8 +143,13 @@ def apply_chaos(scenario_id: str) -> bool:
         return False
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    r = subprocess.run(["kubectl", "apply", "-f", str(manifest)],
-                       capture_output=True, text=True, env=env)
+    r = subprocess.run(
+        ["kubectl", "apply", "-f", str(manifest)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
     return r.returncode == 0
 
 
@@ -152,7 +160,9 @@ def reset_chaos():
         ["kubectl", "delete",
          "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
          "--all", "-A", "--ignore-not-found=true"],
-        capture_output=True, env=env,
+        capture_output=True,
+        env=env,
+        check=False,
     )
     time.sleep(20)
 
@@ -169,9 +179,15 @@ class OnlineRewardFunction:
     4. Returns rewards for GRPO advantage computation
     """
 
-    def __init__(self, tiers: list[str], coordinator_url: str = "http://localhost:9099"):
+    def __init__(
+        self,
+        tiers: list[str],
+        coordinator_url: str = "http://localhost:9099",
+        rollout_log_path: Path | None = None,
+    ):
         self.tiers = tiers
         self.coordinator_url = coordinator_url
+        self.rollout_log_path = rollout_log_path
         self._loop = asyncio.new_event_loop()
 
     def __del__(self):
@@ -211,10 +227,23 @@ class OnlineRewardFunction:
             # Wait for Alertmanager to fire
             await asyncio.sleep(15)
 
+            from bench.runner import wait_for_alert
+
+            alert = wait_for_alert()
+            if alert is None or alert.get("synthetic") is True:
+                log.warning("No alert observed for %s - assigning 0 reward", scenario_id)
+                reset_chaos()
+                rewards.append(0.0)
+                continue
             try:
-                result = await self._run_one_rollout(completion, scenario_id, tier)
-            except Exception as e:
-                log.exception("Rollout %d failed: %s", i + 1, e)
+                result = await self._run_one_rollout(
+                    completion,
+                    scenario_id,
+                    tier,
+                    alert,
+                )
+            except Exception:
+                log.exception("Rollout %d failed", i + 1)
                 result = None
 
             # Always reset before the next rollout — even on failure
@@ -226,6 +255,8 @@ class OnlineRewardFunction:
             else:
                 r = compute_reward(result)
                 rewards.append(r)
+                result["reward"] = r
+                self._persist_rollout(result)
                 _curriculum.record(
                     scenario_id=scenario_id,
                     resolved=bool(result.get("resolved", False)),
@@ -243,51 +274,56 @@ class OnlineRewardFunction:
         )
         return rewards
 
-    async def _run_one_rollout(self, completion_text: str,
-                               scenario_id: str, tier: str) -> dict:
-        """Execute one full incident-response rollout and return a scored episode dict.
-
-        Architecture note: TRL generates G completions per step; we use those
-        completions as the triage agent's initial reasoning seed (injected into
-        the alert context below). The coordinator then continues the full agent
-        chain against the live cluster. Reward is episode-level: resolved/speed/
-        evidence/safety/comms. Group-relative advantages are computed across the
-        G rollouts, giving GRPO its learning signal.
-
-        The completion_text therefore influences the rollout indirectly via the
-        triage seed, creating the completion↔reward coupling GRPO requires.
-        """
-        from agents.coordinator import handle_incident
-        from agents.judge import judge_trajectory
-
-        # Seed the alert with the model's generated triage reasoning so that
-        # the reward IS conditioned on the specific completion TRL produced.
-        alert = {
-            "commonLabels": {"alertname": "GRPOTrainingAlert"},
-            "scenario_id": scenario_id,
-            "alerts": [],
-            "triage_seed": completion_text[:512] if completion_text else "",
+    def _persist_rollout(self, result: dict[str, Any]) -> None:
+        if self.rollout_log_path is None:
+            return
+        self.rollout_log_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            **result,
+            "recorded_at": datetime.now(UTC).isoformat(),
         }
+        with self.rollout_log_path.open("a", encoding="utf-8", newline="\n") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
 
+    async def _run_one_rollout(
+        self,
+        completion_text: str,
+        scenario_id: str,
+        tier: str,
+        alert: dict[str, Any],
+    ) -> dict:
+        """Execute the policy completion itself as one atomic environment action."""
         t0 = time.time()
-        incident = await handle_incident(alert)
-        judge_score = await judge_trajectory(incident, tier=tier)
-
-        remediation = incident.get("remediation", {}).get("final", {})
-        total_turns = sum(
-            len(incident.get(r, {}).get("trajectory", []))
-            for r in ("triage", "diagnosis", "remediation", "comms")
-        )
-
-        return {
-            "tier": tier,
-            "resolved": remediation.get("outcome") == "resolved",
-            "outcome": remediation.get("outcome", "unknown"),
-            "total_turns": total_turns,
-            "time_to_resolve_s": round(time.time() - t0),
-            "judge": judge_score,
-            "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
+        labels = {
+            **(alert.get("commonLabels") or {}),
+            **((alert.get("alerts") or [{}])[0].get("labels") or {}),
         }
+        alert_severity = str(labels.get("severity", "")).lower()
+        triage_severity = "P1" if alert_severity == "critical" else "P2"
+        state = {
+            "alert": alert,
+            "triage": {"severity": triage_severity},
+            "approval": alert.get("approval"),
+            "observations": alert.get("observations", {}),
+        }
+        result = await DirectPolicyEnvironment().step(
+            completion_text,
+            scenario_id=scenario_id,
+            state=state,
+        )
+        result.update(
+            {
+                "scenario_id": scenario_id,
+                "tier": tier,
+                "total_turns": 1,
+                "time_to_resolve_s": round(time.time() - t0),
+                "postmortem_path": None,
+            }
+        )
+        result["reward_contract"] = evaluate_reward_contract(result)
+        return result
 
 
 # ── Optuna HP search ──────────────────────────────────────────────────────────
@@ -301,7 +337,10 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
         return {}
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    reward_fn = OnlineRewardFunction(tiers)
+    reward_fn = OnlineRewardFunction(
+        tiers,
+        rollout_log_path=output_dir / "rollout_trajectories.jsonl",
+    )
 
     def objective(trial: optuna.Trial) -> float:
         lr      = trial.suggest_float("lr", 5e-7, 5e-6, log=True)
@@ -370,6 +409,34 @@ def _flash_attn_available() -> bool:
         return False
 
 
+def build_direct_action_prompts(tiers: list[str]) -> list[dict[str, str]]:
+    """Build training-only prompts for the exact atomic action contract."""
+    allowed_tiers = set(tiers)
+    prompts = []
+    for scenario_id in get_split("train"):
+        meta = SCENARIO_CATALOG[scenario_id]
+        if meta.tier not in allowed_tiers:
+            continue
+        state = {
+            "alert": {
+                "labels": {
+                    "alertname": meta.expected_alert,
+                    "namespace": "default",
+                },
+                "status": "firing",
+            },
+            "instruction": (
+                "Return exactly one JSON object with keys tool, arguments, and "
+                "agent_claimed_resolved. The tool and arguments are the exact action "
+                "that will be safety-checked and executed. Do not include an actions list."
+            ),
+        }
+        prompts.append({"prompt": json.dumps(state, sort_keys=True)})
+    if not prompts:
+        raise ValueError(f"No frozen training scenarios match tiers={sorted(allowed_tiers)}")
+    return prompts
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -408,27 +475,9 @@ def main() -> None:
     # Online reward function — runs real GKE rollouts during training
     reward_fn = OnlineRewardFunction(tiers)
 
-    # Minimal prompt dataset (GRPO generates its own completions online)
+    # Every completion is parsed and executed as one exact structured action.
     from datasets import Dataset
-    sft_data_path = Path("data/sft_corpus.jsonl")
-    if sft_data_path.exists():
-        prompts = []
-        with sft_data_path.open() as f:
-            for line in f:
-                try:
-                    item = json.loads(line)
-                    msgs = item.get("messages", [])
-                    if msgs:
-                        prompts.append({"prompt": json.dumps(msgs[:-1])})
-                except json.JSONDecodeError:
-                    pass
-        dataset = Dataset.from_list(prompts[:5000])
-    else:
-        # Fallback: prompt-only dataset with role instructions
-        dataset = Dataset.from_list([
-            {"prompt": f"You are the AtlasOps {role} agent responding to a real Kubernetes incident."}
-            for role in ["triage", "diagnosis", "remediation", "comms"] * 250
-        ])
+    dataset = Dataset.from_list(build_direct_action_prompts(tiers))
 
     grpo_args = GRPOConfig(
         output_dir=str(output_dir),

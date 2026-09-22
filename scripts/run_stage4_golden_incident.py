@@ -25,10 +25,11 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -159,14 +160,16 @@ ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
     cmd = ["kubectl", "--context", KIND_CONTEXT] + args
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
         return {
             "success": res.returncode == 0,
             "stdout": res.stdout.strip(),
             "stderr": res.stderr.strip(),
             "returncode": res.returncode,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"success": False, "error": str(exc), "returncode": -1}
 
 
@@ -175,8 +178,7 @@ def _query_ollama_model_identity(selected_model: str) -> dict[str, str]:
     import requests
 
     base_url = os.getenv("VLLM_BASE", "http://localhost:11434/v1").strip().rstrip("/")
-    if base_url.endswith("/v1"):
-        base_url = base_url[:-3]
+    base_url = base_url.removesuffix("/v1")
     try:
         response = requests.get(
             f"{base_url}/api/tags",
@@ -189,12 +191,12 @@ def _query_ollama_model_identity(selected_model: str) -> dict[str, str]:
             f"Unable to verify Stage 4 model identity for {selected_model}: {type(exc).__name__}"
         ) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError(
+        raise TypeError(
             f"Unable to verify Stage 4 model identity for {selected_model}: response from /api/tags is not a JSON object"
         )
     models = payload.get("models")
     if not isinstance(models, list):
-        raise RuntimeError(
+        raise TypeError(
             f"Unable to verify Stage 4 model identity for {selected_model}: 'models' in /api/tags is not a list"
         )
 
@@ -310,7 +312,7 @@ def _claimed_attempts_for_protocol_fingerprint(
                 f"Stage 4 attempt accounting record is invalid: {path}"
             ) from exc
         if not isinstance(attempt, dict):
-            raise RuntimeError(f"Stage 4 attempt accounting record is invalid: {path}")
+            raise TypeError(f"Stage 4 attempt accounting record is invalid: {path}")
         if attempt.get("protocol_fingerprint") != protocol_fingerprint_value:
             continue
         if attempt.get("state") not in ATTEMPT_STATES:
@@ -379,7 +381,7 @@ def reserve_experiment_attempt(
         reservation = {
             "experiment_id": experiment_id,
             "state": ATTEMPT_STATE_RESERVED,
-            "reserved_at": datetime.now(timezone.utc).isoformat(),
+            "reserved_at": datetime.now(UTC).isoformat(),
             "reservation_token": uuid.uuid4().hex,
             "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
             "protocol_profile": profile,
@@ -416,7 +418,7 @@ def _transition_attempt(
     updated = {
         **current,
         "state": state,
-        timestamp_field: datetime.now(timezone.utc).isoformat(),
+        timestamp_field: datetime.now(UTC).isoformat(),
     }
     _write_json_atomic(marker_path, updated)
     return updated
@@ -479,7 +481,7 @@ def _extract_prometheus_cpu_cores(result: dict[str, Any]) -> list[float]:
 def collect_sf002_cpu_telemetry(time_unix: float | None = None) -> dict[str, Any]:
     from agents.tools.prometheus import promql_query
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     result = promql_query(DEGRADATION_QUERY, time_unix=time_unix)
     samples = _extract_prometheus_cpu_cores(result)
     return {
@@ -548,7 +550,7 @@ def _prometheus_http_get(path: str) -> tuple[int | None, str]:
 
         resp = requests.get(f"{base}{path}", timeout=10)
         return resp.status_code, resp.text
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return None, str(exc)
 
 
@@ -559,7 +561,7 @@ def _endpoint_ready(
     for path in ("/-/healthy", "/-/ready"):
         try:
             status, _body = http_get_fn(path)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             failures.append(f"{path} transport error: {exc}")
             continue
         if status != 200:
@@ -578,7 +580,7 @@ def _cadvisor_target_healthy(
             if status != 200:
                 return False, [f"targets endpoint -> HTTP {status}"]
             payload = json.loads(body)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return False, [f"targets fetch error: {exc}"]
     active = ((payload or {}).get("data") or {}).get("activeTargets") or []
     cadvisor = [
@@ -752,7 +754,6 @@ def evaluate_causal_g4_predicate(
 
     triage_final = incident_result.get("triage", {}).get("final", {})
     diagnosis_final = incident_result.get("diagnosis", {}).get("final", {})
-    remediation_final = incident_result.get("remediation", {}).get("final", {})
     comms_final = incident_result.get("comms", {}).get("final", {})
     remediation_traj = incident_result.get("remediation", {}).get("trajectory", [])
 
@@ -786,7 +787,15 @@ def evaluate_causal_g4_predicate(
     )
 
     # 8. Approval/safety policy satisfied
-    c8 = incident_result.get("approval") is not None or triage_final.get("severity") in {"P0", "P1", "P2", "P3"}
+    severity = triage_final.get("severity")
+    approval = incident_result.get("approval")
+    if severity == "P1":
+        decision = None
+        if isinstance(approval, dict):
+            decision = approval.get("decision") or approval.get("status")
+        c8 = isinstance(approval, dict) and decision == "approved"
+    else:
+        c8 = severity in {"P0", "P2", "P3"}
 
     # 9. One real permitted remediation mutation executed
     # Policy/circuit-breaker/dedup blocks are not executions.
@@ -980,7 +989,7 @@ def _handle_post_t0_interruption(
             if isinstance(loaded, dict) and "gate_g4_pass" in loaded:
                 primary_record = loaded
                 has_durable_primary = True
-        except Exception:
+        except Exception:  # noqa: BLE001
             has_durable_primary = False
 
     # Check for active leftover chaos in cluster
@@ -1025,7 +1034,7 @@ def _handle_post_t0_interruption(
         model_capability_failure = primary_record.get("model_capability_failure", None)
         root_cause_summary = (
             f"Primary verdict is frozen and authoritative (gate_g4_pass={gate_g4_pass}); "
-            f"post-verdict operational exception occurred: {type(exc).__name__}: {str(exc)}"
+            f"post-verdict operational exception occurred: {type(exc).__name__}: {exc!s}"
         )
         extra_fields: dict[str, Any] = {
             "primary_verdict_authoritative": True,
@@ -1052,7 +1061,7 @@ def _handle_post_t0_interruption(
         gate_g4_pass = None
         env_resolved = None
         model_capability_failure = False
-        root_cause_summary = f"Unhandled {type(exc).__name__} after T0 fault injection: {str(exc)}"
+        root_cause_summary = f"Unhandled {type(exc).__name__} after T0 fault injection: {exc!s}"
         extra_fields = {
             "primary_verdict_authoritative": False,
             "primary_verdict_persisted": False,
@@ -1078,7 +1087,7 @@ def _handle_post_t0_interruption(
         "protocol_marker": reservation.get("protocol_marker", ""),
         "reservation_timestamp": reservation.get("reserved_at", ""),
         "consumed_timestamp": reservation.get("consumed_at", ""),
-        "interruption_timestamp": datetime.now(timezone.utc).isoformat(),
+        "interruption_timestamp": datetime.now(UTC).isoformat(),
         "observed_exception_class": type(exc).__name__,
         "observed_exception_message": str(exc),
         "t0_crossed": True,
@@ -1106,7 +1115,7 @@ def _handle_post_t0_interruption(
         "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
         "result": clean_res,
         "observed_leftover_chaos_sha256": leftover_sha,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     cleanup_file = os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")
     if not os.path.exists(cleanup_file):
@@ -1126,7 +1135,11 @@ async def main() -> dict[str, Any]:
     print("=" * 80)
 
     # Ensure context is kind-atlasops-local
-    subprocess.run(["kubectl", "config", "use-context", KIND_CONTEXT], capture_output=True)
+    subprocess.run(  # noqa: ASYNC221
+        ["kubectl", "config", "use-context", KIND_CONTEXT],
+        capture_output=True,
+        check=False,
+    )
 
     os.environ["KUBECONFIG_CONTEXT"] = KIND_CONTEXT
     os.environ["BACKEND"] = "vllm"
@@ -1138,7 +1151,7 @@ async def main() -> dict[str, Any]:
     os.environ["ARGOCD_URL"] = "http://localhost:18080"
     os.environ["ARGOCD_VERIFY_TLS"] = "false"
 
-    start_time = datetime.now(timezone.utc).isoformat()
+    start_time = datetime.now(UTC).isoformat()
     t0 = time.time()
 
     # Port forwards for local tool execution
@@ -1151,13 +1164,13 @@ async def main() -> dict[str, Any]:
     ]
     pf_procs = []
     for ns, svc, lp, rp in pf_specs:
-        p = subprocess.Popen(
+        p = subprocess.Popen(  # noqa: ASYNC220
             ["kubectl", "--context", KIND_CONTEXT, "port-forward", f"svc/{svc}", f"{lp}:{rp}", "-n", ns],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         pf_procs.append(p)
-    time.sleep(3)
+    time.sleep(3)  # noqa: ASYNC251
 
     evidence: dict[str, Any] = {
         "experiment_id": EXPERIMENT_ID,
@@ -1174,7 +1187,7 @@ async def main() -> dict[str, Any]:
         evidence["reservation_released"] = released
         evidence["outcome"] = "INVALID"
         evidence["failure_phase"] = phase
-        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        evidence["completed_at"] = datetime.now(UTC).isoformat()
         prefault_path = _persist_stage4_prefault_failure(evidence)
         evidence["prefault_evidence"] = prefault_path
         return evidence
@@ -1186,7 +1199,7 @@ async def main() -> dict[str, Any]:
         print("\n>>> Phase 0: Telemetry Readiness Gate (pre-reservation)...")
         telemetry_ready, readiness_detail = wait_for_telemetry_readiness()
         evidence["phases"]["telemetry_readiness"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "ready": telemetry_ready,
             **readiness_detail,
         }
@@ -1202,7 +1215,7 @@ async def main() -> dict[str, Any]:
             evidence["attempt_state"] = "NOT_RESERVED"
             evidence["outcome"] = "PREFLIGHT_ABORT"
             evidence["failure_phase"] = "telemetry_readiness"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
         # Phase 0b: Paymentservice Deployment baseline readiness — also strictly
@@ -1217,7 +1230,7 @@ async def main() -> dict[str, Any]:
         ) = wait_for_baseline_readiness()
         baseline_telemetry = collect_sf002_cpu_telemetry()
         evidence["phases"]["baseline"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "target_deployments": base_workloads.get("stdout")[:500],
             "baseline_healthy": baseline_healthy,
             "cpu_telemetry": baseline_telemetry,
@@ -1241,7 +1254,7 @@ async def main() -> dict[str, Any]:
             evidence["attempt_state"] = "NOT_RESERVED"
             evidence["outcome"] = "PREFLIGHT_ABORT"
             evidence["failure_phase"] = "unhealthy_baseline"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
         reservation = reserve_experiment_attempt(
@@ -1260,7 +1273,7 @@ async def main() -> dict[str, Any]:
         run_kubectl(["delete", "dnschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
         run_kubectl(["delete", "iochaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
         run_kubectl(["delete", "timechaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        time.sleep(2)
+        time.sleep(2)  # noqa: ASYNC251
 
         chaos_precheck = run_kubectl(
             ["get", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos", "-A", "-o", "json"]
@@ -1268,7 +1281,7 @@ async def main() -> dict[str, Any]:
         active_chaos_count = _active_chaos_count(chaos_precheck.get("stdout", ""))
         if active_chaos_count != 0:
             evidence["phases"]["pre_fault_chaos_check"] = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "active_chaos_count": active_chaos_count,
                 "result": chaos_precheck,
             }
@@ -1286,7 +1299,7 @@ async def main() -> dict[str, Any]:
             evidence["reservation_released"] = released
             evidence["outcome"] = "INVALID"
             evidence["failure_phase"] = "fault_application"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             evidence["prefault_evidence"] = _persist_stage4_prefault_failure(evidence)
             print(f"  Fault application failed; reservation released={released}")
             return evidence
@@ -1294,7 +1307,7 @@ async def main() -> dict[str, Any]:
         fault_crossed = True
         evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         evidence["phases"]["injection"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "manifest": manifest_path,
             "result": inject_res,
         }
@@ -1302,11 +1315,11 @@ async def main() -> dict[str, Any]:
 
         # Phase 3: Observable Fault Verification
         print("\n>>> Phase 3: Verifying Observable Fault in Cluster...")
-        time.sleep(4)
+        time.sleep(4)  # noqa: ASYNC251
         chaos_check = run_kubectl(["get", TARGET_CHAOS_KIND.lower(), "-n", TARGET_CHAOS_NAMESPACE, TARGET_CHAOS_NAME, "-o", "json"])
         fault_observable = chaos_check.get("success") is True
         evidence["phases"]["observable_fault"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stresschaos_observed": fault_observable,
             "chaos_status": chaos_check.get("stdout")[:500],
         }
@@ -1333,7 +1346,7 @@ async def main() -> dict[str, Any]:
                 {"max_cores": None},
             )
         evidence["phases"]["degradation_proof"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "timeout_seconds": DEGRADATION_OBSERVATION_TIMEOUT_SECONDS,
             "poll_interval_seconds": DEGRADATION_POLL_INTERVAL_SECONDS,
             "decision": degradation_decision,
@@ -1346,7 +1359,7 @@ async def main() -> dict[str, Any]:
             evidence["failure_phase"] = (
                 "fault_activation" if not fault_observable else "measured_degradation"
             )
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             primary_path = _persist_stage4_primary_evidence(evidence)
             complete_experiment_attempt(reservation)
             clean_res = run_kubectl(
@@ -1388,7 +1401,7 @@ async def main() -> dict[str, Any]:
                         "summary": f"High CPU usage on {TARGET_SERVICE}",
                         "description": f"{TARGET_SERVICE} CPU utilization is at 90% load across 4 workers.",
                     },
-                    "startsAt": datetime.now(timezone.utc).isoformat(),
+                    "startsAt": datetime.now(UTC).isoformat(),
                 }
             ],
             "commonLabels": {
@@ -1427,7 +1440,7 @@ async def main() -> dict[str, Any]:
         ]
 
         evidence["phases"]["coordinator_execution"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "incident_id": incident_result.get("incident_id"),
             "triage": triage_res.get("final"),
             "diagnosis": diagnosis_res.get("final"),
@@ -1439,7 +1452,7 @@ async def main() -> dict[str, Any]:
         }
 
         evidence["phases"]["verification"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "verification_report": verifier_res,
             "env_resolved": incident_result.get("env_resolved", False),
             "agent_claimed_resolved": incident_result.get("agent_claimed_resolved", False),
@@ -1466,7 +1479,7 @@ async def main() -> dict[str, Any]:
         duration_s = round(time.time() - t0, 2)
 
         evidence["duration_seconds"] = duration_s
-        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        evidence["completed_at"] = datetime.now(UTC).isoformat()
         evidence["gate_g4_pass"] = gate_g4_pass
         evidence["causal_criteria"] = eval_result["criteria"]
 

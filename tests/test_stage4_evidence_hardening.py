@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import pathlib
-from concurrent.futures import ThreadPoolExecutor
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,11 +24,12 @@ from scripts.run_stage4_golden_incident import (
     ATTEMPT_STATE_CONSUMED,
     ATTEMPT_STATE_RESERVED,
     DEGRADATION_QUERY,
-    _attempt_marker_path,
-    _paymentservice_baseline_check,
-    collect_sf002_cpu_telemetry,
     G4_PLATFORM_HARDENING_MARKER,
     MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
+    _attempt_marker_path,
+    _paymentservice_baseline_check,
+    _paymentservice_baseline_healthy,
+    collect_sf002_cpu_telemetry,
     complete_experiment_attempt,
     consume_experiment_attempt,
     evaluate_causal_g4_predicate,
@@ -37,7 +37,6 @@ from scripts.run_stage4_golden_incident import (
     reserve_experiment_attempt,
     sf002_degradation_decision,
     stage4_evidence_metadata,
-    _paymentservice_baseline_healthy,
 )
 
 
@@ -171,9 +170,9 @@ def test_prompt_or_tool_contract_drift_fails_closed_before_attempt_budget(
     # contract drift from unrelated runtime drift.
 
     for field in ("diagnosis_prompt", "role_tool_contract"):
-        def build_with_drift(**kwargs):
+        def build_with_drift(_field=field, **kwargs):
             profile = original_builder(**kwargs)
-            profile[field] = {**profile[field], "sha256": "0" * 64}
+            profile[_field] = {**profile[_field], "sha256": "0" * 64}
             return profile
 
         monkeypatch.setattr(runner, "build_runtime_protocol_profile", build_with_drift)
@@ -351,7 +350,7 @@ def _valid_incident() -> dict:
         "incident_id": "inc-hardening",
         "triage": {"final": {"severity": "P1"}},
         "diagnosis": {"final": {"root_cause": "paymentservice CPU pressure"}},
-        "approval": {"decision": "timeout"},
+        "approval": {"decision": "approved"},
         "remediation": {
             "trajectory": [
                 {
@@ -370,6 +369,41 @@ def _valid_incident() -> dict:
         "env_resolved": True,
         "comms": {"final": {"slack_posted": True}},
     }
+
+
+@pytest.mark.parametrize(
+    "approval",
+    [None, {}, {"decision": "timeout"}, {"decision": "rejected"},
+     {"decision": "unknown"}, {"decision": None}, {"decision": True},
+     {"decision": "APPROVED"}, "approved"],
+)
+def test_p1_gate_requires_explicit_approval(approval):
+    """Synthetic predicate coverage only; this is not empirical G4 evidence."""
+    incident = _valid_incident()
+    incident["approval"] = approval
+    result = runner.evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True,
+    )
+    assert result["criteria"]["8_approval_satisfied"] is False
+    assert result["gate_g4_pass"] is False
+
+
+def test_p1_gate_accepts_explicit_approval():
+    result = runner.evaluate_causal_g4_predicate(
+        True, True, True, _valid_incident(), False,
+        primary_evidence_persisted=True,
+    )
+    assert result["criteria"]["8_approval_satisfied"] is True
+
+
+def test_p1_gate_accepts_normalized_approval_status():
+    incident = _valid_incident()
+    incident["approval"] = {"status": "approved"}
+    result = runner.evaluate_causal_g4_predicate(
+        True, True, True, incident, False,
+        primary_evidence_persisted=True,
+    )
+    assert result["criteria"]["8_approval_satisfied"] is True
 
 
 def _model_response(content="", tool_calls=None, finish_reason="stop"):
@@ -643,7 +677,7 @@ def test_every_remediation_model_response_is_persisted_before_branching():
     conclusion.json.return_value = {
         "choices": [{"message": {"role": "assistant", "content": '{"outcome":"unresolved"}'}, "finish_reason": "stop"}]
     }
-    with patch("agents.coordinator.post_with_retry", side_effect=[prose, action, conclusion]):
+    with patch("agents.coordinator.post_with_retry", side_effect=[prose, action, conclusion]):  # noqa: SIM117
         with patch("agents.coordinator.require_audit_log"):
             with patch(
                 "agents.tools.chaos._run",
@@ -689,12 +723,11 @@ def test_forced_conclusion_model_response_is_persisted():
     with patch(
         "agents.coordinator.post_with_retry",
         side_effect=[initial_prose, retry_prose, forced],
-    ):
-        with patch("agents.coordinator.require_audit_log"):
-            result = asyncio.run(__import__("agents.coordinator", fromlist=["call_agent"]).call_agent(
-                "remediation",
-                {"incident_id": "inc-forced"},
-            ))
+    ), patch("agents.coordinator.require_audit_log"):
+        result = asyncio.run(__import__("agents.coordinator", fromlist=["call_agent"]).call_agent(
+            "remediation",
+            {"incident_id": "inc-forced"},
+        ))
     records = [step for step in result["trajectory"] if step.get("kind") == "model_turn"]
     assert [record["turn"] for record in records] == [0, 1, 1]
     assert records[2]["turn_kind"] == "forced_conclusion"
@@ -712,7 +745,7 @@ def test_max_turn_forced_conclusion_has_no_attributed_execution():
         for i in range(10)
     ]
     responses.append(_model_response('{"outcome":"unresolved"}'))
-    with patch("agents.coordinator.post_with_retry", side_effect=responses) as post:
+    with patch("agents.coordinator.post_with_retry", side_effect=responses) as post:  # noqa: SIM117
         with patch("agents.coordinator.require_audit_log"):
             with patch(
                 "agents.tools.prometheus.promql_query",
@@ -750,7 +783,7 @@ def test_settling_is_bounded_and_preserves_verifier_call_contract():
         assert kwargs["agent_claimed_resolved"] is True
         return responses.pop(0)
 
-    with patch("agents.verifier.verify_environment", side_effect=verify):
+    with patch("agents.verifier.verify_environment", side_effect=verify):  # noqa: SIM117
         with patch("asyncio.sleep", new_callable=AsyncMock) as sleep:
             from agents.coordinator import settle_environment
 

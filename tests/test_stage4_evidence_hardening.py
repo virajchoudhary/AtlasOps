@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import pathlib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -26,13 +27,19 @@ from scripts.run_stage4_golden_incident import (
     DEGRADATION_QUERY,
     G4_PLATFORM_HARDENING_MARKER,
     MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
+    MAX_POSTFLIGHT_CLEANUP_ATTEMPTS,
     _attempt_marker_path,
+    _chaos_state_observation,
     _paymentservice_baseline_check,
     _paymentservice_baseline_healthy,
+    _persist_stage4_preflight_evidence,
+    _poisoned_environment_path,
+    _primary_incident_evidence_persisted,
     collect_sf002_cpu_telemetry,
     complete_experiment_attempt,
     consume_experiment_attempt,
     evaluate_causal_g4_predicate,
+    reconcile_stage4_postflight_cleanup,
     release_experiment_reservation,
     reserve_experiment_attempt,
     sf002_degradation_decision,
@@ -52,7 +59,10 @@ def _attempt_root() -> str:
 
 
 @pytest.fixture(autouse=True)
-def isolated_protocol_runtime(monkeypatch):
+def isolated_protocol_runtime(monkeypatch, tmp_path):
+    postmortem_dir = tmp_path / "postmortems"
+    postmortem_dir.mkdir()
+    monkeypatch.setenv("POSTMORTEM_DIR", str(postmortem_dir))
     monkeypatch.setattr(
         runner,
         "_query_ollama_model_identity",
@@ -346,11 +356,72 @@ def test_concurrent_reservations_cannot_exceed_the_last_budget_slot():
 
 
 def _valid_incident() -> dict:
+    incident_id = "inc-hardening"
+    root_cause = "paymentservice CPU pressure caused by StressChaos"
+    postmortem_path = pathlib.Path(os.environ["POSTMORTEM_DIR"]) / f"{incident_id}.md"
+    postmortem_path.write_text(
+        f"Incident: {incident_id}\nRoot cause: {root_cause}\n"
+        "Resolution: Resolved and verified by the objective environment check.\n",
+        encoding="utf-8",
+    )
+    diagnosis = {
+        "final": {
+            "root_cause": root_cause,
+            "evidence": [
+                {
+                    "tool": "promql_query",
+                    "query": "paymentservice_cpu_usage",
+                    "finding": "Observed elevated paymentservice CPU usage.",
+                }
+            ],
+        },
+        "trajectory": [
+            {
+                "tool": "promql_query",
+                "args": {"query": "paymentservice_cpu_usage"},
+                "output": {"success": True, "result": [{"value": "0.6"}]},
+            }
+        ],
+    }
+    from agents.grounding import validate_evidence_grounding
+
+    approval = {
+        "mode": "approve",
+        "severity": "P1",
+        "decision": "approved",
+        "approved_by": "test-operator",
+    }
+    settling = {
+        "started_at": "2026-09-24T00:00:00+00:00",
+        "completed_at": "2026-09-24T00:00:01+00:00",
+        "duration_seconds": 1.0,
+        "timeout_seconds": 30,
+        "poll_interval_seconds": 2,
+        "settled": True,
+        "observations": [
+            {
+                "timestamp": "2026-09-24T00:00:01+00:00",
+                "elapsed_seconds": 1.0,
+                "env_resolved": True,
+                "verification_status": "passed",
+                "failed_checks": [],
+            }
+        ],
+    }
     return {
-        "incident_id": "inc-hardening",
+        "incident_id": incident_id,
+        "incident_anchors": {"primary_service": "paymentservice"},
+        "target_consistency": {
+            "primary_target": "paymentservice",
+            "status": "primary_target_preserved",
+            "requires_review": False,
+        },
         "triage": {"final": {"severity": "P1"}},
-        "diagnosis": {"final": {"root_cause": "paymentservice CPU pressure"}},
-        "approval": {"decision": "approved"},
+        "diagnosis": diagnosis,
+        "grounding_validation": {
+            "diagnosis": validate_evidence_grounding(diagnosis),
+        },
+        "approval": approval,
         "remediation": {
             "trajectory": [
                 {
@@ -365,9 +436,30 @@ def _valid_incident() -> dict:
             ],
             "final": {"outcome": "resolved"},
         },
-        "verification": {"env_resolved": True},
+        "verification": {
+            "env_resolved": True,
+            "verification_status": "passed",
+            "failed_checks": [],
+        },
+        "settling": settling,
         "env_resolved": True,
-        "comms": {"final": {"slack_posted": True}},
+        "comms": {
+            "final": {
+                "incident_id": incident_id,
+                "summary": "paymentservice was resolved and verified by the objective check.",
+                "postmortem_path": str(postmortem_path),
+            },
+            "trajectory": [
+                {
+                    "tool": "postmortem_draft",
+                    "output": {
+                        "success": True,
+                        "path": str(postmortem_path),
+                        "postmortem_path": str(postmortem_path),
+                    },
+                }
+            ],
+        },
     }
 
 
@@ -398,12 +490,284 @@ def test_p1_gate_accepts_explicit_approval():
 
 def test_p1_gate_accepts_normalized_approval_status():
     incident = _valid_incident()
-    incident["approval"] = {"status": "approved"}
+    incident["approval"] = {
+        "mode": "approve",
+        "severity": "p1",
+        "status": "APPROVED",
+        "approved_by": "test-operator",
+    }
     result = runner.evaluate_causal_g4_predicate(
         True, True, True, incident, False,
         primary_evidence_persisted=True,
     )
     assert result["criteria"]["8_approval_satisfied"] is True
+
+
+@pytest.mark.parametrize(
+    "severity,approval",
+    [
+        ("P2", {"mode": "auto", "severity": "P2", "decision": "approved"}),
+        ("P1", {"mode": "auto", "severity": "P1", "decision": "approved"}),
+        ("P1", {"mode": "approve", "severity": "P2", "decision": "approved"}),
+        ("P1", {"mode": "approve", "severity": "P1", "decision": "rejected", "status": "approved"}),
+        ("P1", {"mode": "approve", "severity": "P1", "decision": "approved"}),
+        ("P1", {"mode": "approve", "severity": "P1", "decision": "approved", "approved_by": "  "}),
+        ("P1", "approved"),
+    ],
+)
+def test_p1_gate_rejects_non_p1_or_inconsistent_approval(severity, approval):
+    incident = _valid_incident()
+    incident["triage"]["final"]["severity"] = severity
+    incident["approval"] = approval
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["8_approval_satisfied"] is False
+    assert result["gate_g4_pass"] is False
+
+
+def test_diagnosis_requires_anchored_target_and_grounded_observation():
+    incident = _valid_incident()
+    incident["diagnosis"]["final"]["root_cause"] = "CPU pressure caused elevated latency"
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["7_diagnosis_truth_match"] is False
+
+    incident = _valid_incident()
+    incident["diagnosis"]["final"]["evidence"][0]["query"] = "query-that-was-not-run"
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["7_diagnosis_truth_match"] is False
+
+
+def test_action_predicate_requires_one_successful_exact_chaos_stop():
+    incident = _valid_incident()
+    incident["remediation"]["trajectory"].append(
+        dict(incident["remediation"]["trajectory"][0])
+    )
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["9_remediation_mutating_tool_executed"] is False
+    assert len(result["executed_tool_calls"]) == 2
+
+    incident = _valid_incident()
+    incident["remediation"]["trajectory"][0]["args"]["namespace"] = "other"
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["11_remediation_target_match"] is False
+
+
+def test_blocked_action_outcomes_are_preserved_but_not_counted_as_execution():
+    incident = _valid_incident()
+    incident["remediation"]["trajectory"] = [
+        {
+            "tool": "chaos_stop_experiment",
+            "args": {"kind": "StressChaos", "name": "sf-002-paymentservice-cpu", "namespace": "chaos-mesh"},
+            "output": {"success": False, "error": "approval required"},
+            "blocked_by_policy": True,
+        }
+    ]
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["9_remediation_mutating_tool_executed"] is False
+    assert result["executed_tool_calls"] == []
+    assert result["tool_outcomes"][0]["blocked_by_policy"] is True
+
+
+def test_settling_requires_persisted_bounded_observations():
+    incident = _valid_incident()
+    incident["settling"]["observations"] = []
+    result = evaluate_causal_g4_predicate(
+        True,
+        True,
+        True,
+        incident,
+        False,
+        settling_completed=True,
+        primary_evidence_persisted=True,
+    )
+    assert result["settling_satisfied"] is False
+    assert result["criteria"]["13_objective_env_resolved"] is False
+
+
+def test_comms_requires_real_postmortem_tool_result_and_verified_status():
+    incident = _valid_incident()
+    incident["comms"]["trajectory"] = []
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["14_comms_executed"] is False
+
+    incident = _valid_incident()
+    incident["comms"]["final"]["summary"] = "The incident remains unresolved."
+    result = evaluate_causal_g4_predicate(
+        True, True, True, incident, False, primary_evidence_persisted=True
+    )
+    assert result["criteria"]["14_comms_executed"] is False
+
+
+def test_primary_incident_evidence_requires_exact_record_equality(monkeypatch, tmp_path):
+    incident = _valid_incident()
+    trajectory_dir = tmp_path / "trajectories"
+    trajectory_dir.mkdir()
+    monkeypatch.setenv("TRAJECTORIES_DIR", str(trajectory_dir))
+    record_path = trajectory_dir / f"{incident['incident_id']}.json"
+    record_path.write_text(json.dumps(incident), encoding="utf-8")
+    assert _primary_incident_evidence_persisted(incident) is True
+
+    tampered = json.loads(record_path.read_text(encoding="utf-8"))
+    tampered["remediation"]["trajectory"][0]["output"]["success"] = False
+    record_path.write_text(json.dumps(tampered), encoding="utf-8")
+    assert _primary_incident_evidence_persisted(incident) is False
+
+
+def _preflight_record() -> dict:
+    return {
+        "experiment_id": "EXP-STAGE4-PREFLIGHT-TEST",
+        "scenario_id": "single_fault/sf-002",
+        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+        "protocol_profile": APPROVED_G4_PROTOCOL_PROFILE,
+        "source_identity": {
+            "git_commit": "a" * 40,
+            "working_tree_clean": True,
+            "protocol_fingerprint": "b" * 64,
+        },
+        "phases": {
+            "telemetry_readiness": {"ready": True},
+            "baseline": {"baseline_healthy": True},
+        },
+    }
+
+
+def test_clean_preflight_must_be_verified_and_persisted_immutably(tmp_path):
+    evidence = _preflight_record()
+    path = pathlib.Path(
+        _persist_stage4_preflight_evidence(
+            evidence,
+            {"success": True, "stdout": json.dumps({"items": []})},
+            root=str(tmp_path),
+        )
+    )
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert record["zero_chaos_preflight"]["verified_zero"] is True
+    assert evidence["preflight_evidence"]["persisted_before_injection"] is True
+    with pytest.raises(RuntimeError, match="overwrite Stage 4 preflight"):
+        _persist_stage4_preflight_evidence(
+            evidence,
+            {"success": True, "stdout": json.dumps({"items": []})},
+            root=str(tmp_path),
+        )
+
+
+def test_preflight_does_not_persist_when_zero_chaos_query_failed(tmp_path):
+    evidence = _preflight_record()
+    with pytest.raises(RuntimeError, match="incomplete or unverified"):
+        _persist_stage4_preflight_evidence(
+            evidence,
+            {"success": False, "stdout": json.dumps({"items": []})},
+            root=str(tmp_path),
+        )
+    assert not list((tmp_path / "artifacts" / "evidence" / "stage4").glob("*.preflight.json"))
+
+
+def test_failed_chaos_list_query_is_not_an_empty_preflight():
+    observation = _chaos_state_observation(
+        {"success": False, "stdout": json.dumps({"items": []})}
+    )
+    assert observation == {"count": 0, "verified_zero": False}
+
+
+def test_postflight_cleanup_persists_verified_zero_without_poison(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+
+    def kubectl(args):
+        if args[0] == "delete":
+            return {"success": True, "stdout": "deleted", "returncode": 0}
+        return {"success": True, "stdout": json.dumps({"items": []}), "returncode": 0}
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    cleanup = reconcile_stage4_postflight_cleanup(
+        "EXP-STAGE4-CLEAN-POSTFLIGHT", root=str(tmp_path)
+    )
+    assert cleanup["verified_zero_chaos"] is True
+    assert cleanup["poisoned_environment"] is False
+    assert cleanup["verdict_preserved"] is True
+    assert not pathlib.Path(_poisoned_environment_path(str(tmp_path))).exists()
+
+
+def test_postflight_cleanup_retries_then_poisons_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    chaos_json = json.dumps({"items": [{"metadata": {"name": "leftover"}}]})
+    calls = []
+
+    def kubectl(args):
+        calls.append(args)
+        if args[0] == "delete":
+            return {"success": True, "stdout": "deleted", "returncode": 0}
+        return {"success": True, "stdout": chaos_json, "returncode": 0}
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    cleanup = reconcile_stage4_postflight_cleanup(
+        "EXP-STAGE4-POISON-TEST", root=str(tmp_path)
+    )
+    assert cleanup["verified_zero_chaos"] is False
+    assert cleanup["poisoned_environment"] is True
+    assert len(cleanup["attempts"]) == MAX_POSTFLIGHT_CLEANUP_ATTEMPTS
+    assert len(calls) == 2 * MAX_POSTFLIGHT_CLEANUP_ATTEMPTS
+    assert pathlib.Path(_poisoned_environment_path(str(tmp_path))).exists()
+    with pytest.raises(RuntimeError, match="environment is poisoned"):
+        reserve_experiment_attempt(
+            "EXP-STAGE4-AFTER-POISON",
+            selected_model=APPROVED_G4_MODEL,
+            main_sha="test-sha",
+            attempt_root=str(tmp_path),
+        )
+
+
+def test_postflight_cleanup_requires_successful_zero_chaos_observation(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        runner,
+        "run_kubectl",
+        lambda args: (
+            {"success": True, "stdout": "deleted"}
+            if args[0] == "delete"
+            else {"success": False, "stdout": json.dumps({"items": []})}
+        ),
+    )
+    cleanup = reconcile_stage4_postflight_cleanup(
+        "EXP-STAGE4-FAILED-POSTFLIGHT", root=str(tmp_path)
+    )
+    assert cleanup["verified_zero_chaos"] is False
+    assert pathlib.Path(_poisoned_environment_path(str(tmp_path))).exists()
+
+
+def test_postflight_cleanup_refuses_existing_evidence_before_mutation(monkeypatch, tmp_path):
+    cleanup_path = (
+        tmp_path
+        / "artifacts"
+        / "evidence"
+        / "stage4"
+        / "EXP-STAGE4-IMMUTABLE-CLEANUP.cleanup.json"
+    )
+    cleanup_path.parent.mkdir(parents=True)
+    original = b"{\"preserved\": true}\n"
+    cleanup_path.write_bytes(original)
+    kubectl_calls = []
+    monkeypatch.setattr(runner, "run_kubectl", lambda args: kubectl_calls.append(args))
+
+    with pytest.raises(RuntimeError, match="overwrite Stage 4 cleanup evidence"):
+        reconcile_stage4_postflight_cleanup(
+            "EXP-STAGE4-IMMUTABLE-CLEANUP", root=str(tmp_path)
+        )
+
+    assert kubectl_calls == []
+    assert cleanup_path.read_bytes() == original
 
 
 def _model_response(content="", tool_calls=None, finish_reason="stop"):

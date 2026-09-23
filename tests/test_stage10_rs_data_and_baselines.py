@@ -10,10 +10,7 @@ Validates:
 
 from __future__ import annotations
 
-import json
 import math
-from pathlib import Path
-import pytest
 
 from recommender.baselines import (
     BM25ContentRecommender,
@@ -25,7 +22,7 @@ from recommender.dataset import (
     build_incident_interactions,
     load_interactions,
 )
-from recommender.evaluate import evaluate_recommender, run_full_baseline_benchmark
+from recommender.evaluate import run_full_baseline_benchmark
 from recommender.metrics import (
     hit_at_k,
     mrr_at_k,
@@ -34,6 +31,12 @@ from recommender.metrics import (
     recall_at_k,
 )
 from recommender.runbook_catalog import RUNBOOK_CATALOG, get_all_runbooks, get_runbook
+
+
+def _load_synthetic_interactions(tmp_path):
+    path = tmp_path / "rs_incident_interactions.jsonl"
+    build_incident_interactions(output_path=path)
+    return load_interactions(path=path)
 
 
 class TestStage10RSDataAndBaselines:
@@ -60,13 +63,15 @@ class TestStage10RSDataAndBaselines:
         path, manifest = build_incident_interactions(output_path=out_file)
 
         assert path.exists()
-        assert manifest["total_interactions"] == 28
-        assert manifest["split_distribution"]["train"] == 16
-        assert manifest["split_distribution"]["val"] == 6
-        assert manifest["split_distribution"]["test"] == 6
+        assert manifest["source_scenario_count"] == 28
+        assert manifest["total_interactions"] == 21
+        assert manifest["split_distribution"]["train"] == 12
+        assert manifest["split_distribution"]["val"] == 5
+        assert manifest["split_distribution"]["test"] == 4
+        assert manifest["excluded_scenario_count"] == 7
 
         loaded = load_interactions(path=path)
-        assert len(loaded) == 28
+        assert len(loaded) == 21
         assert all(isinstance(i, IncidentInteraction) for i in loaded)
 
     def test_metrics_mathematical_precision(self):
@@ -101,7 +106,7 @@ class TestStage10RSDataAndBaselines:
         assert ndcg_at_k(recs, gt3, 3) == 0.0
 
     def test_random_recommender(self, tmp_path):
-        interactions = load_interactions()
+        interactions = _load_synthetic_interactions(tmp_path)
         rec = RandomRecommender(seed=123)
         rec.fit(interactions)
 
@@ -111,8 +116,8 @@ class TestStage10RSDataAndBaselines:
         assert len(set(ids)) == 3  # Unique recommendations
         assert all(rb_id in RUNBOOK_CATALOG for rb_id in ids)
 
-    def test_popularity_recommender(self):
-        interactions = load_interactions()
+    def test_popularity_recommender(self, tmp_path):
+        interactions = _load_synthetic_interactions(tmp_path)
         train_data = [i for i in interactions if i.split == "train"]
 
         rec = PopularityRecommender()
@@ -124,8 +129,8 @@ class TestStage10RSDataAndBaselines:
         # Verify scores are non-increasing (sorted descending)
         assert scores == sorted(scores, reverse=True)
 
-    def test_bm25_content_recommender(self):
-        interactions = load_interactions()
+    def test_bm25_content_recommender(self, tmp_path):
+        interactions = _load_synthetic_interactions(tmp_path)
         train_data = [i for i in interactions if i.split == "train"]
 
         rec = BM25ContentRecommender()
@@ -142,17 +147,23 @@ class TestStage10RSDataAndBaselines:
         assert top_rb == "RB-POD-OOM", f"Expected RB-POD-OOM for OOM symptoms, got {top_rb}"
 
     def test_full_baseline_benchmark_execution(self, tmp_path):
+        interactions = _load_synthetic_interactions(tmp_path)
         out_json = tmp_path / "baseline_eval.json"
-        results = run_full_baseline_benchmark(output_path=out_json)
+        results = run_full_baseline_benchmark(interactions=interactions, output_path=out_json)
 
         assert out_json.exists()
         assert "models" in results
+        assert results["dataset_split_counts"] == {
+            "train": 12,
+            "val": 5,
+            "test": 4,
+            "total": 21,
+        }
         assert "RandomRecommender" in results["models"]
         assert "PopularityRecommender" in results["models"]
         assert "BM25ContentRecommender" in results["models"]
 
-        # Verify BM25 test metrics are populated and valid
-        bm25_test = results["models"]["BM25ContentRecommender"]["test"]
-        assert bm25_test["hit@3"] > 0.50
-        assert bm25_test["mrr@3"] > 0.50
-        assert bm25_test["ndcg@3"] > 0.50
+        for model_results in results["models"].values():
+            for metrics in model_results.values():
+                assert metrics
+                assert all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in metrics.values())

@@ -7,13 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-@pytest.mark.parametrize("severity,decision", [
-    ("P1", "approved"), ("P1", "rejected"), ("P1", "timeout"),
-    ("P1", "missing"), ("P2", None), ("P3", None),
+@pytest.mark.parametrize("severity,decision,alert_severity", [
+    ("P1", "approved", None), ("P1", "rejected", None),
+    ("P1", "timeout", None), ("P1", "missing", None),
+    ("P2", None, None), ("P3", None, None),
+    ("P2", "timeout", "critical"),
 ])
 @pytest.mark.parametrize("environment_recovered", [False, True])
 def test_approval_controls_mutating_dispatch_and_persisted_truth(
-    monkeypatch, tmp_path, severity, decision, environment_recovered,
+    monkeypatch, tmp_path, severity, decision, alert_severity, environment_recovered,
 ):
     import agents.coordinator as coord
     import agents.verifier as verifier
@@ -90,8 +92,11 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
 
     calls = AsyncMock(side_effect=agent)
     monkeypatch.setattr(coord, "call_agent", calls)
+    labels = {"alertname": "SafetyTest"}
+    if alert_severity:
+        labels["severity"] = alert_severity
     result = asyncio.run(coord.handle_incident(
-        {"commonLabels": {"alertname": "SafetyTest"}}, incident_id="inc-safety",
+        {"commonLabels": labels}, incident_id="inc-safety",
     ))
     persisted = json.loads((tmp_path / "inc-safety.json").read_text(encoding="utf-8"))
     assert persisted == result
@@ -99,7 +104,12 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     assert result["env_resolved"] is environment_recovered
     assert result["verification"]["env_resolved"] is environment_recovered
     assert gate.pending() == []
-    allowed = decision == "approved" or severity in {"P2", "P3"}
+    allowed = decision == "approved" or (
+        severity in {"P2", "P3"} and alert_severity != "critical"
+    )
+    if alert_severity == "critical":
+        assert result["approval"]["severity"] == "P1"
+        assert result["approval"]["triage_severity"] == "P2"
     assert persisted["resolved"] is (environment_recovered and allowed)
 
     # The benchmark consumer must preserve the operational decision, even if the

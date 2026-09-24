@@ -1,116 +1,63 @@
 # AtlasOps: Autonomous Multi-Agent Incident Response on Kubernetes via Generative AI, Hybrid Runbook Recommendation, and Online Policy Optimization
 
-**Authors:** AtlasOps Academic Team  
-**Institution:** University Research Lab  
-**Repository Fork:** `virajchoudhary/AtlasOps` (Frozen Baseline: `bf9bd19`)  
-**Date:** August 31, 2026  
-
----
+**Authors:** AtlasOps Academic Team
+**Repository fork:** `virajchoudhary/AtlasOps`
+**Upstream baseline:** `Harikishanth/AtlasOps` at `bf9bd197c9f4a05ae55ade254802a9eef1a74356`
+**Status:** Research report draft; full pipeline certification is not established.
+**Evidence review:** 24 September 2026.
 
 ## Abstract
 
-Modern cloud-native systems running on Kubernetes face frequent, cascading failures that overwhelm human site reliability engineers (SREs). While large language models (LLMs) demonstrate emergent reasoning, zero-shot models fail in live incident response due to ungrounded tool calling, severe hallucination, and lack of historical operational context. We present **AtlasOps**, a unified autonomous multi-agent incident response system integrating:
-1. **Generative Multi-Agent Architecture**: A modular, contract-bound pipeline spanning Triage, Root-Cause Diagnosis, Approval Gate, Remediation, and Incident Communications.
-2. **Hybrid Runbook Recommender Systems (RS)**: A tri-signal ranking model ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$) that matches real-time telemetry against codified SRE operational knowledge, achieving **$100.0\%$ Hit@3** on held-out incident test splits.
-3. **Online Group Relative Policy Optimization (GRPO)**: An online reinforcement learning algorithm with normalized advantage estimation and objective environment-verifier rewards, eliminating training-evaluation distribution shifts.
-
-In empirical benchmark evaluations across 28 frozen Kubernetes chaos scenarios and adversarial stress faults, AtlasOps achieves **$100.0\%$ incident resolution**, reduces Mean Time to Resolve (TTR) from $45.0\\text{s} \\rightarrow 18.0\\text{s}$ (a $60\%$ improvement), and elevates composite contract rewards from $0.345 \\rightarrow 0.918$.
-
----
+AtlasOps combines an incident triage, diagnosis, approval, remediation, verification, and communications chain with a runbook recommender and a proposed online reinforcement learning policy. The project preserves upstream architecture and adds software paths for frozen scenario splits, model training, evaluation, and evidence collection. The latest completed golden-incident attempt in the preserved Stage 4 series did not pass. Saved zero-shot, SFT, GRPO, and ablation numbers previously presented as empirical were mock or hardcoded outputs. Current implementation work improves those paths, but a genuine trained SFT/GRPO checkpoint and the required live evaluations are not yet evidenced. This report records the method and open claims without assigning unobserved resolution, reward, or time-to-resolve values.
 
 ## 1. Introduction & Background
 
-Cloud-native microservices architectures exhibit intricate inter-service dependencies. When a fault occurs—such as memory exhaustion in an upstream gateway, packet drop on an internal RPC mesh, or database connection saturation—failures cascade rapidly. 
-
-Existing benchmarks either rely on simulated text-only environments without executable Kubernetes infrastructure or suffer from critical bugs in reward-policy coupling. AtlasOps resolves these challenges by bridging realistic Kubernetes Chaos Mesh environments with scientifically rigorous, disjoint curriculum splits and multi-agent coordination.
-
----
+The university team continues the upstream AtlasOps repository under its MIT license. The academic goal is to test whether multi-agent reasoning, runbook recommendation, and online policy optimization can improve incident response while preserving a human approval boundary and objective environment verification. A benchmark model answer is a proposal; operational resolution comes from the environment verifier. The frozen scenario catalogue contains 28 scenarios with Train(16), Validation(6), and Test(6) identities. Split definitions and source hashes are recorded in the project configuration and Stage 5 evidence.
 
 ## 2. System Architecture & Multi-Agent Flow
 
-AtlasOps structures incident response as an explicit state machine:
+The intended flow is Alert → Triage → Diagnosis → observed evidence → Recommender Top-K → Safety/Approval → Remediation policy → one atomic tool action → environment verifier → next policy state or Comms. The recommender is advisory. A P1 mutation requires explicit human approval; timeout, rejection, and missing approval block mutation. The verifier's `env_resolved` field controls resolution, regardless of an agent's claim. Current integration contracts are local software tests and do not by themselves prove live behavior.
 
-$$\\text{Alert} \\longrightarrow \\text{Triage Agent} \\longrightarrow \\text{Diagnosis Agent} \\longrightarrow \\mathbf{\\text{Hybrid Recommender}} \\longrightarrow \\text{Approval Gate} \\longrightarrow \\text{Remediation Agent} \\longrightarrow \\text{Env Verifier} \\longrightarrow \\text{Comms Agent}$$
+### Evidence boundary
 
-```
- ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────────────────┐
- │ Prometheus / │────▶│ Triage Agent │────▶│  Diagnosis   │────▶│    Hybrid Runbook     │
- │ Alertmanager │     │ (Severity)   │     │    Agent     │     │   Recommender (RS)    │
- └──────────────┘     └──────────────┘     └──────────────┘     └───────────────────────┘
-                                                                            │
- ┌──────────────┐     ┌──────────────┐     ┌──────────────┐                 ▼
- │ Incident     │◀────│ Environment  │◀────│ Remediation  │◀────┌───────────────────────┐
- │ Comms Agent  │     │ Verifier     │     │ Agent (Tool) │     │ Safety / Approval Gate│
- └──────────────┘     └──────────────┘     └──────────────┘     └───────────────────────┘
-```
-
-- **Triage Agent**: Evaluates alert metadata, correlates firing labels, and determines incident severity (P1–P4).
-- **Diagnosis Agent**: Executes non-mutating observability tools (`prom_query`, `kubectl_logs`, `kubectl_describe`, `jaeger_trace`) to infer root cause.
-- **Hybrid Runbook Recommender**: Queries codified runbook graphs to recommend top-$K$ remediation action plans.
-- **Safety / Approval Gate**: Validates proposed remediation commands against security policies and prevents destructive operations.
-- **Remediation Agent**: Executes mutating recovery commands (`kubectl_rollout_undo`, `kubectl_scale`, `argo_sync`, `config_patch`).
-- **Environment Ground-Truth Verifier**: Evaluates cluster health independently using Prometheus SLO probes and pod readiness.
-- **Communications Agent**: Synthesizes executive summaries and forensic postmortems.
-
----
+Benchmark scenario truth, expected root cause, known-good remediation, and frozen verifier predicates are scoring inputs. They must be withheld from model-facing alert, recommendation, and policy state until after inference or action generation. Mock/test adapters are marked non-empirical and cannot close an experimental gate.
 
 ## 3. Academic Workstreams & Methodology
 
-### 3.1 Generative AI & Trajectory Synthesis (SFT)
-We assembled a high-fidelity dataset of 64 multi-agent demonstrations derived strictly from the training curriculum ($T_{\\text{train}}$, 16 scenarios). The dataset features strict loss-masking on assistant tool-call tokens using the `Qwen2.5` chat template.
+### 3.1 Generative AI and SFT
 
-### 3.2 Recommender Systems Innovation
-We designed a tri-signal hybrid recommendation algorithm combining:
-1. **Lexical BM25 Content Matching ($S_{\\text{content}}$)**: Matches diagnostic tokens and root-cause notes against runbook documentation.
-2. **Collaborative Transition Graph Affinities ($S_{\\text{collab}}$)**: Models historical incident-to-runbook co-occurrence and successful recovery paths.
-3. **Global Occurrence Priors ($S_{\\text{prior}}$)**: Incorporates empirical failure frequency across service classes.
+The Stage 7 corpus manifest records 64 examples drawn from the 16 training scenarios, along with the approved Qwen2.5-7B-Instruct QLoRA configuration. Corpus preparation and software tests are evidence of data and implementation only. A completed training manifest, hashed adapter, loss history, and successful real checkpoint evaluation are still required before claiming an SFT effect. G6 and G8 diagnosis evaluations must preserve raw model responses and score only after prediction; they do not imply environment resolution.
 
-$$S(q, r) = \\alpha \\cdot S_{\\text{content}}(q, r) + \\beta \\cdot S_{\\text{collab}}(q, r) + \\gamma \\cdot S_{\\text{prior}}(r)$$
+### 3.2 Runbook recommendation
 
-Trained with hyperparameters $\\alpha = 0.50, \\beta = 0.35, \\gamma = 0.15$, the hybrid recommender achieves **$100.0\%$ Hit@3** on held-out test splits, outperforming pure BM25 ($83.3\%$) and popularity baselines ($83.3\%$).
+The repository implements BM25, popularity/random baselines, and a hybrid content, co-occurrence, and prior ranker. Its saved Stage 10/11 results use scenario-derived labels, not observed historical incident-to-runbook feedback. The original 28-row corpus covers four of twelve catalogued runbooks and remains historical evidence. A corrected, separately preserved synthetic corpus excludes seven scenarios without defensible single-label runbooks: 21 rows span Train(12), Validation(5), and Test(4), with nine runbooks covered. A local hybrid fit on the 12 Train rows yields Test Hit@3=1.0000 and MRR@3=0.7083 on four synthetic Test rows; BM25 yields 0.7500 and 0.6250. These small synthetic measurements do not establish a historical-feedback effect or production generalization. Ranking scores are not calibrated success probabilities.
 
-### 3.3 Reinforcement Learning: Online GRPO
-We implemented Online Group Relative Policy Optimization (GRPO) to optimize policy decision-making without a separate critic model. For each prompt $q$, a group of $G=4$ candidate trajectories $\\{o_1, \\dots, o_G\\}$ are generated. The advantage $A_i$ is computed via group normalization:
+### 3.3 Online GRPO
 
-$$A_i = \\frac{r(q, o_i) - \\text{mean}(\\mathbf{r})}{\\text{std}(\\mathbf{r}) + \\epsilon}$$
-
-The reward function $r(q, o_i)$ enforces objective environment ground truth:
-$$r = 0.40 \\cdot \\mathbb{I}[\\text{EnvResolved}] + 0.25 \\cdot \\text{DiagF1} + 0.20 \\cdot \\text{SpeedScore} + 0.15 \\cdot \\text{CommsScore} - \\text{Penalties}$$
-
----
+The scientific contract is state → trained policy → structured action → one tool execution → settling → objective verifier → reward → next state. Training optimization uses Train only; Validation and Test remain isolated. Existing local tests exercise direct action parsing, approval, policy checks, verifier-grounded resolution, checkpoint validation, and exact policy-output execution. The trainer now has a provenance manifest and rollout ledger; the evaluator rejects absent or incomplete checkpoints. These tests do not establish a trained GRPO checkpoint, safe shared-cluster rollout, or an empirical reward improvement.
 
 ## 4. Empirical Evaluation & Multi-Model Ablations
 
-The comprehensive ablation benchmark evaluated the predetermined 5-model comparison family across 4 partitions:
+| Gate | Current evidence-backed status | Missing evidence |
+| :--- | :--- | :--- |
+| G4 golden incident | NOT_PASSED | A valid live run with clean preflight, authorized P1 action, verifier resolution, and proven postflight cleanup. |
+| G6 zero-shot | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Actual approved base-model inference with raw predictions and split/model hashes. |
+| G7 SFT | PARTIAL | Completed approved training and usable hashed adapter. |
+| G8 SFT evaluation | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Real checkpoint inference over frozen evaluation split. |
+| G9 GRPO | REOPENED | Safe real training trajectories, completed checkpoint provenance, and real evaluation. |
+| G12 integration | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Real integrated policy execution with preserved end-to-end evidence. |
+| G13 ablation | REOPENED | Complete real variant-by-partition artifact matrix and computed uncertainty. |
 
-### Held-Out Test Partition ($T_{\\text{test}}$ — 6 Scenarios)
-| Model Architecture | Resolution Rate | Avg TTR | Contract Reward | Format Compliance | Runbook Hit@3 |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Zero-Shot Baseline** | `0.0%` | `45.0s` | `0.345` | `0.0%` | `33.3%` |
-| **SFT Model** | `100.0%` | `32.0s` | `0.834` | `100.0%` | `50.0%` |
-| **SFT + Recommender** | `100.0%` | `26.5s` | `0.852` | `100.0%` | `100.0%` |
-| **Online GRPO RL** | `100.0%` | `22.0s` | `0.868` | `100.0%` | `66.7%` |
-| **Full Pipeline (GAI + RS + RL)** | **`100.0%`** | **`18.0s`** | **`0.918`** | **`100.0%`** | **`100.0%`** |
+The latest completed Stage 4 result among attempts 009–014 is `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json`: the gate failed, the environment was not resolved, and the diagnosis targeted the wrong service. Attempts 009 and 011–014 are interrupted or inconclusive; some cleanup states remain unverified. These outcomes are retained.
 
-### Adversarial Chaos Stress Partition ($T_{\\text{adv}}$ — 5 Scenarios)
-| Model Architecture | Resolution Rate | Avg TTR | Contract Reward | Runbook Hit@3 |
-| :--- | :---: | :---: | :---: | :---: |
-| **Zero-Shot Baseline** | `0.0%` | `45.0s` | `0.345` | `33.3%` |
-| **SFT Model** | `60.0%` | `42.0s` | `0.580` | `50.0%` |
-| **SFT + Recommender** | `80.0%` | `35.0s` | `0.710` | `100.0%` |
-| **Online GRPO RL** | `80.0%` | `28.0s` | `0.795` | `66.7%` |
-| **Full Pipeline (GAI + RS + RL)** | **`100.0%`** | **`21.0s`** | **`0.885`** | **`100.0%`** |
-
----
+The old Stage 13 `ablation_benchmark_results.json` contains predetermined profiles, including the previously reported 100% resolution, 18-second TTR, and 0.918 reward. They are not empirical measurements. No supported comparative effect size or confidence interval is reported here. A real ablation runner must consume authenticated raw variant artifacts.
 
 ## 5. Demonstration & Operator Console
 
-AtlasOps features a production-ready 7-tab Gradio Ops Console (`dashboard.py`) and standalone launcher CLI (`demo/launcher.py`), featuring zero-risk safe mode guardrails (`DEMO_SAFE_MODE=1`), interactive runbook search, trajectory inspection, and live multi-agent event streaming.
-
----
+The repository contains a local demo launcher and operator console with a safe-mode path. Static/local tests support implementation readiness only. Startup prerequisites, live service health, infrastructure portability, credential configuration, human approval operation, and postflight cleanup need target-specific verification before a deployment claim. No public or production deployment is certified by this report.
 
 ## 6. Conclusion & Attribution
 
-AtlasOps establishes that integrating Generative AI multi-agent orchestration, Hybrid Runbook Recommender Systems, and Online GRPO policy optimization yields an autonomous incident response system that is fast, resilient, and verifiable.
+AtlasOps has substantial software implementation and a preserved negative experiment history. The strict research pipeline remains incomplete. The next scientific work is to establish a sound G4 live contract, obtain approved base-model and trained-checkpoint evidence, and run the predefined evaluation/ablation matrix without exposing Test truth during inference. No result, model metric, TTR, or environment resolution is fabricated in this report.
 
-**Attribution & Provenance**: Extended from upstream baseline `Harikishanth/AtlasOps` (`bf9bd19`) under MIT License into project fork `virajchoudhary/AtlasOps`. Full Git history, attribution, and open-source licensing are preserved.
+The full upstream Git history, MIT license, and original attribution remain part of the fork.

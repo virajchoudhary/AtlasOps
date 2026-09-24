@@ -4,19 +4,28 @@ The registry contains callable wrappers; agent exposure is controlled separately
 by :mod:`agents.tool_policy`.
 """
 
+from agents.tools.alertmanager import alertmanager_list_alerts, alertmanager_silence
+from agents.tools.argocd import (
+    argocd_app_get,
+    argocd_app_history,
+    argocd_list_apps,
+    argocd_rollback,
+)
+from agents.tools.chaos import chaos_list_experiments, chaos_stop_experiment
+from agents.tools.comms import postmortem_draft, slack_post_update
+from agents.tools.gcloud_logging import gcloud_logs_read
+from agents.tools.jaeger import jaeger_get_trace, jaeger_search
 from agents.tools.kubectl import (
-    kubectl_get, kubectl_describe, kubectl_logs, kubectl_top_pods,
-    kubectl_top_nodes, kubectl_rollout, kubectl_scale, kubectl_exec,
+    kubectl_describe,
+    kubectl_exec,
+    kubectl_get,
+    kubectl_logs,
+    kubectl_rollout,
+    kubectl_scale,
+    kubectl_top_nodes,
+    kubectl_top_pods,
 )
 from agents.tools.prometheus import promql_query, promql_query_range
-from agents.tools.jaeger import jaeger_search, jaeger_get_trace
-from agents.tools.argocd import (
-    argocd_list_apps, argocd_app_history, argocd_rollback, argocd_app_get,
-)
-from agents.tools.gcloud_logging import gcloud_logs_read
-from agents.tools.alertmanager import alertmanager_silence, alertmanager_list_alerts
-from agents.tools.chaos import chaos_stop_experiment
-from agents.tools.comms import slack_post_update, postmortem_draft
 
 # Keep tool imports resilient in local/dev test environments where optional
 # cloud SDK extras may be unavailable. This avoids blocking unrelated tools.
@@ -53,6 +62,7 @@ TOOL_REGISTRY = {
     "cloud_monitoring_query": cloud_monitoring_query,
     "alertmanager_silence": alertmanager_silence,
     "alertmanager_list_alerts": alertmanager_list_alerts,
+    "chaos_list_experiments": chaos_list_experiments,
     "chaos_stop_experiment": chaos_stop_experiment,
     "slack_post_update": slack_post_update,
     "postmortem_draft": postmortem_draft,

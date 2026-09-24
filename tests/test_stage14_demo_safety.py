@@ -54,15 +54,18 @@ class TestStage14DemoSafety:
         assert "Top 3 Recommended Runbooks" in res
         assert "RB-POD-OOM" in res
         assert "Suggested Tools" in res
-        assert "Match Confidence" in res
+        assert "Ranking Score" in res
+        assert "scenario-derived" in res
 
     def test_load_ablation_matrix_and_comparison_table(self):
         ablation_text = _load_ablation_matrix()
+        assert "NON-EMPIRICAL" in ablation_text
         assert "AtlasOps Final Multi-Generation Ablation & Stress Matrix" in ablation_text or "results" in ablation_text
         assert "Zero-Shot Baseline" in ablation_text
 
         table_text = _load_comparison_table()
         assert len(table_text) > 0
+        assert "UNVERIFIED" in table_text or "No verified" in table_text
 
     def test_demo_launcher_cli_configuration(self, monkeypatch):
         monkeypatch.setattr("sys.argv", ["launcher.py", "--port", "8080", "--host", "127.0.0.1"])

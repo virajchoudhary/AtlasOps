@@ -21,14 +21,16 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
@@ -64,6 +66,15 @@ def _load_secret_or_default(filename: str, default: str) -> str:
     return default
 
 
+_EXPERIMENT_ID_RE = re.compile(r"^EXP-STAGE4-[A-Za-z0-9][A-Za-z0-9_-]{0,112}$")
+
+
+def _validated_experiment_id(experiment_id: str) -> str:
+    if not isinstance(experiment_id, str) or not _EXPERIMENT_ID_RE.fullmatch(experiment_id):
+        raise ValueError("Stage 4 experiment ID must be a single safe EXP-STAGE4-* name")
+    return experiment_id
+
+
 # Configure environment for local agent execution
 os.environ["BACKEND"] = "openai"
 os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
@@ -92,7 +103,9 @@ os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
 # Experiment identity is operator-controlled and must never collide with a
 # preserved evidence file. Override via STAGE4_EXPERIMENT_ID for each new run;
 # the runner refuses to overwrite an existing per-experiment evidence file.
-EXPERIMENT_ID = os.environ.get("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-004")
+EXPERIMENT_ID = _validated_experiment_id(
+    os.environ.get("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-004")
+)
 SCENARIO_ID = "single_fault/sf-002"
 TARGET_SERVICE = "paymentservice"
 TARGET_NAMESPACE = "default"
@@ -154,19 +167,32 @@ ATTEMPT_STATES = {
 G4_PLATFORM_HARDENING_MARKER = G4_PROTOCOL_MARKER
 MAX_ATTEMPTS_PER_PROTOCOL_MARKER = 2
 ATTEMPT_BUDGET_LOCK_FILENAME = ".reservation.lock"
+CHAOS_RESOURCE_KINDS = "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos"
+POISONED_ENVIRONMENT_FILENAME = ".poisoned-environment.json"
+MAX_POSTFLIGHT_CLEANUP_ATTEMPTS = 3
+POSTFLIGHT_CLEANUP_RETRY_INTERVAL_SECONDS = 2
+BLOCKED_ACTION_MARKERS = (
+    "blocked_by_policy",
+    "blocked_by_circuit_breaker",
+    "dedup_blocked",
+    "cap_blocked",
+    "invalid_arguments",
+)
 
 
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
     cmd = ["kubectl", "--context", KIND_CONTEXT] + args
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
         return {
             "success": res.returncode == 0,
             "stdout": res.stdout.strip(),
             "stderr": res.stderr.strip(),
             "returncode": res.returncode,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"success": False, "error": str(exc), "returncode": -1}
 
 
@@ -175,8 +201,7 @@ def _query_ollama_model_identity(selected_model: str) -> dict[str, str]:
     import requests
 
     base_url = os.getenv("VLLM_BASE", "http://localhost:11434/v1").strip().rstrip("/")
-    if base_url.endswith("/v1"):
-        base_url = base_url[:-3]
+    base_url = base_url.removesuffix("/v1")
     try:
         response = requests.get(
             f"{base_url}/api/tags",
@@ -251,6 +276,8 @@ def _observe_protocol_profile(selected_model: str) -> dict[str, Any]:
 
 
 def _experiment_evidence_dir(experiment_id: str, root: str | None = None) -> str:
+    if experiment_id:
+        _validated_experiment_id(experiment_id)
     base = root or REPO_ROOT
     return os.path.join(base, "artifacts", "evidence", "stage4")
 
@@ -261,6 +288,12 @@ def _attempt_marker_path(experiment_id: str, root: str | None = None) -> str:
         _experiment_evidence_dir(experiment_id, root),
         ".attempts",
         f"{safe_id}.attempt.json",
+    )
+
+
+def _poisoned_environment_path(root: str | None = None) -> str:
+    return os.path.join(
+        _experiment_evidence_dir("", root), POISONED_ENVIRONMENT_FILENAME
     )
 
 
@@ -310,7 +343,7 @@ def _claimed_attempts_for_protocol_fingerprint(
                 f"Stage 4 attempt accounting record is invalid: {path}"
             ) from exc
         if not isinstance(attempt, dict):
-            raise RuntimeError(f"Stage 4 attempt accounting record is invalid: {path}")
+            raise TypeError(f"Stage 4 attempt accounting record is invalid: {path}")
         if attempt.get("protocol_fingerprint") != protocol_fingerprint_value:
             continue
         if attempt.get("state") not in ATTEMPT_STATES:
@@ -356,10 +389,22 @@ def reserve_experiment_attempt(
     if os.path.exists(primary_path):
         raise RuntimeError(f"Stage 4 evidence already exists: {primary_path}")
 
+    poisoned_path = _poisoned_environment_path(attempt_root)
+    if os.path.exists(poisoned_path):
+        raise RuntimeError(
+            "Stage 4 environment is poisoned because zero-Chaos postflight was "
+            f"not proven; operator verification is required before another run: {poisoned_path}"
+        )
+
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
     profile = _observe_protocol_profile(selected_model)
     profile_fingerprint = protocol_fingerprint(profile)
     with _reservation_budget_lock(attempt_root):
+        if os.path.exists(poisoned_path):
+            raise RuntimeError(
+                "Stage 4 environment is poisoned because zero-Chaos postflight was "
+                f"not proven; operator verification is required before another run: {poisoned_path}"
+            )
         spent_attempts = _claimed_attempts_for_protocol_fingerprint(
             profile_fingerprint, attempt_root
         )
@@ -379,7 +424,7 @@ def reserve_experiment_attempt(
         reservation = {
             "experiment_id": experiment_id,
             "state": ATTEMPT_STATE_RESERVED,
-            "reserved_at": datetime.now(timezone.utc).isoformat(),
+            "reserved_at": datetime.now(UTC).isoformat(),
             "reservation_token": uuid.uuid4().hex,
             "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
             "protocol_profile": profile,
@@ -416,7 +461,7 @@ def _transition_attempt(
     updated = {
         **current,
         "state": state,
-        timestamp_field: datetime.now(timezone.utc).isoformat(),
+        timestamp_field: datetime.now(UTC).isoformat(),
     }
     _write_json_atomic(marker_path, updated)
     return updated
@@ -479,7 +524,7 @@ def _extract_prometheus_cpu_cores(result: dict[str, Any]) -> list[float]:
 def collect_sf002_cpu_telemetry(time_unix: float | None = None) -> dict[str, Any]:
     from agents.tools.prometheus import promql_query
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     result = promql_query(DEGRADATION_QUERY, time_unix=time_unix)
     samples = _extract_prometheus_cpu_cores(result)
     return {
@@ -548,7 +593,7 @@ def _prometheus_http_get(path: str) -> tuple[int | None, str]:
 
         resp = requests.get(f"{base}{path}", timeout=10)
         return resp.status_code, resp.text
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return None, str(exc)
 
 
@@ -559,7 +604,7 @@ def _endpoint_ready(
     for path in ("/-/healthy", "/-/ready"):
         try:
             status, _body = http_get_fn(path)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             failures.append(f"{path} transport error: {exc}")
             continue
         if status != 200:
@@ -578,7 +623,7 @@ def _cadvisor_target_healthy(
             if status != 200:
                 return False, [f"targets endpoint -> HTTP {status}"]
             payload = json.loads(body)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return False, [f"targets fetch error: {exc}"]
     active = ((payload or {}).get("data") or {}).get("activeTargets") or []
     cadvisor = [
@@ -736,6 +781,202 @@ def wait_for_baseline_readiness(
     )
 
 
+def _status_text(value: Any) -> str:
+    return value.strip().casefold() if isinstance(value, str) else ""
+
+
+def _p1_approval_satisfied(severity: Any, approval: Any) -> bool:
+    """Require the coordinator's explicit approval record for this P1 run."""
+    if _status_text(severity) != "p1" or not isinstance(approval, dict):
+        return False
+    if _status_text(approval.get("mode")) != "approve":
+        return False
+    if _status_text(approval.get("severity")) != "p1":
+        return False
+    approved_by = approval.get("approved_by")
+    if not isinstance(approved_by, str) or not approved_by.strip():
+        return False
+
+    decision = _status_text(approval.get("decision"))
+    status = _status_text(approval.get("status"))
+    if decision and decision != "approved":
+        return False
+    if status and status != "approved":
+        return False
+    return decision == "approved" or status == "approved"
+
+
+def _diagnosis_is_evidence_backed(incident_result: dict[str, Any]) -> bool:
+    diagnosis = incident_result.get("diagnosis")
+    final = diagnosis.get("final") if isinstance(diagnosis, dict) else None
+    if not isinstance(final, dict):
+        return False
+    root_cause = final.get("root_cause")
+    if not isinstance(root_cause, str) or not root_cause.strip():
+        return False
+    cause_text = root_cause.casefold()
+    compact_cause = cause_text.replace(" ", "").replace("-", "").replace("_", "")
+    identifies_target = TARGET_SERVICE.casefold() in compact_cause
+    identifies_fault = any(
+        phrase in cause_text
+        for phrase in ("cpu", "stresschaos", "stress chaos", "resource pressure")
+    )
+
+    anchors = incident_result.get("incident_anchors")
+    anchors = anchors if isinstance(anchors, dict) else {}
+    target_consistency = incident_result.get("target_consistency")
+    target_consistency = target_consistency if isinstance(target_consistency, dict) else {}
+    target_is_anchored = (
+        _status_text(anchors.get("primary_service")) == TARGET_SERVICE.casefold()
+        and _status_text(target_consistency.get("primary_target"))
+        == TARGET_SERVICE.casefold()
+        and target_consistency.get("requires_review") is False
+        and target_consistency.get("status")
+        in {"primary_target_preserved", "mismatch_observed"}
+    )
+
+    try:
+        from agents.grounding import validate_evidence_grounding
+
+        computed_grounding = validate_evidence_grounding(diagnosis)
+    except Exception:  # noqa: BLE001
+        return False
+    persisted_grounding = incident_result.get("grounding_validation")
+    persisted_grounding = (
+        persisted_grounding.get("diagnosis")
+        if isinstance(persisted_grounding, dict)
+        else None
+    )
+    grounded_citations = (
+        isinstance(persisted_grounding, dict)
+        and persisted_grounding == computed_grounding
+        and computed_grounding.get("grounded") is True
+        and computed_grounding.get("citation_count", 0) > 0
+        and not computed_grounding.get("violations")
+    )
+    return identifies_target and identifies_fault and target_is_anchored and grounded_citations
+
+
+def _settling_report_satisfied(incident_result: dict[str, Any]) -> bool:
+    report = incident_result.get("settling")
+    if not isinstance(report, dict) or report.get("settled") is not True:
+        return False
+    if not all(
+        isinstance(report.get(field), str) and report[field].strip()
+        for field in ("started_at", "completed_at")
+    ):
+        return False
+    timeout = report.get("timeout_seconds")
+    poll_interval = report.get("poll_interval_seconds")
+    duration = report.get("duration_seconds")
+    if not all(
+        isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+        for value in (timeout, poll_interval)
+    ):
+        return False
+    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration < 0:
+        return False
+    observations = report.get("observations")
+    if not isinstance(observations, list) or not observations:
+        return False
+    last = observations[-1]
+    return (
+        isinstance(last, dict)
+        and last.get("env_resolved") is True
+        and _status_text(last.get("verification_status")) == "passed"
+        and last.get("failed_checks") == []
+    )
+
+
+def _status_claim_matches(text: str, *, env_resolved: bool) -> bool:
+    normalized = text.casefold()
+    unresolved_terms = ("unresolved", "unverified", "not resolved", "not verified", "blocked")
+    if env_resolved:
+        return (
+            ("resolved" in normalized or "verified" in normalized)
+            and not any(term in normalized for term in unresolved_terms)
+        )
+    return any(term in normalized for term in unresolved_terms)
+
+
+def _postmortem_path_is_owned(path: str) -> bool:
+    try:
+        candidate = Path(path).resolve()
+        root = Path(os.getenv("POSTMORTEM_DIR", os.path.join(REPO_ROOT, "artifacts", "postmortems"))).resolve()
+        return candidate != root and root in candidate.parents
+    except (OSError, RuntimeError):
+        return False
+
+
+def _comms_evidence_satisfied(incident_result: dict[str, Any], *, env_resolved: bool) -> bool:
+    comms = incident_result.get("comms")
+    final = comms.get("final") if isinstance(comms, dict) else None
+    if not isinstance(final, dict):
+        return False
+    incident_id = str(incident_result.get("incident_id") or "")
+    summary = final.get("summary")
+    postmortem_path = final.get("postmortem_path")
+    if (
+        not incident_id
+        or final.get("incident_id") != incident_id
+        or not isinstance(summary, str)
+        or not summary.strip()
+        or not _status_claim_matches(summary, env_resolved=env_resolved)
+        or not isinstance(postmortem_path, str)
+        or not _postmortem_path_is_owned(postmortem_path)
+    ):
+        return False
+
+    actual_postmortem_path = None
+    trajectory = comms.get("trajectory")
+    if isinstance(trajectory, list):
+        for step in trajectory:
+            if not isinstance(step, dict) or step.get("tool") != "postmortem_draft":
+                continue
+            output = step.get("output")
+            if not isinstance(output, dict) or output.get("success") is not True:
+                continue
+            actual_postmortem_path = output.get("postmortem_path") or output.get("path")
+            if actual_postmortem_path:
+                break
+    if not isinstance(actual_postmortem_path, str):
+        return False
+    try:
+        if Path(actual_postmortem_path).resolve() != Path(postmortem_path).resolve():
+            return False
+        content = Path(actual_postmortem_path).read_text(encoding="utf-8").casefold()
+    except (OSError, RuntimeError):
+        return False
+    diagnosis = incident_result.get("diagnosis")
+    final_diagnosis = diagnosis.get("final") if isinstance(diagnosis, dict) else None
+    root_cause = final_diagnosis.get("root_cause") if isinstance(final_diagnosis, dict) else None
+    return (
+        bool(content.strip())
+        and isinstance(root_cause, str)
+        and root_cause.strip().casefold() in content
+        and _status_claim_matches(content, env_resolved=env_resolved)
+    )
+
+
+def _remediation_tool_outcomes(remediation_trajectory: Any) -> list[dict[str, Any]]:
+    outcomes: list[dict[str, Any]] = []
+    if not isinstance(remediation_trajectory, list):
+        return outcomes
+    for step in remediation_trajectory:
+        if not isinstance(step, dict):
+            continue
+        nested_outcomes = step.get("tool_outcomes")
+        if isinstance(nested_outcomes, list):
+            outcomes.extend(
+                {"turn": step.get("turn"), **outcome}
+                for outcome in nested_outcomes
+                if isinstance(outcome, dict)
+            )
+        if "tool" in step:
+            outcomes.append(dict(step))
+    return outcomes
+
+
 def evaluate_causal_g4_predicate(
     baseline_healthy: bool,
     injection_success: bool,
@@ -744,17 +985,25 @@ def evaluate_causal_g4_predicate(
     harness_repaired_pre_verification: bool,
     *,
     degradation_proven: bool = True,
-    settling_completed: bool = True,
+    settling_completed: bool | None = None,
     primary_evidence_persisted: bool = False,
 ) -> dict[str, Any]:
     """Strictly evaluate the 15 causal requirements for Gate G4 PASS."""
     from agents.tool_policy import CLUSTER_MUTATING_TOOLS
 
-    triage_final = incident_result.get("triage", {}).get("final", {})
-    diagnosis_final = incident_result.get("diagnosis", {}).get("final", {})
-    remediation_final = incident_result.get("remediation", {}).get("final", {})
-    comms_final = incident_result.get("comms", {}).get("final", {})
-    remediation_traj = incident_result.get("remediation", {}).get("trajectory", [])
+    triage_result = incident_result.get("triage")
+    diagnosis_result = incident_result.get("diagnosis")
+    remediation_result = incident_result.get("remediation")
+    triage_final = triage_result.get("final", {}) if isinstance(triage_result, dict) else {}
+    diagnosis_final = (
+        diagnosis_result.get("final", {}) if isinstance(diagnosis_result, dict) else {}
+    )
+    remediation_traj = (
+        remediation_result.get("trajectory", [])
+        if isinstance(remediation_result, dict)
+        else []
+    )
+    remediation_traj = remediation_traj if isinstance(remediation_traj, list) else []
 
     # 1. Baseline healthy
     c1 = baseline_healthy is True
@@ -769,45 +1018,39 @@ def evaluate_causal_g4_predicate(
     incident_id = incident_result.get("incident_id")
     c4 = bool(incident_id and incident_id != "unknown")
 
-    # 5. Triage valid schema
-    c5 = bool(triage_final and isinstance(triage_final, dict) and "severity" in triage_final)
+    # 5. Triage valid schema, with one of the declared severity values.
+    severity = _status_text(triage_final.get("severity")) if isinstance(triage_final, dict) else ""
+    c5 = severity in {"p0", "p1", "p2", "p3"}
 
     # 6. Diagnosis valid schema
-    c6 = bool(diagnosis_final and isinstance(diagnosis_final, dict) and "root_cause" in diagnosis_final)
-
-    # 7. Diagnosis truth match (mentions paymentservice / CPU / stresschaos / resource pressure)
-    diag_str = json.dumps(diagnosis_final).lower()
-    c7 = bool(
-        "payment" in diag_str
-        or "cpu" in diag_str
-        or "stress" in diag_str
-        or "resource" in diag_str
-        or "sf-002" in diag_str
+    c6 = bool(
+        isinstance(diagnosis_final, dict)
+        and isinstance(diagnosis_final.get("root_cause"), str)
+        and diagnosis_final["root_cause"].strip()
     )
 
-    # 8. Approval/safety policy satisfied
-    c8 = incident_result.get("approval") is not None or triage_final.get("severity") in {"P0", "P1", "P2", "P3"}
+    # 7. Diagnosis matches the anchored target/fault and cites grounded observations.
+    c7 = _diagnosis_is_evidence_backed(incident_result)
 
-    # 9. One real permitted remediation mutation executed
-    # Policy/circuit-breaker/dedup blocks are not executions.
+    # 8. The SF002 incident is P1 and has an explicit coordinator approval record.
+    approval = incident_result.get("approval")
+    c8 = _p1_approval_satisfied(severity, approval)
+
+    # 9. Exactly one unblocked cluster mutation was executed.
+    remediation_outcomes = _remediation_tool_outcomes(remediation_traj)
     executed_tool_calls: list[dict[str, Any]] = []
     for step in remediation_traj:
         if not isinstance(step, dict) or step.get("tool") not in CLUSTER_MUTATING_TOOLS:
             continue
-        if (
-            step.get("blocked_by_policy")
-            or step.get("blocked_by_circuit_breaker")
-            or step.get("dedup_blocked")
-            or step.get("cap_blocked")
-        ):
+        if any(step.get(marker) for marker in BLOCKED_ACTION_MARKERS):
             continue
         executed_tool_calls.append(step)
-    c9 = len(executed_tool_calls) >= 1
+    c9 = len(executed_tool_calls) == 1 and c8
 
     # 10. Actual tool result reports success
     c10 = False
     executed_target_matched = False
-    if executed_tool_calls:
+    if c9:
         last_mutating = executed_tool_calls[-1]
         out = last_mutating.get("output", {})
         if isinstance(out, dict) and out.get("success") is True:
@@ -818,23 +1061,28 @@ def evaluate_causal_g4_predicate(
         if tool_name == "chaos_stop_experiment":
             kind_match = str(tool_args.get("kind", "")).lower() == TARGET_CHAOS_KIND.lower()
             name_match = str(tool_args.get("name", "")).strip() == TARGET_CHAOS_NAME
-            executed_target_matched = kind_match and name_match
-        elif tool_name in {"kubectl_rollout", "kubectl_scale"}:
-            res_match = TARGET_SERVICE in str(tool_args.get("deployment", tool_args.get("resource", "")))
-            executed_target_matched = res_match
+            namespace_match = str(tool_args.get("namespace", "")).strip() == TARGET_CHAOS_NAMESPACE
+            executed_target_matched = kind_match and name_match and namespace_match
 
     c11 = executed_target_matched
 
     # 12. No harness repair before verifier
     c12 = harness_repaired_pre_verification is False
 
-    # 13. Bounded convergence completed, then objective env_resolved is true.
+    # 13. Bounded settling observations and the authoritative verifier agree.
     verifier_result = incident_result.get("verification", {})
-    env_resolved = bool(incident_result.get("env_resolved", False) or verifier_result.get("env_resolved", False))
-    c13 = env_resolved is True and settling_completed is True
+    env_resolved = (
+        isinstance(verifier_result, dict)
+        and verifier_result.get("env_resolved") is True
+        and incident_result.get("env_resolved") is True
+    )
+    settling_satisfied = _settling_report_satisfied(incident_result)
+    if settling_completed is False:
+        settling_satisfied = False
+    c13 = env_resolved is True and settling_satisfied
 
-    # 14. Comms ran after verifier
-    c14 = bool(comms_final and isinstance(comms_final, dict))
+    # 14. Comms and its postmortem contain the incident and verified outcome.
+    c14 = _comms_evidence_satisfied(incident_result, env_resolved=env_resolved)
 
     # 15. The coordinator's primary incident record was durably persisted.
     c15 = primary_evidence_persisted is True
@@ -863,6 +1111,8 @@ def evaluate_causal_g4_predicate(
         "criteria": criteria,
         "env_resolved": env_resolved,
         "executed_tool_calls": executed_tool_calls,
+        "tool_outcomes": remediation_outcomes,
+        "settling_satisfied": settling_satisfied,
     }
 
 
@@ -904,6 +1154,20 @@ def _active_chaos_count(kubectl_stdout: str) -> int:
     return len(items) if isinstance(items, list) else -1
 
 
+def _chaos_state_observation(result: dict[str, Any]) -> dict[str, Any]:
+    """Distinguish a verified empty Chaos list from failed or malformed reads."""
+    stdout = result.get("stdout", "") if isinstance(result, dict) else ""
+    count = _active_chaos_count(stdout) if isinstance(stdout, str) else -1
+    return {
+        "count": count,
+        "verified_zero": (
+            isinstance(result, dict)
+            and result.get("success") is True
+            and count == 0
+        ),
+    }
+
+
 def _primary_incident_evidence_persisted(incident_result: dict[str, Any]) -> bool:
     incident_id = str(incident_result.get("incident_id") or "")
     if not incident_id:
@@ -915,9 +1179,11 @@ def _primary_incident_evidence_persisted(incident_result: dict[str, Any]) -> boo
     persisted = _read_json_file(path)
     if not persisted or persisted.get("incident_id") != incident_id:
         return False
-    runtime_trajectory = incident_result.get("remediation", {}).get("trajectory", [])
-    persisted_trajectory = persisted.get("remediation", {}).get("trajectory", [])
-    return len(persisted_trajectory) == len(runtime_trajectory)
+    try:
+        expected_record = json.loads(json.dumps(incident_result, sort_keys=True))
+    except (TypeError, ValueError):
+        return False
+    return persisted == expected_record
 
 
 def _persist_stage4_primary_evidence(evidence: dict[str, Any]) -> str:
@@ -930,6 +1196,20 @@ def _persist_stage4_primary_evidence(evidence: dict[str, Any]) -> str:
 
 
 def _current_main_sha() -> str:
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        raise RuntimeError("Unable to verify a clean experiment source tree for Stage 4")
+    if status.stdout.strip():
+        raise RuntimeError(
+            "Stage 4 requires a clean experiment source tree; commit or preserve local changes "
+            "before reserving an attempt"
+        )
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=REPO_ROOT,
@@ -952,6 +1232,159 @@ def _persist_stage4_prefault_failure(evidence: dict[str, Any]) -> str:
     )
     _write_json_atomic(path, evidence)
     return path
+
+
+def _persist_stage4_preflight_evidence(
+    evidence: dict[str, Any],
+    chaos_precheck: dict[str, Any],
+    *,
+    root: str | None = None,
+) -> str:
+    """Freeze the successful telemetry/workload/zero-Chaos preflight before T0."""
+    phases = evidence.get("phases")
+    phases = phases if isinstance(phases, dict) else {}
+    telemetry = phases.get("telemetry_readiness")
+    baseline = phases.get("baseline")
+    zero_chaos = _chaos_state_observation(chaos_precheck)
+    source_identity = evidence.get("source_identity")
+    if (
+        not isinstance(telemetry, dict)
+        or telemetry.get("ready") is not True
+        or not isinstance(baseline, dict)
+        or baseline.get("baseline_healthy") is not True
+        or not zero_chaos["verified_zero"]
+        or not isinstance(source_identity, dict)
+        or source_identity.get("working_tree_clean") is not True
+        or not source_identity.get("git_commit")
+        or not source_identity.get("protocol_fingerprint")
+    ):
+        raise RuntimeError("Refusing to persist incomplete or unverified Stage 4 preflight")
+
+    experiment_id = str(evidence.get("experiment_id") or "")
+    if not experiment_id:
+        raise RuntimeError("Stage 4 preflight is missing an experiment ID")
+    path = os.path.join(
+        _experiment_evidence_dir(experiment_id, root),
+        f"{experiment_id}.preflight.json",
+    )
+    if os.path.exists(path):
+        raise RuntimeError(f"Refusing to overwrite Stage 4 preflight evidence: {path}")
+    record = {
+        "schema_version": 1,
+        "experiment_id": experiment_id,
+        "scenario_id": evidence.get("scenario_id"),
+        "persisted_at": datetime.now(UTC).isoformat(),
+        "source_identity": source_identity,
+        "protocol_marker": evidence.get("protocol_marker"),
+        "protocol_profile": evidence.get("protocol_profile"),
+        "telemetry_readiness": telemetry,
+        "baseline": baseline,
+        "zero_chaos_preflight": {
+            **zero_chaos,
+            "result": chaos_precheck,
+        },
+    }
+    _write_json_atomic(path, record)
+    evidence["preflight_evidence"] = {
+        "path": os.path.relpath(path, root or REPO_ROOT).replace(os.sep, "/"),
+        "sha256": file_sha256(Path(path)),
+        "persisted_before_injection": True,
+    }
+    return path
+
+
+def reconcile_stage4_postflight_cleanup(
+    experiment_id: str,
+    *,
+    root: str | None = None,
+    max_attempts: int = MAX_POSTFLIGHT_CLEANUP_ATTEMPTS,
+    timing: str = "after_verdict_persisted",
+    observed_leftover_chaos_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Boundedly remove the injected Chaos object and verify cluster-wide zero."""
+    if not 1 <= max_attempts <= MAX_POSTFLIGHT_CLEANUP_ATTEMPTS:
+        raise ValueError(
+            f"max_attempts must be between 1 and {MAX_POSTFLIGHT_CLEANUP_ATTEMPTS}"
+        )
+    evidence_dir = _experiment_evidence_dir(experiment_id, root)
+    cleanup_path = os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")
+    if os.path.exists(cleanup_path):
+        raise RuntimeError(f"Refusing to overwrite Stage 4 cleanup evidence: {cleanup_path}")
+
+    attempts: list[dict[str, Any]] = []
+    verified_zero = False
+    for attempt_number in range(1, max_attempts + 1):
+        started_at = datetime.now(UTC).isoformat()
+        try:
+            delete_result = run_kubectl(
+                [
+                    "delete",
+                    TARGET_CHAOS_KIND.lower(),
+                    TARGET_CHAOS_NAME,
+                    "-n",
+                    TARGET_CHAOS_NAMESPACE,
+                    "--ignore-not-found=true",
+                ]
+            )
+        except Exception as exc:  # noqa: BLE001
+            delete_result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+        time.sleep(POSTFLIGHT_CLEANUP_RETRY_INTERVAL_SECONDS)
+        try:
+            observation_result = run_kubectl(
+                ["get", CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+            )
+        except Exception as exc:  # noqa: BLE001
+            observation_result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+        observation = _chaos_state_observation(observation_result)
+        attempts.append(
+            {
+                "attempt": attempt_number,
+                "started_at": started_at,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "delete_result": delete_result,
+                "postflight_result": observation_result,
+                "active_chaos_count": observation["count"],
+                "verified_zero_chaos": observation["verified_zero"],
+            }
+        )
+        if observation["verified_zero"]:
+            verified_zero = True
+            break
+
+    cleanup_record: dict[str, Any] = {
+        "schema_version": 1,
+        "experiment_id": experiment_id,
+        "timing": timing,
+        "affects_env_resolved": False,
+        "verdict_preserved": True,
+        "max_attempts": max_attempts,
+        "attempts": attempts,
+        "result": attempts[-1]["delete_result"] if attempts else None,
+        "observed_leftover_chaos_sha256": observed_leftover_chaos_sha256,
+        "verified_zero_chaos": verified_zero,
+        "poisoned_environment": not verified_zero,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if not verified_zero:
+        poison_path = _poisoned_environment_path(root)
+        poison_record = {
+            "schema_version": 1,
+            "experiment_id": experiment_id,
+            "marked_at": datetime.now(UTC).isoformat(),
+            "reason": "zero-Chaos postflight could not be verified after bounded cleanup",
+            "cleanup_record": os.path.relpath(cleanup_path, root or REPO_ROOT).replace(os.sep, "/"),
+            "attempts": attempts,
+        }
+        if not os.path.exists(poison_path):
+            _write_json_atomic(poison_path, poison_record)
+        cleanup_record["poisoned_environment_record"] = os.path.relpath(
+            poison_path, root or REPO_ROOT
+        ).replace(os.sep, "/")
+    _write_json_atomic(cleanup_path, cleanup_record)
+    return {
+        **cleanup_record,
+        "cleanup_record_path": os.path.relpath(cleanup_path, root or REPO_ROOT).replace(os.sep, "/"),
+    }
 
 
 def _handle_post_t0_interruption(
@@ -980,7 +1413,7 @@ def _handle_post_t0_interruption(
             if isinstance(loaded, dict) and "gate_g4_pass" in loaded:
                 primary_record = loaded
                 has_durable_primary = True
-        except Exception:
+        except Exception:  # noqa: BLE001
             has_durable_primary = False
 
     # Check for active leftover chaos in cluster
@@ -1025,7 +1458,7 @@ def _handle_post_t0_interruption(
         model_capability_failure = primary_record.get("model_capability_failure", None)
         root_cause_summary = (
             f"Primary verdict is frozen and authoritative (gate_g4_pass={gate_g4_pass}); "
-            f"post-verdict operational exception occurred: {type(exc).__name__}: {str(exc)}"
+            f"post-verdict operational exception occurred: {type(exc).__name__}: {exc!s}"
         )
         extra_fields: dict[str, Any] = {
             "primary_verdict_authoritative": True,
@@ -1052,7 +1485,7 @@ def _handle_post_t0_interruption(
         gate_g4_pass = None
         env_resolved = None
         model_capability_failure = False
-        root_cause_summary = f"Unhandled {type(exc).__name__} after T0 fault injection: {str(exc)}"
+        root_cause_summary = f"Unhandled {type(exc).__name__} after T0 fault injection: {exc!s}"
         extra_fields = {
             "primary_verdict_authoritative": False,
             "primary_verdict_persisted": False,
@@ -1078,7 +1511,7 @@ def _handle_post_t0_interruption(
         "protocol_marker": reservation.get("protocol_marker", ""),
         "reservation_timestamp": reservation.get("reserved_at", ""),
         "consumed_timestamp": reservation.get("consumed_at", ""),
-        "interruption_timestamp": datetime.now(timezone.utc).isoformat(),
+        "interruption_timestamp": datetime.now(UTC).isoformat(),
         "observed_exception_class": type(exc).__name__,
         "observed_exception_message": str(exc),
         "t0_crossed": True,
@@ -1092,26 +1525,18 @@ def _handle_post_t0_interruption(
         _write_json_atomic(interruption_file, interruption_record)
         print(f"  Persisted interruption record (sidecar): {interruption_file}")
 
-    # Perform post-interruption safety cleanup
-    clean_res = run_kubectl(["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
     cleanup_timing = (
         "after_post_verdict_interruption"
         if has_durable_primary
         else "after_post_t0_interruption"
     )
-    cleanup_record = {
-        "experiment_id": experiment_id,
-        "timing": cleanup_timing,
-        "affects_env_resolved": False,
-        "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
-        "result": clean_res,
-        "observed_leftover_chaos_sha256": leftover_sha,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    cleanup_file = os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")
-    if not os.path.exists(cleanup_file):
-        _write_json_atomic(cleanup_file, cleanup_record)
-        print(f"  Persisted safety cleanup record (sidecar): {cleanup_file}")
+    cleanup_record = reconcile_stage4_postflight_cleanup(
+        experiment_id,
+        root=REPO_ROOT,
+        timing=cleanup_timing,
+        observed_leftover_chaos_sha256=leftover_sha,
+    )
+    print(f"  Persisted safety cleanup record (sidecar): {cleanup_record['cleanup_record_path']}")
 
 
 async def main() -> dict[str, Any]:
@@ -1126,7 +1551,11 @@ async def main() -> dict[str, Any]:
     print("=" * 80)
 
     # Ensure context is kind-atlasops-local
-    subprocess.run(["kubectl", "config", "use-context", KIND_CONTEXT], capture_output=True)
+    subprocess.run(  # noqa: ASYNC221
+        ["kubectl", "config", "use-context", KIND_CONTEXT],
+        capture_output=True,
+        check=False,
+    )
 
     os.environ["KUBECONFIG_CONTEXT"] = KIND_CONTEXT
     os.environ["BACKEND"] = "vllm"
@@ -1138,7 +1567,7 @@ async def main() -> dict[str, Any]:
     os.environ["ARGOCD_URL"] = "http://localhost:18080"
     os.environ["ARGOCD_VERIFY_TLS"] = "false"
 
-    start_time = datetime.now(timezone.utc).isoformat()
+    start_time = datetime.now(UTC).isoformat()
     t0 = time.time()
 
     # Port forwards for local tool execution
@@ -1151,13 +1580,13 @@ async def main() -> dict[str, Any]:
     ]
     pf_procs = []
     for ns, svc, lp, rp in pf_specs:
-        p = subprocess.Popen(
+        p = subprocess.Popen(  # noqa: ASYNC220
             ["kubectl", "--context", KIND_CONTEXT, "port-forward", f"svc/{svc}", f"{lp}:{rp}", "-n", ns],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         pf_procs.append(p)
-    time.sleep(3)
+    time.sleep(3)  # noqa: ASYNC251
 
     evidence: dict[str, Any] = {
         "experiment_id": EXPERIMENT_ID,
@@ -1174,7 +1603,7 @@ async def main() -> dict[str, Any]:
         evidence["reservation_released"] = released
         evidence["outcome"] = "INVALID"
         evidence["failure_phase"] = phase
-        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        evidence["completed_at"] = datetime.now(UTC).isoformat()
         prefault_path = _persist_stage4_prefault_failure(evidence)
         evidence["prefault_evidence"] = prefault_path
         return evidence
@@ -1186,7 +1615,7 @@ async def main() -> dict[str, Any]:
         print("\n>>> Phase 0: Telemetry Readiness Gate (pre-reservation)...")
         telemetry_ready, readiness_detail = wait_for_telemetry_readiness()
         evidence["phases"]["telemetry_readiness"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "ready": telemetry_ready,
             **readiness_detail,
         }
@@ -1202,7 +1631,7 @@ async def main() -> dict[str, Any]:
             evidence["attempt_state"] = "NOT_RESERVED"
             evidence["outcome"] = "PREFLIGHT_ABORT"
             evidence["failure_phase"] = "telemetry_readiness"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
         # Phase 0b: Paymentservice Deployment baseline readiness — also strictly
@@ -1217,7 +1646,7 @@ async def main() -> dict[str, Any]:
         ) = wait_for_baseline_readiness()
         baseline_telemetry = collect_sf002_cpu_telemetry()
         evidence["phases"]["baseline"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "target_deployments": base_workloads.get("stdout")[:500],
             "baseline_healthy": baseline_healthy,
             "cpu_telemetry": baseline_telemetry,
@@ -1241,72 +1670,88 @@ async def main() -> dict[str, Any]:
             evidence["attempt_state"] = "NOT_RESERVED"
             evidence["outcome"] = "PREFLIGHT_ABORT"
             evidence["failure_phase"] = "unhealthy_baseline"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
+        main_sha = _current_main_sha()
         reservation = reserve_experiment_attempt(
             EXPERIMENT_ID,
             selected_model=SELECTED_STAGE4_AGENT_MODEL,
-            main_sha=_current_main_sha(),
+            main_sha=main_sha,
         )
         evidence["model"] = reservation["protocol_profile"]["model"]["name"]
         evidence["protocol_profile"] = reservation["protocol_profile"]
+        evidence["source_identity"] = {
+            "git_commit": reservation["main_sha"],
+            "working_tree_clean": True,
+            "protocol_fingerprint": reservation["protocol_fingerprint"],
+        }
 
-        # Pre-experiment environment cleanup: ensure zero stale chaos experiments exist before baseline
-        print("\n>>> Pre-Experiment: Ensuring clean cluster state (zero stale chaos)...")
-        run_kubectl(["delete", "stresschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        run_kubectl(["delete", "podchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        run_kubectl(["delete", "networkchaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        run_kubectl(["delete", "dnschaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        run_kubectl(["delete", "iochaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        run_kubectl(["delete", "timechaos", "--all", "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        time.sleep(2)
-
+        # Require an independently verified empty Chaos list. Never erase
+        # unrelated active experiments as part of preflight.
         chaos_precheck = run_kubectl(
-            ["get", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos", "-A", "-o", "json"]
+            ["get", CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         )
-        active_chaos_count = _active_chaos_count(chaos_precheck.get("stdout", ""))
-        if active_chaos_count != 0:
-            evidence["phases"]["pre_fault_chaos_check"] = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "active_chaos_count": active_chaos_count,
-                "result": chaos_precheck,
-            }
-            print(f"  Active chaos remains ({active_chaos_count}); refusing to start incident setup.")
+        chaos_observation = _chaos_state_observation(chaos_precheck)
+        evidence["phases"]["pre_fault_chaos_check"] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "active_chaos_count": chaos_observation["count"],
+            "verified_zero": chaos_observation["verified_zero"],
+            "result": chaos_precheck,
+        }
+        if not chaos_observation["verified_zero"]:
+            print(
+                "  Zero active Chaos resources were not verified "
+                f"(observed_count={chaos_observation['count']}); refusing to inject."
+            )
             return abort_before_fault("pre_fault_chaos_not_zero")
+        preflight_path = _persist_stage4_preflight_evidence(evidence, chaos_precheck)
+        print(f"  Persisted clean preflight before injection: {preflight_path}")
 
         # Phase 2: Inject Fault
         print(f"\n>>> Phase 2: Injecting Fault ({SCENARIO_ID})...")
         manifest_path = os.path.join(REPO_ROOT, "bench", "chaos_manifests", "single_fault", "sf-002.yaml")
+        # Treat an apply timeout/error as potentially side-effecting until
+        # postflight proves the target resource is absent.
+        fault_crossed = True
         inject_res = run_kubectl(["apply", "-f", manifest_path])
         injection_success = inject_res.get("success") is True
-        if not injection_success:
-            released = release_experiment_reservation(reservation)
-            evidence["attempt_state"] = "RELEASED_PRE_FAULT"
-            evidence["reservation_released"] = released
-            evidence["outcome"] = "INVALID"
-            evidence["failure_phase"] = "fault_application"
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
-            evidence["prefault_evidence"] = _persist_stage4_prefault_failure(evidence)
-            print(f"  Fault application failed; reservation released={released}")
-            return evidence
-        consume_experiment_attempt(reservation)
-        fault_crossed = True
-        evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         evidence["phases"]["injection"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "manifest": manifest_path,
             "result": inject_res,
         }
+        if not injection_success:
+            consume_experiment_attempt(reservation)
+            evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
+            evidence["outcome"] = "INVALID"
+            evidence["failure_phase"] = "fault_application"
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
+            evidence["gate_g4_pass"] = False
+            primary_path = _persist_stage4_primary_evidence(evidence)
+            complete_experiment_attempt(reservation)
+            cleanup_record = reconcile_stage4_postflight_cleanup(
+                EXPERIMENT_ID,
+                timing="after_failed_injection_verdict",
+            )
+            evidence["postflight_cleanup"] = cleanup_record
+            print(
+                "  Fault application was unsuccessful or ambiguous; preserved the "
+                f"negative record ({primary_path}) and verified cleanup="
+                f"{cleanup_record['verified_zero_chaos']}"
+            )
+            return evidence
+        consume_experiment_attempt(reservation)
+        evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         print(f"  Chaos Mesh injection: {inject_res.get('stdout')}")
 
         # Phase 3: Observable Fault Verification
         print("\n>>> Phase 3: Verifying Observable Fault in Cluster...")
-        time.sleep(4)
+        time.sleep(4)  # noqa: ASYNC251
         chaos_check = run_kubectl(["get", TARGET_CHAOS_KIND.lower(), "-n", TARGET_CHAOS_NAMESPACE, TARGET_CHAOS_NAME, "-o", "json"])
         fault_observable = chaos_check.get("success") is True
         evidence["phases"]["observable_fault"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stresschaos_observed": fault_observable,
             "chaos_status": chaos_check.get("stdout")[:500],
         }
@@ -1333,7 +1778,7 @@ async def main() -> dict[str, Any]:
                 {"max_cores": None},
             )
         evidence["phases"]["degradation_proof"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "timeout_seconds": DEGRADATION_OBSERVATION_TIMEOUT_SECONDS,
             "poll_interval_seconds": DEGRADATION_POLL_INTERVAL_SECONDS,
             "decision": degradation_decision,
@@ -1346,22 +1791,14 @@ async def main() -> dict[str, Any]:
             evidence["failure_phase"] = (
                 "fault_activation" if not fault_observable else "measured_degradation"
             )
-            evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
             primary_path = _persist_stage4_primary_evidence(evidence)
             complete_experiment_attempt(reservation)
-            clean_res = run_kubectl(
-                ["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"]
+            cleanup_record = reconcile_stage4_postflight_cleanup(
+                EXPERIMENT_ID,
+                timing="after_failure_verdict_persisted",
             )
-            cleanup_record = {
-                "experiment_id": EXPERIMENT_ID,
-                "timing": "after_failure_verdict_persisted",
-                "affects_env_resolved": False,
-                "result": clean_res,
-            }
-            _write_json_atomic(
-                os.path.join(_experiment_evidence_dir(EXPERIMENT_ID), f"{EXPERIMENT_ID}.cleanup.json"),
-                cleanup_record,
-            )
+            evidence["postflight_cleanup"] = cleanup_record
             print(f"  Degradation proof failed; INVALID evidence saved: {primary_path}")
             return evidence
         evidence["phases"]["degradation_proof"]["passed"] = True
@@ -1388,7 +1825,7 @@ async def main() -> dict[str, Any]:
                         "summary": f"High CPU usage on {TARGET_SERVICE}",
                         "description": f"{TARGET_SERVICE} CPU utilization is at 90% load across 4 workers.",
                     },
-                    "startsAt": datetime.now(timezone.utc).isoformat(),
+                    "startsAt": datetime.now(UTC).isoformat(),
                 }
             ],
             "commonLabels": {
@@ -1420,14 +1857,18 @@ async def main() -> dict[str, Any]:
                 "tool": step.get("tool"),
                 "args": step.get("args"),
                 "output": step.get("output"),
-                "blocked_by_policy": step.get("blocked_by_policy", False),
+                **{
+                    marker: step.get(marker, False)
+                    for marker in BLOCKED_ACTION_MARKERS
+                    if marker in step
+                },
             }
             for step in rem_traj
             if isinstance(step, dict) and "tool" in step
         ]
 
         evidence["phases"]["coordinator_execution"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "incident_id": incident_result.get("incident_id"),
             "triage": triage_res.get("final"),
             "diagnosis": diagnosis_res.get("final"),
@@ -1435,15 +1876,21 @@ async def main() -> dict[str, Any]:
             "grounding_validation": incident_result.get("grounding_validation", {}),
             "model_proposed_action": remediation_res.get("final"),
             "executed_tool_actions": executed_tools,
+            "remediation_trajectory": rem_traj,
+            "target_consistency": incident_result.get("target_consistency"),
+            "incident_anchors": incident_result.get("incident_anchors"),
+            "environment_observation": incident_result.get("environment_observation"),
+            "settling": incident_result.get("settling"),
             "comms": comms_res.get("final"),
         }
 
         evidence["phases"]["verification"] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "verification_report": verifier_res,
             "env_resolved": incident_result.get("env_resolved", False),
             "agent_claimed_resolved": incident_result.get("agent_claimed_resolved", False),
         }
+        evidence["phases"]["settling"] = incident_result.get("settling")
 
         # Phase 5: Causal Gate G4 Evaluation (NO HARNESS DELETION PRE-VERIFICATION)
         harness_repaired_pre_verification = False
@@ -1455,10 +1902,10 @@ async def main() -> dict[str, Any]:
             incident_result=incident_result,
             harness_repaired_pre_verification=harness_repaired_pre_verification,
             degradation_proven=bool(degradation_decision["passed"]),
-            settling_completed=bool(
-                incident_result.get("settling", {}).get("settled", False)
-            ),
             primary_evidence_persisted=primary_evidence_persisted,
+        )
+        evidence["phases"]["coordinator_execution"]["remediation_tool_outcomes"] = (
+            eval_result["tool_outcomes"]
         )
 
         gate_g4_pass = eval_result["gate_g4_pass"]
@@ -1466,7 +1913,7 @@ async def main() -> dict[str, Any]:
         duration_s = round(time.time() - t0, 2)
 
         evidence["duration_seconds"] = duration_s
-        evidence["completed_at"] = datetime.now(timezone.utc).isoformat()
+        evidence["completed_at"] = datetime.now(UTC).isoformat()
         evidence["gate_g4_pass"] = gate_g4_pass
         evidence["causal_criteria"] = eval_result["criteria"]
 
@@ -1484,7 +1931,7 @@ async def main() -> dict[str, Any]:
         per_run_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.json")
         latest_file = os.path.join(evidence_dir, "golden_incident_sf002_manifest.json")
         if os.path.exists(per_run_file):
-            raise SystemExit(
+            raise RuntimeError(
                 f"Refusing to overwrite existing Stage 4 evidence '{per_run_file}'. "
                 "Historical experiment records are immutable. Re-run with a new "
                 "STAGE4_EXPERIMENT_ID (e.g. EXP-STAGE4-SF002-005)."
@@ -1501,18 +1948,13 @@ async def main() -> dict[str, Any]:
         # Recorded in a separate sidecar so the measured evidence file above
         # stays byte-immutable after the verdict.
         print("\n>>> Phase 6: Post-Verdict Cluster Safety Cleanup...")
-        clean_res = run_kubectl(["delete", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME, "-n", TARGET_CHAOS_NAMESPACE, "--ignore-not-found=true"])
-        cleanup_record = {
-            "experiment_id": EXPERIMENT_ID,
-            "timing": "after_verdict_persisted",
-            "affects_env_resolved": False,
-            "command": f"kubectl delete {TARGET_CHAOS_KIND.lower()} {TARGET_CHAOS_NAME} -n {TARGET_CHAOS_NAMESPACE} --ignore-not-found=true",
-            "result": clean_res,
-        }
-        cleanup_file = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.cleanup.json")
-        _write_json_atomic(cleanup_file, cleanup_record)
-        print(f"  Safety cleanup: {clean_res.get('stdout', 'clean')}")
-        print(f"  Cleanup record (sidecar): {cleanup_file}")
+        cleanup_record = reconcile_stage4_postflight_cleanup(EXPERIMENT_ID)
+        evidence["postflight_cleanup"] = cleanup_record
+        print(
+            "  Verified zero-Chaos postflight: "
+            f"{cleanup_record['verified_zero_chaos']} "
+            f"(cleanup record: {cleanup_record['cleanup_record_path']})"
+        )
 
         return evidence
 
@@ -1536,5 +1978,9 @@ async def main() -> dict[str, Any]:
 
 if __name__ == "__main__":
     rep = asyncio.run(main())
-    if not rep.get("gate_g4_pass"):
+    if (
+        not rep.get("gate_g4_pass")
+        or not isinstance(rep.get("postflight_cleanup"), dict)
+        or rep["postflight_cleanup"].get("verified_zero_chaos") is not True
+    ):
         sys.exit(1)

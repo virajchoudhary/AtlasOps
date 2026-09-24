@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from config.splits import get_split
 from recommender.baselines import (
     BM25ContentRecommender,
     PopularityRecommender,
@@ -21,6 +23,7 @@ from recommender.baselines import (
 from recommender.dataset import IncidentInteraction, load_interactions
 from recommender.evaluate import evaluate_recommender
 from recommender.hybrid import HybridRecommender
+from training.sft_provenance import canonical_json_sha256, file_sha256
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("train_hybrid")
@@ -38,7 +41,14 @@ def train_and_evaluate_hybrid(
     gamma: float = 0.15,
 ) -> tuple[HybridRecommender, dict[str, Any]]:
     """Train HybridRecommender on train partition and evaluate across all splits."""
-    corpus = interactions or load_interactions()
+    corpus = interactions if interactions is not None else load_interactions()
+    for interaction in corpus:
+        if interaction.split not in {"train", "val", "test"}:
+            raise ValueError(f"Unknown interaction split: {interaction.split}")
+        if interaction.scenario_id not in get_split(interaction.split):
+            raise ValueError(
+                f"Interaction {interaction.scenario_id} is outside its frozen split"
+            )
     train_data = [i for i in corpus if i.split == "train"]
     val_data = [i for i in corpus if i.split == "val"]
     test_data = [i for i in corpus if i.split == "test"]
@@ -92,6 +102,24 @@ def train_and_evaluate_hybrid(
             "HybridRecommender": test_metrics,
         },
         "checkpoint_path": str(ckpt_path.as_posix()),
+        "checkpoint_sha256": file_sha256(ckpt_path),
+        "dataset_provenance": {
+            "origin": "synthetic_scenario_derived",
+            "historical_interaction_feedback": False,
+            "interaction_rows_sha256": canonical_json_sha256(
+                [asdict(item) for item in corpus]
+            ),
+            "included_scenario_ids_by_split": {
+                split: sorted(item.scenario_id for item in corpus if item.split == split)
+                for split in ("train", "val", "test")
+            },
+            "scenario_catalog_sha256": file_sha256(
+                Path(__file__).resolve().parents[1] / "config/scenario_catalog.py"
+            ),
+            "dataset_generator_sha256": file_sha256(
+                Path(__file__).resolve().parent / "dataset.py"
+            ),
+        },
     }
 
     ev_path = output_evidence_path or (EVIDENCE_DIR / "rs_hybrid_eval.json")

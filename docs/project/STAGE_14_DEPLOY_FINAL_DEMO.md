@@ -1,6 +1,6 @@
 # Stage 14: Deploy Final Demo Safely (Gate G14)
 
-This technical specification and governance document records the packaging, architecture, and verification of the **AtlasOps Safe Operator Demonstration Console and CLI Launcher**.
+This document records the local demo implementation. **G14 is PARTIAL**: a safe-mode UI and launcher have local tests, while target deployment, service health, and live operational safety remain unverified.
 
 ---
 
@@ -26,12 +26,12 @@ The AtlasOps demonstration suite is structured into an interactive 7-tab Gradio 
 
 ---
 
-## 2. Zero-Risk Safe Mode Guardrails
+## 2. Safe Mode Guardrails
 
 To ensure that the demonstration console can be executed safely by evaluators without requiring real cluster access or risking accidental infrastructure mutations:
 - **Default Safe Mode (`DEMO_SAFE_MODE=1`)**:
-  - Intercepts all destructive `kubectl` and `Chaos Mesh` mutating calls.
-  - Returns clear simulated outcomes with full diagnostic telemetry.
+  - The dashboard's `_kubectl`, `_apply_chaos`, and `_reset_chaos` paths return simulated outcomes instead of issuing their cluster commands.
+  - The launcher binds to `127.0.0.1` by default. These controls are local UI behavior, not a system-wide guarantee that every AtlasOps entrypoint is non-mutating.
 - **Explicit Live Flag (`--live-cluster`)**:
   - Live mutating commands are only executed when explicitly authorized with `--live-cluster` in controlled sandbox clusters.
 
@@ -43,8 +43,8 @@ To ensure that the demonstration console can be executed safely by evaluators wi
 # Launch in safe demonstration mode (default)
 python -m demo.launcher --port 7860
 
-# Launch with public sharing link
-python -m demo.launcher --port 7860 --share
+# Use an explicit host only after reviewing network exposure and approval controls
+python -m demo.launcher --port 7860 --host 127.0.0.1
 ```
 
 ---
@@ -58,4 +58,4 @@ Gate G14 is verified by automated unit tests in `tests/test_stage14_demo_safety.
 - `test_load_ablation_matrix_and_comparison_table`: **PASS** (Benchmark and ablation matrix loaders verified).
 - `test_demo_launcher_cli_configuration`: **PASS** (CLI argument parser verified).
 
-**Gate G14 Status**: **`PASS`**
+**Gate G14 Status**: **`PARTIAL`** — local demo implementation and tests are available; live deployment is not certified.

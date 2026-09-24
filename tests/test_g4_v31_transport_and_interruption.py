@@ -151,6 +151,8 @@ def test_post_t0_interruption_case_a_early_timeout_inconclusive(tmp_path):
 
     def mock_run_kubectl(cmd):
         if cmd[0] == "get":
+            if len(cmd) > 1 and cmd[1] == runner.CHAOS_RESOURCE_KINDS:
+                return {"success": True, "stdout": json.dumps({"items": []}), "returncode": 0}
             return {"success": True, "stdout": fake_chaos_yaml, "returncode": 0}
         elif cmd[0] == "delete":
             return {"success": True, "stdout": "deleted", "returncode": 0}
@@ -197,6 +199,7 @@ def test_post_t0_interruption_case_a_early_timeout_inconclusive(tmp_path):
     assert clean["timing"] == "after_post_t0_interruption"
     assert clean["affects_env_resolved"] is False
     assert clean["result"]["success"] is True
+    assert clean["verified_zero_chaos"] is True
 
     # Attempt file remains in CONSUMED state (never released or completed)
     current_attempt = json.loads(attempt_file.read_text(encoding="utf-8"))

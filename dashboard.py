@@ -110,19 +110,28 @@ def _reset_chaos() -> str:
 def _load_comparison_table() -> str:
     p = RESULTS_DIR / "comparison_table.md"
     if p.exists():
-        return p.read_text(encoding="utf-8")
-    return "Benchmark comparison data available in Stage 13 matrix."
+        return (
+            "**UNVERIFIED HISTORICAL COMPARISON — mock outputs may be present.**\n\n"
+            + p.read_text(encoding="utf-8")
+        )
+    return "No verified empirical benchmark comparison is available."
 
 
 def _load_ablation_matrix() -> str:
     p = RESULTS_DIR / "final_ablation_matrix.md"
     if p.exists():
-        return p.read_text(encoding="utf-8")
+        return (
+            "**NON-EMPIRICAL HISTORICAL MATRIX — not a gate result.**\n\n"
+            + p.read_text(encoding="utf-8")
+        )
     ev_path = EVIDENCE_DIR / "stage13/ablation_benchmark_results.json"
     if ev_path.exists():
         data = json.loads(ev_path.read_text(encoding="utf-8"))
-        return f"```json\n{json.dumps(data, indent=2)}\n```"
-    return "Ablation results matrix initializing."
+        return (
+            "**NON-EMPIRICAL HISTORICAL RESULTS — predetermined profiles.**\n\n"
+            f"```json\n{json.dumps(data, indent=2)}\n```"
+        )
+    return "No verified empirical ablation matrix is available."
 
 
 def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k: int) -> str:
@@ -148,7 +157,7 @@ def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k
             "",
         ]
         for idx, r in enumerate(recs, 1):
-            md_lines.append(f"#### #{idx} — [{r.runbook_id}] {r.title} (Match Confidence: `{r.score:.3f}`)")
+            md_lines.append(f"#### #{idx} — [{r.runbook_id}] {r.title} (Ranking Score: `{r.score:.3f}`)")
             md_lines.append(f"- **Category**: `{r.category}`")
             md_lines.append(f"- **Explanation**: {r.explanation}")
             md_lines.append(f"- **Suggested Tools**: `{'`, `'.join(r.suggested_tools)}`")
@@ -156,6 +165,7 @@ def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k
             for act in r.actions:
                 md_lines.append(f"  1. {act}")
             md_lines.append("")
+        md_lines.append("_Ranker inputs are scenario-derived; scores are not calibrated recovery probabilities._")
         return "\n".join(md_lines)
     except Exception as e:
         return f"❌ Recommender query error: {e}"

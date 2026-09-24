@@ -17,7 +17,7 @@ log = logging.getLogger("demo_launcher")
 
 
 def launch_demo(
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 7860,
     safe_mode: bool = True,
     share: bool = False,
@@ -37,7 +37,7 @@ def launch_demo(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Safe Operator Demo Console")
-    parser.add_argument("--host", default="0.0.0.0", help="Binding host interface")
+    parser.add_argument("--host", default="127.0.0.1", help="Binding host interface")
     parser.add_argument("--port", type=int, default=7860, help="Web server port")
     parser.add_argument("--live-cluster", action="store_true", default=False, help="Enable live cluster mutating actions (default: safe mode)")
     parser.add_argument("--share", action="store_true", default=False, help="Create a public Gradio share link")

@@ -44,6 +44,7 @@ class CollaborativeGraphRecommender(BaseRecommender):
     def __init__(self):
         self.service_runbook_matrix: dict[str, dict[str, int]] = {}
         self.alert_runbook_matrix: dict[str, dict[str, int]] = {}
+        # Retained for loading older checkpoints; benchmark tier is never a feature.
         self.tier_runbook_matrix: dict[str, dict[str, int]] = {}
 
     def fit(self, interactions: list[IncidentInteraction]) -> CollaborativeGraphRecommender:
@@ -54,17 +55,11 @@ class CollaborativeGraphRecommender(BaseRecommender):
         for item in interactions:
             rb_id = item.relevant_runbook_id
             alert = item.alertname
-            tier = item.tier
 
             # Alert mapping
             if alert not in self.alert_runbook_matrix:
                 self.alert_runbook_matrix[alert] = {}
             self.alert_runbook_matrix[alert][rb_id] = self.alert_runbook_matrix[alert].get(rb_id, 0) + 1
-
-            # Tier mapping
-            if tier not in self.tier_runbook_matrix:
-                self.tier_runbook_matrix[tier] = {}
-            self.tier_runbook_matrix[tier][rb_id] = self.tier_runbook_matrix[tier].get(rb_id, 0) + 1
 
             # Service mappings
             for svc in item.affected_services:
@@ -74,7 +69,7 @@ class CollaborativeGraphRecommender(BaseRecommender):
 
         return self
 
-    def score_item(self, alertname: str, services: list[str], tier: str, rb_id: str) -> float:
+    def score_item(self, alertname: str, services: list[str], rb_id: str) -> float:
         """Compute collaborative transition graph affinity score in [0, 1]."""
         score = 0.0
         components = 0
@@ -96,14 +91,6 @@ class CollaborativeGraphRecommender(BaseRecommender):
                     score += counts.get(rb_id, 0) / total
                     components += 1
 
-        # Tier pattern affinity
-        if tier in self.tier_runbook_matrix:
-            counts = self.tier_runbook_matrix[tier]
-            total = sum(counts.values())
-            if total > 0:
-                score += 0.5 * (counts.get(rb_id, 0) / total)
-                components += 0.5
-
         return (score / components) if components > 0 else 0.0
 
     def recommend(
@@ -114,16 +101,14 @@ class CollaborativeGraphRecommender(BaseRecommender):
         if isinstance(query, IncidentInteraction):
             alert = query.alertname
             services = query.affected_services
-            tier = query.tier
         else:
             alert = query.get("alertname", "")
             svcs = query.get("affected_services", [])
             services = svcs if isinstance(svcs, list) else [str(svcs)]
-            tier = query.get("tier", "single_fault")
 
         scored = []
         for rb_id in RUNBOOK_CATALOG.keys():
-            s = self.score_item(alert, services, tier, rb_id)
+            s = self.score_item(alert, services, rb_id)
             scored.append((rb_id, round(s, 4)))
 
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -211,8 +196,8 @@ class HybridRecommender(BaseRecommender):
                 continue
 
             explanation = (
-                f"Recommended '{rb.title}' with confidence {score:.2f} based on "
-                f"symptom overlap with {rb.category} patterns and historical recovery success."
+                f"Recommended '{rb.title}' with ranking score {score:.2f} based on "
+                f"symptom overlap with {rb.category} patterns and scenario-derived examples."
             )
 
             rec = RunbookRecommendation(

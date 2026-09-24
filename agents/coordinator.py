@@ -11,13 +11,15 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Security
-from fastapi.security import APIKeyHeader
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 from agents._http_retry import post_with_retry
@@ -25,6 +27,7 @@ from agents.approval import approval_gate, approval_mode_for_severity
 from agents.audit import audit_log, require_audit_log
 from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
+from agents.grounding import build_grounding_reports
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import emit as thought_emit
 from agents.tool_policy import (
@@ -33,11 +36,9 @@ from agents.tool_policy import (
     ROLE_ALLOWED_TOOLS,
 )
 from agents.tools import TOOL_REGISTRY
-from agents.grounding import build_grounding_reports
 from agents.tools.alertmanager import alertmanager_list_alerts
 from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES
 from config.runtime import StepRewardTracker
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("coordinator")
@@ -205,6 +206,402 @@ _RETRY_REASON_NO_TOOL_CALL = "remediation_no_tool_call_retry"
 _TERMINATION_MAX_TURNS = "max_turns_exhausted"
 SETTLE_POLL_INTERVAL_SECONDS = 2
 SETTLE_TIMEOUT_SECONDS = 30
+
+_MODEL_FORBIDDEN_KEYS = frozenset({
+    "benchmark",
+    "benchmark_labels",
+    "benchmark_truth",
+    "expected_checks",
+    "expected_predicates",
+    "expected_remediation",
+    "expected_root_cause",
+    "ground_truth",
+    "known_good_runbook",
+    "scenario",
+    "scenario_id",
+    "scenario_name",
+    "split",
+    "tier",
+    "verifier_predicates",
+})
+_REMEDIATION_CONTROL_KEY = "_runtime_control"
+_TERMINAL_ERROR_CLASSES = frozenset({
+    "authorization_failed",
+    "configuration_error",
+    "evidence_precondition",
+    "forbidden",
+    "invalid_action_arguments",
+    "invalid_arguments",
+    "invalid_revision",
+    "not_found",
+    "safety_block",
+    "terminal_action_blocked",
+})
+_MUTATING_ACTION_TOOLS = frozenset(CLUSTER_MUTATING_TOOLS)
+
+MutationObserver = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+_ACTIVE_MUTATION_OBSERVER: ContextVar[MutationObserver | None] = ContextVar(
+    "atlasops_active_mutation_observer",
+    default=None,
+)
+
+
+def _is_mutating_action(tool: str, args: dict[str, Any] | None = None) -> bool:
+    if tool not in _MUTATING_ACTION_TOOLS:
+        return False
+    if tool == "kubectl_rollout":
+        return str((args or {}).get("action") or "").strip().casefold() == "undo"
+    return True
+
+
+def _normalise_context_key(key: Any) -> str:
+    return str(key).strip().casefold()
+
+
+def _strip_model_forbidden_context(value: Any) -> Any:
+    """Remove evaluation-only fields before serialising model-visible context."""
+    if isinstance(value, dict):
+        return {
+            str(key): _strip_model_forbidden_context(item)
+            for key, item in value.items()
+            if _normalise_context_key(key) not in _MODEL_FORBIDDEN_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_model_forbidden_context(item) for item in value]
+    return value
+
+
+def _model_safe_tool_output(output: dict[str, Any]) -> dict[str, Any]:
+    safe = _strip_model_forbidden_context(output)
+    return safe if isinstance(safe, dict) else {"value": safe}
+
+
+def model_visible_alert(alert: dict[str, Any] | None) -> dict[str, Any]:
+    """Return an operational alert view without benchmark/evaluation metadata."""
+    visible = _strip_model_forbidden_context(alert or {})
+    return visible if isinstance(visible, dict) else {}
+
+
+def build_incident_anchors(alert: dict[str, Any] | None) -> dict[str, Any]:
+    """Derive immutable primary identity from the incoming operational alert."""
+    model_alert = model_visible_alert(alert)
+    common_labels = model_alert.get("commonLabels") or {}
+    if not isinstance(common_labels, dict):
+        common_labels = {}
+    alert_items = model_alert.get("alerts") or []
+    if not isinstance(alert_items, list):
+        alert_items = []
+    first = alert_items[0] if alert_items and isinstance(alert_items[0], dict) else {}
+    labels = first.get("labels") or {}
+    annotations = first.get("annotations") or {}
+    if not isinstance(labels, dict):
+        labels = {}
+    if not isinstance(annotations, dict):
+        annotations = {}
+
+    def first_value(*keys: str) -> str:
+        for source in (common_labels, labels):
+            for key in keys:
+                value = source.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+        return ""
+
+    merged_labels = {
+        **{str(k): v for k, v in labels.items()},
+        **{str(k): v for k, v in common_labels.items()},
+    }
+    return {
+        "alert_name": first_value("alertname", "alert_name"),
+        "primary_service": first_value("service", "deployment", "app", "workload"),
+        "namespace": first_value("namespace") or "default",
+        "labels": merged_labels,
+        "original_description": str(
+            annotations.get("description")
+            or annotations.get("summary")
+            or model_alert.get("description")
+            or ""
+        ),
+    }
+
+
+def extract_tool_observations(agent_result: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Extract tool observations while preserving tool, args, and result provenance."""
+    observations: list[dict[str, Any]] = []
+    for entry in (agent_result or {}).get("trajectory", []) or []:
+        if not isinstance(entry, dict) or not entry.get("tool") or "output" not in entry:
+            continue
+        observations.append({
+            "tool": entry.get("tool"),
+            "args": entry.get("args", {}),
+            "output": _strip_model_forbidden_context(entry.get("output")),
+            **(
+                {"blocked_by_policy": True}
+                if entry.get("blocked_by_policy")
+                else {}
+            ),
+            **(
+                {"blocked_by_terminal_error": True}
+                if entry.get("blocked_by_terminal_error")
+                else {}
+            ),
+        })
+    return observations
+
+
+def validate_target_consistency(
+    anchors: dict[str, Any],
+    triage_final: dict[str, Any] | None,
+    observations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Validate model-reported targets against the alert's primary target."""
+    primary = str(anchors.get("primary_service") or "").strip()
+    reported: list[str] = []
+    triage_final = triage_final or {}
+    for value in triage_final.get("affected_services") or []:
+        if str(value).strip():
+            reported.append(str(value).strip())
+    blast_radius = triage_final.get("blast_radius") or {}
+    if not isinstance(blast_radius, dict):
+        blast_radius = {}
+    for value in blast_radius.get("services") or []:
+        if str(value).strip():
+            reported.append(str(value).strip())
+    reported = list(dict.fromkeys(reported))
+
+    base = {
+        "primary_target": primary or None,
+        "reported_targets": reported,
+        "namespace": anchors.get("namespace"),
+        "requires_review": False,
+    }
+    if not primary:
+        return {**base, "status": "no_explicit_primary_target"}
+    if not reported or primary.casefold() in {value.casefold() for value in reported}:
+        return {**base, "status": "primary_target_preserved"}
+
+    observed_support = False
+    for observation in observations or []:
+        output = observation.get("output")
+        output_text = json.dumps(output, ensure_ascii=False).casefold()
+        if any(value.casefold() in output_text for value in reported):
+            observed_support = True
+            break
+    return {
+        **base,
+        "status": "mismatch_observed" if observed_support else "mismatch_unsubstantiated",
+        "observed_support": observed_support,
+        "requires_review": not observed_support,
+    }
+
+
+def _chaos_observation_from_observations(
+    observations: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Summarise generic observed Chaos resources without scenario inference."""
+    active: list[dict[str, Any]] = []
+    statuses: list[str] = []
+    for observation in observations or []:
+        if observation.get("tool") != "chaos_list_experiments":
+            continue
+        output = observation.get("output") or {}
+        if not isinstance(output, dict):
+            continue
+        statuses.append(str(output.get("observation_status") or "unknown"))
+        for item in output.get("active_experiments") or []:
+            if isinstance(item, dict):
+                active.append(dict(item))
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in active:
+        key = (
+            str(item.get("kind") or ""),
+            str(item.get("name") or ""),
+            str(item.get("namespace") or ""),
+        )
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    if statuses and any(item not in {"observed", "observed_empty"} for item in statuses):
+        status = "unavailable"
+    elif active:
+        status = "observed"
+    elif statuses and all(item in {"observed", "observed_empty"} for item in statuses):
+        status = "observed_empty"
+    else:
+        status = "not_observed"
+    return {
+        "observation_status": status,
+        "active_experiments": deduped,
+        "count": len(deduped),
+    }
+
+
+def _all_runtime_observations(user_input: dict[str, Any]) -> list[dict[str, Any]]:
+    observations: list[dict[str, Any]] = []
+    for key in (
+        "triage_observations",
+        "diagnosis_observations",
+        "environment_observations",
+        "observations",
+    ):
+        value = user_input.get(key)
+        if isinstance(value, list):
+            observations.extend(item for item in value if isinstance(item, dict))
+    environment_observation = user_input.get("environment_observation")
+    if isinstance(environment_observation, dict):
+        observations.append({
+            "tool": "chaos_list_experiments",
+            "args": {},
+            "output": environment_observation,
+        })
+    return observations
+
+
+def _positive_deployment_evidence(user_input: dict[str, Any], app: str) -> bool:
+    """Require actual non-empty Argo history before permitting rollback."""
+    for observation in _all_runtime_observations(user_input):
+        tool = observation.get("tool")
+        if tool == "kubectl_rollout":
+            args = observation.get("args") or {}
+            output = observation.get("output") or {}
+            resource = str(args.get("resource") or "").strip().split("/", 1)[-1]
+            if (
+                str(args.get("action") or "").strip().casefold() == "history"
+                and resource == app
+                and isinstance(output, dict)
+                and output.get("success") is True
+                and str(output.get("stdout") or "").strip()
+            ):
+                return True
+            continue
+        if tool != "argocd_app_history":
+            continue
+        args = observation.get("args") or {}
+        output = observation.get("output") or {}
+        if not isinstance(output, dict):
+            continue
+        if str(args.get("app") or "").strip() != app:
+            continue
+        history = output.get("history")
+        if (
+            output.get("success") is True
+            and isinstance(history, list)
+            and history
+            and any(
+                isinstance(item, dict)
+                and (item.get("id") is not None or item.get("revision"))
+                for item in history
+            )
+        ):
+            return True
+    return False
+
+
+def _observed_chaos_resource(user_input: dict[str, Any], args: dict[str, Any]) -> bool:
+    expected = (
+        str(args.get("kind") or "").casefold(),
+        str(args.get("name") or ""),
+        str(args.get("namespace") or "chaos-mesh").casefold(),
+    )
+    for observation in _all_runtime_observations(user_input):
+        if observation.get("tool") != "chaos_list_experiments":
+            continue
+        output = observation.get("output") or {}
+        for item in output.get("active_experiments") or []:
+            if not isinstance(item, dict):
+                continue
+            observed = (
+                str(item.get("kind") or "").casefold(),
+                str(item.get("name") or ""),
+                str(item.get("namespace") or "").casefold(),
+            )
+            if observed == expected:
+                return True
+    return False
+
+
+def _check_remediation_action_preconditions(
+    tool: str,
+    args: dict[str, Any],
+    user_input: dict[str, Any],
+) -> str | None:
+    control = user_input.get(_REMEDIATION_CONTROL_KEY) or {}
+    if not isinstance(control, dict) or not control.get("enforce_action_preconditions"):
+        return None
+    rollback_target = ""
+    if tool == "argocd_rollback":
+        rollback_target = str(args.get("app") or "").strip()
+    elif tool == "kubectl_rollout" and str(args.get("action") or "").strip() == "undo":
+        resource = str(args.get("resource") or "").strip()
+        rollback_target = resource.split("/", 1)[-1]
+
+    if rollback_target:
+        app = rollback_target
+        if not _positive_deployment_evidence(user_input, app):
+            return (
+                "evidence_precondition: deployment rollback requires positive, "
+                f"non-empty deployment history evidence for app {app!r}"
+            )
+        if tool == "argocd_rollback":
+            revision = str(args.get("revision") or "").strip()
+            known_revisions: set[str] = set()
+            for observation in _all_runtime_observations(user_input):
+                if observation.get("tool") != "argocd_app_history":
+                    continue
+                if str((observation.get("args") or {}).get("app") or "").strip() != app:
+                    continue
+                output = observation.get("output") or {}
+                history = output.get("history") if isinstance(output, dict) else None
+                for item in history if isinstance(history, list) else []:
+                    if isinstance(item, dict):
+                        for value in (item.get("id"), item.get("revision")):
+                            if value is not None:
+                                known_revisions.add(str(value))
+            if revision not in known_revisions:
+                return (
+                    "evidence_precondition: rollback revision is not present in "
+                    f"observed history for app {app!r}"
+                )
+    if tool == "chaos_stop_experiment" and not _observed_chaos_resource(user_input, args):
+        return (
+            "evidence_precondition: chaos_stop_experiment requires a matching "
+            "active Chaos resource observation"
+        )
+    return None
+
+
+def _action_identity(tool: str, args: dict[str, Any]) -> tuple[str, str]:
+    if tool == "argocd_rollback":
+        return tool, str(args.get("app") or "").strip().casefold()
+    if tool == "kubectl_rollout":
+        return tool, f"{args.get('namespace', 'default')}:{args.get('resource', '')}".casefold()
+    if tool == "kubectl_scale":
+        return tool, f"{args.get('namespace', 'default')}:{args.get('deployment', '')}".casefold()
+    if tool == "chaos_stop_experiment":
+        return (
+            tool,
+            f"{args.get('kind', '')}:{args.get('namespace', 'chaos-mesh')}:{args.get('name', '')}".casefold(),
+        )
+    return tool, tool
+
+
+def _terminal_error_class(output: dict[str, Any]) -> str | None:
+    if output.get("success") is True:
+        return None
+    error_class = str(output.get("error_class") or "").strip().casefold()
+    if error_class in _TERMINAL_ERROR_CLASSES:
+        return error_class
+    error = str(output.get("error") or "").casefold()
+    if "invalid revision" in error:
+        return "invalid_revision"
+    if "invalid rollout action" in error or "invalid namespace" in error:
+        return "invalid_action_arguments"
+    if "authorization" in error or "forbidden" in error:
+        return "authorization_failed"
+    if "not found" in error or "doesn't have a resource type" in error:
+        return "not_found"
+    return None
 
 
 def _model_turn_record(
@@ -378,10 +775,17 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
     require_audit_log()
     system_prompt = load_prompt(role)
-    incident_id = str(user_input.get("incident_id", "unknown"))
+    control = user_input.get(_REMEDIATION_CONTROL_KEY) or {}
+    model_input = {
+        key: value
+        for key, value in user_input.items()
+        if key != _REMEDIATION_CONTROL_KEY
+    }
+    model_input = _strip_model_forbidden_context(model_input)
+    incident_id = str(model_input.get("incident_id", "unknown"))
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(user_input, indent=2)},
+        {"role": "user", "content": json.dumps(model_input, indent=2)},
     ]
     trajectory: list[dict[str, Any]] = []
     step_tracker = StepRewardTracker()
@@ -389,16 +793,80 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
     _tool_counts: dict[str, int] = {}  # tool_name → total calls this run (per-tool cap)
     _mutating_tool_executed: bool = False
     _executed_actions: list[dict[str, Any]] = []
+    _terminal_actions: dict[tuple[str, str], str] = {}
+    _mutation_in_response = False
+    _verifier_resolved = False
+    _runtime_context: dict[str, Any] = {
+        **model_input,
+        "observations": [],
+        _REMEDIATION_CONTROL_KEY: control,
+    }
+    mutation_observer = _ACTIVE_MUTATION_OBSERVER.get()
     _remediation_retry_given: bool = False
     _last_choice: dict[str, Any] | None = None
     _last_raw_msg: dict[str, Any] | None = None
     _remediation_turn_record: dict[str, Any] | None = None
+
+    def _record_blocked_tool(
+        tc: dict[str, Any],
+        fn_name: str,
+        fn_args: dict[str, Any],
+        tool_output: dict[str, Any],
+        marker: str,
+        policy_check: str,
+    ) -> None:
+        if _remediation_turn_record is not None:
+            _remediation_turn_record["validation_state"] = marker
+            _remediation_turn_record["tool_outcomes"].append(
+                {
+                    "id": tc.get("id"),
+                    "name": fn_name,
+                    "validation": "blocked",
+                    "execution": "blocked",
+                    "executed": False,
+                }
+            )
+        audit_log.record(
+            incident_id=incident_id,
+            agent_role=role,
+            action_type="tool_result",
+            tool_name=fn_name,
+            tool_args=fn_args,
+            result_summary=str(tool_output.get("error") or marker)[:300],
+            policy_check=policy_check,
+        )
+        thought_emit(
+            role,
+            "tool_result",
+            f"⚠️ {marker}: {str(tool_output.get('error') or '')[:180]}",
+            tool=fn_name,
+        )
+        trajectory.append({
+            "role": role,
+            "turn": turn,
+            "tool": fn_name,
+            "args": fn_args,
+            "output": tool_output,
+            marker: True,
+        })
+        _runtime_context["observations"].append({
+            "tool": fn_name,
+            "args": fn_args,
+            "output": tool_output,
+            marker: True,
+        })
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "content": json.dumps(_model_safe_tool_output(tool_output)),
+        })
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     timeout_cfg = httpx.Timeout(timeout=LLM_REQUEST_TIMEOUT_SECONDS, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as client:
         for turn in range(max_turns):
             turn_executed_names: list[str] = []
+            _mutation_in_response = False
             tool_choice = (
                 "required"
                 if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
@@ -450,7 +918,12 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 # Generic Remediation Tool Execution Retry:
                 # If remediation model returned conclusion text with NO actual tool calls
                 # and no mutating tool has executed yet, grant one structured retry.
-                if role == "remediation" and not _mutating_tool_executed and not _remediation_retry_given:
+                if (
+                    role == "remediation"
+                    and not _mutating_tool_executed
+                    and not _remediation_retry_given
+                    and not _terminal_actions
+                ):
                     _remediation_retry_given = True
                     # Persist the discarded model turn BEFORE continuing (Run-004
                     # observability gap): prose/empty responses must survive.
@@ -570,17 +1043,99 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                             "invalid_arguments": True,
                         }
                     )
+                    _runtime_context["observations"].append({
+                        "tool": fn_name,
+                        "args": {},
+                        "output": tool_output,
+                        "invalid_arguments": True,
+                    })
                     messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": json.dumps(tool_output),
+                            "content": json.dumps(_model_safe_tool_output(tool_output)),
                         }
                     )
                     continue
-                policy_error = _check_tool_policy(role, fn_name, fn_args, user_input)
+                action_key = _action_identity(fn_name, fn_args)
+                if role == "remediation" and _is_mutating_action(fn_name, fn_args):
+                    if _verifier_resolved:
+                        _record_blocked_tool(
+                            tc,
+                            fn_name,
+                            fn_args,
+                            {
+                                "success": False,
+                                "error": "blocked_by_verifier: environment is already resolved",
+                                "error_class": "safety_block",
+                            },
+                            "blocked_by_verifier",
+                            "verifier_resolved",
+                        )
+                        continue
+                    if _mutation_in_response:
+                        _record_blocked_tool(
+                            tc,
+                            fn_name,
+                            fn_args,
+                            {
+                                "success": False,
+                                "error": (
+                                    "blocked_by_action_observation: one mutating action "
+                                    "must be observed before another action is selected"
+                                ),
+                                "error_class": "safety_block",
+                            },
+                            "blocked_by_action_observation",
+                            "one_mutation_per_model_response",
+                        )
+                        continue
+                    terminal_reason = _terminal_actions.get(action_key)
+                    if terminal_reason:
+                        _record_blocked_tool(
+                            tc,
+                            fn_name,
+                            fn_args,
+                            {
+                                "success": False,
+                                "error": (
+                                    "blocked_by_terminal_error: action class is terminal "
+                                    f"after {terminal_reason}"
+                                ),
+                                "error_class": "terminal_action_blocked",
+                            },
+                            "blocked_by_terminal_error",
+                            "terminal_action_class",
+                        )
+                        continue
+
+                precondition_error = _check_remediation_action_preconditions(
+                    fn_name,
+                    fn_args,
+                    _runtime_context,
+                )
+                if precondition_error:
+                    if role == "remediation" and _is_mutating_action(fn_name, fn_args):
+                        _terminal_actions[action_key] = "evidence_precondition"
+                    _record_blocked_tool(
+                        tc,
+                        fn_name,
+                        fn_args,
+                        {
+                            "success": False,
+                            "error": precondition_error,
+                            "error_class": "evidence_precondition",
+                        },
+                        "blocked_by_evidence",
+                        "evidence_precondition",
+                    )
+                    continue
+
+                policy_error = _check_tool_policy(role, fn_name, fn_args, _runtime_context)
                 if policy_error:
                     tool_output = {"success": False, "error": policy_error}
+                    if role == "remediation" and _is_mutating_action(fn_name, fn_args):
+                        _terminal_actions[action_key] = "safety_block"
                     if _remediation_turn_record is not None:
                         _remediation_turn_record["validation_state"] = "blocked_by_policy"
                         _remediation_turn_record["tool_outcomes"].append(
@@ -610,7 +1165,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         {
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": json.dumps(tool_output),
+                            "content": json.dumps(_model_safe_tool_output(tool_output)),
                         }
                     )
                     continue
@@ -630,7 +1185,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     circuit_breaker.check_before_tool_call(
                         incident_id=incident_id,
                         tool_name=fn_name,
-                        is_cluster_mutating=fn_name in CLUSTER_MUTATING_TOOLS,
+                        is_cluster_mutating=_is_mutating_action(fn_name, fn_args),
                     )
                 except CircuitBreakerTripped as e:
                     tool_output = {"success": False, "error": str(e), "blocked_by_circuit_breaker": True}
@@ -663,7 +1218,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         {
                             "role": "tool",
                             "tool_call_id": tc["id"],
-                            "content": json.dumps(tool_output),
+                            "content": json.dumps(_model_safe_tool_output(tool_output)),
                         }
                     )
                     continue
@@ -677,7 +1232,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         _remediation_turn_record["tool_outcomes"].append(
                             {"id": tc.get("id"), "name": fn_name, "validation": "allowed", "execution": "dedup_blocked", "executed": False}
                         )
-                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(tool_output)})
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": json.dumps(_model_safe_tool_output(tool_output)),
+                    })
                     trajectory.append({"role": role, "turn": turn, "tool": fn_name, "args": fn_args, "output": tool_output, "dedup_blocked": True})
                     continue
                 # Dedup guard 2: same tool called >6 times total (catches arg-variation loops)
@@ -691,7 +1250,11 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         _remediation_turn_record["tool_outcomes"].append(
                             {"id": tc.get("id"), "name": fn_name, "validation": "allowed", "execution": "cap_blocked", "executed": False}
                         )
-                    messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(tool_output)})
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": json.dumps(_model_safe_tool_output(tool_output)),
+                    })
                     trajectory.append({"role": role, "turn": turn, "tool": fn_name, "args": fn_args, "output": tool_output, "cap_blocked": True})
                     continue
 
@@ -703,7 +1266,7 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         tool_output = fn(**fn_args)
                     except Exception as e:
                         tool_output = {"error": f"Tool execution failed: {e}"}
-                if fn_name in CLUSTER_MUTATING_TOOLS and bool(tool_output.get("success", False)):
+                if _is_mutating_action(fn_name, fn_args) and bool(tool_output.get("success", False)):
                     _mutating_tool_executed = True
                 if fn is not None:
                     turn_executed_names.append(fn_name)
@@ -725,12 +1288,50 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                             "executed": known_tool,
                         }
                     )
-                _executed_actions.append({
+                action_record = {
                     "step": len(_executed_actions) + 1,
                     "tool": fn_name,
                     "args": fn_args,
                     "output": tool_output,
                     "success": bool(tool_output.get("success", False)),
+                }
+                if role == "remediation" and _is_mutating_action(fn_name, fn_args):
+                    terminal_error = _terminal_error_class(tool_output)
+                    if terminal_error:
+                        _terminal_actions[action_key] = terminal_error
+                mutation_observation: dict[str, Any] | None = None
+                if (
+                    role == "remediation"
+                    and _is_mutating_action(fn_name, fn_args)
+                    and fn is not None
+                ):
+                    _mutation_in_response = True
+                    if mutation_observer is not None:
+                        try:
+                            mutation_observation = await mutation_observer({
+                                **action_record,
+                                "incident_id": incident_id,
+                            })
+                        except Exception as exc:
+                            mutation_observation = {
+                                "env_resolved": False,
+                                "verification_status": "observation_error",
+                                "error": f"{type(exc).__name__}: {exc}",
+                            }
+                        action_record["verifier_observation"] = mutation_observation
+                        if mutation_observation.get("env_resolved") is True:
+                            _verifier_resolved = True
+
+                _executed_actions.append(action_record)
+                _runtime_context["observations"].append({
+                    "tool": fn_name,
+                    "args": fn_args,
+                    "output": tool_output,
+                    **(
+                        {"verifier_observation": mutation_observation}
+                        if mutation_observation is not None
+                        else {}
+                    ),
                 })
                 # Dense per-step reward signal
                 step_reward = step_tracker.record(fn_name, fn_args, tool_output)
@@ -752,12 +1353,49 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                     "role": role, "turn": turn, "tool": fn_name,
                     "args": fn_args, "output": tool_output,
                     "step_reward": step_reward,
+                    **(
+                        {"verifier_observation": mutation_observation}
+                        if mutation_observation is not None
+                        else {}
+                    ),
                 })
+                tool_message = _model_safe_tool_output(tool_output)
+                if mutation_observation is not None:
+                    tool_message["verifier_observation"] = _strip_model_forbidden_context(
+                        mutation_observation
+                    )
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(tool_output)[:TOOL_OUTPUT_MAX_CHARS],
+                    "content": json.dumps(tool_message)[:TOOL_OUTPUT_MAX_CHARS],
                 })
+
+                if _verifier_resolved:
+                    controller_final = {
+                        "incident_id": incident_id,
+                        "outcome": "resolved",
+                        "status": "resolved",
+                        "proposed_actions": [{
+                            "tool": fn_name,
+                            "args": fn_args,
+                        }],
+                        "executed_actions": list(_executed_actions),
+                        "actions_taken": list(_executed_actions),
+                        "verified_by": "environment_verifier",
+                        "verification": mutation_observation,
+                    }
+                    trajectory.append({
+                        "role": role,
+                        "turn": turn,
+                        "controller_conclusion": True,
+                        "reason": "authoritative_verifier_resolved",
+                    })
+                    return {
+                        "role": role,
+                        "trajectory": trajectory,
+                        "final": controller_final,
+                        "step_reward_summary": step_tracker.summary(),
+                    }
 
     log.warning("%s exceeded %d turns", role, max_turns)
     # Persist the final (turn-limit) model response before the forced
@@ -859,6 +1497,7 @@ def _narrate_tool_call(role: str, tool: str, args: dict) -> str:
         "jaeger_get_trace":      lambda a: f"Fetching trace {a.get('trace_id','')[:16]}... — following the span chain...",
         "argocd_list_apps":      lambda a: "Checking Argo CD for recent deployments...",
         "argocd_app_history":    lambda a: f"Checking deploy history for {a.get('app','')}...",
+        "chaos_list_experiments": lambda a: "Observing active supported Chaos Mesh experiments...",
         "argocd_rollback":       lambda a: f"Rolling back {a.get('app','')} to revision {a.get('revision','')}...",
         "chaos_stop_experiment": lambda a: f"Stopping Chaos Mesh experiment {a.get('kind','')} {a.get('name','')} in {a.get('namespace','chaos-mesh')}...",
         "gcloud_logs_read":      lambda a: f"Reading Cloud Logging: `{str(a.get('filter_query',''))[:80]}`",
@@ -884,6 +1523,7 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
         "promql_query":           f"Got metric data — analysing values.",
         "jaeger_search":          f"Found traces — checking for slow spans.",
         "argocd_rollback":        "✅ Rollback executed.",
+        "chaos_list_experiments": "Got active Chaos Mesh observations.",
         "chaos_stop_experiment":  "✅ Chaos experiment stopped and cleared.",
         "kubectl_scale":          "✅ Scale applied.",
         "postmortem_draft":       "✅ Postmortem saved.",
@@ -943,6 +1583,7 @@ _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "jaeger_get_trace": {"type": "object", "properties": {"trace_id": {"type": "string"}}, "required": ["trace_id"], "additionalProperties": False},
     "argocd_list_apps": {"type": "object", "properties": {}, "additionalProperties": False},
     "argocd_app_history": {"type": "object", "properties": {"app": {"type": "string"}}, "required": ["app"], "additionalProperties": False},
+    "chaos_list_experiments": {"type": "object", "properties": {}, "additionalProperties": False},
     "argocd_rollback": {"type": "object", "properties": {"app": {"type": "string"}, "revision": {"type": "string"}}, "required": ["app", "revision"], "additionalProperties": False},
     "chaos_stop_experiment": {
         "type": "object",
@@ -976,6 +1617,14 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "Accepts qualified resource names (deployment/name, statefulset/name, daemonset/name) "
         "or bare deployment names (e.g. 'paymentservice')."
     ),
+    "chaos_list_experiments": (
+        "Read-only inventory of active supported Chaos Mesh experiment resources. "
+        "Returns observed kind, name, namespace, and status; never mutates the cluster."
+    ),
+    "argocd_rollback": (
+        "Roll back an Argo CD application only to a non-negative numeric revision "
+        "present in observed application history; guessed symbolic revisions are invalid."
+    ),
 }
 
 
@@ -995,6 +1644,28 @@ def _extract_severity(user_input: dict[str, Any]) -> str:
     triage = user_input.get("triage", {}) if isinstance(user_input, dict) else {}
     sev = str(triage.get("severity", "")).upper()
     return sev if sev in {"P0", "P1", "P2", "P3"} else "UNKNOWN"
+
+
+def _severity_for_approval(triage_final: dict[str, Any], alert: dict[str, Any]) -> str:
+    """Never let model triage downgrade a critical operational alert."""
+    severity = _extract_severity({"triage": triage_final})
+    common = alert.get("commonLabels") or {}
+    alert_items = alert.get("alerts") or []
+    label_sets = [common]
+    if isinstance(alert_items, list):
+        label_sets.extend(
+            item.get("labels") or {}
+            for item in alert_items
+            if isinstance(item, dict)
+        )
+    critical = any(
+        isinstance(labels, dict)
+        and str(labels.get("severity") or "").strip().casefold() == "critical"
+        for labels in label_sets
+    )
+    if critical and severity not in {"P0", "P1"}:
+        return "P1"
+    return severity
 
 
 def _comms_trajectory_delivered_externally(comms_doc: dict[str, Any]) -> bool:
@@ -1125,6 +1796,30 @@ def _manual_remediation_record(incident_id: str, triage: dict[str, Any], diagnos
     }
 
 
+def _target_mismatch_remediation_record(
+    incident_id: str,
+    target_consistency: dict[str, Any],
+) -> dict[str, Any]:
+    """Represent an unsubstantiated target switch as an explicit escalation."""
+    return {
+        "role": "remediation",
+        "trajectory": [],
+        "final": {
+            "incident_id": incident_id,
+            "status": "target_mismatch",
+            "outcome": "escalated",
+            "proposed_actions": [],
+            "executed_actions": [],
+            "actions_taken": [],
+            "target_consistency": target_consistency,
+            "summary": (
+                "Remediation blocked because Triage contradicted the primary alert "
+                "target without supporting observation evidence."
+            ),
+        },
+    }
+
+
 def _live_judge_requested() -> bool:
     """Post-incident scoring with the external judge (typically 72B on HF or vLLM).
 
@@ -1143,12 +1838,20 @@ async def handle_incident(
     alert: dict[str, Any],
     incident_id: str | None = None,
     scenario_id: str | None = None,
+    remediation_policy: Any | None = None,
 ) -> dict[str, Any]:
     """Run the full agent chain for one incident.
 
     ``scenario_id`` is an evaluation-only channel: it selects the frozen
     verifier spec without ever being placed inside the model-visible alert.
     """
+    remediation_backend = (
+        "rl_policy"
+        if remediation_policy is not None
+        else os.getenv("ATLASOPS_REMEDIATION_BACKEND", "agent").strip().lower()
+    )
+    if remediation_backend not in {"agent", "rl_policy"}:
+        raise ValueError("ATLASOPS_REMEDIATION_BACKEND must be agent or rl_policy")
     incident_id = incident_id or f"inc-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
@@ -1165,31 +1868,84 @@ async def handle_incident(
     finish_reason = ""
     approval_record: dict[str, Any] | None = None
     approval_blocked = False
+    remediation_blocked = False
+    incident_anchors = build_incident_anchors(alert)
+    model_alert = model_visible_alert(alert)
+    target_consistency: dict[str, Any] = {
+        "status": "not_validated",
+        "primary_target": incident_anchors.get("primary_service") or None,
+        "reported_targets": [],
+        "requires_review": False,
+    }
+    triage_observations: list[dict[str, Any]] = []
+    diagnosis_observations: list[dict[str, Any]] = []
+    environment_observation: dict[str, Any] = {
+        "observation_status": "not_observed",
+        "active_experiments": [],
+        "count": 0,
+    }
     try:
-        triage = await call_agent("triage", {"incident_id": incident_id, "alert": alert})
+        triage = await call_agent(
+            "triage",
+            {
+                "incident_id": incident_id,
+                "alert": model_alert,
+                "incident_anchors": incident_anchors,
+            },
+        )
         tri_snap = triage.get("final") or {}
-        diagnosis = await call_agent("diagnosis", {"incident_id": incident_id, "triage": triage["final"]})
-        severity = _extract_severity({"triage": triage.get("final", {})})
+        triage_observations = extract_tool_observations(triage)
+        target_consistency = validate_target_consistency(
+            incident_anchors,
+            tri_snap,
+            triage_observations,
+        )
+        environment_observation = _chaos_observation_from_observations(triage_observations)
+        diagnosis = await call_agent(
+            "diagnosis",
+            {
+                "incident_id": incident_id,
+                "alert": model_alert,
+                "incident_anchors": incident_anchors,
+                "triage": triage["final"],
+                "triage_observations": triage_observations,
+                "target_consistency": target_consistency,
+                "environment_observation": environment_observation,
+            },
+        )
+        diagnosis_observations = extract_tool_observations(diagnosis)
+        environment_observation = _chaos_observation_from_observations(
+            triage_observations + diagnosis_observations
+        )
+        triage_severity = _extract_severity({"triage": triage.get("final", {})})
+        severity = _severity_for_approval(triage.get("final", {}), model_alert)
         approval_mode = approval_mode_for_severity(severity)
-        approval_record = {"mode": approval_mode, "severity": severity}
+        approval_record = {
+            "mode": approval_mode,
+            "severity": severity,
+            "triage_severity": triage_severity,
+        }
+        effective_triage = {**triage["final"], "severity": severity}
 
         # ── Stage 12: Integrated Recommender System Step ──────────────────────
         recommended_runbooks: list[dict[str, Any]] = []
         try:
-            from recommender.dataset import load_interactions
             from recommender.hybrid import HybridRecommender
 
-            ckpt_path = Path("artifacts/models/hybrid_recommender.json")
-            if ckpt_path.exists():
-                recommender_model = HybridRecommender.load_checkpoint(ckpt_path)
-            else:
-                recommender_model = HybridRecommender().fit(load_interactions())
+            ckpt_path = Path(
+                os.getenv(
+                    "ATLASOPS_RECOMMENDER_CHECKPOINT",
+                    "artifacts/models/hybrid_recommender_synthetic_v2.json",
+                )
+            )
+            if not ckpt_path.is_file():
+                raise FileNotFoundError(f"Recommender checkpoint missing: {ckpt_path}")
+            recommender_model = HybridRecommender.load_checkpoint(ckpt_path)
 
             rec_query = {
                 "alertname": alert.get("commonLabels", {}).get("alertname", ""),
                 "affected_services": triage.get("final", {}).get("affected_services", []),
                 "symptoms_text": diagnosis.get("final", {}).get("root_cause", ""),
-                "tier": alert.get("tier", "single_fault"),
             }
             recs = recommender_model.recommend_runbooks(rec_query, k=3)
             recommended_runbooks = [rec.to_dict() for rec in recs]
@@ -1204,20 +1960,121 @@ async def handle_incident(
 
         remediation_input = {
             "incident_id": incident_id,
-            "triage": triage["final"],
+            "alert": model_alert,
+            "incident_anchors": incident_anchors,
+            "triage": effective_triage,
+            "triage_observations": triage_observations,
+            "target_consistency": target_consistency,
             "diagnosis": diagnosis["final"],
+            "diagnosis_observations": diagnosis_observations,
+            "environment_observation": environment_observation,
             "recommended_runbooks": recommended_runbooks,
             "approval_mode": approval_mode,
+            _REMEDIATION_CONTROL_KEY: {
+                "enforce_action_preconditions": True,
+            },
         }
-        if approval_mode == "manual":
+
+        async def _observe_after_mutation(action: dict[str, Any]) -> dict[str, Any]:
+            from agents.verifier import verify_environment
+
+            observed_scenario_id = str(scenario_id or alert.get("scenario_id") or "")
+            result = verify_environment(
+                scenario_id=observed_scenario_id,
+                agent_claimed_resolved=False,
+                alert=alert,
+                incident_context={
+                    "incident_id": incident_id,
+                    "incident_anchors": incident_anchors,
+                    "target_consistency": target_consistency,
+                    "action": action,
+                },
+            )
+            return {
+                "observation_type": "authoritative_environment_verifier",
+                **result.to_dict(),
+            }
+
+        async def _run_remediation_agent() -> dict[str, Any]:
+            if remediation_backend == "rl_policy":
+                from agents.policy_remediation import run_policy_remediation
+                from training.grpo_environment import DirectPolicyEnvironment
+
+                policy = remediation_policy
+                policy_origin = "injected_non_empirical"
+                if policy is None:
+                    checkpoint = os.getenv("ATLASOPS_RL_POLICY_CHECKPOINT", "").strip()
+                    if not checkpoint:
+                        raise RuntimeError(
+                            "rl_policy remediation requires ATLASOPS_RL_POLICY_CHECKPOINT"
+                        )
+                    from bench.grpo_eval import LocalGRPOPolicy
+
+                    policy = LocalGRPOPolicy.from_checkpoint(Path(checkpoint))
+                    policy_origin = "checkpoint"
+
+                def _policy_check(
+                    role: str,
+                    tool: str,
+                    arguments: dict[str, Any],
+                    state: dict[str, Any],
+                ) -> str | None:
+                    return _check_tool_policy(role, tool, arguments, state) or (
+                        _check_remediation_action_preconditions(tool, arguments, state)
+                    )
+
+                async def _settle_policy_step() -> dict[str, Any]:
+                    return await settle_environment(
+                        scenario_id=str(scenario_id or alert.get("scenario_id") or ""),
+                        agent_claimed_resolved=False,
+                        alert=alert,
+                        incident_context={
+                            "incident_id": incident_id,
+                            "incident_anchors": incident_anchors,
+                            "triage": triage,
+                            "diagnosis": diagnosis,
+                            "environment_observation": environment_observation,
+                        },
+                    )
+
+                environment = DirectPolicyEnvironment(
+                    policy_check=_policy_check,
+                    settle=_settle_policy_step,
+                )
+                return await run_policy_remediation(
+                    policy=policy,
+                    state=remediation_input,
+                    scenario_id=str(scenario_id or alert.get("scenario_id") or ""),
+                    environment=environment,
+                    seed=int(os.getenv("ATLASOPS_POLICY_SEED", "42")),
+                    generation_config={
+                        "max_new_tokens": 256,
+                        "temperature": 0.0,
+                        "top_p": 1.0,
+                    },
+                    policy_origin=policy_origin,
+                )
+            observer_token = _ACTIVE_MUTATION_OBSERVER.set(_observe_after_mutation)
+            try:
+                return await call_agent("remediation", remediation_input)
+            finally:
+                _ACTIVE_MUTATION_OBSERVER.reset(observer_token)
+
+        if target_consistency.get("requires_review"):
+            remediation_blocked = True
+            remediation = _target_mismatch_remediation_record(
+                incident_id,
+                target_consistency,
+            )
+        elif approval_mode == "manual":
             thought_emit(
                 "remediation",
                 "waiting_approval",
                 "Manual mode for P0 incident — generating runbook for human execution.",
             )
-            remediation = _manual_remediation_record(incident_id, triage["final"], diagnosis["final"])
+            remediation = _manual_remediation_record(incident_id, effective_triage, diagnosis["final"])
         elif approval_mode == "approve":
-            summary = _remediation_plan_summary(triage["final"], diagnosis["final"])
+            summary = _remediation_plan_summary(effective_triage, diagnosis["final"])
             req = approval_gate.request(incident_id=incident_id, severity=severity, summary=summary)
             public_base = os.getenv("ATLASOPS_PUBLIC_BASE_URL", "").rstrip("/")
             approve_url = f"{public_base}/approve" if public_base else "/approve"
@@ -1298,11 +2155,17 @@ async def handle_incident(
                 )
                 thought_emit("remediation", "thinking", f"Approval granted by {approver}; executing plan.")
                 remediation_input["approval"] = approval_result
-                remediation = await call_agent("remediation", remediation_input)
+                remediation = await _run_remediation_agent()
         else:
-            remediation = await call_agent("remediation", remediation_input)
+            remediation = await _run_remediation_agent()
         # Remediation execution is complete. Now execute objective environment verification.
+        remediation_observations = extract_tool_observations(remediation)
+        environment_observation = _chaos_observation_from_observations(
+            triage_observations + diagnosis_observations + remediation_observations
+        )
         remediation_final = remediation.get("final", {})
+        if remediation_backend == "rl_policy" and remediation_final.get("status") == "blocked":
+            remediation_blocked = True
         scenario_id = str(scenario_id or alert.get("scenario_id") or "")
         agent_claimed_resolved = bool(
             remediation_final.get("outcome") == "resolved"
@@ -1311,6 +2174,9 @@ async def handle_incident(
         incident_context = {
             "incident_id": incident_id,
             "alert": alert,
+            "incident_anchors": incident_anchors,
+            "target_consistency": target_consistency,
+            "environment_observation": environment_observation,
             "triage": triage,
             "diagnosis": diagnosis,
             "remediation": remediation,
@@ -1330,21 +2196,34 @@ async def handle_incident(
         )
         env_resolved = bool(verification_result.env_resolved)
         verification_dict = verification_result.to_dict()
-        operational_resolved = env_resolved and not approval_blocked
+        operational_resolved = (
+            env_resolved
+            and not approval_blocked
+            and not remediation_blocked
+        )
 
         # Comms agent runs after environment verification and receives objective truth
-        if approval_blocked:
+        if approval_blocked or remediation_blocked:
             # Do not let generated Comms text claim execution or publish resolution
             # for a plan that was never authorized. Preserve verifier truth separately.
+            if approval_blocked:
+                blocked_status = remediation_final["status"]
+                blocked_summary = (
+                    "Remediation blocked / not executed — approval outcome: "
+                    f"{status}. Human review required."
+                )
+            else:
+                blocked_status = "target_mismatch"
+                blocked_summary = (
+                    "Remediation blocked / escalated — the model target contradicted "
+                    "the primary alert target without supporting observations."
+                )
             comms = {
                 "role": "comms",
                 "trajectory": [],
                 "final": {
-                    "status": remediation_final["status"],
-                    "summary": (
-                        "Remediation blocked / not executed — approval outcome: "
-                        f"{status}. Human review required."
-                    ),
+                    "status": blocked_status,
+                    "summary": blocked_summary,
                 },
             }
         else:
@@ -1363,7 +2242,7 @@ async def handle_incident(
         _webhook_out = bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip() or os.getenv("SLACK_WEBHOOK_URL", "").strip())
         if _webhook_out and not _comms_trajectory_delivered_externally(comms):
             try:
-                sev = _extract_severity({"triage": triage.get("final", {})}) or "P1"
+                sev = severity
                 if sev not in {"P0", "P1", "P2", "P3"}:
                     sev = "P1"
                 fin = comms.get("final") or {}
@@ -1373,7 +2252,11 @@ async def handle_incident(
                 if not isinstance(summ, str):
                     summ = json.dumps(summ)
                 title = (triage.get("final") or {}).get("title") or incident_id
-                status_label = "Blocked" if approval_blocked else ("Resolved" if env_resolved else "Unresolved")
+                status_label = (
+                    "Blocked"
+                    if approval_blocked or remediation_blocked
+                    else ("Resolved" if env_resolved else "Unresolved")
+                )
                 out = TOOL_REGISTRY["slack_post_update"](
                     channel="#incident-response",
                     severity=sev,
@@ -1403,12 +2286,16 @@ async def handle_incident(
             "incident_id": incident_id,
             "alert": alert,
             "scenario_id": scenario_id,
+            "incident_anchors": incident_anchors,
+            "target_consistency": target_consistency,
+            "environment_observation": environment_observation,
             "approval": approval_record,
             "triage": triage,
             "diagnosis": diagnosis,
             "recommender": {"recommended_runbooks": recommended_runbooks},
             "remediation": remediation,
             "verification": verification_dict,
+            "settling": settling_report,
             "agent_claimed_resolved": agent_claimed_resolved,
             "env_resolved": env_resolved,
             "resolved": operational_resolved,
@@ -1454,6 +2341,8 @@ async def handle_incident(
             finish_reason = "approval_rejected"
         elif rem_status == "approval_timeout":
             finish_reason = "approval_timeout"
+        elif rem_status == "target_mismatch":
+            finish_reason = "escalation"
         elif rem_mode == "manual":
             finish_reason = "manual_runbook"
         elif verification_result.verification_status == "inconclusive":

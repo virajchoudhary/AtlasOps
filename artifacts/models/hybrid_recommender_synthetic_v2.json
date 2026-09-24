@@ -1,0 +1,95 @@
+{
+  "model_type": "AtlasOpsHybridRunbookRecommender",
+  "hyperparameters": {
+    "alpha": 0.5,
+    "beta": 0.35,
+    "gamma": 0.15
+  },
+  "priors": {
+    "RB-POD-OOM": 0.08333333333333333,
+    "RB-POD-CRASH": 0.08333333333333333,
+    "RB-CPU-THROTTLE": 0.16666666666666666,
+    "RB-NET-LOSS": 0.16666666666666666,
+    "RB-NET-DELAY": 0.0,
+    "RB-NET-CORRUPT": 0.0,
+    "RB-DISK-FILL": 0.0,
+    "RB-IO-DELAY": 0.0,
+    "RB-DNS-FAIL": 0.08333333333333333,
+    "RB-HTTP-5XX": 0.0,
+    "RB-CASCADE-HEAL": 0.3333333333333333,
+    "RB-SCALE-OUT": 0.08333333333333333
+  },
+  "collab_service_matrix": {
+    "currencyservice": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "redis-cart": {
+      "RB-CASCADE-HEAL": 2,
+      "RB-NET-LOSS": 1
+    },
+    "recommendationservice": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "productcatalogservice": {
+      "RB-SCALE-OUT": 1,
+      "RB-DNS-FAIL": 1
+    },
+    "frontend": {
+      "RB-CPU-THROTTLE": 1,
+      "RB-DNS-FAIL": 1,
+      "RB-NET-LOSS": 1
+    },
+    "cartservice": {
+      "RB-DNS-FAIL": 1,
+      "RB-CASCADE-HEAL": 1,
+      "RB-POD-CRASH": 1,
+      "RB-NET-LOSS": 1
+    },
+    "checkoutservice": {
+      "RB-DNS-FAIL": 1,
+      "RB-POD-OOM": 1
+    },
+    "paymentservice": {
+      "RB-CPU-THROTTLE": 1
+    }
+  },
+  "collab_alert_matrix": {
+    "CurrencyConversionLatencyHigh": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "RedisCartPartitionCascade": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "RecommendationServiceCpuStarvation": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "ProductCatalogServiceDown": {
+      "RB-SCALE-OUT": 1
+    },
+    "CloudflareCpuSaturation": {
+      "RB-CPU-THROTTLE": 1
+    },
+    "DatadogSystemdDnsOutage": {
+      "RB-DNS-FAIL": 1
+    },
+    "DiscordTreeFailure": {
+      "RB-CASCADE-HEAL": 1
+    },
+    "OnlineBoutiqueCartServiceDown": {
+      "RB-POD-CRASH": 1
+    },
+    "HighCpuUsage": {
+      "RB-CPU-THROTTLE": 1
+    },
+    "HighMemoryUsage": {
+      "RB-POD-OOM": 1
+    },
+    "High5xxErrorRate": {
+      "RB-NET-LOSS": 1
+    },
+    "CartServiceRedisConnectionFailure": {
+      "RB-NET-LOSS": 1
+    }
+  },
+  "collab_tier_matrix": {}
+}

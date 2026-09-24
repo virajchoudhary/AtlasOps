@@ -22,6 +22,24 @@ def test_module_imports_without_configuration_or_http(monkeypatch):
     api_request.assert_not_called()
 
 
+@pytest.mark.parametrize("app", ["../other", "foo/bar", "foo?x=y", "foo%2Fbar", "foo..bar", "A"])
+def test_unsafe_application_selector_fails_before_http(app):
+    import agents.tools.argocd as argocd
+
+    with (
+        patch.object(argocd.requests, "post") as auth_request,
+        patch.object(argocd.requests, "request") as api_request,
+    ):
+        results = [
+            argocd.argocd_app_get(app),
+            argocd.argocd_app_history(app),
+            argocd.argocd_rollback(app, "1"),
+        ]
+    assert all(result["error_class"] == "invalid_action_arguments" for result in results)
+    auth_request.assert_not_called()
+    api_request.assert_not_called()
+
+
 def test_missing_url_fails_before_http(monkeypatch):
     for name in ("ARGOCD_URL", "ARGOCD_USER", "ARGOCD_PASS", "ARGOCD_VERIFY_TLS"):
         monkeypatch.delenv(name, raising=False)

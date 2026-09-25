@@ -211,7 +211,7 @@ def test_jaeger_and_argocd_states_are_fail_closed_and_honest() -> None:
     assert "no Application" in DOCS
 
 
-def test_mutating_make_targets_never_use_implicit_current_context() -> None:
+def test_legacy_chaos_make_targets_are_retired_without_cluster_commands() -> None:
     assert "KUBE_CONTEXT ?= gke_$(PROJECT)_$(ZONE)_$(CLUSTER)" in MAKEFILE
     for target in ("chaos", "chaos-reset", "replay-%"):
         match = re.search(
@@ -221,8 +221,9 @@ def test_mutating_make_targets_never_use_implicit_current_context() -> None:
         )
         assert match, target
         body = match.group(0)
-        assert "require-kube-context" in body
-        assert '--context="$(KUBE_CONTEXT)"' in body
+        assert "Retired:" in body
+        assert "exit 2" in body
+        assert "kubectl" not in body
     assert "gcloud config set" not in SETUP
     assert "RUNTIME_KUBECONFIG=\"$(mktemp)\"" in SETUP
     assert 'kubectl --context="$KUBE_CONTEXT"' in SETUP
@@ -240,11 +241,13 @@ def test_healthz_is_side_effect_free_without_runtime_secrets(monkeypatch) -> Non
 def test_coordinator_webhook_requires_and_accepts_bearer_secret(monkeypatch) -> None:
     import agents.coordinator as coordinator
 
-    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "test-webhook-secret")
     monkeypatch.setattr(coordinator.correlator, "ingest", lambda payload: ("inc-test", False, False))
     monkeypatch.setattr(coordinator, "handle_incident", AsyncMock())
     client = TestClient(coordinator.app)
     payload = {"alerts": [], "commonLabels": {}, "status": "firing"}
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "")
+    assert client.post("/webhook", json=payload).status_code == 503
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "test-webhook-secret")
     assert client.post("/webhook", json=payload).status_code == 401
     response = client.post(
         "/webhook",

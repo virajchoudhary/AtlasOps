@@ -29,23 +29,20 @@ down: require-project
 status: require-kube-context
 	kubectl --context="$(KUBE_CONTEXT)" get pods -A
 
-# ── Chaos injection ────────────────────────────────────────────────────────────
+# ── Retired live shortcuts ────────────────────────────────────────────────────
 .PHONY: chaos chaos-reset
 
-chaos: require-kube-context
-	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make chaos SCENARIO=sf-001"; exit 1; fi
-	@MANIFEST=$$(find bench/chaos_manifests -name "$(SCENARIO).yaml" | head -1); \
-	if [ -z "$$MANIFEST" ]; then echo "Scenario $(SCENARIO) not found"; exit 1; fi; \
-	echo "Applying chaos: $$MANIFEST"; \
-	kubectl --context="$(KUBE_CONTEXT)" apply -f "$$MANIFEST"
+chaos:
+	@echo "Retired: use the governed Stage 4 harness after its complete preflight."
+	@exit 2
 
-chaos-reset: require-kube-context
-	kubectl --context="$(KUBE_CONTEXT)" delete podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos --all -A --ignore-not-found=true
+chaos-reset:
+	@echo "Retired: use scoped Stage 4 cleanup and verify the environment."
+	@exit 2
 
-# ── Historical replays ─────────────────────────────────────────────────────────
-replay-%: require-kube-context
-	kubectl --context="$(KUBE_CONTEXT)" apply -f bench/chaos_manifests/named_replays/$*.yaml
-	@echo "Replay $* triggered. Watch: make status"
+replay-%:
+	@echo "Retired: use the governed Stage 4 harness after its complete preflight."
+	@exit 2
 
 # ── Agent runtime ──────────────────────────────────────────────────────────────
 .PHONY: coordinator
@@ -57,17 +54,17 @@ coordinator:
 .PHONY: bench bench-baseline
 
 bench:
-	python bench/runner.py --model $(MODEL) --output bench/results/$(shell date +%Y%m%d_%H%M%S)
+	python -m bench.runner --model $(or $(MODEL),fixture) --mock --adversarial 0
 
 bench-baseline:
-	python bench/runner.py --model checkpoints/cloudsre_v2_baseline --tag baseline_v2 \
-	  --output bench/results/baseline_v2
+	python -m bench.runner --model fixture --tag baseline_fixture --mock --adversarial 0
 
 # ── Training ───────────────────────────────────────────────────────────────────
 .PHONY: sft grpo trajectories
 
 trajectories:
-	python training/generate_trajectories.py --output data/sft_corpus.jsonl
+	@echo "Retired: use the frozen Train-split corpus and Stage 7 reproducibility contract."
+	@exit 2
 
 sft:
 	python training/sft.py \

@@ -1,5 +1,9 @@
 # AtlasOps Benchmarks
 
+> Historical upstream benchmark narrative. The continuation team has not reproduced
+> these results. The current `bench.runner` is explicit `--mock` fixture-only and cannot
+> apply or clean Chaos. See `docs/project/MASTER_PIPELINE_STATUS.md` for current gates.
+
 Real evaluation against a live GKE cluster (us-central1) running Google Online Boutique.
 Evaluation date: 2026-05-09. Model: `Qwen/Qwen2.5-7B-Instruct` via HF Inference API.
 
@@ -105,8 +109,8 @@ cp .env.example .env  # Add your HF token and GKE IPs
 # 2. Run quick eval (no chaos needed)
 python -m bench.quick_eval
 
-# 3. Run full benchmark (requires kubectl + Chaos Mesh)
-python bench/runner.py --tag baseline
+# 3. Generate isolated NON_EMPIRICAL compatibility fixtures
+python -m bench.runner --model fixture --mock --adversarial 0
 
 # 4. SFT training (AMD MI300X)
 python training/sft.py --model Qwen/Qwen2.5-7B-Instruct --rocm

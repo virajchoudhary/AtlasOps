@@ -9,8 +9,21 @@ prose — without fabricating actions or outcomes. Synthetic fixtures only.
 from __future__ import annotations
 
 import json
+import subprocess
+
+import pytest
 
 from training.generate_trajectories import SFT_EXAMPLE_FORMAT, trajectory_to_sft_examples
+
+
+def test_legacy_trajectory_entrypoints_fail_before_cluster_or_model_work(monkeypatch):
+    from training import generate_trajectories, generate_trajectories_fast
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("external command executed"))
+    with pytest.raises(SystemExit, match="disabled"):
+        generate_trajectories.main()
+    with pytest.raises(SystemExit, match="disabled"):
+        generate_trajectories_fast.main()
 
 
 def _synthetic_incident() -> dict:

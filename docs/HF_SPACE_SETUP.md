@@ -1,5 +1,7 @@
 # Hugging Face Spaces — wired 7B agents + 72B judge
 
+> **Historical hackathon setup notes.** These instructions do not establish a safe current deployment. The current FastAPI runtime requires `ATLASOPS_API_KEY` for approval actions and `ALERTMANAGER_WEBHOOK_SECRET` for `/webhook`. Web Chaos injection and cleanup are retired even with old opt-in flags. Do not deploy the old public incident UI or use this page as a G14 acceptance record.
+
 ## Hackathon Space URL (avoid 404)
 
 The LabLab org Space slug uses a **hyphen**: **`atlas-ops`**, not `atlasops`.
@@ -103,19 +105,15 @@ JUDGE_MODEL=Qwen/Qwen2.5-72B-Instruct-AWQ    # or a smaller HF model Router allo
 BACKEND=openai                                 # optional; bootstrap sets default when ATLASOPS_USE_HF_INFERENCE=1
 ```
 
-Redeploy the Space; trigger chaos from the sidebar and confirm timeline shows both tool calls (`judge` / `judge_trajectory`) and agent turns.
+The original Space workflow above is historical. Review current authentication and Stage 4 governance before any deployment or live experiment.
 
-## Space has no kubeconfig (Pod Kill returns 500)
+## Current web incident boundary
 
-The UI’s **Inject** endpoint runs `kubectl apply` on chaos manifests. Typical HF Space containers **do not** have credentials to your GKE API server, so you will see **`POST /inject` → 500** in logs and the coordinator never starts.
+`POST /inject` and `POST /reset` return 503 after operator authentication. Setting `ATLASOPS_ENABLE_WEB_CHAOS`, `ATLASOPS_WEB_CHAOS_CONTEXT`, or the old skip flag cannot enable them. The web shortcut lacks the Stage 4 preflight and cannot prove that a newly observed alert was caused by its fault or that cleanup restored the environment. `/approve` and `/approval/pending` require the API key, so a pending token cannot be obtained and used anonymously. `/webhook` requires `ALERTMANAGER_WEBHOOK_SECRET`.
 
-Set this **Space variable** so inject **skips** kubectl but still schedules the incident pipeline (reads **live** Alertmanager after a short delay):
+These retired routes execute no command, start no incident, and clear no local state. Use the read-only Gradio console when no cluster action is intended.
 
-```
-ATLASOPS_SKIP_KUBECTL_INJECT=1
-```
-
-Real fault injection still requires a reachable cluster from **somewhere** that has kubeconfig (CI, laptop, or another service). For a public demo, you can rely on **already-firing** alerts in Alertmanager or webhook-driven incidents.
+The public HTML frontend has not been established as an authenticated operator console. Do not enable these web mutation routes on a public Space. For tomorrow's local presentation, use the read-only Gradio console described in `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md`. Run real G4 only through its governed harness after preflight and authorization.
 
 ---
 
@@ -131,26 +129,7 @@ Optional: **`SLACK_WEBHOOK_URL`** for Slack in parallel; both can be set.
 
 ---
 
-## Final hour — submission checklist (do in order)
+## Historical submission checklist
 
-1. **Right Space URL** — Use **`lablab-ai-amd-developer-hackathon/atlas-ops`** (hyphen). Wrong slug → **404**. Push: `git push https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/atlas-ops main` (or add `lablab` remote; see section at top).
-
-2. **Build green** — Space → **Logs** → build finished, app listening on **7860**.
-
-3. **Secrets sanity**
-   - **`VLLM_BASE`** = `http://<MI300X_PUBLIC_IP>:8000/v1` — **not** `localhost`.
-   - **`ATLASOPS_SKIP_KUBECTL_INJECT=1`** on Space (no kubeconfig).
-   - **`ATLASOPS_PUBLIC_BASE_URL`** = `https://lablab-ai-amd-developer-hackathon-atlas-ops.hf.space` (no trailing slash; fix if your slug differs).
-   - **`DISCORD_WEBHOOK_URL`** set; rotate if it was ever pasted in chat.
-   - **Do not set `ATLASOPS_API_KEY`** on the public demo Space unless the UI is updated to send `X-AtlasOps-Key` — otherwise **`POST /inject` returns 401**.
-
-4. **Smoke test in browser (90 seconds)**  
-   Open app → DevTools console:
-   - `fetch('/health').then(r=>r.json()).then(console.log)` → `status: ok`, `agent_base` not localhost.  
-   - Click **Pod Kill** (or one historical replay) → timeline fills; **Approve** if shown; check Discord.
-
-5. **Judge story (one sentence each)**  
-   Real GKE + real metrics; four agents; **human approval** (UI buttons + Discord notice before remediation); MI300X for **SFT + online GRPO**; skip-kubectl only for **fault inject**, agents still use **live tools** elsewhere.
-
-6. **GitHub + slides** — `README` / **`docs/slides.md`** links match the Space you submit; export PDF from Marp if required.
+The former public Space checklist was written for the upstream hackathon and is not a current deployment procedure. A safe new deployment needs an authenticated operator UI, a configured API key and webhook secret, a governed live experiment path with preflight and verified cleanup, and the stage-specific evidence required by the Master Pipeline. The local read-only demo does not require those live prerequisites and does not claim the historical Space is current.
 

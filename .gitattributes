@@ -1,1 +1,15 @@
 *.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
+.gitattributes text eol=lf
+artifacts/SUBMISSION_MANIFEST.json text eol=lf
+artifacts/SUBMISSION_SUMMARY.md text eol=lf
+artifacts/models/hybrid_recommender.json text eol=crlf
+artifacts/models/hybrid_recommender_synthetic_v2.json text eol=crlf
+artifacts/evidence/stage10/rs_dataset_manifest.json text eol=crlf
+artifacts/evidence/stage11/rs_hybrid_eval.json text eol=crlf
+artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json text eol=crlf
+artifacts/overnight_experiments/rs-20260924/interactions.jsonl text eol=crlf
+artifacts/overnight_experiments/rs-20260924/interactions.manifest.json text eol=crlf
+artifacts/evidence/stage13/ablation_benchmark_results.json text eol=crlf

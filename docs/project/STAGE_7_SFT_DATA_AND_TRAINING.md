@@ -18,6 +18,12 @@ Qwen2.5-7B-Instruct training run or usable adapter is currently preserved.
 The corpus is scenario-derived training data. It is not evidence that a model was trained
 or that generated trajectories succeeded in a real environment.
 
+The two older `training/generate_trajectories*.py` command-line entrypoints are retired.
+One applied Chaos and used cluster-wide cleanup; the fast path used synthetic alerts and
+model-claimed outcomes as reward. The pure trajectory serializer remains for the frozen
+Train-split corpus builder and its contract tests. Neither retired entrypoint is a valid
+real-data or empirical training launch command.
+
 ## Training Contract
 
 `training/sft.py` requires exact base-model and tokenizer revisions, verifies the corpus

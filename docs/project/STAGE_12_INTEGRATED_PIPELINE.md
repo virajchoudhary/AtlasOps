@@ -34,4 +34,31 @@ verification step, next-state feedback, resolved termination, Comms state, and p
 A real end-to-end run still requires a valid G9 checkpoint, a healthy controlled environment,
 and legitimate approval for any P1 mutation.
 
+## Governed Real Evidence Capture
+
+`scripts/run_g12_integrated_episode.py` is a thin wrapper around the Stage 4
+golden-incident harness. It does not implement another fault injector or cleanup
+path. It requires a clean disposable checkout, a provenance-validated completed
+GRPO checkpoint, a new `EXP-STAGE4-*` ID, an external new bundle directory, and
+the explicit `--execute-live-chaos` flag. The Stage 4 harness must still pass its
+own source, model, telemetry, baseline, zero-Chaos, approval, and postflight
+controls. Do not run it unattended or use this flag as a substitute for
+experiment-specific authorization.
+
+After the harness returns, the wrapper copies the raw Stage 4 attempt and
+coordinator trajectory, including negative or interrupted evidence when present,
+and records their SHA-256 hashes, exact source SHA, checkpoint provenance, seed,
+model identity, policy origin, and missing fields. It revalidates the checkpoint
+inventory after the run and marks a changed or unavailable checkpoint incomplete.
+It leaves reward and TTR
+unevaluated and always sets `empirical_claim_allowed=false` and
+`gate_certification=NOT_CERTIFIED`; a capture requires independent review before
+any G12 empirical claim. An incomplete attempt remains visible rather than
+becoming a mock success.
+
+No real G12 episode was executed in this implementation pass. The local Kind
+API and Docker Linux engine were unavailable, and no completed GRPO checkpoint
+was supplied. The existing control-flow tests and new capture tests are
+non-live software evidence only.
+
 **Gate G12 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

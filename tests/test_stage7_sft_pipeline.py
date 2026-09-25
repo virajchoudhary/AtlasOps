@@ -120,3 +120,63 @@ class TestStage7SFTPipeline:
         assert config["lora_r"] == 16
         assert config["lora_alpha"] == 32
         assert config["assistant_only_loss"] is True
+
+
+def test_custom_corpus_keeps_canonical_evidence_unchanged(tmp_path, monkeypatch):
+    from training import build_sft_dataset
+
+    canonical = tmp_path / "canonical-evidence"
+    canonical.mkdir()
+    original = {
+        "sft_corpus_manifest.json": b"preserved manifest\n",
+        "sft_training_config.json": b"preserved config\n",
+    }
+    for name, content in original.items():
+        (canonical / name).write_bytes(content)
+    monkeypatch.setattr(build_sft_dataset, "EVIDENCE_DIR", canonical)
+
+    output = tmp_path / "isolated-run" / "sft_corpus_train.jsonl"
+    corpus, manifest = build_sft_dataset.build_sft_corpus(output)
+
+    assert corpus == output
+    assert manifest["total_examples"] == 64
+    assert manifest["corpus_sha256_canonical_lf"] == (
+        "523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81"
+    )
+    for name, content in original.items():
+        assert (canonical / name).read_bytes() == content
+        assert (output.parent / name).is_file()
+    adjacent = json.loads((output.parent / "sft_corpus_manifest.json").read_text(encoding="utf-8"))
+    assert adjacent["corpus_file"] == output.as_posix()
+
+
+def test_custom_corpus_refuses_canonical_evidence_directory(tmp_path, monkeypatch):
+    from training import build_sft_dataset
+
+    canonical = tmp_path / "canonical-evidence"
+    canonical.mkdir()
+    marker = canonical / "sft_corpus_manifest.json"
+    marker.write_bytes(b"preserved manifest\n")
+    monkeypatch.setattr(build_sft_dataset, "EVIDENCE_DIR", canonical)
+
+    with pytest.raises(ValueError, match="canonical Stage 7 evidence"):
+        build_sft_dataset.build_sft_corpus(canonical / "custom.jsonl")
+    assert marker.read_bytes() == b"preserved manifest\n"
+    assert not (canonical / "custom.jsonl").exists()
+
+
+def test_default_corpus_retains_canonical_evidence_location(tmp_path, monkeypatch):
+    from training import build_sft_dataset
+
+    data_dir = tmp_path / "data"
+    evidence_dir = tmp_path / "canonical-evidence"
+    monkeypatch.setattr(build_sft_dataset, "DATA_DIR", data_dir)
+    monkeypatch.setattr(build_sft_dataset, "EVIDENCE_DIR", evidence_dir)
+
+    corpus, manifest = build_sft_dataset.build_sft_corpus()
+
+    assert corpus == data_dir / "sft_corpus_train.jsonl"
+    assert manifest["total_examples"] == 64
+    assert (evidence_dir / "sft_corpus_manifest.json").is_file()
+    assert (evidence_dir / "sft_training_config.json").is_file()
+    assert not (data_dir / "sft_corpus_manifest.json").exists()

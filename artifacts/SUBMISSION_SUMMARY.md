@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-25T17:45:01.016799+00:00`
+- **Generated**: `2026-09-25T20:45:43.810240+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -80,7 +80,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `d450ce1d61e1fef1...` | 2093 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `22222de5592d4392...` | 2435 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6e9eec0d90f873d1...` | 3715 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `79f294072981a62f...` | 1690 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `45e5249fd5284dd8...` | 3595 |
 | `recommender/baselines.py` | `06e8e8e62a82695c...` | 7352 |
@@ -155,7 +155,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage4_telemetry_readiness.py` | `05e4114535263220...` | 15676 |
 | `tests/test_stage5_scenario_splits_and_truth.py` | `af7025be02ca7b27...` | 5364 |
 | `tests/test_stage6_zero_shot_baseline.py` | `483ea70196282110...` | 6032 |
-| `tests/test_stage7_sft_pipeline.py` | `cb99f69762ff3362...` | 5668 |
+| `tests/test_stage7_sft_pipeline.py` | `5265a4a1bc235d4b...` | 8151 |
 | `tests/test_stage8_sft_eval.py` | `24c8786bda4aba1c...` | 4007 |
 | `tests/test_stage9_grpo_pipeline.py` | `5a8ccf28e799ce6d...` | 4777 |
 | `tests/test_tool_policy_contract.py` | `15f377b269d769da...` | 5022 |

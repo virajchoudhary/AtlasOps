@@ -237,7 +237,8 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
         "run_date": datetime.now(timezone.utc).isoformat(),
         "total_scenarios": len(results),
         "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
-        "avg_reward": round(sum(judge_scores) / max(len(judge_scores), 1), 3),
+        "avg_reward": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
+        "judged_episode_count": len(judge_scores),
         "avg_reward_contract": round(sum(contract_scores) / max(len(contract_scores), 1), 3),
         "avg_penalty": round(sum(penalties) / max(len(penalties), 1), 3),
         "avg_turns": mean(valid, "total_turns"),
@@ -268,10 +269,11 @@ def write_comparison_table(summary: dict, output_dir: Path) -> None:
     header += "|---|---|---|---|---|---|---|---|---|---|\n"
     rows = ""
     for r in existing_runs:
+        judge_mean = f"{r['avg_reward']:.3f}" if r.get("avg_reward") is not None else "n/a"
         rows += (
             f"| {r['tag']} | `{Path(r['model']).name}` "
             f"| {r['resolution_rate']:.0%} "
-            f"| {r['avg_reward']:.3f} "
+            f"| {judge_mean} "
             f"| {r.get('avg_reward_contract', 0):.3f} "
             f"| {r.get('avg_penalty', 0):.3f} "
             f"| {r['avg_turns']:.1f} "
@@ -359,7 +361,10 @@ async def main() -> None:
 
     log.info("=== Benchmark complete ===")
     log.info("  Resolution rate : %.1f%%", summary["resolution_rate"] * 100)
-    log.info("  Avg reward      : %.3f", summary["avg_reward"])
+    log.info(
+        "  Avg reward      : %s",
+        f"{summary['avg_reward']:.3f}" if summary["avg_reward"] is not None else "n/a",
+    )
     log.info("  Results         : %s", out_dir)
 
 

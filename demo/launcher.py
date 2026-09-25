@@ -27,9 +27,9 @@ def launch_demo(
     log.info("Launching read-only AtlasOps Demo Console on http://%s:%d", host, port)
 
     try:
-        from dashboard import build_app
+        from dashboard import _UI_CSS, build_app
         demo = build_app()
-        demo.launch(server_name=host, server_port=port, share=share)
+        demo.launch(server_name=host, server_port=port, share=share, css=_UI_CSS)
     except Exception as e:  # noqa: BLE001 - report optional UI/dependency startup failures
         log.error("Failed to launch demo (%s): %s", type(e).__name__, e)
         sys.exit(1)

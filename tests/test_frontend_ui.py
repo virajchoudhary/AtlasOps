@@ -1,37 +1,65 @@
-"""Automated test suite for the modernized AtlasOps Frontend UI and API endpoints."""
+"""Automated contracts for the read-only product UI and existing API endpoints."""
 
 from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+
 from app import app
 
 
 class TestFrontendUIAndAPIs:
-    """Test suite verifying the redesigned Mission Control web interface."""
+    """Test suite verifying the operator console and API compatibility."""
 
     @pytest.fixture(autouse=True)
     def setup_client(self):
         self.client = TestClient(app)
 
-    def test_static_index_html_structure_and_tabs(self):
-        """Verify static/index.html exists and defines all 6 mission control tabs."""
+    def test_static_index_html_structure_and_navigation(self):
+        """The eight views use the incident-first shell, not the old simulation."""
         index_path = Path("static/index.html")
         assert index_path.exists(), "static/index.html must exist"
         content = index_path.read_text(encoding="utf-8")
-
-        # Check document metadata and title
         assert "<title>AtlasOps" in content
-
-        # Check pre-rendered HTML DOM and OpenAI editorial components
-        assert "Autonomous SRE multi-agent intelligence" in content
-        assert "svg viewBox" in content
-        assert "diagram-wrapper" in content
-        assert "Triage Agent" in content
-        assert "Safety Gate" in content
-        assert "Environment Verifier" in content
-        assert 'id="stream-logs"' in content
-        assert 'id="scenario-selector"' in content
-        assert 'id="ablation-tbody"' in content
+        assert all(f'data-page="{page}"' in content for page in (
+            "overview", "incidents", "agents", "models", "evaluations",
+            "runbooks", "evidence", "settings"
+        ))
+        assert 'id="global-status"' in content
+        assert 'id="drawer"' in content
+        assert 'id="quick-open"' in content
+        assert 'id="palette-input"' in content
+        assert 'id="sidebar-backdrop"' in content
+        assert '/static/vendor/lucide.min.js' in content
+        assert '/static/live-incident.js' in content
+        assert Path("static/vendor/lucide.min.js").is_file()
+        assert "ISC License" in Path("static/vendor/LUCIDE-LICENSE").read_text(encoding="utf-8")
+        assert "runSimulation" not in content
+        js = Path("static/console.js").read_text(encoding="utf-8")
+        assert "G4 NOT_PASSED" in js
+        assert "Historical evidence" in js
+        assert "No active incidents" in js
+        assert "No completed verdict" in js
+        assert "/ui/attempts/" in js
+        assert "Foundation & environment" in js
+        assert "Training provenance" in js
+        assert "data-gate" in js
+        assert "processView(referenceSteps" in js
+        assert "processView(recordedSteps(featured)" in js
+        assert 'scenarios: "/api/scenarios"' in js
+        assert 'featured: "/ui/attempts/EXP-STAGE4-SF002-010.json"' in js
+        assert 'data-scenario' in js
+        assert 'data-process-step' in js
+        assert "Objective checks did not establish resolution." in js
+        projection = Path("static/live-incident.js").read_text(encoding="utf-8")
+        assert "approval_denied" in projection
+        assert "Audit unavailable" in projection
+        assert "No verdict exposed" in projection
+        css = Path("static/console.css").read_text(encoding="utf-8")
+        assert ".process-track" in css
+        assert "prefers-reduced-motion: reduce" in css
+        assert "/inject" not in js and "/reset" not in js
+        assert "100.0%" not in js and "0.918" not in js
 
     def test_root_endpoint_serves_html(self):
         """Verify GET / returns HTTP 200 and serves HTML content."""
@@ -39,6 +67,9 @@ class TestFrontendUIAndAPIs:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
         assert "AtlasOps" in response.text
+        assert self.client.get("/static/console.js").status_code == 200
+        assert self.client.get("/static/console.css").status_code == 200
+        assert self.client.get("/static/live-incident.js").status_code == 200
 
     def test_api_scenarios_endpoint(self):
         """Verify GET /api/scenarios returns the codified scenario catalog."""

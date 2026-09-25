@@ -27,15 +27,16 @@ from demo.launcher import main as launcher_main
 
 
 class TestStage14DemoSafety:
-    def test_build_app_constructs_status_and_evidence_tabs(self):
+    def test_build_app_constructs_product_views_without_execution_controls(self):
         app = build_app()
         assert app is not None
-        assert app.title == "AtlasOps Ops Console & Demo Interface"
+        assert app.title == "AtlasOps | Read-only demonstration"
         assert app.analytics_enabled is False
         assert len(app.blocks) > 0
         labels = {component.get("props", {}).get("label") for component in app.config["components"]}
-        assert "🧭 Project Status" in labels
-        assert "📋 Preserved G4 Evidence" in labels
+        assert {"Overview", "Incidents", "Agents", "Models", "Evaluations",
+                "Runbooks", "Evidence", "Settings"} <= labels
+        assert "Scenario Control" not in labels
 
     def test_scenario_selection_never_claims_or_runs_a_fault(self, monkeypatch):
         monkeypatch.setenv("DEMO_SAFE_MODE", "0")

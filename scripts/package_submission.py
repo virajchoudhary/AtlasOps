@@ -62,7 +62,15 @@ def compute_sha256(file_path: Path) -> str:
 def collect_submission_assets() -> dict[str, dict[str, Any]]:
     """Scan and catalog all core submission assets with hashes and sizes."""
     tracked_patterns = [
+        ".gitattributes",
+        "BENCHMARKS.md",
+        "Makefile",
+        "README.md",
+        "app.py",
         "docs/AtlasOps_Technical_Report.md",
+        "docs/BENCHMARKS.md",
+        "docs/END_TO_END_FLOW.md",
+        "docs/HF_SPACE_SETUP.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/STAGE_*.md",
         "artifacts/models/hybrid_recommender.json",
@@ -82,6 +90,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "agents/tools/chaos.py",
         "agents/tools/prometheus.py",
         "bench/zero_shot_baseline.py",
+        "bench/runner.py",
         "bench/sft_eval.py",
         "bench/grpo_eval.py",
         "dashboard.py",
@@ -92,7 +101,11 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "recommender/dataset.py",
         "recommender/train_hybrid.py",
         "scripts/run_stage4_golden_incident.py",
+        "scripts/run_g12_integrated_episode.py",
+        "scripts/package_submission.py",
         "training/sft.py",
+        "training/generate_trajectories.py",
+        "training/generate_trajectories_fast.py",
         "training/sft_provenance.py",
         "training/grpo.py",
         "training/grpo_environment.py",
@@ -146,13 +159,13 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
     destination = output_dir or ARTIFACTS_DIR
     destination.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / "SUBMISSION_MANIFEST.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     log.info("Wrote %s", manifest_path)
 
     # Generate Markdown Summary
     summary_path = destination / "SUBMISSION_SUMMARY.md"
     summary_md = generate_submission_summary_md(manifest)
-    summary_path.write_text(summary_md, encoding="utf-8")
+    summary_path.write_text(summary_md, encoding="utf-8", newline="\n")
     log.info("Wrote %s", summary_path)
 
     return manifest

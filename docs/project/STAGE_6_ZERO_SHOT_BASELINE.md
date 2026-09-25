@@ -6,6 +6,10 @@ The zero-shot evaluator now separates deterministic compatibility tests from gen
 base-model inference. No approved Qwen2.5-7B-Instruct inference run is preserved in the
 repository, so G6 has no empirical performance result.
 
+The older `bench.runner` CLI is retained only for explicit `--mock` compatibility fixtures.
+It cannot apply Chaos or clean a cluster, and writes comparison output inside its unique
+non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inference.
+
 ## Evaluation Contract
 
 - Callers must explicitly select `mock` or `empirical`; there is no silent fallback.

@@ -144,14 +144,15 @@ The research pipeline is not scientifically complete.
 ### Gate G12: Integrate GAI + RS + RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
 - `agents/coordinator.py` inserts recommendations between Diagnosis and Remediation and supplies `recommended_runbooks`. Its default recommender checkpoint is the newly labeled synthetic v2 artifact; a missing checkpoint leaves recommendations unavailable rather than fitting the old mixed-split dataset.
 - An explicit `rl_policy` backend loads a provenance-checked G9 checkpoint and executes its exact structured actions through approval, tool policy, settling, and verification. Local injected-policy tests prove control flow but are non-empirical. Complete end-to-end validation still depends on a real G9 checkpoint and live evidence.
+- The governed G12 capture wrapper reuses the Stage 4 harness, preserves raw attempt and coordinator records with hashes, and never certifies a gate from capture alone. It has not run with a real checkpoint or cluster in this continuation.
 
 ### Gate G13: Run Final Ablation and Stress Evaluation — [REOPENED]
 - `bench/ablation_suite.py` now consumes variant episode artifacts and rejects incomplete or unsupported real comparisons; it does not supply model-name constant metrics as empirical results.
 - Preserve `artifacts/evidence/stage13/ablation_benchmark_results.json` as historical predetermined output. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings. Actual variant execution with valid checkpoints, independent verification, and held-out stress provenance is still required.
 
 ### Gate G14: Deploy Final Demo Safely — [PARTIAL]
-- UI/demo implementations in `dashboard.py` and `demo/launcher.py` remain; default `DEMO_SAFE_MODE=1` makes the dashboard's kubectl/apply/reset helpers simulate their actions.
-- These local helper guards do not certify every coordinator path, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
+- The local Gradio demo in `dashboard.py` and `demo/launcher.py` is read-only. Scenario selection and cleanup guidance execute no kubectl command, inject no fault, and claim no simulated incident outcome. It displays the checked-in G0-G15 status and selected preserved G4 negative/interrupted attempts with source hashes.
+- This console does not certify the separate FastAPI/coordinator entrypoints, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]
 - The technical report now separates implementation, mock/historical evidence, and missing empirical results. `scripts/package_submission.py` derives the declared G0-G15 inventory and emits `NOT_CERTIFIED` with asset hashes and no invented performance figures.

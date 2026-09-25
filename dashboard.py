@@ -1,25 +1,13 @@
-"""AtlasOps — Gradio Ops Console & Demonstration Interface (Gate G14).
+"""Read-only AtlasOps demonstration console with explicit evidence labels (G14)."""
 
-Seven comprehensive tabs:
-  1. Live Ops        — trigger replays, watch live agent thought stream
-  2. Recommender     — query Stage 11 Hybrid Runbook Recommender in real time
-  3. Incidents       — browse past incident trajectories & postmortems
-  4. Ablation Matrix — full 5-model x 4-partition multi-generation comparison
-  5. Benchmarks      — benchmark summary and per-tier metrics
-  6. Replays         — 10 famous historical incident injection buttons
-  7. About           — complete system architecture, multi-agent contract, and team fork provenance
-"""
-
-import asyncio
+import hashlib
 import json
 import logging
 import os
-import subprocess
+import re
 from pathlib import Path
-from typing import Any
 
 import gradio as gr
-import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("dashboard")
@@ -30,18 +18,11 @@ JAEGER_URL      = os.getenv("JAEGER_URL", "")
 ARGOCD_URL      = os.getenv("ARGOCD_URL", "")
 BOUTIQUE_URL    = os.getenv("BOUTIQUE_URL", "")
 COORDINATOR_URL = os.getenv("COORDINATOR_URL", "http://localhost:9099")
-DEMO_SAFE_MODE  = os.getenv("DEMO_SAFE_MODE", "1") == "1"
-
-ROLE_ICONS  = {"triage": "🔴", "diagnosis": "🔍", "recommender": "📚", "remediation": "🔧", "comms": "📣"}
-PHASE_ICONS = {"tool_call": "→", "tool_result": "✓", "conclusion": "★", "thinking": "💭"}
-
-TRAJECTORIES_DIR = Path("data/trajectories")
-RESULTS_DIR      = Path("bench/results")
-EVIDENCE_DIR     = Path("artifacts/evidence")
-POSTMORTEM_DIR   = Path("docs/postmortems")
-CHAOS_DIR        = Path("bench/chaos_manifests")
-
-KUBECTL = os.getenv("KUBECTL_PATH", "kubectl")
+PROJECT_ROOT = Path(__file__).resolve().parent
+RESULTS_DIR = PROJECT_ROOT / "bench/results"
+EVIDENCE_DIR = PROJECT_ROOT / "artifacts/evidence"
+CHAOS_DIR = PROJECT_ROOT / "bench/chaos_manifests"
+STATUS_FILE = PROJECT_ROOT / "docs/project/MASTER_PIPELINE_STATUS.md"
 
 NAMED_REPLAYS = {
     "Cloudflare 2019 — Regex CPU Storm":   "named_replays/hist-cloudflare-2019",
@@ -69,42 +50,25 @@ SINGLE_FAULT = {
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _kubectl(*args) -> str:
-    if DEMO_SAFE_MODE:
-        return f"[DEMO SAFE MODE] Simulated execution: kubectl {' '.join(args)}"
-    try:
-        env = os.environ.copy()
-        r = subprocess.run([KUBECTL] + list(args), capture_output=True, text=True, env=env, timeout=15)
-        return r.stdout + (("\n[stderr] " + r.stderr) if r.returncode != 0 else "")
-    except Exception as e:
-        return f"[Demo Mode] Local fallback: {e}"
-
-
 def _apply_chaos(scenario_path: str) -> str:
-    manifest = CHAOS_DIR / f"{scenario_path}.yaml"
-    if DEMO_SAFE_MODE or not manifest.exists():
-        return f"✅ [SAFE MODE] Injected simulated fault '{scenario_path}' without destructive cluster mutations."
-    try:
-        env = os.environ.copy()
-        r = subprocess.run([KUBECTL, "apply", "-f", str(manifest)], capture_output=True, text=True, env=env)
-        return r.stdout if r.returncode == 0 else f"❌ {r.stderr}"
-    except Exception as e:
-        return f"✅ [SAFE MODE] Injected fault '{scenario_path}' ({e})"
+    allowed = set(NAMED_REPLAYS.values()) | set(SINGLE_FAULT.values())
+    if scenario_path not in allowed:
+        return "❌ Unknown scenario; no command executed."
+    manifest = (CHAOS_DIR / f"{scenario_path}.yaml").resolve()
+    if not manifest.is_relative_to(CHAOS_DIR.resolve()) or not manifest.is_file():
+        return "❌ Scenario manifest unavailable; no command executed."
+    return (
+        f"[READ-ONLY DEMO] Selected {scenario_path}. No fault was injected, "
+        "no incident workflow ran, and no cluster command was executed. "
+        "Use the preserved G4 evidence tab for an actual recorded attempt."
+    )
 
 
 def _reset_chaos() -> str:
-    if DEMO_SAFE_MODE:
-        return "✅ [SAFE MODE] All simulated chaos faults cleared."
-    try:
-        env = os.environ.copy()
-        r = subprocess.run(
-            [KUBECTL, "delete", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
-             "--all", "-A", "--ignore-not-found=true"],
-            capture_output=True, text=True, env=env,
-        )
-        return "✅ All chaos deleted" if r.returncode == 0 else f"❌ {r.stderr}"
-    except Exception as e:
-        return f"✅ [SAFE MODE] Chaos reset ({e})"
+    return (
+        "[READ-ONLY DEMO] No cluster cleanup was performed. "
+        "Use the scoped Stage 4 harness cleanup and verification procedure for real experiments."
+    )
 
 
 def _load_comparison_table() -> str:
@@ -136,9 +100,9 @@ def _load_ablation_matrix() -> str:
 
 def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k: int) -> str:
     try:
-        from recommender.hybrid import HybridRecommender
         from recommender.dataset import load_interactions
-        ckpt = Path("artifacts/models/hybrid_recommender.json")
+        from recommender.hybrid import HybridRecommender
+        ckpt = PROJECT_ROOT / "artifacts/models/hybrid_recommender.json"
         if ckpt.exists():
             model = HybridRecommender.load_checkpoint(ckpt)
         else:
@@ -161,54 +125,162 @@ def _query_hybrid_recommender(alertname: str, service: str, symptoms: str, top_k
             md_lines.append(f"- **Category**: `{r.category}`")
             md_lines.append(f"- **Explanation**: {r.explanation}")
             md_lines.append(f"- **Suggested Tools**: `{'`, `'.join(r.suggested_tools)}`")
-            md_lines.append(f"- **Recommended Actions**:")
+            md_lines.append("- **Recommended Actions**:")
             for act in r.actions:
                 md_lines.append(f"  1. {act}")
             md_lines.append("")
         md_lines.append("_Ranker inputs are scenario-derived; scores are not calibrated recovery probabilities._")
         return "\n".join(md_lines)
-    except Exception as e:
-        return f"❌ Recommender query error: {e}"
+    except Exception:
+        log.exception("Recommender query failed")
+        return "Recommender unavailable; inspect the local demo log for details."
 
 
-def _list_incidents() -> list[str]:
-    if not TRAJECTORIES_DIR.exists():
-        return []
-    return [f.stem for f in sorted(TRAJECTORIES_DIR.glob("*.json"), reverse=True)]
-
-
-def _load_incident(inc_id: str) -> tuple[str, str]:
-    if not inc_id:
-        return "_No incident selected_", ""
-    p = TRAJECTORIES_DIR / f"{inc_id}.json"
-    if not p.exists():
-        return f"Incident record '{inc_id}' not found.", ""
+def _load_project_status() -> str:
+    """Display the checked-in governance snapshot, never inferred live health."""
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        timeline = f"## Incident: {inc_id}\n\n"
-        timeline += f"- **Alert**: `{data.get('alert', {}).get('commonLabels', {}).get('alertname', 'Unknown')}`\n"
-        timeline += f"- **Claimed Resolved**: `{data.get('agent_claimed_resolved')}`\n"
-        timeline += f"- **Environment Resolved**: `{data.get('env_resolved')}`\n"
-        if "recommender" in data:
-            recs = data["recommender"].get("recommended_runbooks", [])
-            timeline += f"- **Recommender Output**: {len(recs)} candidate runbooks suggested.\n"
-        return timeline, f"```json\n{json.dumps(data, indent=2)[:4000]}\n```"
-    except Exception as e:
-        return f"Error loading incident {inc_id}: {e}", ""
+        source = STATUS_FILE.read_text(encoding="utf-8")
+    except OSError as exc:
+        return f"Project status unavailable ({type(exc).__name__})."
+    rows = []
+    for line in source.splitlines():
+        if not re.match(r"^\| \*\*Stage \d+\*\* \|", line):
+            continue
+        cells = [part.strip() for part in line.strip().strip("|").split("|")]
+        if len(cells) != 5:
+            continue
+        status = cells[4].split(" (", 1)[0]
+        rows.append(f"| {cells[2]} | {cells[1]} | {status} |")
+    if len(rows) != 16:
+        return "Project status unavailable: the checked-in G0–G15 table could not be read."
+    return (
+        "**Repository governance snapshot, not a live environment check.** "
+        "Software tests and CI do not close empirical gates.\n\n"
+        "| Gate | Stage | Recorded status |\n|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n\nSource: `docs/project/MASTER_PIPELINE_STATUS.md`. "
+        "G4 remains NOT_PASSED; no new real experiment is implied by this dashboard."
+    )
+
+
+_ATTEMPT_NAME = re.compile(r"EXP-STAGE4-SF002-\d{3}(?:\.interruption)?\.json\Z")
+
+
+def _list_stage4_attempts() -> list[str]:
+    stage_dir = EVIDENCE_DIR / "stage4"
+    if not stage_dir.is_dir():
+        return []
+    return sorted(
+        (path.name for path in stage_dir.iterdir() if path.is_file() and _ATTEMPT_NAME.fullmatch(path.name)),
+        reverse=True,
+    )
+
+
+def _load_stage4_attempt(name: str) -> tuple[str, str]:
+    if not name or not _ATTEMPT_NAME.fullmatch(name):
+        return "Select a preserved Stage 4 attempt.", ""
+    path = EVIDENCE_DIR / "stage4" / name
+    try:
+        raw = path.read_bytes()
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise TypeError("expected a JSON object")
+    except (OSError, ValueError, TypeError, UnicodeDecodeError) as exc:
+        return f"Evidence unavailable ({type(exc).__name__}).", ""
+
+    phases = data.get("phases") or {}
+    execution = phases.get("coordinator_execution") or {}
+    verification = phases.get("verification") or {}
+    approval = execution.get("approval") or {}
+    triage = execution.get("triage") or {}
+    diagnosis = execution.get("diagnosis") or {}
+    comms = execution.get("comms") or {}
+    actions = execution.get("executed_tool_actions") or []
+    mutating = [action for action in actions if action.get("tool") in {"kubectl_rollout", "argocd_rollback", "kubectl_scale", "kubectl_restart"}]
+    from config.scenario_catalog import SCENARIO_CATALOG
+
+    scenario = SCENARIO_CATALOG.get(data.get("scenario_id"))
+    frozen_targets = scenario.target_services if scenario else ()
+    triage_targets = triage.get("affected_services") or []
+    proposal = execution.get("model_proposed_action") or {}
+    proposed_actions = proposal.get("proposed_actions") or []
+    verdict = data.get("gate_g4_pass")
+    if verdict is False:
+        verdict_text = "NOT PASSED"
+    elif verdict is True:
+        verdict_text = "HISTORICAL RAW PASS (not current certification)"
+    else:
+        verdict_text = "INCONCLUSIVE / NOT CERTIFIED"
+    lines = [
+        f"### Preserved attempt {data.get('experiment_id', name)}",
+        "**Historical evidence. Current G4 governance status: NOT_PASSED.**",
+        f"- Recorded outcome: **{verdict_text}**; attempt state: `{data.get('attempt_state', 'unavailable')}`.",
+        f"- Recorded at: `{data.get('completed_at') or data.get('interruption_timestamp') or 'unavailable'}`.",
+        f"- Scenario: `{data.get('scenario_id', 'sf-002')}`; model: `{data.get('model', 'unavailable')}`.",
+        f"- Frozen scenario target: `{', '.join(frozen_targets) or 'unavailable'}`; triage affected services: `{', '.join(triage_targets) or 'unavailable'}`; severity: `{triage.get('severity', 'unavailable')}`.",
+        f"- Diagnosis: {str((diagnosis.get('root_cause') or {}).get('specific') or 'unavailable')[:300]}",
+        "- Recommender output: unavailable in this historical G4 attempt; the G12 integration came later.",
+        f"- P1 approval decision: `{approval.get('decision', 'unavailable')}`.",
+        f"- Mutating tool attempts: `{len(mutating)}`; successful attempts: `{sum(bool(a.get('output', {}).get('success')) for a in mutating)}`.",
+        f"- Environment verifier resolved: `{verification.get('env_resolved', data.get('env_resolved', 'unavailable'))}`.",
+        f"- Comms summary: {str(comms.get('summary_for_dashboard') or 'unavailable')[:300]}",
+    ]
+    criteria = data.get("causal_criteria") or {}
+    warnings = []
+    if frozen_targets and triage_targets and not set(frozen_targets).intersection(triage_targets):
+        warnings.append("- **Target drift:** triage named no frozen target service. This attempt cannot prove correct targeting.")
+    if proposed_actions:
+        first = proposed_actions[0]
+        tool = first.get("tool", "unavailable") if isinstance(first, dict) else "unstructured"
+        lines.append(
+            f"- Historical model proposal: `{tool}`; "
+            "proposal is not an executed action or a trained RL policy result."
+        )
+    if approval.get("decision") == "timeout" and criteria.get("8_approval_satisfied") is True:
+        warnings.append("- **Evidence inconsistency:** historical causal criterion marks approval satisfied despite a timeout. This is not approval proof.")
+    if approval.get("decision") == "timeout" and mutating:
+        warnings.append("- **Safety finding:** mutating tool attempts are recorded after a P1 approval timeout. The attempt did not establish safe approval behavior.")
+    lines[3:3] = warnings
+    for action in mutating[:5]:
+        args = action.get("args") or {}
+        output = action.get("output") or {}
+        target = args.get("resource") or args.get("app") or "unavailable"
+        lines.append(
+            f"  - Tool attempt: `{action.get('tool', 'unavailable')}` on `{str(target)[:80]}`; "
+            f"tool success: `{bool(output.get('success'))}`."
+        )
+    if name.endswith(".interruption.json"):
+        lines.append(f"- Interruption: `{data.get('classification', 'unavailable')}`; no completed verifier verdict is recorded.")
+    provenance = (
+        f"Source: `{path.relative_to(PROJECT_ROOT)}`  \n"
+        f"SHA-256: `{hashlib.sha256(raw).hexdigest()}`  \n"
+        "This summary shows selected fields; inspect the preserved source for the full record."
+    )
+    return "\n".join(lines), provenance
 
 
 # ── Tab Builders ───────────────────────────────────────────────────────────────
+def build_status_tab():
+    with gr.Tab("🧭 Project Status"):
+        gr.Markdown("## What has been proved so far")
+        status_out = gr.Markdown(_load_project_status())
+        gr.Button("Refresh repository status").click(_load_project_status, outputs=[status_out])
+
+
 def build_live_ops_tab():
-    with gr.Tab("⚡ Live Ops & Thought Stream"):
-        gr.Markdown("## Live Multi-Agent Incident Orchestration")
-        gr.Markdown("Trigger a simulated incident to observe real-time multi-agent reasoning from Triage → Diagnosis → Recommender → Remediation → Verifier → Comms.")
+    with gr.Tab("⚡ Scenario Control"):
+        gr.Markdown("## Scenario selection")
+        gr.Markdown(
+            "This console is read-only: selecting a scenario does not inject a fault or run "
+            "the agent pipeline. The preserved G4 tab shows a recorded real attempt."
+        )
         with gr.Row():
             scenario_dropdown = gr.Dropdown(
                 choices=list(SINGLE_FAULT.keys()),
-                value=list(SINGLE_FAULT.keys())[0],
+                value=next(iter(SINGLE_FAULT)),
                 label="Select Failure Scenario",
             )
-            trigger_btn = gr.Button("🚀 Trigger Incident Walkthrough", variant="primary")
+            trigger_btn = gr.Button("Inspect scenario (read-only)", variant="primary")
         status_box = gr.Textbox(label="Execution Status", lines=2)
         trigger_btn.click(lambda s: _apply_chaos(SINGLE_FAULT[s]), inputs=[scenario_dropdown], outputs=[status_box])
 
@@ -216,7 +288,7 @@ def build_live_ops_tab():
 def build_recommender_tab():
     with gr.Tab("📚 Runbook Recommender (RS)"):
         gr.Markdown("## Interactive Hybrid Runbook Recommender (Gate G11 / Stage 12)")
-        gr.Markdown("Queries the tri-signal hybrid recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$) against real symptoms and service topologies.")
+        gr.Markdown("**Local recommender demonstration.** Ranking uses scenario-derived interactions, not historical user feedback or a calibrated recovery probability. No remediation is executed here.")
         with gr.Row():
             alert_in = gr.Dropdown(
                 choices=["KubeMemoryOvercommit", "PodCrashLooping", "HighHTTP5xxRate", "DatabaseConnectionExhaustion", "NetworkPartitionDetected", "DiskVolumeUsageCritical"],
@@ -244,15 +316,19 @@ def build_recommender_tab():
 
 
 def build_incidents_tab():
-    with gr.Tab("📋 Incidents & Trajectories"):
-        gr.Markdown("## Historical Incident Trajectories & Ground-Truth Verification")
+    with gr.Tab("📋 Preserved G4 Evidence"):
+        gr.Markdown("## Recorded golden-incident attempts")
+        gr.Markdown("Read-only summaries of preserved Stage 4 records. An interrupted or negative record is not a gate pass.")
+        choices = _list_stage4_attempts()
+        initial = "EXP-STAGE4-SF002-010.json" if "EXP-STAGE4-SF002-010.json" in choices else (choices[0] if choices else None)
         with gr.Row():
-            incident_list = gr.Dropdown(choices=_list_incidents(), label="Select Incident ID")
-            refresh_btn = gr.Button("🔄 Refresh Trajectories")
-        timeline_out = gr.Markdown("_Select an incident trajectory to view forensic details_")
-        payload_out = gr.Markdown("")
-        incident_list.change(_load_incident, inputs=[incident_list], outputs=[timeline_out, payload_out])
-        refresh_btn.click(lambda: gr.update(choices=_list_incidents()), outputs=[incident_list])
+            incident_list = gr.Dropdown(choices=choices, value=initial, label="Preserved evidence file")
+            refresh_btn = gr.Button("Refresh evidence list")
+        summary, source = _load_stage4_attempt(initial) if initial else ("No Stage 4 attempt evidence is available.", "")
+        timeline_out = gr.Markdown(summary)
+        payload_out = gr.Markdown(source)
+        incident_list.change(_load_stage4_attempt, inputs=[incident_list], outputs=[timeline_out, payload_out])
+        refresh_btn.click(lambda: gr.update(choices=_list_stage4_attempts()), outputs=[incident_list])
 
 
 def build_ablation_tab():
@@ -273,22 +349,21 @@ def build_bench_tab():
 
 
 def build_replays_tab():
-    with gr.Tab("🎬 Historical Replays"):
-        gr.Markdown("## 10 Named Historical Production Incidents")
+    with gr.Tab("🎬 Scenario Catalogue"):
+        gr.Markdown("## Named scenario manifests")
+        gr.Markdown("These buttons select a manifest in read-only mode. They do not replay a historical incident or produce an agent result.")
+        reset_out = gr.Textbox(label="Action status", lines=3)
         with gr.Row():
             for name in list(NAMED_REPLAYS.keys())[:5]:
                 btn = gr.Button(name, size="sm")
-                out = gr.Textbox(visible=False)
                 path = NAMED_REPLAYS[name]
-                btn.click(lambda p=path: _apply_chaos(p), outputs=[out])
+                btn.click(lambda p=path: _apply_chaos(p), outputs=[reset_out])
         with gr.Row():
             for name in list(NAMED_REPLAYS.keys())[5:]:
                 btn = gr.Button(name, size="sm")
-                out = gr.Textbox(visible=False)
                 path = NAMED_REPLAYS[name]
-                btn.click(lambda p=path: _apply_chaos(p), outputs=[out])
-        reset_all = gr.Button("⏹ Clear All Simulated Faults", variant="stop")
-        reset_out = gr.Textbox(label="Status", lines=2)
+                btn.click(lambda p=path: _apply_chaos(p), outputs=[reset_out])
+        reset_all = gr.Button("Show cleanup guidance")
         reset_all.click(_reset_chaos, outputs=[reset_out])
 
 
@@ -311,8 +386,10 @@ Forked from `Harikishanth/AtlasOps` (frozen baseline `bf9bd19`) into `virajchoud
 
 
 def build_app():
-    with gr.Blocks(title="AtlasOps Ops Console & Demo Interface") as demo:
+    with gr.Blocks(title="AtlasOps Ops Console & Demo Interface", analytics_enabled=False) as demo:
         gr.Markdown("# ⚡ AtlasOps — Autonomous Multi-Agent Incident Response Console")
+        gr.Markdown("**Local demo and preserved evidence. No live health or empirical gate pass is implied.**")
+        build_status_tab()
         build_live_ops_tab()
         build_recommender_tab()
         build_incidents_tab()
@@ -325,4 +402,4 @@ def build_app():
 
 if __name__ == "__main__":
     demo = build_app()
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)

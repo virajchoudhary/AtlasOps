@@ -1,13 +1,15 @@
 # End-to-End Incident Flow
 
-How a single chaos scenario travels through AtlasOps from button click to Discord notification.
+How an authenticated Alertmanager alert travels through AtlasOps to a verified
+incident record. The web injection and cleanup shortcuts are retired; a controlled
+real Chaos experiment uses the governed Stage 4 harness and its preflight.
 
 ## Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant Judge as Judge / User
-    participant UI as Live Ops UI
+    participant Operator as Operator
+    participant Alertmanager as Alertmanager
     participant App as app.py
     participant Coord as Coordinator
     participant Corr as Correlator
@@ -16,14 +18,8 @@ sequenceDiagram
     participant Tools as SRE Tools
     participant Discord as Discord Webhook
 
-    Judge->>UI: Click scenario (e.g. Pod Kill)
-    UI->>App: POST /inject {scenario_id}
-    App->>App: kubectl apply (or skip on Space)
-    App-->>UI: 200 OK {correlation_id}
-    UI->>UI: Start SSE stream, show timeline
-
-    Note over App: 20s delay for alert propagation
-
+    Alertmanager->>App: POST /webhook (Bearer secret)
+    App->>App: Authenticate payload
     App->>Corr: ingest(alert)
     Corr-->>App: incident_id, should_dispatch=true
     App->>Coord: handle_incident(alert, incident_id)
@@ -35,10 +31,8 @@ sequenceDiagram
         LLM-->>Coord: tool_call: kubectl_get
         Coord->>Tools: kubectl_get(pods)
         Tools-->>Coord: pod status JSON
-        Coord->>UI: SSE thought (triage / tool_call)
         Coord->>LLM: tool result + continue
         LLM-->>Coord: conclusion {severity, title, blast_radius}
-        Coord->>UI: SSE thought (triage / conclusion)
     end
 
     rect rgb(30,40,60)
@@ -47,15 +41,12 @@ sequenceDiagram
         LLM-->>Coord: tool_call: promql_query, jaeger_search
         Coord->>Tools: promql + jaeger
         Tools-->>Coord: metrics + traces
-        Coord->>UI: SSE thoughts
         LLM-->>Coord: conclusion {root_cause, confidence}
     end
 
     alt P1 severity (approval required)
         Coord->>Discord: Approval required embed
-        Coord->>UI: SSE thought (waiting_approval)
-        Judge->>UI: Click Approve / Reject
-        UI->>App: POST /approve {token, decision}
+        Operator->>App: POST /approve (API key, token, decision)
         App->>Coord: approval callback
     end
 
@@ -70,7 +61,6 @@ sequenceDiagram
                 Tools-->>Coord: tool result
                 Coord->>Coord: authoritative verifier observation
                 Coord-->>LLM: structured action + verifier observation
-                Coord->>UI: SSE thoughts
             end
             Coord-->>LLM: conclusion {outcome: resolved/unresolved/escalated}
         end
@@ -83,19 +73,18 @@ sequenceDiagram
         Coord->>LLM: chat/completions (comms prompt)
         LLM-->>Coord: tool_call: slack_post_update, postmortem_draft
         Coord->>Discord: Closure embed (if webhook configured)
-        Coord->>UI: SSE thought (comms / conclusion)
     end
 
     Coord->>CB: finish_incident(resolved, reason)
     Note over CB: approval_rejected does NOT trip breaker
     Coord->>Discord: Scenario run complete ping (finally block)
     Coord-->>App: full_record
-    App-->>UI: Incident complete
 ```
 
 ## Key Design Decisions
 
-**Correlator bypass for UI injects** — Each `/inject` carries a `correlation_id` starting with `inj-`. The correlator always dispatches these as new incidents instead of merging with existing Alertmanager fingerprints. This prevents the second scenario from being silently swallowed when another run is still active.
+**Webhook ingestion** — The authenticated Alertmanager payload enters the correlator.
+The retired `/inject` path cannot synthesize an alert or bypass incident deduplication.
 
 **Circuit breaker semantics** — Only `system_error` and `agent_error` outcomes count toward the consecutive failure threshold. Designed outcomes like `approval_rejected`, `manual_runbook`, and `approval_timeout` do not trip the breaker, so judges can reject remediation freely without locking the system. The hourly action quota applies only to cluster-mutating remediation tools; external communications and local postmortem writes remain subject to the general per-incident call limit but do not consume cluster-mutation capacity.
 
@@ -118,4 +107,9 @@ After each action, the runtime records the tool result and invokes the objective
 environment verifier before another mutation can execute. Known-terminal errors
 such as authorization failure or invalid revision block cosmetic retries.
 
-**POST /reset clears everything** — Resets chaos manifests, circuit breaker state, and correlator incident tracking. The UI Reset button is a true panic switch for demos.
+**Web action boundary** — `/inject` and `/reset` return 503 even with an API key
+and old opt-in flags; they cannot meet the governed preflight, alert-causality,
+cleanup, and verifier contract. `/approve` and the pending-approval endpoint
+require `ATLASOPS_API_KEY`. The Alertmanager `/webhook` requires
+`ALERTMANAGER_WEBHOOK_SECRET`; an unsigned webhook cannot start an incident.
+Real fault injection and verified cleanup belong to the Stage 4 harness.

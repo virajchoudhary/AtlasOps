@@ -3,12 +3,49 @@
 import asyncio
 import json
 import math
+import sys
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 
 class TestRunScenario:
+    def test_legacy_runner_has_no_live_cluster_actions(self, monkeypatch):
+        from bench import runner
+
+        monkeypatch.setenv("ATLASOPS_MOCK_EVAL", "1")
+        assert runner.apply_chaos("single_fault/sf-001") is False
+        with pytest.raises(RuntimeError, match="cannot clean a cluster"):
+            runner.reset_cluster()
+
+    def test_cli_requires_explicit_mock_before_creating_output(self, monkeypatch, tmp_path):
+        from bench import runner
+
+        destination = tmp_path / "blocked-run"
+        monkeypatch.setenv("ATLASOPS_MOCK_EVAL", "1")
+        monkeypatch.setattr(sys, "argv", ["runner", "--model", "fixture", "--output", str(destination)])
+        with pytest.raises(RuntimeError, match="mock-only"):
+            asyncio.run(runner.main())
+        assert not destination.exists()
+
+    def test_explicit_mock_output_is_isolated_and_labelled(self, monkeypatch, tmp_path):
+        from bench import runner
+
+        destination = tmp_path / "mock-run"
+        monkeypatch.setattr(sys, "argv", [
+            "runner", "--model", "fixture", "--mock", "--adversarial", "0",
+            "--scenarios", "single_fault/sf-001", "--output", str(destination),
+        ])
+        monkeypatch.setenv("AGENT_MODEL", "fixture")
+        asyncio.run(runner.main())
+        summary = json.loads((destination / "results_summary.json").read_text(encoding="utf-8"))
+        episode = json.loads((destination / "results_per_episode.jsonl").read_text(encoding="utf-8"))
+        assert summary["non_empirical"] is True
+        assert episode["non_empirical"] is True
+        assert "NON_EMPIRICAL" in (destination / "comparison_table.md").read_text(encoding="utf-8")
+        with pytest.raises(FileExistsError):
+            asyncio.run(runner.main())
+
     def test_passes_cascade_tier_to_judge(self, monkeypatch):
         from bench import runner
 

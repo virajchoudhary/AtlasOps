@@ -1,61 +1,36 @@
-# Stage 14: Deploy Final Demo Safely (Gate G14)
+# Stage 14: Local Read-Only Demo (Gate G14)
 
-This document records the local demo implementation. **G14 is PARTIAL**: a safe-mode UI and launcher have local tests, while target deployment, service health, and live operational safety remain unverified.
+**G14 is PARTIAL.** The local Gradio console is a demonstration and evidence browser. It does not establish live service health, deployment safety, or an empirical gate pass.
 
----
+## Start
 
-## 1. Operator Demonstration Console Overview
+From the repository root on Windows:
 
-The AtlasOps demonstration suite is structured into an interactive 7-tab Gradio interface accessible locally (`python -m demo.launcher`) and on cloud accelerators:
-
-1. **⚡ Live Ops & Thought Stream**:
-   - Real-time event streaming and visual orchestration of multi-agent incident triage, root-cause diagnosis, runbook recommendation, mutating remediation, and environment verification.
-2. **📚 Runbook Recommender (RS)**:
-   - Interactive live query explorer for the Stage 11 Hybrid Recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$).
-   - Dynamically inspects top-$K$ recommendations, match confidence explanations, suggested tool sequences, and step-by-step remediation procedures.
-3. **📋 Incidents & Trajectories**:
-   - Forensic trajectory inspector rendering historical multi-agent execution records (`data/trajectories/*.json`).
-4. **📈 Multi-Model Ablations**:
-   - Live rendering of the comprehensive 5-model x 4-partition benchmark matrix produced in Stage 13.
-5. **📊 Benchmark Overview**:
-   - Per-tier breakdown across Single-Fault, Named Replays, and Cascading Leaderboard scenarios.
-6. **🎬 Historical Replays**:
-   - 10 named historic production incident replicas (Cloudflare 2019, AWS S3 2017, GitHub 2018, Datadog 2023, Knight Capital 2012, etc.).
-7. **ℹ️ About & Architecture**:
-   - Full academic workstream reference, system contract, and upstream attribution (`Harikishanth/AtlasOps` $\\rightarrow$ `virajchoudhary/AtlasOps`).
-
----
-
-## 2. Safe Mode Guardrails
-
-To ensure that the demonstration console can be executed safely by evaluators without requiring real cluster access or risking accidental infrastructure mutations:
-- **Default Safe Mode (`DEMO_SAFE_MODE=1`)**:
-  - The dashboard's `_kubectl`, `_apply_chaos`, and `_reset_chaos` paths return simulated outcomes instead of issuing their cluster commands.
-  - The launcher binds to `127.0.0.1` by default. These controls are local UI behavior, not a system-wide guarantee that every AtlasOps entrypoint is non-mutating.
-- **Explicit Live Flag (`--live-cluster`)**:
-  - Live mutating commands are only executed when explicitly authorized with `--live-cluster` in controlled sandbox clusters.
-
----
-
-## 3. Quickstart Launcher CLI
-
-```bash
-# Launch in safe demonstration mode (default)
-python -m demo.launcher --port 7860
-
-# Use an explicit host only after reviewing network exposure and approval controls
-python -m demo.launcher --port 7860 --host 127.0.0.1
+```powershell
+& .\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7860
 ```
 
----
+The launcher binds to localhost by default. The Gradio console is read-only: its scenario controls identify checked-in Chaos manifests without running `kubectl`, injecting a fault, starting the agent pipeline, or cleaning a cluster. Live G4 execution belongs to the governed Stage 4 harness after its own preflight and authorization. Do not describe scenario selection as a simulated incident result.
 
-## 4. Gate G14 Acceptance Criteria
+## Five-minute evidence-led walkthrough
 
-Gate G14 is verified by automated unit tests in `tests/test_stage14_demo_safety.py`:
-- `test_build_app_constructs_all_seven_tabs`: **PASS** (Gradio interface successfully initialized).
-- `test_demo_safe_mode_prevents_cluster_mutations`: **PASS** (Safe-mode guardrail validated).
-- `test_dashboard_recommender_query_interactive`: **PASS** (Interactive RS querying verified).
-- `test_load_ablation_matrix_and_comparison_table`: **PASS** (Benchmark and ablation matrix loaders verified).
-- `test_demo_launcher_cli_configuration`: **PASS** (CLI argument parser verified).
+1. **Project Status:** show the checked-in G0–G15 governance snapshot. Explain that G4 is `NOT_PASSED` and CI proves software behavior, not model performance.
+2. **About & Architecture:** follow Alert → Triage → Diagnosis → Recommender → approval → one action → environment verifier → Comms. The verifier determines resolution.
+3. **Scenario Control:** select `sf-002` to show the available manifest. The console reports that no command or incident workflow ran.
+4. **Preserved G4 Evidence:** open `EXP-STAGE4-SF002-010.json`. Show the P1 approval timeout inconsistency, incorrect target, failed mutating tool attempts, objective unresolved verdict, Comms summary, and source SHA-256. Then select attempt 014 to show an interrupted record with no completed verifier verdict.
+5. **Runbook Recommender:** issue the prefilled query. Explain that its ranking is based on scenario-derived interactions and is advisory; no remediation is executed by this tab.
+6. **Ablations and Benchmarks:** show the explicit non-empirical historical labels and the absence of certified measured results. Close on the status tab's remaining gates and blockers.
 
-**Gate G14 Status**: **`PARTIAL`** — local demo implementation and tests are available; live deployment is not certified.
+This walkthrough works without Docker, Kind, a model endpoint, or a GPU. It is a fallback presentation using preserved historical evidence and local software. It must be described as such.
+
+## Visible evidence contract
+
+- The status table is read from `docs/project/MASTER_PIPELINE_STATUS.md`, so it is a repository snapshot, not live health.
+- Stage 4 attempt summaries are read from `artifacts/evidence/stage4/`. They display selected fields and a SHA-256 of the source file; the full source remains unchanged.
+- Historical comparison and ablation files are labelled unverified or non-empirical. They do not close G13.
+- The recommender ranks runbooks from scenario-derived data. A ranking score is not a recovery probability.
+- Missing evidence is shown as unavailable. The UI does not invent resolution, reward, TTR, checkpoint, or model metrics.
+
+## Acceptance boundary
+
+`tests/test_stage14_demo_safety.py` checks construction, read-only behavior, the G0–G15 snapshot, negative and interrupted G4 evidence, recommender output, and historical result labels. A local startup smoke test checks the browser server separately. Neither check proves G14 deployment or any empirical stage.

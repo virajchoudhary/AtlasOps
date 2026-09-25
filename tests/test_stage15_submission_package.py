@@ -57,14 +57,18 @@ class TestStage15SubmissionPackage:
             assert sec in content, f"Missing required section: {sec}"
 
     def test_submission_manifest_integrity_and_metrics(self):
-        assets = collect_submission_assets()
+        assets = json.loads(
+            Path("artifacts/SUBMISSION_MANIFEST.json").read_text(encoding="utf-8")
+        )["assets"]
         assert len(assets) >= 15
+        assert assets.keys() == collect_submission_assets().keys()
 
         for path_str, meta in assets.items():
             p = Path(path_str)
             assert p.exists(), f"Tracked asset {path_str} does not exist!"
             actual_sha = compute_sha256(p)
             assert actual_sha == meta["sha256"], f"Checksum mismatch for {path_str}!"
+            assert p.stat().st_size == meta["size_bytes"]
 
     def test_pipeline_master_status_records_all_gates(self):
         status_path = Path("docs/project/MASTER_PIPELINE_STATUS.md")

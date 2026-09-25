@@ -57,4 +57,6 @@
 > Upstream reports that these live results were produced on a real GKE cluster
 > (us-central1) with Prometheus/Jaeger/Argo CD APIs. This has not been reproduced
 > by the continuation team.
-> Reproduce: `python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3`
+> The former `bench/runner.py` live command is retired. The current runner produces
+> only explicit non-empirical fixtures. A real result requires the governed Stage 4
+> harness and dedicated model evaluators with preserved provenance.

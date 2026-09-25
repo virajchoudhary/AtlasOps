@@ -58,7 +58,19 @@
     ];
   }
 
-  const api = Object.freeze({ projectLiveIncident });
+  function recommendationQuery(item) {
+    const alerts = item?.alert_names;
+    const services = item?.services;
+    if (!Array.isArray(alerts) || alerts.length !== 1 ||
+        !Array.isArray(services) || services.length !== 1) return null;
+    const [alert] = alerts, [service] = services;
+    if (typeof alert !== "string" || typeof service !== "string" ||
+        !alert.trim() || !service.trim() ||
+        alert.length > 100 || service.length > 100) return null;
+    return { alert_name: alert.trim(), service: service.trim(), top_k: 3 };
+  }
+
+  const api = Object.freeze({ projectLiveIncident, recommendationQuery });
   root.AtlasOpsLiveIncident = api;
   if (typeof module === "object" && module.exports) module.exports = api;
 })(globalThis);

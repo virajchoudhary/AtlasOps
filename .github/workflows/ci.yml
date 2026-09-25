@@ -14,6 +14,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend:
+    name: Frontend contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check browser scripts
+        run: |
+          node --check static/console.js
+          node --check static/live-incident.js
+
+      - name: Test live incident projection
+        run: node --test static/live-incident.test.js
+
   quality:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

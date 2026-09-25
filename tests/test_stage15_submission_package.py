@@ -62,6 +62,15 @@ class TestStage15SubmissionPackage:
         )["assets"]
         assert len(assets) >= 15
         assert assets.keys() == collect_submission_assets().keys()
+        assert {
+            "static/index.html",
+            "static/console.css",
+            "static/console.js",
+            "static/live-incident.js",
+            "static/live-incident.test.js",
+            "static/vendor/lucide.min.js",
+            "static/vendor/LUCIDE-LICENSE",
+        } <= assets.keys()
 
         for path_str, meta in assets.items():
             p = Path(path_str)

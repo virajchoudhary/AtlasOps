@@ -259,55 +259,156 @@ def _load_stage4_attempt(name: str) -> tuple[str, str]:
     return "\n".join(lines), provenance
 
 
-# ── Tab Builders ───────────────────────────────────────────────────────────────
-def build_status_tab():
-    with gr.Tab("🧭 Project Status"):
-        gr.Markdown("## What has been proved so far")
+# ── Read-only product views ────────────────────────────────────────────────────
+_UI_CSS = """
+:root { --atlas-ink:#172322; --atlas-line:#dce3e0; --atlas-muted:#586664; }
+body, .gradio-container { background:#f5f7f6 !important; color:var(--atlas-ink) !important; }
+.gradio-container { max-width:1380px !important; padding:20px 28px 48px !important; }
+.atlas-header { background:#182524; color:#edf5f1; padding:21px 25px; border-radius:6px; }
+.atlas-header strong { font-size:19px; }
+.atlas-header small { display:block; color:#b5c9c1; margin-top:3px; }
+.atlas-status { display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+  background:#fff; border:1px solid var(--atlas-line); border-radius:6px; margin:17px 0 25px; }
+.atlas-status div { padding:15px 18px; border-right:1px solid var(--atlas-line); }
+.atlas-status div:last-child { border:0; }
+.atlas-status span { display:block; color:var(--atlas-muted); font-size:12px; }
+.atlas-status b { display:block; font-size:17px; margin-top:5px; }
+.gradio-container .tab-nav { border-bottom:1px solid var(--atlas-line); gap:3px; }
+.gradio-container .tab-nav button { border-radius:5px 5px 0 0 !important; font-size:13px; }
+.gradio-container .tab-nav button.selected { border-bottom:2px solid #087c70 !important; }
+.gradio-container .prose h2 { font-size:22px; margin-top:18px; }
+.gradio-container .prose h3 { font-size:16px; }
+.gradio-container button { border-radius:5px !important; }
+@media(max-width:720px) {
+  .gradio-container { padding:12px 13px 32px !important; }
+  .atlas-status { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .atlas-status div:nth-child(2) { border-right:0; }
+  .atlas-status div:nth-child(-n+2) { border-bottom:1px solid var(--atlas-line); }
+}
+"""
+
+
+def build_overview_tab():
+    with gr.Tab("Overview"):
+        gr.Markdown("## Operations")
+        gr.Markdown(
+            "This local demo displays checked-in evidence, not a live incident feed. "
+            "Open the FastAPI operator console for current process observations."
+        )
+        gr.Markdown("### Current constraints")
+        gr.Markdown(
+            "- **G4: NOT_PASSED.** Attempt 010 is a completed negative result.\n"
+            "- **No current environment verdict.** Historical cluster acceptance is not live health.\n"
+            "- **No verified model outcome aggregate.** Mock and predetermined outputs are not empirical results."
+        )
+
+
+def build_incidents_tab():
+    with gr.Tab("Incidents"):
+        gr.Markdown("## Preserved incident attempts")
+        gr.Markdown(
+            "Read-only historical G4 evidence. An interrupted or negative record is not a gate pass."
+        )
+        choices = _list_stage4_attempts()
+        initial = "EXP-STAGE4-SF002-010.json" if "EXP-STAGE4-SF002-010.json" in choices else (
+            choices[0] if choices else None
+        )
+        with gr.Row():
+            incident_list = gr.Dropdown(choices=choices, value=initial, label="Recorded attempt")
+            refresh_btn = gr.Button("Refresh evidence list")
+        summary, source = _load_stage4_attempt(initial) if initial else (
+            "No Stage 4 attempt evidence is available.", ""
+        )
+        summary_out = gr.Markdown(summary)
+        provenance_out = gr.Markdown(source)
+        incident_list.change(
+            _load_stage4_attempt, inputs=[incident_list], outputs=[summary_out, provenance_out]
+        )
+        refresh_btn.click(lambda: gr.update(choices=_list_stage4_attempts()), outputs=[incident_list])
+        gr.Markdown("### Inspect a scenario")
+        gr.Markdown("Selection does not inject a fault, run agents, or change the cluster.")
+        with gr.Row():
+            scenario = gr.Dropdown(
+                choices=list(SINGLE_FAULT), value=next(iter(SINGLE_FAULT)), label="Scenario manifest"
+            )
+            inspect = gr.Button("Inspect selection")
+        selection_out = gr.Textbox(label="Read-only selection", lines=2, interactive=False)
+        inspect.click(
+            lambda s: _apply_chaos(SINGLE_FAULT[s]), inputs=[scenario], outputs=[selection_out]
+        )
+
+
+def build_agents_tab():
+    with gr.Tab("Agents"):
+        gr.Markdown("## Agent roles")
+        gr.Markdown(
+            "**Generative agents propose. Safety controls authorize. "
+            "Environment verification decides success.**"
+        )
+        gr.Markdown(
+            "| Role | Responsibility | Runtime state |\n|---|---|---|\n"
+            "| Triage | Classify alerts and affected services | Not observed |\n"
+            "| Diagnosis | Investigate root cause | Not observed |\n"
+            "| Recommender | Rank advisory runbooks | Local query available |\n"
+            "| Remediation policy | Enforce target, tool, and approval boundaries | Not observed |\n"
+            "| Verifier | Check objective environment state | No current verdict |\n"
+            "| Comms | Record incident updates | Not observed |"
+        )
+
+
+def build_models_tab():
+    with gr.Tab("Models"):
+        gr.Markdown("## Model readiness")
+        gr.Markdown(
+            "Model names and training code are not deployment evidence. No endpoint probe, "
+            "usable SFT checkpoint, or completed GRPO evaluation is established by this demo."
+        )
+        gr.Markdown(
+            "| Stage | Recorded state | Readiness |\n|---|---|---|\n"
+            "| Base model | Repository configuration | Runtime not verified |\n"
+            "| SFT | Corpus and config exist | Usable checkpoint unverified |\n"
+            "| GRPO | Software contract implemented | Training and evaluation missing |"
+        )
+
+
+def build_evaluations_tab():
+    with gr.Tab("Evaluations"):
+        gr.Markdown("## Research status")
         status_out = gr.Markdown(_load_project_status())
         gr.Button("Refresh repository status").click(_load_project_status, outputs=[status_out])
+        with gr.Accordion("Historical benchmark comparison", open=False):
+            bench_out = gr.Markdown(_load_comparison_table())
+            gr.Button("Refresh comparison").click(_load_comparison_table, outputs=[bench_out])
+        with gr.Accordion("Predetermined ablation output", open=False):
+            ablation_out = gr.Markdown(_load_ablation_matrix())
+            gr.Button("Refresh matrix").click(_load_ablation_matrix, outputs=[ablation_out])
 
 
-def build_live_ops_tab():
-    with gr.Tab("⚡ Scenario Control"):
-        gr.Markdown("## Scenario selection")
+def build_runbooks_tab():
+    with gr.Tab("Runbooks"):
+        gr.Markdown("## Advisory runbook ranking")
         gr.Markdown(
-            "This console is read-only: selecting a scenario does not inject a fault or run "
-            "the agent pipeline. The preserved G4 tab shows a recorded real attempt."
+            "Local recommender demonstration. Interactions are scenario-derived, not historical "
+            "operator feedback; ranking scores are not recovery probabilities. No remediation runs."
         )
-        with gr.Row():
-            scenario_dropdown = gr.Dropdown(
-                choices=list(SINGLE_FAULT.keys()),
-                value=next(iter(SINGLE_FAULT)),
-                label="Select Failure Scenario",
-            )
-            trigger_btn = gr.Button("Inspect scenario (read-only)", variant="primary")
-        status_box = gr.Textbox(label="Execution Status", lines=2)
-        trigger_btn.click(lambda s: _apply_chaos(SINGLE_FAULT[s]), inputs=[scenario_dropdown], outputs=[status_box])
-
-
-def build_recommender_tab():
-    with gr.Tab("📚 Runbook Recommender (RS)"):
-        gr.Markdown("## Interactive Hybrid Runbook Recommender (Gate G11 / Stage 12)")
-        gr.Markdown("**Local recommender demonstration.** Ranking uses scenario-derived interactions, not historical user feedback or a calibrated recovery probability. No remediation is executed here.")
         with gr.Row():
             alert_in = gr.Dropdown(
-                choices=["KubeMemoryOvercommit", "PodCrashLooping", "HighHTTP5xxRate", "DatabaseConnectionExhaustion", "NetworkPartitionDetected", "DiskVolumeUsageCritical"],
-                value="KubeMemoryOvercommit",
-                label="Alert Name",
+                choices=["KubeMemoryOvercommit", "PodCrashLooping", "HighHTTP5xxRate",
+                         "DatabaseConnectionExhaustion", "NetworkPartitionDetected",
+                         "DiskVolumeUsageCritical"],
+                value="KubeMemoryOvercommit", label="Alert",
             )
             service_in = gr.Dropdown(
-                choices=["frontend", "checkoutservice", "paymentservice", "cartservice", "emailservice", "productcatalogservice"],
-                value="frontend",
-                label="Affected Microservice",
+                choices=["frontend", "checkoutservice", "paymentservice", "cartservice",
+                         "emailservice", "productcatalogservice"],
+                value="frontend", label="Service",
             )
-            topk_slider = gr.Slider(minimum=1, maximum=5, value=3, step=1, label="Top-K Recommendations")
+            topk_slider = gr.Slider(minimum=1, maximum=5, value=3, step=1, label="Suggestions")
         symptoms_in = gr.Textbox(
-            label="Observed Incident Symptoms & Root-Cause Notes",
-            value="Container killed by OOM (exit code 137), memory limit 250Mi breached under flash-sale load.",
-            lines=2,
+            label="Symptoms", value="OOMKilled memory limit exceeded", lines=2
         )
-        recommend_btn = gr.Button("🔍 Query Hybrid Recommender", variant="primary")
-        recs_out = gr.Markdown(_query_hybrid_recommender("KubeMemoryOvercommit", "frontend", "OOMKilled memory limit exceeded", 3))
+        recommend_btn = gr.Button("Rank runbooks", variant="primary")
+        recs_out = gr.Markdown("No query run in this session.")
         recommend_btn.click(
             _query_hybrid_recommender,
             inputs=[alert_in, service_in, symptoms_in, topk_slider],
@@ -315,91 +416,68 @@ def build_recommender_tab():
         )
 
 
-def build_incidents_tab():
-    with gr.Tab("📋 Preserved G4 Evidence"):
-        gr.Markdown("## Recorded golden-incident attempts")
-        gr.Markdown("Read-only summaries of preserved Stage 4 records. An interrupted or negative record is not a gate pass.")
-        choices = _list_stage4_attempts()
-        initial = "EXP-STAGE4-SF002-010.json" if "EXP-STAGE4-SF002-010.json" in choices else (choices[0] if choices else None)
-        with gr.Row():
-            incident_list = gr.Dropdown(choices=choices, value=initial, label="Preserved evidence file")
-            refresh_btn = gr.Button("Refresh evidence list")
-        summary, source = _load_stage4_attempt(initial) if initial else ("No Stage 4 attempt evidence is available.", "")
-        timeline_out = gr.Markdown(summary)
-        payload_out = gr.Markdown(source)
-        incident_list.change(_load_stage4_attempt, inputs=[incident_list], outputs=[timeline_out, payload_out])
-        refresh_btn.click(lambda: gr.update(choices=_list_stage4_attempts()), outputs=[incident_list])
+def build_evidence_tab():
+    with gr.Tab("Evidence"):
+        gr.Markdown("## Evidence classes")
+        gr.Markdown(
+            "| Source | Classification | Interpretation |\n|---|---|---|\n"
+            "| Stage 4 attempts | Historical real attempts | Negative or interrupted; G4 NOT_PASSED |\n"
+            "| Stage 6/8/9 archive | Mock outputs | Not empirical model performance |\n"
+            "| Stage 10/11 | Scenario-derived | Bounded recommender evaluation |\n"
+            "| Stage 13 matrix | Predetermined profile | Not measured ablation |"
+        )
+        gr.Markdown("### Named scenario manifests")
+        gr.Markdown("Inspecting a manifest is not a replay or a new incident.")
+        named = gr.Dropdown(
+            choices=list(NAMED_REPLAYS), value=next(iter(NAMED_REPLAYS)), label="Named manifest"
+        )
+        output = gr.Textbox(label="Read-only selection", lines=2, interactive=False)
+        gr.Button("Inspect manifest").click(
+            lambda s: _apply_chaos(NAMED_REPLAYS[s]), inputs=[named], outputs=[output]
+        )
 
 
-def build_ablation_tab():
-    with gr.Tab("📈 Multi-Model Ablations (Stage 13)"):
-        gr.Markdown("## Final Multi-Model Ablation & Stress Matrix (Gate G13)")
-        gr.Markdown("Comparison of the predetermined 5-model family across all 4 evaluation splits.")
-        ablation_out = gr.Markdown(_load_ablation_matrix())
-        refresh_btn = gr.Button("🔄 Refresh Ablation Matrix")
-        refresh_btn.click(_load_ablation_matrix, outputs=[ablation_out])
-
-
-def build_bench_tab():
-    with gr.Tab("📊 Benchmark Overview"):
-        gr.Markdown("## AtlasOps — Benchmark Results & Tier Breakdown")
-        bench_out = gr.Markdown(_load_comparison_table())
-        refresh_btn = gr.Button("🔄 Refresh Benchmark Overview")
-        refresh_btn.click(_load_comparison_table, outputs=[bench_out])
-
-
-def build_replays_tab():
-    with gr.Tab("🎬 Scenario Catalogue"):
-        gr.Markdown("## Named scenario manifests")
-        gr.Markdown("These buttons select a manifest in read-only mode. They do not replay a historical incident or produce an agent result.")
-        reset_out = gr.Textbox(label="Action status", lines=3)
-        with gr.Row():
-            for name in list(NAMED_REPLAYS.keys())[:5]:
-                btn = gr.Button(name, size="sm")
-                path = NAMED_REPLAYS[name]
-                btn.click(lambda p=path: _apply_chaos(p), outputs=[reset_out])
-        with gr.Row():
-            for name in list(NAMED_REPLAYS.keys())[5:]:
-                btn = gr.Button(name, size="sm")
-                path = NAMED_REPLAYS[name]
-                btn.click(lambda p=path: _apply_chaos(p), outputs=[reset_out])
-        reset_all = gr.Button("Show cleanup guidance")
-        reset_all.click(_reset_chaos, outputs=[reset_out])
-
-
-def build_about_tab():
-    with gr.Tab("ℹ️ About & Architecture"):
-        gr.Markdown("""
-## AtlasOps — Autonomous Multi-Agent Incident Response on Kubernetes
-
-### Architecture
-`Incident Alert → Triage Agent → Diagnosis Agent → Hybrid Runbook Recommender → Approval Gate → Remediation Agent → Environment Verifier → Comms Agent`
-
-### Academic Workstreams
-1. **Generative AI**: Multi-agent reasoning, tool calling, fault diagnosis, and incident communication.
-2. **Recommender Systems**: Hybrid collaborative/content-based top-$K$ runbook recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$).
-3. **Reinforcement Learning**: Online Group Relative Policy Optimization (GRPO) with normalized advantage estimation and objective verifier contract reward.
-
-### Project Fork & Provenance
-Forked from `Harikishanth/AtlasOps` (frozen baseline `bf9bd19`) into `virajchoudhary/AtlasOps` with full git history and attribution preserved.
-""")
+def build_settings_tab():
+    with gr.Tab("Settings"):
+        gr.Markdown("## Read-only configuration")
+        gr.Markdown(
+            "| Item | State |\n|---|---|\n"
+            "| Runtime environment | Not probed by this demo |\n"
+            "| Model endpoint | Not probed by this demo |\n"
+            "| Kubernetes context | Not exposed |\n"
+            "| Evidence | Checked-in repository snapshot |\n"
+            "| Approval and remediation | No controls in this demo |"
+        )
+        gr.Markdown("Real experiments use the governed Stage 4 harness and objective verification.")
+        guidance = gr.Textbox(label="Cleanup guidance", lines=2, interactive=False)
+        gr.Button("Show cleanup guidance").click(_reset_chaos, outputs=[guidance])
 
 
 def build_app():
-    with gr.Blocks(title="AtlasOps Ops Console & Demo Interface", analytics_enabled=False) as demo:
-        gr.Markdown("# ⚡ AtlasOps — Autonomous Multi-Agent Incident Response Console")
-        gr.Markdown("**Local demo and preserved evidence. No live health or empirical gate pass is implied.**")
-        build_status_tab()
-        build_live_ops_tab()
-        build_recommender_tab()
+    with gr.Blocks(
+        title="AtlasOps | Read-only demonstration",
+        analytics_enabled=False,
+    ) as demo:
+        gr.HTML(
+            '<div class="atlas-header"><strong>AtlasOps</strong>'
+            "<small>Read-only demonstration / repository evidence snapshot</small></div>"
+            '<div class="atlas-status">'
+            "<div><span>Active incidents</span><b>Not connected</b></div>"
+            "<div><span>Verified outcomes</span><b>Unavailable</b></div>"
+            "<div><span>G4 governance</span><b>NOT_PASSED</b></div>"
+            "<div><span>Environment</span><b>Not probed</b></div></div>"
+        )
+        build_overview_tab()
         build_incidents_tab()
-        build_ablation_tab()
-        build_bench_tab()
-        build_replays_tab()
-        build_about_tab()
+        build_agents_tab()
+        build_models_tab()
+        build_evaluations_tab()
+        build_runbooks_tab()
+        build_evidence_tab()
+        build_settings_tab()
     return demo
 
 
 if __name__ == "__main__":
     demo = build_app()
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False, css=_UI_CSS)

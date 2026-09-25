@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-25T05:26:02.723563+00:00",
+  "generated_at": "2026-09-25T14:19:40.756842+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 127,
+  "asset_count": 135,
   "assets": {
     ".gitattributes": {
       "sha256": "73e21f6635c7ff9d2c283d00dee164948b2585eb885ba4488b065b1ca5d8572b",
@@ -49,14 +49,14 @@
       "last_modified": "2026-09-24T21:59:19.042786+00:00"
     },
     "README.md": {
-      "sha256": "7afbba70faa0f5c94ab54c067cfc0aedc488deeaaf8009a912d5e3a6d6121d3b",
-      "size_bytes": 20626,
-      "last_modified": "2026-09-25T05:16:03.281501+00:00"
+      "sha256": "793d45179291d3096d248b81ddf04da91b3c8318d60f69652093a6ba6f87981c",
+      "size_bytes": 21520,
+      "last_modified": "2026-09-25T13:53:14.947408+00:00"
     },
     "app.py": {
-      "sha256": "b28e8704ebd8232bcc3203ef7b18ae61894a17948bb548c6b637c4a00b621cce",
-      "size_bytes": 16520,
-      "last_modified": "2026-09-25T03:33:46.045749+00:00"
+      "sha256": "d17466d5be9a530076c4d88fa39aa668e9582a1f045d799591eecf415a5be57b",
+      "size_bytes": 17228,
+      "last_modified": "2026-09-25T07:47:24.924716+00:00"
     },
     "docs/AtlasOps_Technical_Report.md": {
       "sha256": "50a354b5e59e8e6b07e597aee915a5e7a91dce02d30bb8c91a332ffdd93782d5",
@@ -259,14 +259,49 @@
       "last_modified": "2026-09-24T21:35:55.207146+00:00"
     },
     "dashboard.py": {
-      "sha256": "c193b9976979fe540f3b2e7ad162b4010f294db93cdea99c12f82ee129745042",
-      "size_bytes": 20364,
-      "last_modified": "2026-09-24T21:35:55.217150+00:00"
+      "sha256": "7e4afc02551bf4d68012712597ed5078cc1bd4fd76d4f2cebeb689f681266d2e",
+      "size_bytes": 23653,
+      "last_modified": "2026-09-25T08:01:35.573294+00:00"
     },
     "demo/launcher.py": {
-      "sha256": "c31aae1fd6c4fb997f18c5a4df10580ac73e973214bce303820a78211faeabbd",
-      "size_bytes": 1722,
-      "last_modified": "2026-09-24T21:35:55.219151+00:00"
+      "sha256": "a9d51bc21b7e45dc6a6e2a50706b3de7efb206d6b3737871770e3c78f3118e1c",
+      "size_bytes": 1744,
+      "last_modified": "2026-09-25T08:01:35.575294+00:00"
+    },
+    "static/index.html": {
+      "sha256": "d2d907afdfd046c5b7b57cb47a6f15019f64d93c736a59353be1f9010e687f6a",
+      "size_bytes": 4760,
+      "last_modified": "2026-09-25T14:15:36.071285+00:00"
+    },
+    "static/console.css": {
+      "sha256": "46419d9f0661838840d4561bd9e99ee8605a45ba2f9430bd7e102c95eeec2af3",
+      "size_bytes": 23843,
+      "last_modified": "2026-09-25T13:53:14.941329+00:00"
+    },
+    "static/console.js": {
+      "sha256": "7703d48ddc66ab465ee1f13fe01662fb0702b078c6bd3f54917e1b5c30763607",
+      "size_bytes": 61741,
+      "last_modified": "2026-09-25T14:18:06.439458+00:00"
+    },
+    "static/live-incident.js": {
+      "sha256": "be7421196cf1b71d7f5c8eebc32af04b62966823bf051dcb76cfe43a5aeeb893",
+      "size_bytes": 4112,
+      "last_modified": "2026-09-25T14:17:48.323605+00:00"
+    },
+    "static/live-incident.test.js": {
+      "sha256": "fd3f33f2283dcb0cc71fe100e9e6803043c35a4b9cefa1df40b1d7a5b9e3f773",
+      "size_bytes": 2665,
+      "last_modified": "2026-09-25T14:17:48.328508+00:00"
+    },
+    "static/vendor/lucide.min.js": {
+      "sha256": "3411692820cb8d47543f69496aa25fd603a358f4498046f41c508a5a3342210e",
+      "size_bytes": 357796,
+      "last_modified": "2026-09-25T08:10:47.283157+00:00"
+    },
+    "static/vendor/LUCIDE-LICENSE": {
+      "sha256": "1e7290b35280a048667bbf0ebabac1c7fd52a75300e8b2946ac165715997f2bc",
+      "size_bytes": 880,
+      "last_modified": "2026-09-25T08:10:47.339649+00:00"
     },
     "config/g4_protocol.py": {
       "sha256": "cd3ff0179812e1678ec05b77e52aee062a5427e30fed784d0cccced45e701d43",
@@ -304,9 +339,9 @@
       "last_modified": "2026-09-25T05:24:32.461868+00:00"
     },
     "scripts/package_submission.py": {
-      "sha256": "aebeeb59e8a65d39098af308e6dfc0d4637ea39f0c31ee97c63992b529605ced",
-      "size_bytes": 7943,
-      "last_modified": "2026-09-25T05:03:54.626874+00:00"
+      "sha256": "0704c30885a9b288ff40246f37184f45e43b3f61c42636ddc2dc726deec5f0ba",
+      "size_bytes": 8185,
+      "last_modified": "2026-09-25T14:19:20.253747+00:00"
     },
     "training/sft.py": {
       "sha256": "29ff6fa2ae27ec8954187d7446970b3f1803dc84cfd43fc49fa90efab78c46b3",
@@ -429,9 +464,9 @@
       "last_modified": "2026-09-24T21:35:55.440154+00:00"
     },
     "tests/test_frontend_ui.py": {
-      "sha256": "30e76d6bddd8441ede26183237c5da40038f28d92a4ffb14a04d73b0f4871254",
-      "size_bytes": 3372,
-      "last_modified": "2026-09-24T21:35:55.442149+00:00"
+      "sha256": "079dc1cdea873c9959fe913ff1ada6b0e0580a48949ac6b4edb21e4169b9205a",
+      "size_bytes": 5073,
+      "last_modified": "2026-09-25T14:15:54.249413+00:00"
     },
     "tests/test_g12_policy_integration_contract.py": {
       "sha256": "708f4a6a526dcaabfbddb3667b31c2eee61234a906d1ab28a38aed9321fe6da6",
@@ -584,14 +619,14 @@
       "last_modified": "2026-09-24T21:35:55.466148+00:00"
     },
     "tests/test_stage14_demo_safety.py": {
-      "sha256": "faae75fba308c19495641d61d8c4ee73b39725c2ee12599bdc357ad9eab3c20b",
-      "size_bytes": 4247,
-      "last_modified": "2026-09-24T21:35:55.466148+00:00"
+      "sha256": "de91c0aa698264b7bdb1c5feaa234eb3bdbe7e715c5f85eb79b3b4a6699f1af3",
+      "size_bytes": 4345,
+      "last_modified": "2026-09-25T07:55:21.319585+00:00"
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "4da7248bb2d1732dfee7424d609f3db2e750112d06f994ff6c2408c71d7ec530",
-      "size_bytes": 3301,
-      "last_modified": "2026-09-24T21:36:50.414731+00:00"
+      "sha256": "64b768f44eb2acd82d2c4e90c809ab7f13d035f767891d8cc85789901c206527",
+      "size_bytes": 3615,
+      "last_modified": "2026-09-25T14:19:20.256279+00:00"
     },
     "tests/test_stage4_baseline_prereservation.py": {
       "sha256": "b8e71a61a1bd6ce1dd93a138e2b16deecc0ef032c3416e60ba2849611d08e7e5",
@@ -662,6 +697,11 @@
       "sha256": "15f377b269d769da88eb23aca0e28d69eac1f0f79a87cef529e8d26b74900bcb",
       "size_bytes": 5022,
       "last_modified": "2026-09-24T21:35:55.477151+00:00"
+    },
+    "tests/test_ui_read_model.py": {
+      "sha256": "1942099a2975dd69809a1e9dbe4f8522d7e32b4bfc9dbb3a82a443a43656fb03",
+      "size_bytes": 3093,
+      "last_modified": "2026-09-25T08:26:48.269100+00:00"
     },
     "tests/test_verifier.py": {
       "sha256": "42820832c21e6f937c412c47c993c101671a0e008023fad782cee963b732f375",

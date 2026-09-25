@@ -304,14 +304,32 @@ Full Academic Technical Report: [`docs/AtlasOps_Technical_Report.md`](docs/Atlas
 bash infra/setup.sh <YOUR_PROJECT_ID> us-central1 atlasops
 ```
 
-### 2. Start the read-only demo
+### 2. Open the operator console
+```bash
+python -m uvicorn app:app --host 127.0.0.1 --port 7871
+```
+
+Open `http://127.0.0.1:7871/`. The browser UI is read-only: current process
+observations are separate from checked-in historical evidence. It has no web
+injection, cleanup, approval, or remediation control. The FastAPI service still
+exposes authenticated operational API routes; serving the UI is not a safety
+certification or an empirical gate result.
+
+The standalone repository-evidence demo is also available:
 ```bash
 python -m demo.launcher --host 127.0.0.1 --port 7860
 ```
 
-The separate FastAPI coordinator is an operational runtime, not the local demo.
-Its web injection and cleanup shortcuts are retired; authenticated Alertmanager
-webhooks and approvals remain subject to the runtime safety controls.
+The web injection and cleanup shortcuts remain retired. Authenticated
+Alertmanager webhooks and approvals retain their runtime safety controls.
+
+The FastAPI console is the canonical product UI. It reads current process
+observations from the existing incident, health, telemetry, cluster, and audit
+endpoints; `/ui/catalog` and the allowlisted `/ui/attempts/{name}` projection
+provide checked-in governance and historical evidence. The scenario catalogue
+appears only under Evaluations, and runbook ranking remains advisory. The
+standalone Gradio console is a read-only repository-evidence companion, not a
+second operational control surface.
 
 ### Hugging Face Space (use your trained 7B + judge on Router)
 

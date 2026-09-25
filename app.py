@@ -66,6 +66,7 @@ from agents.circuit_breaker import circuit_breaker
 from agents.correlator import correlator
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import subscribe, get_history
+from ui_read_model import attempt_detail, catalog
 
 app = FastAPI(title="AtlasOps", docs_url="/api/docs")
 
@@ -246,6 +247,25 @@ async def health():
         "discord_webhook_configured": bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip()),
         "slack_webhook_configured": bool(os.getenv("SLACK_WEBHOOK_URL", "").strip()),
     })
+
+
+@app.get("/ui/catalog")
+async def ui_catalog():
+    """Checked-in governance and historical evidence, never inferred live state."""
+    try:
+        return JSONResponse(catalog())
+    except (OSError, ValueError):
+        log.exception("UI catalog unavailable")
+        raise HTTPException(status_code=503, detail="Repository status unavailable")
+
+
+@app.get("/ui/attempts/{name}")
+async def ui_attempt(name: str):
+    """Allowlisted, bounded projection of one preserved attempt."""
+    try:
+        return JSONResponse(attempt_detail(name))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Preserved attempt unavailable")
 
 
 @app.get("/config")

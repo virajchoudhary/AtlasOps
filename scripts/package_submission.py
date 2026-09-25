@@ -72,6 +72,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/BENCHMARKS.md",
         "docs/END_TO_END_FLOW.md",
         "docs/HF_SPACE_SETUP.md",
+        "docs/slides.md",
+        "docs/media/*.png",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/STAGE_*.md",
         "artifacts/models/hybrid_recommender.json",

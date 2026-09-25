@@ -7,6 +7,7 @@ Stage 15 is **PARTIAL**. The report and asset package exist, but the full resear
 - [Technical report draft](../AtlasOps_Technical_Report.md): separates implementation, historical negative evidence, mock outputs, and absent empirical results.
 - [Submission manifest](../../artifacts/SUBMISSION_MANIFEST.json) and [summary](../../artifacts/SUBMISSION_SUMMARY.md): generated asset hashes and declared G0-G15 statuses. `NOT_CERTIFIED` is the only supported package status while empirical gates remain open.
 - [Package generator](../../scripts/package_submission.py): hashes selected files and reads the master gate inventory. Hashes prove file integrity, not model quality, live safety, or gate closure. Tests write to isolated temporary directories.
+- [Evidence-led presentation source](../slides.md) and its two local UI captures in `docs/media/`: describe the current continuation status without promoting upstream claims or historical mock output into measured results. The presentation source and captures are included in the asset inventory; a rendered deck is a review artifact, not scientific certification.
 
 The checked-in manifest records **raw file bytes**. `.gitattributes` fixes Python and Markdown assets to LF and pins the eight selected frozen JSON/JSONL evidence assets to their preserved CRLF checkout bytes. Verify the manifest after checkout with `python -m pytest -q tests/test_stage15_submission_package.py`; do not normalize evidence bytes to make a hash pass.
 

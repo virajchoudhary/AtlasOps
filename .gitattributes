@@ -3,6 +3,8 @@
 *.md text eol=lf
 Makefile text eol=lf
 .gitattributes text eol=lf
+static/* text eol=lf
+static/vendor/* text eol=lf
 artifacts/SUBMISSION_MANIFEST.json text eol=lf
 artifacts/SUBMISSION_SUMMARY.md text eol=lf
 artifacts/models/hybrid_recommender.json text eol=crlf

@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { projectLiveIncident } = require("./live-incident.js");
+const { projectLiveIncident, recommendationQuery } = require("./live-incident.js");
 assert.equal(globalThis.AtlasOpsLiveIncident.projectLiveIncident, projectLiveIncident);
 
 const incident = { alert_names: ["HighCpuUsage"], services: ["paymentservice"] };
@@ -51,4 +51,24 @@ test("approval outcomes and policy blocks remain distinct", () => {
   const requested = projectLiveIncident(incident, base.slice(0, 1), true, lifecycle);
   assert.equal(requested[4].status, "Requested");
   assert.equal(requested[5].status, "Not reported");
+});
+
+test("advisory query uses only one observed alert and service", () => {
+  assert.deepEqual(recommendationQuery(incident), {
+    alert_name: "HighCpuUsage", service: "paymentservice", top_k: 3
+  });
+  assert.equal(recommendationQuery({ alert_names: [], services: ["paymentservice"] }), null);
+  assert.equal(recommendationQuery({ alert_names: ["HighCpuUsage"], services: [] }), null);
+  assert.equal(recommendationQuery({
+    alert_names: ["HighCpuUsage", "PodCrashLooping"], services: ["paymentservice"]
+  }), null);
+  assert.equal(recommendationQuery({
+    alert_names: ["HighCpuUsage"], services: ["paymentservice", "adservice"]
+  }), null);
+  assert.equal(recommendationQuery({
+    alert_names: ["HighCpuUsage"], services: [" "]
+  }), null);
+  assert.equal(recommendationQuery({
+    alert_names: ["A".repeat(101)], services: ["paymentservice"]
+  }), null);
 });

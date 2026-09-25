@@ -67,6 +67,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "Makefile",
         "README.md",
         "app.py",
+        "ui_read_model.py",
         "docs/AtlasOps_Technical_Report.md",
         "docs/BENCHMARKS.md",
         "docs/END_TO_END_FLOW.md",

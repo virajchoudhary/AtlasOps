@@ -63,6 +63,7 @@ class TestStage15SubmissionPackage:
         assert len(assets) >= 15
         assert assets.keys() == collect_submission_assets().keys()
         assert {
+            "ui_read_model.py",
             "static/index.html",
             "static/console.css",
             "static/console.js",

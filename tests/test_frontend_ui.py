@@ -51,10 +51,13 @@ class TestFrontendUIAndAPIs:
         assert 'data-scenario' in js
         assert 'data-process-step' in js
         assert "Objective checks did not establish resolution." in js
+        assert "liveRecommendationSection(item)" in js
+        assert "A single observed alert and service are required" in js
         projection = Path("static/live-incident.js").read_text(encoding="utf-8")
         assert "approval_denied" in projection
         assert "Audit unavailable" in projection
         assert "No verdict exposed" in projection
+        assert "recommendationQuery" in projection
         css = Path("static/console.css").read_text(encoding="utf-8")
         assert ".process-track" in css
         assert "prefers-reduced-motion: reduce" in css

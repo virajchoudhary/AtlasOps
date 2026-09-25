@@ -157,7 +157,7 @@ class BM25ContentRecommender(BaseRecommender):
 
     def _query_to_text(self, query: dict[str, Any] | IncidentInteraction) -> str:
         if isinstance(query, IncidentInteraction):
-            return f"{query.alertname} {' '.join(query.affected_services)} {query.symptoms_text} {query.tier}"
+            return f"{query.alertname} {' '.join(query.affected_services)} {query.symptoms_text}"
         elif isinstance(query, dict):
             parts = []
             if "alertname" in query:
@@ -167,8 +167,6 @@ class BM25ContentRecommender(BaseRecommender):
                 parts.append(" ".join(svcs) if isinstance(svcs, list) else str(svcs))
             if "symptoms_text" in query:
                 parts.append(str(query["symptoms_text"]))
-            if "expected_root_cause" in query:
-                parts.append(str(query["expected_root_cause"]))
             return " ".join(parts)
         return str(query)
 

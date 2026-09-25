@@ -50,10 +50,10 @@ The research pipeline is not scientifically complete.
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (historical outputs are MOCK) |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (corpus/configuration exists; successful trained checkpoint unverified) |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (deterministic mock evaluation; no demonstrated SFT improvement) |
-| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (indirect triage_seed coupling; incomplete verifier-to-reward plumbing; mock evaluation) |
-| **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **PASS** (bounded scenario-derived dataset and algorithmic evaluation; historical-feedback requirement unmet) |
+| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (direct-action software contract implemented; real training/checkpoint/evaluation missing) |
+| **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **PARTIAL** (scenario-derived dataset and algorithmic evaluation exist; historical incident feedback is absent) |
 | **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **PASS** (bounded hybrid fitting/ranking evaluation on the same small dataset) |
-| **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (software integration exists; corrected-RL validation depends on G9) |
+| **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (direct policy integration is locally tested; real checkpoint/environment execution missing) |
 | **Stage 13** | Run final ablation and stress evaluation | **G13** | Full benchmark evaluation across predetermined comparison family: stabilized AtlasOps baseline, SFT, corrected GRPO, +RS, full GAI+RS+RL, unseen final-test and held-out adversarial evaluation. | **REOPENED** (hardcoded profiles are not actual ablation/stress evidence) |
 | **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **PARTIAL** (UI/demo helpers exist; safe deployment not established by code alone) |
 | **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (report/package implementation exists; scientific certification and submission unestablished) |
@@ -114,52 +114,49 @@ The research pipeline is not scientifically complete.
 - Retain scenario/split governance. This does not certify all later training/runtime consumers as leakage-free, nor substitute for G4.
 
 ### Gate G6: Reproduce GAI Zero-Shot Baseline — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
-- `bench/zero_shot_baseline.py` has split evaluation plumbing and a live runner path. Recovered validation/test summaries in `artifacts/evidence/mock_archive/stage6/` explicitly record `mock_eval=true`.
+- `bench/zero_shot_baseline.py` now has a fail-closed real-inference path with raw-response and model provenance requirements. Recovered validation/test summaries in `artifacts/evidence/mock_archive/stage6/` explicitly record `mock_eval=true`.
 - Their metrics are historical mock outputs, not an empirical baseline. A genuine evaluated baseline with run/model/environment provenance is still required.
 
 ### Gate G7: Generate SFT Data and Train — [PARTIAL]
 - `training/build_sft_dataset.py` synthesizes training-scenario examples; rendering/masking and training code exist in `training/sft_rendering.py`, `training/templates/qwen2_5_tool_sft.jinja`, and `training/sft.py`.
 - `artifacts/evidence/stage7/sft_corpus_manifest.json` records 64 examples / 16 training scenarios and corpus hash; `sft_training_config.json` records QLoRA settings. These are corpus/configuration evidence, not a completed training run or proof of successful live expert trajectories.
-- No successful SFT training record tied to a usable checkpoint was verified in the inspected repository/evidence and local checkpoint inventory. Training completion, checkpoint provenance and usability remain unestablished.
+- `training/sft.py` now persists planned/running/completed-or-failed run provenance and checkpoint inventory when a real run is available. No successful SFT training record tied to a usable checkpoint was verified in the inspected repository/evidence and local checkpoint inventory. Training completion and usability remain unestablished.
 
 ### Gate G8: Evaluate SFT Before RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
-- `bench/sft_eval.py` calls `evaluate_sft_mock_episode` unconditionally in its split loop. The `mock` argument does not select a real checkpoint evaluator.
+- `bench/sft_eval.py` now requires a completed, provenance-checked local checkpoint for real inference; mock evaluation remains explicitly non-empirical.
 - Recovered outputs in `artifacts/evidence/mock_archive/stage8/` are deterministic mock evidence. Previously reported SFT gains and format compliance do not establish checkpoint performance or unlock validated RL training.
 
 ### Gate G9: Correct and Train Online GRPO — [REOPENED]
-- `training/grpo.py` contains training-only scenario sampling, an advantage-normalization helper and TRL training plumbing. These implementation elements are retained.
-- `_run_one_rollout` truncates a completion into `triage_seed` and delegates to `handle_incident`; it does not directly execute the trained policy's selected actions. Direct policy-action-environment coupling remains unresolved.
-- The rollout result derives `resolved` from the remediation claim and omits `env_resolved`/verification fields before reward computation; curriculum updates also consume that claim-derived field. The central fail-closed reward contract alone does not repair this adapter.
-- `bench/grpo_eval.py` unconditionally calls its deterministic mock episode function. Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/` prove neither corrected GRPO nor empirical training gains. Corrected coupling, verifier-grounded reward/curriculum integration, training provenance and real evaluation remain required.
+- `training/grpo.py` now sends the policy completion to `DirectPolicyEnvironment` as the exact proposed action. That adapter checks approval and tool policy, executes at most one action, settles, and carries objective verifier fields into reward and curriculum updates.
+- New trainer provenance records declared and loaded model revisions, frozen Train hash, source state, seed/configuration, rollout ledger, and a hashed completed adapter inventory. `bench/grpo_eval.py` validates this record and rejects missing or incomplete checkpoints; its mock path is explicitly non-empirical.
+- No completed GRPO training run, usable local adapter, or safe real evaluation was obtained. Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/` remain mock evidence. G9 remains reopened pending real authorized trajectories, training, and held-out evaluation.
 
-### Gate G10: Build RS Data and Baselines — [PASS]
-- Retain bounded algorithmic work: 12 runbooks, scenario-derived interaction generation, Random/Popularity/BM25 baselines and ranking metrics in `recommender/`. `recommender/evaluate.py` fits on train rows and computes metrics from recommendations on separate splits.
-- `artifacts/evidence/stage10/rs_baseline_eval.json` records Train(16)/Val(6)/Test(6) evaluation; BM25 test Hit@1=0.6667, Hit@3=0.8333 and MRR@3=0.7500 are retained as saved results on this dataset, not newly rerun measurements.
-- Limitation: `recommender/dataset.py` generates 28 rows from scenario metadata with assigned labels/ratings, covering only 4 of 12 runbooks. These are not genuine historical interaction feedback; the historical-data ambition remains unmet.
-- Known isolation defect: `build_incident_interactions(output_path=...)` still writes the default evidence manifest. Preserved `rs_dataset_manifest.json` points to a pytest temporary dataset. This provenance limitation is recorded, not repaired or regenerated here.
+### Gate G10: Build RS Data and Baselines — [PARTIAL]
+- Retain bounded algorithmic work: 12 runbooks, scenario-derived interaction generation, Random/Popularity/BM25 baselines and ranking metrics in `recommender/`. Evaluation fits on Train rows and scores separate splits.
+- The original saved Stage 10 result remains historical: 28 scenario-derived rows covering 4 of 12 runbooks, with BM25 Test Hit@3=0.8333 and MRR@3=0.7500. It is not a new measurement or historical user feedback.
+- The corrected generator excludes seven scenarios without a defensible single runbook label. The new local corpus has 21 rows (Train 12, Validation 5, Test 4) across 9 runbooks; its manifest records source/split hashes, exclusions, and `historical_user_feedback=false`. Custom dataset output now writes its own adjacent manifest, leaving the prior canonical Stage 10 manifest byte-preserved.
+- The historical incident-to-runbook feedback required by G10 has not been obtained. Synthetic baseline measurements establish only the bounded offline algorithmic result.
 
 ### Gate G11: Train Hybrid Recommender — [PASS]
-- `recommender/hybrid.py` fits BM25 content, service/alert/tier-to-runbook counts and global priors; `recommender/train_hybrid.py` performs train-only fitting and recommendation-based evaluation. This is algorithmic computation, not the Stage 13 constant-profile mechanism.
-- Retain `artifacts/models/hybrid_recommender.json` and saved `artifacts/evidence/stage11/rs_hybrid_eval.json`: test Hit@3=1.0000, MRR@3=0.8333, NDCG@3=0.8770 on six scenario-derived test rows.
-- PASS is limited to this small offline dataset. The collaborative signal derives from scenario labels, not observed historical user interactions; broad superiority or production generalization is not established.
+- `recommender/hybrid.py` fits content, service/alert co-occurrence and global priors without benchmark tier as a runtime feature. `recommender/train_hybrid.py` performs Train-only fitting, rejects wrong frozen-split assignments, and records corpus, source, and checkpoint hashes.
+- Retain the original saved checkpoint and Stage 11 metrics as historical synthetic results. The newly saved `rs_hybrid_eval_synthetic_v2.json` records Test Hit@3=1.0000 and MRR@3=0.7083 on four scenario-derived Test rows; BM25 Hit@3=0.7500 and MRR@3=0.6250 on the same rows. The small sample and synthetic labels do not establish broad superiority or historical-feedback learning.
 
 ### Gate G12: Integrate GAI + RS + RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
-- `agents/coordinator.py` inserts recommendations between Diagnosis and Remediation and supplies `recommended_runbooks`; `agents/prompts/remediation.md` and `tests/test_stage12_integrated_pipeline.py` cover software integration.
-- Complete empirical GAI+RS+corrected-RL validation depends on valid G9 and real upstream model evidence. The fallback that fits `HybridRecommender` on `load_interactions()` is not train-split-filtered; do not extend G5's isolation claim to that runtime path. Recommender exception tolerance is not approval safety.
+- `agents/coordinator.py` inserts recommendations between Diagnosis and Remediation and supplies `recommended_runbooks`. Its default recommender checkpoint is the newly labeled synthetic v2 artifact; a missing checkpoint leaves recommendations unavailable rather than fitting the old mixed-split dataset.
+- An explicit `rl_policy` backend loads a provenance-checked G9 checkpoint and executes its exact structured actions through approval, tool policy, settling, and verification. Local injected-policy tests prove control flow but are non-empirical. Complete end-to-end validation still depends on a real G9 checkpoint and live evidence.
+- The governed G12 capture wrapper reuses the Stage 4 harness, preserves raw attempt and coordinator records with hashes, and never certifies a gate from capture alone. It has not run with a real checkpoint or cluster in this continuation.
 
 ### Gate G13: Run Final Ablation and Stress Evaluation — [REOPENED]
-- `bench/ablation_suite.py::evaluate_model_on_partition` selects hardcoded resolution/TTR/reward/format/runbook values by model name and partition. Its `mock` parameter does not cause real variant evaluation.
-- `artifacts/evidence/stage13/ablation_benchmark_results.json` contains those predetermined profiles. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings.
-- Preserve the artifact as historical output. Actual variant execution with valid checkpoints, independent environment verification and held-out stress provenance is still required; neither tables nor fixture tests close this gate.
+- `bench/ablation_suite.py` now consumes variant episode artifacts and rejects incomplete or unsupported real comparisons; it does not supply model-name constant metrics as empirical results.
+- Preserve `artifacts/evidence/stage13/ablation_benchmark_results.json` as historical predetermined output. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings. Actual variant execution with valid checkpoints, independent verification, and held-out stress provenance is still required.
 
 ### Gate G14: Deploy Final Demo Safely — [PARTIAL]
-- UI/demo implementations in `dashboard.py` and `demo/launcher.py` remain; default `DEMO_SAFE_MODE=1` makes the dashboard's kubectl/apply/reset helpers simulate their actions.
-- These local helper guards do not certify every coordinator path, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
+- The local Gradio demo in `dashboard.py` and `demo/launcher.py` is read-only. Scenario selection and cleanup guidance execute no kubectl command, inject no fault, and claim no simulated incident outcome. It displays the checked-in G0-G15 status and selected preserved G4 negative/interrupted attempts with source hashes.
+- This console does not certify the separate FastAPI/coordinator entrypoints, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]
-- `docs/AtlasOps_Technical_Report.md`, `scripts/package_submission.py`, and existing submission artifacts preserve report/packaging implementation.
-- The package generator hardcodes `CERTIFIED_PASS`, `15 / 15 (100%)` and performance figures; asset hashing cannot validate those claims. Existing report/package completion assertions are unsupported where they conflict with the evidence classifications here and are not authoritative gate closure.
-- Scientific certification and final submission readiness remain unestablished while empirical gates remain open. No report, package, raw evidence or generator was changed or regenerated by this reconciliation.
+- The technical report now separates implementation, mock/historical evidence, and missing empirical results. `scripts/package_submission.py` derives the declared G0-G15 inventory and emits `NOT_CERTIFIED` with asset hashes and no invented performance figures.
+- Scientific certification and final submission readiness remain unestablished while empirical gates remain open. The prior unsupported report/package statements remain available in Git history; file hashes alone do not close a gate.
 
 ---
 

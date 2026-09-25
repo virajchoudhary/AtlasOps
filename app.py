@@ -4,14 +4,11 @@ Serves the custom ops console UI at / and wires the coordinator API.
 This is what HF Spaces runs via the Dockerfile.
 """
 
-import hashlib
 import hmac
 import json
 import logging
 import os
 import subprocess
-import time
-import uuid
 from pathlib import Path
 
 from config.hf_space_env import apply_hf_space_inference_defaults
@@ -27,8 +24,7 @@ from pydantic import BaseModel, Field
 log = logging.getLogger("atlasops")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-# Set ATLASOPS_API_KEY env var to enable auth on all mutating endpoints.
-# If unset, mutations are allowed without a key (dev / demo mode with a warning).
+# Mutating and approval endpoints fail closed without an operator API key.
 _API_KEY = os.getenv("ATLASOPS_API_KEY", "")
 _api_key_header = APIKeyHeader(name="X-AtlasOps-Key", auto_error=False)
 
@@ -38,27 +34,23 @@ _api_key_header = APIKeyHeader(name="X-AtlasOps-Key", auto_error=False)
 _WEBHOOK_SECRET = os.getenv("ALERTMANAGER_WEBHOOK_SECRET", "")
 
 if not _API_KEY:
-    log.warning("ATLASOPS_API_KEY not set — mutating endpoints are unauthenticated (dev mode)")
+    log.warning("ATLASOPS_API_KEY not set — mutating and approval endpoints are disabled")
 if not _WEBHOOK_SECRET:
-    log.warning("ALERTMANAGER_WEBHOOK_SECRET not set — webhook accepts unsigned payloads (dev mode)")
-
-
-def _truthy_env(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    log.warning("ALERTMANAGER_WEBHOOK_SECRET not set — webhook is disabled")
 
 
 def _require_api_key(key: str | None = Security(_api_key_header)) -> None:
-    """Dependency: validates X-AtlasOps-Key header when ATLASOPS_API_KEY is set."""
+    """Require configured operator auth before any protected action."""
     if not _API_KEY:
-        return  # dev mode — no key required
-    if key != _API_KEY:
+        raise HTTPException(status_code=503, detail="ATLASOPS_API_KEY is required for this endpoint")
+    if not key or not hmac.compare_digest(key, _API_KEY):
         raise HTTPException(status_code=401, detail="Invalid or missing X-AtlasOps-Key header")
 
 
 def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
-    """Validate Alertmanager webhook Bearer token when ALERTMANAGER_WEBHOOK_SECRET is set."""
+    """Validate Alertmanager webhook Bearer token before dispatch."""
     if not _WEBHOOK_SECRET:
-        return  # dev mode
+        raise HTTPException(status_code=503, detail="ALERTMANAGER_WEBHOOK_SECRET is required")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Authorization header on webhook")
     token = authorization.removeprefix("Bearer ").strip()
@@ -91,11 +83,8 @@ class InjectRequest(BaseModel):
     name: str | None = None
 
 
-class InjectResponse(BaseModel):
-    ok: bool
-    scenario_id: str
-    correlation_id: str
-    kubectl_skipped: bool = False
+class ResetRequest(BaseModel):
+    scenario_id: str = Field(min_length=1)
 
 
 class RuntimeConfigResponse(BaseModel):
@@ -121,109 +110,21 @@ async def root():
 
 
 @app.post("/inject", dependencies=[Security(_require_api_key)])
-async def inject_chaos(request: Request):
-    """Apply a chaos scenario manifest to the real GKE cluster."""
-    from agents.stream import clear as clear_thought_buffer
-    clear_thought_buffer()
-
-    body = InjectRequest.model_validate(await request.json())
-    scenario_id = body.scenario_id
-    correlation_id = f"inj-{int(time.time())}-{uuid.uuid4().hex[:8]}"
-    manifest = Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
-
-    if not manifest.exists():
-        return JSONResponse({"ok": False, "error": f"Manifest not found: {scenario_id}"}, 404)
-
-    kubectl_skipped = _truthy_env("ATLASOPS_SKIP_KUBECTL_INJECT")
-    if kubectl_skipped:
-        log.warning(
-            "ATLASOPS_SKIP_KUBECTL_INJECT: not applying manifests; firing incident pipeline anyway "
-            "(HF Space demo without kubeconfig)."
-        )
-    else:
-        env = os.environ.copy()
-        env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-        r = subprocess.run(
-            ["kubectl", "apply", "-f", str(manifest)],
-            capture_output=True, text=True, env=env, timeout=15,
-        )
-        if r.returncode != 0:
-            err_msg = (r.stderr or "").strip() or r.stdout.strip() or f"exit {r.returncode}"
-            return JSONResponse(
-                {
-                    "ok": False,
-                    "error": err_msg,
-                    "hint": (
-                        "On Hugging Face Spaces, kubectl usually has no kubeconfig — set "
-                        "ATLASOPS_SKIP_KUBECTL_INJECT=1 to run triage/diagnosis via LLMs using live "
-                        "Prometheus/Alertmanager only (no chaos manifests applied)."
-                    ),
-                },
-                500,
-            )
-
-    # Fire the incident through the coordinator after a brief wait
-    import asyncio
-    asyncio.create_task(_handle_after_delay(body.name or scenario_id, scenario_id, correlation_id))
-    return JSONResponse(
-        InjectResponse(
-            ok=True,
-            scenario_id=scenario_id,
-            correlation_id=correlation_id,
-            kubectl_skipped=kubectl_skipped,
-        ).model_dump()
+async def inject_chaos(_body: InjectRequest):
+    """Retire the web shortcut until it can meet the Stage 4 preflight contract."""
+    raise HTTPException(
+        status_code=503,
+        detail="Web injection is retired; use the governed Stage 4 harness after preflight",
     )
 
 
-async def _handle_after_delay(name: str, scenario_id: str, correlation_id: str):
-    import asyncio
-    await asyncio.sleep(20)
-    from agents.tools.alertmanager import alertmanager_list_alerts
-    result = alertmanager_list_alerts(active_only=True)
-    alerts_list = result.get("alerts") or []
-    top_alert = None
-    if alerts_list:
-        first = alerts_list[0]
-        top_alert = first.get("alertname") or (first.get("labels") or {}).get("alertname")
-    alert = {
-        "commonLabels": {
-            "alertname": top_alert if top_alert else name,
-            "scenario_id": scenario_id,
-        },
-        "alerts": result.get("alerts", []),
-        "scenario_id": scenario_id,
-        "correlation_id": correlation_id,
-    }
-    # Route through correlator so UI-injected incidents obey the same
-    # deduplication and dispatch rules as real Alertmanager webhooks.
-    incident_id, _is_new, should_dispatch = correlator.ingest(alert)
-    if not should_dispatch:
-        return
-    correlator.mark_processing(incident_id, True)
-    try:
-        await handle_incident(alert, incident_id=incident_id)
-    finally:
-        correlator.mark_processing(incident_id, False)
-
-
 @app.post("/reset", dependencies=[Security(_require_api_key)])
-async def reset_chaos():
-    circuit_breaker.reset()
-    correlator.reset()
-
-    kubectl_skipped = _truthy_env("ATLASOPS_SKIP_KUBECTL_INJECT")
-    if kubectl_skipped:
-        log.warning("ATLASOPS_SKIP_KUBECTL_INJECT: skipping kubectl delete on reset")
-    else:
-        env = os.environ.copy()
-        env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-        subprocess.run(
-            ["kubectl", "delete",
-             "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
-             "--all", "-A", "--ignore-not-found=true"],
-            capture_output=True, env=env,
-        )
-    return JSONResponse({"ok": True, "kubectl_skipped": kubectl_skipped, "circuit_breaker_reset": True})
+async def reset_chaos(_body: ResetRequest):
+    """Never claim cleanup from an unverified web command."""
+    raise HTTPException(
+        status_code=503,
+        detail="Web cleanup is retired; use governed scoped cleanup and environment verification",
+    )
 
 
 @app.get("/stream")
@@ -366,8 +267,7 @@ async def runtime_config():
 
 
 @app.post("/approval/callback", dependencies=[Security(_require_api_key)])
-async def approval_callback(request: Request):
-    payload = ApprovalCallbackRequest.model_validate(await request.json())
+async def approval_callback(payload: ApprovalCallbackRequest):
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
@@ -378,10 +278,9 @@ async def approval_callback(request: Request):
     return JSONResponse(result, status_code=status)
 
 
-@app.post("/approve")
-async def approve_public(request: Request):
-    """Demo-friendly approval endpoint (token-scoped, no API key required)."""
-    payload = ApprovalCallbackRequest.model_validate(await request.json())
+@app.post("/approve", dependencies=[Security(_require_api_key)])
+async def approve_public(payload: ApprovalCallbackRequest):
+    """Operator approval endpoint; a token alone is not authorization."""
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
@@ -392,7 +291,7 @@ async def approve_public(request: Request):
     return JSONResponse(result, status_code=status)
 
 
-@app.get("/approval/pending")
+@app.get("/approval/pending", dependencies=[Security(_require_api_key)])
 async def approval_pending():
     return JSONResponse({"pending": approval_gate.pending()})
 

@@ -42,6 +42,7 @@ After every remediation action:
 - `alertmanager_silence(matchers, duration_minutes, comment)` — suppress flapping
 - `promql_query(query)` — verify resolution
 - `kubectl_get(resource, namespace)`, `kubectl_describe(resource, name, namespace)` — sanity check post-action
+- `chaos_list_experiments()` — observe active supported Chaos Mesh resources without mutation
 
 ## Final Output Format (JSON)
 When all actions are finished, produce the final summary JSON:
@@ -66,4 +67,11 @@ When all actions are finished, produce the final summary JSON:
 - **Always call the tool first before reporting conclusion.**
 - **Maximum 5 remediation attempts** before escalating.
 - **Never silence alerts longer than 30 minutes.**
+- Execute at most one mutating action per decision. Wait for the structured
+  environment-verifier observation before selecting another mutation.
+- Do not retry an authorization, invalid-revision, missing-resource, or safety
+  error by changing arguments cosmetically.
+- Only recommend `argocd_rollback` when positive deployment history evidence is
+  present. An active Chaos observation is evidence for the generic
+  `chaos_stop_experiment` action class.
 - If you are not certain the action is safe → escalate via outcome="escalated".

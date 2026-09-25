@@ -4,14 +4,13 @@ Validates:
 1. Generation and integrity of the final submission manifest (artifacts/SUBMISSION_MANIFEST.json).
 2. Completeness of the final academic technical report (docs/AtlasOps_Technical_Report.md).
 3. Cryptographic SHA-256 verification of canonical codebase assets.
-4. Full 15-stage pipeline certification and gate closure.
+4. Honest G0-G15 status inventory without inferred certification.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-import pytest
 
 from scripts.package_submission import (
     build_submission_package,
@@ -21,21 +20,22 @@ from scripts.package_submission import (
 
 
 class TestStage15SubmissionPackage:
-    def test_submission_package_generator_creates_manifest_and_summary(self):
-        manifest = build_submission_package()
+    def test_submission_package_generator_creates_manifest_and_summary(self, tmp_path):
+        manifest = build_submission_package(output_dir=tmp_path)
         assert manifest["project_name"] == "AtlasOps"
-        assert manifest["stages_completed"] == "15 / 15 (100%)"
-        assert manifest["status"] == "CERTIFIED_PASS"
+        assert manifest["status"] == "NOT_CERTIFIED"
+        assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
+        assert manifest["gate_statuses_declared"]["G13"] == "REOPENED"
 
-        manifest_path = Path("artifacts/SUBMISSION_MANIFEST.json")
-        summary_path = Path("artifacts/SUBMISSION_SUMMARY.md")
+        manifest_path = tmp_path / "SUBMISSION_MANIFEST.json"
+        summary_path = tmp_path / "SUBMISSION_SUMMARY.md"
 
         assert manifest_path.exists()
         assert summary_path.exists()
 
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert "key_metrics" in data
-        assert data["key_metrics"]["test_resolution_rate"] == "100.0%"
+        assert data["empirical_metrics"] is None
+        assert "100.0%" not in summary_path.read_text(encoding="utf-8")
 
     def test_technical_report_structure_and_completeness(self):
         report_path = Path("docs/AtlasOps_Technical_Report.md")
@@ -57,16 +57,20 @@ class TestStage15SubmissionPackage:
             assert sec in content, f"Missing required section: {sec}"
 
     def test_submission_manifest_integrity_and_metrics(self):
-        assets = collect_submission_assets()
+        assets = json.loads(
+            Path("artifacts/SUBMISSION_MANIFEST.json").read_text(encoding="utf-8")
+        )["assets"]
         assert len(assets) >= 15
+        assert assets.keys() == collect_submission_assets().keys()
 
         for path_str, meta in assets.items():
             p = Path(path_str)
             assert p.exists(), f"Tracked asset {path_str} does not exist!"
             actual_sha = compute_sha256(p)
             assert actual_sha == meta["sha256"], f"Checksum mismatch for {path_str}!"
+            assert p.stat().st_size == meta["size_bytes"]
 
-    def test_pipeline_master_status_certifies_all_gates(self):
+    def test_pipeline_master_status_records_all_gates(self):
         status_path = Path("docs/project/MASTER_PIPELINE_STATUS.md")
         assert status_path.exists()
         content = status_path.read_text(encoding="utf-8")

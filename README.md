@@ -19,6 +19,15 @@ tags:
 
 # AtlasOps — Can 4 AI agents replace an on-call SRE team?
 
+> [!IMPORTANT]
+> **Current continuation status: NOT_CERTIFIED.** The live results, hardware descriptions,
+> and original hackathon commands retained below are historical material, not results
+> reproduced by this team. G4 is NOT_PASSED; G6/G8/G12 lack empirical evidence; G9/G13
+> are REOPENED. For a safe local presentation, use the read-only
+> [Stage 14 demo](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md) and the
+> [current gate inventory](docs/project/MASTER_PIPELINE_STATUS.md). The legacy
+> `bench.runner` is mock-only and cannot operate a cluster.
+
 > **AMD Developer Hackathon 2026** | Real GKE cluster · Real Chaos Mesh · Real Prometheus alerts · AMD MI300X
 
 [![CI](https://github.com/Harikishanth/AtlasOps/actions/workflows/ci.yml/badge.svg)](https://github.com/Harikishanth/AtlasOps/actions/workflows/ci.yml)
@@ -57,8 +66,8 @@ flowchart LR
     Argo["Argo CD"]
   end
 
-  Alert(["Alertmanager<br/>webhook"]) --> Coord
-  UI(["Live Ops UI<br/>POST /inject"]) --> Coord
+  Alert(["Alertmanager<br/>authenticated webhook"]) --> Corr
+  Corr --> Coord
 
   subgraph Atlas["AtlasOps Coordinator · FastAPI"]
     Coord["handle_incident"]
@@ -70,8 +79,8 @@ flowchart LR
   Coord --> Triage
   Triage --> Diag["Diagnosis"]
   Diag --> Gate["Approval<br/>Gate"]
-  Gate -- "approve / timeout" --> Rem["Remediation"]
-  Gate -- "reject" --> Comms
+  Gate -- "explicit approve" --> Rem["Remediation"]
+  Gate -- "reject / timeout" --> Comms
   Rem --> Comms
   Comms --> PM["Postmortem.md"]
   Comms -.-> Discord["Discord / Slack<br/>webhooks"]
@@ -179,7 +188,7 @@ The static catalogue contains exactly 28 YAML-backed frozen scenarios. The bench
 
 ### Human-in-the-loop Approval Gate
 - **P0**: manual runbook only — agents produce a step-by-step plan, no auto-execution
-- **P1**: approval window (60 s default, configurable) — execution proceeds if approved or times out
+- **P1**: explicit approval required; rejection, timeout, or missing decision blocks remediation
 - **P2/P3**: fully automatic
 - `POST /approval/callback` · `GET /approval/pending`
 
@@ -295,14 +304,14 @@ Full Academic Technical Report: [`docs/AtlasOps_Technical_Report.md`](docs/Atlas
 bash infra/setup.sh <YOUR_PROJECT_ID> us-central1 atlasops
 ```
 
-### 2. Start the ops console
+### 2. Start the read-only demo
 ```bash
-# Launch interactive 7-tab safe operator console
-python -m demo.launcher --port 7860
-
-# Or run FastAPI coordinator
-python app.py          # http://localhost:7860
+python -m demo.launcher --host 127.0.0.1 --port 7860
 ```
+
+The separate FastAPI coordinator is an operational runtime, not the local demo.
+Its web injection and cleanup shortcuts are retired; authenticated Alertmanager
+webhooks and approvals remain subject to the runtime safety controls.
 
 ### Hugging Face Space (use your trained 7B + judge on Router)
 
@@ -310,19 +319,18 @@ Set Space secrets: **`HF_TOKEN`**, **`ATLASOPS_USE_HF_INFERENCE=1`**, **`AGENT_M
 Paste your merged GRPO Hub id as `AGENT_MODEL` (merge locally with `training/merge_lora_for_hub.py` under `.[train]`).  
 Full checklist: [docs/HF_SPACE_SETUP.md](docs/HF_SPACE_SETUP.md).
 
-### 3. Inject a chaos scenario
-```bash
-make chaos SCENARIO=single_fault/sf-001          # pod-kill on cartservice
-make chaos SCENARIO=named_replays/hist-cloudflare-2019
-make chaos-reset
-```
+### 3. Inspect a scenario
 
-Or click a scenario button in the ops console — agents respond in real time.
+Select a scenario in the Gradio console to inspect its checked-in manifest. No
+fault or agent workflow runs. The old `make chaos`, `make chaos-reset`, and web
+injection shortcuts fail closed. Real experiments use the governed Stage 4
+harness after its full preflight and separate authorization.
 
 ### 4. Run the benchmark
 ```bash
-python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3
-# Results → bench/results/comparison_table.md
+python -m bench.runner --model fixture --mock --adversarial 0
+# NON_EMPIRICAL fixture output → bench/results/<run_id>/comparison_table.md
+# Real G6/G8/G9 evaluation uses the dedicated checkpoint and split evaluators.
 ```
 
 ### 5. Train on AMD MI300X
@@ -330,7 +338,8 @@ python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3
 # Set up MI300X (installs ROCm deps, downloads models)
 bash infra/setup_mi300x.sh
 
-python training/generate_trajectories.py   # 5k SFT examples
+# Legacy live trajectory generators are retired; use the frozen Train-split corpus
+# data/sft_corpus_train.jsonl and the Stage 7 reproducibility contract.
 python training/sft.py --model Qwen/Qwen2.5-7B-Instruct --rocm
 python training/grpo.py --model checkpoints/sft_v3 --rocm
 ```

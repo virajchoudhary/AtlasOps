@@ -130,9 +130,15 @@ def test_reservation_happens_only_after_telemetry_gate_and_before_injection_and_
     injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
     consumed = src.index("consume_experiment_attempt(reservation)")
     assert gate < reservation < injection < consumed
-    # CONSUMED sits exactly at the real fault boundary.
-    assert "fault_crossed = True" in src[consumed : consumed + 200]
+    # An apply error may still have side effects, so mark the fault boundary
+    # before issuing the mutation and reconcile through verified postflight.
+    fault_boundary = src.rindex("fault_crossed = True", reservation, injection)
+    assert reservation < fault_boundary < injection < consumed
 
+    zero_chaos_check = src.index("# Require an independently verified empty Chaos list")
+    persist_preflight = src.index("_persist_stage4_preflight_evidence(evidence, chaos_precheck)")
+    assert reservation < zero_chaos_check < persist_preflight < injection
+    assert '"--all"' not in src[zero_chaos_check:injection]
 
 def test_telemetry_failure_aborts_before_reservation_without_persisting_or_releasing():
     src = _runner_src()

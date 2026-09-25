@@ -1,16 +1,15 @@
-"""AtlasOps Benchmark Runner.
+"""Legacy NON_EMPIRICAL benchmark fixture runner.
 
-Runs all 28 frozen scenarios (8 single-fault + 5 cascade + 5 multi-fault + 10 named replays)
-against a model, scores them with the LLM judge, and outputs a comparison table.
+Creates deterministic compatibility fixtures. Real model evaluation uses the
+dedicated Stage 6/8/9 evaluators; live incidents use the governed Stage 4 harness.
 
 Usage:
-  python bench/runner.py --model checkpoints/grpo_v3 --tag grpo_v3
-  python bench/runner.py --model checkpoints/AtlasOps_v2_baseline --tag baseline_v2
+  python -m bench.runner --model fixture --mock --adversarial 0
 
 Output:
   bench/results/<run_id>/results_per_episode.jsonl
   bench/results/<run_id>/results_summary.json
-  bench/results/comparison_table.md  (updates in place across runs)
+  bench/results/<run_id>/comparison_table.md
 """
 
 import argparse
@@ -18,16 +17,13 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agents.adversarial_designer import design_batch
 from agents.coordinator import handle_incident
 from agents.judge import judge_trajectory
 from config.runtime import (
-    DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
     FROZEN_SCENARIOS,
     evaluate_reward_contract,
     bounded_speed_score as _bounded_speed_score,
@@ -43,28 +39,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("runner")
 
 RESULTS_DIR = Path("bench/results")
-MANIFESTS_DIR = Path("bench/chaos_manifests")
 
 
 def apply_chaos(scenario_id: str) -> bool:
-    manifest = MANIFESTS_DIR / f"{scenario_id}.yaml"
-    if not manifest.exists():
-        log.error("manifest not found: %s", manifest)
-        return False
-    r = subprocess.run(["kubectl", "apply", "-f", str(manifest)], capture_output=True, text=True)
-    return r.returncode == 0
+    """Legacy API retained for tests; this runner cannot apply live faults."""
+    log.error("Legacy benchmark runner cannot apply Chaos; use the governed Stage 4 harness")
+    return False
 
 
 def reset_cluster() -> None:
-    subprocess.run(
-        ["kubectl", "delete", "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
-         "--all", "-A"],
-        capture_output=True,
-    )
-    # Also remove any legacy deployment created by named replays
-    subprocess.run(["kubectl", "delete", "deployment", "checkoutservice-legacy",
-                    "-n", "default", "--ignore-not-found=true"], capture_output=True)
-    time.sleep(60)
+    """Never perform cluster-wide cleanup from the legacy runner."""
+    raise RuntimeError("Legacy benchmark runner cannot clean a cluster; use scoped Stage 4 cleanup")
 
 
 def wait_for_alert(timeout_s: int = 300) -> dict | None:
@@ -84,7 +69,7 @@ def wait_for_alert(timeout_s: int = 300) -> dict | None:
 async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
     t0 = time.time()
     tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
-    is_mock = mock or os.getenv("ATLASOPS_MOCK_EVAL", "").lower() in ("1", "true", "yes")
+    is_mock = mock
 
     if is_mock:
         meta = SCENARIO_CATALOG.get(scenario_id)
@@ -137,6 +122,8 @@ async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
             "scenario_id": scenario_id,
             "tier": tier,
             "status": "ok",
+            "evaluation_mode": "mock",
+            "non_empirical": True,
             "outcome": "unresolved",
             "agent_claimed_resolved": False,
             "env_resolved": False,
@@ -268,18 +255,10 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
     }
 
 
-def write_comparison_table(summary: dict) -> None:
-    table_path = RESULTS_DIR / "comparison_table.md"
-    table_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_runs: list[dict] = []
-    if table_path.exists():
-        # naive parse — rebuild from stored JSON summaries
-        for d in RESULTS_DIR.iterdir():
-            s_file = d / "results_summary.json"
-            if s_file.exists():
-                existing_runs.append(json.loads(s_file.read_text()))
-    existing_runs = [r for r in existing_runs if r.get("tag") != summary["tag"]]
-    existing_runs.append(summary)
+def write_comparison_table(summary: dict, output_dir: Path) -> None:
+    """Write one run's non-empirical table inside its unique output directory."""
+    table_path = output_dir / "comparison_table.md"
+    existing_runs = [summary]
     existing_runs.sort(key=lambda x: x.get("run_date", ""))
 
     header = (
@@ -317,7 +296,7 @@ def write_comparison_table(summary: dict) -> None:
         )
 
     table_path.write_text(
-        f"# AtlasOps — Benchmark Results\n\n{header}{rows}{''.join(per_tier_lines)}",
+        f"# AtlasOps — NON_EMPIRICAL Benchmark Fixtures\n\n{header}{rows}{''.join(per_tier_lines)}",
         encoding="utf-8",
     )
     log.info("comparison table updated: %s", table_path)
@@ -332,18 +311,23 @@ async def main() -> None:
     parser.add_argument("--scenarios", nargs="*", help="Override scenario list")
     parser.add_argument("--mock", action="store_true", help="Run in mock/offline baseline replay mode")
     parser.add_argument("--output", default="", help="Override output dir")
-    parser.add_argument("--adversarial", type=int, default=DEFAULT_DYNAMIC_ADVERSARIAL_COUNT,
-                        help="Number of dynamic adversarial scenarios to generate (0 to skip)")
+    parser.add_argument("--adversarial", type=int, default=0,
+                        help="Legacy option; only 0 is supported by this mock-only runner")
     args = parser.parse_args()
 
+    if not args.mock:
+        raise RuntimeError(
+            "Legacy benchmark runner is mock-only; use the dedicated real evaluators "
+            "or the governed Stage 4 harness"
+        )
+    if args.adversarial != 0:
+        raise ValueError("Dynamic adversarial generation is unavailable in the mock-only runner")
     os.environ["AGENT_MODEL"] = args.model
-    if args.mock:
-        os.environ["ATLASOPS_MOCK_EVAL"] = "1"
 
     tag = args.tag or f"run-{int(time.time())}"
     run_id = f"{tag}-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     out_dir = Path(args.output) if args.output else (RESULTS_DIR / run_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=False)
 
     if args.split:
         if args.split == "all":
@@ -355,33 +339,11 @@ async def main() -> None:
     else:
         scenarios = list(FROZEN_SCENARIOS)
 
-    # Generate fresh adversarial scenarios from 72B judge before running frozen set
-    if args.adversarial > 0 and not args.mock:
-        log.info("generating %d dynamic adversarial scenarios via 72B judge...", args.adversarial)
-        # Seed with any existing failure history from prior runs
-        prior_failures = []
-        for d in RESULTS_DIR.iterdir():
-            ep_file = d / "results_per_episode.jsonl"
-            if ep_file.exists():
-                for line in ep_file.read_text().splitlines():
-                    try:
-                        ep = json.loads(line)
-                        if not ep.get("resolved"):
-                            prior_failures.append(ep)
-                    except json.JSONDecodeError:
-                        pass
-        adv_results = await design_batch(prior_failures, count=args.adversarial)
-        for adv in adv_results:
-            # Add generated manifest path as a runnable scenario
-            rel = str(Path(adv["manifest_path"]).relative_to(Path("bench/chaos_manifests")))
-            rel = rel.replace("\\", "/").removesuffix(".yaml")
-            scenarios.append(rel)
-        log.info("added %d adversarial scenarios to run", len(adv_results))
     log.info("running %d scenarios for tag=%s model=%s (mock=%s)", len(scenarios), tag, args.model, args.mock)
 
     results = []
     episodes_file = out_dir / "results_per_episode.jsonl"
-    with episodes_file.open("w", encoding="utf-8") as f:
+    with episodes_file.open("x", encoding="utf-8", newline="\n") as f:
         for i, s in enumerate(scenarios, 1):
             log.info("[%d/%d] %s", i, len(scenarios), s)
             r = await run_scenario(s, mock=args.mock)
@@ -390,8 +352,10 @@ async def main() -> None:
             f.flush()
 
     summary = compute_summary(results, tag, args.model)
+    summary["evaluation_mode"] = "mock"
+    summary["non_empirical"] = True
     (out_dir / "results_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    write_comparison_table(summary)
+    write_comparison_table(summary, out_dir)
 
     log.info("=== Benchmark complete ===")
     log.info("  Resolution rate : %.1f%%", summary["resolution_rate"] * 100)

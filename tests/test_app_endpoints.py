@@ -5,10 +5,17 @@ These tests mock external side effects so they can run in CI without a cluster.
 
 import json
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def configured_test_api_key(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_API_KEY", "atlasops-local-test-key")
 
 
 def _client():
@@ -34,40 +41,78 @@ def test_health_endpoint_ok():
     assert "slack_webhook_configured" in body
 
 
-def test_inject_missing_manifest_returns_404():
-    client = _client()
-    r = client.post("/inject", json={"scenario_id": "does/not/exist"})
-    assert r.status_code == 404
-    assert r.json()["ok"] is False
+@pytest.mark.parametrize("scenario_id", ["single_fault/sf-001", "../../elsewhere"])
+def test_web_injection_retired_even_when_flagged_on(monkeypatch, scenario_id):
+    import app as app_module
+
+    monkeypatch.setenv("ATLASOPS_ENABLE_WEB_CHAOS", "1")
+    monkeypatch.setenv("ATLASOPS_WEB_CHAOS_CONTEXT", "kind-atlasops-local")
+    with (
+        patch("app.subprocess.run") as mock_run,
+        patch("asyncio.create_task") as mock_task,
+        patch.object(app_module.correlator, "ingest") as mock_ingest,
+    ):
+        response = _client().post("/inject", json={"scenario_id": scenario_id, "name": "Smoke"})
+        assert response.status_code == 503
+        assert "retired" in response.json()["detail"]
+        mock_run.assert_not_called()
+        mock_task.assert_not_called()
+        mock_ingest.assert_not_called()
 
 
-@patch("app.subprocess.run")
-@patch("app.Path.exists", return_value=True)
-@patch("asyncio.create_task")
-def test_inject_success_returns_correlation_id(mock_task, mock_exists, mock_run):
-    # The endpoint constructs a coroutine before scheduling it; close it in the
-    # mock so pytest doesn't report an un-awaited coroutine warning.
-    mock_task.side_effect = lambda coro: coro.close()
-    mock_run.return_value = MagicMock(returncode=0, stderr="")
-    client = _client()
-    r = client.post("/inject", json={"scenario_id": "single_fault/sf-001", "name": "Smoke"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["ok"] is True
-    assert body["scenario_id"] == "single_fault/sf-001"
-    assert body["correlation_id"].startswith("inj-")
-    assert mock_task.called
+def test_mutating_and_approval_routes_fail_closed_without_key(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_API_KEY", "")
+    client = TestClient(app_module.app)
+    for path in ("/inject", "/reset", "/approve", "/approval/callback", "/circuit-breaker/reset"):
+        assert client.post(path, json={"scenario_id": "single_fault/sf-001"}).status_code == 503
+    assert client.get("/approval/pending").status_code == 503
 
 
-@patch("app.subprocess.run")
-def test_reset_returns_ok(mock_run):
-    mock_run.return_value = MagicMock(returncode=0)
-    client = _client()
-    r = client.post("/reset")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["ok"] is True
-    assert data["circuit_breaker_reset"] is True
+def test_pending_approval_tokens_require_operator_auth():
+    import app as app_module
+
+    client = TestClient(app_module.app)
+    assert client.get("/approval/pending").status_code == 401
+    assert client.post("/approve", json={"token": "any", "decision": "approved"}).status_code == 401
+
+
+def test_unsigned_webhook_is_disabled_without_secret(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "")
+    client = TestClient(app_module.app)
+    assert client.post("/webhook", json={}).status_code == 503
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "local-test-webhook-secret")
+    assert client.post("/webhook", json={}).status_code == 401
+
+
+def test_web_cleanup_retired_without_resetting_state(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setenv("ATLASOPS_ENABLE_WEB_CHAOS", "1")
+    monkeypatch.setenv("ATLASOPS_WEB_CHAOS_CONTEXT", "kind-atlasops-local")
+    breaker_reset = MagicMock()
+    correlator_reset = MagicMock()
+    monkeypatch.setattr(app_module.circuit_breaker, "reset", breaker_reset)
+    monkeypatch.setattr(app_module.correlator, "reset", correlator_reset)
+    with patch("app.subprocess.run") as mock_run, patch("asyncio.create_task") as mock_task:
+        reset = _client().post("/reset", json={"scenario_id": "single_fault/sf-001"})
+        assert reset.status_code == 503
+        assert "retired" in reset.json()["detail"]
+        mock_run.assert_not_called()
+        mock_task.assert_not_called()
+        breaker_reset.assert_not_called()
+        correlator_reset.assert_not_called()
+
+
+def test_mutating_requests_require_valid_scenario_body():
+    with patch("app.subprocess.run") as mock_run:
+        assert _client().post("/inject", json={"scenario_id": ""}).status_code == 422
+        assert _client().post("/reset", json={}).status_code == 422
+        assert _client().post("/reset", json={"scenario_id": "../../elsewhere"}).status_code == 503
+        mock_run.assert_not_called()
 
 
 def test_slack_feed_returns_recent_posts(tmp_path, monkeypatch):

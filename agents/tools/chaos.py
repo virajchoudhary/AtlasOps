@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -33,6 +34,89 @@ ALLOWED_CHAOS_NAMESPACES = frozenset({
 # explicit reviewed configuration change to this allowlist.
 
 _SAFE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_CHAOS_RESOURCE_TYPES = (
+    "podchaos",
+    "networkchaos",
+    "stresschaos",
+    "dnschaos",
+    "iochaos",
+    "timechaos",
+)
+
+
+def chaos_list_experiments() -> dict[str, Any]:
+    """Observe active supported Chaos Mesh resources without mutating state."""
+    result = _run(
+        [
+            "kubectl",
+            "get",
+            ",".join(_CHAOS_RESOURCE_TYPES),
+            "-A",
+            "-o",
+            "json",
+        ],
+        timeout=30,
+    )
+    if not result.get("success"):
+        return {
+            "success": False,
+            "observation_status": "unavailable",
+            "evidence_status": "environment_unavailable",
+            "active_experiments": [],
+            "error": result.get("error") or result.get("stderr") or "chaos_observation_failed",
+        }
+
+    try:
+        payload = json.loads(str(result.get("stdout") or "{}"))
+    except json.JSONDecodeError:
+        return {
+            "success": False,
+            "observation_status": "invalid_response",
+            "evidence_status": "environment_observation_error",
+            "active_experiments": [],
+            "error": "chaos observation returned invalid JSON",
+        }
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return {
+            "success": False,
+            "observation_status": "invalid_response",
+            "evidence_status": "environment_observation_error",
+            "active_experiments": [],
+            "error": "chaos observation requires an items list",
+        }
+    active_experiments: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata") or {}
+        kind = str(item.get("kind") or "").strip()
+        if kind.casefold() not in ALLOWED_CHAOS_KINDS:
+            continue
+        item_status = item.get("status") or {}
+        conditions = item_status.get("conditions") or []
+        experiment_status = item_status.get("experiment") or {}
+        phase = experiment_status.get("phase")
+        active_experiments.append(
+            {
+                "kind": _CANONICAL_KINDS.get(kind.casefold(), kind),
+                "name": str(metadata.get("name") or ""),
+                "namespace": str(metadata.get("namespace") or ""),
+                "status": {
+                    "phase": phase,
+                    "conditions": conditions,
+                },
+            }
+        )
+
+    return {
+        "success": True,
+        "observation_status": "observed",
+        "evidence_status": "active_experiments" if active_experiments else "no_active_experiments",
+        "active_experiments": active_experiments,
+        "count": len(active_experiments),
+    }
 
 
 def chaos_stop_experiment(

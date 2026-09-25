@@ -1,0 +1,175 @@
+{
+  "model_name": "HybridRecommender",
+  "hyperparameters": {
+    "alpha_content": 0.5,
+    "beta_collab": 0.35,
+    "gamma_prior": 0.15
+  },
+  "dataset_split_counts": {
+    "train": 12,
+    "val": 5,
+    "test": 4,
+    "total": 21
+  },
+  "evaluation": {
+    "val": {
+      "hit@1": 0.6,
+      "mrr@1": 0.6,
+      "ndcg@1": 0.6,
+      "precision@1": 0.6,
+      "recall@1": 0.6,
+      "hit@3": 0.6,
+      "mrr@3": 0.6,
+      "ndcg@3": 0.6,
+      "precision@3": 0.2,
+      "recall@3": 0.6,
+      "hit@5": 0.8,
+      "mrr@5": 0.65,
+      "ndcg@5": 0.6861,
+      "precision@5": 0.16,
+      "recall@5": 0.8
+    },
+    "test": {
+      "hit@1": 0.5,
+      "mrr@1": 0.5,
+      "ndcg@1": 0.5,
+      "precision@1": 0.5,
+      "recall@1": 0.5,
+      "hit@3": 1.0,
+      "mrr@3": 0.7083,
+      "ndcg@3": 0.7827,
+      "precision@3": 0.3333,
+      "recall@3": 1.0,
+      "hit@5": 1.0,
+      "mrr@5": 0.7083,
+      "ndcg@5": 0.7827,
+      "precision@5": 0.2,
+      "recall@5": 1.0
+    },
+    "train": {
+      "hit@1": 0.75,
+      "mrr@1": 0.75,
+      "ndcg@1": 0.75,
+      "precision@1": 0.75,
+      "recall@1": 0.75,
+      "hit@3": 0.8333,
+      "mrr@3": 0.7917,
+      "ndcg@3": 0.8026,
+      "precision@3": 0.2778,
+      "recall@3": 0.8333,
+      "hit@5": 0.8333,
+      "mrr@5": 0.7917,
+      "ndcg@5": 0.8026,
+      "precision@5": 0.1667,
+      "recall@5": 0.8333
+    }
+  },
+  "baseline_comparison_test": {
+    "RandomRecommender": {
+      "hit@1": 0.25,
+      "mrr@1": 0.25,
+      "ndcg@1": 0.25,
+      "precision@1": 0.25,
+      "recall@1": 0.25,
+      "hit@3": 0.25,
+      "mrr@3": 0.25,
+      "ndcg@3": 0.25,
+      "precision@3": 0.0833,
+      "recall@3": 0.25,
+      "hit@5": 1.0,
+      "mrr@5": 0.4125,
+      "ndcg@5": 0.5511,
+      "precision@5": 0.2,
+      "recall@5": 1.0
+    },
+    "PopularityRecommender": {
+      "hit@1": 0.5,
+      "mrr@1": 0.5,
+      "ndcg@1": 0.5,
+      "precision@1": 0.5,
+      "recall@1": 0.5,
+      "hit@3": 0.5,
+      "mrr@3": 0.5,
+      "ndcg@3": 0.5,
+      "precision@3": 0.1667,
+      "recall@3": 0.5,
+      "hit@5": 0.75,
+      "mrr@5": 0.55,
+      "ndcg@5": 0.5967,
+      "precision@5": 0.15,
+      "recall@5": 0.75
+    },
+    "BM25ContentRecommender": {
+      "hit@1": 0.5,
+      "mrr@1": 0.5,
+      "ndcg@1": 0.5,
+      "precision@1": 0.5,
+      "recall@1": 0.5,
+      "hit@3": 0.75,
+      "mrr@3": 0.625,
+      "ndcg@3": 0.6577,
+      "precision@3": 0.25,
+      "recall@3": 0.75,
+      "hit@5": 1.0,
+      "mrr@5": 0.6875,
+      "ndcg@5": 0.7654,
+      "precision@5": 0.2,
+      "recall@5": 1.0
+    },
+    "HybridRecommender": {
+      "hit@1": 0.5,
+      "mrr@1": 0.5,
+      "ndcg@1": 0.5,
+      "precision@1": 0.5,
+      "recall@1": 0.5,
+      "hit@3": 1.0,
+      "mrr@3": 0.7083,
+      "ndcg@3": 0.7827,
+      "precision@3": 0.3333,
+      "recall@3": 1.0,
+      "hit@5": 1.0,
+      "mrr@5": 0.7083,
+      "ndcg@5": 0.7827,
+      "precision@5": 0.2,
+      "recall@5": 1.0
+    }
+  },
+  "checkpoint_path": "artifacts/overnight_experiments/rs-20260924/hybrid_recommender.json",
+  "checkpoint_sha256": "21243d035fc2a972d8d1a41a6eaa7459fbb38f9645a8013bde7f27219cfcfc02",
+  "dataset_provenance": {
+    "origin": "synthetic_scenario_derived",
+    "historical_interaction_feedback": false,
+    "interaction_rows_sha256": "c8cadef583ab7db64dccde8a289527755736c55f7e5a1c54cd63eadd4a9e73a3",
+    "included_scenario_ids_by_split": {
+      "train": [
+        "cascade/cs-001",
+        "cascade/cs-002",
+        "cascade/cs-003",
+        "named_replays/hist-aws-s3-2017",
+        "named_replays/hist-cloudflare-2019",
+        "named_replays/hist-datadog-2023",
+        "named_replays/hist-discord-2022",
+        "single_fault/sf-001",
+        "single_fault/sf-002",
+        "single_fault/sf-003",
+        "single_fault/sf-004",
+        "single_fault/sf-005"
+      ],
+      "val": [
+        "cascade/cs-004",
+        "named_replays/hist-facebook-bgp-2021",
+        "named_replays/hist-fastly-2021",
+        "single_fault/sf-006",
+        "single_fault/sf-007"
+      ],
+      "test": [
+        "cascade/cs-005",
+        "named_replays/hist-azure-dns-2019",
+        "named_replays/hist-knight-capital-2012",
+        "named_replays/hist-slack-2022"
+      ]
+    },
+    "scenario_catalog_sha256": "54e782b8fc6adafafe6138fc2b8fcded5dbce851e7683894933970135eb587bc",
+    "dataset_generator_sha256": "bd915e300b2658b22280bf7c269eaf72e808f3ee9c814c2819f0afcdaf10a492"
+  }
+}

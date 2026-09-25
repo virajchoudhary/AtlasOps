@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -25,6 +26,25 @@ _ARGOCD_STATUS_ERROR_CLASSES = {
     409: "conflict",
     422: "unprocessable",
 }
+_APP_NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
+
+
+def _valid_app_name(app: str) -> bool:
+    return (
+        isinstance(app, str)
+        and len(app) <= 253
+        and all(0 < len(label) <= 63 for label in app.split("."))
+        and _APP_NAME_RE.fullmatch(app) is not None
+        and ".." not in app
+    )
+
+
+def _invalid_app_result() -> dict[str, Any]:
+    return {
+        "success": False,
+        "error": "argocd_invalid_app: application name must be a DNS name",
+        "error_class": "invalid_action_arguments",
+    }
 
 
 def response_contract_profile() -> dict[str, Any]:
@@ -241,6 +261,8 @@ def argocd_list_apps() -> dict[str, Any]:
 
 def argocd_app_history(app: str) -> dict[str, Any]:
     """Get deployment history for an Argo CD application."""
+    if not _valid_app_name(app):
+        return _invalid_app_result()
     result = _api("GET", f"/applications/{app}")
     if result.get("success"):
         history = result["data"].get("status", {}).get("history") or []
@@ -253,6 +275,8 @@ def argocd_app_history(app: str) -> dict[str, Any]:
 
 def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
     """Roll back an Argo CD application to a previous revision."""
+    if not _valid_app_name(app):
+        return _invalid_app_result()
     revision_text = str(revision).strip()
     if not (revision_text.isascii() and revision_text.isdigit()):
         return {
@@ -269,4 +293,6 @@ def argocd_rollback(app: str, revision: str) -> dict[str, Any]:
 
 def argocd_app_get(app: str) -> dict[str, Any]:
     """Get details for a specific Argo CD application."""
+    if not _valid_app_name(app):
+        return _invalid_app_result()
     return _api("GET", f"/applications/{app}")

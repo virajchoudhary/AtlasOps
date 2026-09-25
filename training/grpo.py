@@ -1,16 +1,16 @@
-"""GRPO training for AtlasOps — online RL against real GKE cluster on AMD MI300X.
+"""GRPO training for AtlasOps against one controlled Kubernetes environment.
 
 Architecture:
-  - Each GRPO step generates G=8 rollouts by running the full agent chain
-    against a live chaos scenario on the real GKE cluster
+  - Each GRPO step generates a group of policy completions against a live
+    Chaos Mesh scenario.
   - Reward comes from the AtlasOps reward contract (same as bench/runner.py)
-  - This is TRUE online RL — not offline reward-weighted SFT
-  - QLoRA: 4-bit base + LoRA r=16 for memory efficiency on MI300X
+  - The exact completion action is executed and scored from verifier truth.
+  - QLoRA uses a 4-bit base plus LoRA r=16.
 
 Training flow:
   1. Sample a chaos scenario from the tier-weighted curriculum
   2. Apply Chaos Mesh to real GKE cluster
-  3. Run G=8 parallel agent rollouts (model generates tool calls)
+   3. Run serialized policy rollouts (model generates one action each)
   4. Score each rollout with reward contract (kubectl/promql verify real cluster state)
   5. GRPO updates — policy learns from what actually worked on the real cluster
   6. Reset cluster, next step
@@ -23,19 +23,22 @@ import logging
 import os
 import random
 import subprocess
+import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
-    from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+    from peft import PeftModel, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from trl import GRPOConfig, GRPOTrainer
     _HAS_TORCH_RL = True
 except ImportError:
-    LoraConfig = Any  # type: ignore
-    TaskType = Any  # type: ignore
-    get_peft_model = None  # type: ignore
+    PeftModel = None  # type: ignore
     prepare_model_for_kbit_training = None  # type: ignore
     AutoModelForCausalLM = None  # type: ignore
     AutoTokenizer = None  # type: ignore
@@ -45,10 +48,19 @@ except ImportError:
     _HAS_TORCH_RL = False
 
 from config.runtime import (
-    SCENARIOS_BY_TIER, TIER_SAMPLING_WEIGHTS, evaluate_reward_contract,
+    SCENARIOS_BY_TIER,
     CurriculumManager,
+    evaluate_reward_contract,
 )
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
+from config.scenario_catalog import SCENARIO_CATALOG
+from config.splits import TEST_SPLIT, VAL_SPLIT, get_split
+from training.grpo_environment import DirectPolicyEnvironment
+from training.grpo_provenance import (
+    MANIFEST_NAME,
+    create_run_manifest,
+    persist_status,
+    validate_sft_parent,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,16 +81,6 @@ def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[flo
 # ── QLoRA config ──────────────────────────────────────────────────────────────
 
 if _HAS_TORCH_RL:
-    LORA_CONFIG = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
-        bias="none",
-    )
-
     BNBCONFIG = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -86,7 +88,6 @@ if _HAS_TORCH_RL:
         bnb_4bit_use_double_quant=True,
     )
 else:
-    LORA_CONFIG = None
     BNBCONFIG = None
 
 
@@ -134,27 +135,63 @@ def sample_scenario(tiers: list[str]) -> tuple[str, str]:
     return chosen_sid, chosen_tier
 
 
+def _chaos_manifest(scenario_id: str) -> Path:
+    return Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
+
+
+def zero_chaos_verified() -> bool:
+    env = os.environ.copy()
+    env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
+    result = subprocess.run(
+        [
+            "kubectl", "get",
+            "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
+            "-A", "-o", "json",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and payload.get("items") == []
+
+
 def apply_chaos(scenario_id: str) -> bool:
-    manifest = Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
+    manifest = _chaos_manifest(scenario_id)
     if not manifest.exists():
         return False
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    r = subprocess.run(["kubectl", "apply", "-f", str(manifest)],
-                       capture_output=True, text=True, env=env)
+    r = subprocess.run(
+        ["kubectl", "apply", "-f", str(manifest)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
     return r.returncode == 0
 
 
-def reset_chaos():
+def reset_chaos(scenario_id: str) -> bool:
+    manifest = _chaos_manifest(scenario_id)
+    if not manifest.is_file():
+        return False
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
-    subprocess.run(
-        ["kubectl", "delete",
-         "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
-         "--all", "-A", "--ignore-not-found=true"],
-        capture_output=True, env=env,
+    deleted = subprocess.run(
+        ["kubectl", "delete", "-f", str(manifest), "--ignore-not-found=true"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
     )
-    time.sleep(20)
+    return deleted.returncode == 0 and zero_chaos_verified()
 
 
 # ── Online reward function for TRL GRPOTrainer ────────────────────────────────
@@ -169,9 +206,15 @@ class OnlineRewardFunction:
     4. Returns rewards for GRPO advantage computation
     """
 
-    def __init__(self, tiers: list[str], coordinator_url: str = "http://localhost:9099"):
+    def __init__(
+        self,
+        tiers: list[str],
+        coordinator_url: str = "http://localhost:9099",
+        rollout_log_path: Path | None = None,
+    ):
         self.tiers = tiers
         self.coordinator_url = coordinator_url
+        self.rollout_log_path = rollout_log_path
         self._loop = asyncio.new_event_loop()
 
     def __del__(self):
@@ -179,15 +222,15 @@ class OnlineRewardFunction:
             self._loop.close()
 
     def __call__(self, completions: list[str], prompts: list[str],
-                 **kwargs) -> list[float]:
+                 scenario_id: list[str] | None = None, **kwargs) -> list[float]:
         """Called by TRL after generating G completions. Returns reward per completion."""
         return self._loop.run_until_complete(
-            self._score_batch(completions, prompts)
+            self._score_batch(completions, prompts, scenario_id)
         )
 
     async def _score_batch(self, completions: list[str],
-                           prompts: list[str]) -> list[float]:
-        """Score G completions by running SERIALIZED rollouts on the live cluster.
+                           prompts: list[str], scenario_ids: list[str] | None) -> list[float]:
+        """Score completions by running serialized rollouts on the live cluster.
 
         Why serialized (not asyncio.gather):
         All G rollouts share one GKE cluster. Running them in parallel causes
@@ -197,35 +240,82 @@ class OnlineRewardFunction:
           apply_chaos → wait → rollout → reset_chaos → wait → next rollout
         This is slower (G × episode_time) but produces correct independent rewards.
         """
+        if scenario_ids is None or not (
+            len(completions) == len(prompts) == len(scenario_ids)
+        ):
+            raise ValueError("GRPO rewards require one scenario_id and prompt per completion")
+        train_ids = set(get_split("train"))
+        for scenario_id, prompt in zip(scenario_ids, prompts, strict=True):
+            if scenario_id not in train_ids:
+                raise ValueError(f"GRPO reward scenario is outside frozen Train: {scenario_id}")
+            if SCENARIO_CATALOG[scenario_id].tier not in self.tiers:
+                raise ValueError(f"GRPO reward scenario is outside configured tiers: {scenario_id}")
+            if prompt != _direct_action_prompt(scenario_id):
+                raise ValueError(f"GRPO reward prompt/scenario mismatch: {scenario_id}")
+
         rewards: list[float] = []
-        scenario_id, tier = sample_scenario(self.tiers)
+        if not completions:
+            return rewards
 
         for i, completion in enumerate(completions):
+            scenario_id = scenario_ids[i]
+            tier = SCENARIO_CATALOG[scenario_id].tier
             log.info("Rollout %d/%d — scenario %s", i + 1, len(completions), scenario_id)
 
-            if not apply_chaos(scenario_id):
-                log.warning("Chaos apply failed for %s — assigning 0 reward", scenario_id)
-                rewards.append(0.0)
-                continue
-
-            # Wait for Alertmanager to fire
-            await asyncio.sleep(15)
-
+            if not zero_chaos_verified():
+                raise RuntimeError("GRPO rollout requires verified zero-Chaos preflight")
+            result = None
+            failure_reason = None
             try:
-                result = await self._run_one_rollout(completion, scenario_id, tier)
-            except Exception as e:
-                log.exception("Rollout %d failed: %s", i + 1, e)
-                result = None
+                if not apply_chaos(scenario_id):
+                    log.warning("Chaos apply failed for %s — assigning 0 reward", scenario_id)
+                    failure_reason = "chaos_apply_failed"
+                else:
+                    await asyncio.sleep(15)
+                    from bench.runner import wait_for_alert
 
-            # Always reset before the next rollout — even on failure
-            reset_chaos()
+                    alert = wait_for_alert()
+                    if alert is None or alert.get("synthetic") is True:
+                        log.warning("No real alert observed for %s", scenario_id)
+                        failure_reason = "real_alert_not_observed"
+                    else:
+                        result = await self._run_one_rollout(
+                            completion, scenario_id, tier, alert
+                        )
+            except Exception as exc:
+                log.exception("Rollout %d failed", i + 1)
+                failure_reason = f"{type(exc).__name__}: {exc}"
+            finally:
+                if not reset_chaos(scenario_id):
+                    self._persist_rollout({
+                        "scenario_id": scenario_id,
+                        "tier": tier,
+                        "status": "failed",
+                        "failure": "scenario_cleanup_unverified",
+                        "prior_failure": failure_reason,
+                        "policy_completion": completion,
+                        "reward": None,
+                    })
+                    raise RuntimeError(
+                        f"GRPO scenario cleanup was not verified: {scenario_id}"
+                    )
             await asyncio.sleep(10)   # let the cluster fully stabilise
 
             if result is None:
                 rewards.append(0.0)
+                self._persist_rollout({
+                    "scenario_id": scenario_id,
+                    "tier": tier,
+                    "status": "failed",
+                    "failure": failure_reason or "rollout_failed",
+                    "policy_completion": completion,
+                    "reward": 0.0,
+                })
             else:
                 r = compute_reward(result)
                 rewards.append(r)
+                result["reward"] = r
+                self._persist_rollout(result)
                 _curriculum.record(
                     scenario_id=scenario_id,
                     resolved=bool(result.get("resolved", False)),
@@ -234,65 +324,76 @@ class OnlineRewardFunction:
 
         cur_stats = _curriculum.stats()
         log.info(
-            "Batch done | scenario=%s rewards: min=%.3f max=%.3f mean=%.3f | "
+            "Batch done | scenarios=%d rewards: min=%.3f max=%.3f mean=%.3f | "
             "curriculum: %d tried, %d graduated, %d due for resurface",
-            scenario_id,
+            len(set(scenario_ids)),
             min(rewards), max(rewards), sum(rewards) / len(rewards),
             cur_stats["scenarios_tried"], cur_stats["graduated"],
             cur_stats["due_for_resurface"],
         )
         return rewards
 
-    async def _run_one_rollout(self, completion_text: str,
-                               scenario_id: str, tier: str) -> dict:
-        """Execute one full incident-response rollout and return a scored episode dict.
-
-        Architecture note: TRL generates G completions per step; we use those
-        completions as the triage agent's initial reasoning seed (injected into
-        the alert context below). The coordinator then continues the full agent
-        chain against the live cluster. Reward is episode-level: resolved/speed/
-        evidence/safety/comms. Group-relative advantages are computed across the
-        G rollouts, giving GRPO its learning signal.
-
-        The completion_text therefore influences the rollout indirectly via the
-        triage seed, creating the completion↔reward coupling GRPO requires.
-        """
-        from agents.coordinator import handle_incident
-        from agents.judge import judge_trajectory
-
-        # Seed the alert with the model's generated triage reasoning so that
-        # the reward IS conditioned on the specific completion TRL produced.
-        alert = {
-            "commonLabels": {"alertname": "GRPOTrainingAlert"},
-            "scenario_id": scenario_id,
-            "alerts": [],
-            "triage_seed": completion_text[:512] if completion_text else "",
+    def _persist_rollout(self, result: dict[str, Any]) -> None:
+        if self.rollout_log_path is None:
+            return
+        self.rollout_log_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            **result,
+            "recorded_at": datetime.now(UTC).isoformat(),
         }
+        with self.rollout_log_path.open("a", encoding="utf-8", newline="\n") as stream:
+            stream.write(json.dumps(record, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
 
+    async def _run_one_rollout(
+        self,
+        completion_text: str,
+        scenario_id: str,
+        tier: str,
+        alert: dict[str, Any],
+    ) -> dict:
+        """Execute the policy completion itself as one atomic environment action."""
         t0 = time.time()
-        incident = await handle_incident(alert)
-        judge_score = await judge_trajectory(incident, tier=tier)
-
-        remediation = incident.get("remediation", {}).get("final", {})
-        total_turns = sum(
-            len(incident.get(r, {}).get("trajectory", []))
-            for r in ("triage", "diagnosis", "remediation", "comms")
-        )
-
-        return {
-            "tier": tier,
-            "resolved": remediation.get("outcome") == "resolved",
-            "outcome": remediation.get("outcome", "unknown"),
-            "total_turns": total_turns,
-            "time_to_resolve_s": round(time.time() - t0),
-            "judge": judge_score,
-            "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
+        labels = {
+            **(alert.get("commonLabels") or {}),
+            **((alert.get("alerts") or [{}])[0].get("labels") or {}),
         }
+        alert_severity = str(labels.get("severity", "")).lower()
+        triage_severity = {
+            "critical": "P1",
+            "warning": "P2",
+            "info": "P3",
+        }.get(alert_severity, "P0")
+        state = {
+            "alert": alert,
+            "triage": {"severity": triage_severity},
+            "approval": alert.get("approval"),
+            "observations": alert.get("observations", {}),
+        }
+        result = await DirectPolicyEnvironment().step(
+            completion_text,
+            scenario_id=scenario_id,
+            state=state,
+        )
+        result.update(
+            {
+                "scenario_id": scenario_id,
+                "tier": tier,
+                "total_turns": 1,
+                "time_to_resolve_s": round(time.time() - t0),
+                "postmortem_path": None,
+            }
+        )
+        result["reward_contract"] = evaluate_reward_contract(result)
+        return result
 
 
 # ── Optuna HP search ──────────────────────────────────────────────────────────
 
-def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
+def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
+                      model_revision: str, tokenizer_id: str, tokenizer_revision: str,
+                      sft_checkpoint: Path,
                       n_trials: int = 6) -> dict[str, Any]:
     try:
         import optuna
@@ -301,19 +402,27 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
         return {}
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    reward_fn = OnlineRewardFunction(tiers)
+    reward_fn = OnlineRewardFunction(
+        tiers,
+        rollout_log_path=output_dir / "rollout_trajectories.jsonl",
+    )
 
     def objective(trial: optuna.Trial) -> float:
         lr      = trial.suggest_float("lr", 5e-7, 5e-6, log=True)
         beta    = trial.suggest_float("beta", 0.001, 0.05, log=True)
         num_gen = trial.suggest_categorical("num_generations", [4, 8])
 
-        model, tokenizer = load_model_and_tokenizer(model_path)
+        model, tokenizer = load_model_and_tokenizer(
+            model_path,
+            model_revision=model_revision,
+            tokenizer_id=tokenizer_id,
+            tokenizer_revision=tokenizer_revision,
+            sft_checkpoint=sft_checkpoint,
+        )
 
-        # Minimal dataset: GRPOTrainer needs a prompt dataset
+        # Preserve the exact frozen Train scenario identity through TRL.
         from datasets import Dataset
-        prompts = [{"prompt": "Respond as SRE triage agent."} for _ in range(20)]
-        dataset = Dataset.from_list(prompts)
+        dataset = Dataset.from_list(build_direct_action_prompts(tiers))
 
         grpo_args = GRPOConfig(
             output_dir=f"{output_dir}/trial_{trial.number}",
@@ -344,20 +453,32 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: str,
 
 # ── Model loading ─────────────────────────────────────────────────────────────
 
-def load_model_and_tokenizer(model_path: str):
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+def load_model_and_tokenizer(
+    model_path: str,
+    *,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+    sft_checkpoint: Path,
+):
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_id, revision=tokenizer_revision, trust_remote_code=True
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
+        revision=model_revision,
         quantization_config=BNBCONFIG,
         device_map="auto",
         trust_remote_code=True,
         attn_implementation="flash_attention_2" if _flash_attn_available() else "eager",
     )
     model = prepare_model_for_kbit_training(model)
-    model = get_peft_model(model, LORA_CONFIG)
+    model = PeftModel.from_pretrained(
+        model, str(sft_checkpoint), is_trainable=True
+    )
     model.print_trainable_parameters()
     return model, tokenizer
 
@@ -370,11 +491,69 @@ def _flash_attn_available() -> bool:
         return False
 
 
+def _direct_action_prompt(scenario_id: str) -> str:
+    """Build the public policy prompt for one frozen Train scenario."""
+    if scenario_id not in set(get_split("train")):
+        raise ValueError(f"GRPO prompt scenario is outside frozen Train: {scenario_id}")
+    meta = SCENARIO_CATALOG[scenario_id]
+    state = {
+        "alert": {
+            "labels": {
+                "alertname": meta.expected_alert,
+                "namespace": "default",
+            },
+            "status": "firing",
+        },
+        "instruction": (
+            "Return exactly one JSON object with keys tool, arguments, and "
+            "agent_claimed_resolved. The tool and arguments are the exact action "
+            "that will be safety-checked and executed. Do not include an actions list."
+        ),
+    }
+    return json.dumps(state, sort_keys=True)
+
+
+def build_direct_action_prompts(tiers: list[str]) -> list[dict[str, str]]:
+    """Build training-only prompts with their exact frozen scenario identity."""
+    allowed_tiers = set(tiers)
+    prompts = [
+        {
+            "prompt": _direct_action_prompt(scenario_id),
+            "scenario_id": scenario_id,
+        }
+        for scenario_id in get_split("train")
+        if SCENARIO_CATALOG[scenario_id].tier in allowed_tiers
+    ]
+    if not prompts:
+        raise ValueError(f"No frozen training scenarios match tiers={sorted(allowed_tiers)}")
+    return prompts
+
+
+def _has_verified_rollout(path: Path) -> bool:
+    verified = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line:
+            continue
+        row = json.loads(line)
+        if (
+            row.get("status") == "ok"
+            and isinstance(row.get("verification"), dict)
+            and isinstance(row["verification"].get("env_resolved"), bool)
+        ):
+            verified = True
+    return verified
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",           required=True)
+    parser.add_argument("--model-revision", required=True)
+    parser.add_argument("--tokenizer")
+    parser.add_argument("--tokenizer-revision", required=True)
+    parser.add_argument("--sft-checkpoint", type=Path, required=True)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output",          required=True)
     parser.add_argument("--tiers",           default="cascade,multi_fault,named_replays")
     parser.add_argument("--lr",              type=float, default=1e-6)
@@ -390,12 +569,73 @@ def main() -> None:
     tiers      = [t.strip() for t in args.tiers.split(",")]
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = output_dir / MANIFEST_NAME
+    if manifest_path.exists():
+        raise FileExistsError(f"GRPO run manifest already exists: {manifest_path}")
+    sft_parent = validate_sft_parent(
+        args.sft_checkpoint,
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_revision=args.tokenizer_revision,
+    )
+    prompt_rows = build_direct_action_prompts(tiers)
+    manifest = create_run_manifest(
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_revision=args.tokenizer_revision,
+        seed=args.seed,
+        generation_config={"max_completion_length": args.max_compl_len},
+        hyperparameters={
+            "tiers": tiers,
+            "learning_rate": args.lr,
+            "beta": args.beta,
+            "batch_size": args.batch_size,
+            "num_generations": args.num_generations,
+            "max_steps": args.max_steps,
+            "gradient_accumulation_steps": args.grad_accum,
+            "optuna_trials": args.optuna,
+        },
+        sft_parent=sft_parent,
+        prompt_rows=prompt_rows,
+    )
+    manifest = persist_status(manifest_path, manifest, "planned")
+    try:
+        manifest = persist_status(manifest_path, manifest, "running")
+        run_training(args, output_dir)
+        persist_status(manifest_path, manifest, "completed")
+    except KeyboardInterrupt:
+        persist_status(manifest_path, manifest, "interrupted", error_type="KeyboardInterrupt")
+        raise
+    except Exception as exc:
+        persist_status(manifest_path, manifest, "failed", error_type=type(exc).__name__)
+        raise
 
-    # Optional Optuna HP search (runs live rollouts against GKE)
+
+def run_training(args: argparse.Namespace, output_dir: Path) -> None:
+    """Execute the declared online training run after intent is persisted."""
+    tiers = [tier.strip() for tier in args.tiers.split(",")]
+    random.seed(args.seed)
+    if _HAS_TORCH_RL:
+        import torch
+
+        torch.manual_seed(args.seed)
+
+    # Optional Optuna search runs live rollouts against the configured cluster.
     best_hp: dict[str, Any] = {}
     if args.optuna > 0:
         log.info("Optuna HP search (%d trials × 10 live GKE rollouts each)...", args.optuna)
-        best_hp = run_optuna_search(args.model, tiers, str(output_dir), n_trials=args.optuna)
+        best_hp = run_optuna_search(
+            args.model,
+            tiers,
+            output_dir,
+            args.model_revision,
+            args.tokenizer or args.model,
+            args.tokenizer_revision,
+            args.sft_checkpoint,
+            n_trials=args.optuna,
+        )
 
     lr      = best_hp.get("lr", args.lr)
     beta    = best_hp.get("beta", args.beta)
@@ -403,32 +643,21 @@ def main() -> None:
 
     log.info("GRPO config: lr=%.2e beta=%.4f num_gen=%d tiers=%s", lr, beta, num_gen, tiers)
 
-    model, tokenizer = load_model_and_tokenizer(args.model)
+    model, tokenizer = load_model_and_tokenizer(
+        args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_revision=args.tokenizer_revision,
+        sft_checkpoint=args.sft_checkpoint,
+    )
 
-    # Online reward function — runs real GKE rollouts during training
-    reward_fn = OnlineRewardFunction(tiers)
+    # Online reward function runs real serialized cluster rollouts during training.
+    rollout_path = output_dir / "rollout_trajectories.jsonl"
+    reward_fn = OnlineRewardFunction(tiers, rollout_log_path=rollout_path)
 
-    # Minimal prompt dataset (GRPO generates its own completions online)
+    # Every completion is parsed and executed as one exact structured action.
     from datasets import Dataset
-    sft_data_path = Path("data/sft_corpus.jsonl")
-    if sft_data_path.exists():
-        prompts = []
-        with sft_data_path.open() as f:
-            for line in f:
-                try:
-                    item = json.loads(line)
-                    msgs = item.get("messages", [])
-                    if msgs:
-                        prompts.append({"prompt": json.dumps(msgs[:-1])})
-                except json.JSONDecodeError:
-                    pass
-        dataset = Dataset.from_list(prompts[:5000])
-    else:
-        # Fallback: prompt-only dataset with role instructions
-        dataset = Dataset.from_list([
-            {"prompt": f"You are the AtlasOps {role} agent responding to a real Kubernetes incident."}
-            for role in ["triage", "diagnosis", "remediation", "comms"] * 250
-        ])
+    dataset = Dataset.from_list(build_direct_action_prompts(tiers))
 
     grpo_args = GRPOConfig(
         output_dir=str(output_dir),
@@ -447,6 +676,7 @@ def main() -> None:
         num_generations=num_gen,
         max_completion_length=args.max_compl_len,
         beta=beta,
+        seed=args.seed,
     )
 
     trainer = GRPOTrainer(
@@ -457,9 +687,12 @@ def main() -> None:
         reward_funcs=[reward_fn],  # ← online RL against real GKE cluster
     )
 
-    log.info("Starting online GRPO against real GKE cluster on AMD MI300X...")
+    log.info("Starting online GRPO against the configured Kubernetes environment...")
     log.info("Each step: apply chaos → G=%d rollouts → reward contract → gradient update", num_gen)
     trainer.train()
+
+    if not rollout_path.is_file() or not _has_verified_rollout(rollout_path):
+        raise RuntimeError("GRPO training returned without a verified real rollout trajectory")
 
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
@@ -473,7 +706,9 @@ def main() -> None:
         "best_reward_mean": max(rewards) if rewards else None,
         "reward_history": rewards,
         "config": {"lr": lr, "beta": beta, "num_generations": num_gen},
-        "training_mode": "online_rl_real_gke",
+        "training_mode": "online_rl_real_environment",
+        "seed": args.seed,
+        "trainer_log_history": logs,
     }
     (output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
     log.info("Done. final_reward=%.4f | best=%.4f",

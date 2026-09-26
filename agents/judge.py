@@ -10,6 +10,7 @@ Red herring handling scored as 4th dimension for multi-fault/adversarial tiers.
 
 import json
 import logging
+import math
 import os
 from typing import Any
 
@@ -93,10 +94,8 @@ _TIER_PERSONA = {
     "adversarial":   _RUBRIC_PRINCIPAL,
 }
 
-_FALLBACK = {
-    "correctness": 0.5, "efficiency": 0.5, "reasoning": 0.5,
-    "red_herring_handling": 0.5, "overall": 0.5, "critique": "judge_fallback",
-}
+class JudgeUnavailable(RuntimeError):
+    """The external judge did not return a usable grade."""
 
 
 async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> dict[str, Any]:
@@ -137,25 +136,37 @@ async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> d
             )
             if r.status_code != 200:
                 log.warning(
-                    "judge HTTP %s — model=%s url=%s body=%s",
+                    "judge HTTP %s — model=%s",
                     r.status_code,
                     JUDGE_MODEL,
-                    JUDGE_URL,
-                    r.text[:500],
                 )
-                return _FALLBACK
+                raise JudgeUnavailable(f"judge_http_{r.status_code}")
 
             content = r.json()["choices"][0]["message"]["content"]
 
         start = content.find("{")
         end   = content.rfind("}") + 1
         if start == -1 or end == 0:
-            return _FALLBACK
+            raise JudgeUnavailable("unparseable_response")
 
         result = json.loads(content[start:end])
+        if not isinstance(result, dict):
+            raise JudgeUnavailable("invalid_grade")
         result.setdefault("red_herring_handling", 0.5)
+        for key in ("correctness", "efficiency", "reasoning", "overall", "red_herring_handling"):
+            score = result.get(key)
+            if (
+                not isinstance(score, int | float)
+                or isinstance(score, bool)
+                or not math.isfinite(score)
+                or not 0.0 <= score <= 1.0
+            ):
+                raise JudgeUnavailable("invalid_grade")
+        result["judge_available"] = True
         return result
 
-    except Exception:
-        log.exception("judge_trajectory failed (using fallback scores)")
-        return _FALLBACK
+    except JudgeUnavailable:
+        raise
+    except Exception as exc:
+        log.warning("judge_trajectory unavailable (%s)", type(exc).__name__)
+        raise JudgeUnavailable(f"judge_failure:{type(exc).__name__}") from exc

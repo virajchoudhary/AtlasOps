@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-25T20:26:02.905519+00:00`
+- **Generated**: `2026-09-26T10:33:56.301045+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -38,8 +38,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `793d45179291d309...` | 21520 |
-| `agents/coordinator.py` | `aaa7188e07889f8f...` | 110421 |
+| `agents/coordinator.py` | `5f3b7dbe8269421c...` | 110412 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
+| `agents/judge.py` | `b817d1433d43e70a...` | 7853 |
 | `agents/policy_remediation.py` | `d071d7f9046c38d8...` | 4511 |
 | `agents/prompts/comms.md` | `be58db4dcef9b422...` | 2662 |
 | `agents/prompts/diagnosis.md` | `26265a2007477eed...` | 2902 |
@@ -60,10 +61,11 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
 | `bench/ablation_suite.py` | `957c4bc2ee0a3d1f...` | 12406 |
 | `bench/grpo_eval.py` | `8c6aa528de0289b3...` | 50036 |
-| `bench/runner.py` | `06ff8c96b4ae72f3...` | 15321 |
+| `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `4e13d1aa99c62031...` | 23096 |
 | `bench/zero_shot_baseline.py` | `c0fd30a86fd3b994...` | 19879 |
 | `config/g4_protocol.py` | `cd3ff0179812e167...` | 19865 |
+| `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
 | `dashboard.py` | `7e4afc02551bf4d6...` | 23653 |
 | `demo/launcher.py` | `a9d51bc21b7e45dc...` | 1744 |
 | `docs/AtlasOps_Technical_Report.md` | `50a354b5e59e8e6b...` | 7749 |
@@ -82,15 +84,17 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `d450ce1d61e1fef1...` | 2093 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `22222de5592d4392...` | 2435 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6e9eec0d90f873d1...` | 3715 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `79f294072981a62f...` | 1690 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `45e5249fd5284dd8...` | 3595 |
-| `docs/slides.md` | `6ecbdfde38946c6d...` | 5538 |
+| `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
+| `eval.py` | `49d8b006daf1939b...` | 8692 |
+| `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
 | `recommender/baselines.py` | `06e8e8e62a82695c...` | 7352 |
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `b04dc631efa77cc9...` | 8267 |
+| `scripts/package_submission.py` | `519c3eb7d91569f7...` | 8409 |
 | `scripts/run_g12_integrated_episode.py` | `534781631814e86a...` | 11177 |
 | `scripts/run_stage4_golden_incident.py` | `4f5bd7592f90d9ac...` | 81252 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
@@ -130,10 +134,12 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |
 | `tests/test_http_retry.py` | `ab782b8c5d1c70ae...` | 2569 |
 | `tests/test_infra_contract.py` | `e4ee2ab5e3927cb1...` | 14459 |
+| `tests/test_judge_outage_provenance.py` | `f9327e7055a73328...` | 6426 |
 | `tests/test_judge_tier.py` | `f3785d7864e22b96...` | 635 |
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
+| `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |
 | `tests/test_rs_runtime_query_isolation.py` | `6697c24640643f9e...` | 1945 |
 | `tests/test_rs_stage11_provenance.py` | `3105c5b00b268859...` | 2073 |
@@ -148,7 +154,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `8c7a2cebfaefc912...` | 4130 |
+| `tests/test_stage15_submission_package.py` | `0b84977aa8f0e36b...` | 4484 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `fe8354613ff2720b...` | 38102 |
 | `tests/test_stage4_evidence_hardening.py` | `1e26c9043960fc16...` | 44607 |
@@ -158,13 +164,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage4_telemetry_readiness.py` | `05e4114535263220...` | 15676 |
 | `tests/test_stage5_scenario_splits_and_truth.py` | `af7025be02ca7b27...` | 5364 |
 | `tests/test_stage6_zero_shot_baseline.py` | `483ea70196282110...` | 6032 |
-| `tests/test_stage7_sft_pipeline.py` | `cb99f69762ff3362...` | 5668 |
+| `tests/test_stage7_sft_pipeline.py` | `5265a4a1bc235d4b...` | 8151 |
 | `tests/test_stage8_sft_eval.py` | `24c8786bda4aba1c...` | 4007 |
 | `tests/test_stage9_grpo_pipeline.py` | `5a8ccf28e799ce6d...` | 4777 |
 | `tests/test_tool_policy_contract.py` | `15f377b269d769da...` | 5022 |
 | `tests/test_tools.py` | `ae53aff75ba44b80...` | 15558 |
 | `tests/test_ui_read_model.py` | `1942099a2975dd69...` | 3093 |
 | `tests/test_verifier.py` | `42820832c21e6f93...` | 27740 |
+| `training/build_sft_dataset.py` | `b3399a94654cacb2...` | 10765 |
 | `training/generate_trajectories.py` | `490b20a96c1501a8...` | 5498 |
 | `training/generate_trajectories_fast.py` | `773885747caed336...` | 411 |
 | `training/grpo.py` | `1040ef5f92e3bca9...` | 27747 |

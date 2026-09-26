@@ -19,12 +19,12 @@ style: |
 
 26 September 2026
 
-Current reviewed main: `6cbad8f54c9ec29da3e3e3c9e5446e008b6db12d`
+Reviewed code baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`
 
 <small>University team continuation of Harikishanth/AtlasOps, upstream baseline
 `bf9bd197c9f4a05ae55ade254802a9eef1a74356`. MIT attribution retained.</small>
 
-<!-- Source: AGENTS.md; docs/project/MASTER_PIPELINE_STATUS.md; GitHub main at 6cbad8f. -->
+<!-- Source: AGENTS.md; docs/project/MASTER_PIPELINE_STATUS.md; main at 8560a8c before the presentation merge. -->
 
 ---
 
@@ -60,14 +60,17 @@ GRPO checkpoint or real integrated episode has been verified.**
 
 - G0-G3 and G5 retain their bounded project milestones. The historical G3
   acceptance report does not prove current cluster health.
-- The professional UI and read-only Gradio evidence browser are implemented.
-  CI on current main passed frontend contracts and Python 3.11/3.12.
+- The professional UI and Gradio browser are read-only evidence views.
+  Judge outages remain ungraded, and Chaos tool rewards follow the canonical
+  mutation policy. These are locally tested software contracts.
+- CI for the reviewed code baseline passed frontend contracts and Python
+  3.11/3.12, including the full unit suite.
 - G10/G11 recommender results use a small scenario-derived interaction set.
   They are not historical operator feedback.
 - The submission inventory verifies file integrity and remains
   **NOT_CERTIFIED**.
 
-<!-- Source: docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json; GitHub Actions run 36171143687. -->
+<!-- Source: docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json; GitHub Actions main run 36235943522 at 8560a8c. -->
 
 ---
 
@@ -92,8 +95,9 @@ failed, so the present cluster state cannot be inferred from those records.
 
 - G6 needs an approved endpoint with an observed exact model revision and
   preserved raw predictions. Existing Stage 6 outputs are mock evidence.
-- G7 needs a suitable BF16-capable GPU and a compatible pinned training
-  runtime. G8 then needs a completed, hashed SFT adapter.
+- G7's synthetic Train corpus can be generated without overwriting canonical
+  evidence. Real training still needs approved BF16-capable compute and a
+  pinned runtime. G8 then needs a completed, hashed SFT adapter.
 - G9 needs a real policy checkpoint and governed environment rollouts. Local
   direct-action tests do not establish trained-policy performance.
 - G12 needs that checkpoint and a live, clean controlled environment.
@@ -123,10 +127,11 @@ localhost without a public share link by default.
 
 **Non-live engineering is substantial; scientific closure remains open.**
 
-Current host: Docker Linux engine absent, Kind API unreachable, no approved
-model endpoint observed, GTX 1650 with 4 GiB VRAM, and no optional ML training
-stack in the local project environment. Independent verifier attempts failed
-before findings due to a tool-stream decode error.
+At the recorded 26 September local preflight: Docker Linux engine absent,
+Kind API unreachable, no approved model endpoint observed, GTX 1650 with
+4 GiB VRAM, and no optional ML training stack in the project environment.
+Independent agent review was unavailable after a transport/decode failure;
+no verifier PASS is claimed.
 
 Next, an operator must establish a clean disposable Kind environment, confirm
 zero active Chaos and an approved model identity, arrange legitimate P1
@@ -135,4 +140,4 @@ and a frozen adversarial evaluation protocol remain separate prerequisites.
 
 **Package state: NOT_CERTIFIED. No production certification is claimed.**
 
-<!-- Source: current local preflight on 2026-09-26; docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json. -->
+<!-- Source: recorded local preflight on 2026-09-26; docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json. -->

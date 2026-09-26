@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-25T20:26:02.905519+00:00",
+  "generated_at": "2026-09-26T10:33:56.301045+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 139,
+  "asset_count": 146,
   "assets": {
     ".gitattributes": {
       "sha256": "b7ecde5620295b7982b660ba1f4d0c9e6e8a5524575d64b694c1621cb18da18d",
@@ -84,9 +84,9 @@
       "last_modified": "2026-09-25T20:09:56.474036+00:00"
     },
     "docs/slides.md": {
-      "sha256": "6ecbdfde38946c6dd609cd020fea3848eef04ca1164919e164e61af4d3d7556d",
-      "size_bytes": 5538,
-      "last_modified": "2026-09-25T20:18:43.146238+00:00"
+      "sha256": "04aa2ff18b4f2e4c8a731dedc76932b498763b71ec4c6e620e72356b61f66b72",
+      "size_bytes": 5890,
+      "last_modified": "2026-09-26T10:33:36.369293+00:00"
     },
     "docs/media/console-overview-20260926.png": {
       "sha256": "4e9d204e953ee2f9631dea331f421947fa5091e00b5f04ea7cf9ec681da75630",
@@ -149,9 +149,9 @@
       "last_modified": "2026-09-25T20:09:56.513498+00:00"
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "22222de5592d4392a91257206c2f2f64292bbf595824f23f74e3b18315e42831",
-      "size_bytes": 2435,
-      "last_modified": "2026-09-25T20:09:56.514495+00:00"
+      "sha256": "6e9eec0d90f873d156a1324aca9b4521e8e368b663381e9fe708efda25ea1bb6",
+      "size_bytes": 3715,
+      "last_modified": "2026-09-26T10:30:47.562203+00:00"
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
       "sha256": "79f294072981a62f4a71d4ffd2a51a10896565658a198fd5f519f0147dcf2ad7",
@@ -204,14 +204,19 @@
       "last_modified": "2026-09-25T20:09:56.346385+00:00"
     },
     "agents/coordinator.py": {
-      "sha256": "aaa7188e07889f8f224b17b1717807834c7a3ab69975694c530f84e93b6ea04c",
-      "size_bytes": 110421,
-      "last_modified": "2026-09-25T20:09:56.282809+00:00"
+      "sha256": "5f3b7dbe8269421c4914474cf44e0ba593a2969f52043f959e5883f429bb1edb",
+      "size_bytes": 110412,
+      "last_modified": "2026-09-26T10:30:47.549711+00:00"
     },
     "agents/grounding.py": {
       "sha256": "bd1141dd29d97a240e99c5c8a57da21f4d9070384da53a4f69e1f6c43f24da53",
       "size_bytes": 6759,
       "last_modified": "2026-09-25T20:09:56.285325+00:00"
+    },
+    "agents/judge.py": {
+      "sha256": "b817d1433d43e70afdc13876f8893e7b203f49cb46742b17dd0b126d27596475",
+      "size_bytes": 7853,
+      "last_modified": "2026-09-26T10:30:47.550712+00:00"
     },
     "agents/policy_remediation.py": {
       "sha256": "d071d7f9046c38d8aca26a788b40ca5e2b66e4fcc9d77aa7c994f5606275f4a1",
@@ -264,9 +269,9 @@
       "last_modified": "2026-09-25T20:09:56.450799+00:00"
     },
     "bench/runner.py": {
-      "sha256": "06ff8c96b4ae72f3f43198fe11582bb1c020e26c850a71e4610017f239906111",
-      "size_bytes": 15321,
-      "last_modified": "2026-09-25T20:09:56.447801+00:00"
+      "sha256": "6e75db82c21d1ad54783e569687b010c4fcd5a26d346f1a4302d4e4e02c3c191",
+      "size_bytes": 15551,
+      "last_modified": "2026-09-26T10:30:47.560194+00:00"
     },
     "bench/sft_eval.py": {
       "sha256": "4e13d1aa99c6203139a48766b4fd51f048726330ccf6963465391e5b0484f3d9",
@@ -287,6 +292,16 @@
       "sha256": "a9d51bc21b7e45dc6a6e2a50706b3de7efb206d6b3737871770e3c78f3118e1c",
       "size_bytes": 1744,
       "last_modified": "2026-09-25T20:09:56.463470+00:00"
+    },
+    "eval.py": {
+      "sha256": "49d8b006daf1939b4964a73e1b835e9a824373008077f583d72dc56651704e7f",
+      "size_bytes": 8692,
+      "last_modified": "2026-09-26T10:30:47.562203+00:00"
+    },
+    "leaderboard.py": {
+      "sha256": "110b1dd3bffe80f1be778daf7ea63fac91ddf9d01a21a14d1fe6cc927404438d",
+      "size_bytes": 15804,
+      "last_modified": "2026-09-26T10:30:47.563713+00:00"
     },
     "static/index.html": {
       "sha256": "d2d907afdfd046c5b7b57cb47a6f15019f64d93c736a59353be1f9010e687f6a",
@@ -328,6 +343,11 @@
       "size_bytes": 19865,
       "last_modified": "2026-09-25T20:09:56.454309+00:00"
     },
+    "config/runtime.py": {
+      "sha256": "96fe1d1834846cb36d70a165e0af316d873d6aa304cf98e1414248ae2c7d7721",
+      "size_bytes": 18567,
+      "last_modified": "2026-09-26T10:30:47.561201+00:00"
+    },
     "recommender/baselines.py": {
       "sha256": "06e8e8e62a82695c70b150e9fe1f97aaec5fb4eb062e35f94fbe18c4d24feaf6",
       "size_bytes": 7352,
@@ -359,14 +379,19 @@
       "last_modified": "2026-09-25T20:09:56.582259+00:00"
     },
     "scripts/package_submission.py": {
-      "sha256": "b04dc631efa77cc9f39b4d702c5a1a46e6b761716f091394ac4b12ede9fade30",
-      "size_bytes": 8267,
-      "last_modified": "2026-09-25T20:19:19.674435+00:00"
+      "sha256": "519c3eb7d91569f730445f7a1108683b64e5744f4c9f0db3e313d8e2abf7614d",
+      "size_bytes": 8409,
+      "last_modified": "2026-09-26T10:32:05.581512+00:00"
     },
     "training/sft.py": {
       "sha256": "29ff6fa2ae27ec8954187d7446970b3f1803dc84cfd43fc49fa90efab78c46b3",
       "size_bytes": 9091,
       "last_modified": "2026-09-25T20:09:56.708457+00:00"
+    },
+    "training/build_sft_dataset.py": {
+      "sha256": "b3399a94654cacb2a82c8c54bb0a8df9d4ed301733e94c38b2406236e158ea0b",
+      "size_bytes": 10765,
+      "last_modified": "2026-09-26T10:30:47.567738+00:00"
     },
     "training/generate_trajectories.py": {
       "sha256": "490b20a96c1501a82893e78b5ab67c80278287c0cfe712043e0cca5e9cd6cdf1",
@@ -553,6 +578,11 @@
       "size_bytes": 14459,
       "last_modified": "2026-09-25T20:09:56.649143+00:00"
     },
+    "tests/test_judge_outage_provenance.py": {
+      "sha256": "f9327e7055a733289b6bfd65085bb2ed0f5dfde501fae41762812fc4aa5a15f3",
+      "size_bytes": 6426,
+      "last_modified": "2026-09-26T10:30:47.564725+00:00"
+    },
     "tests/test_judge_tier.py": {
       "sha256": "f3785d7864e22b962a96017b2eb86ec1976616f7e077f097048a1423d0078774",
       "size_bytes": 635,
@@ -572,6 +602,11 @@
       "sha256": "624f272690b2ee4da165767b9d99302b0c77524e1e0b16a71eec4b386e4977a7",
       "size_bytes": 2664,
       "last_modified": "2026-09-25T20:09:56.654144+00:00"
+    },
+    "tests/test_reward_tool_policy.py": {
+      "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",
+      "size_bytes": 1387,
+      "last_modified": "2026-09-26T10:30:47.565719+00:00"
     },
     "tests/test_rs_dataset_provenance.py": {
       "sha256": "cf14c29cb8b64929c92d4b813ce9186d38da682b7acf3a7e7af409fd1e19611d",
@@ -644,9 +679,9 @@
       "last_modified": "2026-09-25T20:09:56.673736+00:00"
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "8c7a2cebfaefc9126d42240e51f3ca58f742dc3ccc8d32d16b2c55f8986b25fe",
-      "size_bytes": 4130,
-      "last_modified": "2026-09-25T20:19:23.032937+00:00"
+      "sha256": "0b84977aa8f0e36b29b551d6291001442826dcfd5bb10f6523b5af11afbff40d",
+      "size_bytes": 4484,
+      "last_modified": "2026-09-26T10:33:37.982554+00:00"
     },
     "tests/test_stage4_baseline_prereservation.py": {
       "sha256": "b8e71a61a1bd6ce1dd93a138e2b16deecc0ef032c3416e60ba2849611d08e7e5",
@@ -694,9 +729,9 @@
       "last_modified": "2026-09-25T20:09:56.687782+00:00"
     },
     "tests/test_stage7_sft_pipeline.py": {
-      "sha256": "cb99f69762ff3362adf942837762b35080346ebd5f09e66b50f5d0929a450bb4",
-      "size_bytes": 5668,
-      "last_modified": "2026-09-25T20:09:56.690304+00:00"
+      "sha256": "5265a4a1bc235d4be0edf330addceac2dfd09924ee145447a3b02a40d48e7fc0",
+      "size_bytes": 8151,
+      "last_modified": "2026-09-26T10:30:47.566720+00:00"
     },
     "tests/test_stage8_sft_eval.py": {
       "sha256": "24c8786bda4aba1cd5ca54c644e2352bda10c284b63046281f0e7c97e1ea7bcd",

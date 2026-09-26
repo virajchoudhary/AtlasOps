@@ -257,7 +257,7 @@ def print_leaderboard(results: list[dict]):
                     reverse=True)
 
     print("\n" + "═" * 80)
-    print("  ATLASOPS LEADERBOARD — Real GKE Cluster, Real Chaos Mesh")
+    print("  ATLASOPS LEADERBOARD — Run provenance must be verified separately")
     print("  " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
     print("═" * 80)
     print(f"\n  {'#':<3} {'Model':<38} {'Params':<8} {'Res%':>6} {'Judge':>7}"
@@ -287,21 +287,18 @@ def print_leaderboard(results: list[dict]):
         delta_res = atlasops_best["resolution_rate"] - best_frontier["resolution_rate"]
         delta_ttr = ((best_frontier.get("avg_ttr_s") or 0)
                      - (atlasops_best.get("avg_ttr_s") or 0))
-        print(f"\n  ✦ AtlasOps fine-tuned 7B vs {best_frontier['display']}:")
+        print(f"\n  AtlasOps vs {best_frontier['display']} in this run:")
         print(f"    Resolution rate:  {atlasops_best['resolution_rate']:.0%} "
               f"vs {best_frontier['resolution_rate']:.0%}  ({delta_res:+.0%})")
         if delta_ttr > 0:
             print(f"    Time to resolve:  {delta_ttr:.0f}s faster on average")
-        print(f"\n  → A 7B model fine-tuned on real SRE incidents beats "
-              f"{best_frontier['params']} {best_frontier['display'].split('(')[0].strip()}")
-        print(f"    on real production infrastructure. Training on AMD MI300X.\n")
 
 
 def save_results(results: list[dict]):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = RESULTS_DIR / f"leaderboard_{ts}.json"
-    path.write_text(json.dumps(results, indent=2, default=str))
+    path.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8", newline="\n")
 
     # Also write a clean markdown table for the README
     ranked = sorted(results, key=lambda x: x["resolution_rate"], reverse=True)
@@ -314,9 +311,9 @@ def save_results(results: list[dict]):
         marker = " ⭐" if r["type"] == "atlasops" else ""
         md += (f"| {i} | {r['display']}{marker} | {r['params']} "
                f"| {r['resolution_rate']:.0%} | {judge_mean} | {ttr} |\n")
-    md += "\n*Evaluated on real GKE cluster with real Chaos Mesh fault injection.*\n"
+    md += "\n*Run environment and empirical provenance must be verified separately.*\n"
     md_path = RESULTS_DIR / "leaderboard_table.md"
-    md_path.write_text(md)
+    md_path.write_text(md, encoding="utf-8", newline="\n")
 
     log.info("Results → %s", path)
     log.info("Markdown table → %s", md_path)

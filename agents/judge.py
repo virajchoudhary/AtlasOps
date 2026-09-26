@@ -152,7 +152,8 @@ async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> d
         result = json.loads(content[start:end])
         if not isinstance(result, dict):
             raise JudgeUnavailable("invalid_grade")
-        for key in ("correctness", "efficiency", "reasoning", "overall"):
+        result.setdefault("red_herring_handling", 0.5)
+        for key in ("correctness", "efficiency", "reasoning", "overall", "red_herring_handling"):
             score = result.get(key)
             if (
                 not isinstance(score, int | float)
@@ -161,7 +162,6 @@ async def judge_trajectory(incident: dict[str, Any], tier: str = "unknown") -> d
                 or not 0.0 <= score <= 1.0
             ):
                 raise JudgeUnavailable("invalid_grade")
-        result.setdefault("red_herring_handling", 0.5)
         result["judge_available"] = True
         return result
 

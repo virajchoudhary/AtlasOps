@@ -1,6 +1,7 @@
 """An unavailable external judge must not become a numeric grade."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -72,6 +73,73 @@ def test_valid_judge_grade_remains_measured(monkeypatch):
     monkeypatch.setattr(judge, "post_with_retry", AsyncMock(return_value=response))
     grade = asyncio.run(judge.judge_trajectory({}))
     assert grade["overall"] == 0.8
+    assert grade["red_herring_handling"] == 0.5
+    assert grade["judge_available"] is True
+
+
+@pytest.mark.parametrize(
+    "red_herring_handling",
+    [-0.01, 1.01, True, "0.5", None, float("nan"), float("inf"), float("-inf")],
+)
+def test_invalid_red_herring_grade_is_unavailable(monkeypatch, red_herring_handling):
+    from agents import judge
+
+    response = Mock(
+        status_code=200,
+        json=Mock(
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "correctness": 0.8,
+                                    "efficiency": 0.7,
+                                    "reasoning": 0.9,
+                                    "overall": 0.8,
+                                    "red_herring_handling": red_herring_handling,
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        ),
+    )
+    monkeypatch.setattr(judge, "post_with_retry", AsyncMock(return_value=response))
+    with pytest.raises(judge.JudgeUnavailable, match="invalid_grade"):
+        asyncio.run(judge.judge_trajectory({}))
+
+
+@pytest.mark.parametrize("red_herring_handling", [0, 0.25, 1])
+def test_valid_red_herring_grade_is_measured(monkeypatch, red_herring_handling):
+    from agents import judge
+
+    response = Mock(
+        status_code=200,
+        json=Mock(
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "correctness": 0.8,
+                                    "efficiency": 0.7,
+                                    "reasoning": 0.9,
+                                    "overall": 0.8,
+                                    "red_herring_handling": red_herring_handling,
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        ),
+    )
+    monkeypatch.setattr(judge, "post_with_retry", AsyncMock(return_value=response))
+    grade = asyncio.run(judge.judge_trajectory({}))
+    assert grade["red_herring_handling"] == red_herring_handling
     assert grade["judge_available"] is True
 
 
@@ -98,7 +166,7 @@ def test_ungraded_legacy_evaluation_has_no_judge_mean():
     assert summary["avg_judge_score"] is None
 
 
-def test_ungraded_leaderboard_has_no_judge_mean(monkeypatch, capsys):
+def test_ungraded_leaderboard_has_no_judge_mean(monkeypatch, capsys, tmp_path):
     import leaderboard
 
     monkeypatch.setattr(
@@ -106,6 +174,7 @@ def test_ungraded_leaderboard_has_no_judge_mean(monkeypatch, capsys):
         "run_episode",
         AsyncMock(return_value={"status": "error", "error": "judge_http_503"}),
     )
+    monkeypatch.setattr(leaderboard, "RESULTS_DIR", tmp_path)
     summary = asyncio.run(
         leaderboard.eval_model(
             "fixture",
@@ -115,4 +184,11 @@ def test_ungraded_leaderboard_has_no_judge_mean(monkeypatch, capsys):
     )
     assert summary["avg_judge_score"] is None
     leaderboard.print_leaderboard([summary])
-    assert "n/a" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "n/a" in output
+    assert "Real GKE" not in output
+    leaderboard.save_results([summary])
+    table = (tmp_path / "leaderboard_table.md").read_text(encoding="utf-8")
+    assert "| n/a |" in table
+    assert "real GKE cluster" not in table
+    assert "provenance must be verified separately" in table

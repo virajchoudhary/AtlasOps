@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-25T20:32:40.995895+00:00`
+- **Generated**: `2026-09-26T09:26:09.285553+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -127,7 +127,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |
 | `tests/test_http_retry.py` | `ab782b8c5d1c70ae...` | 2569 |
 | `tests/test_infra_contract.py` | `e4ee2ab5e3927cb1...` | 14459 |
-| `tests/test_judge_outage_provenance.py` | `be556bf355a6fc43...` | 3659 |
+| `tests/test_judge_outage_provenance.py` | `f9327e7055a73328...` | 6426 |
 | `tests/test_judge_tier.py` | `f3785d7864e22b96...` | 635 |
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |

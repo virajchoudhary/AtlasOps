@@ -242,7 +242,8 @@ async def eval_model(model_key: str, model_cfg: dict,
         "valid_episodes": len(valid),
         "resolved_count": len(resolved),
         "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
-        "avg_judge_score": round(sum(judge_scores) / max(len(judge_scores), 1), 3),
+        "avg_judge_score": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
+        "judged_episode_count": len(judge_scores),
         "avg_ttr_s": round(sum(ttr_vals) / max(len(ttr_vals), 1), 1) if ttr_vals else None,
         "per_tier": per_tier,
         "episodes": episodes,
@@ -252,11 +253,11 @@ async def eval_model(model_key: str, model_cfg: dict,
 # ── Leaderboard display ───────────────────────────────────────────────────────
 
 def print_leaderboard(results: list[dict]):
-    ranked = sorted(results, key=lambda x: (x["resolution_rate"], x["avg_judge_score"]),
+    ranked = sorted(results, key=lambda x: (x["resolution_rate"], x["avg_judge_score"] if x["avg_judge_score"] is not None else -1),
                     reverse=True)
 
     print("\n" + "═" * 80)
-    print("  ATLASOPS LEADERBOARD — Real GKE Cluster, Real Chaos Mesh")
+    print("  ATLASOPS LEADERBOARD — Run provenance must be verified separately")
     print("  " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
     print("═" * 80)
     print(f"\n  {'#':<3} {'Model':<38} {'Params':<8} {'Res%':>6} {'Judge':>7}"
@@ -268,9 +269,10 @@ def print_leaderboard(results: list[dict]):
         cas = r["per_tier"].get("cascade", {}).get("rate", 0)
         rep = r["per_tier"].get("named_replays", {}).get("rate", 0)
         ttr = f"{r['avg_ttr_s']:.0f}s" if r.get("avg_ttr_s") else "  —"
+        judge_mean = f"{r['avg_judge_score']:.3f}" if r["avg_judge_score"] is not None else "n/a"
         marker = " ◄" if r["type"] == "atlasops" else ""
         print(f"  {i:<3} {r['display'][:37]:<38} {r['params']:<8} "
-              f"{r['resolution_rate']:>5.0%} {r['avg_judge_score']:>7.3f}"
+              f"{r['resolution_rate']:>5.0%} {judge_mean:>7}"
               f" {ttr:>6} {sf:>4.0%} {cas:>4.0%} {rep:>4.0%}{marker}")
 
     print("\n  Legend: SF=single-fault  Cas=cascade  Rep=named-replay  ◄=AtlasOps model")
@@ -285,21 +287,18 @@ def print_leaderboard(results: list[dict]):
         delta_res = atlasops_best["resolution_rate"] - best_frontier["resolution_rate"]
         delta_ttr = ((best_frontier.get("avg_ttr_s") or 0)
                      - (atlasops_best.get("avg_ttr_s") or 0))
-        print(f"\n  ✦ AtlasOps fine-tuned 7B vs {best_frontier['display']}:")
+        print(f"\n  AtlasOps vs {best_frontier['display']} in this run:")
         print(f"    Resolution rate:  {atlasops_best['resolution_rate']:.0%} "
               f"vs {best_frontier['resolution_rate']:.0%}  ({delta_res:+.0%})")
         if delta_ttr > 0:
             print(f"    Time to resolve:  {delta_ttr:.0f}s faster on average")
-        print(f"\n  → A 7B model fine-tuned on real SRE incidents beats "
-              f"{best_frontier['params']} {best_frontier['display'].split('(')[0].strip()}")
-        print(f"    on real production infrastructure. Training on AMD MI300X.\n")
 
 
 def save_results(results: list[dict]):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = RESULTS_DIR / f"leaderboard_{ts}.json"
-    path.write_text(json.dumps(results, indent=2, default=str))
+    path.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8", newline="\n")
 
     # Also write a clean markdown table for the README
     ranked = sorted(results, key=lambda x: x["resolution_rate"], reverse=True)
@@ -308,12 +307,13 @@ def save_results(results: list[dict]):
     md += "|---|---|---|---|---|---|\n"
     for i, r in enumerate(ranked, 1):
         ttr = f"{r['avg_ttr_s']:.0f}s" if r.get("avg_ttr_s") else "—"
+        judge_mean = f"{r['avg_judge_score']:.3f}" if r["avg_judge_score"] is not None else "n/a"
         marker = " ⭐" if r["type"] == "atlasops" else ""
         md += (f"| {i} | {r['display']}{marker} | {r['params']} "
-               f"| {r['resolution_rate']:.0%} | {r['avg_judge_score']:.3f} | {ttr} |\n")
-    md += "\n*Evaluated on real GKE cluster with real Chaos Mesh fault injection.*\n"
+               f"| {r['resolution_rate']:.0%} | {judge_mean} | {ttr} |\n")
+    md += "\n*Run environment and empirical provenance must be verified separately.*\n"
     md_path = RESULTS_DIR / "leaderboard_table.md"
-    md_path.write_text(md)
+    md_path.write_text(md, encoding="utf-8", newline="\n")
 
     log.info("Results → %s", path)
     log.info("Markdown table → %s", md_path)

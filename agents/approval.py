@@ -51,7 +51,10 @@ class ApprovalGate:
     def __init__(self, timeout_seconds: int | None = None):
         # Default 300s so humans can intervene during demos.
         # Override via APPROVAL_TIMEOUT_SECONDS as needed.
-        self.timeout_seconds = timeout_seconds or int(os.getenv("APPROVAL_TIMEOUT_SECONDS", "300"))
+        self.timeout_seconds = (
+            timeout_seconds if timeout_seconds is not None
+            else int(os.getenv("APPROVAL_TIMEOUT_SECONDS", "300"))
+        )
         self._pending_by_incident: dict[str, ApprovalRequest] = {}
         self._pending_by_token: dict[str, ApprovalRequest] = {}
 
@@ -71,6 +74,9 @@ class ApprovalGate:
             req.decision = "timeout"
             self._clear(req)
             return {"status": "timeout", "incident_id": incident_id}
+        except asyncio.CancelledError:
+            self._clear(req)
+            raise
         result = {
             "status": req.decision,
             "incident_id": req.incident_id,
@@ -84,6 +90,8 @@ class ApprovalGate:
         req = self._pending_by_token.get(token)
         if not req:
             return {"ok": False, "error": "unknown_token"}
+        if req.decision != "pending":
+            return {"ok": False, "error": "already_decided"}
         normalized = decision.lower().strip()
         if normalized not in {"approved", "rejected"}:
             return {"ok": False, "error": "decision must be approved or rejected"}

@@ -74,9 +74,18 @@ APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256 = "26265a2007477eed58a69b80c0a1faf74a00c
 APPROVED_G4_V33_TOOL_CONTRACT_SHA256 = "ee6540f7901e15893e3810e0e3805e90e5976a2d20e1c31ae7e6c8d1fae3902b"
 APPROVED_G4_V33_LLM_TRANSPORT = APPROVED_G4_V32_LLM_TRANSPORT
 
-# Active approved protocol declaration (prospective v3.3 runtime-correctness profile)
-G4_PROTOCOL_MARKER = G4_V33_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V33_PROTOCOL_PROFILE_VERSION
+G4_V34_PROTOCOL_MARKER = "G4-RECOVERY-V3.4-2026-09-26"
+G4_V34_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.4"
+APPROVED_G4_V34_APPROVAL_CHANNEL = {
+    "transport": "host-loopback-same-process",
+    "timeout_seconds": 300,
+    "authentication": "X-AtlasOps-Key",
+    "restart": "fail-closed-memory-only",
+}
+
+# Active prospective v3.4 declaration; historical v3.3 remains frozen below.
+G4_PROTOCOL_MARKER = G4_V34_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V34_PROTOCOL_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V33_MODEL
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256
@@ -237,6 +246,15 @@ def llm_transport_profile() -> dict[str, Any]:
     }
 
 
+def approval_channel_profile() -> dict[str, Any]:
+    from agents.approval import approval_gate
+
+    return {
+        **APPROVED_G4_V34_APPROVAL_CHANNEL,
+        "timeout_seconds": approval_gate.timeout_seconds,
+    }
+
+
 def build_runtime_protocol_profile(
     *,
     selected_model: str,
@@ -258,6 +276,7 @@ def build_runtime_protocol_profile(
         "diagnosis_prompt": diagnosis_prompt_profile(),
         "role_tool_contract": tool_contract_profile(),
         "llm_transport": llm_transport_profile(),
+        "approval_channel": approval_channel_profile(),
         "f1_contract": _f1_contract(),
         "scenario_fault_contract": _scenario_fault_contract(),
         "metrics_api": metrics_observation,
@@ -400,7 +419,18 @@ APPROVED_G4_V33_PROTOCOL_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V33_PROTOCOL_PROFILE
+APPROVED_G4_V34_PROTOCOL_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V33_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V34_PROTOCOL_MARKER,
+    "profile_version": G4_V34_PROTOCOL_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V33_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V34_PROTOCOL_PROFILE_VERSION,
+    },
+    "approval_channel": APPROVED_G4_V34_APPROVAL_CHANNEL,
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V34_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

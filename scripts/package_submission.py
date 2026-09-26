@@ -74,6 +74,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/HF_SPACE_SETUP.md",
         "docs/slides.md",
         "docs/media/*.png",
+        "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/STAGE_*.md",
         "artifacts/models/hybrid_recommender.json",
@@ -85,6 +86,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "artifacts/overnight_experiments/rs-20260924/interactions.manifest.json",
         "artifacts/evidence/stage13/ablation_benchmark_results.json",
         "agents/coordinator.py",
+        "agents/approval.py",
         "agents/grounding.py",
         "agents/judge.py",
         "agents/policy_remediation.py",
@@ -127,6 +129,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "training/grpo_provenance.py",
         "bench/ablation_suite.py",
         "tests/test_*.py",
+        "tests/stage4_approval_process.py",
     ]
 
     assets: dict[str, dict[str, Any]] = {}

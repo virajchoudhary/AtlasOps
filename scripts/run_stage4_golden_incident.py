@@ -17,22 +17,27 @@ Zero paid APIs. Local Ollama model selected through ATLASOPS_STAGE4_AGENT_MODEL.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import math
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
 import uuid
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
+import uvicorn
+from fastapi import FastAPI, HTTPException, Security
+from fastapi.security import APIKeyHeader
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -56,14 +61,96 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
-def _load_secret_or_default(filename: str, default: str) -> str:
-    path = os.path.join(REPO_ROOT, "secrets", filename)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            val = f.read().strip()
-            if val:
-                return val
-    return default
+STAGE4_APPROVAL_TIMEOUT_SECONDS = 300
+_STAGE4_SECRET_FILES = {
+    "ARGOCD_PASS": "argocd-pass.secret",
+    "ATLASOPS_AUDIT_SECRET": "atlasops-audit-secret.secret",
+    "ATLASOPS_API_KEY": "atlasops-api-key.secret",
+    "ALERTMANAGER_WEBHOOK_SECRET": "alertmanager-webhook-secret.secret",
+}
+
+
+def load_stage4_secrets() -> dict[str, str]:
+    """Resolve required secrets from explicit env or an external absolute directory."""
+    raw_dir = os.getenv("ATLASOPS_STAGE4_SECRET_DIR", "").strip()
+    secret_dir = Path(raw_dir) if raw_dir else None
+    if secret_dir is not None and not secret_dir.is_absolute():
+        raise RuntimeError("ATLASOPS_STAGE4_SECRET_DIR must be an absolute path")
+    if secret_dir is not None:
+        checkout = Path(REPO_ROOT).resolve()
+        resolved_dir = secret_dir.resolve()
+        if resolved_dir == checkout or checkout in resolved_dir.parents:
+            raise RuntimeError("ATLASOPS_STAGE4_SECRET_DIR must be outside the checkout")
+    resolved: dict[str, str] = {}
+    missing: list[str] = []
+    for name, filename in _STAGE4_SECRET_FILES.items():
+        env_value = os.getenv(name, "").strip()
+        file_value = ""
+        if secret_dir is not None:
+            path = secret_dir / filename
+            try:
+                file_value = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+            except (OSError, UnicodeError) as exc:
+                raise RuntimeError(f"Unable to load Stage 4 secret {name}") from exc
+        if env_value and file_value and env_value != file_value:
+            raise RuntimeError(f"Conflicting Stage 4 secret sources for {name}")
+        value = env_value or file_value
+        if value:
+            resolved[name] = value
+        else:
+            missing.append(name)
+    if missing:
+        raise RuntimeError("Missing Stage 4 runtime secrets: " + ", ".join(missing))
+    os.environ.update(resolved)
+    return resolved
+
+
+def stage4_approval_app(api_key: str) -> FastAPI:
+    """Only the approval endpoints share this host process's coordinator gate."""
+    if not api_key:
+        raise RuntimeError("Stage 4 operator API key is required")
+    from agents.coordinator import approve, approval_pending
+
+    header = APIKeyHeader(name="X-AtlasOps-Key", auto_error=False)
+
+    def require_operator(key: str | None = Security(header)) -> None:
+        if not key or not hmac.compare_digest(key.encode(), api_key.encode()):
+            raise HTTPException(status_code=401, detail="Invalid or missing X-AtlasOps-Key header")
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_api_route("/approve", approve, methods=["POST"], dependencies=[Security(require_operator)])
+    app.add_api_route(
+        "/approval/pending", approval_pending, methods=["GET"],
+        dependencies=[Security(require_operator)],
+    )
+    return app
+
+
+@asynccontextmanager
+async def stage4_approval_server(api_key: str):
+    """Serve approval on loopback in the event loop waiting for its decision."""
+    app = stage4_approval_app(api_key)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    listener.setblocking(False)
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", access_log=False))
+    task = asyncio.create_task(server.serve(sockets=[listener]))
+    try:
+        async with asyncio.timeout(10):
+            while not server.started:
+                if task.done():
+                    await task
+                    raise RuntimeError("Stage 4 approval listener stopped before startup")
+                await asyncio.sleep(0.01)
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        try:
+            await task
+        finally:
+            listener.close()
 
 
 _EXPERIMENT_ID_RE = re.compile(r"^EXP-STAGE4-[A-Za-z0-9][A-Za-z0-9_-]{0,112}$")
@@ -80,17 +167,12 @@ os.environ["BACKEND"] = "openai"
 os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
 os.environ["LLM_API_KEY"] = "ollama"
 os.environ["KUBECONFIG_CONTEXT"] = "kind-atlasops-local"
-os.environ["APPROVAL_TIMEOUT_SECONDS"] = "2"
 os.environ["PROMETHEUS_URL"] = "http://localhost:19090"
 os.environ["ALERTMANAGER_URL"] = "http://localhost:19093"
 os.environ["JAEGER_URL"] = "http://localhost:16686"
 os.environ["ARGOCD_URL"] = "http://localhost:18080"
 os.environ["ARGOCD_USER"] = "atlasops"
-os.environ["ARGOCD_PASS"] = _load_secret_or_default("argocd-pass.secret", "atlasops-local-pass")
 os.environ["ARGOCD_VERIFY_TLS"] = "false"
-os.environ["ATLASOPS_AUDIT_SECRET"] = _load_secret_or_default("atlasops-audit-secret.secret", "local-audit-secret-key-1234567890")
-os.environ["ATLASOPS_API_KEY"] = _load_secret_or_default("atlasops-api-key.secret", "local-api-key-1234567890")
-os.environ["ALERTMANAGER_WEBHOOK_SECRET"] = _load_secret_or_default("alertmanager-webhook-secret.secret", "local-webhook-secret-1234567890")
 os.environ["POSTMORTEM_DIR"] = os.path.join(REPO_ROOT, "artifacts", "postmortems")
 os.environ["TRAJECTORIES_DIR"] = os.path.join(REPO_ROOT, "artifacts", "trajectories")
 
@@ -1540,6 +1622,28 @@ def _handle_post_t0_interruption(
 
 
 async def main() -> dict[str, Any]:
+    secrets = load_stage4_secrets()
+    from agents.approval import approval_gate
+
+    approval_gate.timeout_seconds = STAGE4_APPROVAL_TIMEOUT_SECONDS
+    previous_base = os.environ.get("ATLASOPS_PUBLIC_BASE_URL")
+    try:
+        async with stage4_approval_server(secrets["ATLASOPS_API_KEY"]) as base_url:
+            os.environ["ATLASOPS_PUBLIC_BASE_URL"] = base_url
+            print(f" Stage 4 host approval endpoint: {base_url}/approval/pending")
+            print(
+                " Operator access requires X-AtlasOps-Key; only this host process "
+                "can decide its pending P1 request."
+            )
+            return await _run_experiment()
+    finally:
+        if previous_base is None:
+            os.environ.pop("ATLASOPS_PUBLIC_BASE_URL", None)
+        else:
+            os.environ["ATLASOPS_PUBLIC_BASE_URL"] = previous_base
+
+
+async def _run_experiment() -> dict[str, Any]:
     fault_crossed = False
     fault_observable = False
     reservation: dict[str, Any] | None = None

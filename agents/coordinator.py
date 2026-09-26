@@ -2314,7 +2314,7 @@ async def handle_incident(
             thought_emit("comms", "tool_call", f"Scoring incident with external judge ({tier} rubric)…", tool="judge")
             try:
                 scores = await judge_trajectory(full_record, tier=tier)
-                ov = float(scores.get("overall", 0.0))
+                ov = float(scores["overall"])
                 crit = str(scores.get("critique", ""))[:400]
                 thought_emit(
                     "comms",

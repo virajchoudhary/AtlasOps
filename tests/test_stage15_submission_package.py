@@ -71,6 +71,14 @@ class TestStage15SubmissionPackage:
             "static/live-incident.test.js",
             "static/vendor/lucide.min.js",
             "static/vendor/LUCIDE-LICENSE",
+            "docs/slides.md",
+            "docs/media/console-overview-20260926.png",
+            "docs/media/gradio-demo-20260926.png",
+            "agents/judge.py",
+            "config/runtime.py",
+            "training/build_sft_dataset.py",
+            "eval.py",
+            "leaderboard.py",
         } <= assets.keys()
 
         for path_str, meta in assets.items():
@@ -89,3 +97,13 @@ class TestStage15SubmissionPackage:
         for g_idx in range(1, 16):
             gate_tag = f"**G{g_idx}**"
             assert gate_tag in content, f"Missing Gate G{g_idx} in MASTER_PIPELINE_STATUS.md"
+
+    def test_presentation_keeps_empirical_claims_open(self):
+        slides = Path("docs/slides.md").read_text(encoding="utf-8")
+        assert slides.count("\n---\n") == 8
+        assert "Reviewed code baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`" in slides
+        assert "Current reviewed main:" not in slides
+        assert "G4 remains NOT_PASSED" in slides
+        assert "NOT_CERTIFIED" in slides
+        assert "SFT + Online GRPO Trained" not in slides
+        assert "One real GKE cluster. No simulations." not in slides

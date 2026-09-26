@@ -14,12 +14,12 @@ The launcher binds to localhost by default. The Gradio console is read-only: its
 
 ## Five-minute evidence-led walkthrough
 
-1. **Project Status:** show the checked-in G0–G15 governance snapshot. Explain that G4 is `NOT_PASSED` and CI proves software behavior, not model performance.
-2. **About & Architecture:** follow Alert → Triage → Diagnosis → Recommender → approval → one action → environment verifier → Comms. The verifier determines resolution.
-3. **Scenario Control:** select `sf-002` to show the available manifest. The console reports that no command or incident workflow ran.
-4. **Preserved G4 Evidence:** open `EXP-STAGE4-SF002-010.json`. Show the P1 approval timeout inconsistency, incorrect target, failed mutating tool attempts, objective unresolved verdict, Comms summary, and source SHA-256. Then select attempt 014 to show an interrupted record with no completed verifier verdict.
-5. **Runbook Recommender:** issue the prefilled query. Explain that its ranking is based on scenario-derived interactions and is advisory; no remediation is executed by this tab.
-6. **Ablations and Benchmarks:** show the explicit non-empirical historical labels and the absence of certified measured results. Close on the status tab's remaining gates and blockers.
+1. **Overview:** show `G4 NOT_PASSED`, the checked-in G0-G15 governance snapshot, and the explicit absence of current cluster or model verdicts. CI proves software behavior, not model performance.
+2. **Incidents and Agents:** inspect the preserved negative G4 attempt 010. Follow alert, Triage, Diagnosis, advisory recommendation, approval timeout, attempted action, objective unresolved verdict, and Comms. A recorded phase is not proof of success.
+3. **Evidence:** inspect attempt 010's source hash, then compare interrupted attempt 014, which has no completed verifier verdict. Select a named manifest to show its read-only description; no command or incident workflow runs.
+4. **Runbooks:** issue the prefilled query. Its ranking uses scenario-derived interactions, is advisory, and executes no remediation.
+5. **Evaluations:** show the mock Stage 6/8/9 and predetermined Stage 13 labels. No certified measured comparison exists.
+6. **Settings:** confirm the demo is a repository evidence snapshot without operator approval, injection, or cleanup controls.
 
 This walkthrough works without Docker, Kind, a model endpoint, or a GPU. It is a fallback presentation using preserved historical evidence and local software. It must be described as such.
 

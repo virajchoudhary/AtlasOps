@@ -105,7 +105,9 @@ async def test_post_with_retry_respects_max_attempts_two():
 
 
 @pytest.mark.asyncio
-async def test_call_agent_passes_transport_parameters():
+async def test_call_agent_passes_transport_parameters(monkeypatch, tmp_path):
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "synthetic-transport-audit-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status.return_value = None

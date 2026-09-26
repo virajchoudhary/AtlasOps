@@ -33,12 +33,14 @@ from config.g4_protocol import (
     APPROVED_G4_V32_PROTOCOL_PROFILE,
     APPROVED_G4_V33_MODEL,
     APPROVED_G4_V33_MODEL_DIGEST,
+    APPROVED_G4_V33_PROTOCOL_PROFILE,
     APPROVED_G4_V33_TOOL_CONTRACT_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
     G4_V31_PROTOCOL_MARKER,
     G4_V33_PROTOCOL_MARKER,
+    G4_V34_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -48,19 +50,31 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_v33_profile_pins_exact_model_and_digest():
+def test_approved_v34_profile_pins_model_and_host_approval_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
         "name": APPROVED_G4_V33_MODEL,
         "digest": APPROVED_G4_V33_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V33_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V34_PROTOCOL_MARKER
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
         "max_attempts": 2,
         "base_backoff_seconds": 1.5,
     }
+    assert APPROVED_G4_PROTOCOL_PROFILE["approval_channel"] == {
+        "transport": "host-loopback-same-process",
+        "timeout_seconds": 300,
+        "authentication": "X-AtlasOps-Key",
+        "restart": "fail-closed-memory-only",
+    }
+
+
+def test_historical_v33_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V33_PROTOCOL_PROFILE["protocol_marker"] == G4_V33_PROTOCOL_MARKER
+    assert "approval_channel" not in APPROVED_G4_V33_PROTOCOL_PROFILE
+    assert protocol_fingerprint(APPROVED_G4_V33_PROTOCOL_PROFILE) == "1d9694f79bcba99ac9c8a0b67e66d0e6b66165aa88b47bb311986362ed7943fe"
 
 
 def test_historical_v31_profile_remains_exact_and_immutable():
@@ -249,6 +263,7 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
     assert len(first) == 64
     for component in (
         "model",
+        "approval_channel",
         "diagnosis_prompt",
         "role_tool_contract",
         "f1_contract",
@@ -269,6 +284,16 @@ def _approved_observation():
 def test_runtime_builder_reproduces_explicitly_approved_profile():
     assert _approved_observation() == APPROVED_G4_PROTOCOL_PROFILE
     assert protocol.validate_runtime_protocol_profile(_approved_observation())
+
+
+def test_stage4_approval_timeout_drift_fails_protocol_qualification(monkeypatch):
+    from agents.approval import approval_gate
+
+    monkeypatch.setattr(approval_gate, "timeout_seconds", 2)
+    observed = _approved_observation()
+    assert observed["approval_channel"]["timeout_seconds"] == 2
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(observed)
 
 
 def test_invalid_model_digest_is_rejected_before_profile_comparison():

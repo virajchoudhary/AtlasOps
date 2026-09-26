@@ -151,9 +151,14 @@ def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, A
         if sid in test_set:
             raise ValueError(f"LEAKAGE DETECTED: Scenario {sid} is in TEST_SPLIT!")
 
-    out_file = output_path or (DATA_DIR / "sft_corpus_train.jsonl")
+    canonical_file = DATA_DIR / "sft_corpus_train.jsonl"
+    out_file = output_path or canonical_file
+    is_canonical = out_file.resolve() == canonical_file.resolve()
+    if not is_canonical and out_file.resolve().is_relative_to(EVIDENCE_DIR.resolve()):
+        raise ValueError("Custom corpus output cannot be inside canonical Stage 7 evidence")
+    evidence_dir = EVIDENCE_DIR if is_canonical else out_file.parent
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
 
     examples: list[dict[str, Any]] = []
     judge_score = {"correctness": 1.0, "efficiency": 0.95, "reasoning": 0.95, "red_herring_handling": 1.0, "overall": 0.98, "critique": "Optimal SRE execution."}
@@ -203,7 +208,7 @@ def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, A
         "template_render_validated": True,
     }
 
-    manifest_path = EVIDENCE_DIR / "sft_corpus_manifest.json"
+    manifest_path = evidence_dir / "sft_corpus_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     # 3. Save standard SFT training hyperparameter config
@@ -223,7 +228,7 @@ def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, A
         "assistant_only_loss": True,
         "train_corpus_sha256": corpus_sha256,
     }
-    config_path = EVIDENCE_DIR / "sft_training_config.json"
+    config_path = evidence_dir / "sft_training_config.json"
     config_path.write_text(json.dumps(training_config, indent=2), encoding="utf-8")
 
     log.info("SFT Corpus successfully assembled! Total examples: %d, SHA-256: %s", len(examples), corpus_sha256)

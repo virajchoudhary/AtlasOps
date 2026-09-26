@@ -12,6 +12,8 @@ import os
 import random
 from typing import Any
 
+from agents.tool_policy import CLUSTER_MUTATING_TOOLS
+
 DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:7b-instruct"
 
 
@@ -367,12 +369,11 @@ class StepRewardTracker:
     Partial progress = success_count / total_calls (monotonic — never decreases).
     """
 
-    _MUTATING = frozenset({
-        "argocd_rollback", "kubectl_rollout", "kubectl_scale", "alertmanager_silence",
-    })
+    _MUTATING = CLUSTER_MUTATING_TOOLS
     _INVESTIGATIVE = frozenset({
         "promql_query", "promql_query_range", "jaeger_search", "jaeger_get_trace",
         "kubectl_logs", "kubectl_describe", "alertmanager_list_alerts",
+        "chaos_list_experiments",
         "gcloud_logs_read", "cloud_monitoring_query",
     })
 

@@ -139,7 +139,8 @@ def compute_stats(results: list[dict], tag: str) -> dict:
         "total_episodes": len(results),
         "valid_episodes": len(valid),
         "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
-        "avg_judge_score": round(sum(judge_scores) / max(len(judge_scores), 1), 3),
+        "avg_judge_score": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
+        "judged_episode_count": len(judge_scores),
         "avg_ttr_seconds": round(sum(ttr_values) / max(len(ttr_values), 1), 1),
         "min_ttr_seconds": min(ttr_values) if ttr_values else None,
         "max_ttr_seconds": max(ttr_values) if ttr_values else None,
@@ -160,11 +161,13 @@ def print_comparison(base_stats: dict, ft_stats: dict):
         ("Avg TTR (seconds)", "avg_ttr_seconds", "{:.0f}s"),
     ]
     for label, key, fmt in metrics:
-        b = base_stats.get(key, 0)
-        f = ft_stats.get(key, 0)
-        delta = f - b if isinstance(b, (int, float)) else 0
-        sign = "+" if delta > 0 else ""
-        print(f"  {label:<28} {fmt.format(b):>12} {fmt.format(f):>12} {sign}{fmt.format(delta):>9}")
+        b = base_stats.get(key)
+        f = ft_stats.get(key)
+        b_display = fmt.format(b) if b is not None else "n/a"
+        f_display = fmt.format(f) if f is not None else "n/a"
+        delta = f - b if b is not None and f is not None else None
+        delta_display = f"{'+' if delta > 0 else ''}{fmt.format(delta)}" if delta is not None else "n/a"
+        print(f"  {label:<28} {b_display:>12} {f_display:>12} {delta_display:>10}")
 
     print("\n  Per-Tier Resolution Rate:")
     for tier in ("single_fault", "cascade", "named_replays"):

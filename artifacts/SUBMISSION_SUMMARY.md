@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-25T17:45:01.016799+00:00`
+- **Generated**: `2026-09-26T09:26:09.285553+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -38,7 +38,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `793d45179291d309...` | 21520 |
-| `agents/coordinator.py` | `aaa7188e07889f8f...` | 110421 |
+| `agents/coordinator.py` | `5f3b7dbe8269421c...` | 110412 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
 | `agents/policy_remediation.py` | `d071d7f9046c38d8...` | 4511 |
 | `agents/prompts/comms.md` | `be58db4dcef9b422...` | 2662 |
@@ -60,7 +60,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
 | `bench/ablation_suite.py` | `957c4bc2ee0a3d1f...` | 12406 |
 | `bench/grpo_eval.py` | `8c6aa528de0289b3...` | 50036 |
-| `bench/runner.py` | `06ff8c96b4ae72f3...` | 15321 |
+| `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `4e13d1aa99c62031...` | 23096 |
 | `bench/zero_shot_baseline.py` | `c0fd30a86fd3b994...` | 19879 |
 | `config/g4_protocol.py` | `cd3ff0179812e167...` | 19865 |
@@ -127,6 +127,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |
 | `tests/test_http_retry.py` | `ab782b8c5d1c70ae...` | 2569 |
 | `tests/test_infra_contract.py` | `e4ee2ab5e3927cb1...` | 14459 |
+| `tests/test_judge_outage_provenance.py` | `f9327e7055a73328...` | 6426 |
 | `tests/test_judge_tier.py` | `f3785d7864e22b96...` | 635 |
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |

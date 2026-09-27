@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -9,7 +10,9 @@ from pathlib import Path
 import pytest
 
 from config.splits import TEST_SPLIT, TRAIN_SEED, TRAIN_SPLIT
+from training import sft_provenance
 from training.sft_provenance import (
+    SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
     canonical_file_sha256,
     create_run_manifest,
     inspect_training_corpus,
@@ -18,6 +21,15 @@ from training.sft_provenance import (
     mark_running,
     write_manifest_atomic,
 )
+
+
+@pytest.fixture(autouse=True)
+def _lightweight_runtime_probe(monkeypatch):
+    monkeypatch.setattr(
+        sft_provenance,
+        "runtime_environment",
+        lambda: {"packages": {}},
+    )
 
 
 def _manifest(tmp_path: Path) -> tuple[dict, Path, Path]:
@@ -58,9 +70,140 @@ def test_planned_manifest_captures_exact_inputs_and_source(tmp_path):
     assert manifest["dataset"]["split_seed"] == TRAIN_SEED
     assert manifest["dataset"]["corpus_sha256_canonical_lf"]
     assert manifest["dataset"]["split_sha256"]
+    assert manifest["dataset"]["total_examples"] == len(TRAIN_SPLIT)
+    assert manifest["dataset"]["total_scenarios"] == len(TRAIN_SPLIT)
+    assert manifest["dataset"]["data_origin"] == "UNVERIFIED"
+    assert manifest["dataset"]["synthetic"] is None
+    assert manifest["dataset"]["data_origin_source"] == "unverified"
+    assert manifest["dataset"]["corpus_manifest"] == {
+        "present": False,
+        "path": None,
+        "sha256": None,
+    }
     assert manifest["source"]["git_sha"]
     assert manifest["output_dir"] == str(output.resolve())
     assert "packages" in manifest["environment"]
+
+
+def _generated_corpus(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    from training import build_sft_dataset
+
+    data_dir = tmp_path / "dataset"
+    monkeypatch.setattr(build_sft_dataset, "DATA_DIR", data_dir)
+    monkeypatch.setattr(build_sft_dataset, "EVIDENCE_DIR", tmp_path / "frozen-evidence")
+    monkeypatch.setattr(
+        build_sft_dataset,
+        "prepare_example_for_training",
+        lambda example: {"messages": example["messages"], "tools": []},
+    )
+    monkeypatch.setattr(
+        build_sft_dataset,
+        "render_messages",
+        lambda messages, **kwargs: ("rendered", ["generated"]),
+    )
+    corpus, _ = build_sft_dataset.build_sft_corpus()
+    return corpus, data_dir / "sft_corpus_manifest.json"
+
+
+def _create_manifest_for_corpus(corpus: Path, output_dir: Path) -> dict:
+    return create_run_manifest(
+        corpus_path=corpus,
+        output_dir=output_dir,
+        base_model="Qwen/Qwen2.5-7B-Instruct",
+        base_model_revision="model-commit",
+        tokenizer="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision="tokenizer-commit",
+        role="all",
+        hyperparameters={"seed": TRAIN_SEED},
+    )
+
+
+def test_adjacent_corpus_origin_is_validated_and_preserved(
+    tmp_path,
+    monkeypatch,
+):
+    corpus, corpus_manifest_path = _generated_corpus(tmp_path, monkeypatch)
+    source_manifest_bytes = corpus_manifest_path.read_bytes()
+    run_output = tmp_path / "checkpoint"
+    run = _create_manifest_for_corpus(corpus, run_output)
+    dataset = run["dataset"]
+
+    assert dataset["data_origin"] == "scenario_derived_synthetic"
+    assert dataset["synthetic"] is True
+    assert dataset["data_origin_source"] == "adjacent_corpus_manifest"
+    assert dataset["corpus_manifest"] == {
+        "present": True,
+        "path": str(corpus_manifest_path.resolve()),
+        "sha256": hashlib.sha256(corpus_manifest_path.read_bytes()).hexdigest(),
+    }
+    assert dataset["corpus_sha256_canonical_lf"] == json.loads(
+        corpus_manifest_path.read_text(encoding="utf-8")
+    )["corpus_sha256_canonical_lf"]
+    assert dataset["total_examples"] == 64
+    assert dataset["total_scenarios"] == 16
+    assert dataset["split"] == "train"
+
+    run_output.mkdir()
+    (run_output / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (run_output / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
+    running = mark_running(
+        run,
+        resolved_model_revision="resolved-model-commit",
+        resolved_tokenizer_revision="resolved-tokenizer-commit",
+    )
+    completed = mark_completed(
+        running,
+        output_dir=run_output,
+        manifest_path=run_output / "sft_run_manifest.json",
+        trainer_state={"global_step": 1},
+        training_history=[],
+    )
+    assert completed["dataset"] == dataset
+    assert completed["dataset"]["data_origin"] == "scenario_derived_synthetic"
+
+    for field, value, message in (
+        ("corpus_sha256_canonical_lf", "0" * 64, "corpus hash"),
+        ("split", "val", "Train split"),
+        ("total_examples", 63, "example count"),
+        ("total_scenarios", 15, "scenario count"),
+    ):
+        tampered_manifest = json.loads(source_manifest_bytes)
+        tampered_manifest[field] = value
+        corpus_manifest_path.write_text(
+            json.dumps(tampered_manifest),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match=message):
+            _create_manifest_for_corpus(corpus, run_output)
+
+    legacy_manifest = json.loads(source_manifest_bytes)
+    legacy_manifest.pop("data_origin")
+    legacy_manifest.pop("synthetic")
+    corpus_manifest_path.write_text(json.dumps(legacy_manifest), encoding="utf-8")
+    legacy_dataset = _create_manifest_for_corpus(corpus, run_output)["dataset"]
+    assert legacy_dataset["data_origin"] == "UNVERIFIED"
+    assert legacy_dataset["synthetic"] is None
+    assert legacy_dataset["data_origin_source"] == "unverified"
+    assert legacy_dataset["corpus_manifest"]["present"] is True
+    assert legacy_dataset["corpus_manifest"]["sha256"] == hashlib.sha256(
+        corpus_manifest_path.read_bytes()
+    ).hexdigest()
+
+    unsupported_manifest = json.loads(source_manifest_bytes)
+    unsupported_manifest["data_origin"] = "human_expert_verified"
+    unsupported_manifest["synthetic"] = False
+    assert (
+        unsupported_manifest["corpus_sha256_canonical_lf"]
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    )
+    corpus_manifest_path.write_text(
+        json.dumps(unsupported_manifest),
+        encoding="utf-8",
+    )
+    unsupported_dataset = _create_manifest_for_corpus(corpus, run_output)["dataset"]
+    assert unsupported_dataset["data_origin"] == "UNVERIFIED"
+    assert unsupported_dataset["synthetic"] is None
+    assert unsupported_dataset["data_origin_source"] == "unverified"
 
 
 def test_corpus_hash_is_newline_stable(tmp_path):
@@ -149,6 +292,8 @@ def test_running_and_completed_manifest_hash_checkpoint_files(tmp_path):
     assert persisted["training_history"] == [{"loss": 1.25, "step": 4}]
     assert persisted["checkpoint"]["total_files"] == 2
     assert persisted["checkpoint"]["tree_sha256"]
+    assert persisted["dataset"]["data_origin"] == "UNVERIFIED"
+    assert persisted["dataset"]["corpus_manifest"]["present"] is False
     assert {
         item["path"] for item in persisted["checkpoint"]["files"]
     } == {"adapter_config.json", "adapter_model.safetensors"}
@@ -208,3 +353,20 @@ def test_failure_and_interruption_are_durable(
     assert persisted["status"] == expected_status
     assert persisted["completed_at"]
     assert persisted["failure"]["type"] == type(exc).__name__
+    assert persisted["failure"]["message"] == (
+        "SFT run failed; exception details are withheld"
+    )
+
+
+def test_failure_manifest_omits_exception_text(tmp_path):
+    manifest, _, _ = _manifest(tmp_path)
+    marker = "INJECTED_SFT_SECRET_MARKER"
+
+    failed = mark_failed(manifest, RuntimeError(marker))
+    serialized = json.dumps(failed)
+
+    assert failed["failure"]["type"] == "RuntimeError"
+    assert failed["failure"]["message"] == (
+        "SFT run failed; exception details are withheld"
+    )
+    assert marker not in serialized

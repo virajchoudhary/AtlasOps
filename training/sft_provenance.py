@@ -12,6 +12,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import stat
 import subprocess
 import sys
 import tempfile
@@ -25,11 +26,28 @@ from config.splits import TRAIN_SEED, TRAIN_SPLIT
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAMES = ("accelerate", "bitsandbytes", "datasets", "peft", "torch", "transformers", "trl")
 ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
+CORPUS_MANIFEST_NAME = "sft_corpus_manifest.json"
+UNVERIFIED_DATA_ORIGIN = "UNVERIFIED"
+SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256 = (
+    "523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81"
+)
+SCENARIO_DERIVED_SYNTHETIC_TOTAL_EXAMPLES = 64
+SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS = 16
+MAX_VERIFIED_SFT_CORPUS_BYTES = 16 * 1024 * 1024
+MAX_VERIFIED_SFT_MANIFEST_BYTES = 1024 * 1024
+_DATA_ORIGIN_PROVENANCE_FIELDS = frozenset(
+    {"data_origin", "synthetic", "data_origin_source", "corpus_manifest"}
+)
 
 
 def canonical_file_sha256(path: Path) -> str:
     """Hash a text corpus with CRLF normalized to LF."""
-    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    return canonical_bytes_sha256(path.read_bytes())
+
+
+def canonical_bytes_sha256(raw: bytes) -> str:
+    """Hash a corpus byte snapshot with CRLF normalized to LF."""
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
 
 
 def file_sha256(path: Path) -> str:
@@ -102,10 +120,25 @@ def runtime_environment() -> dict[str, Any]:
 
 
 def inspect_training_corpus(path: Path) -> dict[str, Any]:
+    return _inspect_training_corpus_lines(
+        path.read_text(encoding="utf-8").splitlines()
+    )
+
+
+def inspect_training_corpus_bytes(raw: bytes) -> dict[str, Any]:
+    """Inspect JSONL rows from the same bounded byte snapshot used for hashing."""
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ValueError("SFT corpus is not valid UTF-8") from exc
+    return _inspect_training_corpus_lines(lines)
+
+
+def _inspect_training_corpus_lines(lines: list[str]) -> dict[str, Any]:
     train_ids = set(TRAIN_SPLIT)
     scenario_counts: dict[str, int] = {}
     role_counts: dict[str, int] = {}
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
@@ -135,6 +168,330 @@ def inspect_training_corpus(path: Path) -> dict[str, Any]:
         "observed_scenarios": sorted(scenario_counts),
         "scenario_counts": dict(sorted(scenario_counts.items())),
         "role_counts": dict(sorted(role_counts.items())),
+    }
+
+
+def _has_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def has_redirecting_path_component(path: Path) -> bool:
+    """Identify symlink, Windows reparse, or hard-link path redirects."""
+    absolute_path = Path(os.path.abspath(path))
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    for component in (absolute_path, *absolute_path.parents):
+        try:
+            details = component.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        if stat.S_ISLNK(details.st_mode):
+            return True
+        if getattr(details, "st_file_attributes", 0) & reparse_attribute:
+            return True
+        if (
+            component == absolute_path
+            and not stat.S_ISDIR(details.st_mode)
+            and getattr(details, "st_nlink", 1) > 1
+        ):
+            return True
+    return False
+
+
+def _read_bounded_snapshot(path: Path, max_bytes: int) -> tuple[bytes | None, str]:
+    try:
+        path_details = path.stat()
+        if not stat.S_ISREG(path_details.st_mode):
+            return None, "not_regular"
+        if path_details.st_size > max_bytes:
+            return None, "too_large"
+        with path.open("rb") as stream:
+            details = os.fstat(stream.fileno())
+            if not stat.S_ISREG(details.st_mode):
+                return None, "not_regular"
+            if details.st_size > max_bytes:
+                return None, "too_large"
+            chunks = []
+            total_bytes = 0
+            while total_bytes <= max_bytes:
+                chunk = stream.read(min(64 * 1024, max_bytes + 1 - total_bytes))
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    return None, "too_large"
+                chunks.append(chunk)
+        return b"".join(chunks), "read"
+    except OSError:
+        return None, "unavailable"
+
+
+def _verify_recorded_corpus_manifest(
+    dataset: dict[str, Any],
+    corpus_manifest: dict[str, Any],
+    *,
+    approved_corpus_path: Path | None,
+) -> tuple[bool, str]:
+    if not corpus_manifest.get("present"):
+        return False, "absent"
+    if approved_corpus_path is None:
+        return False, "approval_required"
+
+    corpus_path_text = dataset.get("corpus_path")
+    manifest_path_text = corpus_manifest.get("path")
+    if (
+        not isinstance(corpus_path_text, str)
+        or not Path(corpus_path_text).is_absolute()
+        or not isinstance(manifest_path_text, str)
+        or not Path(manifest_path_text).is_absolute()
+    ):
+        return False, "invalid_path"
+
+    approved_path = Path(os.path.abspath(approved_corpus_path))
+    recorded_corpus_path = Path(os.path.abspath(corpus_path_text))
+    if recorded_corpus_path != approved_path:
+        return False, "approval_mismatch"
+    corpus_path = approved_path
+    expected_manifest_path = Path(
+        os.path.abspath(corpus_path.parent / CORPUS_MANIFEST_NAME)
+    )
+    recorded_manifest_path = Path(os.path.abspath(manifest_path_text))
+    if recorded_manifest_path != expected_manifest_path:
+        return False, "path_mismatch"
+    if has_redirecting_path_component(corpus_path) or has_redirecting_path_component(
+        expected_manifest_path
+    ):
+        return False, "redirected_path"
+
+    corpus_bytes, corpus_status = _read_bounded_snapshot(
+        corpus_path,
+        MAX_VERIFIED_SFT_CORPUS_BYTES,
+    )
+    if corpus_bytes is None:
+        return False, (
+            "corpus_too_large" if corpus_status == "too_large"
+            else f"corpus_{corpus_status}"
+        )
+    if canonical_bytes_sha256(corpus_bytes) != dataset.get(
+        "corpus_sha256_canonical_lf"
+    ):
+        return False, "corpus_hash_mismatch"
+    try:
+        corpus_inventory = inspect_training_corpus_bytes(corpus_bytes)
+    except (TypeError, ValueError):
+        return False, "corpus_invalid"
+    if (
+        corpus_inventory["total_examples"] != dataset.get("total_examples")
+        or len(corpus_inventory["observed_scenarios"])
+        != dataset.get("total_scenarios")
+    ):
+        return False, "corpus_metadata_mismatch"
+
+    manifest_bytes, manifest_status = _read_bounded_snapshot(
+        expected_manifest_path,
+        MAX_VERIFIED_SFT_MANIFEST_BYTES,
+    )
+    if manifest_bytes is None:
+        return False, (
+            "manifest_too_large" if manifest_status == "too_large"
+            else f"manifest_{manifest_status}"
+        )
+    if hashlib.sha256(manifest_bytes).hexdigest() != corpus_manifest.get("sha256"):
+        return False, "hash_mismatch"
+    try:
+        source_manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False, "invalid_manifest"
+    if not isinstance(source_manifest, dict):
+        return False, "invalid_manifest"
+
+    if (
+        source_manifest.get("corpus_sha256_canonical_lf")
+        != dataset.get("corpus_sha256_canonical_lf")
+        or source_manifest.get("split") != dataset.get("split")
+        or type(source_manifest.get("total_examples")) is not int
+        or source_manifest.get("total_examples") != dataset.get("total_examples")
+        or type(source_manifest.get("total_scenarios")) is not int
+        or source_manifest.get("total_scenarios") != dataset.get("total_scenarios")
+    ):
+        return False, "metadata_mismatch"
+
+    if dataset.get("data_origin") == "scenario_derived_synthetic" and (
+        source_manifest.get("data_origin") != "scenario_derived_synthetic"
+        or source_manifest.get("synthetic") is not True
+    ):
+        return False, "origin_mismatch"
+    return True, "verified"
+
+
+def normalize_training_data_provenance(
+    dataset: dict[str, Any],
+    *,
+    approved_corpus_path: Path | None = None,
+) -> dict[str, Any]:
+    """Validate source metadata, reading corpus paths only after explicit approval."""
+    normalized = dict(dataset)
+    present_fields = _DATA_ORIGIN_PROVENANCE_FIELDS.intersection(normalized)
+    if not present_fields:
+        normalized.update(
+            {
+                "data_origin": UNVERIFIED_DATA_ORIGIN,
+                "synthetic": None,
+                "data_origin_source": "unverified",
+                "corpus_manifest": {
+                    "present": False,
+                    "path": None,
+                    "sha256": None,
+                    "content_verified": False,
+                    "verification_status": "absent",
+                },
+            }
+        )
+        return normalized
+
+    missing = _DATA_ORIGIN_PROVENANCE_FIELDS.difference(normalized)
+    if missing:
+        raise ValueError(
+            f"SFT training data origin provenance is incomplete: {sorted(missing)}"
+        )
+
+    data_origin = normalized["data_origin"]
+    synthetic = normalized["synthetic"]
+    origin_source = normalized["data_origin_source"]
+    corpus_manifest = normalized["corpus_manifest"]
+    if not isinstance(data_origin, str) or not data_origin.strip():
+        raise ValueError("SFT training data origin must be a non-empty string")
+    if synthetic is not None and type(synthetic) is not bool:
+        raise ValueError("SFT training synthetic flag must be true, false, or null")
+    if not isinstance(corpus_manifest, dict):
+        raise ValueError("SFT corpus manifest provenance must be an object")
+
+    manifest_present = corpus_manifest.get("present")
+    manifest_path = corpus_manifest.get("path")
+    manifest_sha256 = corpus_manifest.get("sha256")
+    if type(manifest_present) is not bool:
+        raise ValueError("SFT corpus manifest provenance requires a boolean present flag")
+    if manifest_present:
+        if not isinstance(manifest_path, str) or not manifest_path:
+            raise ValueError("Present SFT corpus manifest provenance requires a path")
+        if not _has_sha256(manifest_sha256):
+            raise ValueError("Present SFT corpus manifest provenance requires a SHA-256")
+    elif manifest_path is not None or manifest_sha256 is not None:
+        raise ValueError("Absent SFT corpus manifest provenance cannot include a path or hash")
+
+    if origin_source == "adjacent_corpus_manifest":
+        if not manifest_present:
+            raise ValueError("Adjacent SFT data origin requires manifest provenance")
+    elif origin_source != "unverified":
+        raise ValueError("Unknown SFT data origin source")
+
+    if not _has_sha256(normalized.get("corpus_sha256_canonical_lf")):
+        raise ValueError("SFT training data provenance lacks the corpus SHA-256")
+    total_examples = normalized.get("total_examples")
+    total_scenarios = normalized.get("total_scenarios")
+    if type(total_examples) is not int or total_examples < 1:
+        raise ValueError("SFT training data provenance lacks a positive example count")
+    if type(total_scenarios) is not int or total_scenarios != len(TRAIN_SPLIT):
+        raise ValueError("SFT training data provenance has an invalid scenario count")
+
+    manifest_content_verified, verification_status = _verify_recorded_corpus_manifest(
+        normalized,
+        corpus_manifest,
+        approved_corpus_path=approved_corpus_path,
+    )
+    corpus_manifest = dict(corpus_manifest)
+    corpus_manifest["content_verified"] = manifest_content_verified
+    corpus_manifest["verification_status"] = verification_status
+    normalized["corpus_manifest"] = corpus_manifest
+
+    known_synthetic_source = (
+        data_origin == "scenario_derived_synthetic"
+        and synthetic is True
+        and origin_source == "adjacent_corpus_manifest"
+        and normalized["corpus_sha256_canonical_lf"]
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+        and total_examples == SCENARIO_DERIVED_SYNTHETIC_TOTAL_EXAMPLES
+        and total_scenarios == SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS
+        and manifest_content_verified
+    )
+    if not known_synthetic_source:
+        normalized.update(
+            {
+                "data_origin": UNVERIFIED_DATA_ORIGIN,
+                "synthetic": None,
+                "data_origin_source": "unverified",
+            }
+        )
+    return normalized
+
+
+def _corpus_manifest_provenance(
+    corpus_path: Path,
+    *,
+    corpus_sha256: str,
+    corpus_inventory: dict[str, Any],
+) -> dict[str, Any]:
+    manifest_path = corpus_path.parent / CORPUS_MANIFEST_NAME
+    if manifest_path.is_symlink():
+        raise ValueError("Adjacent SFT corpus manifest must not be a symlink")
+    if not manifest_path.exists():
+        return {
+            "data_origin": UNVERIFIED_DATA_ORIGIN,
+            "synthetic": None,
+            "data_origin_source": "unverified",
+            "corpus_manifest": {"present": False, "path": None, "sha256": None},
+        }
+    if not manifest_path.is_file():
+        raise ValueError("Adjacent SFT corpus manifest must be a regular file")
+    try:
+        source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Adjacent SFT corpus manifest is unreadable or invalid JSON") from exc
+    if not isinstance(source_manifest, dict):
+        raise ValueError("Adjacent SFT corpus manifest must be a JSON object")
+    if source_manifest.get("corpus_sha256_canonical_lf") != corpus_sha256:
+        raise ValueError("Adjacent SFT corpus manifest corpus hash does not match the corpus")
+    if source_manifest.get("split") != "train":
+        raise ValueError("Adjacent SFT corpus manifest must identify the Train split")
+    if (
+        type(source_manifest.get("total_examples")) is not int
+        or source_manifest["total_examples"] != corpus_inventory["total_examples"]
+    ):
+        raise ValueError("Adjacent SFT corpus manifest example count does not match the corpus")
+    if (
+        type(source_manifest.get("total_scenarios")) is not int
+        or source_manifest["total_scenarios"] != len(corpus_inventory["observed_scenarios"])
+    ):
+        raise ValueError("Adjacent SFT corpus manifest scenario count does not match the corpus")
+
+    data_origin = source_manifest.get("data_origin")
+    synthetic = source_manifest.get("synthetic")
+    is_known_synthetic_corpus = (
+        corpus_sha256 == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+        and data_origin == "scenario_derived_synthetic"
+        and synthetic is True
+    )
+    if is_known_synthetic_corpus:
+        origin_source = "adjacent_corpus_manifest"
+    else:
+        data_origin = UNVERIFIED_DATA_ORIGIN
+        synthetic = None
+        origin_source = "unverified"
+
+    return {
+        "data_origin": data_origin,
+        "synthetic": synthetic,
+        "data_origin_source": origin_source,
+        "corpus_manifest": {
+            "present": True,
+            "path": str(manifest_path.resolve()),
+            "sha256": file_sha256(manifest_path),
+        },
     }
 
 
@@ -175,6 +532,12 @@ def create_run_manifest(
         raise ValueError("An exact tokenizer revision is required")
 
     corpus_inventory = inspect_training_corpus(corpus_path)
+    corpus_sha256 = canonical_file_sha256(corpus_path)
+    origin_provenance = _corpus_manifest_provenance(
+        corpus_path,
+        corpus_sha256=corpus_sha256,
+        corpus_inventory=corpus_inventory,
+    )
     started_at = datetime.now(UTC).isoformat()
     return {
         "schema_version": 1,
@@ -194,12 +557,14 @@ def create_run_manifest(
         },
         "dataset": {
             "corpus_path": str(corpus_path.resolve()),
-            "corpus_sha256_canonical_lf": canonical_file_sha256(corpus_path),
+            "corpus_sha256_canonical_lf": corpus_sha256,
             "split": "train",
             "split_seed": seed,
             "split_scenarios": list(TRAIN_SPLIT),
             "split_sha256": canonical_json_sha256(list(TRAIN_SPLIT)),
             **corpus_inventory,
+            "total_scenarios": len(corpus_inventory["observed_scenarios"]),
+            **origin_provenance,
         },
         "role_filter": role,
         "hyperparameters": hyperparameters,
@@ -298,7 +663,7 @@ def mark_failed(
             "completed_at": datetime.now(UTC).isoformat(),
             "failure": {
                 "type": type(exc).__name__,
-                "message": str(exc),
+                "message": "SFT run failed; exception details are withheld",
             },
         }
     )

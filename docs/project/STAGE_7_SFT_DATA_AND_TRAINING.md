@@ -11,10 +11,16 @@ Qwen2.5-7B-Instruct training run or usable adapter is currently preserved.
   file is absent from a clean checkout. It contains 64 synthetic demonstrations
   from the 16 frozen Train scenarios: four agent roles per scenario.
 - Validation and Test scenario IDs are excluded.
-- `artifacts/evidence/stage7/sft_corpus_manifest.json` records corpus counts, schema,
-  and canonical LF SHA-256.
-- `artifacts/evidence/stage7/sft_training_config.json` records the approved
-  Qwen2.5-7B-Instruct 4-bit NF4 QLoRA configuration.
+- Newly generated corpus manifests record
+  `data_origin: scenario_derived_synthetic` and `synthetic: true`, plus corpus counts,
+  schema, and canonical LF SHA-256.
+- Generated manifests and training configs are written beside the generated corpus.
+  This leaves the frozen, tracked `artifacts/evidence/stage7/` records byte-for-byte
+  unchanged.
+- Corpus and sidecars are staged beside their destinations and atomically replaced.
+  The builder rejects existing symlink, junction/reparse, or hard-link redirects.
+  Output-directory changes must be serialized: a parent directory replaced between
+  validation and replacement cannot be locked against by portable filesystem APIs.
 
 The corpus is scenario-derived training data. It is not evidence that a model was trained
 or that generated trajectories succeeded in a real environment.
@@ -26,8 +32,8 @@ clean source checkout and run:
 & .\.venv\Scripts\python.exe -m training.build_sft_dataset --output "C:\experiment-root\g7-prep\sft_corpus_train.jsonl"
 ```
 
-The custom corpus manifest and training config are written beside that file,
-not over the canonical Stage 7 evidence. Verify the corpus's canonical-LF
+The corpus manifest and training config are written beside that file. Verify the
+corpus's canonical-LF
 SHA-256 against `523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81`
 before training. The local 2026-09-26 replay reproduced this hash; its examples
 remain synthetic.
@@ -41,11 +47,16 @@ real-data or empirical training launch command.
 ## Training Contract
 
 `training/sft.py` requires exact base-model and tokenizer revisions, verifies the corpus
-against the frozen Train split, and uses the project-owned Qwen tool template with
-assistant-only loss. It writes planned, running, completed, failed, or interrupted state
-atomically and records:
+against the frozen Train split and any adjacent corpus manifest's hash, split, and counts,
+and uses the project-owned Qwen tool template with assistant-only loss. It writes planned,
+running, completed, failed, or interrupted state atomically and records:
 
 - corpus, split, and template hashes;
+- adjacent corpus-manifest path and raw SHA-256, with its data-origin classification;
+- `UNVERIFIED` origin and a null synthetic flag when no verifiable classification exists.
+  The known `scenario_derived_synthetic` label is accepted only with the frozen corpus
+  SHA-256 and its exact 64-example, 16-scenario Train inventory; unsupported or
+  conflicting origin claims remain unverified.
 - seed, hyperparameters, LoRA and quantization settings;
 - source SHA and dirty-state digest;
 - runtime, package, and hardware metadata;

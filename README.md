@@ -6,7 +6,7 @@ colorTo: blue
 sdk: docker
 app_port: 7860
 pinned: true
-short_description: 4 AI agents responding to real GKE incidents on AMD MI300X
+short_description: Evidence-led multi-agent SRE research demo (not certified)
 tags:
   - agents
   - multi-agent
@@ -40,7 +40,7 @@ tags:
 
 ---
 
-The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 22 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
+The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 24 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
 
 **Triage** acked the alert and mapped the blast radius in 47 seconds.  
 **Diagnosis** traced the root cause to a currency service CPU hog via Jaeger in 3 tool calls.  
@@ -50,7 +50,7 @@ The inherited AtlasOps design gives 4 specialized AI agents an incident alert an
 Total time to resolve a Cloudflare 2019 cascade replay: **4 minutes 12 seconds.**  
 A senior SRE on a good day: ~25 minutes.
 
-This is **AtlasOps** — a self-improving multi-agent SRE platform where a 72B adversarial judge can generate novel chaos scenarios targeting the agents' specific weaknesses, trained via SFT → Online GRPO on an AMD MI300X (192 GB HBM3). The default benchmark requests up to 10 generated scenarios per run.
+This is **AtlasOps** — a multi-agent SRE platform designed to learn from SFT and online GRPO, with a prospective 72B adversarial scenario designer. The original MI300X training and dynamic benchmark claims have not been reproduced by this continuation; the current legacy benchmark runner is mock-only and does not generate scenarios.
 
 ---
 
@@ -138,6 +138,10 @@ Full fine-tuning pipeline on AMD hardware:
 
 ### Training Evidence
 
+The figures and numbers in this section are inherited upstream claims. The
+continuation team has not reproduced the training runs or verified usable
+checkpoints; see the current gate inventory before citing results.
+
 **SFT** — 2,028 real trajectories, 254 steps on MI300X in 14 min. Loss dropped 97.8%, token accuracy reached 99.1%.
 
 ![SFT Loss and Token Accuracy](assets/training/sft_loss.png)
@@ -158,9 +162,9 @@ Full training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Ra
 
 ## Tool Registry and Agent Access
 
-AtlasOps registers **23 SRE tool wrappers**. Role ACLs expose **18** to autonomous agents:
+AtlasOps registers **24 SRE tool wrappers**. Role ACLs expose **19** to autonomous agents:
 
-`kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `alertmanager_list_alerts` · `alertmanager_silence` · `chaos_stop_experiment` · `slack_post_update` · **`postmortem_draft`**
+`kubectl_get` · `kubectl_describe` · `kubectl_logs` · `kubectl_top_pods` · `kubectl_rollout` · `kubectl_scale` · `promql_query` · `promql_query_range` · `jaeger_search` · `jaeger_get_trace` · `argocd_list_apps` · `argocd_app_history` · **`argocd_rollback`** · `alertmanager_list_alerts` · `alertmanager_silence` · `chaos_list_experiments` · `chaos_stop_experiment` · `slack_post_update` · **`postmortem_draft`**
 
 Five registered wrappers are intentionally not agent-exposed: `argocd_app_get`, `cloud_monitoring_query`, `gcloud_logs_read`, `kubectl_top_nodes`, and high-risk `kubectl_exec`. Registration does not grant an agent permission to call a tool.
 
@@ -170,7 +174,7 @@ Tool exposure is separate from deployment availability. In particular, the Argo 
 
 ---
 
-## 28 Frozen Scenarios + Dynamic Adversarial Generation
+## 28 Frozen Scenarios + Prospective Adversarial Design
 
 | Tier | Count | Examples |
 |---|---|---|
@@ -178,9 +182,13 @@ Tool exposure is separate from deployment availability. In particular, the Argo 
 | Cascade | 5 | currency latency → checkout timeout → frontend 5xx surge |
 | Multi-fault | 5 | 3 simultaneous faults + red herrings across namespaces |
 | Named Replays | 10 | Cloudflare 2019, AWS S3 2017, GitHub 2018, Discord 2022, Knight Capital 2012… |
-| **Dynamic adversarial** | up to 10 requested by a default benchmark run | Qwen2.5-72B judge designs new Chaos Mesh YAML targeting agent weaknesses in real time |
+| **Dynamic adversarial (prospective)** | up to 10 in the design, none in the current mock runner | A 72B judge could design new Chaos Mesh YAML after validation and approval |
 
-The static catalogue contains exactly 28 YAML-backed frozen scenarios. The benchmark runner separately requests up to 10 newly generated adversarial scenarios by default, so a successful default generation can produce a run of up to 38 scenarios. Those generated scenarios are not frozen catalogue members.
+The static catalogue contains exactly 28 YAML-backed frozen scenarios. The
+upstream design allows up to 10 newly generated adversarial scenarios in a
+separate run, but the current legacy runner is mock-only and disables that
+generation path. Its 10/38 constants are limits, not proof of a generated run.
+Generated scenarios are not frozen catalogue members.
 
 ---
 
@@ -219,24 +227,27 @@ Every tool call, approval decision, and incident boundary is written to an appen
         ↓
   Online GRPO  (G=8 live GKE rollouts per step, DAPO loss)
         ↓
-  Benchmark  (28 frozen + up to 10 generated scenarios by default, anti-gaming reward contract)
+  Benchmark  (28 frozen; prospective generated scenarios require a separate governed path)
 ```
 
-**This is true online RL.** Each GRPO training step:
-1. Applies a real Chaos Mesh fault to the live GKE cluster
-2. Runs G=8 parallel agent chain rollouts
-3. Scores each with the reward contract (kubectl/promql verify real cluster state)
-4. Computes GRPO advantages and updates the policy
+The corrected GRPO code is designed for true online RL; a completed training run and usable checkpoint have not been verified. In a real authorized run, each training step would:
+1. Apply a real Chaos Mesh fault to an authorized controlled cluster
+2. Run G=8 parallel agent chain rollouts
+3. Score each with the reward contract (kubectl/promql verify real cluster state)
+4. Compute GRPO advantages and update the policy
 
 ### What makes our training different from competitors
 
+The table describes the intended online-training design, not a completed
+continuation training run or observed model improvement.
+
 | Feature | Standard GRPO | AtlasOps |
 |---|---|---|
-| Environment | Simulator / offline rewards | **Real GKE cluster, live kubectl** |
+| Environment | Simulator / offline rewards | **Controlled Kubernetes environment, live kubectl (prospective)** |
 | Loss | Standard GRPO | **DAPO** (distributional advantage — more stable on skewed rewards) |
 | Reward | Episode-level only | **Dense per-step** (progress delta per tool call) + episode contract |
 | Curriculum | Random / fixed | **Spaced repetition** (mastery tracking, [3→6→12→24→48] resurface intervals) |
-| Scenario generation | Static | **Dynamic adversarial** (default benchmark requests up to 10 newly generated Chaos YAML scenarios) |
+| Scenario generation | Static | **Dynamic adversarial design is prospective; current legacy runner disables it** |
 
 ### Reward Contract (Anti-Gaming)
 
@@ -267,26 +278,21 @@ not yet reproduced these live-cluster benchmark results.
 
 **Historical upstream claim:** +28 pp improvement from zero-shot baseline → GRPO. Reward includes anti-gaming penalties (command spam, false resolution, hallucinated evidence).
 
-*Run `python scripts/release_gate.py` to verify artifact presence. Results auto-update in the dashboard Benchmark tab.*
+`python scripts/release_gate.py` checks artifact wiring; it does not validate
+these historical performance figures. Mock benchmark output is stored in a
+run-specific directory and does not auto-update the dashboard's stable
+comparison path.
 
 ---
 
 ## University Continuation & Academic Roadmap (Master Pipeline v1.1)
 
-This fork (`virajchoudhary/AtlasOps`) represents the university team's rigorous continuation of the upstream baseline (`bf9bd19`), certified across all **15 Stages (Gates G1–G15 PASS)**:
+This fork (`virajchoudhary/AtlasOps`) continues the upstream baseline (`bf9bd19`) under the 15-stage Master Pipeline. Implementation is not certification: current gate statuses and missing empirical work are recorded in the [Master Pipeline inventory](docs/project/MASTER_PIPELINE_STATUS.md).
 
 1. **Generative AI Multi-Agent System**: Contract-bound state machine (`Alert → Triage → Diagnosis → Hybrid Recommender → Approval Gate → Remediation → Verifier → Comms`) with loss-masked SFT trajectories.
-2. **Recommender Systems (RS) Layer**: Tri-signal Hybrid Recommender ($S_{\text{content}} + S_{\text{collab}} + S_{\text{prior}}$) matching live telemetry against 12 codified SRE runbooks, achieving **100.0% Hit@3** on held-out test splits.
+2. **Recommender Systems (RS) Layer**: Tri-signal Hybrid Recommender ($S_{\text{content}} + S_{\text{collab}} + S_{\text{prior}}$) against 12 codified SRE runbooks. A bounded synthetic evaluation reached 100.0% Hit@3 on four scenario-derived Test rows; historical interaction feedback and broad real-world performance remain unverified.
 3. **Online Reinforcement Learning (GRPO)**: Normalized group advantage estimation ($A_i = \frac{r_i - \mu}{\sigma + \epsilon}$) with objective environment verifier ground truth.
-4. **Final Multi-Model Ablation Matrix (Held-Out Test Split)**:
-
-| Model Architecture | Resolution Rate | Avg TTR | Contract Reward | Format Compliance | Runbook Hit@3 |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Zero-Shot Baseline** (Stage 6) | `0.0%` | `45.0s` | `0.345` | `0.0%` | `33.3%` |
-| **SFT Model** (Stage 8) | `100.0%` | `32.0s` | `0.834` | `100.0%` | `50.0%` |
-| **SFT + Recommender** (Stage 11/12) | `100.0%` | `26.5s` | `0.852` | `100.0%` | `100.0%` |
-| **Online GRPO RL** (Stage 9) | `100.0%` | `22.0s` | `0.868` | `100.0%` | `66.7%` |
-| **Full Pipeline (GAI + RS + RL)** | **`100.0%`** | **`18.0s`** | **`0.918`** | **`100.0%`** | **`100.0%`** |
+4. **Final Multi-Model Ablation Matrix (Held-Out Test Split)**: The Stage 13 runner now requires actual per-variant episode artifacts. Its previously saved constant profiles are historical predetermined output, not an observed comparison. Genuine zero-shot, SFT, GRPO, recommender-integrated, and full-pipeline results remain to be measured on the held-out split after their upstream gates pass.
 
 Full Academic Technical Report: [`docs/AtlasOps_Technical_Report.md`](docs/AtlasOps_Technical_Report.md) | Upstream Audit Report: [`docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md`](docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md)
 
@@ -295,14 +301,25 @@ Full Academic Technical Report: [`docs/AtlasOps_Technical_Report.md`](docs/Atlas
 ## Quick Start
 
 ### Prerequisites
-- GCP project with `container.googleapis.com` enabled
-- `gcloud`, `kubectl`, `helm` installed
-- AMD MI300X instance (or Fireworks AI fallback for inference)
+- Python 3.11 or 3.12, Docker, Kind, `kubectl`, and Helm for the free-first local path
+- A host able to sustain the selected local model alongside the controlled cluster
+- Explicit operator-provisioned runtime secrets outside the checkout
+- GCP/GKE and AMD MI300X are optional portability/training paths, not local Stage 3 prerequisites
 
-### 1. Provision GCP infrastructure
+### 1. Check local infrastructure prerequisites
+Install the project's Python dependencies from the applicable pinned lock
+(for Windows/Python 3.12, `requirements/dev-win-py312.lock`) before starting
+the console. Provision protected local secret files and point
+`ATLASOPS_SECRET_DIR` at their directory for the Stage 3 check.
+
 ```bash
-bash infra/setup.sh <YOUR_PROJECT_ID> us-central1 atlasops
+bash infra/local/setup_local.sh --check
 ```
+The mutating `--apply` path requires a separate environment review and
+authorization. The [v1.1 Free-First execution specification](docs/project/PIPELINE_V1_1_FREE_FIRST.md)
+describes the local path; the Stage 3 operator guide still contains the older
+optional GKE procedure. `--check` probes local prerequisites, including Docker
+and secrets, but is not live G3 acceptance.
 
 ### 2. Open the operator console
 ```bash
@@ -331,7 +348,7 @@ appears only under Evaluations, and runbook ranking remains advisory. The
 standalone Gradio console is a read-only repository-evidence companion, not a
 second operational control surface.
 
-### Hugging Face Space (use your trained 7B + judge on Router)
+### Hugging Face Space (prospective, after training and approval)
 
 Set Space secrets: **`HF_TOKEN`**, **`ATLASOPS_USE_HF_INFERENCE=1`**, **`AGENT_MODEL`**, **`JUDGE_MODEL`**.  
 Paste your merged GRPO Hub id as `AGENT_MODEL` (merge locally with `training/merge_lora_for_hub.py` under `.[train]`).  
@@ -378,7 +395,7 @@ python -m pytest tests/test_app_endpoints.py -q
 ### 7. Release readiness gate
 ```bash
 python scripts/release_gate.py --strict
-# Writes docs/RELEASE_READINESS.md — all checks must PASS before submission
+# Writes docs/RELEASE_READINESS.md; artifact checks alone cannot certify G0-G15.
 ```
 
 ---
@@ -397,9 +414,9 @@ atlasops/
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
 │   ├── prompts/                # triage / diagnosis / remediation / comms
-│   └── tools/                  # 22 registered wrappers; 19 agent-exposed
+│   └── tools/                  # 24 registered wrappers; 19 agent-exposed
 ├── bench/
-│   ├── runner.py               # Benchmark harness (28 frozen + optional generated scenarios)
+│   ├── runner.py               # Mock-only benchmark of the 28 frozen scenarios
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/
 ├── config/
 │   └── runtime.py              # Frozen scenarios · reward contract · CurriculumManager · StepRewardTracker

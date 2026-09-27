@@ -1,5 +1,15 @@
 # AtlasOps Upstream Alignment, Architecture Audit & Verification Report
 
+> [!IMPORTANT]
+> **Retrospective correction (2026-09-27): NOT_CERTIFIED.** This August 31
+> report overclaimed scientific completion. Its PASS tables and numerical
+> results below are a historical audit snapshot, not current empirical gate
+> evidence. The [Master Pipeline gate inventory](MASTER_PIPELINE_STATUS.md)
+> and preserved raw evidence control current status: G4 is NOT_PASSED,
+> G6/G8/G12 lack empirical evidence, G9/G13 are REOPENED, and G15 is PARTIAL.
+> Do not use this report to assert 15/15 certification or reproduced upstream
+> training and benchmark outcomes.
+
 **Project Fork:** `virajchoudhary/AtlasOps`  
 **Upstream Source Baseline:** `Harikishanth/AtlasOps` @ `bf9bd197c9f4a05ae55ade254802a9eef1a74356`  
 **Audit Completion Date:** August 31, 2026  
@@ -7,19 +17,26 @@
 
 ---
 
-## 1. Executive Summary & Verification Verdict
+## 1. Historical Audit Claim and Current Correction
 
-An exhaustive audit of the `virajchoudhary/AtlasOps` repository confirms **100% adherence to the upstream architectural design, patterns, and contracts**, while successfully fulfilling all academic extensions and repairing upstream defects:
+The original audit claimed 100% adherence and completed academic extensions.
+Current source and evidence establish narrower implementation milestones, not
+full scientific verification. In particular, G4's latest completed attempt is
+negative, real SFT/GRPO checkpoints and evaluated model gains are missing, and
+the final ablation matrix is predetermined rather than observed. The historical
+points below should be read under those limits:
 
 - **Upstream Git History & Attribution**: Full commit lineage from initial commit `87de5f4` up to frozen baseline `bf9bd19` is preserved verbatim under the MIT License.
-- **Architectural Preservation**: The multi-agent pipeline (`Alert -> Triage -> Diagnosis -> Approval Gate -> Remediation -> Comms`) and tool registry (23 wrappers, 18 agent-exposed) are preserved and active.
+- **Architectural Preservation**: The multi-agent pipeline (`Alert -> Triage -> Diagnosis -> Approval Gate -> Remediation -> Comms`) is preserved; the current registry has 24 wrappers and 19 role-exposed tools.
 - **Defect Resolution**: Repaired critical upstream defects including benchmark tier ordering, policy-environment GRPO reward coupling, test-set data contamination, and local isolation.
-- **Academic Extensions**: Codified the **Recommender Systems (RS)** layer (12 Kubernetes runbooks, tri-signal Hybrid Recommender with $100.0\%$ Test Hit@3) and **Online GRPO** with normalized group advantage.
-- **Automated Verification**: **796 / 796 tests passing** (0 failures, 1 skipped) across the full repository test suite.
+- **Academic Extensions**: Codified the **Recommender Systems (RS)** layer (12 Kubernetes runbooks, tri-signal Hybrid Recommender with a small synthetic Test evaluation) and an online GRPO code path with normalized group advantage; real training and full-pipeline validation remain open.
+- **Automated Verification**: the original 796-test count is historical. Unit
+  tests can establish code behavior, not live incident resolution, training,
+  or independent empirical gate closure.
 
 ---
 
-## 2. Component-by-Component Upstream Alignment Matrix
+## 2. Historical Component Audit (Implementation Scope Only)
 
 ### 2.1 Multi-Agent System & Coordinator (`agents/`)
 | Upstream Spec / Component | Upstream Intent | Continuation Implementation | Audit Status |
@@ -29,7 +46,7 @@ An exhaustive audit of the `virajchoudhary/AtlasOps` repository confirms **100% 
 | `agents/circuit_breaker.py` | Hard limits: 50 tool calls, 10 mutations/hr, 5 incidents | Preserved with semantic failure classification | **PASS** |
 | `agents/correlator.py` | Alert storm deduplication (5-min window) | Preserved with alert clustering | **PASS** |
 | `agents/audit.py` | Append-only HMAC hash-chained audit log | Preserved with `verify_integrity()` cryptographic check | **PASS** |
-| `agents/adversarial_designer.py` | 72B judge generating novel Chaos YAML | Preserved with structured schema validation | **PASS** |
+| `agents/adversarial_designer.py` | 72B judge generating novel Chaos YAML | Designer exists; generated fields/YAML are not yet schema-validated for a governed run | **IMPLEMENTED, UNVALIDATED** |
 | `agents/judge.py` | Episode scoring & anti-gaming contract | Preserved with objective environment verifier ground truth | **PASS** |
 | `agents/stream.py` | SSE thought streaming for dashboard | Preserved with real-time thought event dispatch | **PASS** |
 | `agents/prompts/` | System prompts for 4 specialized roles | Preserved and calibrated with runbook guidance | **PASS** |
@@ -37,10 +54,10 @@ An exhaustive audit of the `virajchoudhary/AtlasOps` repository confirms **100% 
 ---
 
 ### 2.2 SRE Tool Registry (`agents/tools/`)
-The upstream contract specifies **23 registered tool wrappers** with **18 agent-exposed** and **5 unexposed** (high-risk or internal):
-- **18 Agent-Exposed Tools**: `kubectl_get`, `kubectl_describe`, `kubectl_logs`, `kubectl_top_pods`, `kubectl_rollout`, `kubectl_scale`, `promql_query`, `promql_query_range`, `jaeger_search`, `jaeger_get_trace`, `argocd_list_apps`, `argocd_app_history`, `argocd_rollback`, `alertmanager_list_alerts`, `alertmanager_silence`, `chaos_stop_experiment`, `slack_post_update`, `postmortem_draft`.
+The current registry specifies **24 registered tool wrappers** with **19 agent-exposed** and **5 unexposed** (high-risk or internal):
+- **19 Agent-Exposed Tools**: `kubectl_get`, `kubectl_describe`, `kubectl_logs`, `kubectl_top_pods`, `kubectl_rollout`, `kubectl_scale`, `promql_query`, `promql_query_range`, `jaeger_search`, `jaeger_get_trace`, `argocd_list_apps`, `argocd_app_history`, `argocd_rollback`, `alertmanager_list_alerts`, `alertmanager_silence`, `chaos_list_experiments`, `chaos_stop_experiment`, `slack_post_update`, `postmortem_draft`.
 - **5 Unexposed Tools**: `argocd_app_get`, `cloud_monitoring_query`, `gcloud_logs_read`, `kubectl_top_nodes`, `kubectl_exec`.
-- **Audit Verdict**: All 23 tools are registered, role ACLs strictly enforced in `agents/tools/registry.py`, and verified in `tests/test_tools.py`. **PASS**.
+- **Audit limit**: registration and role ACLs are locally tested in `agents/tools/__init__.py`, `agents/tool_policy.py`, and `tests/test_tool_policy_contract.py`; this does not prove every backend is reachable in a live environment.
 
 ---
 
@@ -50,10 +67,10 @@ The upstream contract specifies **23 registered tool wrappers** with **18 agent-
 | **Single-Fault** | 8 | `sf-001` through `sf-008` | `train` (4), `val` (2), `test` (2) |
 | **Cascade** | 5 | `cs-001` through `cs-005` | `train` (3), `val` (1), `test` (1) |
 | **Multi-Fault** | 5 | `mf-001` through `mf-005` | `train` (3), `val` (1), `test` (1) |
-| **Named Replays** | 10 | 10 real historic production outages | `train` (6), `val` (2), `test` (2) |
-| **Total** | **28** | **28 Chaos YAML manifests** | **Zero Data Leakage** |
+| **Named Replays** | 10 | Synthetic Chaos Mesh approximations inspired by public incidents | `train` (6), `val` (2), `test` (2) |
+| **Total** | **28** | **28 Chaos YAML manifests** | **Static split disjointness** |
 
-- **Audit Verdict**: All 28 manifests exist in `bench/chaos_manifests/` with exact YAML schemas. Split disjointness verified by `tests/test_stage5_scenario_splits_and_truth.py`. **PASS**.
+- **Audit limit**: all 28 manifests and split membership are locally tested by `tests/test_stage5_scenario_splits_and_truth.py`. This does not prove every downstream training/evaluation consumer avoids test leakage.
 
 ---
 
@@ -65,7 +82,7 @@ The upstream contract specifies **23 registered tool wrappers** with **18 agent-
    - Normalized group advantage estimation: $A_i = \\frac{r_i - \\mu}{\\sigma + \\epsilon}$.
    - Dense step scoring + objective environment verifier ground truth.
    - Cloud GPU packages ready for free execution on Kaggle T4/P100 accelerators.
-- **Audit Verdict**: Training entrypoints, configs, loss masking, and cloud notebooks verified. **PASS**.
+- **Audit limit**: entrypoints, configs, loss masking, and cloud notebooks are implementation artifacts. No completed, usable SFT or GRPO checkpoint and no real training outcome were verified.
 
 ---
 
@@ -73,8 +90,12 @@ The upstream contract specifies **23 registered tool wrappers** with **18 agent-
 - **Runbook Catalog**: 12 codified Kubernetes SRE runbooks (`recommender/catalog.py`).
 - **Dataset**: 28 interaction episodes across splits with SHA-256 manifest (`recommender/dataset.py`).
 - **Algorithm**: Tri-signal Hybrid Recommender ($S_{\\text{content}} + S_{\\text{collab}} + S_{\\text{prior}}$) in `recommender/hybrid.py`.
-- **Empirical Evidence**: Achieved **$100.0\%$ Hit@3** and **$0.833$ MRR@3** on held-out test split, serialized in `artifacts/models/hybrid_recommender.json`.
-- **Audit Verdict**: Recommender layer fully integrated and tested in `tests/test_stage10_rs_data_and_baselines.py`, `test_stage11_hybrid_recommender.py`, and `test_stage12_integrated_pipeline.py`. **PASS**.
+- **Bounded offline evidence**: a scenario-derived synthetic Test split has four
+  rows; its saved ranking scores do not prove historical interaction feedback
+  or broad real-world performance. See the Stage 10/11 entries in the Master
+  Pipeline inventory.
+- **Audit limit**: recommender control flow is locally tested, but G10 remains
+  PARTIAL and G11 PASS is limited to synthetic offline ranking.
 
 ---
 
@@ -82,21 +103,25 @@ The upstream contract specifies **23 registered tool wrappers** with **18 agent-
 - Gradio 7-tab console featuring Live Ops event stream, interactive Recommender explorer, forensic trajectory viewer, ablation matrix, benchmark overview, historical replays, and about tab.
 - Enforced zero-risk safe mode guardrail (`DEMO_SAFE_MODE=1`).
 - Standalone CLI launcher (`python -m demo.launcher`).
-- **Audit Verdict**: Verified by `tests/test_stage14_demo_safety.py` and active local server execution on port 7860. **PASS**.
+- **Audit limit**: `tests/test_stage14_demo_safety.py` covers local read-only behavior. A previously observed local server is not evidence of current deployment readiness.
 
 ---
 
 ### 2.7 Submission Deliverables & Documentation
 - Academic Technical Report: `docs/AtlasOps_Technical_Report.md`.
 - Submission Manifest: `artifacts/SUBMISSION_MANIFEST.json` and `artifacts/SUBMISSION_SUMMARY.md`.
-- Master Pipeline Certification: `docs/project/MASTER_PIPELINE_STATUS.md` (15/15 Gates PASS).
-- **Audit Verdict**: Verified by `tests/test_stage15_submission_package.py`. **PASS**.
+- Master Pipeline gate inventory: `docs/project/MASTER_PIPELINE_STATUS.md`
+  (several gates open; no 15/15 certification).
+- **Audit limit**: `tests/test_stage15_submission_package.py` verifies selected
+  asset hashes and truthful status inventory, not submission certification.
 
 ---
 
 ## 3. Makefile & CLI Target Verification
 
-All commands specified in the upstream README have been audited and verified:
+The following commands were listed by the historical audit. Their comments are
+not current execution evidence; several generate files, and no real benchmark,
+training, or deployment result follows from a successful exit code:
 
 ```bash
 # Cluster & Infrastructure Checks (Safe Dry-Run)
@@ -104,22 +129,26 @@ make infra-check PROJECT=test-proj          # PASS
 make teardown-check PROJECT=test-proj       # PASS
 
 # Benchmark Execution
-python -m bench.ablation_suite --mock       # PASS (Generates ablation matrix)
-python bench/runner.py                      # PASS (Benchmark harness)
+python -m bench.ablation_suite --mock       # Historical predetermined output only
+python -m bench.runner --model fixture --mock --adversarial 0  # NON_EMPIRICAL fixture
 
 # Recommender Systems Training
 python -m recommender.train_hybrid          # PASS (Trains & evaluates hybrid model)
 
 # Packaging & Release Gate
-python scripts/release_gate.py --strict     # PASS (docs/RELEASE_READINESS.md written)
-python -m scripts.package_submission        # PASS (artifacts/SUBMISSION_MANIFEST.json written)
+python scripts/release_gate.py --strict     # Historical artifact-only PASS was not certification
+python -m scripts.package_submission        # Emits a NOT_CERTIFIED asset inventory
 
 # Test Suite Execution
-pytest tests/ -v                            # PASS (796 tests passed)
+pytest tests/ -v                            # Historical test count; rerun against current code
 ```
 
 ---
 
 ## 4. Final Conclusion
 
-The AtlasOps project fork `virajchoudhary/AtlasOps` faithfully honors the upstream design, repository structure, and operational philosophy of `Harikishanth/AtlasOps` while completing the rigorous university continuation roadmap with complete scientific reproducibility, zero data leakage, and 100% CI pass.
+The fork preserves the upstream lineage and core architecture, with locally
+tested extensions. The August 31 claim of complete scientific reproducibility
+and roadmap closure is withdrawn. Complete the remaining empirical gates in
+the approved order, retain negative and mock classifications, and independently
+review the final evidence before any certification or submission claim.

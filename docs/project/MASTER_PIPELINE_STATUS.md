@@ -26,9 +26,12 @@ This governance document records the repository's alignment with the canonical e
 
 ---
 
-Reconciled on 2026-09-06 against main `fa2eed2bbb75eb81dedfecd6a80f3bc87915ee38`
-(including evidence recovery PR #58). This is a source/evidence review, not a new experiment,
-training run, service-health check, or re-execution of historical tests.
+The original evidence reconciliation was performed on 2026-09-06 against main
+`fa2eed2bbb75eb81dedfecd6a80f3bc87915ee38` (including evidence recovery
+PR #58). The software/status inventory was reviewed again against main
+`eeec29b775fe9c3b12a6900d4851151ca6b49a8f` on 2026-09-27, including
+the prospective v3.4 approval repair in PR #69. Neither review is a new
+experiment, training run, service-health check, or re-execution of historical tests.
 
 **State meanings:** PASS is limited to the evidence and scope stated below;
 NOT_PASSED records an unmet gate; REOPENED withdraws an unsupported previous PASS;
@@ -108,6 +111,11 @@ The research pipeline is not scientifically complete.
 - `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json` is the latest completed negative result among 009-014: `gate_g4_pass=false`, objective `env_resolved=false`, and incorrect adservice targeting instead of paymentservice.
 - Attempts 009 and 011-014 are interrupted/inconclusive, not successes. Cleanup for 012-014 failed with TLS timeouts; current cleanup state is unverified. Successful cleanup cannot retroactively establish agent resolution.
 - `artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md` indexes preserved outcomes. Attempt 010 records approval timeout alongside `8_approval_satisfied=true`; this is an inconsistency, not human approval evidence. Exhausting an attempt budget does not close G4.
+- The prospective [v3.4 approval channel](G4_PROTOCOL_V34_APPROVAL_CHANNEL.md)
+  repairs the host-process P1 callback and fail-closed external secret loading
+  in code. Its synthetic tests do not establish a real operator decision,
+  resolved environment, cleanup, or G4 PASS. A future attempt 015 requires a
+  fresh ignored-ledger and poison-latch check before any reservation.
 
 ### Gate G5: Scenario Truth and Benchmark Splits — [PASS]
 - `config/scenario_catalog.py`, `config/splits.py`, and `tests/test_stage5_scenario_splits_and_truth.py` define/check 28 frozen manifests, hashes, verifier coverage and disjoint Train(16)/Val(6)/Test(6) populations.

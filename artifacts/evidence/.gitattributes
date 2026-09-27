@@ -1,4 +1,14 @@
 # SETUP-03: preserve immutable recovered evidence bytes, including line endings.
+# Stable checkout EOL for tracked raw-byte package assets selected by Stage 15.
+stage3/acceptance_report.json text eol=crlf
+stage4/EXP-STAGE4-SF002-00[2-8]* text eol=crlf
+stage4/golden_incident_sf002_manifest.json text eol=crlf
+stage7/sft_corpus_manifest.json text eol=crlf
+stage7/sft_training_config.json text eol=crlf
+stage10/rs_baseline_eval.json text eol=crlf
+recovery/2026-09-05-workspace-recovery.json text eol=crlf
+
+# SETUP-03 froze attempts 009-014 as raw bytes; keep these rules unchanged.
 stage4/EXP-STAGE4-SF002-009.* -text
 stage4/EXP-STAGE4-SF002-010.* -text
 stage4/EXP-STAGE4-SF002-011.* -text

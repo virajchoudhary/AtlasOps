@@ -170,6 +170,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "artifacts/overnight_experiments/rs-20260924/interactions.manifest.json",
         "artifacts/evidence/stage13/ablation_benchmark_results.json",
         "agents/coordinator.py",
+        "agents/_http_retry.py",
         "agents/approval.py",
         "agents/grounding.py",
         "agents/judge.py",

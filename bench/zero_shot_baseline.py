@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -18,7 +19,9 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -26,7 +29,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from agents._http_retry import post_with_retry
+from agents._http_retry import ResponseBodyTooLargeError, post_with_retry
 from bench.runner import compute_summary, run_scenario
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
 from config.splits import (
@@ -50,10 +53,19 @@ SPLIT_SEEDS = {
     "test": TEST_SEED,
     "leaderboard": LEADERBOARD_SEED,
 }
+OLLAMA_IDENTITY_TIMEOUT_SECONDS = 10.0
+MAX_G6_INFERENCE_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class InferenceResult:
+    content: str
+    model_name: str
+
 
 InferenceCallable = Callable[
     [list[dict[str, str]], str, dict[str, Any]],
-    Awaitable[str],
+    Awaitable[str | InferenceResult],
 ]
 
 
@@ -166,6 +178,206 @@ def _sanitized_endpoint() -> str:
     return urlunsplit((parsed.scheme, hostname, parsed.path, "", ""))
 
 
+def _local_ollama_tags_url() -> str:
+    """Return the local Ollama tags URL without carrying endpoint credentials."""
+    raw = os.getenv("VLLM_BASE", "").strip()
+    if not raw:
+        raise RuntimeError("Empirical mode requires VLLM_BASE")
+    try:
+        parsed = urlsplit(raw)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise RuntimeError("VLLM_BASE is not a valid local Ollama endpoint") from None
+
+    if parsed.scheme.lower() not in {"http", "https"} or not host:
+        raise RuntimeError("VLLM_BASE must point to a local Ollama endpoint")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RuntimeError("VLLM_BASE must not contain URL credentials, query, or fragment")
+    if parsed.path.rstrip("/") not in {"", "/v1"}:
+        raise RuntimeError("VLLM_BASE must use the OpenAI-compatible /v1 base path")
+
+    normalized_host = host.lower()
+    try:
+        is_local = (
+            normalized_host == "localhost" or ipaddress.ip_address(normalized_host).is_loopback
+        )
+    except ValueError:
+        is_local = normalized_host == "localhost"
+    if not is_local:
+        raise RuntimeError("G6 empirical inference requires a loopback local Ollama endpoint")
+
+    authority = f"[{normalized_host}]" if ":" in normalized_host else normalized_host
+    if port is not None:
+        authority = f"{authority}:{port}"
+    return urlunsplit((parsed.scheme.lower(), authority, "/api/tags", "", ""))
+
+
+def _normalize_sha256_digest(value: Any, label: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a string")
+    match = re.fullmatch(
+        r"(?:sha256:)?([0-9a-f]{64})",
+        value.strip(),
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        raise RuntimeError(f"{label} must be a 64-hex SHA-256 digest")
+    return match.group(1).lower()
+
+
+def _normalize_observed_model_identity(identity: Any) -> dict[str, str]:
+    if not isinstance(identity, dict):
+        raise TypeError("Local Ollama identity response must be a JSON object")
+    name = identity.get("name")
+    if not isinstance(name, str) or not name:
+        raise RuntimeError("Local Ollama identity response has no model name")
+    return {
+        "provider": "ollama-local",
+        "name": name,
+        "digest": _normalize_sha256_digest(
+            identity.get("digest"),
+            "Local Ollama model digest",
+        ),
+    }
+
+
+async def observe_local_model_identity(model_name: str) -> dict[str, str]:
+    """Read the exact requested model's normalized SHA-256 identity from Ollama."""
+    tags_url = _local_ollama_tags_url()
+    try:
+        async with httpx.AsyncClient(
+            timeout=OLLAMA_IDENTITY_TIMEOUT_SECONDS,
+            trust_env=False,
+        ) as client:
+            response = await client.get(tags_url)
+            if not 200 <= response.status_code < 300:
+                raise RuntimeError(
+                    f"Local Ollama identity endpoint returned HTTP {response.status_code}"
+                )
+            payload = response.json()
+    except RuntimeError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Unable to read local Ollama model identity ({type(exc).__name__})"
+        ) from None
+
+    if not isinstance(payload, dict):
+        raise TypeError("Local Ollama /api/tags response must be a JSON object")
+    models = payload.get("models")
+    if not isinstance(models, list):
+        raise TypeError("Local Ollama /api/tags models field must be a list")
+
+    matching = [
+        item for item in models if isinstance(item, dict) and item.get("name") == model_name
+    ]
+    if not matching:
+        raise RuntimeError("Requested model name is not installed in local Ollama")
+    if len(matching) != 1:
+        raise RuntimeError("Requested model name is ambiguous in local Ollama")
+    return _normalize_observed_model_identity(matching[0])
+
+
+def _requested_model_revision_digest(model_revision: str) -> str:
+    try:
+        return _normalize_sha256_digest(model_revision, "model_revision")
+    except RuntimeError:
+        raise ValueError("model_revision must be a 64-hex SHA-256 digest") from None
+
+
+def _verify_requested_model_identity(
+    identity: dict[str, str],
+    model_name: str,
+    model_revision_digest: str,
+) -> None:
+    if identity["name"] != model_name:
+        raise RuntimeError("Observed local Ollama model name does not match requested model")
+    if identity["digest"] != model_revision_digest:
+        raise RuntimeError(
+            "Observed local Ollama model digest does not match explicit model revision"
+        )
+
+
+def _response_error_fingerprint(response: httpx.Response) -> dict[str, Any]:
+    body = response.content
+    media_type = response.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
+    body_format = (
+        "json" if media_type == "application/json" or media_type.endswith("+json") else "other"
+    )
+    return {
+        "status_code": response.status_code,
+        "body_format": body_format,
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "body_byte_length": len(body),
+    }
+
+
+class InferenceResponseError(RuntimeError):
+    """Bounded error metadata without retaining arbitrary response content."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str,
+        response: httpx.Response | None = None,
+        response_body_too_large: ResponseBodyTooLargeError | None = None,
+        response_model_name_verified: bool | None = None,
+    ) -> None:
+        super().__init__(message)
+        if response is not None:
+            response_fingerprint = _response_error_fingerprint(response)
+        elif response_body_too_large is not None:
+            response_fingerprint = {
+                "status_code": response_body_too_large.status_code,
+                "body_format": "other",
+                "body_sha256": response_body_too_large.body_prefix_sha256,
+                "body_byte_length": response_body_too_large.body_bytes_read,
+                "body_truncated": True,
+                "body_limit_bytes": response_body_too_large.limit_bytes,
+            }
+        else:
+            raise ValueError("Inference response error requires bounded response evidence")
+        self.response_error = {
+            "kind": kind,
+            **response_fingerprint,
+        }
+        self.response_model_name_verified = response_model_name_verified
+
+
+def _sanitized_inference_error(exc: Exception) -> str:
+    if isinstance(exc, InferenceResponseError):
+        kind = exc.response_error.get("kind")
+        if kind not in {
+            "empty_completion_content",
+            "http_status_error",
+            "invalid_json",
+            "invalid_response_shape",
+            "missing_completion_content",
+            "missing_model_name",
+            "response_body_too_large",
+            "response_model_name_mismatch",
+        }:
+            kind = "response_error"
+        return f"InferenceResponseError: {kind}"
+    if isinstance(exc, httpx.TimeoutException):
+        return "TimeoutError: transport_timeout; details redacted"
+    if isinstance(exc, httpx.ConnectError):
+        return "ConnectError: transport_connection_failure; details redacted"
+    if isinstance(exc, httpx.HTTPError):
+        return "HTTPError: transport_failure; details redacted"
+    if isinstance(exc, json.JSONDecodeError):
+        return "JSONDecodeError: invalid_json; details redacted"
+    if isinstance(exc, TypeError):
+        return "TypeError: invalid_response; details redacted"
+    if isinstance(exc, ValueError):
+        return "ValueError: invalid_response; details redacted"
+    if isinstance(exc, RuntimeError):
+        return "RuntimeError: inference_failure; details redacted"
+    return "Exception: inference_failure; details redacted"
+
+
 def _parse_prediction(raw_text: str) -> dict[str, Any]:
     text = raw_text.strip()
     if text.startswith("```"):
@@ -191,14 +403,16 @@ async def openai_compatible_inference(
     messages: list[dict[str, str]],
     model_name: str,
     generation_config: dict[str, Any],
-) -> str:
-    """Call a configured OpenAI-compatible endpoint with no local fallback."""
+) -> InferenceResult:
+    """Call local Ollama's OpenAI-compatible endpoint with no fallback."""
     base_url = os.getenv("VLLM_BASE", "").strip().rstrip("/")
     if not base_url:
         raise RuntimeError("Empirical mode requires VLLM_BASE")
 
     api_key = os.getenv("LLM_API_KEY", "").strip()
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = {"Accept-Encoding": "identity"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     payload = {
         "model": model_name,
         "messages": messages,
@@ -207,23 +421,77 @@ async def openai_compatible_inference(
         "max_tokens": generation_config["max_tokens"],
         "seed": generation_config["seed"],
     }
-    async with httpx.AsyncClient(headers=headers, timeout=generation_config["timeout_seconds"]) as client:
-        response = await post_with_retry(
-            client,
-            f"{base_url}/chat/completions",
-            payload,
-            context="g6-zero-shot",
+    async with httpx.AsyncClient(
+        headers=headers,
+        timeout=generation_config["timeout_seconds"],
+        trust_env=False,
+    ) as client:
+        try:
+            response = await post_with_retry(
+                client,
+                f"{base_url}/chat/completions",
+                payload,
+                context="g6-zero-shot",
+                max_response_bytes=MAX_G6_INFERENCE_RESPONSE_BYTES,
+            )
+        except ResponseBodyTooLargeError as exc:
+            raise InferenceResponseError(
+                "OpenAI-compatible inference response exceeded configured size limit",
+                kind="response_body_too_large",
+                response_body_too_large=exc,
+            ) from None
+    if not response.is_success:
+        raise InferenceResponseError(
+            f"OpenAI-compatible inference returned HTTP {response.status_code}",
+            kind="http_status_error",
+            response=response,
         )
-        response.raise_for_status()
+    try:
         body = response.json()
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response is not valid JSON",
+            kind="invalid_json",
+            response=response,
+        ) from exc
+
+    if not isinstance(body, dict):
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response is not a JSON object",
+            kind="invalid_response_shape",
+            response=response,
+        )
+    served_model = body.get("model")
+    if not isinstance(served_model, str) or not served_model.strip():
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response lacks a model name",
+            kind="missing_model_name",
+            response=response,
+            response_model_name_verified=False,
+        )
+    if served_model != model_name:
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response model does not match requested model",
+            kind="response_model_name_mismatch",
+            response=response,
+            response_model_name_verified=False,
+        )
 
     try:
         content = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError("Model response lacks choices[0].message.content") from exc
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response lacks choices[0].message.content",
+            kind="missing_completion_content",
+            response=response,
+        ) from exc
     if not isinstance(content, str) or not content.strip():
-        raise ValueError("Model response content is empty")
-    return content
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response content is empty",
+            kind="empty_completion_content",
+            response=response,
+        )
+    return InferenceResult(content=content, model_name=served_model)
 
 
 def _resolve_mode(mode: str | None, mock: bool | None) -> Literal["mock", "empirical"]:
@@ -243,7 +511,7 @@ async def _evaluate_empirical_episode(
     generation_config: dict[str, Any],
     inference_fn: InferenceCallable,
     inference_backend: str,
-    empirical_claim_allowed: bool,
+    observed_model_identity: dict[str, str] | None,
 ) -> dict[str, Any]:
     meta = SCENARIO_CATALOG[scenario_id]
     public_input = build_public_incident_input(meta)
@@ -251,8 +519,20 @@ async def _evaluate_empirical_episode(
     started_at = datetime.now(UTC).isoformat()
 
     raw_text = ""
+    response_model_name: str | None = None
+    response_model_name_verified: bool | None = None
+    response_error: dict[str, Any] | None = None
     try:
-        raw_text = await inference_fn(messages, model_name, generation_config)
+        inference_result = await inference_fn(messages, model_name, generation_config)
+        if isinstance(inference_result, InferenceResult):
+            if inference_result.model_name != model_name:
+                response_model_name_verified = False
+                raise RuntimeError("Inference response model name does not match requested model")
+            raw_text = inference_result.content
+            response_model_name = inference_result.model_name
+            response_model_name_verified = True
+        else:
+            raw_text = inference_result
         prediction = _parse_prediction(raw_text)
         diagnostic_metrics = compute_diagnostic_f1(
             str(prediction["root_cause"]),
@@ -265,7 +545,10 @@ async def _evaluate_empirical_episode(
         prediction = None
         diagnostic_metrics = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
         status = "error"
-        error = f"{type(exc).__name__}: {exc}"
+        if isinstance(exc, InferenceResponseError):
+            response_error = exc.response_error
+            response_model_name_verified = exc.response_model_name_verified
+        error = _sanitized_inference_error(exc)
 
     episode = {
         "scenario_id": scenario_id,
@@ -273,8 +556,13 @@ async def _evaluate_empirical_episode(
         "status": status,
         "evaluation_mode": "empirical",
         "empirical_inference_executed": status == "ok",
-        "empirical_claim_allowed": empirical_claim_allowed and status == "ok",
+        "empirical_claim_allowed": False,
         "inference_backend": inference_backend,
+        "observed_model_identity": observed_model_identity,
+        "model_identity_attestation_status": "pending",
+        "response_model_name": response_model_name,
+        "response_model_name_verified": response_model_name_verified,
+        "inference_response_error": response_error,
         "request_messages": messages,
         "public_input": public_input,
         "raw_model_response": raw_text,
@@ -295,6 +583,36 @@ async def _evaluate_empirical_episode(
     if error is not None:
         episode["error"] = error
     return episode
+
+
+def _write_episode_rows_atomically(
+    episodes_file: Path,
+    episodes: list[dict[str, Any]],
+) -> None:
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=episodes_file.parent,
+            prefix=f".{episodes_file.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary_path = Path(stream.name)
+            for episode in episodes:
+                stream.write(json.dumps(episode, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, episodes_file)
+    except Exception:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
 
 
 async def evaluate_zero_shot_split(
@@ -333,6 +651,18 @@ async def evaluate_zero_shot_split(
         and not os.getenv("VLLM_BASE", "").strip()
     ):
         raise RuntimeError("Empirical mode requires VLLM_BASE")
+    model_revision_digest: str | None = None
+    observed_model_identity: dict[str, str] | None = None
+    if selected_mode == "empirical" and configured_backend:
+        model_revision_digest = _requested_model_revision_digest(model_revision)
+        observed_model_identity = _normalize_observed_model_identity(
+            await observe_local_model_identity(model_name)
+        )
+        _verify_requested_model_identity(
+            observed_model_identity,
+            model_name,
+            model_revision_digest,
+        )
 
     split_seed = SPLIT_SEEDS[split_name]
     generation_config = {
@@ -392,11 +722,65 @@ async def evaluate_zero_shot_split(
                     generation_config,
                     inference_fn,
                     selected_backend,
-                    configured_backend,
+                    observed_model_identity,
                 )
             episodes.append(episode)
             stream.write(json.dumps(episode, sort_keys=True) + "\n")
             stream.flush()
+
+    if selected_mode == "empirical" and configured_backend:
+        observed_after: dict[str, str] | None = None
+        attestation_error: str | None = None
+        identity_observations_match: bool | None = None
+        try:
+            observed_after = _normalize_observed_model_identity(
+                await observe_local_model_identity(model_name)
+            )
+            identity_observations_match = observed_after == observed_model_identity
+            recheck_status = (
+                "observations_match" if identity_observations_match else "identity_changed"
+            )
+            if not identity_observations_match:
+                attestation_error = "Local Ollama model identity changed during evaluation"
+        except Exception as exc:  # noqa: BLE001
+            recheck_status = "unverifiable"
+            attestation_error = f"{type(exc).__name__}: local Ollama model identity recheck failed"
+
+        model_identity_attestation = {
+            "provider": "ollama-local",
+            "requested_name": model_name,
+            "requested_revision_sha256": model_revision_digest,
+            "observed_before": observed_model_identity,
+            "observed_after": observed_after,
+            "status": "alias_observed_not_immutable",
+            "recheck_status": recheck_status,
+            "observations_match": identity_observations_match,
+            "response_model_names": [episode["response_model_name"] for episode in episodes],
+            "immutable_serving_attestation": False,
+            "claimable": False,
+            "limitation": (
+                "Mutable Ollama tags and response model names do not bind the served "
+                "digest to each generation."
+            ),
+            "error": attestation_error,
+        }
+        for episode in episodes:
+            episode["model_identity_attestation_status"] = "alias_observed_not_immutable"
+            episode["model_identity_recheck_status"] = recheck_status
+            episode["empirical_claim_allowed"] = False
+    else:
+        model_identity_attestation = {
+            "status": "not_applicable",
+            "reason": "mock_mode" if selected_mode == "mock" else "injected_test_double",
+            "claimable": False,
+        }
+        if selected_mode == "empirical":
+            for episode in episodes:
+                episode["model_identity_attestation_status"] = "not_applicable"
+                episode["model_identity_recheck_status"] = "not_applicable"
+
+    if selected_mode == "empirical":
+        _write_episode_rows_atomically(episodes_file, episodes)
 
     summary = compute_summary(episodes, tag=tag, model=model_name)
     valid = [episode for episode in episodes if episode.get("status") == "ok"]
@@ -412,12 +796,8 @@ async def evaluate_zero_shot_split(
             and len(valid) == len(episodes)
             and bool(episodes)
         ),
-        "empirical_claim_allowed": (
-            selected_mode == "empirical"
-            and configured_backend
-            and len(valid) == len(episodes)
-            and bool(episodes)
-        ),
+        "empirical_claim_allowed": False,
+        "model_identity_attestation": model_identity_attestation,
         "environment_resolution_evaluated": False,
         "resolution_rate": summary["resolution_rate"] if selected_mode == "mock" else None,
         "failed_scenarios": len(episodes) - len(valid),

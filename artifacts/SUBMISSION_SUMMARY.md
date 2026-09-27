@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-27T17:13:16.931920+00:00`
+- **Generated**: `2026-09-27T17:27:12.897413+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -132,7 +132,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/chaos_manifests/single_fault/sf-008.yaml` | `41d3f6d2ed0278bb...` | 388 |
 | `bench/grpo_eval.py` | `8c6aa528de0289b3...` | 50036 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
-| `bench/sft_eval.py` | `4e13d1aa99c62031...` | 23096 |
+| `bench/sft_eval.py` | `f6b12f8eb75b88af...` | 25633 |
 | `bench/zero_shot_baseline.py` | `0fd29bd11f415b3c...` | 35215 |
 | `config/g4_protocol.py` | `067d7e1bb04a75f6...` | 20851 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
@@ -157,8 +157,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `c226e170dc119c75...` | 3958 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6e9eec0d90f873d1...` | 3715 |
-| `docs/project/STAGE_8_SFT_EVALUATION.md` | `79f294072981a62f...` | 1690 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6b648f935a3cf168...` | 4552 |
+| `docs/project/STAGE_8_SFT_EVALUATION.md` | `06289e0ec3b252e0...` | 2809 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `45e5249fd5284dd8...` | 3595 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
@@ -204,7 +204,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g4_runtime_context_remediation_loop.py` | `79debd0c2024bea2...` | 22071 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `7ddb615759077b9d...` | 24092 |
 | `tests/test_g6_empirical_contract.py` | `a1c4b822a9bf80ea...` | 29670 |
-| `tests/test_g8_empirical_contract.py` | `647c06dd2576eca8...` | 9019 |
+| `tests/test_g8_empirical_contract.py` | `2f358c8dd141fdab...` | 22972 |
 | `tests/test_g9_direct_policy_environment.py` | `566f8bd0ef2369a8...` | 14668 |
 | `tests/test_g9_empirical_contract.py` | `e1c992af32a1e52e...` | 16217 |
 | `tests/test_grpo_training_provenance.py` | `e1fa1f80465ce5b5...` | 8849 |
@@ -226,7 +226,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `fcc4bd53b53598df...` | 10382 |
-| `tests/test_sft_training_provenance.py` | `8205531eeb4bff78...` | 7365 |
+| `tests/test_sft_training_provenance.py` | `d7eabf4fd11265be...` | 13610 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
@@ -243,21 +243,21 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage4_telemetry_readiness.py` | `05e4114535263220...` | 15676 |
 | `tests/test_stage5_scenario_splits_and_truth.py` | `af7025be02ca7b27...` | 5364 |
 | `tests/test_stage6_zero_shot_baseline.py` | `483ea70196282110...` | 6032 |
-| `tests/test_stage7_sft_pipeline.py` | `5265a4a1bc235d4b...` | 8151 |
-| `tests/test_stage8_sft_eval.py` | `24c8786bda4aba1c...` | 4007 |
+| `tests/test_stage7_sft_pipeline.py` | `f5589d2ca93f37d6...` | 17406 |
+| `tests/test_stage8_sft_eval.py` | `6bd4b848ad48ce2a...` | 4287 |
 | `tests/test_stage9_grpo_pipeline.py` | `5a8ccf28e799ce6d...` | 4777 |
 | `tests/test_tool_policy_contract.py` | `15f377b269d769da...` | 5022 |
 | `tests/test_tools.py` | `ae53aff75ba44b80...` | 15558 |
 | `tests/test_ui_read_model.py` | `1942099a2975dd69...` | 3093 |
 | `tests/test_verifier.py` | `42820832c21e6f93...` | 27740 |
-| `training/build_sft_dataset.py` | `b3399a94654cacb2...` | 10765 |
+| `training/build_sft_dataset.py` | `237323d639d21a7b...` | 14343 |
 | `training/generate_trajectories.py` | `490b20a96c1501a8...` | 5498 |
 | `training/generate_trajectories_fast.py` | `773885747caed336...` | 411 |
 | `training/grpo.py` | `1040ef5f92e3bca9...` | 27747 |
 | `training/grpo_environment.py` | `51dec0f0383268a3...` | 10583 |
 | `training/grpo_provenance.py` | `c63871f5d484201e...` | 6851 |
 | `training/sft.py` | `29ff6fa2ae27ec89...` | 9091 |
-| `training/sft_provenance.py` | `30981f180779bd04...` | 10157 |
+| `training/sft_provenance.py` | `db9cbb6a18bc8be5...` | 24681 |
 | `training/sft_rendering.py` | `dd036d8ca715065e...` | 10109 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |
 | `ui_read_model.py` | `859db572c2706d7d...` | 10012 |

@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-27T15:44:51.898382+00:00`
+- **Generated**: `2026-09-27T16:16:01.704425+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -169,7 +169,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
 | `scripts/package_submission.py` | `19a86bfd1768596d...` | 12247 |
-| `scripts/release_gate.py` | `5355b14374c0b6cb...` | 7639 |
+| `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `534781631814e86a...` | 11177 |
 | `scripts/run_stage4_golden_incident.py` | `15194c94c0820560...` | 85332 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
@@ -215,6 +215,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
+| `tests/test_release_gate.py` | `a48495a595203612...` | 12372 |
 | `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |
 | `tests/test_rs_runtime_query_isolation.py` | `6697c24640643f9e...` | 1945 |

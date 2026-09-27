@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-27T16:16:01.704425+00:00",
+  "generated_at": "2026-09-27T17:13:16.931920+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,11 +31,11 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 226,
+  "asset_count": 227,
   "assets": {
     "AGENTS.md": {
-      "sha256": "a1eed5d56ee858ddd27770fcd449009a56032efe219e73c9789837f9a0955106",
-      "size_bytes": 5967
+      "sha256": "6c3eefb051f5c3e691db238c3c78754de8a6430cc33a0a9c26fe78f75758c3e8",
+      "size_bytes": 6096
     },
     ".gitattributes": {
       "sha256": "2db7d7edd61c5b616c5ddc41341e00bc1b5708a27d69ec220bf6f87a47b6c795",
@@ -50,8 +50,8 @@
       "size_bytes": 4129
     },
     "README.md": {
-      "sha256": "793d45179291d3096d248b81ddf04da91b3c8318d60f69652093a6ba6f87981c",
-      "size_bytes": 21520
+      "sha256": "e9947f682f3c9060cb4c0764fe2688adf77c353915f04f65736ea7c41b634c19",
+      "size_bytes": 22991
     },
     "app.py": {
       "sha256": "d17466d5be9a530076c4d88fa39aa668e9582a1f045d799591eecf415a5be57b",
@@ -94,12 +94,12 @@
       "size_bytes": 4419
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "7450a39b4240683d113c5b225c481dee5e0b9ef3969789a4ed00d06ae4152060",
-      "size_bytes": 25551
+      "sha256": "e6ee5dacc9679120d344c18edceec1d2716900004b7fbd0094eef52dfbfbd6cb",
+      "size_bytes": 26128
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
-      "sha256": "eaf66eb8a80cf109ff4f15853e95493e9585c58978ca37c2f097fa36e1d639b6",
-      "size_bytes": 8574
+      "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
+      "size_bytes": 10277
     },
     "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
       "sha256": "3a31a019bb01239225168e6ed1925499cf689f05b7c7344cf2106af46ad576b5",
@@ -704,6 +704,10 @@
     "tests/test_circuit_breaker.py": {
       "sha256": "eb4f927ce31ffe65ab6c12cbf8a65541043cd6cea3b829d7b9e9859e62151272",
       "size_bytes": 4714
+    },
+    "tests/test_claim_integrity.py": {
+      "sha256": "08610d37d555c651abfcaf259289bc9bcf542d32e1d4528cf554085dbb5cb658",
+      "size_bytes": 1778
     },
     "tests/test_coordinator.py": {
       "sha256": "e82e21b5326ca7f3cbc73b5cedc14838a306894061a3d576f5b116429f7c9f34",

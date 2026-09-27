@@ -20,10 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from bench.runner import compute_summary
-from bench.zero_shot_baseline import compute_diagnostic_f1
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
 from config.splits import LEADERBOARD_SEED, TEST_SEED, TRAIN_SPLIT, VAL_SEED, get_split
+from training.sft_provenance import (
+    MAX_VERIFIED_SFT_CORPUS_BYTES,
+    normalize_training_data_provenance,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("sft_eval")
@@ -43,6 +45,34 @@ InferenceCallable = Callable[
     [list[dict[str, str]], str, Path, dict[str, Any]],
     Awaitable[str],
 ]
+
+
+def _compute_summary(results: list[dict[str, Any]], tag: str, model: str) -> dict[str, Any]:
+    from bench.runner import compute_summary
+
+    return compute_summary(results, tag=tag, model=model)
+
+
+def _compute_diagnostic_f1(predicted: str, ground_truth: str) -> dict[str, float]:
+    from bench.zero_shot_baseline import compute_diagnostic_f1
+
+    return compute_diagnostic_f1(predicted, ground_truth)
+
+
+def _safe_exception_category(exc: Exception) -> str:
+    if isinstance(exc, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, TypeError):
+        return "type_error"
+    if isinstance(exc, ValueError):
+        return "invalid_value"
+    if isinstance(exc, OSError):
+        return "io_error"
+    if isinstance(exc, RuntimeError):
+        return "runtime_error"
+    return "inference_error"
 
 
 def _file_sha256(path: Path) -> str:
@@ -138,7 +168,11 @@ def _parse_prediction(raw_text: str) -> dict[str, Any]:
     return prediction
 
 
-def _load_checkpoint_manifest(checkpoint: Path) -> tuple[dict[str, Any], str]:
+def _load_checkpoint_manifest(
+    checkpoint: Path,
+    *,
+    approved_corpus_path: Path | None = None,
+) -> tuple[dict[str, Any], str]:
     manifest_path = checkpoint / "sft_run_manifest.json"
     if manifest_path.is_symlink():
         raise ValueError("Checkpoint provenance manifest must not be a symlink")
@@ -163,6 +197,11 @@ def _load_checkpoint_manifest(checkpoint: Path) -> tuple[dict[str, Any], str]:
     dataset = manifest.get("dataset")
     if not isinstance(dataset, dict) or dataset.get("split") != "train":
         raise ValueError("Checkpoint provenance must identify the frozen Train split")
+    dataset = normalize_training_data_provenance(
+        dataset,
+        approved_corpus_path=approved_corpus_path,
+    )
+    manifest["dataset"] = dataset
     expected_train_hash = _canonical_json_sha256(list(TRAIN_SPLIT))
     if dataset.get("split_sha256") != expected_train_hash:
         raise ValueError("Checkpoint provenance Train split differs from the frozen split")
@@ -319,7 +358,7 @@ def evaluate_sft_mock_episode(scenario_id: str, model_name: str) -> dict[str, An
     expected_root = meta.expected_root_cause if meta else "pod failure"
     target_svc = meta.target_services[0] if meta and meta.target_services else "frontend"
     predicted = f"Root cause identified: {expected_root} causing errors on {target_svc}."
-    diagnostic = compute_diagnostic_f1(predicted, expected_root)
+    diagnostic = _compute_diagnostic_f1(predicted, expected_root)
     is_resolved = sum(ord(char) for char in scenario_id) % 3 != 0
     ttr = 32.0 if is_resolved else 55.0
     reward = {
@@ -365,6 +404,7 @@ async def evaluate_sft_split(
     mode: str | None = None,
     mock: bool | None = None,
     checkpoint: Path | None = None,
+    approved_corpus_path: Path | None = None,
     output_dir: Path | None = None,
     inference_fn: InferenceCallable | None = None,
     temperature: float = 0.0,
@@ -383,7 +423,10 @@ async def evaluate_sft_split(
         if checkpoint is None:
             raise ValueError("Empirical mode requires an explicit checkpoint")
         checkpoint = checkpoint.resolve()
-        manifest, manifest_hash = _load_checkpoint_manifest(checkpoint)
+        manifest, manifest_hash = _load_checkpoint_manifest(
+            checkpoint,
+            approved_corpus_path=approved_corpus_path,
+        )
         if configured_backend:
             inference_fn = LocalSFTInference(manifest)
 
@@ -411,6 +454,7 @@ async def evaluate_sft_split(
                 public_input = _public_input(meta)
                 request_messages = _messages(public_input)
                 raw_text = ""
+                error_category = None
                 try:
                     raw_text = await inference_fn(
                         request_messages,
@@ -419,17 +463,16 @@ async def evaluate_sft_split(
                         generation_config,
                     )
                     prediction = _parse_prediction(raw_text)
-                    diagnostic = compute_diagnostic_f1(
+                    diagnostic = _compute_diagnostic_f1(
                         str(prediction["root_cause"]),
                         meta.expected_root_cause,
                     )
                     status = "ok"
-                    error = None
                 except Exception as exc:  # noqa: BLE001
                     prediction = None
                     diagnostic = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
                     status = "error"
-                    error = f"{type(exc).__name__}: {exc}"
+                    error_category = _safe_exception_category(exc)
                 episode = {
                     "scenario_id": scenario_id,
                     "tier": meta.tier,
@@ -451,13 +494,14 @@ async def evaluate_sft_split(
                     "resolved": None,
                     "time_to_resolve_s": None,
                 }
-                if error is not None:
-                    episode["error"] = error
+                if error_category is not None:
+                    episode["error_category"] = error_category
+                    episode["error"] = f"{error_category}: inference failed"
             results.append(episode)
             stream.write(json.dumps(episode, sort_keys=True) + "\n")
 
     tag = f"sft-{split_name}-{model_name.replace(':', '-').replace('/', '-')}"
-    summary = compute_summary(results, tag=tag, model=model_name)
+    summary = _compute_summary(results, tag=tag, model=model_name)
     valid = [row for row in results if row.get("status") == "ok"]
     summary.update(
         {
@@ -504,6 +548,22 @@ async def evaluate_sft_split(
             ),
             "base_model": manifest["base_model"] if manifest else None,
             "training_source": manifest.get("source") if manifest else None,
+            "training_data_provenance": (
+                {
+                    "data_origin": manifest["dataset"]["data_origin"],
+                    "synthetic": manifest["dataset"]["synthetic"],
+                    "data_origin_source": manifest["dataset"]["data_origin_source"],
+                    "corpus_manifest": manifest["dataset"]["corpus_manifest"],
+                    "corpus_sha256_canonical_lf": manifest["dataset"].get(
+                        "corpus_sha256_canonical_lf"
+                    ),
+                    "split": manifest["dataset"].get("split"),
+                    "total_examples": manifest["dataset"].get("total_examples"),
+                    "total_scenarios": manifest["dataset"].get("total_scenarios"),
+                }
+                if manifest
+                else None
+            ),
             "evaluator_source": _source_provenance(),
             "generation_config": generation_config,
             "truth_withheld_during_inference": True,
@@ -555,6 +615,14 @@ def main() -> None:
     parser.add_argument("--split", default="val", choices=["val", "test", "leaderboard"])
     parser.add_argument("--model", default="qwen2.5:7b-instruct-sft")
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--approved-corpus-path",
+        type=Path,
+        help=(
+            "Explicitly approve this exact local SFT corpus path for G8 provenance "
+            f"verification (maximum {MAX_VERIFIED_SFT_CORPUS_BYTES // (1024 * 1024)} MiB)"
+        ),
+    )
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--mock", action="store_true", help="Run NON_EMPIRICAL test mode")
     modes.add_argument("--empirical", action="store_true", help="Load and evaluate the checkpoint")
@@ -567,6 +635,7 @@ def main() -> None:
             model_name=args.model,
             mode="empirical" if args.empirical else "mock",
             checkpoint=args.checkpoint,
+            approved_corpus_path=args.approved_corpus_path,
             output_dir=args.output,
         )
     )

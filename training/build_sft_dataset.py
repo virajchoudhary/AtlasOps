@@ -11,13 +11,16 @@ import argparse
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
+from config.splits import TEST_SPLIT, VAL_SPLIT, get_split
 from training.generate_trajectories import SFT_EXAMPLE_FORMAT, trajectory_to_sft_examples
 from training.sft_rendering import prepare_example_for_training, render_messages
+from training.sft_provenance import has_redirecting_path_component
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("build_sft_dataset")
@@ -138,6 +141,60 @@ def create_expert_trajectory(scenario_id: str, meta: ScenarioMetadata) -> dict[s
     return incident
 
 
+def _validate_generated_paths(out_file: Path, canonical_file: Path) -> None:
+    evidence_dir = EVIDENCE_DIR.resolve()
+    is_canonical = out_file.resolve() == canonical_file.resolve()
+    if not is_canonical and out_file.resolve().is_relative_to(evidence_dir):
+        raise ValueError("Custom corpus output cannot be inside canonical Stage 7 evidence")
+
+    for path in (
+        out_file,
+        out_file.parent / "sft_corpus_manifest.json",
+        out_file.parent / "sft_training_config.json",
+    ):
+        if has_redirecting_path_component(path):
+            raise ValueError(
+                f"Generated corpus output cannot use a symlink, junction, or hard link: {path}"
+            )
+        if path.resolve().is_relative_to(evidence_dir):
+            raise ValueError(
+                f"Generated corpus output cannot target canonical Stage 7 evidence: {path}"
+            )
+
+
+def _validate_generated_parents(paths: tuple[Path, ...]) -> None:
+    evidence_dir = EVIDENCE_DIR.resolve()
+    for path in paths:
+        if has_redirecting_path_component(path.parent):
+            raise ValueError(f"Generated corpus parent path was redirected: {path.parent}")
+        if path.parent.resolve().is_relative_to(evidence_dir):
+            raise ValueError(
+                f"Generated corpus output cannot target canonical Stage 7 evidence: {path}"
+            )
+
+
+def _stage_text_output(
+    destination: Path,
+    content: str,
+    staged_paths: list[Path],
+) -> Path:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        newline=None,
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        staged_path = Path(stream.name)
+        staged_paths.append(staged_path)
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return staged_path
+
+
 def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, Any]]:
     """Generate the complete SFT training corpus strictly bounded to TRAIN_SPLIT."""
     train_ids = get_split("train")
@@ -153,12 +210,11 @@ def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, A
 
     canonical_file = DATA_DIR / "sft_corpus_train.jsonl"
     out_file = output_path or canonical_file
-    is_canonical = out_file.resolve() == canonical_file.resolve()
-    if not is_canonical and out_file.resolve().is_relative_to(EVIDENCE_DIR.resolve()):
-        raise ValueError("Custom corpus output cannot be inside canonical Stage 7 evidence")
-    evidence_dir = EVIDENCE_DIR if is_canonical else out_file.parent
+    manifest_path = out_file.parent / "sft_corpus_manifest.json"
+    config_path = out_file.parent / "sft_training_config.json"
+    _validate_generated_paths(out_file, canonical_file)
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    evidence_dir.mkdir(parents=True, exist_ok=True)
+    _validate_generated_paths(out_file, canonical_file)
 
     examples: list[dict[str, Any]] = []
     judge_score = {"correctness": 1.0, "efficiency": 0.95, "reasoning": 0.95, "red_herring_handling": 1.0, "overall": 0.98, "critique": "Optimal SRE execution."}
@@ -166,73 +222,132 @@ def build_sft_corpus(output_path: Path | None = None) -> tuple[Path, dict[str, A
 
     log.info("Building SFT training corpus for %d scenarios in TRAIN_SPLIT...", len(train_ids))
 
-    with out_file.open("w", encoding="utf-8") as f:
-        for sid in train_ids:
-            meta = SCENARIO_CATALOG[sid]
-            incident = create_expert_trajectory(sid, meta)
-            sft_examples = trajectory_to_sft_examples(sid, meta.tier, incident, judge_score, reward_contract)
-            
-            for ex in sft_examples:
-                # Validate Qwen2.5 template renderability
-                prepared = prepare_example_for_training(ex)
-                rendered_text, gen_spans = render_messages(
-                    prepared["messages"], tools=prepared["tools"], track_generation=True
+    generated_paths = (out_file, manifest_path, config_path)
+    staged_paths: list[Path] = []
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline=None,
+            dir=out_file.parent,
+            prefix=f".{out_file.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as corpus_stream:
+            corpus_temp_path = Path(corpus_stream.name)
+            staged_paths.append(corpus_temp_path)
+            for sid in train_ids:
+                meta = SCENARIO_CATALOG[sid]
+                incident = create_expert_trajectory(sid, meta)
+                sft_examples = trajectory_to_sft_examples(
+                    sid,
+                    meta.tier,
+                    incident,
+                    judge_score,
+                    reward_contract,
                 )
-                assert rendered_text, f"Template rendering failed for {ex['scenario_id']} role={ex['role']}"
-                assert len(gen_spans) > 0, f"No generation spans found for {ex['scenario_id']} role={ex['role']}"
 
-                f.write(json.dumps(ex) + "\n")
-                examples.append(ex)
+                for ex in sft_examples:
+                    prepared = prepare_example_for_training(ex)
+                    rendered_text, gen_spans = render_messages(
+                        prepared["messages"],
+                        tools=prepared["tools"],
+                        track_generation=True,
+                    )
+                    assert rendered_text, (
+                        f"Template rendering failed for {ex['scenario_id']} role={ex['role']}"
+                    )
+                    assert len(gen_spans) > 0, (
+                        f"No generation spans found for {ex['scenario_id']} role={ex['role']}"
+                    )
+                    corpus_stream.write(json.dumps(ex) + "\n")
+                    examples.append(ex)
+            corpus_stream.flush()
+            os.fsync(corpus_stream.fileno())
 
-    # 2. Compute dataset statistics
-    raw_bytes = out_file.read_bytes()
-    corpus_sha256 = hashlib.sha256(raw_bytes.replace(b"\r\n", b"\n")).hexdigest()
+        # Hash and publish the exact staged corpus bytes; the final path is replaced atomically.
+        raw_bytes = corpus_temp_path.read_bytes()
+        corpus_sha256 = hashlib.sha256(raw_bytes.replace(b"\r\n", b"\n")).hexdigest()
+        role_counts = {
+            role: sum(1 for example in examples if example["role"] == role)
+            for role in ("triage", "diagnosis", "remediation", "comms")
+        }
+        tier_counts = {
+            tier: sum(1 for example in examples if example["tier"] == tier)
+            for tier in ("single_fault", "cascade", "multi_fault", "named_replays")
+        }
+        total_tool_turns = sum(example["n_tool_turns"] for example in examples)
 
-    role_counts = {role: sum(1 for e in examples if e["role"] == role) for role in ("triage", "diagnosis", "remediation", "comms")}
-    tier_counts = {tier: sum(1 for e in examples if e["tier"] == tier) for tier in ("single_fault", "cascade", "multi_fault", "named_replays")}
-    total_tool_turns = sum(e["n_tool_turns"] for e in examples)
+        manifest = {
+            "dataset_name": "atlasops_sft_corpus_train",
+            "format": SFT_EXAMPLE_FORMAT,
+            "data_origin": "scenario_derived_synthetic",
+            "synthetic": True,
+            "corpus_file": str(out_file.as_posix()),
+            "corpus_sha256_canonical_lf": corpus_sha256,
+            "total_examples": len(examples),
+            "total_scenarios": len(train_ids),
+            "split": "train",
+            "quarantined_splits": ["val", "test"],
+            "leakage_verified": True,
+            "role_distribution": role_counts,
+            "tier_distribution": tier_counts,
+            "total_tool_turns": total_tool_turns,
+            "template_render_validated": True,
+        }
 
-    manifest = {
-        "dataset_name": "atlasops_sft_corpus_train",
-        "format": SFT_EXAMPLE_FORMAT,
-        "corpus_file": str(out_file.as_posix()),
-        "corpus_sha256_canonical_lf": corpus_sha256,
-        "total_examples": len(examples),
-        "total_scenarios": len(train_ids),
-        "split": "train",
-        "quarantined_splits": ["val", "test"],
-        "leakage_verified": True,
-        "role_distribution": role_counts,
-        "tier_distribution": tier_counts,
-        "total_tool_turns": total_tool_turns,
-        "template_render_validated": True,
-    }
+        training_config = {
+            "base_model": "Qwen/Qwen2.5-7B-Instruct",
+            "quantization": "4-bit NF4",
+            "lora_r": 16,
+            "lora_alpha": 32,
+            "lora_dropout": 0.05,
+            "target_modules": [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            "learning_rate": 2e-4,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 4,
+            "max_seq_length": 2048,
+            "num_train_epochs": 3,
+            "optimizer": "paged_adamw_8bit",
+            "assistant_only_loss": True,
+            "train_corpus_sha256": corpus_sha256,
+        }
 
-    manifest_path = evidence_dir / "sft_corpus_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        staged_manifest = _stage_text_output(
+            manifest_path,
+            json.dumps(manifest, indent=2),
+            staged_paths,
+        )
+        staged_config = _stage_text_output(
+            config_path,
+            json.dumps(training_config, indent=2),
+            staged_paths,
+        )
 
-    # 3. Save standard SFT training hyperparameter config
-    training_config = {
-        "base_model": "Qwen/Qwen2.5-7B-Instruct",
-        "quantization": "4-bit NF4",
-        "lora_r": 16,
-        "lora_alpha": 32,
-        "lora_dropout": 0.05,
-        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        "learning_rate": 2e-4,
-        "batch_size": 2,
-        "gradient_accumulation_steps": 4,
-        "max_seq_length": 2048,
-        "num_train_epochs": 3,
-        "optimizer": "paged_adamw_8bit",
-        "assistant_only_loss": True,
-        "train_corpus_sha256": corpus_sha256,
-    }
-    config_path = evidence_dir / "sft_training_config.json"
-    config_path.write_text(json.dumps(training_config, indent=2), encoding="utf-8")
+        _validate_generated_parents(generated_paths)
+        os.replace(corpus_temp_path, out_file)
+        _validate_generated_parents(generated_paths)
+        os.replace(staged_manifest, manifest_path)
+        _validate_generated_parents(generated_paths)
+        os.replace(staged_config, config_path)
 
-    log.info("SFT Corpus successfully assembled! Total examples: %d, SHA-256: %s", len(examples), corpus_sha256)
-    return out_file, manifest
+        log.info(
+            "SFT Corpus successfully assembled! Total examples: %d, SHA-256: %s",
+            len(examples),
+            corpus_sha256,
+        )
+        return out_file, manifest
+    finally:
+        for staged_path in staged_paths:
+            staged_path.unlink(missing_ok=True)
 
 
 def main() -> None:

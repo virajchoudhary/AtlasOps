@@ -11,6 +11,21 @@ exists in the current evidence set, so G8 has no empirical model result.
 - Empirical mode requires an explicit output directory; implicit mock output is
   isolated under a unique non-empirical run directory.
 - Every declared checkpoint file and aggregate tree hash is verified before loading.
+- The training corpus origin, synthetic flag, and adjacent corpus-manifest provenance are
+  validated and carried into the evaluation summary. Older manifests without these fields
+  and unsupported or conflicting origin claims are reported as `UNVERIFIED`.
+- Corpus-origin verification is opt-in: the caller must approve the exact corpus path with
+  `--approved-corpus-path`. Without that approval, G8 does not touch the recorded corpus
+  path and reports the origin as `UNVERIFIED`; approved reads are capped at 16 MiB for the
+  corpus and 1 MiB for its manifest.
+- Keep the approved corpus parent stable during verification; portable path checks cannot
+  lock it against concurrent replacement.
+- G8 constrains the manifest to the recorded corpus's sibling path, re-reads and hashes the
+  accessible corpus and manifest from one byte snapshot each, and checks their Train split
+  and counts. Missing, redirected, oversized, or mismatched provenance is reported as
+  `UNVERIFIED`.
+- Scenario-derived synthetic training data is disclosed but does not by itself prevent
+  empirical model inference or diagnosis scoring.
 - The base model and tokenizer use the revisions recorded by training.
 - Validation/Test truth is withheld until after raw generation and then used only for
   scoring.

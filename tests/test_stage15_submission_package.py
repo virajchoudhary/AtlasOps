@@ -131,6 +131,8 @@ class TestStage15SubmissionPackage:
             "training/build_sft_dataset.py",
             "training/sft_rendering.py",
             "training/templates/qwen2_5_tool_sft.jinja",
+            "training/grpo_reward.py",
+            "tests/test_g9_direct_reward.py",
             "eval.py",
             "leaderboard.py",
         } <= assets.keys()

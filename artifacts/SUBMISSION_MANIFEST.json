@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-27T15:44:51.898382+00:00",
+  "generated_at": "2026-09-27T16:16:01.704425+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 225,
+  "asset_count": 226,
   "assets": {
     "AGENTS.md": {
       "sha256": "a1eed5d56ee858ddd27770fcd449009a56032efe219e73c9789837f9a0955106",
@@ -610,8 +610,8 @@
       "size_bytes": 12247
     },
     "scripts/release_gate.py": {
-      "sha256": "5355b14374c0b6cb30260d64bc09f64786e319354f72c386f25e6123c4830f81",
-      "size_bytes": 7639
+      "sha256": "6054f5c6ed9362b604e206784b5581cfd44527347d1b6dfb076228db24b22af7",
+      "size_bytes": 17618
     },
     "training/sft.py": {
       "sha256": "29ff6fa2ae27ec8954187d7446970b3f1803dc84cfd43fc49fa90efab78c46b3",
@@ -796,6 +796,10 @@
     "tests/test_local_metrics_installer.py": {
       "sha256": "624f272690b2ee4da165767b9d99302b0c77524e1e0b16a71eec4b386e4977a7",
       "size_bytes": 2664
+    },
+    "tests/test_release_gate.py": {
+      "sha256": "a48495a595203612138f701a83aa6ed3817e3309166191ca00ab75d53af6e29d",
+      "size_bytes": 12372
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",

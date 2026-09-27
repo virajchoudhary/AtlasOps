@@ -347,7 +347,11 @@ def test_metrics_server_missing_state_cannot_match_required_present_profile():
 
 def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch():
     root = __import__("pathlib").Path(__file__).parent / "scratch" / "never-used-profile"
-    with patch.object(runner, "_query_ollama_model_identity") as model_query, patch.object(
+    with patch.object(
+        runner, "_current_main_sha", return_value="test-sha"
+    ), patch.object(
+        runner, "_query_ollama_model_identity"
+    ) as model_query, patch.object(
         runner, "_probe_metrics_server_contract"
     ) as metrics_probe:
         model_query.return_value = {

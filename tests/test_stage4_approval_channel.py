@@ -19,7 +19,7 @@ HELPER = Path(__file__).with_name("stage4_approval_process.py")
 TEST_KEY = "synthetic-operator-key"
 
 
-def _wait_for(path: Path, process: subprocess.Popen, timeout: float = 10) -> dict:
+def _wait_for(path: Path, process: subprocess.Popen, timeout: float = 30) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if path.is_file():

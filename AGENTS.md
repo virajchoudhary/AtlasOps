@@ -96,18 +96,20 @@ authorization. Estimate storage before any multi-GB operation.
 
 - G4 remains NOT_PASSED: attempt 010 is the latest completed negative result among
   009-014; 009 and 011-014 are interrupted/inconclusive. Cleanup failures remain recorded.
-- GRPO still passes completion text through `triage_seed` to the coordinator rather than
-  directly executing the trained policy's actions; rollout reward/curriculum plumbing
-  also needs correction to carry authoritative environment-verification fields.
+- GRPO now has a locally tested direct-action policy/environment adapter. Real settling,
+  explicit live-run authorization and pinned cluster context, P1 integration, and dense
+  reward evidence still require verification before a live training claim.
 - SFT corpus/configuration exists, but successful training and usable checkpoint provenance
   are unverified. Archived Stage 6/8/9 mock outputs cannot close empirical gates.
-- Stage 13 uses hardcoded metric profiles; actual variant ablation/stress evaluation is missing.
-- Stage 10 dataset generation writes the default evidence manifest even with a custom
-  dataset output path; isolate evidence output in a separate scoped fix.
+- Stage 13's current aggregator rejects missing real variant metrics; the saved hardcoded
+  profiles remain historical, and actual variant ablation/stress evaluation is missing.
+- Stage 10 custom dataset output now writes its own adjacent evidence manifest. The
+  historical-feedback dataset required by G10 is still missing.
 - SAFETY-01 makes P1 approval fail closed: only explicit approval permits remediation;
   timeout/rejection remain blocked with distinct persisted outcomes. Mock/unit control-flow
   coverage is not empirical G4 evidence or a certification of safe deployment.
-- Recommender implementation/evaluation exists, but its 28 scenario-derived interactions
-  cover only 4 of 12 runbooks and are not genuine historical interaction feedback.
+- Recommender implementation/evaluation exists. The original saved result used 28
+  scenario-derived rows covering 4 runbooks; the corrected 21-row corpus covers 9 of
+  12 runbooks. Neither is genuine historical interaction feedback.
 - Infrastructure scripts have static/local validation; real provisioning or portability
   claims require target-specific verification and explicit authorization.

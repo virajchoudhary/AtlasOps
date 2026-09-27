@@ -18,13 +18,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from config.scenario_catalog import SCENARIO_CATALOG
 from scripts.package_submission import (
     _matching_tracked_files,
     build_submission_package,
     collect_submission_assets,
     compute_sha256,
 )
-from config.scenario_catalog import SCENARIO_CATALOG
 
 
 def _git_attributes(paths: set[str] | list[str]) -> dict[str, dict[str, str]]:
@@ -103,6 +103,7 @@ class TestStage15SubmissionPackage:
             "docs/slides.md",
             "docs/media/console-overview-20260926.png",
             "docs/media/gradio-demo-20260926.png",
+            "agents/_http_retry.py",
             "agents/judge.py",
             "agents/approval.py",
             "config/runtime.py",

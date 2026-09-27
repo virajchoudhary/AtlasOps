@@ -13,7 +13,12 @@ The coordinator supports the intended integrated sequence:
 - The recommender loads a reviewed checkpoint, uses observed query fields, and remains
   advisory. Missing recommendations do not become remediation truth.
 - `ATLASOPS_REMEDIATION_BACKEND=rl_policy` selects the policy path and requires
-  `ATLASOPS_RL_POLICY_CHECKPOINT`; there is no operational-model fallback.
+  `ATLASOPS_RL_POLICY_CHECKPOINT` for checkpoint-backed use. Both injected
+  and checkpoint-backed live policy paths require
+  `ATLASOPS_RL_POLICY_EXECUTE_ACTIONS=1` and an explicit
+  `KUBECONFIG_CONTEXT` before incident work or tool dispatch; there is no
+  operational-model fallback. An injected policy remains non-empirical model
+  evidence even when its controlled environment action was explicitly authorized.
 - Each policy completion becomes the exact action sent through ACL, evidence preconditions,
   approval, one tool execution, settling, and objective verification.
 - An unresolved verifier result is included in the next policy state.
@@ -40,7 +45,10 @@ and legitimate approval for any P1 mutation.
 golden-incident harness. It does not implement another fault injector or cleanup
 path. It requires a clean disposable checkout, a provenance-validated completed
 GRPO checkpoint, a new `EXP-STAGE4-*` ID, an external new bundle directory, and
-the explicit `--execute-live-chaos` flag. The Stage 4 harness must still pass its
+the explicit `--execute-live-chaos` flag plus
+`--kube-context kind-atlasops-local`. The wrapper validates these before
+creating a bundle and passes the live-policy opt-in to the coordinator. The
+Stage 4 harness must still pass its
 own source, model, telemetry, baseline, zero-Chaos, approval, and postflight
 controls. Do not run it unattended or use this flag as a substitute for
 experiment-specific authorization.

@@ -11,6 +11,11 @@ import pytest
 
 from scripts import run_g12_integrated_episode as capture
 
+LIVE_EXECUTION = {
+    "execute_live_chaos": True,
+    "kube_context": capture.METRICS_SERVER_CONTEXT,
+}
+
 
 def test_cli_requires_explicit_live_execution_before_any_work(monkeypatch, tmp_path):
     monkeypatch.setattr(
@@ -33,6 +38,49 @@ def test_cli_requires_explicit_live_execution_before_any_work(monkeypatch, tmp_p
         capture.main()
     assert exc.value.code == 2
     assert not (tmp_path / "bundle").exists()
+
+
+def test_cli_requires_named_stage4_context_before_any_work(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_g12_integrated_episode",
+            "--checkpoint", str(tmp_path / "missing"),
+            "--experiment-id", "EXP-STAGE4-SF002-999",
+            "--bundle-dir", str(tmp_path / "bundle"),
+            "--seed", "17",
+            "--execute-live-chaos",
+        ],
+    )
+    monkeypatch.setattr(
+        capture,
+        "run_live_episode",
+        lambda **_kwargs: pytest.fail("live harness invoked without context"),
+    )
+    with pytest.raises(SystemExit) as exc:
+        capture.main()
+    assert exc.value.code == 2
+    assert not (tmp_path / "bundle").exists()
+
+
+def test_direct_live_wrapper_requires_opt_in_and_context(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        capture,
+        "_source_sha",
+        lambda _root: pytest.fail("source probed before live authorization"),
+    )
+    kwargs = {
+        "checkpoint": tmp_path / "checkpoint",
+        "experiment_id": "EXP-STAGE4-SF002-999",
+        "bundle": tmp_path / "bundle",
+        "seed": 17,
+    }
+    with pytest.raises(PermissionError, match="--execute-live-chaos"):
+        capture.run_live_episode(**kwargs)
+    with pytest.raises(ValueError, match="--kube-context"):
+        capture.run_live_episode(**kwargs, execute_live_chaos=True)
+    assert not kwargs["bundle"].exists()
 
 
 def test_negative_integrated_attempt_is_archived_without_a_gate_claim(tmp_path):
@@ -137,6 +185,8 @@ def test_live_wrapper_uses_governed_harness_and_records_failure(monkeypatch, tmp
         assert check is False
         assert env["ATLASOPS_REMEDIATION_BACKEND"] == "rl_policy"
         assert env["ATLASOPS_RL_POLICY_CHECKPOINT"] == str(checkpoint.resolve())
+        assert env["ATLASOPS_RL_POLICY_EXECUTE_ACTIONS"] == "1"
+        assert env["KUBECONFIG_CONTEXT"] == capture.METRICS_SERVER_CONTEXT
         assert env["STAGE4_EXPERIMENT_ID"] == "EXP-STAGE4-SF002-999"
         return SimpleNamespace(returncode=1)
 
@@ -146,6 +196,7 @@ def test_live_wrapper_uses_governed_harness_and_records_failure(monkeypatch, tmp
         experiment_id="EXP-STAGE4-SF002-999",
         bundle=bundle,
         seed=17,
+        **LIVE_EXECUTION,
     )
     assert manifest["status"] == "INCOMPLETE"
     assert manifest["process_exit_code"] == 1
@@ -167,6 +218,7 @@ def test_live_wrapper_preserves_launch_failure(monkeypatch, tmp_path):
         experiment_id="EXP-STAGE4-SF002-999",
         bundle=bundle,
         seed=17,
+        **LIVE_EXECUTION,
     )
     assert manifest["status"] == "INCOMPLETE"
     assert manifest["process_exit_code"] == 127
@@ -189,6 +241,7 @@ def test_live_wrapper_flags_checkpoint_change_after_run(monkeypatch, tmp_path):
         experiment_id="EXP-STAGE4-SF002-999",
         bundle=tmp_path / "bundle",
         seed=17,
+        **LIVE_EXECUTION,
     )
     assert manifest["checkpoint_postflight_verified"] is False
     assert "checkpoint_changed_during_run" in manifest["problems"]
@@ -208,6 +261,7 @@ def test_live_wrapper_rejects_unsafe_paths_before_execution(monkeypatch, tmp_pat
             experiment_id="../../elsewhere",
             bundle=tmp_path / "bundle",
             seed=17,
+            **LIVE_EXECUTION,
         )
     with pytest.raises(ValueError, match="outside"):
         capture.run_live_episode(
@@ -215,6 +269,7 @@ def test_live_wrapper_rejects_unsafe_paths_before_execution(monkeypatch, tmp_pat
             experiment_id="EXP-STAGE4-SF002-999",
             bundle=root / "bundle",
             seed=17,
+            **LIVE_EXECUTION,
         )
 
 
@@ -238,5 +293,37 @@ def test_live_wrapper_rejects_existing_attempt_sidecar(monkeypatch, tmp_path):
             experiment_id="EXP-STAGE4-SF002-999",
             bundle=bundle,
             seed=17,
+            **LIVE_EXECUTION,
         )
     assert not bundle.exists()
+
+
+def test_checkpoint_policy_requires_explicit_context_before_loading(monkeypatch, tmp_path):
+    from agents import coordinator
+    from bench import grpo_eval
+
+    checkpoint = str(tmp_path / "checkpoint")
+    calls = []
+
+    def load(path, **kwargs):
+        calls.append((path, kwargs))
+        return object()
+
+    monkeypatch.setattr(grpo_eval.LocalGRPOPolicy, "from_checkpoint", load)
+    monkeypatch.delenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", raising=False)
+    monkeypatch.delenv("KUBECONFIG_CONTEXT", raising=False)
+    with pytest.raises(RuntimeError, match="live policy opt-in"):
+        coordinator._load_rl_policy_checkpoint(checkpoint)
+    monkeypatch.setenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", "1")
+    with pytest.raises(RuntimeError, match="KUBECONFIG_CONTEXT"):
+        coordinator._load_rl_policy_checkpoint(checkpoint)
+    assert calls == []
+
+    monkeypatch.setenv("KUBECONFIG_CONTEXT", capture.METRICS_SERVER_CONTEXT)
+    coordinator._load_rl_policy_checkpoint(checkpoint)
+    assert calls == [
+        (
+            tmp_path / "checkpoint",
+            {"execute_actions": True, "kube_context": capture.METRICS_SERVER_CONTEXT},
+        )
+    ]

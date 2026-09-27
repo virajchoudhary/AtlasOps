@@ -10,9 +10,12 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import re
+import stat
+import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -59,9 +62,78 @@ def compute_sha256(file_path: Path) -> str:
     return h.hexdigest()
 
 
+def _is_link_or_reparse_point(path: Path) -> bool:
+    """Inspect a path component without following links or junctions."""
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ValueError(f"Tracked asset path component cannot be inspected: {path}") from error
+
+    if stat.S_ISLNK(metadata.st_mode):
+        return True
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if getattr(metadata, "st_file_attributes", 0) & reparse_attribute:
+        return True
+
+    is_junction = getattr(path, "is_junction", None)
+    if is_junction is not None:
+        try:
+            return bool(is_junction())
+        except (OSError, RuntimeError) as error:
+            raise ValueError(
+                f"Tracked asset path component cannot be inspected: {path}"
+            ) from error
+    return False
+
+
+def _matching_tracked_files(repo_root: Path, patterns: list[str]) -> dict[str, Path]:
+    """Select indexed files matching the package allowlist and reject escaping links."""
+    repo_root = repo_root.resolve()
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).stdout
+    tracked_paths = {
+        os.fsdecode(path) for path in listing.split(b"\0") if path
+    }
+
+    selected: dict[str, Path] = {}
+    for pattern in patterns:
+        for relative_path in sorted(tracked_paths):
+            if "/" not in pattern and "/" in relative_path:
+                continue
+            if not PurePosixPath(relative_path).match(pattern):
+                continue
+            candidate = repo_root.joinpath(*PurePosixPath(relative_path).parts)
+            component = repo_root
+            for part in PurePosixPath(relative_path).parts:
+                component = component / part
+                if _is_link_or_reparse_point(component):
+                    raise ValueError(
+                        f"Tracked asset path traverses a symbolic link or reparse point: {relative_path}"
+                    )
+            try:
+                resolved_path = candidate.resolve(strict=True)
+            except (OSError, RuntimeError) as error:
+                raise ValueError(f"Tracked asset cannot be resolved: {relative_path}") from error
+            try:
+                resolved_path.relative_to(repo_root)
+            except ValueError as error:
+                raise ValueError(f"Tracked asset escapes repository root: {relative_path}") from error
+            if not resolved_path.is_file():
+                continue
+            selected[relative_path] = candidate
+
+    return selected
+
+
 def collect_submission_assets() -> dict[str, dict[str, Any]]:
-    """Scan and catalog all core submission assets with hashes and sizes."""
+    """Catalog selected Git-index assets with raw-byte hashes and sizes."""
     tracked_patterns = [
+        "AGENTS.md",
         ".gitattributes",
         "BENCHMARKS.md",
         "Makefile",
@@ -76,9 +148,21 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/media/*.png",
         "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
+        "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
         "docs/project/STAGE_*.md",
         "artifacts/models/hybrid_recommender.json",
         "artifacts/models/hybrid_recommender_synthetic_v2.json",
+        "artifacts/evidence/.gitattributes",
+        "artifacts/evidence/recovery/2026-09-05-workspace-recovery.json",
+        "artifacts/evidence/recovery/SETUP-03_COMMANDS.md",
+        "artifacts/evidence/stage3/acceptance_report.json",
+        "artifacts/evidence/stage4/*.json",
+        "artifacts/evidence/stage4/*.yaml",
+        "artifacts/evidence/stage4/*.md",
+        "artifacts/evidence/stage4/EXP-STAGE4-SF002-00[4-8].runlog.txt",
+        "artifacts/evidence/stage7/sft_corpus_manifest.json",
+        "artifacts/evidence/stage7/sft_training_config.json",
+        "artifacts/evidence/stage10/rs_baseline_eval.json",
         "artifacts/evidence/stage10/rs_dataset_manifest.json",
         "artifacts/evidence/stage11/rs_hybrid_eval.json",
         "artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json",
@@ -90,6 +174,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "agents/grounding.py",
         "agents/judge.py",
         "agents/policy_remediation.py",
+        "agents/verifier.py",
         "agents/prompts/*.md",
         "agents/tool_policy.py",
         "agents/tools/argocd.py",
@@ -97,6 +182,10 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "agents/tools/prometheus.py",
         "bench/zero_shot_baseline.py",
         "bench/runner.py",
+        "bench/chaos_manifests/cascade/*.yaml",
+        "bench/chaos_manifests/multi_fault/*.yaml",
+        "bench/chaos_manifests/named_replays/*.yaml",
+        "bench/chaos_manifests/single_fault/*.yaml",
         "bench/sft_eval.py",
         "bench/grpo_eval.py",
         "dashboard.py",
@@ -112,6 +201,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "static/vendor/LUCIDE-LICENSE",
         "config/g4_protocol.py",
         "config/runtime.py",
+        "config/scenario_catalog.py",
+        "config/splits.py",
         "recommender/baselines.py",
         "recommender/hybrid.py",
         "recommender/dataset.py",
@@ -119,10 +210,13 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "scripts/run_stage4_golden_incident.py",
         "scripts/run_g12_integrated_episode.py",
         "scripts/package_submission.py",
+        "scripts/release_gate.py",
         "training/sft.py",
         "training/build_sft_dataset.py",
         "training/generate_trajectories.py",
         "training/generate_trajectories_fast.py",
+        "training/sft_rendering.py",
+        "training/templates/qwen2_5_tool_sft.jinja",
         "training/sft_provenance.py",
         "training/grpo.py",
         "training/grpo_environment.py",
@@ -132,18 +226,13 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "tests/stage4_approval_process.py",
     ]
 
+    repo_root = Path.cwd().resolve()
     assets: dict[str, dict[str, Any]] = {}
-
-    for pattern in tracked_patterns:
-        matches = list(Path(".").glob(pattern))
-        for p in matches:
-            if p.is_file():
-                rel = p.as_posix()
-                assets[rel] = {
-                    "sha256": compute_sha256(p),
-                    "size_bytes": p.stat().st_size,
-                    "last_modified": datetime.fromtimestamp(p.stat().st_mtime, tz=UTC).isoformat(),
-                }
+    for rel, path in _matching_tracked_files(repo_root, tracked_patterns).items():
+        assets[rel] = {
+            "sha256": compute_sha256(path),
+            "size_bytes": path.stat().st_size,
+        }
 
     return assets
 

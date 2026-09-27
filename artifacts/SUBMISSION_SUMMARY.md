@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-26T16:39:11.545856+00:00`
+- **Generated**: `2026-09-27T12:46:55.828682+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -34,7 +34,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 
 | Asset Path | SHA-256 Digest | Size (Bytes) |
 | :--- | :--- | :---: |
-| `.gitattributes` | `b7ecde5620295b79...` | 798 |
+| `.gitattributes` | `2db7d7edd61c5b61...` | 1073 |
+| `AGENTS.md` | `a1eed5d56ee858dd...` | 5967 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `793d45179291d309...` | 21520 |
@@ -51,22 +52,91 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `agents/tools/argocd.py` | `5cfdad11258fcf68...` | 10784 |
 | `agents/tools/chaos.py` | `bdba977da1a3c657...` | 5801 |
 | `agents/tools/prometheus.py` | `dc8d87332f66dae8...` | 3586 |
+| `agents/verifier.py` | `850dc5f2f197887e...` | 37725 |
 | `app.py` | `d17466d5be9a5300...` | 17228 |
+| `artifacts/evidence/.gitattributes` | `a5c3211d796d1d08...` | 880 |
+| `artifacts/evidence/recovery/2026-09-05-workspace-recovery.json` | `710fddcaeb2ea6c8...` | 22788 |
+| `artifacts/evidence/recovery/SETUP-03_COMMANDS.md` | `0819c3ffe5e9cfe6...` | 15741 |
+| `artifacts/evidence/stage10/rs_baseline_eval.json` | `821c76fc6958593b...` | 4130 |
 | `artifacts/evidence/stage10/rs_dataset_manifest.json` | `69d7bfa78cccda00...` | 587 |
 | `artifacts/evidence/stage11/rs_hybrid_eval.json` | `2ff967237a7bf21c...` | 3234 |
 | `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json` | `fe32b345c8bcddf3...` | 4544 |
 | `artifacts/evidence/stage13/ablation_benchmark_results.json` | `3b7f1f88e6e37a96...` | 7156 |
+| `artifacts/evidence/stage3/acceptance_report.json` | `cbf33ff804e699ea...` | 10099 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-002.json` | `082d87065a3b3208...` | 7924 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-003.json` | `28719b806d9e97c2...` | 8406 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.cleanup.json` | `3efc65bd84398007...` | 421 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.json` | `7a8b25aa8601a880...` | 7486 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-004.runlog.txt` | `d55117e07fb3f216...` | 4574 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-005.cleanup.json` | `2cad59217205ac3e...` | 323 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-005.json` | `f174cba840a72bcb...` | 7860 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-005.runlog.txt` | `39b079f59ebc3f12...` | 871 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-006.runlog.txt` | `269c8b2cdf402a08...` | 652 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-007.cleanup.json` | `e07d9a0600806487...` | 323 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-007.json` | `a562cf84d9207aeb...` | 7810 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-007.runlog.txt` | `b2e196fc84b50cd6...` | 1033 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-008.cleanup.json` | `258086ce95931726...` | 423 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-008.json` | `79d45c7a22fa5509...` | 31303 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-008.runlog.txt` | `7af7999074fc30be...` | 9698 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-009.cleanup.json` | `dfe8f4fbf5cb13af...` | 613 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-009.interruption.json` | `ff23c36e8bb96bfc...` | 2158 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-009.leftover-chaos.yaml` | `1285e7e175eba956...` | 4145 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.cleanup.json` | `0ab5c3251e550925...` | 423 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json` | `a405a33b379cfb12...` | 754655 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-011.cleanup.json` | `f3687e70173da647...` | 617 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-011.interruption.json` | `d41eb45edc07169d...` | 1750 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-011.leftover-chaos.yaml` | `6fdd5f42893b4b1d...` | 1609 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-012.cleanup.json` | `240b747d453fb6ae...` | 496 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-012.interruption.json` | `3e9ca8a1ff31c52d...` | 1233 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-013.cleanup.json` | `e1e17c2aa2be4abf...` | 496 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-013.interruption.json` | `77dadcb96e26f3d3...` | 1233 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-014.cleanup.json` | `e8c2b8771a0c06fd...` | 496 |
+| `artifacts/evidence/stage4/EXP-STAGE4-SF002-014.interruption.json` | `da24200124f0b92e...` | 1233 |
+| `artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md` | `a6e910f350bd1a4e...` | 2334 |
+| `artifacts/evidence/stage4/golden_incident_sf002_manifest.json` | `7a8b25aa8601a880...` | 7486 |
+| `artifacts/evidence/stage7/sft_corpus_manifest.json` | `c3527d6e25069a21...` | 704 |
+| `artifacts/evidence/stage7/sft_training_config.json` | `be26026069c5f272...` | 583 |
 | `artifacts/models/hybrid_recommender.json` | `53d0a4fb640b4691...` | 2646 |
 | `artifacts/models/hybrid_recommender_synthetic_v2.json` | `21243d035fc2a972...` | 2192 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
 | `bench/ablation_suite.py` | `957c4bc2ee0a3d1f...` | 12406 |
+| `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
+| `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
+| `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
+| `bench/chaos_manifests/cascade/cs-004.yaml` | `7b5a11f3a4f679d2...` | 469 |
+| `bench/chaos_manifests/cascade/cs-005.yaml` | `448df63030582a23...` | 978 |
+| `bench/chaos_manifests/multi_fault/mf-001.yaml` | `1e2b6a68107dfbec...` | 788 |
+| `bench/chaos_manifests/multi_fault/mf-002.yaml` | `1a656644a99d8da2...` | 907 |
+| `bench/chaos_manifests/multi_fault/mf-003.yaml` | `447ac4edf080f2ad...` | 785 |
+| `bench/chaos_manifests/multi_fault/mf-004.yaml` | `0eff6068d2c5813d...` | 765 |
+| `bench/chaos_manifests/multi_fault/mf-005.yaml` | `959048e58473ffe2...` | 844 |
+| `bench/chaos_manifests/named_replays/hist-aws-s3-2017.yaml` | `55e3babadc529686...` | 985 |
+| `bench/chaos_manifests/named_replays/hist-azure-dns-2019.yaml` | `fa78984d8e099db6...` | 632 |
+| `bench/chaos_manifests/named_replays/hist-cloudflare-2019.yaml` | `f85f73d68869c225...` | 639 |
+| `bench/chaos_manifests/named_replays/hist-datadog-2023.yaml` | `cfa781546a1953f0...` | 504 |
+| `bench/chaos_manifests/named_replays/hist-discord-2022.yaml` | `e74f931dc0c70872...` | 981 |
+| `bench/chaos_manifests/named_replays/hist-facebook-bgp-2021.yaml` | `4a99827df3a0402f...` | 655 |
+| `bench/chaos_manifests/named_replays/hist-fastly-2021.yaml` | `957335d19cbd4a95...` | 555 |
+| `bench/chaos_manifests/named_replays/hist-github-2018.yaml` | `72570683734d6165...` | 594 |
+| `bench/chaos_manifests/named_replays/hist-knight-capital-2012.yaml` | `45fd37cd50720c40...` | 1480 |
+| `bench/chaos_manifests/named_replays/hist-slack-2022.yaml` | `ab6f396bff921f96...` | 1034 |
+| `bench/chaos_manifests/single_fault/sf-001.yaml` | `90c402c4f88465c1...` | 304 |
+| `bench/chaos_manifests/single_fault/sf-002.yaml` | `06686ac0645bd039...` | 369 |
+| `bench/chaos_manifests/single_fault/sf-003.yaml` | `4dfb91c8f36f19cc...` | 382 |
+| `bench/chaos_manifests/single_fault/sf-004.yaml` | `b78f35d8562ef641...` | 373 |
+| `bench/chaos_manifests/single_fault/sf-005.yaml` | `0b896f22557f1319...` | 476 |
+| `bench/chaos_manifests/single_fault/sf-006.yaml` | `886e4873b3f71761...` | 393 |
+| `bench/chaos_manifests/single_fault/sf-007.yaml` | `3e15a122b34aed52...` | 440 |
+| `bench/chaos_manifests/single_fault/sf-008.yaml` | `41d3f6d2ed0278bb...` | 388 |
 | `bench/grpo_eval.py` | `8c6aa528de0289b3...` | 50036 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `4e13d1aa99c62031...` | 23096 |
 | `bench/zero_shot_baseline.py` | `c0fd30a86fd3b994...` | 19879 |
 | `config/g4_protocol.py` | `067d7e1bb04a75f6...` | 20851 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
+| `config/scenario_catalog.py` | `6d94db05f8d2e956...` | 27577 |
+| `config/splits.py` | `31c270e9596f9c35...` | 1421 |
 | `dashboard.py` | `7e4afc02551bf4d6...` | 23653 |
 | `demo/launcher.py` | `a9d51bc21b7e45dc...` | 1744 |
 | `docs/AtlasOps_Technical_Report.md` | `50a354b5e59e8e6b...` | 7749 |
@@ -82,13 +152,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `6d6631ce9c3c8b9a...` | 3457 |
 | `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `cb1c07a038e191ae...` | 2220 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
-| `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `c0b8b5e374aa911f...` | 2563 |
+| `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `d450ce1d61e1fef1...` | 2093 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6e9eec0d90f873d1...` | 3715 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `79f294072981a62f...` | 1690 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `45e5249fd5284dd8...` | 3595 |
+| `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `eaf66eb8a80cf109...` | 8574 |
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
@@ -96,7 +167,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `8491ab6c2b72637b...` | 8543 |
+| `scripts/package_submission.py` | `b5a5d3cf955bd227...` | 12214 |
+| `scripts/release_gate.py` | `5355b14374c0b6cb...` | 7639 |
 | `scripts/run_g12_integrated_episode.py` | `534781631814e86a...` | 11177 |
 | `scripts/run_stage4_golden_incident.py` | `15194c94c0820560...` | 85332 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
@@ -157,7 +229,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `7957671759c2002b...` | 4683 |
+| `tests/test_stage15_submission_package.py` | `09b989bace77a952...` | 22510 |
 | `tests/test_stage4_approval_channel.py` | `73d03fc83793fcfb...` | 12720 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `fe8354613ff2720b...` | 38102 |
@@ -183,4 +255,6 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_provenance.py` | `c63871f5d484201e...` | 6851 |
 | `training/sft.py` | `29ff6fa2ae27ec89...` | 9091 |
 | `training/sft_provenance.py` | `30981f180779bd04...` | 10157 |
+| `training/sft_rendering.py` | `dd036d8ca715065e...` | 10109 |
+| `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |
 | `ui_read_model.py` | `859db572c2706d7d...` | 10012 |

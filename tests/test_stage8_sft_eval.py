@@ -17,6 +17,17 @@ from bench.sft_eval import evaluate_sft_mock_episode, evaluate_sft_split
 from config.splits import get_split
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _trajectories_dir(tmp_path_factory):
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv(
+        "TRAJECTORIES_DIR",
+        str(tmp_path_factory.mktemp("stage8-trajectories")),
+    )
+    yield
+    monkeypatch.undo()
+
+
 class TestStage8SFTEvaluation:
     def test_evaluate_sft_mock_episode_structure_and_compliance(self):
         scenario_id = "single_fault/pod_memory_limit"

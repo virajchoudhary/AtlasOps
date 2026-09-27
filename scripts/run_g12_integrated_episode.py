@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from config.g4_protocol import METRICS_SERVER_CONTEXT
+
 ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENT_ID = re.compile(r"EXP-STAGE4-[A-Za-z0-9][A-Za-z0-9_-]{0,112}\Z")
 
@@ -187,8 +189,20 @@ def collect_bundle(
 
 
 def run_live_episode(
-    *, checkpoint: Path, experiment_id: str, bundle: Path, seed: int
+    *,
+    checkpoint: Path,
+    experiment_id: str,
+    bundle: Path,
+    seed: int,
+    execute_live_chaos: bool = False,
+    kube_context: str | None = None,
 ) -> dict[str, Any]:
+    if execute_live_chaos is not True:
+        raise PermissionError("G12 live capture requires explicit --execute-live-chaos")
+    if kube_context != METRICS_SERVER_CONTEXT:
+        raise ValueError(
+            f"G12 live capture requires --kube-context {METRICS_SERVER_CONTEXT}"
+        )
     if not EXPERIMENT_ID.fullmatch(experiment_id):
         raise ValueError("Experiment ID must be a safe, unique EXP-STAGE4-* name")
     if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
@@ -208,6 +222,8 @@ def run_live_episode(
     env = os.environ.copy()
     env["ATLASOPS_REMEDIATION_BACKEND"] = "rl_policy"
     env["ATLASOPS_RL_POLICY_CHECKPOINT"] = str(checkpoint.expanduser().resolve())
+    env["ATLASOPS_RL_POLICY_EXECUTE_ACTIONS"] = "1"
+    env["KUBECONFIG_CONTEXT"] = kube_context
     env["ATLASOPS_POLICY_SEED"] = str(seed)
     env["STAGE4_EXPERIMENT_ID"] = experiment_id
     launch_error = None
@@ -257,14 +273,22 @@ def main() -> None:
         action="store_true",
         help="Run the Stage 4 harness with real cluster actions after its preflight",
     )
+    parser.add_argument(
+        "--kube-context",
+        help="Explicit Stage 4 Kubernetes context for the integrated policy",
+    )
     args = parser.parse_args()
     if not args.execute_live_chaos:
         parser.error("No run started: live Chaos requires --execute-live-chaos and separate authorization")
+    if args.kube_context != METRICS_SERVER_CONTEXT:
+        parser.error(f"G12 requires --kube-context {METRICS_SERVER_CONTEXT}")
     manifest = run_live_episode(
         checkpoint=args.checkpoint,
         experiment_id=args.experiment_id,
         bundle=args.bundle_dir,
         seed=args.seed,
+        execute_live_chaos=args.execute_live_chaos,
+        kube_context=args.kube_context,
     )
     print(f"G12 evidence capture: {manifest['status']} (NOT_CERTIFIED)")
     if manifest["process_exit_code"] or manifest["status"] != "CAPTURED_FOR_REVIEW":

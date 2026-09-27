@@ -95,6 +95,30 @@ class ApprovalCallbackPayload(BaseModel):
     reason: str = ""
 
 
+def _require_rl_policy_live_context() -> str:
+    """Require a scoped live-policy opt-in before any rl_policy incident work."""
+    if os.getenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS") != "1":
+        raise RuntimeError("rl_policy remediation requires explicit live policy opt-in")
+    kube_context = os.getenv("KUBECONFIG_CONTEXT", "").strip()
+    if not kube_context:
+        raise RuntimeError("Checkpoint-backed remediation requires KUBECONFIG_CONTEXT")
+    return kube_context
+
+
+def _load_rl_policy_checkpoint(checkpoint: str, *, kube_context: str | None = None):
+    """Load a G9 adapter only after matching the authorized context."""
+    selected_context = _require_rl_policy_live_context()
+    if kube_context is not None and kube_context != selected_context:
+        raise RuntimeError("Checkpoint-backed remediation Kubernetes context changed")
+    from bench.grpo_eval import LocalGRPOPolicy
+
+    return LocalGRPOPolicy.from_checkpoint(
+        Path(checkpoint),
+        execute_actions=True,
+        kube_context=selected_context,
+    )
+
+
 def load_prompt(role: str) -> str:
     return (PROMPTS_DIR / f"{role}.md").read_text(encoding="utf-8")
 
@@ -1852,6 +1876,11 @@ async def handle_incident(
     )
     if remediation_backend not in {"agent", "rl_policy"}:
         raise ValueError("ATLASOPS_REMEDIATION_BACKEND must be agent or rl_policy")
+    rl_policy_kube_context = (
+        _require_rl_policy_live_context()
+        if remediation_backend == "rl_policy"
+        else None
+    )
     incident_id = incident_id or f"inc-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
@@ -1995,7 +2024,11 @@ async def handle_incident(
                 **result.to_dict(),
             }
 
-        async def _run_remediation_agent() -> dict[str, Any]:
+        async def _run_remediation_agent(
+            *,
+            action_approval_provider: Callable[[dict[str, Any], dict[str, Any]], Any]
+            | None = None,
+        ) -> dict[str, Any]:
             if remediation_backend == "rl_policy":
                 from agents.policy_remediation import run_policy_remediation
                 from training.grpo_environment import DirectPolicyEnvironment
@@ -2008,9 +2041,10 @@ async def handle_incident(
                         raise RuntimeError(
                             "rl_policy remediation requires ATLASOPS_RL_POLICY_CHECKPOINT"
                         )
-                    from bench.grpo_eval import LocalGRPOPolicy
-
-                    policy = LocalGRPOPolicy.from_checkpoint(Path(checkpoint))
+                    policy = _load_rl_policy_checkpoint(
+                        checkpoint,
+                        kube_context=rl_policy_kube_context,
+                    )
                     policy_origin = "checkpoint"
 
                 def _policy_check(
@@ -2040,6 +2074,11 @@ async def handle_incident(
                 environment = DirectPolicyEnvironment(
                     policy_check=_policy_check,
                     settle=_settle_policy_step,
+                    execute_live_chaos=True,
+                    kube_context=rl_policy_kube_context,
+                    _action_approval_gate=(
+                        approval_gate if action_approval_provider is not None else None
+                    ),
                 )
                 return await run_policy_remediation(
                     policy=policy,
@@ -2053,12 +2092,104 @@ async def handle_incident(
                         "top_p": 1.0,
                     },
                     policy_origin=policy_origin,
+                    approval_provider=action_approval_provider,
                 )
             observer_token = _ACTIVE_MUTATION_OBSERVER.set(_observe_after_mutation)
             try:
                 return await call_agent("remediation", remediation_input)
             finally:
                 _ACTIVE_MUTATION_OBSERVER.reset(observer_token)
+
+        async def _approve_exact_policy_action(
+            action: dict[str, Any],
+            policy_state: dict[str, Any],
+        ) -> Any:
+            nonlocal approval_blocked
+            if policy_state.get("incident_id") != incident_id:
+                approval_record["decision"] = "incident_mismatch"
+                approval_blocked = True
+                return None
+            try:
+                request = approval_gate.request_action(
+                    incident_id=incident_id,
+                    severity=severity,
+                    action=action,
+                )
+            except Exception:  # noqa: BLE001 - request failure must block the action
+                approval_record["decision"] = "request_failed"
+                approval_blocked = True
+                return None
+
+            approval_record["action_digest"] = request.action_digest
+            approval_record["action_summary"] = request.action_summary
+            audit_log.record(
+                incident_id=incident_id,
+                agent_role="remediation",
+                action_type="approval_requested",
+                tool_name=action["tool"],
+                tool_args=action["arguments"],
+                result_summary=request.action_summary or "Exact policy action approval",
+                policy_check="requires_approval",
+            )
+            public_base = os.getenv("ATLASOPS_PUBLIC_BASE_URL", "").rstrip("/")
+            approve_url = f"{public_base}/approve" if public_base else "/approve"
+            thought_emit(
+                "remediation",
+                "waiting_approval",
+                f"Awaiting approval for exact policy action: {request.action_summary}",
+            )
+            try:
+                TOOL_REGISTRY["slack_post_update"](
+                    channel="#incident-response",
+                    severity=severity,
+                    title=f"Exact action approval required: {incident_id}",
+                    summary=request.action_summary or "Policy action requires approval.",
+                    action_items=[
+                        f"Action digest: {request.action_digest}",
+                        (
+                            f"Approve: POST {approve_url} with X-AtlasOps-Key and "
+                            f"{{\"token\":\"{request.token}\",\"decision\":\"approved\","
+                            "\"approved_by\":\"<name>\"}"
+                        ),
+                        (
+                            f"Reject: POST {approve_url} with X-AtlasOps-Key and "
+                            f"{{\"token\":\"{request.token}\",\"decision\":\"rejected\","
+                            "\"approved_by\":\"<name>\",\"reason\":\"...\"}"
+                        ),
+                        "Approval applies only to the displayed tool and exact arguments.",
+                    ],
+                )
+            except Exception as exc:  # noqa: BLE001 - callback endpoint remains authoritative
+                log.warning("failed to send exact-action approval notification: %s", exc)
+
+            result, permit = await approval_gate.wait_for_action_decision(
+                incident_id,
+                request_token=request.token,
+            )
+            decision = str(result.get("status", "missing"))
+            approval_record["decision"] = decision
+            approval_record["action_digest"] = request.action_digest
+            approval_record["action_summary"] = request.action_summary
+            if result.get("approved_by"):
+                approval_record["approved_by"] = result["approved_by"]
+            audit_log.record(
+                incident_id=incident_id,
+                agent_role="remediation",
+                action_type="approval_decision",
+                tool_name=action["tool"],
+                tool_args=action["arguments"],
+                result_summary=decision,
+                approved_by=result.get("approved_by", ""),
+                policy_check=(
+                    "approval_granted"
+                    if decision == "approved" and permit is not None
+                    else "approval_denied"
+                ),
+            )
+            if decision != "approved" or permit is None:
+                approval_blocked = True
+                return None
+            return permit
 
         if target_consistency.get("requires_review"):
             remediation_blocked = True
@@ -2073,6 +2204,10 @@ async def handle_incident(
                 "Manual mode for P0 incident — generating runbook for human execution.",
             )
             remediation = _manual_remediation_record(incident_id, effective_triage, diagnosis["final"])
+        elif approval_mode == "approve" and remediation_backend == "rl_policy":
+            remediation = await _run_remediation_agent(
+                action_approval_provider=_approve_exact_policy_action
+            )
         elif approval_mode == "approve":
             summary = _remediation_plan_summary(effective_triage, diagnosis["final"])
             req = approval_gate.request(incident_id=incident_id, severity=severity, summary=summary)

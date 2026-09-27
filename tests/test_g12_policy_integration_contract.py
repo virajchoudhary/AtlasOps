@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
 from agents.coordinator import handle_incident
 from agents.policy_remediation import run_policy_remediation
+from config.g4_protocol import METRICS_SERVER_CONTEXT
 from training.grpo_environment import DirectPolicyEnvironment
 
 
@@ -61,14 +63,15 @@ async def test_policy_receives_verifier_state_without_benchmark_truth() -> None:
         tool_registry={"chaos_stop_experiment": execute, "chaos_list_experiments": observe},
         policy_check=lambda role, tool, arguments, state: None,
         verifier=verify,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-synthetic",
     )
     result = await run_policy_remediation(
         policy=policy,
         state={
             "incident_id": "inc-original",
             "alert": {"commonLabels": {"alertname": "HighCPUUsage"}},
-            "triage": {"severity": "P1"},
-            "approval": {"decision": "approved"},
+            "triage": {"severity": "P2"},
             "recommended_runbooks": [{"runbook_id": "RB-CPU"}],
             "expected_root_cause": "hidden answer",
             "scenario_id": "single_fault/sf-002",
@@ -104,6 +107,8 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
     environment = DirectPolicyEnvironment(
         tool_registry={"chaos_stop_experiment": lambda **kwargs: executed.append(kwargs)},
         policy_check=lambda role, tool, arguments, state: None,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-synthetic",
     )
     result = await run_policy_remediation(
         policy=ScriptedPolicy(),
@@ -120,13 +125,24 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_full_incident_path_uses_policy_action_and_verified_comms(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("triage_severity", "alert_severity"),
+    [("P2", "warning"), ("P1", "critical")],
+)
+async def test_full_incident_path_uses_policy_action_and_verified_comms(
+    monkeypatch, tmp_path, triage_severity, alert_severity
+) -> None:
+    import asyncio
+
     import agents.verifier as verifier_module
     import training.grpo_environment as environment_module
     from agents import coordinator
 
     monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
     monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
+    monkeypatch.setenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", "1")
+    monkeypatch.setenv("KUBECONFIG_CONTEXT", METRICS_SERVER_CONTEXT)
     monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
     executed = []
     policy_states = []
@@ -148,6 +164,7 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(monkeypa
             )
 
     def execute(**arguments):
+        assert os.environ["KUBECONFIG_CONTEXT"] == METRICS_SERVER_CONTEXT
         executed.append(arguments)
         return {"success": True, "applied": arguments}
 
@@ -171,7 +188,7 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(monkeypa
                 "role": role,
                 "trajectory": [],
                 "final": {
-                    "severity": "P2",
+                    "severity": triage_severity,
                     "affected_services": ["paymentservice"],
                     "title": "Payment latency",
                 },
@@ -190,14 +207,43 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(monkeypa
     async def fake_settle(**kwargs):
         return {"status": "observed"}
 
+    approved_actions = []
+    if triage_severity == "P1":
+        original_request = coordinator.approval_gate.request_action
+
+        def request_and_approve(**kwargs):
+            request = original_request(**kwargs)
+            approved_actions.append(request)
+            asyncio.get_running_loop().call_soon(
+                coordinator.approval_gate.callback,
+                request.token,
+                "approved",
+                "test-operator",
+                "unit-test approval",
+            )
+            return request
+
+        monkeypatch.setattr(
+            coordinator.approval_gate, "request_action", request_and_approve
+        )
+
     monkeypatch.setattr(coordinator, "call_agent", fake_agent)
     monkeypatch.setattr(coordinator, "settle_environment", fake_settle)
+    monkeypatch.setitem(
+        coordinator.TOOL_REGISTRY,
+        "slack_post_update",
+        lambda **_kwargs: {"success": True},
+    )
     monkeypatch.setattr(environment_module, "TOOL_REGISTRY", {"kubectl_scale": execute})
     monkeypatch.setattr(environment_module, "verify_environment", verify)
     monkeypatch.setattr(verifier_module, "verify_environment", verify)
 
     alert = {
-        "commonLabels": {"alertname": "HighCPUUsage", "service": "paymentservice"},
+        "commonLabels": {
+            "alertname": "HighCPUUsage",
+            "service": "paymentservice",
+            "severity": alert_severity,
+        },
         "expected_root_cause": "hidden benchmark answer",
     }
     result = await handle_incident(
@@ -218,3 +264,79 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(monkeypa
     assert result["remediation"]["final"]["evidence_class"] == "NON_EMPIRICAL"
     assert result["env_resolved"] is True
     assert comms_inputs[0]["env_resolved"] is True
+    if triage_severity == "P1":
+        assert result["approval"]["decision"] == "approved"
+        assert result["approval"]["approved_by"] == "test-operator"
+        assert len(approved_actions) == 2
+        assert all(
+            action.action["tool"] == "kubectl_scale"
+            and action.action["arguments"] == {
+                "deployment": "paymentservice",
+                "namespace": "default",
+                "replicas": 2,
+            }
+            for action in approved_actions
+        )
+        assert result["approval"]["action_digest"] == approved_actions[-1].action_digest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("severity", "alert_severity"),
+    [("P2", "warning"), ("P3", "info")],
+)
+async def test_injected_rl_policy_without_live_opt_in_calls_no_agent_or_tool(
+    monkeypatch, tmp_path, severity, alert_severity
+):
+    from agents import coordinator
+
+    monkeypatch.delenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", raising=False)
+    monkeypatch.delenv("KUBECONFIG_CONTEXT", raising=False)
+    monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
+    agent_calls = []
+    policy_calls = []
+    tool_calls = []
+
+    class Policy:
+        def generate(self, state, *, seed, generation_config):
+            policy_calls.append(state)
+            return json.dumps({
+                "tool": "kubectl_scale",
+                "arguments": {
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                },
+                "agent_claimed_resolved": False,
+            })
+
+    async def fake_agent(role, *_args, **_kwargs):
+        agent_calls.append(role)
+        return {"role": role, "trajectory": [], "final": {}}
+
+    monkeypatch.setattr(coordinator, "call_agent", fake_agent)
+    monkeypatch.setitem(
+        coordinator.TOOL_REGISTRY,
+        "kubectl_scale",
+        lambda **arguments: tool_calls.append(arguments) or {"success": True},
+    )
+
+    with pytest.raises(RuntimeError, match="live policy opt-in"):
+        await handle_incident(
+            {
+                "commonLabels": {
+                    "alertname": "HighCPUUsage",
+                    "service": "paymentservice",
+                    "severity": alert_severity,
+                }
+            },
+            incident_id="inc-no-live-opt-in",
+            scenario_id="single_fault/sf-002",
+            remediation_policy=Policy(),
+        )
+
+    assert severity in {"P2", "P3"}
+    assert agent_calls == []
+    assert policy_calls == []
+    assert tool_calls == []
+    assert not (tmp_path / "trajectories").exists()

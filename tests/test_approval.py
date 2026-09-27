@@ -2,6 +2,8 @@
 
 import asyncio
 
+import pytest
+
 
 def test_approval_policy_mapping():
     from agents.approval import approval_mode_for_severity
@@ -40,3 +42,18 @@ def test_approval_callback_rejects_unknown_token():
     gate = ApprovalGate(timeout_seconds=1)
     result = gate.callback("missing-token", "approved")
     assert result["ok"] is False
+
+
+@pytest.mark.parametrize("decision", ["approved", "rejected"])
+@pytest.mark.parametrize("approved_by", ["", " ", "\t\n"])
+def test_approval_callback_requires_nonblank_operator_identity(decision, approved_by):
+    from agents.approval import ApprovalGate
+
+    gate = ApprovalGate(timeout_seconds=1)
+    req = gate.request("inc-no-operator", "P1", "review")
+
+    result = gate.callback(req.token, decision, approved_by=approved_by)
+
+    assert result == {"ok": False, "error": "approved_by is required"}
+    assert req.decision == "pending"
+    assert req.event.is_set() is False

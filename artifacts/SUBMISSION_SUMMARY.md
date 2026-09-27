@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-27T17:27:12.897413+00:00`
+- **Generated**: `2026-09-27T17:52:42.495916+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -40,8 +40,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `e9947f682f3c9060...` | 22991 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
-| `agents/approval.py` | `906647ebb08d1858...` | 3851 |
-| `agents/coordinator.py` | `5f3b7dbe8269421c...` | 110412 |
+| `agents/approval.py` | `6028ccd40f5a9caa...` | 4048 |
+| `agents/coordinator.py` | `41637afaf8e93f4d...` | 110805 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
 | `agents/judge.py` | `b817d1433d43e70a...` | 7853 |
 | `agents/policy_remediation.py` | `d071d7f9046c38d8...` | 4511 |
@@ -146,7 +146,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/HF_SPACE_SETUP.md` | `b9fd2597fb62d620...` | 8350 |
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
-| `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `f61575d3b3f0a586...` | 4419 |
+| `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `d0c3a6284b313028...` | 5997 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `e6ee5dacc9679120...` | 26128 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
@@ -171,7 +171,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `scripts/package_submission.py` | `19a86bfd1768596d...` | 12247 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `534781631814e86a...` | 11177 |
-| `scripts/run_stage4_golden_incident.py` | `15194c94c0820560...` | 85332 |
+| `scripts/run_stage4_golden_incident.py` | `0920c25765ec51fa...` | 95577 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
 | `static/console.js` | `277ba766de0a84b2...` | 64395 |
 | `static/index.html` | `d2d907afdfd046c5...` | 4760 |
@@ -183,8 +183,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_adversarial_designer.py` | `e7e9d4f038571eeb...` | 5365 |
 | `tests/test_agents_grounding.py` | `9d7b64c0b0249273...` | 8244 |
 | `tests/test_app_endpoints.py` | `03cfab59acae6057...` | 6964 |
-| `tests/test_approval.py` | `62c82fa66d0c8ec1...` | 1392 |
-| `tests/test_approval_fail_closed.py` | `b8cce161aee66a1e...` | 7789 |
+| `tests/test_approval.py` | `eb11e94fd763eaea...` | 1987 |
+| `tests/test_approval_fail_closed.py` | `7c8a92f09acce480...` | 8456 |
 | `tests/test_argocd.py` | `87874c569f40a989...` | 11814 |
 | `tests/test_argocd_error_taxonomy.py` | `c6b43f9a2b9ac2b7...` | 6802 |
 | `tests/test_audit.py` | `7a2a10bda3a28e61...` | 3176 |
@@ -200,9 +200,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_frontend_ui.py` | `172e063d5e638158...` | 5251 |
 | `tests/test_g12_policy_integration_contract.py` | `708f4a6a526dcaab...` | 8113 |
 | `tests/test_g12_real_capture.py` | `5ff4bd9cb60d99ad...` | 9506 |
-| `tests/test_g4_protocol_profile.py` | `2ee5fcc5a228a883...` | 19121 |
+| `tests/test_g4_protocol_profile.py` | `6834682b5c7e6077...` | 19217 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `79debd0c2024bea2...` | 22071 |
-| `tests/test_g4_v31_transport_and_interruption.py` | `7ddb615759077b9d...` | 24092 |
+| `tests/test_g4_v31_transport_and_interruption.py` | `91ffe657a66083a0...` | 24216 |
 | `tests/test_g6_empirical_contract.py` | `a1c4b822a9bf80ea...` | 29670 |
 | `tests/test_g8_empirical_contract.py` | `2f358c8dd141fdab...` | 22972 |
 | `tests/test_g9_direct_policy_environment.py` | `566f8bd0ef2369a8...` | 14668 |
@@ -233,13 +233,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
 | `tests/test_stage15_submission_package.py` | `afdb364707eb1282...` | 22547 |
-| `tests/test_stage4_approval_channel.py` | `73d03fc83793fcfb...` | 12720 |
+| `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `fe8354613ff2720b...` | 38102 |
-| `tests/test_stage4_evidence_hardening.py` | `1e26c9043960fc16...` | 44607 |
+| `tests/test_stage4_evidence_hardening.py` | `089ed07525890055...` | 44731 |
 | `tests/test_stage4_f1_envelope_contract.py` | `12d60e468e760a64...` | 5200 |
 | `tests/test_stage4_grounding_evidence.py` | `c6feaab32aabda8c...` | 1472 |
 | `tests/test_stage4_model_selection.py` | `985a3f66808cccb2...` | 6272 |
+| `tests/test_stage4_preflight_contract.py` | `a1c5f7ab0facfc99...` | 21874 |
 | `tests/test_stage4_telemetry_readiness.py` | `05e4114535263220...` | 15676 |
 | `tests/test_stage5_scenario_splits_and_truth.py` | `af7025be02ca7b27...` | 5364 |
 | `tests/test_stage6_zero_shot_baseline.py` | `483ea70196282110...` | 6032 |

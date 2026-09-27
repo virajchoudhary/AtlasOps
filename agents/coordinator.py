@@ -20,7 +20,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from agents._http_retry import post_with_retry
 from agents.approval import approval_gate, approval_mode_for_severity
@@ -91,7 +91,7 @@ class AlertWebhookPayload(BaseModel):
 class ApprovalCallbackPayload(BaseModel):
     token: str = Field(min_length=1)
     decision: str = Field(min_length=1)
-    approved_by: str = ""
+    approved_by: str = Field(min_length=1)
     reason: str = ""
 
 
@@ -2116,11 +2116,17 @@ async def handle_incident(
             except Exception as e:
                 log.warning("failed to send approval notification: %s", e)
             approval_result = await approval_gate.wait_for_decision(incident_id)
-            approval_record["decision"] = approval_result.get("status")
-            if approval_result.get("approved_by"):
-                approval_record["approved_by"] = approval_result.get("approved_by")
             status = approval_result.get("status", "missing")
-            # Only explicit approval authorizes remediation; timeout fails closed.
+            approver = approval_result.get("approved_by")
+            has_operator_identity = isinstance(approver, str) and bool(approver.strip())
+            if status == "approved" and not has_operator_identity:
+                status = "identity_missing"
+                approval_result = {**approval_result, "status": status}
+            approval_record["decision"] = status
+            if has_operator_identity:
+                approver = approver.strip()
+                approval_record["approved_by"] = approver
+            # Only an explicit approval with a named operator authorizes remediation.
             if status != "approved":
                 approval_blocked = True
                 audit_log.record(
@@ -2144,7 +2150,6 @@ async def handle_incident(
                     },
                 }
             else:
-                approver = approval_result.get("approved_by") or "human-operator"
                 audit_log.record(
                     incident_id=incident_id,
                     agent_role="remediation",
@@ -2415,11 +2420,14 @@ async def webhook(request: Request):
 @app.post("/approve", dependencies=[Security(_require_runtime_api_key)])
 async def approve(request: Request):
     """Token-scoped approval callback used by the dedicated coordinator runtime."""
-    payload = ApprovalCallbackPayload.model_validate(await request.json())
+    try:
+        payload = ApprovalCallbackPayload.model_validate(await request.json())
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Invalid approval callback payload") from exc
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by or "human-operator",
+        approved_by=payload.approved_by,
         reason=payload.reason,
     )
     return JSONResponse(result, status_code=200 if result.get("ok") else 400)

@@ -167,6 +167,36 @@ def test_restart_drops_old_token_and_requires_a_fresh_decision(approval_process)
     assert _wait_for(output / "result.json", new_process)["approval"]["decision"] == "rejected"
 
 
+@pytest.mark.parametrize("decision", ["approved", "rejected"])
+@pytest.mark.parametrize("approved_by", [None, " \t"])
+def test_missing_or_blank_operator_identity_cannot_release_remediation(
+    approval_process, decision, approved_by,
+):
+    process, output, base_url = approval_process(
+        f"missing-operator-{decision}-{approved_by is None}", timeout=3,
+    )
+    pending = _pending(base_url, process)
+    headers = {"X-AtlasOps-Key": TEST_KEY}
+    payload = {"token": pending["token"], "decision": decision}
+    expected_status = 422 if approved_by is None else 400
+    if approved_by is not None:
+        payload["approved_by"] = approved_by
+
+    response = httpx.post(
+        f"{base_url}/approve",
+        json=payload,
+        headers=headers,
+        timeout=2,
+    )
+
+    assert response.status_code == expected_status
+    result = _wait_for(output / "result.json", process)
+    assert result["approval"]["decision"] == "timeout"
+    assert result["remediation"]["status"] == "approval_timeout"
+    assert "remediation" not in result["roles"]
+    assert result["remediation"]["executed_actions"] == []
+
+
 def test_stage4_secret_loading_requires_real_external_or_environment_values(monkeypatch, tmp_path):
     from scripts.run_stage4_golden_incident import load_stage4_secrets
 

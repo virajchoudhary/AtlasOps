@@ -10,6 +10,7 @@ import pytest
 @pytest.mark.parametrize("severity,decision,alert_severity", [
     ("P1", "approved", None), ("P1", "rejected", None),
     ("P1", "timeout", None), ("P1", "missing", None),
+    ("P1", "approved_without_identity", None),
     ("P2", None, None), ("P3", None, None),
     ("P2", "timeout", "critical"),
 ])
@@ -64,6 +65,12 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
 
     monkeypatch.setattr(gate, "request", request_with_decision)
     monkeypatch.setattr(coord, "approval_gate", gate)
+    if decision == "approved_without_identity":
+        async def approved_without_identity(incident_id):
+            gate._clear(gate._pending_by_incident[incident_id])
+            return {"status": "approved", "approved_by": ""}
+
+        monkeypatch.setattr(gate, "wait_for_decision", approved_without_identity)
 
     def response(message):
         result = MagicMock()
@@ -100,7 +107,15 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     ))
     persisted = json.loads((tmp_path / "inc-safety.json").read_text(encoding="utf-8"))
     assert persisted == result
-    assert result["approval"].get("decision") == decision
+    expected_decision = (
+        "identity_missing" if decision == "approved_without_identity" else decision
+    )
+    expected_blocked_status = (
+        "approval_identity_missing"
+        if decision == "approved_without_identity"
+        else f"approval_{decision}"
+    )
+    assert result["approval"].get("decision") == expected_decision
     assert result["env_resolved"] is environment_recovered
     assert result["verification"]["env_resolved"] is environment_recovered
     assert gate.pending() == []
@@ -135,12 +150,12 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
             tool_spies[name].assert_not_called()
         model.assert_not_awaited()
         assert [c.args[0] for c in calls.call_args_list] == ["triage", "diagnosis"]
-        assert result["remediation"]["final"]["status"] == f"approval_{decision}"
-        assert result["remediation"]["final"]["approval"]["status"] == decision
+        assert result["remediation"]["final"]["status"] == expected_blocked_status
+        assert result["remediation"]["final"]["approval"]["status"] == expected_decision
         assert result["remediation"]["final"]["executed_actions"] == []
         assert result["agent_claimed_resolved"] is False
         assert verify.call_args.kwargs["agent_claimed_resolved"] is False
-        assert result["comms"]["final"]["status"] == f"approval_{decision}"
+        assert result["comms"]["final"]["status"] == expected_blocked_status
         closure = tool_spies["slack_post_update"].call_args.kwargs
         assert "Blocked" in closure["title"]
         assert "not executed" in closure["summary"]
@@ -148,4 +163,4 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
         decisions = [c.kwargs for c in audit.record.call_args_list if c.kwargs.get("action_type") == "approval_decision"]
         assert len(decisions) == 1
         assert decisions[0]["policy_check"] == "approval_denied"
-        assert decisions[0]["result_summary"] == decision
+        assert decisions[0]["result_summary"] == expected_decision

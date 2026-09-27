@@ -44,6 +44,11 @@ def isolated_protocol_runtime(monkeypatch):
         "_probe_metrics_server_contract",
         lambda: APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
     )
+    monkeypatch.setattr(
+        runner,
+        "_current_main_sha",
+        lambda expected_sha=None: expected_sha,
+    )
 
 
 def test_coordinator_declares_v32_transport_constants():

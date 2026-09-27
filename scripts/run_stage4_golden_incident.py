@@ -24,6 +24,7 @@ import math
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -78,7 +79,10 @@ def load_stage4_secrets() -> dict[str, str]:
         raise RuntimeError("ATLASOPS_STAGE4_SECRET_DIR must be an absolute path")
     if secret_dir is not None:
         checkout = Path(REPO_ROOT).resolve()
-        resolved_dir = secret_dir.resolve()
+        try:
+            resolved_dir = secret_dir.resolve()
+        except (OSError, RuntimeError) as exc:
+            raise RuntimeError("Unable to resolve ATLASOPS_STAGE4_SECRET_DIR") from exc
         if resolved_dir == checkout or checkout in resolved_dir.parents:
             raise RuntimeError("ATLASOPS_STAGE4_SECRET_DIR must be outside the checkout")
     resolved: dict[str, str] = {}
@@ -88,8 +92,27 @@ def load_stage4_secrets() -> dict[str, str]:
         file_value = ""
         if secret_dir is not None:
             path = secret_dir / filename
+            file_path = path
+            if path.is_symlink():
+                try:
+                    file_path = path.resolve(strict=True)
+                except (OSError, RuntimeError) as exc:
+                    raise RuntimeError(f"Unable to load Stage 4 secret {name}") from exc
+                if file_path == checkout or checkout in file_path.parents:
+                    raise RuntimeError(
+                        f"Stage 4 secret file for {name} must not point into the checkout"
+                    )
+                if file_path != resolved_dir and resolved_dir not in file_path.parents:
+                    raise RuntimeError(
+                        f"Stage 4 secret file for {name} must resolve within "
+                        "ATLASOPS_STAGE4_SECRET_DIR"
+                    )
             try:
-                file_value = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+                file_value = (
+                    file_path.read_text(encoding="utf-8").strip()
+                    if file_path.is_file()
+                    else ""
+                )
             except (OSError, UnicodeError) as exc:
                 raise RuntimeError(f"Unable to load Stage 4 secret {name}") from exc
         if env_value and file_value and env_value != file_value:
@@ -154,6 +177,8 @@ async def stage4_approval_server(api_key: str):
 
 
 _EXPERIMENT_ID_RE = re.compile(r"^EXP-STAGE4-[A-Za-z0-9][A-Za-z0-9_-]{0,112}$")
+_APPROVED_MAIN_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_GIT_READ_ONLY_TIMEOUT_SECONDS = 10
 
 
 def _validated_experiment_id(experiment_id: str) -> str:
@@ -182,12 +207,8 @@ log = logging.getLogger("stage4.golden")
 KIND_CONTEXT = "kind-atlasops-local"
 SELECTED_STAGE4_AGENT_MODEL = resolve_stage4_agent_model()
 os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
-# Experiment identity is operator-controlled and must never collide with a
-# preserved evidence file. Override via STAGE4_EXPERIMENT_ID for each new run;
-# the runner refuses to overwrite an existing per-experiment evidence file.
-EXPERIMENT_ID = _validated_experiment_id(
-    os.environ.get("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-004")
-)
+# Populated only after the explicit operator-supplied experiment ID passes preflight.
+EXPERIMENT_ID = ""
 SCENARIO_ID = "single_fault/sf-002"
 TARGET_SERVICE = "paymentservice"
 TARGET_NAMESPACE = "default"
@@ -364,6 +385,59 @@ def _experiment_evidence_dir(experiment_id: str, root: str | None = None) -> str
     return os.path.join(base, "artifacts", "evidence", "stage4")
 
 
+def _attempts_directory_path(root: str | None = None) -> Path:
+    return Path(_experiment_evidence_dir("", root)) / ".attempts"
+
+
+def _validate_attempts_directory(attempts_dir: Path) -> None:
+    attempts_dir = Path(attempts_dir)
+    try:
+        canonical_root = attempts_dir.parents[3].resolve(strict=False)
+        expected_evidence_dir = canonical_root / "artifacts" / "evidence" / "stage4"
+        resolved_evidence_dir = attempts_dir.parent.resolve(strict=False)
+        resolved_attempts_dir = attempts_dir.resolve(strict=False)
+    except (IndexError, OSError, RuntimeError) as exc:
+        raise RuntimeError(
+            f"Unable to resolve canonical Stage 4 evidence path: {attempts_dir}"
+        ) from exc
+
+    if os.path.normcase(str(resolved_evidence_dir)) != os.path.normcase(
+        str(expected_evidence_dir)
+    ):
+        raise RuntimeError(
+            "Stage 4 evidence directory redirects outside its canonical checkout: "
+            f"{attempts_dir.parent}"
+        )
+    if os.path.normcase(str(resolved_attempts_dir)) != os.path.normcase(
+        str(expected_evidence_dir / ".attempts")
+    ):
+        raise RuntimeError(
+            "Stage 4 attempt accounting directory must not redirect outside its "
+            f"canonical evidence path: {attempts_dir}"
+        )
+
+    try:
+        metadata = attempts_dir.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to inspect Stage 4 attempt accounting directory: {attempts_dir}"
+        ) from exc
+
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
+        raise RuntimeError(
+            "Stage 4 attempt accounting directory must not redirect through a "
+            f"symlink, junction, or reparse point: {attempts_dir}"
+        )
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise RuntimeError(
+            f"Stage 4 attempt accounting path is not a directory: {attempts_dir}"
+        )
+
+
 def _attempt_marker_path(experiment_id: str, root: str | None = None) -> str:
     safe_id = experiment_id.replace(os.sep, "_").replace("/", "_")
     return os.path.join(
@@ -371,6 +445,38 @@ def _attempt_marker_path(experiment_id: str, root: str | None = None) -> str:
         ".attempts",
         f"{safe_id}.attempt.json",
     )
+
+
+def _require_fresh_experiment_id() -> str:
+    raw_id = os.environ.get("STAGE4_EXPERIMENT_ID")
+    if not isinstance(raw_id, str) or not raw_id.strip():
+        raise RuntimeError(
+            "STAGE4_EXPERIMENT_ID must be explicitly set to a fresh Stage 4 experiment ID"
+        )
+    try:
+        experiment_id = _validated_experiment_id(raw_id)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid STAGE4_EXPERIMENT_ID: {exc}") from exc
+
+    evidence_dir = _experiment_evidence_dir(experiment_id)
+    attempts_dir = os.path.join(evidence_dir, ".attempts")
+    _validate_attempts_directory(Path(attempts_dir))
+    existing_artifacts = (
+        ("primary evidence", os.path.join(evidence_dir, f"{experiment_id}.json")),
+        ("attempt marker", _attempt_marker_path(experiment_id)),
+        ("preflight evidence", os.path.join(evidence_dir, f"{experiment_id}.preflight.json")),
+        ("cleanup evidence", os.path.join(evidence_dir, f"{experiment_id}.cleanup.json")),
+        ("interruption evidence", os.path.join(evidence_dir, f"{experiment_id}.interruption.json")),
+        ("pre-fault evidence", os.path.join(attempts_dir, f"{experiment_id}.prefault.json")),
+        ("run log", os.path.join(evidence_dir, f"{experiment_id}.runlog.txt")),
+        ("leftover Chaos evidence", os.path.join(evidence_dir, f"{experiment_id}.leftover-chaos.yaml")),
+    )
+    for artifact, path in existing_artifacts:
+        if os.path.lexists(path):
+            raise RuntimeError(
+                f"Stage 4 {artifact} already exists for experiment ID: {path}"
+            )
+    return experiment_id
 
 
 def _poisoned_environment_path(root: str | None = None) -> str:
@@ -381,7 +487,12 @@ def _poisoned_environment_path(root: str | None = None) -> str:
 
 def _write_json_atomic(path: str, data: dict[str, Any]) -> None:
     directory = os.path.dirname(path)
+    attempts_dir = Path(directory) if Path(directory).name == ".attempts" else None
+    if attempts_dir is not None:
+        _validate_attempts_directory(attempts_dir)
     os.makedirs(directory, exist_ok=True)
+    if attempts_dir is not None:
+        _validate_attempts_directory(attempts_dir)
     temporary = os.path.join(
         directory,
         f".{os.path.basename(path)}.{uuid.uuid4().hex}.tmp",
@@ -391,10 +502,15 @@ def _write_json_atomic(path: str, data: dict[str, Any]) -> None:
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
+    if attempts_dir is not None:
+        _validate_attempts_directory(attempts_dir)
     os.replace(temporary, path)
 
 
 def _read_json_file(path: str) -> dict[str, Any] | None:
+    attempts_dir = Path(path).parent
+    if attempts_dir.name == ".attempts":
+        _validate_attempts_directory(attempts_dir)
     try:
         with open(path, "r", encoding="utf-8") as stream:
             value = json.load(stream)
@@ -406,9 +522,8 @@ def _read_json_file(path: str) -> dict[str, Any] | None:
 def _claimed_attempts_for_protocol_fingerprint(
     protocol_fingerprint_value: str, attempt_root: str | None = None
 ) -> int:
-    attempts_dir = os.path.join(
-        _experiment_evidence_dir("", attempt_root), ".attempts"
-    )
+    attempts_dir = _attempts_directory_path(attempt_root)
+    _validate_attempts_directory(attempts_dir)
     if not os.path.isdir(attempts_dir):
         return 0
 
@@ -439,11 +554,11 @@ def _claimed_attempts_for_protocol_fingerprint(
 
 @contextmanager
 def _reservation_budget_lock(attempt_root: str | None = None):
-    attempts_dir = os.path.join(
-        _experiment_evidence_dir("", attempt_root), ".attempts"
-    )
+    attempts_dir = _attempts_directory_path(attempt_root)
+    _validate_attempts_directory(attempts_dir)
     os.makedirs(attempts_dir, exist_ok=True)
-    lock_path = os.path.join(attempts_dir, ATTEMPT_BUDGET_LOCK_FILENAME)
+    _validate_attempts_directory(attempts_dir)
+    lock_path = str(attempts_dir / ATTEMPT_BUDGET_LOCK_FILENAME)
     try:
         lock_descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError as exc:
@@ -452,9 +567,11 @@ def _reservation_budget_lock(attempt_root: str | None = None):
             f"refusing ambiguous accounting: {lock_path}"
         ) from exc
     try:
+        _validate_attempts_directory(attempts_dir)
         yield
     finally:
         os.close(lock_descriptor)
+        _validate_attempts_directory(attempts_dir)
         os.unlink(lock_path)
 
 
@@ -463,26 +580,45 @@ def reserve_experiment_attempt(
     *,
     selected_model: str,
     main_sha: str,
+    expected_main_sha: str | None = None,
     attempt_root: str | None = None,
 ) -> dict[str, Any]:
     """Atomically reserve an experiment after exact protocol qualification."""
-    evidence_dir = _experiment_evidence_dir(experiment_id)
+    attempts_dir = _attempts_directory_path(attempt_root)
+    _validate_attempts_directory(attempts_dir)
+    evidence_dir = _experiment_evidence_dir(experiment_id, attempt_root)
     primary_path = os.path.join(evidence_dir, f"{experiment_id}.json")
-    if os.path.exists(primary_path):
+    if os.path.lexists(primary_path):
         raise RuntimeError(f"Stage 4 evidence already exists: {primary_path}")
 
     poisoned_path = _poisoned_environment_path(attempt_root)
-    if os.path.exists(poisoned_path):
+    if os.path.lexists(poisoned_path):
         raise RuntimeError(
             "Stage 4 environment is poisoned because zero-Chaos postflight was "
             f"not proven; operator verification is required before another run: {poisoned_path}"
+        )
+
+    source_sha = expected_main_sha if expected_main_sha is not None else main_sha
+    if not isinstance(source_sha, str) or not source_sha.strip():
+        raise RuntimeError(
+            "Stage 4 attempt reservation requires an approved exact source SHA"
+        )
+    if not isinstance(main_sha, str) or not main_sha.strip():
+        raise RuntimeError(
+            "Stage 4 attempt reservation requires the exact current main_sha"
+        )
+    verified_main_sha = _current_main_sha(expected_sha=source_sha)
+    if verified_main_sha.lower() != main_sha.lower():
+        raise RuntimeError(
+            "Stage 4 reservation main_sha must match the approved current source"
         )
 
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
     profile = _observe_protocol_profile(selected_model)
     profile_fingerprint = protocol_fingerprint(profile)
     with _reservation_budget_lock(attempt_root):
-        if os.path.exists(poisoned_path):
+        _validate_attempts_directory(attempts_dir)
+        if os.path.lexists(poisoned_path):
             raise RuntimeError(
                 "Stage 4 environment is poisoned because zero-Chaos postflight was "
                 f"not proven; operator verification is required before another run: {poisoned_path}"
@@ -496,11 +632,16 @@ def reserve_experiment_attempt(
                 f"profile {profile_fingerprint}: "
                 f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
             )
-        if os.path.exists(marker_path):
+        if os.path.lexists(marker_path):
             existing = _read_json_file(marker_path) or {}
             raise RuntimeError(
                 f"Stage 4 attempt already exists: {marker_path} "
                 f"(state={existing.get('state', 'UNKNOWN')})"
+            )
+        verified_main_sha = _current_main_sha(expected_sha=source_sha)
+        if verified_main_sha.lower() != main_sha.lower():
+            raise RuntimeError(
+                "Stage 4 reservation source changed before marker creation"
             )
 
         reservation = {
@@ -527,6 +668,7 @@ def _transition_attempt(
     timestamp_field: str,
     attempt_root: str | None = None,
 ) -> dict[str, Any]:
+    _validate_attempts_directory(_attempts_directory_path(attempt_root))
     marker_path = _attempt_marker_path(reservation["experiment_id"], attempt_root)
     current = _read_json_file(marker_path) or {}
     if current.get("reservation_token") != reservation.get("reservation_token"):
@@ -578,12 +720,14 @@ def release_experiment_reservation(
     attempt_root: str | None = None,
 ) -> bool:
     """Release only an unused reservation after a pre-fault setup failure."""
+    _validate_attempts_directory(_attempts_directory_path(attempt_root))
     marker_path = _attempt_marker_path(reservation["experiment_id"], attempt_root)
     current = _read_json_file(marker_path) or {}
     if current.get("reservation_token") != reservation.get("reservation_token"):
         return False
     if current.get("state") != ATTEMPT_STATE_RESERVED:
         return False
+    _validate_attempts_directory(_attempts_directory_path(attempt_root))
     os.remove(marker_path)
     return True
 
@@ -1277,31 +1421,103 @@ def _persist_stage4_primary_evidence(evidence: dict[str, Any]) -> str:
     return path
 
 
-def _current_main_sha() -> str:
-    status = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _approved_main_sha() -> str:
+    approved_sha = os.environ.get("STAGE4_APPROVED_MAIN_SHA", "")
+    if not _APPROVED_MAIN_SHA_RE.fullmatch(approved_sha):
+        raise RuntimeError(
+            "STAGE4_APPROVED_MAIN_SHA must be explicitly set to a full 40-character commit SHA"
+        )
+    # This is the operator's SHA attestation, not independent proof of PR review or CI.
+    return approved_sha.lower()
+
+
+def _current_main_sha(expected_sha: str | None = None) -> str:
+    approved_sha = _approved_main_sha()
+    if expected_sha is not None and approved_sha != expected_sha.lower():
+        raise RuntimeError(
+            "STAGE4_APPROVED_MAIN_SHA changed after Stage 4 source preflight"
+        )
+
+    def git_read_only(args: list[str], *, remote: bool = False):
+        options: dict[str, Any] = {
+            "cwd": REPO_ROOT,
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": _GIT_READ_ONLY_TIMEOUT_SECONDS,
+        }
+        if remote:
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            options["env"] = env
+        try:
+            return subprocess.run(["git", *args], **options)
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            if remote:
+                raise RuntimeError(
+                    "Unable to verify remote origin/main freshness; refusing Stage 4 cluster access"
+                ) from None
+            raise RuntimeError(
+                "Unable to verify the clean main checkout required for Stage 4"
+            ) from None
+
+    status = git_read_only(["status", "--porcelain", "--untracked-files=all"])
     if status.returncode != 0:
-        raise RuntimeError("Unable to verify a clean experiment source tree for Stage 4")
+        raise RuntimeError("Unable to verify a clean main checkout for Stage 4")
     if status.stdout.strip():
         raise RuntimeError(
-            "Stage 4 requires a clean experiment source tree; commit or preserve local changes "
-            "before reserving an attempt"
+            "Stage 4 requires a clean main checkout; commit or preserve local changes "
+            "before contacting the cluster"
         )
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+    branch = git_read_only(["symbolic-ref", "--quiet", "--short", "HEAD"])
+    if branch.returncode != 0 or branch.stdout.strip() != "main":
+        raise RuntimeError(
+            "Stage 4 requires checked-out branch main; detached or non-main HEAD is not allowed"
+        )
+    head = git_read_only(["rev-parse", "--verify", "HEAD"])
+    origin_main = git_read_only(["rev-parse", "--verify", "origin/main^{commit}"])
+    main_sha = head.stdout.strip()
+    local_origin_sha = origin_main.stdout.strip()
+    if (
+        head.returncode != 0
+        or not _APPROVED_MAIN_SHA_RE.fullmatch(main_sha)
+        or origin_main.returncode != 0
+        or not _APPROVED_MAIN_SHA_RE.fullmatch(local_origin_sha)
+    ):
+        raise RuntimeError(
+            "Unable to establish valid HEAD and origin/main commits for Stage 4 preflight"
+        )
+    if main_sha.lower() != approved_sha or local_origin_sha.lower() != approved_sha:
+        raise RuntimeError(
+            "Stage 4 HEAD and local origin/main must both match STAGE4_APPROVED_MAIN_SHA"
+        )
+
+    remote_main = git_read_only(
+        ["ls-remote", "--exit-code", "origin", "refs/heads/main"],
+        remote=True,
     )
-    main_sha = result.stdout.strip()
-    if result.returncode != 0 or len(main_sha) != 40:
-        raise RuntimeError("Unable to establish a valid repository HEAD for Stage 4 reservation")
+    if remote_main.returncode != 0:
+        raise RuntimeError(
+            "Unable to verify remote origin/main freshness; refusing to use cached refs"
+        )
+    remote_hashes = []
+    for line in remote_main.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[1] == "refs/heads/main":
+            remote_hashes.append(fields[0])
+    if (
+        len(remote_hashes) != 1
+        or not _APPROVED_MAIN_SHA_RE.fullmatch(remote_hashes[0])
+    ):
+        raise RuntimeError(
+            "Unable to verify a single full remote origin/main commit hash"
+        )
+    if remote_hashes[0].lower() != approved_sha:
+        raise RuntimeError(
+            "remote origin/main does not match STAGE4_APPROVED_MAIN_SHA"
+        )
+    if expected_sha is not None and main_sha.lower() != expected_sha.lower():
+        raise RuntimeError("Stage 4 source identity changed after startup preflight")
     return main_sha
 
 
@@ -1644,6 +1860,16 @@ async def main() -> dict[str, Any]:
 
 
 async def _run_experiment() -> dict[str, Any]:
+    global EXPERIMENT_ID
+
+    EXPERIMENT_ID = _require_fresh_experiment_id()
+    poisoned_path = _poisoned_environment_path()
+    if os.path.lexists(poisoned_path):
+        raise RuntimeError(
+            "Stage 4 environment is poisoned because zero-Chaos postflight was "
+            f"not proven; operator verification is required before another run: {poisoned_path}"
+        )
+    main_sha = _current_main_sha()
     fault_crossed = False
     fault_observable = False
     reservation: dict[str, Any] | None = None
@@ -1777,11 +2003,11 @@ async def _run_experiment() -> dict[str, Any]:
             evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
-        main_sha = _current_main_sha()
         reservation = reserve_experiment_attempt(
             EXPERIMENT_ID,
             selected_model=SELECTED_STAGE4_AGENT_MODEL,
             main_sha=main_sha,
+            expected_main_sha=main_sha,
         )
         evidence["model"] = reservation["protocol_profile"]["model"]["name"]
         evidence["protocol_profile"] = reservation["protocol_profile"]
@@ -1817,6 +2043,7 @@ async def _run_experiment() -> dict[str, Any]:
         manifest_path = os.path.join(REPO_ROOT, "bench", "chaos_manifests", "single_fault", "sf-002.yaml")
         # Treat an apply timeout/error as potentially side-effecting until
         # postflight proves the target resource is absent.
+        _current_main_sha(expected_sha=main_sha)
         fault_crossed = True
         inject_res = run_kubectl(["apply", "-f", manifest_path])
         injection_success = inject_res.get("success") is True

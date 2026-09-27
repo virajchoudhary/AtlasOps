@@ -95,8 +95,11 @@ class ApprovalGate:
         normalized = decision.lower().strip()
         if normalized not in {"approved", "rejected"}:
             return {"ok": False, "error": "decision must be approved or rejected"}
+        operator_identity = approved_by.strip() if isinstance(approved_by, str) else ""
+        if not operator_identity:
+            return {"ok": False, "error": "approved_by is required"}
         req.decision = normalized
-        req.approved_by = approved_by
+        req.approved_by = operator_identity
         req.reason = reason
         req.event.set()
         return {"ok": True, "incident_id": req.incident_id, "decision": normalized}

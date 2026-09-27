@@ -24,6 +24,22 @@ These are platform/control-path faults, not evidence of a model outcome.
   `ATLASOPS_STAGE4_SECRET_DIR` outside the checkout. If both sources exist
   they must agree. Missing, empty, unreadable, or conflicting values stop the
   run. No checked-in or demo secret is a fallback.
+- Before cluster contact, the operator supplies a fresh explicit
+  `STAGE4_EXPERIMENT_ID` and a full `STAGE4_APPROVED_MAIN_SHA`. The runner
+  rejects an existing per-attempt record, a poisoned-environment latch, a dirty
+  or detached checkout, a non-`main` branch, or any mismatch among HEAD, local
+  `origin/main`, the operator's SHA, and a fresh read-only remote `main` lookup.
+  An unreachable remote fails closed. The source check repeats at reservation
+  and immediately before fault application; pre-fault drift releases an unused
+  reservation without crossing T0. The operator must separately establish
+  that `origin` is the trusted fork and that the SHA passed PR review and CI;
+  equality of Git refs alone is not approval evidence.
+- The ignored `.attempts` ledger must be a normal directory under the Stage 4
+  evidence path, not a symlink or junction. The runner rechecks this at
+  preflight and reservation/transition boundaries. The operator must keep the
+  evidence parent stable and single-writer: path checks cannot prevent a
+  concurrent same-user process from replacing that parent between a check
+  and a filesystem operation. This is not a hostile-local-writer guarantee.
 - The runner starts an authenticated HTTP listener on an ephemeral
   `127.0.0.1` port in the **same event loop and process** as `handle_incident`.
   Only `POST /approve` and `GET /approval/pending` are exposed. The listener
@@ -61,6 +77,12 @@ or explicitly provide all four environment variables. Verify separately
 that the credentials match the deployed coordinator/Argo CD secrets. Never
 commit, print, or paste their values. The local API key protects the host
 listener; the in-cluster service is still independent.
+
+Immediately before a future run, verify the fork's remote `main`, its PR/CI
+acceptance, and the clean local checkout independently. Supply that full SHA as
+`STAGE4_APPROVED_MAIN_SHA`, and select an unused `STAGE4_EXPERIMENT_ID` only
+after checking the ignored attempt ledger and poison latch. This setup is not
+an authorization to reserve an attempt, request P1, or inject a fault.
 
 The synthetic subprocess tests cover both decisions, HTTP authentication,
 the unrelated coordinator process, timeout, replay, and process restart.

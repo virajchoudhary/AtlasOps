@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 
+import httpx
 import pytest
 
 import bench.zero_shot_baseline as zero_shot
@@ -20,6 +23,91 @@ def _prediction(root_cause: str = "service saturation under load") -> str:
             "confidence": 0.4,
         }
     )
+
+
+def _mock_tags_endpoint(
+    monkeypatch,
+    payload,
+    *,
+    status_code: int = 200,
+    failure=None,
+    client_options=None,
+):
+    requests = []
+
+    class FakeResponse:
+        def __init__(self):
+            self.status_code = status_code
+
+        def json(self):
+            return payload
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            if client_options is not None:
+                client_options.append(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url):
+            requests.append(url)
+            if failure is not None:
+                raise failure
+            return FakeResponse()
+
+    monkeypatch.setattr(zero_shot.httpx, "AsyncClient", FakeAsyncClient)
+    return requests
+
+
+def _mock_completion_endpoint(
+    monkeypatch,
+    payload,
+    *,
+    status_code: int = 200,
+    client_options=None,
+    failure=None,
+):
+    response = httpx.Response(
+        status_code,
+        json=payload,
+        request=httpx.Request(
+            "POST",
+            "http://127.0.0.1:11434/v1/chat/completions",
+        ),
+    )
+    calls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            if client_options is not None:
+                client_options.append(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    async def fake_post(_client, url, json, *, context, max_response_bytes=None):
+        calls.append(
+            {
+                "url": url,
+                "payload": json,
+                "context": context,
+                "max_response_bytes": max_response_bytes,
+            }
+        )
+        if failure is not None:
+            raise failure
+        return response
+
+    monkeypatch.setattr(zero_shot.httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(zero_shot, "post_with_retry", fake_post)
+    return response, calls
 
 
 @pytest.mark.asyncio
@@ -55,6 +143,616 @@ async def test_empirical_default_backend_requires_configured_endpoint(
             mode="empirical",
             output_dir=tmp_path,
         )
+
+
+@pytest.mark.asyncio
+async def test_configured_backend_rejects_unverified_model_before_output(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    async def wrong_identity(_model_name):
+        return {"name": "qwen2.5:7b-instruct", "digest": "b" * 64}
+
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", wrong_identity)
+    with pytest.raises(RuntimeError, match="model revision"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_name="qwen2.5:7b-instruct",
+            model_revision="a" * 64,
+            mode="empirical",
+            output_dir=tmp_path / "run",
+        )
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.asyncio
+async def test_configured_backend_requires_sha256_model_revision_before_observation(
+    tmp_path,
+    monkeypatch,
+):
+    observer_called = False
+
+    async def identity_observer(_model_name):
+        nonlocal observer_called
+        observer_called = True
+        return {"name": "qwen2.5:7b-instruct", "digest": "a" * 64}
+
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
+
+    with pytest.raises(ValueError, match="64-hex SHA-256"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_name="qwen2.5:7b-instruct",
+            model_revision="commit-identifier",
+            mode="empirical",
+            output_dir=tmp_path / "run",
+        )
+
+    assert observer_called is False
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.asyncio
+async def test_observe_local_model_identity_reads_exact_ollama_tag(monkeypatch):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    requests = _mock_tags_endpoint(
+        monkeypatch,
+        {
+            "models": [
+                {"name": "other-model:latest", "digest": "b" * 64},
+                {"name": model_name, "digest": f"sha256:{digest}"},
+            ]
+        },
+    )
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    identity = await zero_shot.observe_local_model_identity(model_name)
+
+    assert requests == ["http://127.0.0.1:11434/api/tags"]
+    assert identity == {
+        "provider": "ollama-local",
+        "name": model_name,
+        "digest": digest,
+    }
+
+
+@pytest.mark.asyncio
+async def test_ambient_http_proxy_is_disabled_for_local_identity_and_inference(
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8123")
+    monkeypatch.setenv("http_proxy", "http://proxy.invalid:8123")
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8123")
+    monkeypatch.setenv("https_proxy", "http://proxy.invalid:8123")
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    tag_client_options = []
+    _mock_tags_endpoint(
+        monkeypatch,
+        {"models": [{"name": model_name, "digest": digest}]},
+        client_options=tag_client_options,
+    )
+    await zero_shot.observe_local_model_identity(model_name)
+    assert tag_client_options[0]["trust_env"] is False
+
+    inference_client_options = []
+    _mock_completion_endpoint(
+        monkeypatch,
+        {
+            "model": model_name,
+            "choices": [{"message": {"content": _prediction()}}],
+        },
+        client_options=inference_client_options,
+    )
+    inference_result = await zero_shot.openai_compatible_inference(
+        [],
+        model_name,
+        {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 512,
+            "seed": 1,
+            "timeout_seconds": 2,
+        },
+    )
+
+    assert inference_result.model_name == model_name
+    assert inference_client_options[0]["trust_env"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("models", "error"),
+    [
+        ([], "not installed"),
+        ([{"name": "qwen2.5:7b-instruct-v2", "digest": "a" * 64}], "not installed"),
+        (
+            [
+                {"name": "qwen2.5:7b-instruct", "digest": "a" * 64},
+                {"name": "qwen2.5:7b-instruct", "digest": "b" * 64},
+            ],
+            "ambiguous",
+        ),
+        ([{"name": "qwen2.5:7b-instruct", "digest": "not-a-digest"}], "64-hex"),
+    ],
+)
+async def test_observe_local_model_identity_fails_closed_for_bad_tags(
+    tmp_path,
+    monkeypatch,
+    models,
+    error,
+):
+    _mock_tags_endpoint(monkeypatch, {"models": models})
+    monkeypatch.setenv("VLLM_BASE", "http://localhost:11434/v1")
+
+    with pytest.raises(RuntimeError, match=error):
+        await zero_shot.observe_local_model_identity("qwen2.5:7b-instruct")
+
+
+@pytest.mark.asyncio
+async def test_local_identity_rejects_remote_endpoint_without_leaking_url_credentials(
+    monkeypatch,
+):
+    requests = _mock_tags_endpoint(monkeypatch, {"models": []})
+    monkeypatch.setenv(
+        "VLLM_BASE",
+        "https://user:private-password@example.invalid/v1?token=private-token",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await zero_shot.observe_local_model_identity("qwen2.5:7b-instruct")
+
+    assert requests == []
+    assert "private-password" not in str(exc_info.value)
+    assert "private-token" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_local_identity_rejects_non_loopback_endpoint_without_connecting(
+    monkeypatch,
+):
+    requests = _mock_tags_endpoint(monkeypatch, {"models": []})
+    monkeypatch.setenv("VLLM_BASE", "https://inference.example.invalid/v1")
+
+    with pytest.raises(RuntimeError, match="loopback"):
+        await zero_shot.observe_local_model_identity("qwen2.5:7b-instruct")
+
+    assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_local_identity_transport_failure_is_sanitized(monkeypatch):
+    requests = _mock_tags_endpoint(
+        monkeypatch,
+        {"models": []},
+        failure=httpx.ConnectError("credential must not be retained"),
+    )
+    monkeypatch.setenv("VLLM_BASE", "http://localhost:11434/v1")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await zero_shot.observe_local_model_identity("qwen2.5:7b-instruct")
+
+    assert requests == ["http://localhost:11434/api/tags"]
+    assert "credential" not in str(exc_info.value)
+    assert "ConnectError" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_unverifiable_preflight_fails_before_creating_run_output(
+    tmp_path,
+    monkeypatch,
+):
+    _mock_tags_endpoint(
+        monkeypatch,
+        {"models": []},
+        failure=httpx.ConnectError("endpoint detail must not be retained"),
+    )
+    monkeypatch.setenv("VLLM_BASE", "http://localhost:11434/v1")
+
+    with pytest.raises(RuntimeError, match="ConnectError"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_name="qwen2.5:7b-instruct",
+            model_revision="a" * 64,
+            mode="empirical",
+            output_dir=tmp_path / "run",
+        )
+
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("served_model", "should_succeed"),
+    [
+        ("qwen2.5:7b-instruct", True),
+        ("qwen2.5:7b-instruct-v2", False),
+        (None, False),
+    ],
+)
+async def test_openai_compatible_response_model_must_match_request(
+    monkeypatch,
+    served_model,
+    should_succeed,
+):
+    response_body = {"choices": [{"message": {"content": _prediction()}}]}
+    if served_model is not None:
+        response_body["model"] = served_model
+    response, calls = _mock_completion_endpoint(monkeypatch, response_body)
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    generation_config = {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "max_tokens": 512,
+        "seed": 1,
+        "timeout_seconds": 2,
+    }
+
+    if should_succeed:
+        result = await zero_shot.openai_compatible_inference(
+            [],
+            "qwen2.5:7b-instruct",
+            generation_config,
+        )
+        assert result.content == _prediction()
+        assert result.model_name == "qwen2.5:7b-instruct"
+    else:
+        with pytest.raises(
+            zero_shot.InferenceResponseError,
+            match="model",
+        ) as exc_info:
+            await zero_shot.openai_compatible_inference(
+                [],
+                "qwen2.5:7b-instruct",
+                generation_config,
+            )
+        evidence = exc_info.value.response_error
+        assert evidence["kind"] == (
+            "missing_model_name" if served_model is None else "response_model_name_mismatch"
+        )
+        assert evidence["status_code"] == 200
+        assert evidence["body_sha256"] == hashlib.sha256(response.content).hexdigest()
+        assert evidence["body_byte_length"] == len(response.content)
+        assert not hasattr(exc_info.value, "raw_response_body")
+
+    assert calls[0]["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+    assert calls[0]["payload"]["model"] == "qwen2.5:7b-instruct"
+    assert calls[0]["context"] == "g6-zero-shot"
+    assert calls[0]["max_response_bytes"] == zero_shot.MAX_G6_INFERENCE_RESPONSE_BYTES
+
+
+@pytest.mark.asyncio
+async def test_large_encoded_error_body_is_not_persisted(monkeypatch):
+    api_key = "api-key-must-not-be-retained"
+    encoded_key = base64.b64encode(api_key.encode()).decode()
+    oversized_value = "oversized-response-" * 20_000
+    model_name = "qwen2.5:7b-instruct"
+    monkeypatch.setenv("LLM_API_KEY", api_key)
+    response, _calls = _mock_completion_endpoint(
+        monkeypatch,
+        {
+            "model": "other-model",
+            "error": {
+                "message": api_key,
+                "encoded": encoded_key,
+                "blob": oversized_value,
+            },
+        },
+    )
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    async def failing_inference(messages, requested_model, generation_config):
+        return await zero_shot.openai_compatible_inference(
+            messages,
+            requested_model,
+            generation_config,
+        )
+
+    episode = await zero_shot._evaluate_empirical_episode(
+        VAL_SPLIT[0],
+        model_name,
+        {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 512,
+            "seed": 1,
+            "timeout_seconds": 2,
+        },
+        failing_inference,
+        "openai-compatible",
+        {
+            "provider": "ollama-local",
+            "name": model_name,
+            "digest": "a" * 64,
+        },
+    )
+    serialized = json.dumps(episode, sort_keys=True)
+
+    assert episode["status"] == "error"
+    assert episode["inference_response_error"] == {
+        "kind": "response_model_name_mismatch",
+        "status_code": 200,
+        "body_format": "json",
+        "body_sha256": hashlib.sha256(response.content).hexdigest(),
+        "body_byte_length": len(response.content),
+    }
+    assert episode["response_model_name"] is None
+    assert episode["response_model_name_verified"] is False
+    assert api_key not in serialized
+    assert encoded_key not in serialized
+    assert oversized_value not in serialized
+    assert "raw_inference_error_response" not in episode
+    assert len(serialized) < 10_000
+
+
+@pytest.mark.asyncio
+async def test_g6_oversized_transport_response_persists_only_bounded_fingerprint(
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    limit = zero_shot.MAX_G6_INFERENCE_RESPONSE_BYTES
+    prefix = b"x" * limit
+    oversized = zero_shot.ResponseBodyTooLargeError(
+        status_code=200,
+        limit_bytes=limit,
+        body_prefix_sha256=hashlib.sha256(prefix).hexdigest(),
+    )
+    _response, calls = _mock_completion_endpoint(
+        monkeypatch,
+        {},
+        failure=oversized,
+    )
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    async def failing_inference(messages, requested_model, generation_config):
+        return await zero_shot.openai_compatible_inference(
+            messages,
+            requested_model,
+            generation_config,
+        )
+
+    episode = await zero_shot._evaluate_empirical_episode(
+        VAL_SPLIT[0],
+        model_name,
+        {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 512,
+            "seed": 1,
+            "timeout_seconds": 2,
+        },
+        failing_inference,
+        "openai-compatible",
+        {
+            "provider": "ollama-local",
+            "name": model_name,
+            "digest": "a" * 64,
+        },
+    )
+    serialized = json.dumps(episode, sort_keys=True)
+
+    assert episode["status"] == "error"
+    assert episode["inference_response_error"] == {
+        "kind": "response_body_too_large",
+        "status_code": 200,
+        "body_format": "other",
+        "body_sha256": hashlib.sha256(prefix).hexdigest(),
+        "body_byte_length": limit,
+        "body_truncated": True,
+        "body_limit_bytes": limit,
+    }
+    assert episode["raw_model_response"] == ""
+    assert episode["inference_response_error"]["body_sha256"] in serialized
+    assert "x" * 1024 not in serialized
+    assert calls[0]["max_response_bytes"] == limit
+    assert len(serialized) < 10_000
+
+
+@pytest.mark.asyncio
+async def test_transient_alias_with_matching_observations_stays_nonclaimable(
+    tmp_path,
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    identity_checks = []
+
+    async def identity_observer(requested_name):
+        identity_checks.append(requested_name)
+        return {"name": requested_name, "digest": f"sha256:{digest}"}
+
+    async def fake_inference(_messages, _model_name, _generation_config):
+        # A mutable alias could change and revert during inference; the API returns only its name.
+        return zero_shot.InferenceResult(_prediction(), model_name)
+
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
+
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        model_name=model_name,
+        model_revision=f"sha256:{digest}",
+        mode="empirical",
+        output_dir=tmp_path / "run",
+    )
+
+    assert identity_checks == [model_name, model_name]
+    assert summary["empirical_inference_executed"] is True
+    assert summary["empirical_claim_allowed"] is False
+    assert summary["non_empirical"] is False
+    attestation = summary["model_identity_attestation"]
+    assert attestation["status"] == "alias_observed_not_immutable"
+    assert attestation["recheck_status"] == "observations_match"
+    assert attestation["observations_match"] is True
+    assert attestation["immutable_serving_attestation"] is False
+    assert attestation["claimable"] is False
+    assert attestation["observed_before"]["digest"] == digest
+    assert attestation["observed_after"]["digest"] == digest
+    assert attestation["response_model_names"] == [model_name] * len(VAL_SPLIT)
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "results_per_episode.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["empirical_claim_allowed"] is False for row in rows)
+    assert all(
+        row["model_identity_attestation_status"] == "alias_observed_not_immutable" for row in rows
+    )
+    assert all(row["response_model_name"] == model_name for row in rows)
+    assert all(row["response_model_name_verified"] is True for row in rows)
+    assert all(row["observed_model_identity"]["digest"] == digest for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_episode_finalize_replace_failure_preserves_prior_raw_rows(
+    tmp_path,
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    before_replace = []
+
+    async def identity_observer(requested_name):
+        return {"name": requested_name, "digest": digest}
+
+    async def fake_inference(_messages, _model_name, _generation_config):
+        return zero_shot.InferenceResult(_prediction(), model_name)
+
+    def fail_replace(_temporary_path, destination):
+        before_replace.append(destination.read_bytes())
+        raise OSError("simulated atomic replace failure")
+
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
+    monkeypatch.setattr(zero_shot.os, "replace", fail_replace)
+
+    output_dir = tmp_path / "run"
+    with pytest.raises(OSError, match="simulated atomic replace failure"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_name=model_name,
+            model_revision=digest,
+            mode="empirical",
+            output_dir=output_dir,
+        )
+
+    episode_file = output_dir / "results_per_episode.jsonl"
+    assert len(before_replace) == 1
+    assert episode_file.read_bytes() == before_replace[0]
+    rows = [json.loads(line) for line in before_replace[0].decode().splitlines()]
+    assert len(rows) == len(VAL_SPLIT)
+    assert all(row["empirical_claim_allowed"] is False for row in rows)
+    assert all(row["model_identity_attestation_status"] == "pending" for row in rows)
+    assert all(row["raw_model_response"] == _prediction() for row in rows)
+    assert list(output_dir.glob(".results_per_episode.jsonl.*.tmp")) == []
+    assert not (output_dir / "results_summary.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_configured_empirical_identity_drift_makes_run_nonclaimable(
+    tmp_path,
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    requested_digest = "a" * 64
+    served_digest = "b" * 64
+    identities = iter(
+        [
+            {"name": model_name, "digest": requested_digest},
+            {"name": model_name, "digest": served_digest},
+        ]
+    )
+
+    async def identity_observer(_requested_name):
+        return next(identities)
+
+    async def fake_inference(_messages, _model_name, _generation_config):
+        return zero_shot.InferenceResult(_prediction(), model_name)
+
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
+
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        model_name=model_name,
+        model_revision=requested_digest,
+        mode="empirical",
+        output_dir=tmp_path / "run",
+    )
+
+    assert summary["empirical_inference_executed"] is True
+    assert summary["empirical_claim_allowed"] is False
+    assert summary["model_identity_attestation"]["status"] == "alias_observed_not_immutable"
+    assert summary["model_identity_attestation"]["recheck_status"] == "identity_changed"
+    assert summary["model_identity_attestation"]["observations_match"] is False
+    assert summary["model_identity_attestation"]["claimable"] is False
+    assert summary["model_identity_attestation"]["observed_after"]["digest"] == served_digest
+    episode_file = tmp_path / "run" / "results_per_episode.jsonl"
+    rows = [json.loads(line) for line in episode_file.read_text(encoding="utf-8").splitlines()]
+    assert all(row["empirical_claim_allowed"] is False for row in rows)
+    assert all(
+        row["model_identity_attestation_status"] == "alias_observed_not_immutable" for row in rows
+    )
+    assert all(row["model_identity_recheck_status"] == "identity_changed" for row in rows)
+    assert (
+        summary["raw_predictions_sha256"] == hashlib.sha256(episode_file.read_bytes()).hexdigest()
+    )
+
+
+@pytest.mark.asyncio
+async def test_unverifiable_final_identity_recheck_makes_run_nonclaimable(
+    tmp_path,
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    checks = 0
+
+    async def identity_observer(_requested_name):
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return {"name": model_name, "digest": digest}
+        raise RuntimeError("untrusted detail must not be retained")
+
+    async def fake_inference(_messages, _model_name, _generation_config):
+        return zero_shot.InferenceResult(_prediction(), model_name)
+
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
+
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        model_name=model_name,
+        model_revision=digest,
+        mode="empirical",
+        output_dir=tmp_path / "run",
+    )
+
+    assert checks == 2
+    assert summary["empirical_inference_executed"] is True
+    assert summary["empirical_claim_allowed"] is False
+    assert summary["model_identity_attestation"]["status"] == "alias_observed_not_immutable"
+    assert summary["model_identity_attestation"]["recheck_status"] == "unverifiable"
+    assert summary["model_identity_attestation"]["claimable"] is False
+    assert "must not be retained" not in summary["model_identity_attestation"]["error"]
+    episode_file = tmp_path / "run" / "results_per_episode.jsonl"
+    rows = [json.loads(line) for line in episode_file.read_text(encoding="utf-8").splitlines()]
+    assert all(row["empirical_claim_allowed"] is False for row in rows)
+    assert all(
+        row["model_identity_attestation_status"] == "alias_observed_not_immutable" for row in rows
+    )
+    assert all(row["model_identity_recheck_status"] == "unverifiable" for row in rows)
 
 
 @pytest.mark.asyncio
@@ -109,12 +807,13 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
     monkeypatch,
 ):
     calls = 0
+    secret_marker = "synthetic-injected-secret-marker"
     monkeypatch.setenv("ATLASOPS_MOCK_EVAL", "1")
 
     async def failing_inference(messages, model_name, generation_config):
         nonlocal calls
         calls += 1
-        raise RuntimeError("endpoint unavailable")
+        raise RuntimeError(secret_marker)
 
     summary = await zero_shot.evaluate_zero_shot_split(
         "val",
@@ -137,7 +836,8 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
     assert all(row["status"] == "error" for row in rows)
     assert all(row["evaluation_mode"] == "empirical" for row in rows)
     assert all("mock" not in row for row in rows)
-    assert all("endpoint unavailable" in row["error"] for row in rows)
+    assert all(row["error"] == "RuntimeError: inference_failure; details redacted" for row in rows)
+    assert secret_marker not in json.dumps(rows)
 
 
 @pytest.mark.asyncio

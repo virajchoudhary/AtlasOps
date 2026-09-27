@@ -13,15 +13,34 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
 ## Evaluation Contract
 
 - Callers must explicitly select `mock` or `empirical`; there is no silent fallback.
-- Empirical mode requires an exact model revision and a configured OpenAI-compatible
-  endpoint, plus an explicit unique output directory.
+- Configured empirical mode is restricted to a loopback-local Ollama endpoint exposed
+  through its OpenAI-compatible `/v1` API, plus an explicit unique output directory.
+  Both HTTP clients disable environment proxy discovery (`trust_env=False`).
+- The explicit `model_revision` must be a 64-hex SHA-256 digest (optionally prefixed by
+  `sha256:`). Before creating run output or sending inference requests, the evaluator
+  requires exactly one matching Ollama `/api/tags` entry and verifies its digest.
+- Every completion response must name the exact requested model; that response field is
+  a name, not a digest. The evaluator records the per-response name and rechecks
+  `/api/tags` after inference, but those boundary observations cannot prove that a
+  mutable Ollama tag served the same digest throughout each completion. Configured local
+  Ollama runs are therefore classified `alias_observed_not_immutable` and never set
+  `empirical_claim_allowed=true`. G6 needs a separately approved immutable-serving
+  attestation that binds a content digest to each generation before exact-model claims
+  are possible.
 - The model sees only public alert fields. Expected root cause, Chaos configuration,
   verifier predicates, and known remediation are withheld until scoring.
-- Raw requests, responses, parse failures, generation configuration, split and dataset
-  hashes, source identity, seed, timestamps, and runtime metadata are persisted.
+- Raw requests, successful model text, parse failures, generation configuration, split
+  and dataset hashes, source identity, seed, timestamps, runtime metadata, and model
+  identity observations are persisted. Failed HTTP response bodies are not persisted;
+  only a bounded error category, status, format, SHA-256, and byte length are retained.
+- Completion responses are streamed with a 4 MiB raw-byte cap. Oversized responses stop
+  at the limit and retain only a prefix hash, observed byte count, and truncation flag.
+- Finalized episode rows replace the initial JSONL atomically. If finalization fails,
+  the initial rows remain intact and nonclaimable.
 - Diagnosis-only evaluation leaves environment resolution, reward, and time to resolve
   unevaluated.
-- Injected test doubles and mock runs are marked non-empirical.
+- Injected test doubles and mock runs are marked non-empirical; injected inference skips
+  local Ollama identity attestation and can never be claimable empirical evidence.
 - An implicit mock output goes to a unique non-empirical directory and cannot update
   the canonical Stage 6 evidence path.
 
@@ -33,9 +52,12 @@ reward values are historical fixture output. They are not model measurements.
 
 ## Current Verification
 
-Local tests cover mode selection, truth withholding, raw-output provenance, failure
-retention, metric computation after inference, split isolation, and artifact-path
-isolation. A genuine run still requires the approved model and an available inference
-endpoint.
+Local tests cover mode selection, truth withholding, local Ollama tag checks, ambient
+proxy isolation, response-model matching, mutable-alias nonclaimability, atomic output
+finalization, bounded error fingerprints, raw-output provenance, failure retention,
+metric computation after inference, split isolation, and artifact-path isolation. The
+identity and inference endpoints in these tests are mocked; no model or network request
+is made. G6 still requires an approved immutable-serving attestation before its exact
+model evaluation can be claimable.
 
 **Gate G6 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

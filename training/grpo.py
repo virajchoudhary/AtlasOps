@@ -3,7 +3,7 @@
 Architecture:
   - Each GRPO step generates a group of policy completions against a live
     Chaos Mesh scenario.
-  - Reward comes from the AtlasOps reward contract (same as bench/runner.py)
+  - Direct-action reward comes from conclusive objective verifier checks.
   - The exact completion action is executed and scored from verifier truth.
   - QLoRA uses a 4-bit base plus LoRA r=16.
 
@@ -11,7 +11,7 @@ Training flow:
   1. Sample a chaos scenario from the tier-weighted curriculum
   2. Apply Chaos Mesh to real GKE cluster
    3. Run serialized policy rollouts (model generates one action each)
-  4. Score each rollout with reward contract (kubectl/promql verify real cluster state)
+  4. Score each rollout from objective verifier evidence.
   5. GRPO updates — policy learns from what actually worked on the real cluster
   6. Reset cluster, next step
 """
@@ -25,6 +25,7 @@ import random
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -54,15 +55,32 @@ from config.runtime import (
 )
 from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import TEST_SPLIT, VAL_SPLIT, get_split
-from training.grpo_environment import DirectPolicyEnvironment
+from training.grpo_environment import (
+    DirectPolicyEnvironment,
+    require_live_kube_context,
+    strip_untrusted_approval_context,
+)
 from training.grpo_provenance import (
     MANIFEST_NAME,
     create_run_manifest,
+    has_verified_final_rollout,
     persist_status,
     validate_sft_parent,
 )
+from training.grpo_reward import score_direct_action_step
 
 log = logging.getLogger(__name__)
+
+
+def _require_live_execution(
+    execute_live_chaos: bool,
+    kube_context: str | None,
+) -> str:
+    return require_live_kube_context(
+        execute_live_chaos,
+        kube_context,
+        opt_in_flag="--execute-live-chaos",
+    )
 
 
 def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[float]:
@@ -98,7 +116,7 @@ _curriculum = CurriculumManager()
 
 
 def compute_reward(episode: dict) -> float:
-    """Blend episode-level contract reward (70%) with dense step rewards (30%).
+    """Legacy full-agent 70/30 blend; not the direct-action training scorer.
 
     Dense step rewards sum tool-call-level progress signals from StepRewardTracker.
     Normalised over 10 (typical episode has 15-30 tool calls, each capped at 0.99).
@@ -112,6 +130,30 @@ def compute_reward(episode: dict) -> float:
     )
     step_norm = max(0.0, min(1.0, step_total / 10.0))
     return round(0.7 * contract + 0.3 * step_norm, 4)
+
+
+def compute_direct_action_reward(result: dict[str, Any]) -> float:
+    """Score one verified direct action; never infer a judge or role trajectory."""
+    settling = result.get("settling")
+    if (
+        result.get("status") != "ok"
+        or result.get("scorable") is not True
+        or not isinstance(settling, Mapping)
+        or settling.get("status") != "settled"
+        or settling.get("stable") is not True
+        or type(settling.get("stable_observations")) is not int
+        or settling["stable_observations"] < 2
+    ):
+        raise ValueError("Direct-action rollout is unscorable")
+    verification = result.get("verification")
+    if not isinstance(verification, Mapping):
+        raise ValueError("Direct-action rollout lacks objective verification")
+    decomposition = score_direct_action_step(
+        verification,
+        agent_claimed_resolved=result.get("agent_claimed_resolved") is True,
+    )
+    result["direct_reward_decomposition"] = decomposition
+    return float(decomposition["total"])
 
 
 def sample_scenario(tiers: list[str]) -> tuple[str, str]:
@@ -139,12 +181,17 @@ def _chaos_manifest(scenario_id: str) -> Path:
     return Path("bench/chaos_manifests") / f"{scenario_id}.yaml"
 
 
-def zero_chaos_verified() -> bool:
+def zero_chaos_verified(
+    *,
+    execute_live_chaos: bool = False,
+    kube_context: str | None = None,
+) -> bool:
+    context = _require_live_execution(execute_live_chaos, kube_context)
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
     result = subprocess.run(
         [
-            "kubectl", "get",
+            "kubectl", "--context", context, "get",
             "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timechaos",
             "-A", "-o", "json",
         ],
@@ -162,14 +209,20 @@ def zero_chaos_verified() -> bool:
     return isinstance(payload, dict) and payload.get("items") == []
 
 
-def apply_chaos(scenario_id: str) -> bool:
+def apply_chaos(
+    scenario_id: str,
+    *,
+    execute_live_chaos: bool = False,
+    kube_context: str | None = None,
+) -> bool:
+    context = _require_live_execution(execute_live_chaos, kube_context)
     manifest = _chaos_manifest(scenario_id)
     if not manifest.exists():
         return False
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
     r = subprocess.run(
-        ["kubectl", "apply", "-f", str(manifest)],
+        ["kubectl", "--context", context, "apply", "-f", str(manifest)],
         capture_output=True,
         text=True,
         env=env,
@@ -178,31 +231,43 @@ def apply_chaos(scenario_id: str) -> bool:
     return r.returncode == 0
 
 
-def reset_chaos(scenario_id: str) -> bool:
+def reset_chaos(
+    scenario_id: str,
+    *,
+    execute_live_chaos: bool = False,
+    kube_context: str | None = None,
+) -> bool:
+    context = _require_live_execution(execute_live_chaos, kube_context)
     manifest = _chaos_manifest(scenario_id)
     if not manifest.is_file():
         return False
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
     deleted = subprocess.run(
-        ["kubectl", "delete", "-f", str(manifest), "--ignore-not-found=true"],
+        [
+            "kubectl", "--context", context, "delete", "-f", str(manifest),
+            "--ignore-not-found=true",
+        ],
         capture_output=True,
         text=True,
         env=env,
         check=False,
     )
-    return deleted.returncode == 0 and zero_chaos_verified()
+    return deleted.returncode == 0 and zero_chaos_verified(
+        execute_live_chaos=execute_live_chaos,
+        kube_context=context,
+    )
 
 
 # ── Online reward function for TRL GRPOTrainer ────────────────────────────────
 
 class OnlineRewardFunction:
-    """Wraps the real GKE environment as a TRL-compatible reward function.
+    """Wraps a controlled Kubernetes environment for TRL reward callbacks.
 
     For each batch of completions TRL generates, this class:
-    1. Parses the model's tool call sequence from the completion text
-    2. Executes it against the real GKE cluster (via coordinator)
-    3. Scores the outcome with the reward contract
+    1. Validates the exact single policy action and live execution context.
+    2. Runs serialized fault/action/cleanup cycles in the selected environment.
+    3. Settles and scores conclusive objective verifier observations.
     4. Returns rewards for GRPO advantage computation
     """
 
@@ -211,19 +276,46 @@ class OnlineRewardFunction:
         tiers: list[str],
         coordinator_url: str = "http://localhost:9099",
         rollout_log_path: Path | None = None,
+        *,
+        execute_live_chaos: bool = False,
+        kube_context: str | None = None,
+        rollout_phase: str = "final_training",
+        trial_number: int | None = None,
+        effective_hyperparameters: Mapping[str, Any] | None = None,
     ):
+        self.kube_context = _require_live_execution(
+            execute_live_chaos, kube_context
+        )
+        self.execute_live_chaos = execute_live_chaos
         self.tiers = tiers
         self.coordinator_url = coordinator_url
         self.rollout_log_path = rollout_log_path
+        if rollout_phase not in {"final_training", "optuna_trial"}:
+            raise ValueError("GRPO rollout phase must be final_training or optuna_trial")
+        if rollout_phase == "optuna_trial" and (
+            not isinstance(trial_number, int)
+            or isinstance(trial_number, bool)
+            or trial_number < 0
+        ):
+            raise ValueError("Optuna rollout provenance requires a non-negative trial number")
+        if rollout_phase == "final_training" and trial_number is not None:
+            raise ValueError("Final training rollouts cannot carry an Optuna trial number")
+        if rollout_phase == "optuna_trial" and not effective_hyperparameters:
+            raise ValueError("Optuna rollout provenance requires effective hyperparameters")
+        self.rollout_phase = rollout_phase
+        self.trial_number = trial_number
+        self.effective_hyperparameters = dict(effective_hyperparameters or {})
         self._loop = asyncio.new_event_loop()
 
     def __del__(self):
-        if not self._loop.is_closed():
-            self._loop.close()
+        loop = getattr(self, "_loop", None)
+        if loop is not None and not loop.is_closed():
+            loop.close()
 
     def __call__(self, completions: list[str], prompts: list[str],
                  scenario_id: list[str] | None = None, **kwargs) -> list[float]:
         """Called by TRL after generating G completions. Returns reward per completion."""
+        _require_live_execution(self.execute_live_chaos, self.kube_context)
         return self._loop.run_until_complete(
             self._score_batch(completions, prompts, scenario_id)
         )
@@ -240,6 +332,9 @@ class OnlineRewardFunction:
           apply_chaos → wait → rollout → reset_chaos → wait → next rollout
         This is slower (G × episode_time) but produces correct independent rewards.
         """
+        kube_context = _require_live_execution(
+            self.execute_live_chaos, self.kube_context
+        )
         if scenario_ids is None or not (
             len(completions) == len(prompts) == len(scenario_ids)
         ):
@@ -262,12 +357,19 @@ class OnlineRewardFunction:
             tier = SCENARIO_CATALOG[scenario_id].tier
             log.info("Rollout %d/%d — scenario %s", i + 1, len(completions), scenario_id)
 
-            if not zero_chaos_verified():
+            if not zero_chaos_verified(
+                execute_live_chaos=self.execute_live_chaos,
+                kube_context=kube_context,
+            ):
                 raise RuntimeError("GRPO rollout requires verified zero-Chaos preflight")
             result = None
             failure_reason = None
             try:
-                if not apply_chaos(scenario_id):
+                if not apply_chaos(
+                    scenario_id,
+                    execute_live_chaos=self.execute_live_chaos,
+                    kube_context=kube_context,
+                ):
                     log.warning("Chaos apply failed for %s — assigning 0 reward", scenario_id)
                     failure_reason = "chaos_apply_failed"
                 else:
@@ -286,7 +388,11 @@ class OnlineRewardFunction:
                 log.exception("Rollout %d failed", i + 1)
                 failure_reason = f"{type(exc).__name__}: {exc}"
             finally:
-                if not reset_chaos(scenario_id):
+                if not reset_chaos(
+                    scenario_id,
+                    execute_live_chaos=self.execute_live_chaos,
+                    kube_context=kube_context,
+                ):
                     self._persist_rollout({
                         "scenario_id": scenario_id,
                         "tier": tier,
@@ -312,9 +418,18 @@ class OnlineRewardFunction:
                     "reward": 0.0,
                 })
             else:
-                r = compute_reward(result)
+                try:
+                    r = compute_direct_action_reward(result)
+                except ValueError as exc:
+                    result["reward"] = None
+                    result["failure"] = f"direct_action_reward_unscorable:{type(exc).__name__}"
+                    self._persist_rollout(result)
+                    raise RuntimeError(
+                        "GRPO direct-action rollout cannot be scored"
+                    ) from None
                 rewards.append(r)
                 result["reward"] = r
+                result["reward_profile"] = "direct_action_objective_v1"
                 self._persist_rollout(result)
                 _curriculum.record(
                     scenario_id=scenario_id,
@@ -334,11 +449,21 @@ class OnlineRewardFunction:
         return rewards
 
     def _persist_rollout(self, result: dict[str, Any]) -> None:
+        kube_context = _require_live_execution(
+            self.execute_live_chaos, self.kube_context
+        )
         if self.rollout_log_path is None:
             return
         self.rollout_log_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
             **result,
+            "rollout_phase": self.rollout_phase,
+            "trial_number": self.trial_number,
+            "effective_hyperparameters": self.effective_hyperparameters,
+            "live_execution": {
+                "execute_live_chaos": self.execute_live_chaos,
+                "kube_context": kube_context,
+            },
             "recorded_at": datetime.now(UTC).isoformat(),
         }
         with self.rollout_log_path.open("a", encoding="utf-8", newline="\n") as stream:
@@ -365,13 +490,16 @@ class OnlineRewardFunction:
             "warning": "P2",
             "info": "P3",
         }.get(alert_severity, "P0")
+        public_alert = strip_untrusted_approval_context(alert)
         state = {
-            "alert": alert,
+            "alert": public_alert,
             "triage": {"severity": triage_severity},
-            "approval": alert.get("approval"),
-            "observations": alert.get("observations", {}),
+            "observations": public_alert.get("observations", {}),
         }
-        result = await DirectPolicyEnvironment().step(
+        result = await DirectPolicyEnvironment(
+            execute_live_chaos=self.execute_live_chaos,
+            kube_context=self.kube_context,
+        ).step(
             completion_text,
             scenario_id=scenario_id,
             state=state,
@@ -385,7 +513,6 @@ class OnlineRewardFunction:
                 "postmortem_path": None,
             }
         )
-        result["reward_contract"] = evaluate_reward_contract(result)
         return result
 
 
@@ -394,7 +521,11 @@ class OnlineRewardFunction:
 def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       model_revision: str, tokenizer_id: str, tokenizer_revision: str,
                       sft_checkpoint: Path,
-                      n_trials: int = 6) -> dict[str, Any]:
+                      n_trials: int = 6,
+                      *,
+                      execute_live_chaos: bool = False,
+                      kube_context: str | None = None) -> dict[str, Any]:
+    kube_context = _require_live_execution(execute_live_chaos, kube_context)
     try:
         import optuna
     except ImportError:
@@ -402,15 +533,35 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
         return {}
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    reward_fn = OnlineRewardFunction(
-        tiers,
-        rollout_log_path=output_dir / "rollout_trajectories.jsonl",
-    )
 
     def objective(trial: optuna.Trial) -> float:
         lr      = trial.suggest_float("lr", 5e-7, 5e-6, log=True)
         beta    = trial.suggest_float("beta", 0.001, 0.05, log=True)
         num_gen = trial.suggest_categorical("num_generations", [4, 8])
+        effective_hyperparameters = {
+            "tiers": tiers,
+            "learning_rate": lr,
+            "beta": beta,
+            "batch_size": 1,
+            "num_generations": num_gen,
+            "max_steps": 10,
+            "gradient_accumulation_steps": 1,
+            "max_completion_length": 256,
+        }
+        reward_fn = OnlineRewardFunction(
+            tiers,
+            rollout_log_path=(
+                Path(output_dir)
+                / "optuna_trials"
+                / f"trial_{trial.number}"
+                / "rollout_trajectories.jsonl"
+            ),
+            execute_live_chaos=execute_live_chaos,
+            kube_context=kube_context,
+            rollout_phase="optuna_trial",
+            trial_number=trial.number,
+            effective_hyperparameters=effective_hyperparameters,
+        )
 
         model, tokenizer = load_model_and_tokenizer(
             model_path,
@@ -418,6 +569,8 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             tokenizer_id=tokenizer_id,
             tokenizer_revision=tokenizer_revision,
             sft_checkpoint=sft_checkpoint,
+            execute_live_chaos=execute_live_chaos,
+            kube_context=kube_context,
         )
 
         # Preserve the exact frozen Train scenario identity through TRL.
@@ -428,6 +581,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             output_dir=f"{output_dir}/trial_{trial.number}",
             learning_rate=lr,
             per_device_train_batch_size=1,
+            gradient_accumulation_steps=1,
             bf16=True, max_steps=10, report_to=[], optim="paged_adamw_8bit",
             num_generations=num_gen, beta=beta, max_completion_length=256,
         )
@@ -444,7 +598,14 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
     study = optuna.create_study(direction="maximize",
                                 sampler=optuna.samplers.TPESampler(seed=42))
     study.optimize(objective, n_trials=n_trials)
-    best = {"params": study.best_params, "value": study.best_value}
+    best = {
+        "params": study.best_params,
+        "value": study.best_value,
+        "live_execution": {
+            "execute_live_chaos": execute_live_chaos,
+            "kube_context": kube_context,
+        },
+    }
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     (Path(output_dir) / "optuna_best.json").write_text(json.dumps(best, indent=2))
     log.info("Best HP: %s (value=%.4f)", study.best_params, study.best_value)
@@ -460,7 +621,10 @@ def load_model_and_tokenizer(
     tokenizer_id: str,
     tokenizer_revision: str,
     sft_checkpoint: Path,
+    execute_live_chaos: bool = False,
+    kube_context: str | None = None,
 ):
+    _require_live_execution(execute_live_chaos, kube_context)
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_id, revision=tokenizer_revision, trust_remote_code=True
     )
@@ -530,18 +694,7 @@ def build_direct_action_prompts(tiers: list[str]) -> list[dict[str, str]]:
 
 
 def _has_verified_rollout(path: Path) -> bool:
-    verified = False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line:
-            continue
-        row = json.loads(line)
-        if (
-            row.get("status") == "ok"
-            and isinstance(row.get("verification"), dict)
-            and isinstance(row["verification"].get("env_resolved"), bool)
-        ):
-            verified = True
-    return verified
+    return has_verified_final_rollout(path)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -564,7 +717,23 @@ def main() -> None:
     parser.add_argument("--max-compl-len",   type=int,   default=512)
     parser.add_argument("--grad-accum",      type=int,   default=4)
     parser.add_argument("--optuna",          type=int,   default=0)
+    parser.add_argument(
+        "--execute-live-chaos",
+        action="store_true",
+        help="Opt in to live G9 cluster mutations for this invocation",
+    )
+    parser.add_argument(
+        "--kube-context",
+        help="Named Kubernetes context explicitly targeted by every G9 kubectl call",
+    )
     args = parser.parse_args()
+    try:
+        kube_context = _require_live_execution(
+            args.execute_live_chaos, args.kube_context
+        )
+    except (PermissionError, ValueError) as exc:
+        parser.error(str(exc))
+    args.kube_context = kube_context
 
     tiers      = [t.strip() for t in args.tiers.split(",")]
     output_dir = Path(args.output)
@@ -597,13 +766,21 @@ def main() -> None:
             "gradient_accumulation_steps": args.grad_accum,
             "optuna_trials": args.optuna,
         },
+        execute_live_chaos=args.execute_live_chaos,
+        kube_context=kube_context,
         sft_parent=sft_parent,
         prompt_rows=prompt_rows,
     )
     manifest = persist_status(manifest_path, manifest, "planned")
     try:
         manifest = persist_status(manifest_path, manifest, "running")
-        run_training(args, output_dir)
+        run_result = run_training(args, output_dir)
+        manifest["training"]["effective_hyperparameters"] = run_result[
+            "effective_hyperparameters"
+        ]
+        manifest["training"]["hyperparameter_selection"] = run_result[
+            "hyperparameter_selection"
+        ]
         persist_status(manifest_path, manifest, "completed")
     except KeyboardInterrupt:
         persist_status(manifest_path, manifest, "interrupted", error_type="KeyboardInterrupt")
@@ -613,8 +790,17 @@ def main() -> None:
         raise
 
 
-def run_training(args: argparse.Namespace, output_dir: Path) -> None:
+def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     """Execute the declared online training run after intent is persisted."""
+    kube_context = _require_live_execution(
+        getattr(args, "execute_live_chaos", False),
+        getattr(args, "kube_context", None),
+    )
+    rollout_path = output_dir / "rollout_trajectories.jsonl"
+    if rollout_path.exists():
+        raise FileExistsError(
+            f"Final GRPO rollout ledger already exists: {rollout_path}"
+        )
     tiers = [tier.strip() for tier in args.tiers.split(",")]
     random.seed(args.seed)
     if _HAS_TORCH_RL:
@@ -635,11 +821,33 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> None:
             args.tokenizer_revision,
             args.sft_checkpoint,
             n_trials=args.optuna,
+            execute_live_chaos=args.execute_live_chaos,
+            kube_context=kube_context,
         )
 
     lr      = best_hp.get("lr", args.lr)
     beta    = best_hp.get("beta", args.beta)
     num_gen = best_hp.get("num_generations", args.num_generations)
+    if best_hp and not {"lr", "beta", "num_generations"} <= best_hp.keys():
+        raise RuntimeError("Optuna returned incomplete effective hyperparameters")
+    requested_hyperparameters = {
+        "tiers": tiers,
+        "learning_rate": args.lr,
+        "beta": args.beta,
+        "batch_size": args.batch_size,
+        "num_generations": args.num_generations,
+        "max_steps": args.max_steps,
+        "gradient_accumulation_steps": args.grad_accum,
+        "optuna_trials": args.optuna,
+    }
+    effective_hyperparameters = {
+        **requested_hyperparameters,
+        "learning_rate": lr,
+        "beta": beta,
+        "num_generations": num_gen,
+        "max_completion_length": args.max_compl_len,
+    }
+    hyperparameter_selection = "optuna" if best_hp else "requested"
 
     log.info("GRPO config: lr=%.2e beta=%.4f num_gen=%d tiers=%s", lr, beta, num_gen, tiers)
 
@@ -649,11 +857,19 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> None:
         tokenizer_id=args.tokenizer or args.model,
         tokenizer_revision=args.tokenizer_revision,
         sft_checkpoint=args.sft_checkpoint,
+        execute_live_chaos=args.execute_live_chaos,
+        kube_context=kube_context,
     )
 
     # Online reward function runs real serialized cluster rollouts during training.
-    rollout_path = output_dir / "rollout_trajectories.jsonl"
-    reward_fn = OnlineRewardFunction(tiers, rollout_log_path=rollout_path)
+    reward_fn = OnlineRewardFunction(
+        tiers,
+        rollout_log_path=rollout_path,
+        execute_live_chaos=args.execute_live_chaos,
+        kube_context=kube_context,
+        rollout_phase="final_training",
+        effective_hyperparameters=effective_hyperparameters,
+    )
 
     # Every completion is parsed and executed as one exact structured action.
     from datasets import Dataset
@@ -688,10 +904,17 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> None:
     )
 
     log.info("Starting online GRPO against the configured Kubernetes environment...")
-    log.info("Each step: apply chaos → G=%d rollouts → reward contract → gradient update", num_gen)
+    log.info("Each step: apply chaos → G=%d rollouts → objective reward → gradient update", num_gen)
     trainer.train()
 
-    if not rollout_path.is_file() or not _has_verified_rollout(rollout_path):
+    if not rollout_path.is_file() or not has_verified_final_rollout(
+        rollout_path,
+        live_execution={
+            "execute_live_chaos": args.execute_live_chaos,
+            "kube_context": kube_context,
+        },
+        effective_hyperparameters=effective_hyperparameters,
+    ):
         raise RuntimeError("GRPO training returned without a verified real rollout trajectory")
 
     model.save_pretrained(str(output_dir))
@@ -706,13 +929,25 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> None:
         "best_reward_mean": max(rewards) if rewards else None,
         "reward_history": rewards,
         "config": {"lr": lr, "beta": beta, "num_generations": num_gen},
+        "generation_config": {"max_completion_length": args.max_compl_len},
+        "requested_hyperparameters": requested_hyperparameters,
+        "effective_hyperparameters": effective_hyperparameters,
+        "hyperparameter_selection": hyperparameter_selection,
         "training_mode": "online_rl_real_environment",
         "seed": args.seed,
+        "live_execution": {
+            "execute_live_chaos": args.execute_live_chaos,
+            "kube_context": kube_context,
+        },
         "trainer_log_history": logs,
     }
     (output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
     log.info("Done. final_reward=%.4f | best=%.4f",
              summary["final_reward_mean"] or 0, summary["best_reward_mean"] or 0)
+    return {
+        "effective_hyperparameters": effective_hyperparameters,
+        "hyperparameter_selection": hyperparameter_selection,
+    }
 
 
 if __name__ == "__main__":

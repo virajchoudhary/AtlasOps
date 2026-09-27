@@ -4,8 +4,14 @@ import json
 import os
 import re
 import subprocess
+from contextvars import ContextVar
 from typing import Any
 
+
+_G9_KUBECONFIG_CONTEXT: ContextVar[str | None] = ContextVar(
+    "atlasops_g9_kubeconfig_context",
+    default=None,
+)
 
 METRICS_API_UNAVAILABLE_SIGNATURE = "metrics api not available"
 METRICS_API_UNAVAILABLE_ERROR_CLASS = "metrics_api_unavailable"
@@ -68,13 +74,61 @@ def canonicalize_rollout_resource(resource: str) -> tuple[str | None, str | None
 
 
 def _run(cmd: list[str], timeout: int = 30) -> dict[str, Any]:
-    ctx = os.getenv("KUBECONFIG_CONTEXT", "").strip()
-    if ctx and len(cmd) > 1 and cmd[0] == "kubectl" and "--context" not in cmd:
-        cmd = [cmd[0], "--context", ctx] + cmd[1:]
+    scoped_context = _G9_KUBECONFIG_CONTEXT.get()
+    command = list(cmd)
+    command_env = None
+    if scoped_context is not None and len(command) > 1 and command[0] == "kubectl":
+        selected_context = scoped_context.strip()
+        if not selected_context:
+            return {
+                "error": "G9-scoped Kubernetes context must be a named context",
+                "success": False,
+            }
+
+        explicit_contexts = []
+        index = 0
+        while index < len(command):
+            argument = command[index]
+            if argument == "--context":
+                explicit_contexts.append(
+                    command[index + 1] if index + 1 < len(command) else None
+                )
+                index += 2
+            elif argument.startswith("--context="):
+                explicit_contexts.append(argument.partition("=")[2])
+                index += 1
+            else:
+                index += 1
+        if any(context != selected_context for context in explicit_contexts):
+            return {
+                "error": "Explicit kubectl context conflicts with the G9-scoped context",
+                "success": False,
+            }
+        if not explicit_contexts:
+            command = [command[0], "--context", selected_context] + command[1:]
+
+        command_env = os.environ.copy()
+        command_env.pop("KUBECONFIG_CONTEXT", None)
+        command_env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
+    else:
+        ambient_context = os.getenv("KUBECONFIG_CONTEXT", "").strip()
+        if (
+            ambient_context
+            and len(command) > 1
+            and command[0] == "kubectl"
+            and "--context" not in command
+        ):
+            command = [command[0], "--context", ambient_context] + command[1:]
+
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
+        run_options: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "timeout": timeout,
+        }
+        if command_env is not None:
+            run_options["env"] = command_env
+        result = subprocess.run(command, **run_options)
         return {
             "stdout": result.stdout,
             "stderr": result.stderr,

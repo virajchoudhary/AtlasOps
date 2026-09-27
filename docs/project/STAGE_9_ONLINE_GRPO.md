@@ -15,8 +15,12 @@ The required relationship is:
 - Train-only prompts carry their exact frozen `scenario_id` into the reward callback.
 - The generated completion is parsed as exactly one action. The same tool and arguments
   are policy checked and executed; no second operational model is invoked.
-- P1 requires explicit approval. P0 remains manual; unknown alert severity cannot
-  enter the automatic P2 path. P2/P3 follow the configured automatic approval policy.
+- P1 requires explicit approval. The coordinator-backed `rl_policy` path requests
+  approval for the exact parsed tool and arguments, then consumes a one-use
+  incident/action-bound permit. Standalone training and evaluation do not yet
+  expose a positive operator channel and keep P1 mutation blocked. P0 remains
+  manual; unknown alert severity cannot enter the automatic P2 path. P2/P3
+  follow the configured automatic approval policy.
 - Rollback and Chaos stop require matching positive live history/resource observations
   immediately before the mutation.
 - The environment executes at most one mutation before settling and verifier observation.
@@ -25,6 +29,13 @@ The required relationship is:
   another rollout starts. Failed attempts remain in the raw rollout ledger.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
+- The prospective direct-action reward uses only conclusive objective verifier
+  checks: `0.75` for verified resolution plus `0.25` times required-check
+  coverage, minus `0.25` for a false resolution claim. Multi-step evaluation
+  averages recorded step totals. Unscorable observations have no numeric
+  reward and cannot establish a completed empirical checkpoint. The older
+  four-agent 70/30 contract/dense blend is not the direct-action scorer; absent
+  role summaries or judge fields are never invented to make that blend run.
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.

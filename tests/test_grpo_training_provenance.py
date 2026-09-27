@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from argparse import Namespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from training.grpo_provenance import (
     MANIFEST_NAME,
     checkpoint_inventory,
     create_run_manifest,
+    has_verified_final_rollout,
     persist_status,
     validate_sft_parent,
 )
@@ -87,17 +89,35 @@ def _parent():
 
 
 def _planned_manifest():
-    return create_run_manifest(
+    requested = {
+        "tiers": ["single_fault"],
+        "learning_rate": 1e-6,
+        "beta": 0.04,
+        "batch_size": 1,
+        "num_generations": 8,
+        "max_steps": 1,
+        "gradient_accumulation_steps": 4,
+        "optuna_trials": 0,
+    }
+    manifest = create_run_manifest(
         model_id="Qwen/Qwen2.5-7B-Instruct",
         model_revision="resolved-model-revision",
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision="resolved-tokenizer-revision",
         seed=42,
         generation_config={"max_completion_length": 256},
-        hyperparameters={"max_steps": 1},
+        hyperparameters=requested,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
         sft_parent=_parent(),
         prompt_rows=[{"scenario_id": TRAIN_SPLIT[0], "prompt": "public fixture"}],
     )
+    manifest["training"]["effective_hyperparameters"] = {
+        **requested,
+        "max_completion_length": 256,
+    }
+    manifest["training"]["hyperparameter_selection"] = "requested"
+    return manifest
 
 
 def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
@@ -105,6 +125,10 @@ def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
     manifest = persist_status(manifest_path, _planned_manifest(), "planned")
     assert manifest["splits"]["train_sha256"] == canonical_json_sha256(list(TRAIN_SPLIT))
     assert manifest["training"]["mode"] == "online_rl_real_environment"
+    assert manifest["training"]["live_execution"] == {
+        "execute_live_chaos": True,
+        "kube_context": "kind-atlasops-test",
+    }
     assert manifest["sft_parent"]["checkpoint_tree_sha256"] == "d" * 64
     assert manifest["splits"]["selected_scenario_ids"] == [TRAIN_SPLIT[0]]
     assert manifest["splits"]["selected_prompt_rows_sha256"]
@@ -112,8 +136,47 @@ def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
     manifest = persist_status(manifest_path, manifest, "running")
     (tmp_path / "adapter_config.json").write_text("{}", encoding="utf-8")
     (tmp_path / "adapter_model.safetensors").write_bytes(b"real-bytes-for-test-only")
+    effective = manifest["training"]["effective_hyperparameters"]
     (tmp_path / "rollout_trajectories.jsonl").write_text(
-        '{"env_resolved":false}\n', encoding="utf-8"
+        json.dumps({
+            "status": "ok",
+            "scorable": True,
+            "rollout_phase": "final_training",
+            "effective_hyperparameters": effective,
+            "verification": {
+                "verification_status": "failed",
+                "env_resolved": False,
+                "checks": [{
+                    "name": "workload_ready",
+                    "target": "default/paymentservice",
+                    "required": True,
+                    "passed": False,
+                    "observed": {"ready_replicas": 1, "desired_replicas": 2},
+                }],
+            },
+            "settling": {
+                "status": "settled",
+                "stable": True,
+                "verification_status": "failed",
+                "required_stable_observations": 2,
+                "stable_observations": 2,
+            },
+            "live_execution": {
+                "execute_live_chaos": True,
+                "kube_context": "kind-atlasops-test",
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "training_summary.json").write_text(
+        json.dumps({
+            "requested_hyperparameters": manifest["training"]["requested_hyperparameters"],
+            "effective_hyperparameters": effective,
+            "hyperparameter_selection": "requested",
+            "generation_config": manifest["training"]["generation_config"],
+            "live_execution": manifest["training"]["live_execution"],
+        }),
+        encoding="utf-8",
     )
     completed = persist_status(manifest_path, manifest, "completed")
     assert completed["status"] == "completed"
@@ -121,8 +184,206 @@ def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
         "adapter_config.json",
         "adapter_model.safetensors",
         "rollout_trajectories.jsonl",
+        "training_summary.json",
     }
     assert completed["checkpoint"] == checkpoint_inventory(tmp_path)
+
+
+def test_completion_rejects_verified_optuna_ledger_without_final_rollout(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    (tmp_path / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
+    trial_ledger = tmp_path / "optuna_trials" / "trial_0" / "rollout_trajectories.jsonl"
+    trial_ledger.parent.mkdir(parents=True)
+    trial_ledger.write_text(
+        json.dumps({
+            "status": "ok",
+            "rollout_phase": "optuna_trial",
+            "trial_number": 0,
+            "effective_hyperparameters": {
+                "learning_rate": 1e-6,
+                "beta": 0.01,
+                "num_generations": 4,
+            },
+            "verification": {"env_resolved": True},
+            "live_execution": {
+                "execute_live_chaos": True,
+                "kube_context": "kind-atlasops-test",
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="final-training rollout"):
+        persist_status(manifest_path, manifest, "completed")
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+
+
+@pytest.mark.parametrize("invalid_first", [False, True])
+def test_completion_rejects_mixed_final_rollout_ledger_in_either_order(
+    tmp_path, invalid_first
+):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    (tmp_path / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
+    effective = manifest["training"]["effective_hyperparameters"]
+    live_execution = manifest["training"]["live_execution"]
+    valid_row = {
+        "status": "ok",
+        "scorable": True,
+        "rollout_phase": "final_training",
+        "effective_hyperparameters": effective,
+        "verification": {
+            "verification_status": "failed",
+            "env_resolved": False,
+        },
+        "settling": {
+            "status": "settled",
+            "stable": True,
+            "verification_status": "failed",
+            "required_stable_observations": 2,
+            "stable_observations": 2,
+        },
+        "live_execution": live_execution,
+    }
+    invalid_row = {
+        **valid_row,
+        "status": "unscorable",
+        "scorable": False,
+        "verification": {
+            "verification_status": "inconclusive",
+            "env_resolved": False,
+        },
+        "settling": {
+            "status": "timeout",
+            "stable": False,
+            "verification_status": "inconclusive",
+            "required_stable_observations": 2,
+            "stable_observations": 0,
+        },
+    }
+    rows = (
+        [invalid_row, valid_row]
+        if invalid_first
+        else [valid_row, invalid_row]
+    )
+    ledger_path = tmp_path / "rollout_trajectories.jsonl"
+    ledger_contents = "".join(json.dumps(row) + "\n" for row in rows)
+    ledger_path.write_text(ledger_contents, encoding="utf-8")
+    (tmp_path / "training_summary.json").write_text(
+        json.dumps({
+            "requested_hyperparameters": manifest["training"]["requested_hyperparameters"],
+            "effective_hyperparameters": effective,
+            "hyperparameter_selection": "requested",
+            "generation_config": manifest["training"]["generation_config"],
+            "live_execution": live_execution,
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="final-training rollout row"):
+        persist_status(manifest_path, manifest, "completed")
+
+    assert ledger_path.read_text(encoding="utf-8") == ledger_contents
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+
+
+def test_optuna_rollout_is_not_final_training_evidence(tmp_path):
+    ledger = tmp_path / "rollout_trajectories.jsonl"
+    ledger.write_text(
+        json.dumps({
+            "status": "ok",
+            "scorable": True,
+            "rollout_phase": "optuna_trial",
+            "trial_number": 0,
+            "effective_hyperparameters": {
+                "learning_rate": 1e-6,
+                "beta": 0.01,
+                "num_generations": 4,
+            },
+            "verification": {
+                "verification_status": "failed",
+                "env_resolved": False,
+            },
+            "settling": {
+                "status": "settled",
+                "stable": True,
+                "verification_status": "failed",
+                "required_stable_observations": 2,
+                "stable_observations": 2,
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    assert has_verified_final_rollout(ledger) is False
+
+
+def test_final_rollout_accepts_conclusive_failed_settle_as_a_negative(tmp_path):
+    ledger = tmp_path / "rollout_trajectories.jsonl"
+    ledger.write_text(
+        json.dumps({
+            "status": "ok",
+            "scorable": True,
+            "rollout_phase": "final_training",
+            "effective_hyperparameters": {"learning_rate": 1e-6},
+            "verification": {
+                "verification_status": "failed",
+                "env_resolved": False,
+            },
+            "settling": {
+                "status": "settled",
+                "stable": True,
+                "verification_status": "failed",
+                "required_stable_observations": 2,
+                "stable_observations": 2,
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    assert has_verified_final_rollout(ledger) is True
+
+
+@pytest.mark.parametrize(
+    ("scorable", "verification_status", "settle_status", "stable"),
+    [
+        (False, "inconclusive", "timeout", False),
+        (True, "inconclusive", "timeout", False),
+        (True, "error", "error", False),
+        (True, "failed", "timeout", False),
+        (True, "failed", "settled", False),
+    ],
+)
+def test_final_rollout_rejects_unscorable_or_unsettled_verification(
+    tmp_path, scorable, verification_status, settle_status, stable
+):
+    ledger = tmp_path / "rollout_trajectories.jsonl"
+    ledger.write_text(
+        json.dumps({
+            "status": "ok",
+            "scorable": scorable,
+            "rollout_phase": "final_training",
+            "effective_hyperparameters": {"learning_rate": 1e-6},
+            "verification": {
+                "verification_status": verification_status,
+                "env_resolved": False,
+            },
+            "settling": {
+                "status": settle_status,
+                "stable": stable,
+                "verification_status": verification_status,
+                "required_stable_observations": 2,
+                "stable_observations": 0 if not stable else 2,
+            },
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    assert has_verified_final_rollout(ledger) is False
 
 
 def test_missing_adapter_cannot_be_marked_completed(tmp_path):
@@ -162,11 +423,16 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
             str(tmp_path / "sft"),
             "--output",
             str(output_dir),
+            "--execute-live-chaos",
+            "--kube-context",
+            "kind-atlasops-test",
         ],
     )
     monkeypatch.setattr(grpo, "validate_sft_parent", lambda *args, **kwargs: _parent())
 
     def fail_training(args, output_dir):
+        assert args.execute_live_chaos is True
+        assert args.kube_context == "kind-atlasops-test"
         assert json.loads((output_dir / MANIFEST_NAME).read_text(encoding="utf-8"))[
             "status"
         ] == "running"
@@ -179,6 +445,427 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
     assert saved["status"] == "failed"
     assert saved["failure"]["error_type"] == "RuntimeError"
     assert saved["checkpoint"] is None
+    assert saved["training"]["live_execution"] == {
+        "execute_live_chaos": True,
+        "kube_context": "kind-atlasops-test",
+    }
+
+
+def test_main_records_optuna_effective_hyperparameters_separately(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "resolved-model-revision",
+            "--tokenizer-revision",
+            "resolved-tokenizer-revision",
+            "--sft-checkpoint",
+            str(tmp_path / "sft"),
+            "--output",
+            str(output_dir),
+            "--lr",
+            "0.000001",
+            "--beta",
+            "0.04",
+            "--num-generations",
+            "8",
+            "--optuna",
+            "1",
+            "--execute-live-chaos",
+            "--kube-context",
+            "kind-atlasops-test",
+        ],
+    )
+    monkeypatch.setattr(grpo, "validate_sft_parent", lambda *_args, **_kwargs: _parent())
+    effective = {
+        "tiers": ["cascade", "multi_fault", "named_replays"],
+        "learning_rate": 2e-6,
+        "beta": 0.02,
+        "batch_size": 1,
+        "num_generations": 4,
+        "max_steps": 200,
+        "gradient_accumulation_steps": 4,
+        "optuna_trials": 1,
+        "max_completion_length": 512,
+    }
+
+    def complete_fake_training(args, run_dir):
+        run_manifest = json.loads((run_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+        assert run_manifest["status"] == "running"
+        requested = run_manifest["training"]["requested_hyperparameters"]
+        (run_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+        (run_dir / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
+        (run_dir / "rollout_trajectories.jsonl").write_text(
+            json.dumps({
+                "status": "ok",
+                "scorable": True,
+                "rollout_phase": "final_training",
+                "effective_hyperparameters": effective,
+                "verification": {
+                    "verification_status": "failed",
+                    "env_resolved": False,
+                    "checks": [{
+                        "name": "workload_ready",
+                        "target": "default/paymentservice",
+                        "required": True,
+                        "passed": False,
+                        "observed": {"ready_replicas": 1, "desired_replicas": 2},
+                    }],
+                },
+                "settling": {
+                    "status": "settled",
+                    "stable": True,
+                    "verification_status": "failed",
+                    "required_stable_observations": 2,
+                    "stable_observations": 2,
+                },
+                "live_execution": {
+                    "execute_live_chaos": True,
+                    "kube_context": args.kube_context,
+                },
+            }) + "\n",
+            encoding="utf-8",
+        )
+        (run_dir / "training_summary.json").write_text(
+            json.dumps({
+                "requested_hyperparameters": requested,
+                "effective_hyperparameters": effective,
+                "hyperparameter_selection": "optuna",
+                "generation_config": run_manifest["training"]["generation_config"],
+                "live_execution": run_manifest["training"]["live_execution"],
+            }),
+            encoding="utf-8",
+        )
+        (run_dir / "optuna_best.json").write_text(
+            json.dumps({
+                "params": {
+                    "lr": effective["learning_rate"],
+                    "beta": effective["beta"],
+                    "num_generations": effective["num_generations"],
+                },
+                "value": 0.5,
+                "live_execution": run_manifest["training"]["live_execution"],
+            }),
+            encoding="utf-8",
+        )
+        return {
+            "effective_hyperparameters": effective,
+            "hyperparameter_selection": "optuna",
+        }
+
+    monkeypatch.setattr(grpo, "run_training", complete_fake_training)
+    grpo.main()
+
+    completed = json.loads((output_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    training = completed["training"]
+    assert completed["status"] == "completed"
+    assert training["hyperparameter_selection"] == "optuna"
+    assert training["requested_hyperparameters"]["learning_rate"] == 1e-6
+    assert training["requested_hyperparameters"]["beta"] == 0.04
+    assert training["requested_hyperparameters"]["num_generations"] == 8
+    assert training["effective_hyperparameters"] == effective
+
+
+@pytest.mark.parametrize(
+    ("live_args", "error"),
+    [
+        (["--kube-context", "kind-atlasops-test"], "--execute-live-chaos"),
+        (["--execute-live-chaos"], "--kube-context"),
+    ],
+)
+def test_cli_rejects_incomplete_live_execution_before_output_or_work(
+    monkeypatch, tmp_path, capsys, live_args, error
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "resolved-model-revision",
+            "--tokenizer-revision",
+            "resolved-tokenizer-revision",
+            "--sft-checkpoint",
+            str(tmp_path / "sft"),
+            "--output",
+            str(output_dir),
+            *live_args,
+        ],
+    )
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: pytest.fail("SFT provenance read before validation"),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "build_direct_action_prompts",
+        lambda *_args, **_kwargs: pytest.fail("prompts built before validation"),
+    )
+    monkeypatch.setattr(
+        grpo, "run_training", lambda *_args, **_kwargs: pytest.fail("training started")
+    )
+    monkeypatch.setattr(
+        grpo.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("subprocess invoked before validation"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        grpo.main()
+
+    assert exc.value.code == 2
+    assert error in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("execute_live_chaos", "kube_context", "error_type"),
+    [
+        (False, "kind-atlasops-test", PermissionError),
+        (True, None, ValueError),
+    ],
+)
+def test_direct_run_training_validates_before_model_load_or_output(
+    monkeypatch, tmp_path, execute_live_chaos, kube_context, error_type
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    args = Namespace(
+        execute_live_chaos=execute_live_chaos,
+        kube_context=kube_context,
+    )
+    monkeypatch.setattr(
+        grpo,
+        "load_model_and_tokenizer",
+        lambda *_args, **_kwargs: pytest.fail("model load before validation"),
+    )
+
+    with pytest.raises(error_type):
+        grpo.run_training(args, output_dir)
+
+    assert not output_dir.exists()
+
+
+def test_direct_optuna_search_requires_live_execution_before_output(tmp_path):
+    from training import grpo
+
+    output_dir = tmp_path / "optuna"
+    with pytest.raises(PermissionError, match="--execute-live-chaos"):
+        grpo.run_optuna_search(
+            "Qwen/Qwen2.5-7B-Instruct",
+            ["single_fault"],
+            output_dir,
+            "resolved-model-revision",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "resolved-tokenizer-revision",
+            tmp_path / "sft",
+        )
+    assert not output_dir.exists()
+
+
+def test_model_loader_requires_live_opt_in_before_tokenizer_load(monkeypatch, tmp_path):
+    from training import grpo
+
+    calls = []
+
+    class Tokenizer:
+        @classmethod
+        def from_pretrained(cls, *_args, **_kwargs):
+            calls.append("tokenizer")
+            pytest.fail("tokenizer loaded before live execution validation")
+
+    monkeypatch.setattr(grpo, "AutoTokenizer", Tokenizer)
+    with pytest.raises(PermissionError, match="--execute-live-chaos"):
+        grpo.load_model_and_tokenizer(
+            "Qwen/Qwen2.5-7B-Instruct",
+            model_revision="resolved-model-revision",
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision="resolved-tokenizer-revision",
+            sft_checkpoint=tmp_path / "sft",
+        )
+    assert calls == []
+
+
+def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
+    from training import grpo
+
+    monkeypatch.setattr(grpo, "_HAS_TORCH_RL", False)
+    observed = {}
+    args = Namespace(
+        execute_live_chaos=True,
+        kube_context=" kind-atlasops-test ",
+        tiers="single_fault",
+        seed=42,
+        optuna=1,
+        model="Qwen/Qwen2.5-7B-Instruct",
+        model_revision="resolved-model-revision",
+        tokenizer=None,
+        tokenizer_revision="resolved-tokenizer-revision",
+        sft_checkpoint=tmp_path / "sft",
+    )
+
+    class StopAtOptuna(RuntimeError):
+        pass
+
+    def stop_at_optuna(*_args, **kwargs):
+        observed.update(kwargs)
+        raise StopAtOptuna
+
+    monkeypatch.setattr(grpo, "run_optuna_search", stop_at_optuna)
+    with pytest.raises(StopAtOptuna):
+        grpo.run_training(args, tmp_path / "run")
+
+    assert observed["execute_live_chaos"] is True
+    assert observed["kube_context"] == "kind-atlasops-test"
+
+
+def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_path):
+    from types import ModuleType, SimpleNamespace
+
+    from training import grpo
+
+    observed = {}
+
+    class Trial:
+        number = 0
+
+        def suggest_float(self, name, *_args, **_kwargs):
+            return {"lr": 1e-6, "beta": 0.01}[name]
+
+        def suggest_categorical(self, _name, choices):
+            return choices[0]
+
+    class Study:
+        def __init__(self):
+            self.best_params = {
+                "lr": 1e-6,
+                "beta": 0.01,
+                "num_generations": 4,
+            }
+            self.best_value = 0.5
+
+        def optimize(self, objective, *, n_trials):
+            assert n_trials == 1
+            objective(Trial())
+
+    class Sampler:
+        def __init__(self, *, seed):
+            assert seed == 42
+
+    optuna = ModuleType("optuna")
+    optuna.logging = SimpleNamespace(
+        WARNING="warning",
+        set_verbosity=lambda _level: None,
+    )
+    optuna.Trial = Trial
+    optuna.samplers = SimpleNamespace(TPESampler=Sampler)
+    optuna.create_study = lambda **_kwargs: Study()
+    monkeypatch.setitem(sys.modules, "optuna", optuna)
+
+    datasets = ModuleType("datasets")
+
+    class Dataset:
+        @staticmethod
+        def from_list(rows):
+            return rows
+
+    datasets.Dataset = Dataset
+    monkeypatch.setitem(sys.modules, "datasets", datasets)
+
+    class FakeRewardFunction:
+        def __init__(
+            self,
+            _tiers,
+            *,
+            rollout_log_path,
+            rollout_phase,
+            trial_number,
+            effective_hyperparameters,
+            **kwargs,
+        ):
+            observed["reward_options"] = kwargs
+            observed["rollout_log_path"] = rollout_log_path
+            observed["rollout_phase"] = rollout_phase
+            observed["trial_number"] = trial_number
+            observed["effective_hyperparameters"] = effective_hyperparameters
+
+    class FakeTrainer:
+        def __init__(self, **_kwargs):
+            self.state = SimpleNamespace(log_history=[{"rewards/mean": 0.5}])
+
+        def train(self):
+            pass
+
+    def fake_load_model(*_args, **kwargs):
+        observed["model_options"] = kwargs
+        return object(), object()
+
+    monkeypatch.setattr(grpo, "OnlineRewardFunction", FakeRewardFunction)
+    monkeypatch.setattr(grpo, "load_model_and_tokenizer", fake_load_model)
+    monkeypatch.setattr(grpo, "GRPOConfig", lambda **kwargs: kwargs)
+    monkeypatch.setattr(grpo, "GRPOTrainer", FakeTrainer)
+    output_dir = tmp_path / "optuna"
+    result = grpo.run_optuna_search(
+        "Qwen/Qwen2.5-7B-Instruct",
+        ["single_fault"],
+        output_dir,
+        "resolved-model-revision",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "resolved-tokenizer-revision",
+        tmp_path / "sft",
+        n_trials=1,
+        execute_live_chaos=True,
+        kube_context=" kind-atlasops-test ",
+    )
+
+    expected_live_execution = {
+        "execute_live_chaos": True,
+        "kube_context": "kind-atlasops-test",
+    }
+    assert result == {
+        "lr": 1e-6,
+        "beta": 0.01,
+        "num_generations": 4,
+    }
+    assert observed["reward_options"] == expected_live_execution
+    assert {
+        key: observed["model_options"][key]
+        for key in expected_live_execution
+    } == expected_live_execution
+    assert observed["rollout_log_path"] == (
+        output_dir / "optuna_trials" / "trial_0" / "rollout_trajectories.jsonl"
+    )
+    assert observed["rollout_phase"] == "optuna_trial"
+    assert observed["trial_number"] == 0
+    assert observed["effective_hyperparameters"] == {
+        "tiers": ["single_fault"],
+        "learning_rate": 1e-6,
+        "beta": 0.01,
+        "batch_size": 1,
+        "num_generations": 4,
+        "max_steps": 10,
+        "gradient_accumulation_steps": 1,
+        "max_completion_length": 256,
+    }
+    assert json.loads(
+        (output_dir / "optuna_best.json").read_text(encoding="utf-8")
+    )["live_execution"] == expected_live_execution
 
 
 def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):
@@ -243,5 +930,7 @@ def test_grpo_loader_trains_from_sft_adapter(monkeypatch, tmp_path):
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision="resolved-tokenizer-revision",
         sft_checkpoint=checkpoint,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
     )
     assert calls == [(str(checkpoint), True)]

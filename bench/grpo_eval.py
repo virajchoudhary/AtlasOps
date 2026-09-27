@@ -32,12 +32,19 @@ from config.splits import get_split
 from training.grpo_environment import (
     DirectPolicyEnvironment,
     parse_policy_action,
+    require_live_kube_context,
+    uses_builtin_tool_registry,
 )
 from training.grpo_provenance import (
     ADAPTER_WEIGHT_NAMES,
+    has_verified_final_rollout,
     source_identity,
+    validate_hyperparameter_provenance,
+    validate_optuna_best,
     validate_sft_parent,
+    validate_training_summary,
 )
+from training.grpo_reward import aggregate_direct_action_steps, score_direct_action_step
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("grpo_eval")
@@ -80,6 +87,10 @@ class CheckpointProvenance:
     code_sha: str
     source_state: str
     training_mode: str
+    live_execution: Mapping[str, Any]
+    requested_hyperparameters: Mapping[str, Any]
+    effective_hyperparameters: Mapping[str, Any]
+    hyperparameter_selection: str
     train_split_sha256: str
     training_seed: int
     training_generation_config: Mapping[str, Any]
@@ -95,6 +106,10 @@ class CheckpointProvenance:
             "code_sha": self.code_sha,
             "source_state": self.source_state,
             "training_mode": self.training_mode,
+            "live_execution": dict(self.live_execution),
+            "requested_hyperparameters": dict(self.requested_hyperparameters),
+            "effective_hyperparameters": dict(self.effective_hyperparameters),
+            "hyperparameter_selection": self.hyperparameter_selection,
             "train_split_sha256": self.train_split_sha256,
             "training_seed": self.training_seed,
             "training_generation_config": dict(self.training_generation_config),
@@ -148,6 +163,18 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
     training_mode = training.get("mode")
     if training_mode not in {"online_rl_real_environment", "online_rl_real_kind"}:
         raise ValueError("Empirical G9 requires a completed real-environment GRPO checkpoint")
+    live_execution_record = _required_mapping(
+        training.get("live_execution"), "training.live_execution"
+    )
+    training_kube_context = require_live_kube_context(
+        live_execution_record.get("execute_live_chaos"),
+        live_execution_record.get("kube_context"),
+        opt_in_flag="--execute-live-chaos",
+    )
+    live_execution = {
+        "execute_live_chaos": True,
+        "kube_context": training_kube_context,
+    }
     seed = training.get("seed")
     if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
         raise ValueError("GRPO training provenance requires a non-negative integer seed")
@@ -156,6 +183,11 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
     )
     if not training_generation_config:
         raise ValueError("GRPO training provenance requires generation configuration")
+    (
+        requested_hyperparameters,
+        effective_hyperparameters,
+        hyperparameter_selection,
+    ) = validate_hyperparameter_provenance(training)
 
     identities: dict[str, Mapping[str, str]] = {}
     for identity in ("base_model", "tokenizer"):
@@ -188,8 +220,7 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
         raise ValueError("Checkpoint provenance requires a SHA-256 hash for the frozen Train split")
     if train_split_sha256.lower() != _canonical_sha256(list(get_split("train"))):
         raise ValueError("Checkpoint provenance Train split differs from the frozen split")
-    hyperparameters = _required_mapping(training.get("hyperparameters"), "training.hyperparameters")
-    tiers = hyperparameters.get("tiers")
+    tiers = requested_hyperparameters.get("tiers")
     if not isinstance(tiers, list) or not tiers or any(not isinstance(tier, str) for tier in tiers):
         raise ValueError("GRPO checkpoint requires the selected training tiers")
     from training.grpo import build_direct_action_prompts
@@ -276,6 +307,25 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
         raise ValueError("GRPO checkpoint is missing adapter_config.json")
     if not any((checkpoint_path / name).is_file() for name in ADAPTER_WEIGHT_NAMES):
         raise ValueError("GRPO checkpoint is missing adapter model weights")
+    if not has_verified_final_rollout(
+        checkpoint_path / "rollout_trajectories.jsonl",
+        live_execution=live_execution,
+        effective_hyperparameters=effective_hyperparameters,
+    ):
+        raise ValueError(
+            "Empirical G9 checkpoint requires a verified final-training rollout ledger"
+        )
+    summary_path = checkpoint_path / "training_summary.json"
+    if not summary_path.is_file():
+        raise ValueError("Empirical G9 checkpoint requires training_summary.json")
+    training_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    validate_training_summary(training, training_summary)
+    if hyperparameter_selection == "optuna":
+        validate_optuna_best(
+            checkpoint_path / "optuna_best.json",
+            effective_hyperparameters=effective_hyperparameters,
+            live_execution=live_execution,
+        )
 
     return CheckpointProvenance(
         checkpoint_path=checkpoint_path,
@@ -286,6 +336,10 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
         code_sha=code_sha,
         source_state=str(source_state),
         training_mode=str(training_mode),
+        live_execution=live_execution,
+        requested_hyperparameters=requested_hyperparameters,
+        effective_hyperparameters=effective_hyperparameters,
+        hyperparameter_selection=hyperparameter_selection,
         train_split_sha256=train_split_sha256,
         training_seed=seed,
         training_generation_config=dict(training_generation_config),
@@ -341,23 +395,59 @@ def _public_policy_state(state: Mapping[str, Any]) -> dict[str, Any]:
         raise TypeError("Initial policy state must be an object")
     state_copy = json.loads(json.dumps(dict(state), ensure_ascii=False, allow_nan=False))
     _reject_benchmark_truth(state_copy)
+    _reject_untrusted_authorization_context(state_copy)
     state_copy["instruction"] = ACTION_INSTRUCTION
     return state_copy
 
 
-def _authoritative_environment(environment: Any) -> bool:
+def _reject_untrusted_authorization_context(
+    value: Any, path: str = "state"
+) -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized_key = str(key).strip().casefold()
+            if normalized_key in {"approval", "_runtime_control"}:
+                raise ValueError(
+                    "Standalone G9 evaluation cannot accept caller-supplied "
+                    f"authorization data: {path}.{key}"
+                )
+            _reject_untrusted_authorization_context(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _reject_untrusted_authorization_context(child, f"{path}[{index}]")
+
+
+def _authoritative_environment(environment: Any, kube_context: str) -> bool:
     return (
         type(environment) is DirectPolicyEnvironment
         and environment.tool_registry is TOOL_REGISTRY
         and environment.policy_check is _check_tool_policy
         and environment.verifier is verify_environment
+        and environment.execute_live_chaos is True
+        and environment.kube_context == kube_context
+        and environment.has_custom_settle is False
+        and environment.uses_builtin_settle is True
+        and environment.has_custom_settle_timing is False
     )
 
 
 class LocalGRPOPolicy:
     """Lazy Hugging Face base model plus the provenance-checked GRPO adapter."""
 
-    def __init__(self, checkpoint: str | Path, *, device: str | None = None):
+    def __init__(
+        self,
+        checkpoint: str | Path,
+        *,
+        device: str | None = None,
+        execute_actions: bool = False,
+        kube_context: str | None = None,
+    ):
+        self.kube_context = require_live_kube_context(
+            execute_actions,
+            kube_context,
+            opt_in_flag="--execute-actions",
+        )
+        self.execute_actions = execute_actions
         self.provenance = validate_grpo_checkpoint(checkpoint)
         self.device = device
         self._model: Any = None
@@ -369,8 +459,15 @@ class LocalGRPOPolicy:
         checkpoint: str | Path,
         *,
         device: str | None = None,
+        execute_actions: bool = False,
+        kube_context: str | None = None,
     ) -> LocalGRPOPolicy:
-        return cls(checkpoint, device=device)
+        return cls(
+            checkpoint,
+            device=device,
+            execute_actions=execute_actions,
+            kube_context=kube_context,
+        )
 
     def _load(self) -> None:
         import torch
@@ -410,6 +507,11 @@ class LocalGRPOPolicy:
         seed: int,
         generation_config: Mapping[str, Any],
     ) -> str:
+        require_live_kube_context(
+            self.execute_actions,
+            self.kube_context,
+            opt_in_flag="--execute-actions",
+        )
         return await asyncio.to_thread(
             self._generate,
             dict(state),
@@ -463,6 +565,17 @@ def _step_reward(
     *,
     agent_claimed_resolved: bool,
 ) -> dict[str, Any]:
+    if (
+        isinstance(verification, Mapping)
+        and verification.get("verification_status") in {"passed", "failed"}
+        and isinstance(verification.get("checks"), list)
+        and verification["checks"]
+    ):
+        return score_direct_action_step(
+            verification,
+            agent_claimed_resolved=agent_claimed_resolved,
+        )
+
     verified = isinstance(verification, Mapping) and verification.get("env_resolved") is True
     checks = verification.get("checks", []) if isinstance(verification, Mapping) else []
     required_checks = [
@@ -484,6 +597,44 @@ def _step_reward(
         "required_check_coverage": round(coverage, 6),
         "total": round(resolution_reward + check_reward + false_resolution_penalty, 6),
     }
+
+
+def _empirical_unscorable_reason(result: Mapping[str, Any]) -> str | None:
+    status = result.get("status")
+    if status == "blocked":
+        return "policy action was blocked without post-action verification"
+    if status == "unscorable":
+        return str(result.get("failure") or "environment marked the step unscorable")
+    if status != "ok":
+        return f"environment status is not scoreable: {status!r}"
+    if result.get("scorable") is not True:
+        return "environment did not mark the step scoreable"
+
+    settling = result.get("settling")
+    if (
+        not isinstance(settling, Mapping)
+        or settling.get("status") != "settled"
+        or settling.get("stable") is not True
+        or not isinstance(settling.get("stable_observations"), int)
+        or isinstance(settling.get("stable_observations"), bool)
+        or settling["stable_observations"] < 2
+    ):
+        return "post-action environment did not reach stable settling"
+
+    verification = result.get("verification")
+    if not isinstance(verification, Mapping):
+        return "post-action verifier result is missing"
+    verification_status = verification.get("verification_status")
+    if verification_status not in {"passed", "failed"}:
+        return f"post-action verification is nonconclusive: {verification_status!r}"
+    if settling.get("verification_status") != verification_status:
+        return "settling status differs from the final verifier status"
+    env_resolved = verification.get("env_resolved")
+    if not isinstance(env_resolved, bool):
+        return "post-action verification lacks a boolean env_resolved"
+    if (verification_status == "passed") is not env_resolved:
+        return "post-action verification status conflicts with env_resolved"
+    return None
 
 
 def _validate_environment_result(
@@ -544,6 +695,8 @@ async def evaluate_grpo_episode(
     max_steps: int = 5,
     evaluation_mode: str = "EMPIRICAL",
     event_sink: Callable[[dict[str, Any]], None] | None = None,
+    execute_actions: bool = False,
+    kube_context: str | None = None,
 ) -> dict[str, Any]:
     """Run one trajectory, submitting each raw completion as one environment step.
 
@@ -554,11 +707,30 @@ async def evaluate_grpo_episode(
     mode = evaluation_mode.upper()
     if mode not in {"EMPIRICAL", "NON_EMPIRICAL"}:
         raise ValueError("evaluation_mode must be EMPIRICAL or NON_EMPIRICAL")
-    if mode == "EMPIRICAL" and not isinstance(policy, LocalGRPOPolicy):
-        raise ValueError("Empirical G9 evaluation requires a provenance-checked LocalGRPOPolicy checkpoint")
+    if mode == "NON_EMPIRICAL" and (
+        isinstance(environment, DirectPolicyEnvironment)
+        or uses_builtin_tool_registry(getattr(environment, "tool_registry", None))
+    ):
+        raise ValueError(
+            "NON_EMPIRICAL G9 episodes require an injected non-live environment adapter"
+        )
+    live_context: str | None = None
+    if mode == "EMPIRICAL":
+        live_context = require_live_kube_context(
+            execute_actions,
+            kube_context,
+            opt_in_flag="--execute-actions",
+        )
+        if not isinstance(policy, LocalGRPOPolicy):
+            raise ValueError("Empirical G9 evaluation requires a provenance-checked LocalGRPOPolicy checkpoint")
+        if (
+            policy.execute_actions is not True
+            or policy.kube_context != live_context
+        ):
+            raise ValueError("Empirical G9 policy must retain the authorized Kubernetes context")
     if environment is None or not callable(getattr(environment, "step", None)):
         raise TypeError("G9 evaluation requires an explicit one-step environment interface")
-    if mode == "EMPIRICAL" and not _authoritative_environment(environment):
+    if mode == "EMPIRICAL" and not _authoritative_environment(environment, live_context):
         raise ValueError("Empirical G9 evaluation requires the built-in tool and environment verifier")
     if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
         raise ValueError("Evaluation seed must be a non-negative integer")
@@ -570,6 +742,7 @@ async def evaluate_grpo_episode(
     started_at = _utc_now()
     trajectory: list[dict[str, Any]] = []
     failure: str | None = None
+    episode_scorable = True
 
     def emit(event: dict[str, Any]) -> None:
         if event_sink is not None:
@@ -589,7 +762,8 @@ async def evaluate_grpo_episode(
 
     if mode == "EMPIRICAL":
         preflight = await _maybe_await(
-            environment.verifier(
+            environment.invoke_tool(
+                environment.verifier,
                 scenario_id=scenario_id,
                 agent_claimed_resolved=False,
                 alert=state.get("alert"),
@@ -676,7 +850,13 @@ async def evaluate_grpo_episode(
             emit({"event": "episode_interrupted", "scenario_id": scenario_id, "step": step_index})
             raise
         except Exception as exc:  # noqa: BLE001 - preserve environment failures in the trajectory
-            failure = f"environment_step_error: {type(exc).__name__}: {exc}"
+            failure = (
+                f"unscorable_environment_step_error: {type(exc).__name__}"
+                if mode == "EMPIRICAL"
+                else f"environment_step_error: {type(exc).__name__}: {exc}"
+            )
+            step_scorable = mode != "EMPIRICAL"
+            episode_scorable = episode_scorable and step_scorable
             failed_step = {
                 "step": step_index,
                 "state": state,
@@ -686,34 +866,66 @@ async def evaluate_grpo_episode(
                 "submitted_at": _utc_now(),
                 "environment_result": None,
                 "verification": None,
-                "reward_decomposition": _step_reward(None, agent_claimed_resolved=bool(parsed_action and parsed_action.get("agent_claimed_resolved"))),
+                "scorable": step_scorable,
+                "reward_decomposition": (
+                    _step_reward(
+                        None,
+                        agent_claimed_resolved=bool(
+                            parsed_action
+                            and parsed_action.get("agent_claimed_resolved")
+                        ),
+                    )
+                    if step_scorable
+                    else None
+                ),
                 "failure": failure,
             }
             trajectory.append(failed_step)
             emit({"event": "step_result", "scenario_id": scenario_id, "record": failed_step})
             break
 
+        step_scorable = True
         if not isinstance(environment_result, Mapping):
             failure = "environment_contract_error: result was not an object"
             result_mapping: Mapping[str, Any] = {}
+            if mode == "EMPIRICAL":
+                step_scorable = False
         else:
             result_mapping = environment_result
-            failure = _validate_environment_result(completion_text, parsed_action, result_mapping)
+            unscorable_reason = (
+                _empirical_unscorable_reason(result_mapping)
+                if mode == "EMPIRICAL"
+                else None
+            )
+            if unscorable_reason is not None:
+                failure = f"unscorable_verification: {unscorable_reason}"
+                step_scorable = False
+            else:
+                failure = _validate_environment_result(
+                    completion_text, parsed_action, result_mapping
+                )
             if failure:
-                failure = f"environment_contract_error: {failure}"
+                if not failure.startswith("unscorable_verification:"):
+                    failure = f"environment_contract_error: {failure}"
+        episode_scorable = episode_scorable and step_scorable
 
         verification = result_mapping.get("verification") if isinstance(result_mapping.get("verification"), Mapping) else None
         claimed = bool(parsed_action and parsed_action.get("agent_claimed_resolved") is True)
         verified_resolved = bool(
-            failure is None
+            step_scorable
+            and failure is None
             and result_mapping.get("status") == "ok"
             and isinstance(verification, Mapping)
             and verification.get("env_resolved") is True
             and result_mapping.get("env_resolved") is True
         )
-        reward = _step_reward(
-            verification if failure is None else None,
-            agent_claimed_resolved=claimed,
+        reward = (
+            _step_reward(
+                verification if failure is None else None,
+                agent_claimed_resolved=claimed,
+            )
+            if step_scorable
+            else None
         )
         previous_history = state.get("history", [])
         history = list(previous_history) if isinstance(previous_history, list) else []
@@ -724,6 +936,7 @@ async def evaluate_grpo_episode(
             "verification": verification,
             "terminal_block": result_mapping.get("terminal_block"),
             "env_resolved": verified_resolved,
+            "scorable": step_scorable,
         }
         next_state = {
             **state,
@@ -753,6 +966,7 @@ async def evaluate_grpo_episode(
             ),
             "verification": verification,
             "env_resolved": verified_resolved,
+            "scorable": step_scorable,
             "agent_claimed_resolved": claimed,
             "reward_decomposition": reward,
             "next_state": next_state,
@@ -775,21 +989,51 @@ async def evaluate_grpo_episode(
     claimed_resolved = any(step.get("agent_claimed_resolved") is True for step in trajectory)
     elapsed = time.monotonic() - episode_started
     termination_reason = (
-        "max_steps_without_verified_resolution"
-        if not resolved and failure is None and len(trajectory) >= max_steps
+        "unscorable_environment_observation"
+        if not episode_scorable
+        else (
+            "max_steps_without_verified_resolution"
+            if not resolved and failure is None and len(trajectory) >= max_steps
+            else None
+        )
+    )
+    if not episode_scorable:
+        episode_reward_decomposition = None
+    elif mode == "EMPIRICAL":
+        step_rewards = [
+            step["reward_decomposition"]
+            for step in trajectory
+            if isinstance(step.get("reward_decomposition"), Mapping)
+        ]
+        episode_reward_decomposition = (
+            aggregate_direct_action_steps(step_rewards)
+            if len(step_rewards) == len(trajectory) and step_rewards
+            else None
+        )
+    else:
+        episode_reward_decomposition = _step_reward(
+            final_verification if failure is None else None,
+            agent_claimed_resolved=claimed_resolved,
+        )
+    episode_reward = (
+        episode_reward_decomposition["total"]
+        if episode_reward_decomposition is not None
         else None
     )
-    episode_reward_decomposition = _step_reward(
-        final_verification if failure is None else None,
-        agent_claimed_resolved=claimed_resolved,
+    episode_status = (
+        "unscorable"
+        if not episode_scorable
+        else "ok"
+        if failure is None
+        else "failed"
     )
-    episode_reward = episode_reward_decomposition["total"]
     episode = {
         "schema_version": 1,
         "evaluation_mode": mode,
         "empirical": mode == "EMPIRICAL",
         "scenario_id": scenario_id,
-        "status": "ok" if failure is None else "failed",
+        "status": episode_status,
+        "scorable": episode_scorable,
         "resolved": resolved,
         "env_resolved": resolved,
         "agent_claimed_resolved": claimed_resolved,
@@ -801,6 +1045,9 @@ async def evaluate_grpo_episode(
         "turns": len(trajectory),
         "reward": episode_reward,
         "reward_decomposition": episode_reward_decomposition,
+        "reward_profile": (
+            "direct_action_objective_v1" if mode == "EMPIRICAL" else "NON_EMPIRICAL_fixture"
+        ),
         "failure": failure,
         "termination_reason": termination_reason,
         "started_at": started_at,
@@ -810,7 +1057,13 @@ async def evaluate_grpo_episode(
     }
     emit(
         {
-            "event": "episode_completed" if failure is None else "episode_failed",
+            "event": (
+                "episode_unscorable"
+                if not episode_scorable
+                else "episode_completed"
+                if failure is None
+                else "episode_failed"
+            ),
             "scenario_id": scenario_id,
             "result": {key: value for key, value in episode.items() if key != "trajectory"},
         }
@@ -867,6 +1120,8 @@ async def evaluate_grpo_split(
     generation_config: Mapping[str, Any] | None = None,
     max_steps: int = 5,
     device: str | None = None,
+    execute_actions: bool = False,
+    kube_context: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate a frozen split; real evaluation never falls back to mocks.
 
@@ -882,20 +1137,32 @@ async def evaluate_grpo_split(
             model_name=model_name,
             output_dir=Path(output_dir) if output_dir is not None else None,
         )
+    kube_context = require_live_kube_context(
+        execute_actions,
+        kube_context,
+        opt_in_flag="--execute-actions",
+    )
     if checkpoint is None:
         raise ValueError("Empirical G9 evaluation requires an actual --checkpoint")
     if state_provider is None:
         raise ValueError("Empirical G9 evaluation requires a public-state provider")
     if environment is None:
         raise ValueError("Empirical G9 evaluation requires an explicit environment interface")
-    if not _authoritative_environment(environment):
-        raise ValueError("Empirical G9 evaluation requires the built-in tool and environment verifier")
+    if not _authoritative_environment(environment, kube_context):
+        raise ValueError(
+            "Empirical G9 evaluation requires the built-in tools with the selected Kubernetes context"
+        )
     if output_dir is None:
         raise ValueError("Empirical G9 evaluation requires an explicit output directory")
     if split_name.strip().lower() == "train":
         raise ValueError("G9 evaluation cannot use the frozen Train split")
 
-    policy = LocalGRPOPolicy.from_checkpoint(checkpoint, device=device)
+    policy = LocalGRPOPolicy.from_checkpoint(
+        checkpoint,
+        device=device,
+        execute_actions=execute_actions,
+        kube_context=kube_context,
+    )
     provenance = policy.provenance
     evaluator_source = source_identity()
     config = _normalize_generation_config(generation_config)
@@ -923,6 +1190,10 @@ async def evaluate_grpo_split(
                 "split_sha256": split_sha256,
                 "seed": seed,
                 "generation_config": config,
+                "live_execution": {
+                    "execute_actions": execute_actions,
+                    "kube_context": kube_context,
+                },
                 "provenance": provenance.to_record(),
                 "evaluator_source": evaluator_source,
             }
@@ -940,6 +1211,8 @@ async def evaluate_grpo_split(
                     max_steps=max_steps,
                     evaluation_mode="EMPIRICAL",
                     event_sink=persist,
+                    execute_actions=execute_actions,
+                    kube_context=kube_context,
                 )
                 episode["split"] = split_name
                 episode["split_sha256"] = split_sha256
@@ -963,8 +1236,10 @@ async def evaluate_grpo_split(
                     "split": split_name,
                     "split_sha256": split_sha256,
                     "status": "failed",
+                    "scorable": False,
                     "resolved": False,
                     "env_resolved": False,
+                    "reward": None,
                     "failure": f"{type(exc).__name__}: {exc}",
                     "seed": seed + index,
                     "generation_config": config,
@@ -976,13 +1251,22 @@ async def evaluate_grpo_split(
                 results.append(failed)
                 persist({"recorded_at": _utc_now(), "event": "episode_failed", "result": failed})
 
-        successful = [row for row in results if row.get("status") == "ok"]
+        scorable_rows = [row for row in results if row.get("scorable") is True]
+        successful = [
+            row for row in scorable_rows if row.get("status") == "ok"
+        ]
         resolved_times = [
             float(row["time_to_resolve_s"])
             for row in successful
             if row.get("env_resolved") is True
             and isinstance(row.get("time_to_resolve_s"), int | float)
             and not isinstance(row.get("time_to_resolve_s"), bool)
+        ]
+        scorable_rewards = [
+            float(row["reward"])
+            for row in scorable_rows
+            if isinstance(row.get("reward"), int | float)
+            and not isinstance(row.get("reward"), bool)
         ]
         format_compliant = [
             bool(row.get("trajectory"))
@@ -993,10 +1277,15 @@ async def evaluate_grpo_split(
             )
             for row in results
         ]
-        mean_reward = sum(float(row.get("reward", 0.0)) for row in results) / max(
-            len(results), 1
+        mean_reward = (
+            sum(scorable_rewards) / len(scorable_rewards)
+            if scorable_rewards
+            else None
         )
-        claim_allowed = bool(results) and len(successful) == len(results)
+        claim_allowed = bool(results) and all(
+            row.get("status") == "ok" and row.get("scorable") is True
+            for row in results
+        )
         summary = {
             "schema_version": 1,
             "run_id": run_id,
@@ -1009,8 +1298,18 @@ async def evaluate_grpo_split(
             "split_sha256": split_sha256,
             "scenario_count": len(scenario_ids),
             "completed_episodes": len(results),
-            "resolution_rate": sum(row.get("env_resolved") is True for row in results)
-            / max(len(results), 1),
+            "scorable_episodes": len(scorable_rows),
+            "unscorable_episodes": sum(
+                row.get("status") == "unscorable"
+                or row.get("scorable") is False
+                for row in results
+            ),
+            "resolution_rate": (
+                sum(row.get("env_resolved") is True for row in scorable_rows)
+                / len(scorable_rows)
+                if scorable_rows
+                else None
+            ),
             "avg_time_to_resolve_s": (
                 sum(resolved_times) / len(resolved_times)
                 if resolved_times
@@ -1019,9 +1318,13 @@ async def evaluate_grpo_split(
             "avg_reward_contract": mean_reward,
             "mean_reward": mean_reward,
             "format_compliance_rate": sum(format_compliant) / max(len(results), 1),
-            "failed_episodes": sum(row.get("status") != "ok" for row in results),
+            "failed_episodes": sum(row.get("status") == "failed" for row in results),
             "seed": seed,
             "generation_config": config,
+            "live_execution": {
+                "execute_actions": execute_actions,
+                "kube_context": kube_context,
+            },
             "provenance": provenance.to_record(),
             "evaluator_source": evaluator_source,
             "model": provenance.base_model["id"],
@@ -1116,6 +1419,7 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--device")
     parser.add_argument("--execute-actions", action="store_true", help="Allow policy actions to reach the configured environment tools")
+    parser.add_argument("--kube-context", help="Named Kubernetes context for every G9 tool and verifier call")
     parser.add_argument("--mock", action="store_true", help="Run deterministic NON_EMPIRICAL compatibility fixtures")
     parser.add_argument("--model", default="qwen2.5:7b-instruct-grpo", help="NON_EMPIRICAL compatibility label")
     args = parser.parse_args()
@@ -1134,12 +1438,23 @@ def main() -> None:
         parser.error("Empirical mode requires --checkpoint, --state-dir, and --output-dir")
     if not args.execute_actions:
         parser.error("Empirical mode requires --execute-actions to enable environment interaction")
+    try:
+        kube_context = require_live_kube_context(
+            args.execute_actions,
+            args.kube_context,
+            opt_in_flag="--execute-actions",
+        )
+    except (PermissionError, ValueError) as exc:
+        parser.error(str(exc))
     asyncio.run(
         evaluate_grpo_split(
             args.split,
             checkpoint=args.checkpoint,
             state_provider=lambda scenario_id: _load_public_state(args.state_dir, scenario_id),
-            environment=DirectPolicyEnvironment(),
+            environment=DirectPolicyEnvironment(
+                execute_live_chaos=args.execute_actions,
+                kube_context=kube_context,
+            ),
             seed=args.seed,
             generation_config={
                 "max_new_tokens": args.max_new_tokens,
@@ -1149,6 +1464,8 @@ def main() -> None:
             max_steps=args.max_steps,
             output_dir=args.output_dir,
             device=args.device,
+            execute_actions=args.execute_actions,
+            kube_context=kube_context,
         )
     )
 

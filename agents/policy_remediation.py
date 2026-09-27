@@ -7,11 +7,17 @@ validates one action and observes the verifier before another decision.
 from __future__ import annotations
 
 import inspect
+import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
 
 from agents.coordinator import _strip_model_forbidden_context
-from training.grpo_environment import DirectPolicyEnvironment
+from agents.approval import ActionApprovalPermit
+from training.grpo_environment import (
+    DirectPolicyEnvironment,
+    parse_policy_action,
+    policy_action_requires_operator_approval,
+)
 
 
 async def run_policy_remediation(
@@ -24,6 +30,7 @@ async def run_policy_remediation(
     generation_config: dict[str, Any],
     max_actions: int = 3,
     policy_origin: str = "injected_non_empirical",
+    approval_provider: Callable[[dict[str, Any], dict[str, Any]], Any] | None = None,
 ) -> dict[str, Any]:
     """Run bounded policy decisions with verifier feedback after each action."""
     if max_actions < 1:
@@ -47,10 +54,35 @@ async def run_policy_remediation(
         if not isinstance(raw_completion, str):
             raise TypeError("Policy generation must return the raw completion string")
 
+        approval_permit = None
+        try:
+            parsed_action = parse_policy_action(raw_completion)
+        except (TypeError, ValueError):
+            parsed_action = None
+        if (
+            parsed_action is not None
+            and approval_provider is not None
+            and policy_action_requires_operator_approval(parsed_action, current_state)
+        ):
+            action_for_approval = json.loads(
+                json.dumps(parsed_action, ensure_ascii=False, allow_nan=False)
+            )
+            approved = approval_provider(action_for_approval, current_state)
+            approval_permit = (
+                await approved if inspect.isawaitable(approved) else approved
+            )
+            if approval_permit is not None and not isinstance(
+                approval_permit, ActionApprovalPermit
+            ):
+                raise TypeError(
+                    "Action approval provider must return an ApprovalGate permit or None"
+                )
+
         result = await environment.step(
             raw_completion,
             scenario_id=scenario_id,
             state=current_state,
+            _action_approval_permit=approval_permit,
         )
         executed = result.get("executed_actions") or []
         all_executed.extend(executed)

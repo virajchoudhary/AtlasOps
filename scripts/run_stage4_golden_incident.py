@@ -1713,7 +1713,7 @@ def _handle_post_t0_interruption(
     *,
     reservation: dict[str, Any],
     evidence: dict[str, Any],
-    exc: Exception,
+    exc: BaseException,
     fault_observable: bool,
     evidence_dir: str,
 ) -> None:
@@ -2146,6 +2146,8 @@ async def _run_experiment() -> dict[str, Any]:
         }
         if not immediate_observation["verified_zero"]:
             return abort_before_fault("immediate_pre_apply_chaos_not_zero")
+        reservation = consume_experiment_attempt(reservation)
+        evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         fault_crossed = True
         inject_res = run_kubectl(["apply", "-f", manifest_path])
         injection_success = inject_res.get("success") is True
@@ -2155,8 +2157,6 @@ async def _run_experiment() -> dict[str, Any]:
             "result": inject_res,
         }
         if not injection_success:
-            consume_experiment_attempt(reservation)
-            evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
             evidence["outcome"] = "INVALID"
             evidence["failure_phase"] = "fault_application"
             evidence["completed_at"] = datetime.now(UTC).isoformat()
@@ -2174,8 +2174,6 @@ async def _run_experiment() -> dict[str, Any]:
                 f"{cleanup_record['verified_zero_chaos']}"
             )
             return evidence
-        consume_experiment_attempt(reservation)
-        evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         print(f"  Chaos Mesh injection: {inject_res.get('stdout')}")
 
         # Phase 3: Observable Fault Verification
@@ -2391,9 +2389,23 @@ async def _run_experiment() -> dict[str, Any]:
 
         return evidence
 
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt, asyncio.CancelledError) as exc:
         if reservation is not None and not fault_crossed:
-            release_experiment_reservation(reservation)
+            attempt_path = _attempt_marker_path(reservation["experiment_id"])
+            attempt_data = _read_json_file(attempt_path) or {}
+            if attempt_data.get("state") == ATTEMPT_STATE_CONSUMED:
+                evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
+                evidence["reservation_released"] = False
+                evidence["outcome"] = "INVALID"
+                evidence["failure_phase"] = "attempt_consumption"
+                evidence["t0_crossed"] = False
+                evidence["observed_exception_class"] = type(exc).__name__
+                evidence["observed_exception_message"] = str(exc)
+                evidence["completed_at"] = datetime.now(UTC).isoformat()
+                prefault_path = _persist_stage4_prefault_failure(evidence)
+                evidence["prefault_evidence"] = prefault_path
+            else:
+                release_experiment_reservation(reservation)
         elif reservation is not None and fault_crossed:
             _handle_post_t0_interruption(
                 reservation=reservation,

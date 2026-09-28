@@ -63,6 +63,15 @@ These are platform/control-path faults, not evidence of a model outcome.
   requires the first two raw successful zero-Chaos reads; a claimed
   `verified_zero` field cannot replace either observation. This final read
   does not lock the cluster against another actor changing it afterward.
+- After the successful final read, the runner durably transitions the attempt
+  from `RESERVED` to `CONSUMED` before invoking the potentially side-effecting
+  `kubectl apply`; T0 may cross when apply begins. An interruption before that
+  transition commits releases the unused reservation. If it commits but apply
+  has not begun, the consumed marker is preserved with pre-fault failure
+  evidence and `t0_crossed=false`; it is not released or reported as cleanup.
+  An interruption during or after apply uses the post-T0 interruption and
+  cleanup path. These transition rules are part of the prospective v3.4
+  pre-T0 safety fingerprint, not a change to frozen v3.3 attempts.
 - Host-local port-forwards are scoped to this runner. A partial startup
   failure or interruption during startup settling or initial evidence setup
   terminates and waits for the processes already launched; normal exit and

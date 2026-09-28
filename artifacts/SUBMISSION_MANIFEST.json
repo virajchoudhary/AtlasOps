@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T05:31:31.702691+00:00",
+  "generated_at": "2026-09-28T06:27:10.783774+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -94,8 +94,8 @@
       "size_bytes": 53821
     },
     "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md": {
-      "sha256": "896bb15325033327c20666e4b3cbbb5ab29a063d7e5ce5a4be58246b893c5973",
-      "size_bytes": 7909
+      "sha256": "043dd1f3109cb08fe39b8426738c1623743fb166e405a0c07d7a5ce79887c2e3",
+      "size_bytes": 8353
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -618,8 +618,8 @@
       "size_bytes": 6053
     },
     "scripts/run_stage4_golden_incident.py": {
-      "sha256": "6092e459f251a4ae9a5ba8da6d04a8419e9b60bc1aaf869094997f0bbdc194e5",
-      "size_bytes": 98626
+      "sha256": "cb442ffea89f2cd554320db274f5830bd3785f6c2905039faf297431016e2ad9",
+      "size_bytes": 99511
     },
     "scripts/run_g12_integrated_episode.py": {
       "sha256": "5deaeec192b580db0b5bfb7e86aa3eeb02f55e637e423f4152503cf30c1645b6",
@@ -934,8 +934,8 @@
       "size_bytes": 6249
     },
     "tests/test_stage4_preflight_contract.py": {
-      "sha256": "8c805c8194b19db58af843c72381e886a81e278009c0af2324bdbfee527eea50",
-      "size_bytes": 27906
+      "sha256": "8582a9082e024d79818789e45a991b4eea6b9f535b92bef119f3879d95253555",
+      "size_bytes": 33085
     },
     "tests/test_stage4_telemetry_readiness.py": {
       "sha256": "40246fa1582f6d155f98d5a6553aa8eb329931a143895efe5cdde90474a7752b",

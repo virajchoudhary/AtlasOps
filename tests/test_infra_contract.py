@@ -292,10 +292,11 @@ def test_static_status_documents_keep_live_state_unverified() -> None:
     contract = read("docs/project/INFRASTRUCTURE_CONTRACT.md")
     status = read("docs/project/IMPLEMENTATION_STATUS.md")
     assert "STATICALLY WIRED / LIVE UNVERIFIED" in contract
-    assert "REPAIRED / STATICALLY VALIDATED" in status
-    assert "Real GKE provisioning | UNVERIFIED" in status
-    assert "Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED" in status
-    assert "Environment verifier | IMPLEMENTED / CONTRACT VALIDATED / MOCKED/TESTED" in status
+    assert "Infrastructure configuration | REPAIRED / STATICALLY VALIDATED" in status
+    assert "Controlled infrastructure | HISTORICAL LOCAL G3 PASS" in status
+    assert "Current cluster health and any GKE deployment require separate verification" in status
+    assert "Environment verifier | IMPLEMENTED / CONTRACT TESTED" in status
+    assert "does not make the G4 negative result a PASS" in status
 
 
 def test_jaeger_and_argocd_helm_values_render_statically() -> None:

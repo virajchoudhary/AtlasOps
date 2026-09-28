@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T05:49:28.591302+00:00`
+- **Generated**: `2026-09-28T06:14:59.275396+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -151,7 +151,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `896bb15325033327...` | 7909 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
-| `docs/project/IMPLEMENTATION_STATUS.md` | `04a284d339089b9c...` | 3589 |
+| `docs/project/IMPLEMENTATION_STATUS.md` | `cf7cc72264001759...` | 3806 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `e6ee5dacc9679120...` | 26128 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
@@ -221,7 +221,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_grpo_training_provenance.py` | `5779afca52c6021a...` | 33108 |
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |
 | `tests/test_http_retry.py` | `892c62148f766660...` | 6136 |
-| `tests/test_infra_contract.py` | `e4ee2ab5e3927cb1...` | 14459 |
+| `tests/test_infra_contract.py` | `acf912e9f656d248...` | 14569 |
 | `tests/test_judge_outage_provenance.py` | `f9327e7055a73328...` | 6426 |
 | `tests/test_judge_tier.py` | `f3785d7864e22b96...` | 635 |
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |

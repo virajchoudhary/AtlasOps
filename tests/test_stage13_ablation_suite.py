@@ -25,6 +25,10 @@ def _artifact(
     reward: float = 0.5,
     resolution_rate: float = 0.5,
     ttr: float | None = 30.0,
+    adversarial_membership_sha256: str | None = None,
+    adversarial_ids: list[str] | None = None,
+    seed: int | None = None,
+    protocol_sha256: str | None = None,
 ) -> Path:
     raw_path = path.with_suffix(".jsonl")
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -45,9 +49,105 @@ def _artifact(
         "raw_predictions_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
         "evaluator_source": {"git_sha": "b" * 40, "git_dirty": False},
     }
+    if adversarial_membership_sha256 is not None:
+        payload["adversarial_membership_sha256"] = adversarial_membership_sha256
+    if adversarial_ids is not None:
+        payload["adversarial_ids"] = adversarial_ids
+    if seed is not None:
+        payload["seed"] = seed
+    if protocol_sha256 is not None:
+        payload["protocol_sha256"] = protocol_sha256
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def _write_test_membership_record(
+    tmp_path: Path,
+    *,
+    adversarial_ids: list[str] | None = None,
+    seed: int = 7,
+    protocol_sha256: str = "c" * 64,
+) -> tuple[Path, str, dict]:
+    record = {
+        "schema_version": 1,
+        "split": "adversarial",
+        "seed": seed,
+        "protocol_sha256": protocol_sha256,
+        "adversarial_ids": adversarial_ids or [
+            "adv-test-only-001",
+            "adv-test-only-002",
+        ],
+    }
+    path = tmp_path / "test-only-adversarial-membership.json"
+    path.write_text(json.dumps(record), encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return path, digest, record
+
+
+def _write_full_suite_inputs(
+    tmp_path: Path,
+    *,
+    record: dict | None = None,
+    include_membership_reference: bool = True,
+) -> tuple[Path, Path, str, list[Path]]:
+    if record is None:
+        membership_path, membership_sha256, record = _write_test_membership_record(
+            tmp_path
+        )
+    else:
+        membership_path = tmp_path / "test-only-adversarial-membership.json"
+        membership_path.write_text(json.dumps(record), encoding="utf-8")
+        membership_sha256 = hashlib.sha256(membership_path.read_bytes()).hexdigest()
+
+    variants = {}
+    adversarial_artifacts = []
+    for variant_index, variant in enumerate(REQUIRED_VARIANTS):
+        partitions = {}
+        for partition in REQUIRED_PARTITIONS:
+            artifact_paths = []
+            for run_index, reward in enumerate((0.5, 0.7), start=1):
+                artifact = _artifact(
+                    tmp_path / "artifacts" / f"{variant_index}-{partition}-{run_index}.json",
+                    partition=partition,
+                    variant=variant,
+                    reward=reward,
+                    adversarial_membership_sha256=(
+                        membership_sha256 if partition == "adversarial" else None
+                    ),
+                    adversarial_ids=(
+                        record["adversarial_ids"]
+                        if partition == "adversarial"
+                        and isinstance(record.get("adversarial_ids"), list)
+                        else None
+                    ),
+                    seed=(
+                        record["seed"]
+                        if partition == "adversarial"
+                        and isinstance(record.get("seed"), int)
+                        else None
+                    ),
+                    protocol_sha256=(
+                        record["protocol_sha256"]
+                        if partition == "adversarial"
+                        and isinstance(record.get("protocol_sha256"), str)
+                        else None
+                    ),
+                )
+                artifact_paths.append(str(artifact.relative_to(tmp_path)))
+                if partition == "adversarial":
+                    adversarial_artifacts.append(artifact)
+            partitions[partition] = artifact_paths
+        variants[variant] = partitions
+
+    manifest_payload = {"variants": variants}
+    if include_membership_reference:
+        manifest_payload["adversarial_membership"] = str(
+            membership_path.relative_to(tmp_path)
+        )
+    manifest = tmp_path / "ablation-inputs.json"
+    manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
+    return manifest, membership_path, membership_sha256, adversarial_artifacts
 
 
 def test_rejects_mock_artifacts(tmp_path):
@@ -148,6 +248,33 @@ def test_rejects_duplicate_run_artifacts(tmp_path):
         aggregate_variant_partition("SFT Model", "val", [artifact, artifact])
 
 
+def test_direct_adversarial_aggregation_cannot_supply_its_own_trust_anchor(tmp_path):
+    membership = {
+        "adversarial_ids": ["adv-test-only-001"],
+        "seed": 7,
+        "protocol_sha256": "c" * 64,
+    }
+    digest = "d" * 64
+    artifact = _artifact(
+        tmp_path / "self-declared.json",
+        partition="adversarial",
+        adversarial_membership_sha256=digest,
+        adversarial_ids=membership["adversarial_ids"],
+        seed=7,
+        protocol_sha256=membership["protocol_sha256"],
+    )
+    with pytest.raises(ValueError, match="full suite"):
+        aggregate_variant_partition("SFT Model", "adversarial", [artifact])
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        aggregate_variant_partition(
+            "SFT Model",
+            "adversarial",
+            [artifact],
+            adversarial_membership=membership,
+            adversarial_membership_sha256=digest,
+        )
+
+
 @pytest.mark.parametrize("value", [True, float("nan"), -0.01, 1.01])
 def test_rejects_invalid_optional_runbook_rate(tmp_path, value):
     artifact = _artifact(tmp_path / "invalid-optional.json")
@@ -171,38 +298,168 @@ def test_rejects_malformed_manifest_artifact_paths(tmp_path):
 
 
 def test_full_suite_uses_declared_artifacts_only(tmp_path):
-    variants = {}
-    for variant_index, variant in enumerate(REQUIRED_VARIANTS):
-        partitions = {}
-        for partition in REQUIRED_PARTITIONS:
-            first = _artifact(
-                tmp_path / "artifacts" / f"{variant_index}-{partition}-1.json",
-                partition=partition,
-                variant=variant,
-            )
-            second = _artifact(
-                tmp_path / "artifacts" / f"{variant_index}-{partition}-2.json",
-                partition=partition,
-                variant=variant,
-                reward=0.7,
-            )
-            partitions[partition] = [
-                str(first.relative_to(tmp_path)),
-                str(second.relative_to(tmp_path)),
-            ]
-        variants[variant] = partitions
-    manifest = tmp_path / "ablation-inputs.json"
-    manifest.write_text(
-        json.dumps({"variants": variants}),
-        encoding="utf-8",
-    )
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
     result = run_full_ablation_suite(
         manifest_path=manifest,
         output_dir=tmp_path / "output",
+        expected_adversarial_membership_sha256=membership_sha256,
     )
     assert result["evaluation_mode"] == "empirical_aggregation"
     assert result["non_empirical"] is False
+    assert result["empirical_claim_allowed"] is False
+    assert result["certification_status"] == "NOT_CERTIFIED"
     assert result["results"]["SFT Model"]["val"]["run_count"] == 2
+
+
+def test_full_suite_requires_external_membership_hash_anchor(tmp_path):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="supplied externally"):
+        run_full_ablation_suite(manifest_path=manifest, output_dir=output_dir)
+    with pytest.raises(ValueError, match="does not match external"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256="0" * 64,
+        )
+    with pytest.raises(ValueError, match="64-character digest"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256="not-a-digest",
+        )
+    assert not output_dir.exists()
+    assert len(membership_sha256) == 64
+
+
+def test_full_suite_requires_membership_record_reference(tmp_path):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(
+        tmp_path, include_membership_reference=False
+    )
+    with pytest.raises(ValueError, match="reference an adversarial membership"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+
+def test_full_suite_rejects_missing_membership_record(tmp_path):
+    manifest, membership_path, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    membership_path.unlink()
+    with pytest.raises(FileNotFoundError, match="membership record missing"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+
+def test_full_suite_rejects_oversized_membership_record(tmp_path):
+    manifest, membership_path, _, _ = _write_full_suite_inputs(tmp_path)
+    record_bytes = b" " * 262_145
+    membership_path.write_bytes(record_bytes)
+    expected_sha256 = hashlib.sha256(record_bytes).hexdigest()
+    with pytest.raises(ValueError, match="exceeds 262144 bytes"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=expected_sha256,
+        )
+
+
+def test_full_suite_rejects_duplicate_membership_fields(tmp_path):
+    manifest, membership_path, _, _ = _write_full_suite_inputs(tmp_path)
+    record = json.loads(membership_path.read_text(encoding="utf-8"))
+    membership_path.write_text(
+        json.dumps(record)[:-1] + ', "adversarial_ids": ["adv-test-only-003"]}',
+        encoding="utf-8",
+    )
+    expected_sha256 = hashlib.sha256(membership_path.read_bytes()).hexdigest()
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="duplicate field 'adversarial_ids'"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=expected_sha256,
+        )
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        (
+            {"adversarial_ids": ["adv-test-only-001", "adv-test-only-001"]},
+            "unique",
+        ),
+        ({"adversarial_ids": ["../escape"]}, "safe"),
+        ({"adversarial_ids": []}, "non-empty"),
+        ({"seed": -1}, "non-negative"),
+        ({"protocol_sha256": "not-a-digest"}, "protocol_sha256"),
+    ],
+)
+def test_full_suite_rejects_invalid_membership_record(tmp_path, updates, message):
+    manifest, membership_path, _, _ = _write_full_suite_inputs(tmp_path)
+    record = json.loads(membership_path.read_text(encoding="utf-8"))
+    record.update(updates)
+    membership_path.write_text(json.dumps(record), encoding="utf-8")
+    expected_sha256 = hashlib.sha256(membership_path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=expected_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("adversarial_membership_sha256", "d" * 64, "membership SHA-256"),
+        ("adversarial_ids", ["adv-unapproved"], "membership IDs"),
+        (
+            "adversarial_ids",
+            ["adv-test-only-002", "adv-test-only-001"],
+            "membership IDs",
+        ),
+        ("seed", 8, "seed mismatch"),
+        ("protocol_sha256", "d" * 64, "protocol SHA-256"),
+    ],
+)
+def test_full_suite_rejects_adversarial_artifact_provenance_mismatch(
+    tmp_path, field, value, message
+):
+    manifest, _, membership_sha256, adversarial_artifacts = _write_full_suite_inputs(
+        tmp_path
+    )
+    artifact_path = adversarial_artifacts[0]
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact[field] = value
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+
+def test_full_suite_requires_exact_adversarial_split_field(tmp_path):
+    manifest, _, membership_sha256, adversarial_artifacts = _write_full_suite_inputs(
+        tmp_path
+    )
+    artifact_path = adversarial_artifacts[0]
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact.pop("split")
+    artifact["split_name"] = "adversarial"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValueError, match="exact split field"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
 
 
 def test_full_suite_rejects_incomplete_matrix(tmp_path):

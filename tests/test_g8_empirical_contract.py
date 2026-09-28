@@ -424,6 +424,9 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
     assert summary["avg_reward_contract"] is None
     assert summary["checkpoint_tree_sha256"]
     assert summary["raw_predictions_sha256"]
+    assert summary["split_sha256"] == (
+        "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4"
+    )
     assert summary["training_data_provenance"]["data_origin"] == "UNVERIFIED"
     assert summary["training_data_provenance"]["synthetic"] is None
     assert summary["training_data_provenance"]["corpus_manifest"]["present"] is False

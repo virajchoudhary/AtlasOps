@@ -97,6 +97,9 @@ async def test_policy_receives_verifier_state_without_benchmark_truth() -> None:
     assert result["final"]["incident_id"] == "inc-original"
     assert result["final"]["env_resolved"] is True
     assert len(result["final"]["executed_actions"]) == 2
+    assert [step["environment_status"] for step in result["policy_steps"]] == [
+        "ok", "ok"
+    ]
     assert result["policy_steps"][0]["parsed_action"]["arguments"]["name"] == "observed-1"
     assert result["policy_steps"][1]["next_state"]["env_resolved"] is True
 
@@ -122,6 +125,7 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
     assert result["final"]["status"] == "blocked"
     assert result["final"]["terminal_block"]["category"] == "approval_required"
     assert len(result["policy_steps"]) == 1
+    assert result["policy_steps"][0]["environment_status"] == "blocked"
 
 
 @pytest.mark.asyncio

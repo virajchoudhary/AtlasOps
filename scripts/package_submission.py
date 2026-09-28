@@ -149,6 +149,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/media/*.png",
         "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
+        "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
         "docs/project/STAGE_*.md",
@@ -174,6 +175,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "agents/coordinator.py",
         "agents/adversarial_designer.py",
         "agents/_http_retry.py",
+        "agents/approval_http.py",
         "agents/approval.py",
         "agents/grounding.py",
         "agents/judge.py",
@@ -229,6 +231,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "bench/ablation_suite.py",
         "tests/test_*.py",
         "tests/stage4_approval_process.py",
+        "tests/g9_approval_process.py",
     ]
 
     repo_root = Path.cwd().resolve()

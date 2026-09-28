@@ -388,6 +388,11 @@ class TestStage4CausalPredicate:
 class TestCoordinatorRemediationContract:
     """Tests for coordinator tool policy checks and remediation execution retry."""
 
+    @pytest.fixture(autouse=True)
+    def _synthetic_audit(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "synthetic-stage4-causal-test-secret")
+        monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+
     def test_coordinator_policy_checks_chaos_namespace_allowlist(self) -> None:
         from agents.coordinator import _check_tool_policy
 

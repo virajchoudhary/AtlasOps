@@ -25,6 +25,7 @@ import random
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,11 @@ except ImportError:
     GRPOTrainer = None  # type: ignore
     _HAS_TORCH_RL = False
 
+from agents.approval import ApprovalGate
+from agents.approval_http import (
+    OPERATOR_APPROVAL_TIMEOUT_SECONDS,
+    loopback_approval_server,
+)
 from config.runtime import (
     SCENARIOS_BY_TIER,
     CurriculumManager,
@@ -57,6 +63,8 @@ from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import TEST_SPLIT, VAL_SPLIT, get_split
 from training.grpo_environment import (
     DirectPolicyEnvironment,
+    parse_policy_action,
+    policy_action_requires_operator_approval,
     require_live_kube_context,
     strip_untrusted_approval_context,
 )
@@ -81,6 +89,34 @@ def _require_live_execution(
         kube_context,
         opt_in_flag="--execute-live-chaos",
     )
+
+
+def _require_single_writer() -> None:
+    """Do not let distributed trainers run concurrent faults on one cluster."""
+    for name, required in (
+        ("WORLD_SIZE", 1),
+        ("LOCAL_WORLD_SIZE", 1),
+        ("RANK", 0),
+        ("LOCAL_RANK", 0),
+    ):
+        raw = os.getenv(name)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"G9 requires a single training process ({name} invalid)") from exc
+        if value != required:
+            raise RuntimeError(f"G9 requires a single training process ({name}={value})")
+    torch = sys.modules.get("torch")
+    distributed = getattr(torch, "distributed", None)
+    if (
+        distributed is not None
+        and distributed.is_available()
+        and distributed.is_initialized()
+        and distributed.get_world_size() != 1
+    ):
+        raise RuntimeError("G9 requires a single training process")
 
 
 def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[float]:
@@ -282,6 +318,7 @@ class OnlineRewardFunction:
         rollout_phase: str = "final_training",
         trial_number: int | None = None,
         effective_hyperparameters: Mapping[str, Any] | None = None,
+        operator_approval_enabled: bool = False,
     ):
         self.kube_context = _require_live_execution(
             execute_live_chaos, kube_context
@@ -305,6 +342,7 @@ class OnlineRewardFunction:
         self.rollout_phase = rollout_phase
         self.trial_number = trial_number
         self.effective_hyperparameters = dict(effective_hyperparameters or {})
+        self.operator_approval_enabled = operator_approval_enabled
         self._loop = asyncio.new_event_loop()
 
     def __del__(self):
@@ -322,6 +360,29 @@ class OnlineRewardFunction:
 
     async def _score_batch(self, completions: list[str],
                            prompts: list[str], scenario_ids: list[str] | None) -> list[float]:
+        _require_single_writer()
+        if not self.operator_approval_enabled:
+            return await self._score_batch_with_gate(
+                completions, prompts, scenario_ids, approval_gate=None
+            )
+        operator_api_key = os.getenv("ATLASOPS_API_KEY", "").strip()
+        if not operator_api_key:
+            raise RuntimeError("G9 operator API key is required before live preflight")
+        gate = ApprovalGate(timeout_seconds=OPERATOR_APPROVAL_TIMEOUT_SECONDS)
+        async with loopback_approval_server(gate, operator_api_key) as base_url:
+            log.warning("G9 host operator approval endpoint: %s/approval/pending", base_url)
+            return await self._score_batch_with_gate(
+                completions, prompts, scenario_ids, approval_gate=gate
+            )
+
+    async def _score_batch_with_gate(
+        self,
+        completions: list[str],
+        prompts: list[str],
+        scenario_ids: list[str] | None,
+        *,
+        approval_gate: ApprovalGate | None,
+    ) -> list[float]:
         """Score completions by running serialized rollouts on the live cluster.
 
         Why serialized (not asyncio.gather):
@@ -370,7 +431,7 @@ class OnlineRewardFunction:
                     execute_live_chaos=self.execute_live_chaos,
                     kube_context=kube_context,
                 ):
-                    log.warning("Chaos apply failed for %s — assigning 0 reward", scenario_id)
+                    log.warning("Chaos apply failed for %s; rollout is unscorable", scenario_id)
                     failure_reason = "chaos_apply_failed"
                 else:
                     await asyncio.sleep(15)
@@ -381,12 +442,18 @@ class OnlineRewardFunction:
                         log.warning("No real alert observed for %s", scenario_id)
                         failure_reason = "real_alert_not_observed"
                     else:
-                        result = await self._run_one_rollout(
-                            completion, scenario_id, tier, alert
-                        )
+                        if approval_gate is None:
+                            result = await self._run_one_rollout(
+                                completion, scenario_id, tier, alert
+                            )
+                        else:
+                            result = await self._run_one_rollout(
+                                completion, scenario_id, tier, alert,
+                                approval_gate=approval_gate,
+                            )
             except Exception as exc:
-                log.exception("Rollout %d failed", i + 1)
-                failure_reason = f"{type(exc).__name__}: {exc}"
+                log.warning("Rollout %d failed (%s)", i + 1, type(exc).__name__)
+                failure_reason = f"rollout_exception:{type(exc).__name__}"
             finally:
                 if not reset_chaos(
                     scenario_id,
@@ -408,15 +475,15 @@ class OnlineRewardFunction:
             await asyncio.sleep(10)   # let the cluster fully stabilise
 
             if result is None:
-                rewards.append(0.0)
                 self._persist_rollout({
                     "scenario_id": scenario_id,
                     "tier": tier,
                     "status": "failed",
                     "failure": failure_reason or "rollout_failed",
                     "policy_completion": completion,
-                    "reward": 0.0,
+                    "reward": None,
                 })
+                raise RuntimeError("GRPO rollout is unscorable without policy/verifier evidence")
             else:
                 try:
                     r = compute_direct_action_reward(result)
@@ -477,6 +544,8 @@ class OnlineRewardFunction:
         scenario_id: str,
         tier: str,
         alert: dict[str, Any],
+        *,
+        approval_gate: ApprovalGate | None = None,
     ) -> dict:
         """Execute the policy completion itself as one atomic environment action."""
         t0 = time.time()
@@ -492,20 +561,58 @@ class OnlineRewardFunction:
         }.get(alert_severity, "P0")
         public_alert = strip_untrusted_approval_context(alert)
         state = {
+            "incident_id": f"g9-{uuid.uuid4().hex}",
             "alert": public_alert,
             "triage": {"severity": triage_severity},
             "observations": public_alert.get("observations", {}),
         }
-        result = await DirectPolicyEnvironment(
-            execute_live_chaos=self.execute_live_chaos,
-            kube_context=self.kube_context,
-        ).step(
+        environment_kwargs: dict[str, Any] = {
+            "execute_live_chaos": self.execute_live_chaos,
+            "kube_context": self.kube_context,
+        }
+        if approval_gate is not None:
+            environment_kwargs["_action_approval_gate"] = approval_gate
+        environment = DirectPolicyEnvironment(**environment_kwargs)
+        permit = None
+        approval_record = None
+        try:
+            action = parse_policy_action(completion_text)
+        except (TypeError, ValueError):
+            action = None
+        if (
+            approval_gate is not None
+            and action is not None
+            and policy_action_requires_operator_approval(action, state)
+        ):
+            request = approval_gate.request_action(
+                incident_id=state["incident_id"],
+                severity=triage_severity,
+                action=action,
+                operator_scope={
+                    "kube_context": self.kube_context,
+                    "scenario_id": scenario_id,
+                },
+            )
+            decision, permit = await approval_gate.wait_for_action_decision(
+                state["incident_id"],
+                request_token=request.token,
+            )
+            approval_record = {
+                "decision": decision.get("status"),
+                "approved_by": decision.get("approved_by"),
+                "action_digest": request.action_digest,
+            }
+        step_kwargs = {"_action_approval_permit": permit} if approval_gate is not None else {}
+        result = await environment.step(
             completion_text,
             scenario_id=scenario_id,
             state=state,
+            **step_kwargs,
         )
         result.update(
             {
+                "incident_id": state["incident_id"],
+                "approval": approval_record,
                 "scenario_id": scenario_id,
                 "tier": tier,
                 "total_turns": 1,
@@ -524,7 +631,9 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       n_trials: int = 6,
                       *,
                       execute_live_chaos: bool = False,
-                      kube_context: str | None = None) -> dict[str, Any]:
+                      kube_context: str | None = None,
+                      operator_approval_enabled: bool = False) -> dict[str, Any]:
+    _require_single_writer()
     kube_context = _require_live_execution(execute_live_chaos, kube_context)
     try:
         import optuna
@@ -561,6 +670,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             rollout_phase="optuna_trial",
             trial_number=trial.number,
             effective_hyperparameters=effective_hyperparameters,
+            operator_approval_enabled=operator_approval_enabled,
         )
 
         model, tokenizer = load_model_and_tokenizer(
@@ -592,7 +702,10 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
         )
         trainer.train()
         logs = trainer.state.log_history
-        rewards = [l.get("rewards/mean", 0) for l in logs if "rewards/mean" in l]
+        rewards = [
+            entry.get("rewards/mean", 0)
+            for entry in logs if "rewards/mean" in entry
+        ]
         return sum(rewards[-3:]) / max(len(rewards[-3:]), 1)
 
     study = optuna.create_study(direction="maximize",
@@ -726,6 +839,11 @@ def main() -> None:
         "--kube-context",
         help="Named Kubernetes context explicitly targeted by every G9 kubectl call",
     )
+    parser.add_argument(
+        "--enable-p1-approval",
+        action="store_true",
+        help="Start a same-process localhost operator channel for exact P1 actions",
+    )
     args = parser.parse_args()
     try:
         kube_context = _require_live_execution(
@@ -734,6 +852,9 @@ def main() -> None:
     except (PermissionError, ValueError) as exc:
         parser.error(str(exc))
     args.kube_context = kube_context
+    _require_single_writer()
+    if args.enable_p1_approval and not os.getenv("ATLASOPS_API_KEY", "").strip():
+        parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
 
     tiers      = [t.strip() for t in args.tiers.split(",")]
     output_dir = Path(args.output)
@@ -771,6 +892,15 @@ def main() -> None:
         sft_parent=sft_parent,
         prompt_rows=prompt_rows,
     )
+    manifest["training"]["operator_approval"] = {
+        "mode": (
+            "loopback_exact_action_v1" if args.enable_p1_approval else "disabled"
+        ),
+        "timeout_seconds": (
+            OPERATOR_APPROVAL_TIMEOUT_SECONDS if args.enable_p1_approval else None
+        ),
+        "identity": "operator_supplied_name_not_independent_attestation",
+    }
     manifest = persist_status(manifest_path, manifest, "planned")
     try:
         manifest = persist_status(manifest_path, manifest, "running")
@@ -792,6 +922,7 @@ def main() -> None:
 
 def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     """Execute the declared online training run after intent is persisted."""
+    _require_single_writer()
     kube_context = _require_live_execution(
         getattr(args, "execute_live_chaos", False),
         getattr(args, "kube_context", None),
@@ -823,6 +954,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
             n_trials=args.optuna,
             execute_live_chaos=args.execute_live_chaos,
             kube_context=kube_context,
+            operator_approval_enabled=getattr(args, "enable_p1_approval", False),
         )
 
     lr      = best_hp.get("lr", args.lr)
@@ -869,6 +1001,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         kube_context=kube_context,
         rollout_phase="final_training",
         effective_hyperparameters=effective_hyperparameters,
+        operator_approval_enabled=getattr(args, "enable_p1_approval", False),
     )
 
     # Every completion is parsed and executed as one exact structured action.
@@ -921,7 +1054,10 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     tokenizer.save_pretrained(str(output_dir))
 
     logs = trainer.state.log_history
-    rewards = [l.get("rewards/mean") for l in logs if "rewards/mean" in l]
+    rewards = [
+        entry.get("rewards/mean")
+        for entry in logs if "rewards/mean" in entry
+    ]
     summary = {
         "model": args.model, "tiers": tiers,
         "total_steps": trainer.state.global_step,
@@ -938,6 +1074,19 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         "live_execution": {
             "execute_live_chaos": args.execute_live_chaos,
             "kube_context": kube_context,
+        },
+        "operator_approval": {
+            "mode": (
+                "loopback_exact_action_v1"
+                if getattr(args, "enable_p1_approval", False)
+                else "disabled"
+            ),
+            "timeout_seconds": (
+                OPERATOR_APPROVAL_TIMEOUT_SECONDS
+                if getattr(args, "enable_p1_approval", False)
+                else None
+            ),
+            "identity": "operator_supplied_name_not_independent_attestation",
         },
         "trainer_log_history": logs,
     }

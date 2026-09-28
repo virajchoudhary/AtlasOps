@@ -80,7 +80,6 @@ LLM_BASE_BACKOFF_SECONDS: float = 1.5
 TOOL_OUTPUT_MAX_CHARS: int = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
-TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
 
 class AlertWebhookPayload(BaseModel):
     alerts: list[dict[str, Any]] = Field(default_factory=list)

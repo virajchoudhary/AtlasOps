@@ -37,8 +37,10 @@ from typing import Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Security
+from fastapi import FastAPI, HTTPException, Request, Security
+from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, ValidationError
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -132,13 +134,32 @@ def stage4_approval_app(api_key: str) -> FastAPI:
     """Only the approval endpoints share this host process's coordinator gate."""
     if not api_key:
         raise RuntimeError("Stage 4 operator API key is required")
-    from agents.coordinator import approve, approval_pending
+    from agents.approval import approval_gate
 
     header = APIKeyHeader(name="X-AtlasOps-Key", auto_error=False)
+
+    class ApprovalPayload(BaseModel):
+        token: str
+        decision: str
+        approved_by: str
+        reason: str = ""
 
     def require_operator(key: str | None = Security(header)) -> None:
         if not key or not hmac.compare_digest(key.encode(), api_key.encode()):
             raise HTTPException(status_code=401, detail="Invalid or missing X-AtlasOps-Key header")
+
+    async def approve(request: Request) -> JSONResponse:
+        try:
+            payload = ApprovalPayload.model_validate(await request.json())
+        except (ValueError, ValidationError) as exc:
+            raise HTTPException(status_code=422, detail="Invalid approval callback") from exc
+        result = approval_gate.callback(
+            payload.token, payload.decision, payload.approved_by, payload.reason
+        )
+        return JSONResponse(result, status_code=200 if result.get("ok") else 400)
+
+    async def approval_pending() -> JSONResponse:
+        return JSONResponse({"pending": approval_gate.pending()})
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_api_route("/approve", approve, methods=["POST"], dependencies=[Security(require_operator)])
@@ -187,26 +208,11 @@ def _validated_experiment_id(experiment_id: str) -> str:
     return experiment_id
 
 
-# Configure environment for local agent execution
-os.environ["BACKEND"] = "openai"
-os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
-os.environ["LLM_API_KEY"] = "ollama"
-os.environ["KUBECONFIG_CONTEXT"] = "kind-atlasops-local"
-os.environ["PROMETHEUS_URL"] = "http://localhost:19090"
-os.environ["ALERTMANAGER_URL"] = "http://localhost:19093"
-os.environ["JAEGER_URL"] = "http://localhost:16686"
-os.environ["ARGOCD_URL"] = "http://localhost:18080"
-os.environ["ARGOCD_USER"] = "atlasops"
-os.environ["ARGOCD_VERIFY_TLS"] = "false"
-os.environ["POSTMORTEM_DIR"] = os.path.join(REPO_ROOT, "artifacts", "postmortems")
-os.environ["TRAJECTORIES_DIR"] = os.path.join(REPO_ROOT, "artifacts", "trajectories")
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("stage4.golden")
 
 KIND_CONTEXT = "kind-atlasops-local"
 SELECTED_STAGE4_AGENT_MODEL = resolve_stage4_agent_model()
-os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
 # Populated only after the explicit operator-supplied experiment ID passes preflight.
 EXPERIMENT_ID = ""
 SCENARIO_ID = "single_fault/sf-002"
@@ -1543,6 +1549,17 @@ def _persist_stage4_preflight_evidence(
     phases = phases if isinstance(phases, dict) else {}
     telemetry = phases.get("telemetry_readiness")
     baseline = phases.get("baseline")
+    pre_reservation = phases.get("pre_reservation_chaos_check")
+    pre_reservation_result = (
+        pre_reservation.get("result")
+        if isinstance(pre_reservation, dict)
+        else None
+    )
+    pre_reservation_zero = (
+        _chaos_state_observation(pre_reservation_result)
+        if isinstance(pre_reservation_result, dict)
+        else {"count": None, "verified_zero": False}
+    )
     zero_chaos = _chaos_state_observation(chaos_precheck)
     source_identity = evidence.get("source_identity")
     if (
@@ -1550,6 +1567,9 @@ def _persist_stage4_preflight_evidence(
         or telemetry.get("ready") is not True
         or not isinstance(baseline, dict)
         or baseline.get("baseline_healthy") is not True
+        or not isinstance(pre_reservation, dict)
+        or pre_reservation.get("verified_zero") is not True
+        or not pre_reservation_zero["verified_zero"]
         or not zero_chaos["verified_zero"]
         or not isinstance(source_identity, dict)
         or source_identity.get("working_tree_clean") is not True
@@ -1577,6 +1597,10 @@ def _persist_stage4_preflight_evidence(
         "protocol_profile": evidence.get("protocol_profile"),
         "telemetry_readiness": telemetry,
         "baseline": baseline,
+        "zero_chaos_pre_reservation": {
+            **pre_reservation_zero,
+            "result": pre_reservation_result,
+        },
         "zero_chaos_preflight": {
             **zero_chaos,
             "result": chaos_precheck,
@@ -1859,6 +1883,66 @@ async def main() -> dict[str, Any]:
             os.environ["ATLASOPS_PUBLIC_BASE_URL"] = previous_base
 
 
+def _stop_port_forwards(processes: list[subprocess.Popen]) -> None:
+    for process in processes:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+    for process in processes:
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                log.warning("Stage 4 port-forward did not stop within its timeout")
+        except OSError:
+            pass
+
+
+def _start_port_forwards(
+    specs: list[tuple[str, str, int, int]],
+) -> list[subprocess.Popen]:
+    processes: list[subprocess.Popen] = []
+    try:
+        for namespace, service, local_port, remote_port in specs:
+            processes.append(
+                subprocess.Popen(  # noqa: ASYNC220
+                    [
+                        "kubectl", "--context", KIND_CONTEXT, "port-forward",
+                        f"svc/{service}", f"{local_port}:{remote_port}", "-n", namespace,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            )
+    except BaseException:
+        _stop_port_forwards(processes)
+        raise
+    return processes
+
+
+def _configure_stage4_runtime() -> None:
+    """Set local endpoints only after secrets and source preflight succeed."""
+    os.environ.update({
+        "KUBECONFIG_CONTEXT": KIND_CONTEXT,
+        "BACKEND": "vllm",
+        "VLLM_BASE": "http://localhost:11434/v1",
+        "LLM_API_KEY": "",
+        "AGENT_MODEL": SELECTED_STAGE4_AGENT_MODEL,
+        "PROMETHEUS_URL": "http://localhost:19090",
+        "ALERTMANAGER_URL": "http://localhost:19093",
+        "JAEGER_URL": "http://localhost:16686",
+        "ARGOCD_URL": "http://localhost:18080",
+        "ARGOCD_USER": "atlasops",
+        "ARGOCD_VERIFY_TLS": "false",
+        "POSTMORTEM_DIR": os.path.join(REPO_ROOT, "artifacts", "postmortems"),
+        "TRAJECTORIES_DIR": os.path.join(REPO_ROOT, "artifacts", "trajectories"),
+    })
+
+
 async def _run_experiment() -> dict[str, Any]:
     global EXPERIMENT_ID
 
@@ -1880,22 +1964,7 @@ async def _run_experiment() -> dict[str, Any]:
     print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
     print("=" * 80)
 
-    # Ensure context is kind-atlasops-local
-    subprocess.run(  # noqa: ASYNC221
-        ["kubectl", "config", "use-context", KIND_CONTEXT],
-        capture_output=True,
-        check=False,
-    )
-
-    os.environ["KUBECONFIG_CONTEXT"] = KIND_CONTEXT
-    os.environ["BACKEND"] = "vllm"
-    os.environ["VLLM_BASE"] = "http://localhost:11434/v1"
-    os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL
-    os.environ["PROMETHEUS_URL"] = "http://localhost:19090"
-    os.environ["ALERTMANAGER_URL"] = "http://localhost:19093"
-    os.environ["JAEGER_URL"] = "http://localhost:16686"
-    os.environ["ARGOCD_URL"] = "http://localhost:18080"
-    os.environ["ARGOCD_VERIFY_TLS"] = "false"
+    _configure_stage4_runtime()
 
     start_time = datetime.now(UTC).isoformat()
     t0 = time.time()
@@ -1908,14 +1977,7 @@ async def _run_experiment() -> dict[str, Any]:
         ("jaeger", "jaeger", 16686, 16686),
         ("argocd", "argocd-server", 18080, 80),
     ]
-    pf_procs = []
-    for ns, svc, lp, rp in pf_specs:
-        p = subprocess.Popen(  # noqa: ASYNC220
-            ["kubectl", "--context", KIND_CONTEXT, "port-forward", f"svc/{svc}", f"{lp}:{rp}", "-n", ns],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        pf_procs.append(p)
+    pf_procs = _start_port_forwards(pf_specs)
     time.sleep(3)  # noqa: ASYNC251
 
     evidence: dict[str, Any] = {
@@ -2000,6 +2062,27 @@ async def _run_experiment() -> dict[str, Any]:
             evidence["attempt_state"] = "NOT_RESERVED"
             evidence["outcome"] = "PREFLIGHT_ABORT"
             evidence["failure_phase"] = "unhealthy_baseline"
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
+            return evidence
+
+        # Prove an empty cluster-wide Chaos inventory before writing any
+        # reservation marker. The post-reservation read below catches drift
+        # during protocol/profile observation before fault application.
+        _current_main_sha(expected_sha=main_sha)
+        pre_reservation_chaos = run_kubectl(
+            ["get", CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        )
+        pre_reservation_observation = _chaos_state_observation(pre_reservation_chaos)
+        evidence["phases"]["pre_reservation_chaos_check"] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "active_chaos_count": pre_reservation_observation["count"],
+            "verified_zero": pre_reservation_observation["verified_zero"],
+            "result": pre_reservation_chaos,
+        }
+        if not pre_reservation_observation["verified_zero"]:
+            evidence["attempt_state"] = "NOT_RESERVED"
+            evidence["outcome"] = "PREFLIGHT_ABORT"
+            evidence["failure_phase"] = "pre_reservation_chaos_not_zero"
             evidence["completed_at"] = datetime.now(UTC).isoformat()
             return evidence
 
@@ -2302,9 +2385,7 @@ async def _run_experiment() -> dict[str, Any]:
             )
         raise
     finally:
-        for p in pf_procs:
-            p.terminate()
-            p.wait()
+        _stop_port_forwards(pf_procs)
 
 
 if __name__ == "__main__":

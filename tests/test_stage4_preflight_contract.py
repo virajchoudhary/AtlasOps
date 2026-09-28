@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -20,6 +23,41 @@ SECRET_FILES = {
     "ATLASOPS_API_KEY": "atlasops-api-key.secret",
     "ALERTMANAGER_WEBHOOK_SECRET": "alertmanager-webhook-secret.secret",
 }
+
+
+def test_import_does_not_override_host_runtime_or_create_output(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(repo_root)
+    settings = {
+        "BACKEND": "synthetic-test-backend",
+        "VLLM_BASE": "http://127.0.0.1:59099/v1",
+        "LLM_API_KEY": "synthetic-test-key-not-printed",
+        "KUBECONFIG_CONTEXT": "synthetic-current-context",
+        "TRAJECTORIES_DIR": str(tmp_path / "trajectories"),
+        "POSTMORTEM_DIR": str(tmp_path / "postmortems"),
+    }
+    environment.update(settings)
+    script = (
+        "import os,json; keys="
+        + repr(list(settings))
+        + "; before={k:os.environ[k] for k in keys};"
+        + "import scripts.run_stage4_golden_incident;"
+        + "print(json.dumps({k:os.environ.get(k)==before[k] for k in keys}))"
+    )
+    process = subprocess.run(
+        [sys.executable, "-B", "-c", script],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert process.returncode == 0
+    assert all(json.loads(process.stdout).values())
+    assert not (tmp_path / "trajectories").exists()
+    assert not (tmp_path / "postmortems").exists()
 
 
 @pytest.fixture(autouse=True)
@@ -323,7 +361,7 @@ def test_runner_requires_explicit_approved_sha_before_cluster_contact(
         asyncio.run(runner._run_experiment())
 
 
-def test_runner_checks_clean_origin_main_before_first_cluster_command(
+def test_runner_checks_clean_origin_main_without_global_context_switch(
     isolated_runner, monkeypatch,
 ):
     monkeypatch.setenv("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-PREFLIGHT-ORDER")
@@ -337,31 +375,148 @@ def test_runner_checks_clean_origin_main_before_first_cluster_command(
     def run(args, **kwargs):
         if args[0] == "git":
             return git_run(args, **kwargs)
+        pytest.fail(f"runner changed global kubeconfig: {args!r}")
+
+    monkeypatch.setattr(runner.subprocess, "run", run)
+    def port_forward(args, **_kwargs):
         cluster_calls.append(list(args))
         raise ClusterCommandReached
 
-    monkeypatch.setattr(runner.subprocess, "run", run)
-    monkeypatch.setattr(
-        runner.subprocess,
-        "Popen",
-        lambda *args, **kwargs: pytest.fail("port-forward started before preflight"),
-    )
+    monkeypatch.setattr(runner.subprocess, "Popen", port_forward)
 
     with pytest.raises(ClusterCommandReached):
         asyncio.run(runner._run_experiment())
 
     assert len(git_calls) == 5
-    assert cluster_calls == [
-        ["kubectl", "config", "use-context", runner.KIND_CONTEXT],
+    assert cluster_calls[0][:4] == [
+        "kubectl", "--context", runner.KIND_CONTEXT, "port-forward",
     ]
+
+
+@pytest.mark.parametrize(
+    "chaos_result",
+    [
+        {"success": True, "stdout": '{"items":[{"kind":"StressChaos"}]}'},
+        {"success": False, "stdout": '{"items":[]}'},
+    ],
+)
+def test_zero_chaos_must_be_verified_before_attempt_reservation(
+    isolated_runner, monkeypatch, chaos_result,
+):
+    experiment_id = "EXP-STAGE4-SF002-ZERO-PRE-RESERVATION"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    _install_mocked_preflight_edges(monkeypatch)
+    calls = []
+
+    def kubectl(args, timeout=20):
+        calls.append(list(args))
+        return chaos_result
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    monkeypatch.setattr(
+        runner, "reserve_experiment_attempt",
+        lambda *_args, **_kwargs: pytest.fail("attempt reserved before zero-Chaos proof"),
+    )
+
+    result = asyncio.run(runner._run_experiment())
+    assert result["outcome"] == "PREFLIGHT_ABORT"
+    assert result["attempt_state"] == "NOT_RESERVED"
+    assert result["failure_phase"] == "pre_reservation_chaos_not_zero"
+    assert calls == [["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]]
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
+
+
+def test_new_chaos_after_reservation_releases_marker_before_apply(
+    isolated_runner, monkeypatch,
+):
+    experiment_id = "EXP-STAGE4-SF002-CHAOS-DRIFT"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    _install_mocked_preflight_edges(monkeypatch)
+    events = []
+
+    def kubectl(args, timeout=20):
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        events.append("chaos_read")
+        items = [] if len(events) == 1 else [{"kind": "StressChaos"}]
+        return {
+            "success": True,
+            "stdout": json.dumps({"items": items}),
+            "returncode": 0,
+        }
+
+    def reserve(experiment_id, *, selected_model, main_sha, **_kwargs):
+        events.append("reserve")
+        reservation = {
+            "experiment_id": experiment_id,
+            "state": runner.ATTEMPT_STATE_RESERVED,
+            "reservation_token": "synthetic-reservation-token",
+            "protocol_profile": {"model": {"name": selected_model}},
+            "protocol_fingerprint": "synthetic-protocol-fingerprint",
+            "main_sha": main_sha,
+        }
+        runner._write_json_atomic(
+            runner._attempt_marker_path(experiment_id), reservation
+        )
+        return reservation
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    monkeypatch.setattr(runner, "reserve_experiment_attempt", reserve)
+    result = asyncio.run(runner._run_experiment())
+
+    assert events == ["chaos_read", "reserve", "chaos_read"]
+    assert result["failure_phase"] == "pre_fault_chaos_not_zero"
+    assert result["reservation_released"] is True
+    assert result["attempt_state"] == "RELEASED_PRE_FAULT"
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 
 class _ProcessStub:
     def terminate(self):
         return None
 
-    def wait(self):
+    def wait(self, timeout=None):
         return 0
+
+
+def test_partial_port_forward_startup_cleans_started_process(
+    isolated_runner, monkeypatch,
+):
+    experiment_id = "EXP-STAGE4-SF002-PARTIAL-FORWARD"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    events = []
+
+    class StartedForward:
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout=None):
+            events.append("wait")
+
+    def popen(*_args, **_kwargs):
+        events.append("start")
+        if events.count("start") == 2:
+            raise OSError("synthetic second forward failure")
+        return StartedForward()
+
+    monkeypatch.setattr(runner.subprocess, "Popen", popen)
+    monkeypatch.setattr(
+        runner, "run_kubectl",
+        lambda *_args, **_kwargs: pytest.fail("cluster read after failed forward"),
+    )
+    monkeypatch.setattr(
+        runner, "reserve_experiment_attempt",
+        lambda *_args, **_kwargs: pytest.fail("attempt reserved after failed forward"),
+    )
+    with pytest.raises(OSError, match="synthetic second forward failure"):
+        asyncio.run(runner._run_experiment())
+    assert events == ["start", "start", "terminate", "wait"]
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 
 def _install_mocked_preflight_edges(monkeypatch):
@@ -447,7 +602,7 @@ def test_source_change_before_t0_releases_reservation_without_apply(
 
     def changed_source(expected_sha=None):
         source_checks.append(expected_sha)
-        if len(source_checks) <= 2:
+        if len(source_checks) <= 3:
             return MAIN_SHA
         raise RuntimeError("source changed before T0")
 
@@ -496,9 +651,12 @@ def test_source_change_before_t0_releases_reservation_without_apply(
         asyncio.run(runner._run_experiment())
 
     marker_path = Path(runner._attempt_marker_path(experiment_id))
-    assert source_checks == [None, MAIN_SHA, MAIN_SHA]
+    assert source_checks == [None, MAIN_SHA, MAIN_SHA, MAIN_SHA]
     assert len(reserve_calls) == 1
-    assert kubectl_calls == [["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]]
+    assert kubectl_calls == [
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+    ]
     assert not marker_path.exists()
     assert not any(args[0] == "apply" for args in kubectl_calls)
 

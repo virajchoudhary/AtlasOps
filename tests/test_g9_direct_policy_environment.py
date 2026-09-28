@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -1109,7 +1110,7 @@ async def test_grpo_cleanup_failure_aborts_before_next_rollout(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ):
     from bench import runner
 
@@ -1136,18 +1137,24 @@ async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
     monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
     monkeypatch.setattr(runner, "wait_for_alert", lambda: None)
     reward_function = grpo.OnlineRewardFunction(
-        ["single_fault"], **LIVE_EXECUTION
+        ["single_fault"],
+        rollout_log_path=tmp_path / "rollouts.jsonl",
+        **LIVE_EXECUTION,
     )
     try:
-        rewards = await reward_function._score_batch(
-            [_completion()],
-            [grpo._direct_action_prompt("single_fault/sf-002")],
-            ["single_fault/sf-002"],
-        )
+        with pytest.raises(RuntimeError, match="unscorable"):
+            await reward_function._score_batch(
+                [_completion()],
+                [grpo._direct_action_prompt("single_fault/sf-002")],
+                ["single_fault/sf-002"],
+            )
     finally:
         reward_function._loop.close()
 
-    assert rewards == [0.0]
+    record = json.loads((tmp_path / "rollouts.jsonl").read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert record["failure"] == "real_alert_not_observed"
+    assert record["reward"] is None
     assert observed["zero"] == LIVE_EXECUTION
     assert observed["apply"] == ("single_fault/sf-002", LIVE_EXECUTION)
     assert observed["reset"] == ("single_fault/sf-002", LIVE_EXECUTION)
@@ -1313,6 +1320,65 @@ async def test_training_alert_approval_cannot_authorize_p1_mutation(monkeypatch)
     assert executed == []
     assert result["status"] == "blocked"
     assert result["terminal_block"]["category"] == "approval_required"
+
+
+def test_standalone_training_approval_is_bound_to_generated_action(monkeypatch):
+    from agents.approval import ApprovalGate
+
+    gate = ApprovalGate(timeout_seconds=2)
+    observed = {}
+
+    class FakeEnvironment:
+        def __init__(self, *, _action_approval_gate, **_kwargs):
+            assert _action_approval_gate is gate
+
+        async def step(
+            self, completion_text, *, scenario_id, state, _action_approval_permit=None
+        ):
+            action = json.loads(completion_text)
+            observed["allowed"] = gate.consume_action_permit(
+                _action_approval_permit,
+                incident_id=state["incident_id"],
+                action_digest=gate.action_digest(action),
+            )
+            return {"status": "ok" if observed["allowed"] else "blocked", "env_resolved": False}
+
+    monkeypatch.setattr(grpo, "DirectPolicyEnvironment", FakeEnvironment)
+    reward_function = grpo.OnlineRewardFunction(["single_fault"], **LIVE_EXECUTION)
+    completion = json.dumps({
+        "tool": "kubectl_scale",
+        "arguments": {"deployment": "paymentservice", "replicas": 2, "namespace": "default"},
+    })
+    async def exercise():
+        task = asyncio.create_task(reward_function._run_one_rollout(
+            completion,
+            "single_fault/sf-002",
+            "single_fault",
+            {"commonLabels": {"severity": "critical"}, "alerts": []},
+            approval_gate=gate,
+        ))
+        for _ in range(100):
+            if gate.pending():
+                break
+            await asyncio.sleep(0.01)
+        pending = gate.pending()
+        assert len(pending) == 1
+        assert pending[0]["action"]["tool"] == "kubectl_scale"
+        assert pending[0]["operator_scope"] == {
+            "kube_context": "kind-atlasops-test",
+            "scenario_id": "single_fault/sf-002",
+        }
+        assert gate.callback(pending[0]["token"], "approved", approved_by="operator")["ok"]
+        return await task
+
+    try:
+        result = asyncio.run(exercise())
+    finally:
+        reward_function._loop.close()
+
+    assert observed["allowed"] is True
+    assert result["status"] == "ok"
+    assert gate.pending() == []
 
 
 @pytest.mark.asyncio

@@ -53,8 +53,9 @@ own source, model, telemetry, baseline, zero-Chaos, approval, and postflight
 controls. Do not run it unattended or use this flag as a substitute for
 experiment-specific authorization.
 
-After the harness returns, the wrapper copies the raw Stage 4 attempt and
-coordinator trajectory, including negative or interrupted evidence when present,
+After the harness returns, the wrapper copies the available raw Stage 4 attempt,
+pre-fault failure record, and coordinator trajectory, including negative or
+interrupted evidence when present,
 and records their SHA-256 hashes, exact source SHA, checkpoint provenance, seed,
 model identity, policy origin, and missing fields. It revalidates the checkpoint
 inventory after the run and marks a changed or unavailable checkpoint incomplete.
@@ -63,6 +64,39 @@ unevaluated and always sets `empirical_claim_allowed=false` and
 `gate_certification=NOT_CERTIFIED`; a capture requires independent review before
 any G12 empirical claim. An incomplete attempt remains visible rather than
 becoming a mock success.
+
+`CAPTURED_FOR_REVIEW` requires every policy step to contain its ordered index,
+timezone-aware start and completion timestamps, pre-action and next state
+objects with matching action, tool-result, verifier and resolution feedback.
+Both states retain the incident ID, alert, and incident anchors, and their alert
+and anchors must match the source incident. The final executed-action list must
+match the ordered policy-step actions and results. A deadline
+observation may omit resolution and failed-check fields, but an ordinary
+conclusive observation must retain them.
+Adjacent steps must form a state chain with non-overlapping chronology; no
+step may start from an already resolved state or follow a recorded resolution,
+terminal block, or unscorable/error settlement. The primary Stage 4 anchor copy
+must also match the trajectory
+and alert-derived anchors. The final remediation status must match the last
+step. The environment's raw `status` is not persisted per step, so an otherwise
+unrecorded non-`ok` status cannot be reconstructed from this bundle. Verifier status,
+resolution, required checks and failed-check names must agree; any verifier
+nested in settlement is checked against the step verifier. Executed steps retain
+exactly one tool action with its result and structured settlement observations
+or an explicit timeout/error/unscorable record. A blocked step requires a recognized
+terminal-block category and reason, no executed action, and null verification
+and settlement. Failed or unresolved results do not prevent capture.
+
+The Stage 4 cleanup sidecar is required and checked for schema, experiment
+identity, and consistency of the raw postflight Chaos item count with the
+recorded count and zero-Chaos verdict. A recorded cleanup failure and
+poisoned-environment state are valid
+negative evidence, not a reason to discard the bundle or a cleanup PASS. Missing
+or malformed cleanup evidence, step data, or state relationships keeps the
+bundle `INCOMPLETE`; copied raw artifacts and their hashes remain available
+either way. An unscorable step may preserve a last passed verifier while
+remaining unresolved when its settlement failure is explicit. Review capture is
+not evidence of remediation success, gate closure, or empirical certification.
 
 No real G12 episode was executed in this implementation pass. The local Kind
 API and Docker Linux engine were unavailable, and no completed GRPO checkpoint

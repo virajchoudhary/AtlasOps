@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T09:05:10.209239+00:00",
+  "generated_at": "2026-09-28T18:52:05.584831+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -134,8 +134,8 @@
       "size_bytes": 1751
     },
     "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
-      "sha256": "85a2d06ee0203366b90efd1cb734780c052d2a7454b247f88d2a34cb79759e72",
-      "size_bytes": 3946
+      "sha256": "062d53070612b7c56e70f25f58870a02a0fc67916a8316feab5cf30882af6e3c",
+      "size_bytes": 6247
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
       "sha256": "cb1c07a038e191aeaeaf2cfc7a6a1cea2061380a6ecc03a29ab51d165ee4b57d",
@@ -634,8 +634,8 @@
       "size_bytes": 99511
     },
     "scripts/run_g12_integrated_episode.py": {
-      "sha256": "5deaeec192b580db0b5bfb7e86aa3eeb02f55e637e423f4152503cf30c1645b6",
-      "size_bytes": 12070
+      "sha256": "5a87095d24daa0d3292c39586eb9ed35a9c442231c35587f3b87af51698ac490",
+      "size_bytes": 38984
     },
     "scripts/package_submission.py": {
       "sha256": "765f8ad94fa5affec91dc3dfbe9a38a26051495b54dcbd0ef3e01bc214c5d88c",
@@ -774,8 +774,8 @@
       "size_bytes": 12272
     },
     "tests/test_g12_real_capture.py": {
-      "sha256": "2fbf3a683d44ccafa1af7da4580c6bd4ac68a9198385bfaa3ca77b9211fca83b",
-      "size_bytes": 12516
+      "sha256": "7e152c2ee74cdbd4737ed36ced3d4c6343f4f686ddc873526524caba67726ca6",
+      "size_bytes": 43289
     },
     "tests/test_g4_protocol_profile.py": {
       "sha256": "062b4869df3fc22e1d7b256af7f7220da88e1c7891f4ebd6ba7dd1394f0e4344",

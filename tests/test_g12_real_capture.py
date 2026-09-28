@@ -99,6 +99,7 @@ def _complete_executed_negative_step():
         "started_at": "2026-09-28T12:00:00+00:00",
         "completed_at": "2026-09-28T12:00:01+00:00",
         "state": state,
+        "environment_status": "ok",
         "raw_policy_output": raw_policy_output,
         "parsed_action": action,
         "executed_actions": [{
@@ -130,6 +131,7 @@ def _complete_executed_negative_step():
 
 def _complete_blocked_step():
     step = _complete_executed_negative_step()
+    step["environment_status"] = "blocked"
     step["executed_actions"] = []
     step["verification"] = None
     step["settling"] = None
@@ -146,6 +148,7 @@ def _complete_blocked_step():
 
 def _complete_unscorable_step():
     step = _complete_executed_negative_step()
+    step["environment_status"] = "unscorable"
     verification = {
         "verification_status": "inconclusive",
         "env_resolved": False,
@@ -504,6 +507,7 @@ def test_missing_or_malformed_policy_steps_are_incomplete(
         "index",
         "started_at",
         "completed_at",
+        "environment_status",
         "raw_policy_output",
         "parsed_action",
         "executed_actions",
@@ -548,6 +552,62 @@ def test_complete_unscorable_policy_step_is_captured_for_review(tmp_path):
     assert manifest["policy_step_count"] == 1
     assert manifest["empirical_claim_allowed"] is False
     assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_missing_environment_status_makes_capture_incomplete(tmp_path):
+    step = _complete_executed_negative_step()
+    del step["environment_status"]
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_environment_status_missing" in manifest["problems"]
+
+
+@pytest.mark.parametrize(
+    ("step_kind", "claimed_status"),
+    [
+        ("executed", "blocked"),
+        ("executed", "unscorable"),
+        ("blocked", "ok"),
+        ("unscorable", "ok"),
+    ],
+)
+def test_environment_status_must_match_action_and_settlement(
+    tmp_path, step_kind, claimed_status
+):
+    factories = {
+        "executed": _complete_executed_negative_step,
+        "blocked": _complete_blocked_step,
+        "unscorable": _complete_unscorable_step,
+    }
+    step = factories[step_kind]()
+    step["environment_status"] = claimed_status
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_environment_status_mismatch" in manifest["problems"]
+
+
+@pytest.mark.parametrize("claimed_status", [[], {}, True, "error", None])
+def test_malformed_environment_status_is_preserved_as_incomplete(
+    tmp_path, claimed_status
+):
+    step = _complete_executed_negative_step()
+    step["environment_status"] = claimed_status
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_environment_status_invalid" in manifest["problems"]
+    assert (bundle / "g12_capture_manifest.json").is_file()
 
 
 def test_unscorable_policy_step_with_explicit_settlement_failure_is_captured(

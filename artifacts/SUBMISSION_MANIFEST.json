@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T19:28:29.379974+00:00",
+  "generated_at": "2026-09-28T20:02:04.588661+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -134,8 +134,8 @@
       "size_bytes": 1751
     },
     "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
-      "sha256": "062d53070612b7c56e70f25f58870a02a0fc67916a8316feab5cf30882af6e3c",
-      "size_bytes": 6247
+      "sha256": "c8d56d51a7da4b66a4c2c3a57706935b17840e700ab249b40a6a26ce2f8e09dd",
+      "size_bytes": 6312
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
       "sha256": "80fa3056d135dd9c6d0d3b4cf0affbbf368477c2742d689fd39f4dd667b46631",
@@ -386,8 +386,8 @@
       "size_bytes": 7853
     },
     "agents/policy_remediation.py": {
-      "sha256": "1771dd59d62001955b7db4fd3d0db23b5f9f735921f7fb71b3b885db54fc55f8",
-      "size_bytes": 5791
+      "sha256": "22cc5faba3346fe91ac93812f542ea14be141796aa9bd47ad62960a9e1e4c418",
+      "size_bytes": 5897
     },
     "agents/verifier.py": {
       "sha256": "850dc5f2f197887ef81fda1190cbf576f03e79033a1dbe395359ee1bcb4610df",
@@ -634,8 +634,8 @@
       "size_bytes": 99511
     },
     "scripts/run_g12_integrated_episode.py": {
-      "sha256": "5a87095d24daa0d3292c39586eb9ed35a9c442231c35587f3b87af51698ac490",
-      "size_bytes": 38984
+      "sha256": "b805a8221d55c015b6c5feae60c354a85fa795ee8f8827c80720034c73f1b787",
+      "size_bytes": 39748
     },
     "scripts/package_submission.py": {
       "sha256": "765f8ad94fa5affec91dc3dfbe9a38a26051495b54dcbd0ef3e01bc214c5d88c",
@@ -770,12 +770,12 @@
       "size_bytes": 5251
     },
     "tests/test_g12_policy_integration_contract.py": {
-      "sha256": "ebbca01c5e5422ea70a36e7c7610e8ea185259d15b65e491773707d1ab9f49e7",
-      "size_bytes": 12272
+      "sha256": "7b11cd4d22f2e25c828b70c4957da91e0920f38194eaedbdcd79562d61f7dab6",
+      "size_bytes": 12449
     },
     "tests/test_g12_real_capture.py": {
-      "sha256": "7e152c2ee74cdbd4737ed36ced3d4c6343f4f686ddc873526524caba67726ca6",
-      "size_bytes": 43289
+      "sha256": "8058ce2909c71e9df025337294840ac06a55a3e36d468674913c7489372c3c50",
+      "size_bytes": 45180
     },
     "tests/test_g4_protocol_profile.py": {
       "sha256": "062b4869df3fc22e1d7b256af7f7220da88e1c7891f4ebd6ba7dd1394f0e4344",

@@ -318,7 +318,11 @@ def _settlement_record_problems(settling: Any, prefix: str) -> list[str]:
 
 
 def _policy_step_stops_execution(step: dict[str, Any]) -> bool:
-    if step.get("env_resolved") is True or isinstance(step.get("terminal_block"), dict):
+    if (
+        step.get("environment_status") != "ok"
+        or step.get("env_resolved") is True
+        or isinstance(step.get("terminal_block"), dict)
+    ):
         return True
 
     settling = step.get("settling")
@@ -436,6 +440,7 @@ def _policy_steps_problems(
         "started_at",
         "completed_at",
         "state",
+        "environment_status",
         "raw_policy_output",
         "parsed_action",
         "executed_actions",
@@ -462,6 +467,13 @@ def _policy_steps_problems(
 
         started = _parse_policy_timestamp(step.get("started_at"))
         completed = _parse_policy_timestamp(step.get("completed_at"))
+        environment_status = step.get("environment_status")
+        valid_environment_status = (
+            isinstance(environment_status, str)
+            and environment_status in {"ok", "blocked", "unscorable"}
+        )
+        if "environment_status" in step and not valid_environment_status:
+            problems.append(f"{prefix}_environment_status_invalid")
         if "started_at" in step and started is None:
             problems.append(f"{prefix}_started_at_invalid")
         if "completed_at" in step and completed is None:
@@ -565,6 +577,11 @@ def _policy_steps_problems(
         verification = step.get("verification")
         settling = step.get("settling")
         settlement_failure = _has_settlement_failure(settling)
+        expected_environment_status = (
+            "blocked" if blocked else "unscorable" if settlement_failure else "ok"
+        )
+        if valid_environment_status and environment_status != expected_environment_status:
+            problems.append(f"{prefix}_environment_status_mismatch")
         if blocked:
             if "verification" in step and verification is not None:
                 problems.append(f"{prefix}_blocked_verification_present")

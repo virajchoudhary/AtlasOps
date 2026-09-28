@@ -1,8 +1,9 @@
-# G4 prospective v3.4 approval channel
+# G4 prospective v3.4 approval and pre-T0 safety
 
 Status: prospective implementation candidate, **not an executed or certified G4 result**.
 Marker: `G4-RECOVERY-V3.4-2026-09-26` (`g4-recovery-profile-v3.4`).
-Scope: Stage 4 host runner approval transport and clean-checkout credentials only.
+Scope: Stage 4 host approval transport, clean-checkout credentials, and
+pre-reservation source/cluster safety checks.
 The `G4-RECOVERY-V3.3-2026-09-16` declaration and all historical attempts remain frozen.
 
 ## Reason for a new profile
@@ -40,6 +41,27 @@ These are platform/control-path faults, not evidence of a model outcome.
   evidence parent stable and single-writer: path checks cannot prevent a
   concurrent same-user process from replacing that parent between a check
   and a filesystem operation. This is not a hostile-local-writer guarantee.
+- Importing the runner must not overwrite environment settings, populate a
+  demo model-provider key, or create output directories. Invocation loads the
+  four required secrets first. The host-only approval listener binds directly
+  to the same-process gate without importing the coordinator early. After the
+  approved-main source check, the runner configures its local model and tool
+  endpoints, clears any ambient model-provider key for unauthenticated local
+  Ollama, and uses explicit `--context kind-atlasops-local` arguments. It must
+  not run `kubectl config use-context` or alter the operator's active kubeconfig
+  context.
+- Telemetry, paymentservice baseline, a fresh approved-source check, and a
+  successful cluster-wide zero-Chaos observation must all pass before writing
+  a reservation marker. A failed or nonempty Chaos read returns
+  `PREFLIGHT_ABORT / NOT_RESERVED` without injection. After reservation and
+  profile observation, the runner reads the cluster-wide Chaos inventory
+  again immediately before apply. Drift releases the unused reservation.
+  The durable preflight record requires both raw successful zero-Chaos reads;
+  a claimed `verified_zero` field cannot replace either observation.
+- Host-local port-forwards are scoped to this runner. A partial startup
+  failure terminates and waits for the processes already launched; normal
+  exit and preflight abort also stop them. A failed tunnel cannot leave an
+  unaccounted helper running while the attempt remains unreserved.
 - The runner starts an authenticated HTTP listener on an ephemeral
   `127.0.0.1` port in the **same event loop and process** as `handle_incident`.
   Only `POST /approve` and `GET /approval/pending` are exposed. The listener
@@ -63,9 +85,11 @@ These are platform/control-path faults, not evidence of a model outcome.
   process restart after fault injection does not prove cleanup; the existing
   interruption and poisoned-environment recovery controls still govern that
   case.
-- The profile's canonical fingerprint now includes the transport, timeout,
-  authentication, and restart contract. v3.3 and earlier fingerprints and
-  attempt accounting remain historical. A future run must use a clean
+- The active prospective profile's canonical fingerprint includes the
+  transport, timeout, authentication, restart, and pre-T0 safety terms.
+  This unexecuted v3.4 amendment changes that prospective fingerprint;
+  v3.3 and earlier fingerprints and attempt accounting remain historical.
+  A future run must use a clean
   approved `main` checkout and pass the full live preflight before reservation.
 
 ## Operator preparation (no execution in this change)
@@ -86,6 +110,10 @@ an authorization to reserve an attempt, request P1, or inject a fault.
 
 The synthetic subprocess tests cover both decisions, HTTP authentication,
 the unrelated coordinator process, timeout, replay, and process restart.
+Separate mocked preflight tests cover no global context switch, no import-time
+configuration write, first-read refusal before reservation, second-read
+refusal before apply, partial port-forward startup cleanup, source drift, and
+immutable preflight evidence.
 They do **not** establish cluster reachability, model performance, actual
 human approval, remediation safety under a real incident, or G4 closure.
 Attempt `EXP-STAGE4-SF002-015` is **unreserved**; this revision stops before

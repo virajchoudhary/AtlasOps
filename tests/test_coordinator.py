@@ -2,7 +2,6 @@
 
 import json
 import asyncio
-import pathlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -142,17 +141,19 @@ def test_call_agent_requires_audit_secret_before_model_or_tool(monkeypatch):
 
 class TestApprovalFlow:
     @pytest.fixture(autouse=True)
-    def _configure_safe_test_runtime(self, monkeypatch):
-        audit_root = (
-            pathlib.Path(__file__).resolve().parents[1]
-            / "scratch"
-            / "coordinator-approval-tests"
-        )
-        audit_root.mkdir(parents=True, exist_ok=True)
+    def _configure_safe_test_runtime(self, monkeypatch, tmp_path):
+        audit_root = tmp_path / "coordinator-approval-tests"
         monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
         monkeypatch.setenv("ATLASOPS_USE_HF_INFERENCE", "0")
         monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
         monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(audit_root / "audit.jsonl"))
+        import agents.coordinator as coord
+        import agents.tools.comms as comms
+
+        monkeypatch.setattr(coord, "TRAJECTORIES_DIR", audit_root / "trajectories")
+        monkeypatch.setattr(comms, "_LOG_PATH", audit_root / "slack_posts.jsonl")
+        monkeypatch.setattr(comms, "SLACK_WEBHOOK", "")
+        monkeypatch.setattr(comms, "DISCORD_WEBHOOK", "")
 
     def test_manual_mode_skips_remediation_agent(self, monkeypatch):
         import agents.coordinator as coord
@@ -191,35 +192,33 @@ class TestApprovalFlow:
 
 class TestCoordinatorExecutionAndVerificationTruth:
     @pytest.fixture(autouse=True)
-    def _configure_safe_test_runtime(self, monkeypatch):
-        runtime_root = (
-            pathlib.Path(__file__).resolve().parents[1]
-            / "scratch"
-            / "coordinator-runtime-tests"
-        )
-        runtime_root.mkdir(parents=True, exist_ok=True)
+    def _configure_safe_test_runtime(self, monkeypatch, tmp_path):
+        runtime_root = tmp_path / "coordinator-runtime-tests"
         monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
         monkeypatch.setenv("ATLASOPS_USE_HF_INFERENCE", "0")
         monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "test-placeholder-audit-secret")
         monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(runtime_root / "audit.jsonl"))
 
         import agents.coordinator as coord
+        import agents.tools.comms as comms
+
+        monkeypatch.setattr(coord, "TRAJECTORIES_DIR", runtime_root / "trajectories")
+        monkeypatch.setattr(comms, "_LOG_PATH", runtime_root / "slack_posts.jsonl")
+        monkeypatch.setattr(comms, "SLACK_WEBHOOK", "")
+        monkeypatch.setattr(comms, "DISCORD_WEBHOOK", "")
         async def fake_wait(_incident_id):
             return {"status": "approved", "approved_by": "auto-test"}
         monkeypatch.setattr(coord.approval_gate, "wait_for_decision", fake_wait)
 
-    def test_canonical_execution_ordering_and_verifier_passed_to_comms(self, monkeypatch):
+    def test_canonical_execution_ordering_and_verifier_passed_to_comms(
+        self, monkeypatch, tmp_path,
+    ):
         import agents.coordinator as coord
         from agents.verifier import EnvironmentVerificationResult
 
-        traj_dir = (
-            pathlib.Path(__file__).resolve().parents[1]
-            / "scratch"
-            / "coordinator-runtime-tests"
-            / "trajectories"
-        )
-        traj_dir.mkdir(parents=True, exist_ok=True)
+        traj_dir = tmp_path / "trajectories"
         monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
+        assert not traj_dir.exists()
 
         call_order = []
         verifier_calls = []
@@ -347,17 +346,11 @@ class TestCoordinatorExecutionAndVerificationTruth:
         assert persisted_data["verification"]["evidence"] == ["authoritative_final"]
         assert persisted_data["comms"] == comms
 
-    def test_agent_claims_resolved_but_verifier_fails(self, monkeypatch):
+    def test_agent_claims_resolved_but_verifier_fails(self, monkeypatch, tmp_path):
         import agents.coordinator as coord
         from agents.verifier import EnvironmentVerificationResult
 
-        traj_dir = (
-            pathlib.Path(__file__).resolve().parents[1]
-            / "scratch"
-            / "coordinator-verifier-failure-tests"
-            / "trajectories"
-        )
-        traj_dir.mkdir(parents=True, exist_ok=True)
+        traj_dir = tmp_path / "coordinator-verifier-failure-tests" / "trajectories"
         monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
 
         triage = {"role": "triage", "trajectory": [], "final": {"severity": "P1"}}

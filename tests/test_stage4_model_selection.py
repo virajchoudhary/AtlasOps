@@ -60,10 +60,11 @@ def test_coordinator_request_model_matches_selected_model():
     completed = _run_probe(
         "import os\n"
         "import pathlib\n"
+        "import tempfile\n"
         "import config.runtime as runtime\n"
         "import scripts.run_stage4_golden_incident as runner\n"
-        "trajectories_dir = pathlib.Path(runner.REPO_ROOT) / 'scratch' / 'stage4-model-test-trajectories' / os.urandom(8).hex()\n"
-        "trajectories_dir.mkdir(parents=True)\n"
+        "runner._configure_stage4_runtime()\n"
+        "trajectories_dir = pathlib.Path(tempfile.mkdtemp(prefix='atlasops-stage4-model-'))\n"
         "os.environ['TRAJECTORIES_DIR'] = str(trajectories_dir)\n"
         "import agents.coordinator as coordinator\n"
         "isolated_dir = pathlib.Path(os.environ['TRAJECTORIES_DIR']).resolve()\n"
@@ -121,7 +122,7 @@ def test_runner_wires_selected_model_into_coordinator_contract():
     source = (REPO_ROOT / "scripts" / "run_stage4_golden_incident.py").read_text(
         encoding="utf-8"
     )
-    assert 'os.environ["AGENT_MODEL"] = SELECTED_STAGE4_AGENT_MODEL' in source
+    assert '"AGENT_MODEL": SELECTED_STAGE4_AGENT_MODEL' in source
     assert '"model": SELECTED_STAGE4_AGENT_MODEL' in source
 
 

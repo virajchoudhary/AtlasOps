@@ -55,6 +55,7 @@ reward values are historical fixture output. They are not model measurements.
 Local tests cover mode selection, truth withholding, local Ollama tag checks, ambient
 proxy isolation, response-model matching, mutable-alias nonclaimability, atomic output
 finalization, bounded error fingerprints, raw-output provenance, failure retention,
+and finite numeric confidence validation (Booleans are not numeric predictions),
 metric computation after inference, split isolation, and artifact-path isolation. The
 identity and inference endpoints in these tests are mocked; no model or network request
 is made. G6 still requires an approved immutable-serving attestation before its exact

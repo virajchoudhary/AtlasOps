@@ -264,6 +264,7 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
     for component in (
         "model",
         "approval_channel",
+        "pre_t0_safety",
         "diagnosis_prompt",
         "role_tool_contract",
         "f1_contract",
@@ -271,6 +272,11 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
         "metrics_api",
     ):
         assert component in APPROVED_G4_PROTOCOL_PROFILE
+    assert APPROVED_G4_PROTOCOL_PROFILE["pre_t0_safety"] == {
+        "zero_chaos_before_reservation": True,
+        "zero_chaos_rechecked_before_apply": True,
+        "kubectl_context": "explicit-per-command-no-global-switch",
+    }
 
 
 def _approved_observation():

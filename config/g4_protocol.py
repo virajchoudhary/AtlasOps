@@ -82,6 +82,11 @@ APPROVED_G4_V34_APPROVAL_CHANNEL = {
     "authentication": "X-AtlasOps-Key",
     "restart": "fail-closed-memory-only",
 }
+APPROVED_G4_V34_PRE_T0_SAFETY = {
+    "zero_chaos_before_reservation": True,
+    "zero_chaos_rechecked_before_apply": True,
+    "kubectl_context": "explicit-per-command-no-global-switch",
+}
 
 # Active prospective v3.4 declaration; historical v3.3 remains frozen below.
 G4_PROTOCOL_MARKER = G4_V34_PROTOCOL_MARKER
@@ -277,6 +282,7 @@ def build_runtime_protocol_profile(
         "role_tool_contract": tool_contract_profile(),
         "llm_transport": llm_transport_profile(),
         "approval_channel": approval_channel_profile(),
+        "pre_t0_safety": dict(APPROVED_G4_V34_PRE_T0_SAFETY),
         "f1_contract": _f1_contract(),
         "scenario_fault_contract": _scenario_fault_contract(),
         "metrics_api": metrics_observation,
@@ -428,6 +434,7 @@ APPROVED_G4_V34_PROTOCOL_PROFILE: dict[str, Any] = {
         "version": G4_V34_PROTOCOL_PROFILE_VERSION,
     },
     "approval_channel": APPROVED_G4_V34_APPROVAL_CHANNEL,
+    "pre_t0_safety": APPROVED_G4_V34_PRE_T0_SAFETY,
 }
 
 APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V34_PROTOCOL_PROFILE

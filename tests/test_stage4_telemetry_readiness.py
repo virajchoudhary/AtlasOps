@@ -16,6 +16,8 @@ from scripts.run_stage4_golden_incident import (
     TELEMETRY_REQUIRED_STABLE_PROBES,
     TELEMETRY_SCRAPE_INTERVAL_SECONDS,
     TELEMETRY_READINESS_TIMEOUT_SECONDS,
+    _start_port_forwards,
+    _stop_port_forwards,
     wait_for_telemetry_readiness,
 )
 
@@ -367,12 +369,31 @@ def test_post_fault_f1_contract_matches_envelope_amendment():
     assert TELEMETRY_READINESS_TIMEOUT_SECONDS == 120
 
 
-def test_port_forward_streams_do_not_use_blocking_pipes():
-    src = _runner_src()
-    pf_block = src[src.index("pf_procs = []") : src.index("time.sleep(3)")]
-    assert "stdout=subprocess.DEVNULL" in pf_block
-    assert "stderr=subprocess.DEVNULL" in pf_block
-    assert "subprocess.PIPE" not in pf_block
+def test_port_forward_streams_do_not_use_blocking_pipes(monkeypatch):
+    observed = {}
+
+    class Forward:
+        def terminate(self):
+            observed["terminated"] = True
+
+        def wait(self, timeout=None):
+            observed["waited"] = True
+
+    def popen(args, **kwargs):
+        observed["args"] = args
+        observed["streams"] = kwargs
+        return Forward()
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    forwards = _start_port_forwards([("default", "synthetic-svc", 19099, 9099)])
+    assert observed["args"][:4] == [
+        "kubectl", "--context", "kind-atlasops-local", "port-forward",
+    ]
+    assert observed["streams"]["stdout"] is subprocess.DEVNULL
+    assert observed["streams"]["stderr"] is subprocess.DEVNULL
+    _stop_port_forwards(forwards)
+    assert observed["terminated"] is True
+    assert observed["waited"] is True
 
 
 def test_runtime_attempt_markers_are_internal_and_ignored():

@@ -2,6 +2,7 @@
 *.py text eol=lf
 *.md text eol=lf
 Makefile text eol=lf
+pyproject.toml text eol=crlf
 .gitattributes text eol=lf
 static/* text eol=lf
 static/vendor/* text eol=lf

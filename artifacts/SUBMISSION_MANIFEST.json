@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T05:27:32.635410+00:00",
+  "generated_at": "2026-09-28T05:31:31.702691+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -38,8 +38,8 @@
       "size_bytes": 6096
     },
     ".gitattributes": {
-      "sha256": "2db7d7edd61c5b616c5ddc41341e00bc1b5708a27d69ec220bf6f87a47b6c795",
-      "size_bytes": 1073
+      "sha256": "0de5fcd2ce928d3c78cdc1bb87dea8507296f8827d92ab63bcbd73542e34c201",
+      "size_bytes": 1102
     },
     "BENCHMARKS.md": {
       "sha256": "469f977169a3cd564d82005beaae44fca26d12cb1b2695146b386fa8a921382c",

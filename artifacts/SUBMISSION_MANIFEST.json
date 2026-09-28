@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T21:19:33.820342+00:00",
+  "generated_at": "2026-09-28T22:16:29.175948+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -166,8 +166,8 @@
       "size_bytes": 5473
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
-      "sha256": "06289e0ec3b252e0c438eb20ad4d04f122cc92036e1454db8371043857abc50a",
-      "size_bytes": 2809
+      "sha256": "445358d8a1f4f4e289b6e94eeb0c05fdd9d4a194b29f883c4a89fb24c5e1fde9",
+      "size_bytes": 2865
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
       "sha256": "48d034aca45427e0155d93165d46c2e76e496832c66afe426eae16dde84d875f",
@@ -546,8 +546,8 @@
       "size_bytes": 388
     },
     "bench/sft_eval.py": {
-      "sha256": "f6b12f8eb75b88af0a1ec7b9d609bceb1b1291615b2fc3105e9734315be3350f",
-      "size_bytes": 25633
+      "sha256": "19144a835431d797bfb2a7b3bbfc1a443998efec9b0a7a5f0b6e5575ecae8e6e",
+      "size_bytes": 25705
     },
     "bench/grpo_eval.py": {
       "sha256": "f50d531c56849fdf3a9bf3c519b5baff6ebdeedf2c5ec7df2bd3e8b52ba0489a",
@@ -794,8 +794,8 @@
       "size_bytes": 33592
     },
     "tests/test_g8_empirical_contract.py": {
-      "sha256": "2f358c8dd141fdaba6c481bd93f6de1d55e24128bcd0e03593dcf28538821d6b",
-      "size_bytes": 22972
+      "sha256": "f9933b62f10ecb979c7025f6314ceb29ec62dd491848df20918594bc9a3e4204",
+      "size_bytes": 23093
     },
     "tests/test_g9_approval_channel.py": {
       "sha256": "39471f4e566ce28cfc6c6120087f20d6afbb880b98f5157abe2697311259d5d3",
@@ -966,8 +966,8 @@
       "size_bytes": 17406
     },
     "tests/test_stage8_sft_eval.py": {
-      "sha256": "6bd4b848ad48ce2a768da1805811701e4d5628a0389a8120131d239e8e3e010b",
-      "size_bytes": 4287
+      "sha256": "82049a9768ce947d4371209968df451fac44bde2cd3002611c321d6d5c4fa836",
+      "size_bytes": 5082
     },
     "tests/test_stage9_grpo_pipeline.py": {
       "sha256": "5a8ccf28e799ce6d94026543a7d4e0bf10e0ac8cf449fc3ace9c2d37ed2ea983",

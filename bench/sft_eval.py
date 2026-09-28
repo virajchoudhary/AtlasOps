@@ -506,6 +506,7 @@ async def evaluate_sft_split(
     summary.update(
         {
             "split": split_name,
+            "split_sha256": _canonical_json_sha256(list(scenario_ids)),
             "variant": "SFT Model",
             "evaluation_mode": selected_mode,
             "mock_eval": selected_mode == "mock",

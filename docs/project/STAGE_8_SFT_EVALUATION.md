@@ -30,7 +30,8 @@ exists in the current evidence set, so G8 has no empirical model result.
 - Validation/Test truth is withheld until after raw generation and then used only for
   scoring.
 - Raw requests, responses, parse failures, checkpoint identity, evaluator source,
-  generation settings, and split seed are persisted.
+  generation settings, split seed, and the SHA-256 digest of the exact ordered frozen
+  split are persisted.
 - Diagnosis-only evaluation leaves environment resolution, reward, safety, and time to
   resolve unevaluated.
 - Mock mode is explicitly non-empirical and does not update shared comparison evidence.

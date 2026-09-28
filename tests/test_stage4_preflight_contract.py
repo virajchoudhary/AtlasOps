@@ -622,6 +622,41 @@ def test_port_forward_startup_interrupt_cleans_every_started_process(
     assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 
+def test_port_forwards_stop_if_evidence_setup_is_interrupted(
+    isolated_runner, monkeypatch,
+):
+    experiment_id = "EXP-STAGE4-SF002-INTERRUPTED-EVIDENCE"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    events = []
+
+    class StartedForward:
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout=None):
+            events.append("wait")
+
+    monkeypatch.setattr(
+        runner.subprocess, "Popen",
+        lambda *_args, **_kwargs: events.append("start") or StartedForward(),
+    )
+    monkeypatch.setattr(
+        runner, "stage4_evidence_metadata",
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        runner, "wait_for_telemetry_readiness",
+        lambda: pytest.fail("telemetry read after interrupted evidence setup"),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(runner._run_experiment())
+    assert events == ["start"] * 5 + ["terminate"] * 5 + ["wait"] * 5
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
+
+
 def _install_mocked_preflight_edges(monkeypatch):
     context_calls = []
     port_forward_calls = []

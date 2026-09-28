@@ -64,10 +64,10 @@ These are platform/control-path faults, not evidence of a model outcome.
   `verified_zero` field cannot replace either observation. This final read
   does not lock the cluster against another actor changing it afterward.
 - Host-local port-forwards are scoped to this runner. A partial startup
-  failure or interruption during startup settling terminates and waits for
-  the processes already launched; normal exit and preflight abort also stop
-  them. A failed tunnel cannot leave an unaccounted helper running while the
-  attempt remains unreserved.
+  failure or interruption during startup settling or initial evidence setup
+  terminates and waits for the processes already launched; normal exit and
+  preflight abort also stop them. A failed tunnel cannot leave an unaccounted
+  helper running while the attempt remains unreserved.
 - The runner starts an authenticated HTTP listener on an ephemeral
   `127.0.0.1` port in the **same event loop and process** as `handle_incident`.
   Only `POST /approve` and `GET /approval/pending` are exposed. The listener

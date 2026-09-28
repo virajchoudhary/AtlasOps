@@ -1983,25 +1983,29 @@ async def _run_experiment() -> dict[str, Any]:
     ]
     pf_procs = _start_port_forwards(pf_specs, settle_seconds=3)
 
-    evidence: dict[str, Any] = {
-        "experiment_id": EXPERIMENT_ID,
-        "scenario_id": SCENARIO_ID,
-        "tier": "single_fault",
-        **stage4_evidence_metadata(),
-        "started_at": start_time,
-        "phases": {},
-    }
+    try:
+        evidence: dict[str, Any] = {
+            "experiment_id": EXPERIMENT_ID,
+            "scenario_id": SCENARIO_ID,
+            "tier": "single_fault",
+            **stage4_evidence_metadata(),
+            "started_at": start_time,
+            "phases": {},
+        }
 
-    def abort_before_fault(phase: str) -> dict[str, Any]:
-        released = release_experiment_reservation(reservation)
-        evidence["attempt_state"] = "RELEASED_PRE_FAULT"
-        evidence["reservation_released"] = released
-        evidence["outcome"] = "INVALID"
-        evidence["failure_phase"] = phase
-        evidence["completed_at"] = datetime.now(UTC).isoformat()
-        prefault_path = _persist_stage4_prefault_failure(evidence)
-        evidence["prefault_evidence"] = prefault_path
-        return evidence
+        def abort_before_fault(phase: str) -> dict[str, Any]:
+            released = release_experiment_reservation(reservation)
+            evidence["attempt_state"] = "RELEASED_PRE_FAULT"
+            evidence["reservation_released"] = released
+            evidence["outcome"] = "INVALID"
+            evidence["failure_phase"] = phase
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
+            prefault_path = _persist_stage4_prefault_failure(evidence)
+            evidence["prefault_evidence"] = prefault_path
+            return evidence
+    except BaseException:
+        _stop_port_forwards(pf_procs)
+        raise
 
     try:
         # Phase 0: Telemetry readiness gate — strictly BEFORE any reservation.

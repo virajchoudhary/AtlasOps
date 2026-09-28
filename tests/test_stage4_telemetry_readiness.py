@@ -125,21 +125,21 @@ def test_legacy_nonexistent_container_selector_is_absent():
 # --- 3/14/15/16: ordering contract -------------------------------------------
 
 
-def test_reservation_happens_only_after_telemetry_gate_and_before_injection_and_consumed():
+def test_reservation_happens_after_telemetry_and_consumption_precedes_injection():
     src = _runner_src()
     gate = src.index("wait_for_telemetry_readiness()")
     reservation = src.index("reservation = reserve_experiment_attempt(")
     injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
     consumed = src.index("consume_experiment_attempt(reservation)")
-    assert gate < reservation < injection < consumed
+    assert gate < reservation < consumed < injection
     # An apply error may still have side effects, so mark the fault boundary
     # before issuing the mutation and reconcile through verified postflight.
     fault_boundary = src.rindex("fault_crossed = True", reservation, injection)
-    assert reservation < fault_boundary < injection < consumed
+    assert reservation < consumed < fault_boundary < injection
 
     zero_chaos_check = src.index("# Require an independently verified empty Chaos list")
     persist_preflight = src.index("_persist_stage4_preflight_evidence(evidence, chaos_precheck)")
-    assert reservation < zero_chaos_check < persist_preflight < injection
+    assert reservation < zero_chaos_check < persist_preflight < consumed
     assert '"--all"' not in src[zero_chaos_check:injection]
 
 def test_telemetry_failure_aborts_before_reservation_without_persisting_or_releasing():

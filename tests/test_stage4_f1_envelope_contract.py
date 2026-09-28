@@ -115,7 +115,7 @@ def test_precondition_ordering_preserved():
     reservation = src.index("reservation = reserve_experiment_attempt(")
     injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
     consumed = src.index("consume_experiment_attempt(reservation)")
-    assert telemetry < baseline < reservation < injection < consumed
+    assert telemetry < baseline < reservation < consumed < injection
 
 
 def test_degradation_loop_uses_amended_timeout_constant():

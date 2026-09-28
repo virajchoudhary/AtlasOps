@@ -15,6 +15,344 @@ LIVE_EXECUTION = {
     "execute_live_chaos": True,
     "kube_context": capture.METRICS_SERVER_CONTEXT,
 }
+EXPERIMENT_ID = "EXP-STAGE4-SF002-999"
+INCIDENT_ID = "inc-test-999"
+SOURCE_SHA = "a" * 40
+INCIDENT_ALERT = {"commonLabels": {"service": "paymentservice"}}
+INCIDENT_ANCHORS = {
+    "alert_name": "",
+    "primary_service": "paymentservice",
+    "namespace": "default",
+    "labels": {"service": "paymentservice"},
+    "original_description": "",
+}
+_NO_CLEANUP_SIDECAR = object()
+
+
+def _complete_cleanup_record(*, verified_zero_chaos=True):
+    items = [] if verified_zero_chaos else [{"metadata": {"name": "fixture-leftover"}}]
+    return {
+        "schema_version": 1,
+        "experiment_id": EXPERIMENT_ID,
+        "timing": "after_verdict_persisted",
+        "affects_env_resolved": False,
+        "verdict_preserved": True,
+        "max_attempts": 1,
+        "attempts": [{
+            "attempt": 1,
+            "started_at": "2026-09-28T12:00:00+00:00",
+            "completed_at": "2026-09-28T12:00:01+00:00",
+            "delete_result": {"success": True},
+            "postflight_result": {
+                "success": True,
+                "stdout": json.dumps({"items": items}),
+            },
+            "active_chaos_count": len(items),
+            "verified_zero_chaos": verified_zero_chaos,
+        }],
+        "result": {"success": True},
+        "observed_leftover_chaos_sha256": None,
+        "verified_zero_chaos": verified_zero_chaos,
+        "poisoned_environment": not verified_zero_chaos,
+        "timestamp": "2026-09-28T12:00:01+00:00",
+    }
+
+
+def _complete_executed_negative_step():
+    action = {
+        "tool": "chaos_stop_experiment",
+        "arguments": {
+            "kind": "StressChaos",
+            "name": "fixture-experiment",
+            "namespace": "chaos-mesh",
+        },
+        "agent_claimed_resolved": True,
+    }
+    raw_policy_output = json.dumps(action)
+    tool_result = {"success": False, "error": "experiment remained active"}
+    verification = {
+        "verification_status": "failed",
+        "env_resolved": False,
+        "failed_checks": ["chaos_stopped"],
+        "checks": [{
+            "name": "chaos_stopped",
+            "target": "StressChaos",
+            "passed": False,
+            "required": True,
+        }],
+    }
+    state = {
+        "incident_id": INCIDENT_ID,
+        "alert": json.loads(json.dumps(INCIDENT_ALERT)),
+        "incident_anchors": json.loads(json.dumps(INCIDENT_ANCHORS)),
+        "env_resolved": False,
+    }
+    next_state = {
+        **state,
+        "previous_policy_action": action,
+        "previous_tool_result": tool_result,
+        "verification": verification,
+        "env_resolved": False,
+    }
+    return {
+        "index": 0,
+        "started_at": "2026-09-28T12:00:00+00:00",
+        "completed_at": "2026-09-28T12:00:01+00:00",
+        "state": state,
+        "raw_policy_output": raw_policy_output,
+        "parsed_action": action,
+        "executed_actions": [{
+            "tool": action["tool"],
+            "arguments": action["arguments"],
+            "result": tool_result,
+        }],
+        "verification": verification,
+        "settling": {
+            "started_at": "2026-09-28T12:00:00+00:00",
+            "completed_at": "2026-09-28T12:00:01+00:00",
+            "duration_seconds": 1.0,
+            "timeout_seconds": 30.0,
+            "poll_interval_seconds": 1.0,
+            "settled": False,
+            "observations": [{
+                "timestamp": "2026-09-28T12:00:01+00:00",
+                "elapsed_seconds": 1.0,
+                "env_resolved": False,
+                "verification_status": "failed",
+                "failed_checks": ["chaos_stopped"],
+            }],
+        },
+        "env_resolved": False,
+        "terminal_block": None,
+        "next_state": next_state,
+    }
+
+
+def _complete_blocked_step():
+    step = _complete_executed_negative_step()
+    step["executed_actions"] = []
+    step["verification"] = None
+    step["settling"] = None
+    step["terminal_block"] = {
+        "category": "approval_required",
+        "reason": "Mutation requires the severity-specific approval decision",
+    }
+    step["next_state"].update({
+        "previous_tool_result": None,
+        "verification": None,
+    })
+    return step
+
+
+def _complete_unscorable_step():
+    step = _complete_executed_negative_step()
+    verification = {
+        "verification_status": "inconclusive",
+        "env_resolved": False,
+        "failed_checks": ["telemetry"],
+        "checks": [{
+            "name": "telemetry",
+            "target": "prometheus",
+            "passed": False,
+            "required": True,
+        }],
+    }
+    step["verification"] = verification
+    step["settling"] = {
+        "status": "unscorable",
+        "settled": False,
+        "stable": False,
+        "stable_observations": 0,
+        "observation_count": 1,
+        "verification_status": "inconclusive",
+        "last_verification": verification,
+        "observations": [],
+        "failure": "post_action_verification_nonconclusive",
+    }
+    step["next_state"]["verification"] = verification
+    return step
+
+
+def _complete_resolved_step():
+    step = _complete_executed_negative_step()
+    verification = {
+        "verification_status": "passed",
+        "env_resolved": True,
+        "failed_checks": [],
+        "checks": [{
+            "name": "chaos_stopped",
+            "target": "StressChaos",
+            "passed": True,
+            "required": True,
+        }],
+    }
+    step["verification"] = verification
+    step["settling"].update({
+        "status": "settled",
+        "settled": True,
+        "observations": [{
+            **step["settling"]["observations"][0],
+            "env_resolved": True,
+            "verification_status": "passed",
+            "failed_checks": [],
+        }],
+    })
+    step["env_resolved"] = True
+    step["next_state"].update({
+        "verification": verification,
+        "env_resolved": True,
+    })
+    return step
+
+
+def _complete_followup_step(first, *, blocked=False):
+    second = _complete_blocked_step() if blocked else _complete_executed_negative_step()
+    second["index"] = 1
+    second["started_at"] = "2026-09-28T12:00:02+00:00"
+    second["completed_at"] = "2026-09-28T12:00:03+00:00"
+    second["parsed_action"]["arguments"]["name"] = "fixture-experiment-second"
+    second["raw_policy_output"] = json.dumps(second["parsed_action"])
+    if second["executed_actions"]:
+        second["executed_actions"][0]["arguments"] = json.loads(
+            json.dumps(second["parsed_action"]["arguments"])
+        )
+    second["state"] = json.loads(json.dumps(first["next_state"]))
+    second["next_state"] = {
+        **second["state"],
+        "previous_policy_action": second["parsed_action"],
+        "previous_tool_result": (
+            second["executed_actions"][0]["result"]
+            if second["executed_actions"]
+            else None
+        ),
+        "verification": second["verification"],
+        "env_resolved": second["env_resolved"],
+    }
+    return second
+
+
+def _complete_error_step():
+    step = _complete_unscorable_step()
+    step["verification"] = None
+    step["settling"].update({
+        "status": "error",
+        "verification_status": "error",
+        "last_verification": None,
+        "failure": "post_action_verification_error:RuntimeError",
+    })
+    step["next_state"]["verification"] = None
+    return step
+
+
+def _complete_remediation(policy_steps):
+    last = policy_steps[-1]
+    status = (
+        "blocked"
+        if last["terminal_block"] is not None
+        else "resolved"
+        if last["env_resolved"]
+        else "unresolved"
+    )
+    executed_actions = [
+        action
+        for step in policy_steps
+        for action in step["executed_actions"]
+    ]
+    return {
+        "policy_steps": policy_steps,
+        "final": {
+            "incident_id": INCIDENT_ID,
+            "status": status,
+            "outcome": status,
+            "executed_actions": executed_actions,
+            "verification": last["verification"],
+            "env_resolved": last["env_resolved"],
+            "terminal_block": last["terminal_block"],
+            "policy_backend": "checkpoint",
+        },
+    }
+
+
+def _complete_two_step_chain():
+    first = _complete_executed_negative_step()
+    return [first, _complete_followup_step(first)]
+
+
+def _collect_fixture(
+    tmp_path,
+    remediation,
+    *,
+    cleanup_sidecar=_NO_CLEANUP_SIDECAR,
+    prefault_sidecar: bytes | None = None,
+    primary_incident_anchors=INCIDENT_ANCHORS,
+):
+    root = tmp_path / "repo"
+    evidence_dir = root / "artifacts/evidence/stage4"
+    trajectory_dir = root / "artifacts/trajectories"
+    evidence_dir.mkdir(parents=True)
+    trajectory_dir.mkdir(parents=True)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    primary = {
+        "experiment_id": EXPERIMENT_ID,
+        "gate_g4_pass": False,
+        "duration_seconds": 31.5,
+        "source_identity": {"git_commit": SOURCE_SHA},
+        "preflight_evidence": {"persisted_before_injection": True},
+        "protocol_profile": {"model": {"name": "fixture"}},
+        "phases": {
+            "coordinator_execution": {
+                "incident_id": INCIDENT_ID,
+                "incident_anchors": primary_incident_anchors,
+            }
+        },
+    }
+    incident = {
+        "incident_id": INCIDENT_ID,
+        "alert": INCIDENT_ALERT,
+        "incident_anchors": INCIDENT_ANCHORS,
+        "triage": {"final": {"severity": "P1"}},
+        "diagnosis": {"final": {"root_cause": "observed pressure"}},
+        "recommender": {"recommended_runbooks": [{"runbook_id": "RB-1"}]},
+        "approval": {"decision": "approved"},
+        "remediation": remediation,
+        "settling": {"settled": False},
+        "verification": {"env_resolved": False},
+        "comms": {"final": {"summary": "Unresolved"}},
+    }
+    (evidence_dir / f"{EXPERIMENT_ID}.json").write_text(
+        json.dumps(primary), encoding="utf-8"
+    )
+    if cleanup_sidecar is not None:
+        sidecar = (
+            _complete_cleanup_record()
+            if cleanup_sidecar is _NO_CLEANUP_SIDECAR
+            else cleanup_sidecar
+        )
+        cleanup_text = sidecar if isinstance(sidecar, str) else json.dumps(sidecar)
+        (evidence_dir / f"{EXPERIMENT_ID}.cleanup.json").write_text(
+            cleanup_text, encoding="utf-8"
+        )
+    if prefault_sidecar is not None:
+        attempts_dir = evidence_dir / ".attempts"
+        attempts_dir.mkdir()
+        (attempts_dir / f"{EXPERIMENT_ID}.prefault.json").write_bytes(
+            prefault_sidecar
+        )
+    (trajectory_dir / f"{INCIDENT_ID}.json").write_text(
+        json.dumps(incident), encoding="utf-8"
+    )
+    manifest = capture.collect_bundle(
+        root=root,
+        bundle=bundle,
+        experiment_id=EXPERIMENT_ID,
+        source_sha=SOURCE_SHA,
+        checkpoint={"checkpoint_sha256": "b" * 64},
+        seed=17,
+        process_exit_code=1,
+        checkpoint_postflight_verified=True,
+    )
+    return manifest, bundle
 
 
 def test_cli_requires_explicit_live_execution_before_any_work(monkeypatch, tmp_path):
@@ -84,57 +422,10 @@ def test_direct_live_wrapper_requires_opt_in_and_context(monkeypatch, tmp_path):
 
 
 def test_negative_integrated_attempt_is_archived_without_a_gate_claim(tmp_path):
-    root = tmp_path / "repo"
-    evidence_dir = root / "artifacts/evidence/stage4"
-    trajectory_dir = root / "artifacts/trajectories"
-    evidence_dir.mkdir(parents=True)
-    trajectory_dir.mkdir(parents=True)
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    experiment_id = "EXP-STAGE4-SF002-999"
-    incident_id = "inc-test-999"
-    source_sha = "a" * 40
-    primary = {
-        "experiment_id": experiment_id,
-        "gate_g4_pass": False,
-        "duration_seconds": 31.5,
-        "source_identity": {"git_commit": source_sha},
-        "preflight_evidence": {"persisted_before_injection": True},
-        "protocol_profile": {"model": {"name": "fixture"}},
-        "phases": {"coordinator_execution": {"incident_id": incident_id}},
-    }
-    incident = {
-        "incident_id": incident_id,
-        "alert": {"commonLabels": {"service": "paymentservice"}},
-        "triage": {"final": {"severity": "P1"}},
-        "diagnosis": {"final": {"root_cause": "observed pressure"}},
-        "recommender": {"recommended_runbooks": [{"runbook_id": "RB-1"}]},
-        "approval": {"decision": "approved"},
-        "remediation": {
-            "final": {"policy_backend": "checkpoint", "status": "unresolved"},
-            "policy_steps": [{"parsed_action": {"tool": "chaos_stop_experiment"}}],
-        },
-        "settling": {"settled": False},
-        "verification": {"env_resolved": False},
-        "comms": {"final": {"summary": "Unresolved"}},
-    }
-    evidence_path = evidence_dir / f"{experiment_id}.json"
-    evidence_path.write_text(json.dumps(primary), encoding="utf-8")
-    (evidence_dir / f"{experiment_id}.cleanup.json").write_text(
-        json.dumps({"verified_zero_chaos": True}), encoding="utf-8"
-    )
-    trajectory_path = trajectory_dir / f"{incident_id}.json"
-    trajectory_path.write_text(json.dumps(incident), encoding="utf-8")
-
-    manifest = capture.collect_bundle(
-        root=root,
-        bundle=bundle,
-        experiment_id=experiment_id,
-        source_sha=source_sha,
-        checkpoint={"checkpoint_sha256": "b" * 64},
-        seed=17,
-        process_exit_code=1,
-        checkpoint_postflight_verified=True,
+    step = _complete_executed_negative_step()
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
     )
 
     assert manifest["status"] == "CAPTURED_FOR_REVIEW"
@@ -149,6 +440,630 @@ def test_negative_integrated_attempt_is_archived_without_a_gate_claim(tmp_path):
     for asset in manifest["assets"].values():
         assert asset["sha256"] == hashlib.sha256((bundle / asset["path"]).read_bytes()).hexdigest()
     assert json.loads((bundle / "g12_capture_manifest.json").read_text()) == manifest
+
+
+def test_parsed_action_only_policy_step_is_incomplete(tmp_path):
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        {
+            "final": {"policy_backend": "checkpoint", "status": "unresolved"},
+            "policy_steps": [{
+                "parsed_action": {"tool": "chaos_stop_experiment"},
+            }],
+        },
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_started_at_missing" in manifest["problems"]
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+@pytest.mark.parametrize(
+    ("remediation", "problem"),
+    [
+        (
+            {"final": {"policy_backend": "checkpoint", "status": "unresolved"}},
+            "policy_steps_missing",
+        ),
+        (
+            {
+                "final": {"policy_backend": "checkpoint", "status": "unresolved"},
+                "policy_steps": None,
+            },
+            "policy_steps_malformed",
+        ),
+        (
+            {
+                "final": {"policy_backend": "checkpoint", "status": "unresolved"},
+                "policy_steps": [],
+            },
+            "policy_steps_empty",
+        ),
+        (
+            {
+                "final": {"policy_backend": "checkpoint", "status": "unresolved"},
+                "policy_steps": [None],
+            },
+            "policy_step_0_malformed",
+        ),
+    ],
+)
+def test_missing_or_malformed_policy_steps_are_incomplete(
+    tmp_path, remediation, problem
+):
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert problem in manifest["problems"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "index",
+        "started_at",
+        "completed_at",
+        "raw_policy_output",
+        "parsed_action",
+        "executed_actions",
+        "verification",
+        "settling",
+        "terminal_block",
+        "state",
+        "next_state",
+    ],
+)
+def test_executed_policy_step_requires_complete_capture_fields(tmp_path, field):
+    step = _complete_executed_negative_step()
+    remediation = _complete_remediation([step])
+    del step[field]
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert f"policy_step_0_{field}_missing" in manifest["problems"]
+
+
+def test_complete_blocked_policy_step_is_captured_for_review(tmp_path):
+    step = _complete_blocked_step()
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["policy_step_count"] == 1
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_complete_unscorable_policy_step_is_captured_for_review(tmp_path):
+    step = _complete_unscorable_step()
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["policy_step_count"] == 1
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_unscorable_policy_step_with_explicit_settlement_failure_is_captured(
+    tmp_path,
+):
+    step = _complete_unscorable_step()
+    step["verification"] = None
+    step["settling"]["status"] = "error"
+    step["settling"]["last_verification"] = None
+    step["settling"]["failure"] = "post_action_verifier_error:RuntimeError"
+    step["next_state"]["verification"] = None
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_invalid_action_block_is_captured_without_execution(tmp_path):
+    step = _complete_blocked_step()
+    step["raw_policy_output"] = "not-json"
+    step["parsed_action"] = None
+    step["terminal_block"]["category"] = "invalid_action"
+    step["terminal_block"]["reason"] = "Policy completion must be one JSON object"
+    step["next_state"]["previous_policy_action"] = None
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+
+
+def test_tool_unavailable_block_can_retain_parseable_raw_action_without_parsed_action(
+    tmp_path,
+):
+    step = _complete_blocked_step()
+    step["parsed_action"] = None
+    step["terminal_block"]["category"] = "tool_unavailable"
+    step["terminal_block"]["reason"] = "Unknown tool: chaos_stop_experiment"
+    step["next_state"]["previous_policy_action"] = None
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_executed_action_requires_a_tool_result(tmp_path):
+    step = _complete_executed_negative_step()
+    remediation = _complete_remediation([step])
+    del step["executed_actions"][0]["result"]
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_executed_action_malformed" in manifest["problems"]
+
+
+def test_policy_step_requires_matching_next_state_feedback_and_index(tmp_path):
+    step = _complete_executed_negative_step()
+    remediation = _complete_remediation([step])
+    step["next_state"] = {"incident_id": INCIDENT_ID}
+    step["index"] = True
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_index_invalid" in manifest["problems"]
+    assert "policy_step_0_next_state_feedback_mismatch" in manifest["problems"]
+
+
+def test_blocked_step_cannot_claim_an_action_was_executed(tmp_path):
+    step = _complete_blocked_step()
+    remediation = _complete_remediation([step])
+    step["executed_actions"] = [{
+        "tool": step["parsed_action"]["tool"],
+        "arguments": step["parsed_action"]["arguments"],
+        "result": {"success": False},
+    }]
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_blocked_action_was_executed" in manifest["problems"]
+
+
+def test_policy_step_timestamps_must_be_ordered_and_timezone_aware(tmp_path):
+    step = _complete_executed_negative_step()
+    remediation = _complete_remediation([step])
+    step["started_at"] = "2026-09-28T12:00:02"
+    step["completed_at"] = "2026-09-28T12:00:01+00:00"
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_started_at_invalid" in manifest["problems"]
+
+
+def test_policy_steps_must_chain_state_and_not_overlap(tmp_path):
+    steps = _complete_two_step_chain()
+    steps[1]["state"] = {**steps[1]["state"], "unexpected_state": True}
+    steps[1]["started_at"] = "2026-09-28T12:00:00.500000+00:00"
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation(steps),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_1_state_chain_mismatch" in manifest["problems"]
+    assert "policy_step_1_starts_before_previous_completed" in manifest["problems"]
+
+
+def test_policy_cannot_act_from_already_resolved_input_state(tmp_path):
+    step = _complete_executed_negative_step()
+    step["state"]["env_resolved"] = True
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_state_already_resolved" in manifest["problems"]
+
+
+def test_multi_step_unresolved_policy_trajectory_is_reviewable(tmp_path):
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation(_complete_two_step_chain()),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["policy_step_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "terminal_reason", ["resolved", "blocked", "unscorable", "error"]
+)
+def test_policy_steps_cannot_continue_after_terminal_result(
+    tmp_path, terminal_reason
+):
+    if terminal_reason == "resolved":
+        first = _complete_resolved_step()
+    elif terminal_reason == "blocked":
+        first = _complete_blocked_step()
+    elif terminal_reason == "unscorable":
+        first = _complete_unscorable_step()
+    else:
+        first = _complete_error_step()
+    second = _complete_followup_step(
+        first,
+        blocked=terminal_reason == "resolved",
+    )
+    if terminal_reason == "resolved":
+        second["terminal_block"] = {
+            "category": "already_resolved",
+            "reason": "Environment was already verified resolved",
+        }
+
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([first, second]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_1_after_terminal_step" in manifest["problems"]
+
+
+def test_final_remediation_status_must_match_last_policy_step(tmp_path):
+    step = _complete_executed_negative_step()
+    remediation = _complete_remediation([step])
+    remediation["final"]["status"] = "resolved"
+    remediation["final"]["outcome"] = "resolved"
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "remediation_final_status_mismatch" in manifest["problems"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "failed_but_resolved",
+        "passed_but_unresolved",
+        "failed_without_failed_required_check",
+        "passed_with_failed_required_check",
+        "empty_checks",
+        "failed_checks_disagree",
+    ],
+)
+def test_verifier_status_resolution_and_checks_must_be_consistent(
+    tmp_path, mutation
+):
+    step = _complete_executed_negative_step()
+    verification = step["verification"]
+    if mutation == "failed_but_resolved":
+        verification["env_resolved"] = True
+        step["next_state"]["verification"] = verification
+    elif mutation == "passed_but_unresolved":
+        verification["verification_status"] = "passed"
+    elif mutation == "failed_without_failed_required_check":
+        verification["checks"][0]["passed"] = True
+        verification["failed_checks"] = []
+    elif mutation == "passed_with_failed_required_check":
+        verification["verification_status"] = "passed"
+        verification["env_resolved"] = True
+        verification["failed_checks"] = ["chaos_stopped"]
+        step["env_resolved"] = True
+        step["next_state"]["env_resolved"] = True
+        step["next_state"]["verification"] = verification
+    elif mutation == "empty_checks":
+        verification["checks"] = []
+    elif mutation == "failed_checks_disagree":
+        verification["failed_checks"] = []
+
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert any(problem.startswith("policy_step_0_verification") for problem in manifest["problems"])
+
+
+def test_nested_settlement_verifier_must_match_step_verifier(tmp_path):
+    step = _complete_executed_negative_step()
+    nested = json.loads(json.dumps(step["verification"]))
+    nested["verification_status"] = "passed"
+    nested["env_resolved"] = True
+    nested["failed_checks"] = []
+    nested["checks"][0]["passed"] = True
+    step["settling"]["verification"] = nested
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_settlement_verification_mismatch" in manifest["problems"]
+
+
+def test_settlement_observation_must_have_time_and_verifier_status(tmp_path):
+    step = _complete_executed_negative_step()
+    step["settling"]["observations"] = [{}]
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert any(
+        problem.startswith("policy_step_0_settling_observation_0_")
+        for problem in manifest["problems"]
+    )
+
+
+@pytest.mark.parametrize("category", ["unrecognized_block", ["approval_required"]])
+def test_unsupported_block_category_is_incomplete_without_raising(tmp_path, category):
+    step = _complete_blocked_step()
+    step["terminal_block"]["category"] = category
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_terminal_block_category_invalid" in manifest["problems"]
+
+
+def test_missing_cleanup_sidecar_marks_capture_incomplete_and_preserves_bundle(tmp_path):
+    step = _complete_executed_negative_step()
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+        cleanup_sidecar=None,
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "cleanup_evidence_missing" in manifest["problems"]
+    assert (bundle / f"{EXPERIMENT_ID}.json").is_file()
+    assert (bundle / f"trajectory-{INCIDENT_ID}.json").is_file()
+    assert (bundle / "g12_capture_manifest.json").is_file()
+
+
+@pytest.mark.parametrize(
+    ("sidecar", "problem"),
+    [
+        ("not-json", "cleanup_evidence_unreadable"),
+        (
+            {
+                "schema_version": 1,
+                "experiment_id": "EXP-STAGE4-SF002-other",
+                "verified_zero_chaos": True,
+            },
+            "cleanup_evidence_malformed",
+        ),
+    ],
+)
+def test_invalid_cleanup_sidecar_marks_incomplete_and_preserves_raw_bytes(
+    tmp_path, sidecar, problem
+):
+    step = _complete_executed_negative_step()
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+        cleanup_sidecar=sidecar,
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert any(item.startswith(problem) for item in manifest["problems"])
+    cleanup_name = f"{EXPERIMENT_ID}.cleanup.json"
+    cleanup_asset = manifest["assets"][cleanup_name]
+    raw = (bundle / cleanup_asset["path"]).read_bytes()
+    assert cleanup_asset["sha256"] == hashlib.sha256(raw).hexdigest()
+
+
+def test_complete_negative_cleanup_failure_remains_reviewable(tmp_path):
+    step = _complete_executed_negative_step()
+    cleanup = _complete_cleanup_record(verified_zero_chaos=False)
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+        cleanup_sidecar=cleanup,
+    )
+
+    attempt = _complete_cleanup_record(verified_zero_chaos=False)["attempts"][0]
+    assert len(json.loads(attempt["postflight_result"]["stdout"])["items"]) == 1
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_cleanup_raw_postflight_items_must_match_recorded_count(tmp_path):
+    cleanup = _complete_cleanup_record()
+    cleanup["attempts"][0]["postflight_result"]["stdout"] = json.dumps({
+        "items": [{"metadata": {"name": "unrecorded-leftover"}}]
+    })
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+        cleanup_sidecar=cleanup,
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "cleanup_evidence_malformed" in manifest["problems"]
+
+
+@pytest.mark.parametrize("field", ["alert", "incident_anchors"])
+def test_policy_states_must_match_authoritative_incident_source(tmp_path, field):
+    step = _complete_executed_negative_step()
+    if field == "alert":
+        untrusted = {"commonLabels": {"service": "unrelated-service"}}
+        problem = "policy_step_0_state_alert_source_mismatch"
+    else:
+        untrusted = {**INCIDENT_ANCHORS, "primary_service": "unrelated-service"}
+        problem = "policy_step_0_state_anchors_source_mismatch"
+    step["state"][field] = untrusted
+    step["next_state"][field] = json.loads(json.dumps(untrusted))
+    manifest, _bundle = _collect_fixture(
+        tmp_path, _complete_remediation([step])
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert problem in manifest["problems"]
+
+
+@pytest.mark.parametrize("mutation", ["omit", "reorder", "change_result"])
+def test_final_executed_actions_must_match_ordered_policy_step_results(
+    tmp_path, mutation
+):
+    remediation = _complete_remediation(_complete_two_step_chain())
+    final_actions = json.loads(json.dumps(remediation["final"]["executed_actions"]))
+    if mutation == "omit":
+        final_actions.pop()
+    elif mutation == "reorder":
+        final_actions.reverse()
+    else:
+        final_actions[0]["result"]["success"] = True
+    remediation["final"]["executed_actions"] = final_actions
+
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "remediation_final_executed_actions_mismatch" in manifest["problems"]
+
+
+def test_failure_bundle_preserves_and_hashes_prefault_evidence(tmp_path):
+    prefault_raw = json.dumps({
+        "experiment_id": EXPERIMENT_ID,
+        "preflight_status": "failed",
+    }).encode("utf-8")
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+        prefault_sidecar=prefault_raw,
+    )
+
+    name = f"{EXPERIMENT_ID}.prefault.json"
+    asset = manifest["assets"][name]
+    copied = (bundle / asset["path"]).read_bytes()
+    assert copied == prefault_raw
+    assert asset["sha256"] == hashlib.sha256(prefault_raw).hexdigest()
+    assert asset["size_bytes"] == len(prefault_raw)
+
+
+def test_primary_coordinator_anchors_must_match_trajectory_and_source(tmp_path):
+    primary_anchors = {**INCIDENT_ANCHORS, "primary_service": "wrong-service"}
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+        primary_incident_anchors=primary_anchors,
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "primary_incident_anchors_mismatch" in manifest["problems"]
+    primary_name = f"{EXPERIMENT_ID}.json"
+    primary_asset = manifest["assets"][primary_name]
+    primary_raw = (bundle / primary_asset["path"]).read_bytes()
+    assert json.loads(primary_raw)["phases"]["coordinator_execution"][
+        "incident_anchors"
+    ] == primary_anchors
+    assert primary_asset["sha256"] == hashlib.sha256(primary_raw).hexdigest()
+
+
+def test_unscorable_step_may_preserve_passed_last_verifier_without_resolution(
+    tmp_path,
+):
+    step = _complete_unscorable_step()
+    verification = {
+        "verification_status": "passed",
+        "env_resolved": True,
+        "failed_checks": [],
+        "checks": [{
+            "name": "chaos_stopped",
+            "target": "StressChaos",
+            "passed": True,
+            "required": True,
+        }],
+    }
+    step["verification"] = verification
+    step["settling"].update({
+        "status": "timeout",
+        "verification_status": "passed",
+        "last_verification": verification,
+        "failure": "post_action_settle_timeout",
+    })
+    step["next_state"]["verification"] = verification
+    remediation = _complete_remediation([step])
+    manifest, _bundle = _collect_fixture(tmp_path, remediation)
+
+    assert remediation["final"]["status"] == "unresolved"
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["recorded_env_resolved"] is False
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_timed_out_observation_may_omit_resolution_and_failed_checks(tmp_path):
+    step = _complete_unscorable_step()
+    verification = {
+        "verification_status": "passed",
+        "env_resolved": True,
+        "failed_checks": [],
+        "checks": [{
+            "name": "chaos_stopped",
+            "target": "StressChaos",
+            "passed": True,
+            "required": True,
+        }],
+    }
+    step["verification"] = verification
+    step["settling"].update({
+        "status": "timeout",
+        "verification_status": "passed",
+        "last_verification": verification,
+        "failure": "post_action_settle_timeout",
+        "observations": [{
+            "elapsed_s": 1.0,
+            "verification_status": "passed",
+            "timed_out": True,
+        }],
+    })
+    step["next_state"]["verification"] = verification
+    manifest, _bundle = _collect_fixture(
+        tmp_path, _complete_remediation([step])
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["recorded_env_resolved"] is False
+
+
+def test_normal_observation_requires_failed_checks(tmp_path):
+    step = _complete_executed_negative_step()
+    del step["settling"]["observations"][0]["failed_checks"]
+    manifest, _bundle = _collect_fixture(
+        tmp_path, _complete_remediation([step])
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_settling_observation_0_failed_checks_malformed" in manifest["problems"]
+
+
+@pytest.mark.parametrize("anchor", ["incident_id", "alert", "incident_anchors"])
+def test_policy_state_and_next_state_require_incident_anchors(tmp_path, anchor):
+    step = _complete_executed_negative_step()
+    step["state"].pop(anchor)
+    step["next_state"].pop(anchor)
+    manifest, _bundle = _collect_fixture(
+        tmp_path, _complete_remediation([step])
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_state_anchors_missing" in manifest["problems"]
+    assert "policy_step_0_next_state_anchors_missing" in manifest["problems"]
 
 
 def test_missing_primary_is_preserved_as_incomplete(tmp_path):

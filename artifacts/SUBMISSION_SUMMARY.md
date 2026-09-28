@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T04:13:50.220720+00:00`
+- **Generated**: `2026-09-28T04:19:25.959744+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -41,7 +41,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `README.md` | `e9947f682f3c9060...` | 22991 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
 | `agents/approval.py` | `a09cbcd7d886ae4c...` | 9128 |
-| `agents/coordinator.py` | `b8b6a0520be04398...` | 116994 |
+| `agents/coordinator.py` | `afcbd3fbbb9ea1c3...` | 116942 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
 | `agents/judge.py` | `b817d1433d43e70a...` | 7853 |
 | `agents/policy_remediation.py` | `1771dd59d6200195...` | 5791 |
@@ -193,7 +193,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
 | `tests/test_claim_integrity.py` | `08610d37d555c651...` | 1778 |
-| `tests/test_coordinator.py` | `e82e21b5326ca7f3...` | 18298 |
+| `tests/test_coordinator.py` | `c2a702c7f581ee19...` | 18422 |
+| `tests/test_coordinator_import_side_effects.py` | `9b07ef640ae58481...` | 1095 |
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |

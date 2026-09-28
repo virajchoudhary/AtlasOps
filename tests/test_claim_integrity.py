@@ -74,15 +74,16 @@ def test_upstream_readme_comparison_covers_each_delivery_area_without_certifying
     ).read_text(encoding="utf-8")
 
     assert "bf9bd197c9f4a05ae55ade254802a9eef1a74356" in matrix
-    assert "c83c4066a1f2ef5a8b50033bbbea3118543fb657" in matrix
-    assert "through PR #90" in matrix
+    assert "0f79a691457aa0d69cac52ae5668fc5fd1e9ef6c" in matrix
+    assert "through PR #93" in matrix
     assert "GENERATED_UNAPPROVED" in matrix
     assert "opt-in standalone G9 host channel" in matrix
     assert "Invalid G6 returned predictions remain unscored" in matrix
     assert "No simulated responses. No fake metrics. No Docker Compose" in matrix
     assert "historical upstream claims and promises" in matrix
     assert "intentionally differs" in matrix
-    assert "raw episodes still do not prove row-level membership" in matrix
+    assert "check ordered membership from hashed raw episode rows or G9 events" in matrix
+    assert "Metric summaries remain unverified declarations" in matrix
     assert "Leaderboard overlaps Train/Val and is not an independent held-out partition" in matrix
     assert "mocked in-process runner tests" in matrix
     assert "Hard process termination and live cleanup are not established" in matrix

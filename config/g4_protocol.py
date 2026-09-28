@@ -85,6 +85,8 @@ APPROVED_G4_V34_APPROVAL_CHANNEL = {
 APPROVED_G4_V34_PRE_T0_SAFETY = {
     "zero_chaos_before_reservation": True,
     "zero_chaos_rechecked_before_apply": True,
+    "attempt_consumption": "durable-before-apply",
+    "interrupted_pre_apply_consumed": "preserve-and-record-prefault",
     "kubectl_context": "explicit-per-command-no-global-switch",
 }
 

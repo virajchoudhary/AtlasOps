@@ -275,8 +275,21 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
     assert APPROVED_G4_PROTOCOL_PROFILE["pre_t0_safety"] == {
         "zero_chaos_before_reservation": True,
         "zero_chaos_rechecked_before_apply": True,
+        "attempt_consumption": "durable-before-apply",
+        "interrupted_pre_apply_consumed": "preserve-and-record-prefault",
         "kubectl_context": "explicit-per-command-no-global-switch",
     }
+
+
+def test_v34_attempt_transition_terms_are_required_by_fingerprint():
+    observed = _approved_observation()
+    observed["pre_t0_safety"].pop("attempt_consumption")
+
+    assert protocol_fingerprint(observed) != protocol_fingerprint(
+        APPROVED_G4_PROTOCOL_PROFILE
+    )
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(observed)
 
 
 def _approved_observation():

@@ -107,14 +107,14 @@ def test_never_reserves_or_mutates_on_failure(tmp_path):
 # --- ordering contract ---------------------------------------------------------
 
 
-def test_baseline_gate_precedes_reservation_precedes_fault_and_consumption():
+def test_baseline_gate_precedes_reservation_and_consumption_before_fault():
     src = _runner_src()
     telemetry = src.index("wait_for_telemetry_readiness()")
     baseline = src.index("wait_for_baseline_readiness()")
     reservation = src.index("reservation = reserve_experiment_attempt(")
     injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
     consumed = src.index("consume_experiment_attempt(reservation)")
-    assert telemetry < baseline < reservation < injection < consumed
+    assert telemetry < baseline < reservation < consumed < injection
 
 
 def test_baseline_preflight_aborts_without_reservation_side_effects():

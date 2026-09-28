@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T19:07:58.987607+00:00`
+- **Generated**: `2026-09-28T19:28:29.379974+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -39,7 +39,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
-| `README.md` | `831eda64debd1565...` | 24853 |
+| `README.md` | `8bf6678ffcc19cae...` | 24931 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
 | `agents/adversarial_designer.py` | `f6bc96059e6ca56a...` | 21393 |
 | `agents/approval.py` | `f8fd1975c2648f20...` | 9781 |
@@ -167,7 +167,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `06289e0ec3b252e0...` | 2809 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
-| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `444e918d67c8b3b7...` | 7100 |
+| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `771b94cfe73c34ca...` | 8685 |
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
@@ -201,7 +201,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
-| `tests/test_claim_integrity.py` | `2071079ed55abf86...` | 4563 |
+| `tests/test_claim_integrity.py` | `cbbc9a2d4fe0f8da...` | 4948 |
 | `tests/test_coordinator.py` | `c2a702c7f581ee19...` | 18422 |
 | `tests/test_coordinator_import_side_effects.py` | `9b07ef640ae58481...` | 1095 |
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |

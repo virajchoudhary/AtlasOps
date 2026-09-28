@@ -74,11 +74,17 @@ def test_upstream_readme_comparison_covers_each_delivery_area_without_certifying
     ).read_text(encoding="utf-8")
 
     assert "bf9bd197c9f4a05ae55ade254802a9eef1a74356" in matrix
-    assert "c695d84b81842a816589cd8533d38200e0bb2580" in matrix
-    assert "through PR #84" in matrix
+    assert "d3c0b9f87740f9e089dbd17826462d5f1174cfab" in matrix
+    assert "through PR #87" in matrix
     assert "GENERATED_UNAPPROVED" in matrix
     assert "opt-in standalone G9 host channel" in matrix
     assert "Invalid G6 returned predictions remain unscored" in matrix
+    assert "No simulated responses. No fake metrics. No Docker Compose" in matrix
+    assert "historical upstream claims and promises" in matrix
+    assert "intentionally differs" in matrix
+    assert "raw episodes still do not prove row-level membership" in matrix
+    assert "do not auto-update" in matrix
+    assert "Hugging Face Space model-serving setup is prospective" in matrix
     for heading in (
         "Architecture",
         "Track 1",

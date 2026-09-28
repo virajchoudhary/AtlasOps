@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-27T20:50:07.409136+00:00`
+- **Generated**: `2026-09-28T05:22:39.563719+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -40,6 +40,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `e9947f682f3c9060...` | 22991 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
+| `agents/adversarial_designer.py` | `f6bc96059e6ca56a...` | 21393 |
 | `agents/approval.py` | `a09cbcd7d886ae4c...` | 9128 |
 | `agents/coordinator.py` | `b8b6a0520be04398...` | 116994 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
@@ -146,6 +147,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/HF_SPACE_SETUP.md` | `b9fd2597fb62d620...` | 8350 |
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
+| `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `d0c3a6284b313028...` | 5997 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `e6ee5dacc9679120...` | 26128 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
@@ -164,11 +166,12 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
+| `pyproject.toml` | `97d22256c6f75f8b...` | 1383 |
 | `recommender/baselines.py` | `06e8e8e62a82695c...` | 7352 |
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `1d9ed5d3a5fee0ab...` | 12282 |
+| `scripts/package_submission.py` | `d1cff35dca484d62...` | 12415 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `5deaeec192b580db...` | 12070 |
 | `scripts/run_stage4_golden_incident.py` | `0920c25765ec51fa...` | 95577 |
@@ -180,7 +183,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `static/vendor/LUCIDE-LICENSE` | `1e7290b35280a048...` | 880 |
 | `static/vendor/lucide.min.js` | `3411692820cb8d47...` | 357796 |
 | `tests/stage4_approval_process.py` | `49df4be30e8edda0...` | 2416 |
-| `tests/test_adversarial_designer.py` | `e7e9d4f038571eeb...` | 5365 |
+| `tests/test_adversarial_designer.py` | `79f017da4584c382...` | 18677 |
 | `tests/test_agents_grounding.py` | `9d7b64c0b0249273...` | 8244 |
 | `tests/test_app_endpoints.py` | `03cfab59acae6057...` | 6964 |
 | `tests/test_approval.py` | `920d02620bbd67a2...` | 8347 |
@@ -233,7 +236,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `89930e5e1b7250d0...` | 22632 |
+| `tests/test_stage15_submission_package.py` | `1836d3c5a287901a...` | 22777 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `fe8354613ff2720b...` | 38102 |

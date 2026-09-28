@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-27T20:50:07.409136+00:00`
+- **Generated**: `2026-09-28T05:45:25.944872+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -38,7 +38,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `AGENTS.md` | `6c3eefb051f5c3e6...` | 6096 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
-| `README.md` | `e9947f682f3c9060...` | 22991 |
+| `README.md` | `831eda64debd1565...` | 24853 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
 | `agents/approval.py` | `a09cbcd7d886ae4c...` | 9128 |
 | `agents/coordinator.py` | `b8b6a0520be04398...` | 116994 |
@@ -147,6 +147,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `d0c3a6284b313028...` | 5997 |
+| `docs/project/IMPLEMENTATION_STATUS.md` | `04a284d339089b9c...` | 3589 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `e6ee5dacc9679120...` | 26128 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
@@ -161,6 +162,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `06289e0ec3b252e0...` | 2809 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `e06218132d3e7a58...` | 4400 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
+| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `b80582dc3ef1fa2f...` | 7025 |
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
@@ -168,7 +170,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `1d9ed5d3a5fee0ab...` | 12282 |
+| `scripts/package_submission.py` | `6a4486ff15391492...` | 12393 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `5deaeec192b580db...` | 12070 |
 | `scripts/run_stage4_golden_incident.py` | `0920c25765ec51fa...` | 95577 |
@@ -192,7 +194,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
-| `tests/test_claim_integrity.py` | `08610d37d555c651...` | 1778 |
+| `tests/test_claim_integrity.py` | `6ae4b090317d803c...` | 4208 |
 | `tests/test_coordinator.py` | `e82e21b5326ca7f3...` | 18298 |
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
@@ -233,7 +235,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `89930e5e1b7250d0...` | 22632 |
+| `tests/test_stage15_submission_package.py` | `c172b62cac682fea...` | 22751 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `fe8354613ff2720b...` | 38102 |

@@ -1,29 +1,25 @@
 # AtlasOps implementation status
 
-This is a concise current classification, not a complete implementation audit. For canonical Stage 0-15 sequence, governance rules, and formal gate closure evidence, see [MASTER_PIPELINE_STATUS.md](MASTER_PIPELINE_STATUS.md).
+**Current continuation status: NOT_CERTIFIED.** This is a concise software and
+evidence classification, not an independent live-readiness verdict. The
+[Master Pipeline inventory](MASTER_PIPELINE_STATUS.md) controls the formal
+G0-G15 status and explains preserved negative and mock evidence.
 
 
-| Area | Baseline status | Project treatment |
+| Area | Current classification | Evidence boundary |
 |---|---|---|
-| Coordinator / four-agent flow | IMPLEMENTED / STATICALLY PACKAGED | Dedicated non-root 9099 container, private Service, safe probe, ConfigMap/Secret references, and bounded RBAC; live rollout/model/tool execution unverified |
-| SRE tool policy | STATICALLY VALIDATED | 23 wrappers are registered, 20 are exposed through deterministic role ACLs, and 3 are intentionally unexposed. Cluster mutations, external communications, filesystem writes, and high-risk execution have separate side-effect classifications. Registration/exposure does not guarantee operational availability; Argo and other live integrations remain configuration-dependent and unverified. Chaos deletion (`chaos_stop_experiment`) is remediation-only and namespace-allowlisted to `chaos-mesh`. |
-| Safety/approval controls | IMPLEMENTED | Preserve + validate |
-| Benchmark runner | REPAIRED | Stage 1B moved tier derivation before judge invocation, added mocked regression coverage, and enforced F821 in CI. Real GKE/Chaos benchmark execution remains UNVERIFIED; published benchmark results remain UNREPRODUCED. |
-| SFT pipeline | IMPLEMENTED IN CODE | Reproduce later |
-| GRPO | PARTIAL / REVIEW-SENSITIVE | Correct + validate |
-| Environment verifier | IMPLEMENTED / CONTRACT VALIDATED / MOCKED/TESTED | Dedicated deterministic `agents/verifier.py` engine aligned with all 28 frozen Chaos Mesh manifests (`bench/chaos_manifests/`) and dynamic adversarial synthesis. Tested with exact workload target matching, tier agreement, selector namespace agreement, Chaos Mesh CRD clearance, legacy deployment removal, and Alertmanager alert clearance; distinguishes `agent_claimed_resolved` from `env_resolved` and penalizes false resolutions in benchmark reward evaluation. Live GKE cluster execution remains unverified until Stage 3. |
-| Recommender Systems | ABSENT | Original extension |
-| Infrastructure static provisioning | REPAIRED / STATICALLY VALIDATED | Explicit check/apply gates, zonal 1→3 topology, identity/network requirements, immutable pins, and static tests; see `INFRASTRUCTURE_CONTRACT.md` |
-| Real GKE provisioning | UNVERIFIED | No setup/teardown apply was run; review Stage 1D-B before a controlled reproduction |
-| Prometheus / Alertmanager | STATICALLY WIRED / LIVE UNVERIFIED | kube-state-metrics availability rule plus authenticated private coordinator route; no live alert proof |
-| Application metrics | BLOCKED / DEFERRED | Pinned Boutique source does not prove request/error/latency Prometheus metrics |
-| Jaeger / tracing | STATICALLY READY / LIVE UNVERIFIED | Jaeger 4.12.0 Helm configuration defined with ClusterIP and bounded development resources; `JAEGER_URL` wired into coordinator; live Query API reachability and Online Boutique trace ingestion pending Stage 3 live execution |
-| Argo CD | STATICALLY READY / LIVE UNVERIFIED | Argo CD 10.3.2 controller enabled as canonical G3 component with ClusterIP; Secret-backed credential contract (`argocd-user`/`argocd-pass`); non-destructive `argocd_list_apps` contract with 0 Application ownership |
-| Gate G3 Readiness | STATICALLY VALIDATED / LIVE PENDING | Static Helm template validation passed, acceptance matrix codified in `docs/project/G3_ACCEPTANCE_PLAN.md`; zero cloud resources provisioned |
-| Published benchmark/result claims | UNVERIFIED BY OUR TEAM | Reproduce |
+| Coordinator / four-agent flow | IMPLEMENTED / NON-LIVE TESTED | Triage, Diagnosis, advisory Recommender, Approval, Remediation, Verifier, and Comms are wired. G4 `NOT_PASSED`: the latest completed preserved attempt is negative, and current cluster/model readiness is not inferred from tests. |
+| SRE tool policy | STATICALLY VALIDATED | 24 wrappers are registered, 19 are exposed through role ACLs, and 5 are intentionally unexposed. Side-effect policy and explicit action approval do not prove live backend reachability or safe remediation. |
+| Safety / approval | IMPLEMENTED / NON-LIVE TESTED | P1 rejects timeout, rejection, and missing decisions. The prospective v3.4 host listener and standalone G9 exact-action channel have synthetic process-boundary tests; G9 requires a separate opt-in and key, and remains fail-closed by default. A real operator decision and G4 outcome are unverified. |
+| Benchmark and model identity | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | The legacy `bench.runner` is mock-only. G6 validates finite numeric prediction confidence, but still requires a real frozen-split run and immutable-serving attestation; matching Ollama tag observations cannot certify a per-generation model digest. |
+| SFT corpus and training | PARTIAL | The 64-example Train-only corpus is scenario-derived synthetic data. G7 has provenance and checkpoint contracts but no completed usable adapter; G8 has no real SFT checkpoint evaluation. |
+| Direct-action GRPO | REOPENED | G9 `REOPENED`: the policy executes its own parsed action through tool policy, settling, objective verifier, and direct reward in local tests. No completed real training, checkpoint, or held-out evaluation exists. |
+| Environment verifier | IMPLEMENTED / CONTRACT TESTED | Verifier predicates cover 28 frozen manifests and separate agent claims from observed resolution. This does not make the G4 negative result a PASS. |
+| Recommender Systems | BOUNDED SYNTHETIC EVALUATION | G10 is PARTIAL: scenario-derived interactions are not historical user feedback. G11 PASS is limited to small offline ranking on synthetic labels; the integrated recommendation remains advisory. |
+| Controlled infrastructure | HISTORICAL LOCAL G3 PASS | Stage 3 acceptance recorded a Kind environment and component APIs, with individual wrapper and trace-ingestion limits. Current cluster health and any GKE deployment require separate verification. |
+| Integrated evaluation and ablation | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | G12 lacks a real checkpoint/environment run. G13 remains REOPENED: the artifact-driven runner rejects historical predetermined metric profiles. The bounded adversarial generator writes unapproved proposals, not held-out evaluation evidence. |
+| Operator UI and submission | PARTIAL / NOT_CERTIFIED | The read-only local console and asset-hashed Stage 15 inventory are useful for presentation. They do not establish a safe deployment, a complete empirical matrix, or final scientific certification. |
 
-## Development orchestration note
-
-Native Codex fallback is temporarily authorized because official Sol Advisor 0.5.0 has
-a verified Windows `PLUGIN_DATA` validation defect. This optional tooling issue does not
-change AtlasOps implementation or runtime status.
+No deployment, peer-host experiment, new P1 request, or attempt-015 reservation
+follows from this status summary. Frozen v3.3 and historical evidence remain
+authoritative for their original runs.

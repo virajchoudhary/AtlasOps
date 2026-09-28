@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-27T20:50:07.409136+00:00",
+  "generated_at": "2026-09-28T05:45:25.944872+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 230,
+  "asset_count": 232,
   "assets": {
     "AGENTS.md": {
       "sha256": "6c3eefb051f5c3e691db238c3c78754de8a6430cc33a0a9c26fe78f75758c3e8",
@@ -50,8 +50,8 @@
       "size_bytes": 4129
     },
     "README.md": {
-      "sha256": "e9947f682f3c9060cb4c0764fe2688adf77c353915f04f65736ea7c41b634c19",
-      "size_bytes": 22991
+      "sha256": "831eda64debd156539931951e6dcbe081f7f5af2be4c9dfa0cf91585d3a9786e",
+      "size_bytes": 24853
     },
     "app.py": {
       "sha256": "d17466d5be9a530076c4d88fa39aa668e9582a1f045d799591eecf415a5be57b",
@@ -93,6 +93,10 @@
       "sha256": "d0c3a6284b313028a9799ab33d10ac06f99e7204e3648846eda52d74e2fae732",
       "size_bytes": 5997
     },
+    "docs/project/IMPLEMENTATION_STATUS.md": {
+      "sha256": "04a284d339089b9cf40e14593a8555546022f2ac85d860c35ada25af861ee33c",
+      "size_bytes": 3589
+    },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
       "sha256": "e6ee5dacc9679120d344c18edceec1d2716900004b7fbd0094eef52dfbfbd6cb",
       "size_bytes": 26128
@@ -100,6 +104,10 @@
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
       "size_bytes": 10277
+    },
+    "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md": {
+      "sha256": "b80582dc3ef1fa2f081e6086bc57e8e936cb58c6b5ff3a45dc5e91131f37db7e",
+      "size_bytes": 7025
     },
     "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
       "sha256": "3a31a019bb01239225168e6ed1925499cf689f05b7c7344cf2106af46ad576b5",
@@ -606,8 +614,8 @@
       "size_bytes": 12070
     },
     "scripts/package_submission.py": {
-      "sha256": "1d9ed5d3a5fee0abab8f4c7306cad80ffdd700887cbe53fdbe017829a809cb8f",
-      "size_bytes": 12282
+      "sha256": "6a4486ff1539149216e9a53c40727571df0b471c416426f983275b4aa8c38502",
+      "size_bytes": 12393
     },
     "scripts/release_gate.py": {
       "sha256": "6054f5c6ed9362b604e206784b5581cfd44527347d1b6dfb076228db24b22af7",
@@ -710,8 +718,8 @@
       "size_bytes": 4714
     },
     "tests/test_claim_integrity.py": {
-      "sha256": "08610d37d555c651abfcaf259289bc9bcf542d32e1d4528cf554085dbb5cb658",
-      "size_bytes": 1778
+      "sha256": "6ae4b090317d803cb9a9872a6834d63de74b686514ef576768f7a4d279bfd913",
+      "size_bytes": 4208
     },
     "tests/test_coordinator.py": {
       "sha256": "e82e21b5326ca7f3cbc73b5cedc14838a306894061a3d576f5b116429f7c9f34",
@@ -874,8 +882,8 @@
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "89930e5e1b7250d00a05badf3012baf270f5bb41d356e69d1ec84356d82eb108",
-      "size_bytes": 22632
+      "sha256": "c172b62cac682feadbc2c4afdfc50a62ab3cc2ffb18efb5e79dc353420ba51a5",
+      "size_bytes": 22751
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

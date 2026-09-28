@@ -111,6 +111,8 @@ class TestStage15SubmissionPackage:
             "config/splits.py",
             "agents/verifier.py",
             "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
+            "docs/project/IMPLEMENTATION_STATUS.md",
+            "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",
             "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
             "tests/stage4_approval_process.py",

@@ -66,7 +66,8 @@ any G12 empirical claim. An incomplete attempt remains visible rather than
 becoming a mock success.
 
 `CAPTURED_FOR_REVIEW` requires every policy step to contain its ordered index,
-timezone-aware start and completion timestamps, pre-action and next state
+direct environment status (`ok`, `blocked`, or `unscorable`), timezone-aware
+start and completion timestamps, pre-action and next state
 objects with matching action, tool-result, verifier and resolution feedback.
 Both states retain the incident ID, alert, and incident anchors, and their alert
 and anchors must match the source incident. The final executed-action list must
@@ -76,11 +77,11 @@ conclusive observation must retain them.
 Adjacent steps must form a state chain with non-overlapping chronology; no
 step may start from an already resolved state or follow a recorded resolution,
 terminal block, or unscorable/error settlement. The primary Stage 4 anchor copy
-must also match the trajectory
-and alert-derived anchors. The final remediation status must match the last
-step. The environment's raw `status` is not persisted per step, so an otherwise
-unrecorded non-`ok` status cannot be reconstructed from this bundle. Verifier status,
-resolution, required checks and failed-check names must agree; any verifier
+must also match the trajectory and alert-derived anchors. The final remediation
+status must match the last step. The recorded environment status must agree with
+the terminal block or explicit settlement failure; any non-`ok` status stops the
+policy sequence. Verifier status, resolution, required checks and failed-check
+names must agree; any verifier
 nested in settlement is checked against the step verifier. Executed steps retain
 exactly one tool action with its result and structured settlement observations
 or an explicit timeout/error/unscorable record. A blocked step requires a recognized

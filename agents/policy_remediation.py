@@ -84,6 +84,7 @@ async def run_policy_remediation(
             state=current_state,
             _action_approval_permit=approval_permit,
         )
+        environment_status = result.get("status")
         executed = result.get("executed_actions") or []
         all_executed.extend(executed)
         for action in executed:
@@ -110,6 +111,7 @@ async def run_policy_remediation(
                 "started_at": started_at,
                 "completed_at": datetime.now(UTC).isoformat(),
                 "state": current_state,
+                "environment_status": environment_status,
                 "raw_policy_output": raw_completion,
                 "parsed_action": result.get("policy_action"),
                 "executed_actions": executed,
@@ -121,7 +123,7 @@ async def run_policy_remediation(
             }
         )
         current_state = next_state
-        if result.get("status") != "ok" or current_state["env_resolved"]:
+        if environment_status != "ok" or current_state["env_resolved"]:
             break
 
     last = steps[-1] if steps else None

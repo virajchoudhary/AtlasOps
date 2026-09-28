@@ -17,6 +17,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from bench.episode_membership import (
+    MAX_RAW_OUTPUT_BYTES,
+    derive_raw_scenario_ids,
+    ordered_scenario_ids_sha256,
+)
+from config.splits import get_split
+
 REQUIRED_METRICS = (
     "resolution_rate",
     "avg_time_to_resolve_s",
@@ -38,11 +45,23 @@ _ADVERSARIAL_ID_RE = re.compile(
 )
 _MAX_ADVERSARIAL_MEMBERSHIP_BYTES = 262_144
 _MAX_ADVERSARIAL_MEMBERSHIP_IDS = 4_096
+_PARTITION_MEMBERSHIP_INTERPRETATIONS = {
+    "val": "ordered IDs match the frozen Validation split",
+    "test": "ordered IDs match the frozen Test split",
+    "leaderboard": "overlaps Train and Validation; not an independent held-out set",
+    "adversarial": "ordered IDs match the externally SHA-256-anchored membership record",
+}
 _T_975_DF_1_TO_30 = (
     12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
     2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
     2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042,
 )
+
+
+def _raw_episode_format_for_variant(variant: str) -> str:
+    if variant not in REQUIRED_VARIANTS:
+        raise ValueError(f"unsupported variant for raw episode membership: {variant!r}")
+    return "g9_event_stream" if variant == "Online GRPO RL" else "episode_rows"
 
 
 def _sha256(path: Path) -> str:
@@ -197,7 +216,12 @@ def _validate_adversarial_artifact(
 
 
 def _load_empirical_artifact(
-    path: Path, expected_partition: str, expected_variant: str | None = None
+    path: Path,
+    expected_partition: str,
+    expected_variant: str | None = None,
+    *,
+    expected_episode_ids: list[str] | None = None,
+    raw_format: str | None = None,
 ) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Evaluator artifact missing: {path}")
@@ -248,12 +272,42 @@ def _load_empirical_artifact(
     raw_output_path = payload.get("raw_predictions_path") or payload.get("raw_trajectory_path")
     if not isinstance(raw_output_hash, str) or not _SHA256_RE.fullmatch(raw_output_hash):
         raise ValueError(f"Artifact lacks raw-output provenance: {path}")
+    if expected_episode_ids is not None:
+        artifact_split_sha256 = payload.get("split_sha256")
+        if (
+            not isinstance(artifact_split_sha256, str)
+            or not _SHA256_RE.fullmatch(artifact_split_sha256)
+            or artifact_split_sha256.lower()
+            != ordered_scenario_ids_sha256(expected_episode_ids)
+        ):
+            raise ValueError(
+                f"Artifact split_sha256 does not match expected ordered IDs: {path}"
+            )
     if not isinstance(raw_output_path, str) or not raw_output_path:
         raise ValueError(f"Artifact lacks raw-output path: {path}")
     raw_path = Path(raw_output_path)
     if not raw_path.is_absolute():
         raw_path = path.parent / raw_path
-    if not raw_path.is_file() or _sha256(raw_path) != raw_output_hash.lower():
+    if not raw_path.is_file():
+        raise ValueError(f"Artifact raw-output bytes do not match provenance: {path}")
+    if expected_episode_ids is not None:
+        if raw_format is None:
+            raise ValueError("Raw episode membership validation requires an output format")
+        with raw_path.open("rb") as raw_file:
+            raw_bytes = raw_file.read(MAX_RAW_OUTPUT_BYTES + 1)
+        if len(raw_bytes) > MAX_RAW_OUTPUT_BYTES:
+            raise ValueError(
+                f"Artifact raw-output exceeds {MAX_RAW_OUTPUT_BYTES} bytes: {path}"
+            )
+        if hashlib.sha256(raw_bytes).hexdigest() != raw_output_hash.lower():
+            raise ValueError(f"Artifact raw-output bytes do not match provenance: {path}")
+        payload["_raw_scenario_ids"] = derive_raw_scenario_ids(
+            raw_bytes,
+            expected_ids=expected_episode_ids,
+            partition=expected_partition,
+            raw_format=raw_format,
+        )
+    elif _sha256(raw_path) != raw_output_hash.lower():
         raise ValueError(f"Artifact raw-output bytes do not match provenance: {path}")
     source = payload.get("evaluator_source") or payload.get("source")
     if not isinstance(source, dict):
@@ -299,12 +353,22 @@ def _aggregate_variant_partition_validated(
     *,
     adversarial_membership: dict[str, Any] | None = None,
     adversarial_membership_sha256: str | None = None,
+    expected_episode_ids: list[str] | None = None,
+    raw_format: str | None = None,
+    membership_source: str | None = None,
+    membership_interpretation: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate one variant/partition from real evaluator artifacts."""
     if not artifact_paths:
         raise ValueError(f"No evaluator artifacts supplied for {variant}/{partition}")
     artifacts = [
-        _load_empirical_artifact(path.resolve(), partition, variant)
+        _load_empirical_artifact(
+            path.resolve(),
+            partition,
+            variant,
+            expected_episode_ids=expected_episode_ids,
+            raw_format=raw_format,
+        )
         for path in artifact_paths
     ]
     if partition == "adversarial":
@@ -346,10 +410,22 @@ def _aggregate_variant_partition_validated(
         optional_runbook.append(float(value))
     if optional_runbook:
         metrics["runbook_top3_hit_rate"] = _aggregate(optional_runbook)
-    return {
+    observed_episode_ids = None
+    if expected_episode_ids is not None:
+        observed_episode_ids = artifacts[0].get("_raw_scenario_ids")
+        if not isinstance(observed_episode_ids, list) or any(
+            artifact.get("_raw_scenario_ids") != observed_episode_ids
+            for artifact in artifacts[1:]
+        ):
+            raise ValueError("Raw episode membership differs across repeated runs")
+    result = {
         "variant": variant,
         "partition": partition,
         "run_count": len(artifacts),
+        "metrics_source": "unverified_artifact_summaries",
+        "non_empirical": True,
+        "empirical_claim_allowed": False,
+        "certification_status": "NOT_CERTIFIED",
         "metrics": metrics,
         "artifacts": [
             {
@@ -367,6 +443,18 @@ def _aggregate_variant_partition_validated(
             for path, artifact in zip(artifact_paths, artifacts, strict=True)
         ],
     }
+    if expected_episode_ids is not None:
+        if membership_source is None or membership_interpretation is None:
+            raise ValueError("Raw episode membership provenance is incomplete")
+        if observed_episode_ids != expected_episode_ids:
+            raise ValueError("Raw episode membership does not match expected IDs")
+        result["episode_membership"] = {
+            "scenario_ids": observed_episode_ids,
+            "scenario_ids_sha256": ordered_scenario_ids_sha256(observed_episode_ids),
+            "source": membership_source,
+            "interpretation": membership_interpretation,
+        }
+    return result
 
 
 def aggregate_variant_partition(
@@ -379,8 +467,19 @@ def aggregate_variant_partition(
         raise ValueError(
             "Adversarial aggregation requires the full suite with an external membership SHA-256"
         )
+    if partition not in {"val", "test", "leaderboard"}:
+        raise ValueError(
+            f"unsupported partition for raw episode membership: {partition!r}"
+        )
+    raw_format = _raw_episode_format_for_variant(variant)
     return _aggregate_variant_partition_validated(
-        variant, partition, artifact_paths
+        variant,
+        partition,
+        artifact_paths,
+        expected_episode_ids=list(get_split(partition)),
+        raw_format=raw_format,
+        membership_source="config.splits.get_split",
+        membership_interpretation=_PARTITION_MEMBERSHIP_INTERPRETATIONS[partition],
     )
 
 
@@ -447,9 +546,16 @@ def run_full_ablation_suite(
             resolved_manifest_path,
             expected_adversarial_membership_sha256,
         )
-        results = {
-            variant: {
-                partition: _aggregate_variant_partition_validated(
+        results = {}
+        for variant, partitions in matrix.items():
+            results[variant] = {}
+            for partition, artifact_paths in partitions.items():
+                expected_episode_ids = (
+                    membership["adversarial_ids"]
+                    if partition == "adversarial"
+                    else list(get_split(partition))
+                )
+                results[variant][partition] = _aggregate_variant_partition_validated(
                     variant,
                     partition,
                     artifact_paths,
@@ -459,15 +565,22 @@ def run_full_ablation_suite(
                     adversarial_membership_sha256=(
                         membership_sha256 if partition == "adversarial" else None
                     ),
+                    expected_episode_ids=expected_episode_ids,
+                    raw_format=_raw_episode_format_for_variant(variant),
+                    membership_source=(
+                        "external_sha256_anchored_membership_record"
+                        if partition == "adversarial"
+                        else "config.splits.get_split"
+                    ),
+                    membership_interpretation=(
+                        _PARTITION_MEMBERSHIP_INTERPRETATIONS[partition]
+                    ),
                 )
-                for partition, artifact_paths in partitions.items()
-            }
-            for variant, partitions in matrix.items()
-        }
         payload = {
             "suite_name": "AtlasOps Final Ablation & Stress Evaluation",
-            "evaluation_mode": "empirical_aggregation",
-            "non_empirical": False,
+            "evaluation_mode": "declared_artifact_aggregation",
+            "non_empirical": True,
+            "metrics_source": "unverified_artifact_summaries",
             "empirical_claim_allowed": False,
             "certification_status": "NOT_CERTIFIED",
             "created_at": datetime.now(UTC).isoformat(),

@@ -8,12 +8,102 @@ from pathlib import Path
 
 import pytest
 
+from bench import episode_membership
+from config.splits import get_split
 from bench.ablation_suite import (
     REQUIRED_PARTITIONS,
     REQUIRED_VARIANTS,
     aggregate_variant_partition,
     run_full_ablation_suite,
 )
+
+
+def _membership_sha256(scenario_ids: list[str]) -> str:
+    content = json.dumps(
+        scenario_ids, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def _synthetic_raw_episode_rows(
+    variant: str, scenario_ids: list[str]
+) -> list[dict]:
+    """Build synthetic schema fixtures, not empirical evaluation evidence."""
+    rows = []
+    for scenario_id in scenario_ids:
+        row = {"scenario_id": scenario_id, "evaluation_mode": "empirical"}
+        if variant == "Zero-Shot Baseline":
+            row["prediction"] = {"root_cause": "synthetic"}
+        elif variant == "SFT Model":
+            row["raw_model_response"] = "synthetic"
+        elif variant == "SFT + Recommender":
+            row["recommendation"] = "synthetic"
+        elif variant == "Full Pipeline (GAI + RS + RL)":
+            row["pipeline_result"] = "synthetic"
+        rows.append(row)
+    return rows
+
+
+def _synthetic_g9_events(
+    partition: str, scenario_ids: list[str]
+) -> list[dict]:
+    """Build synthetic G9 event fixtures, not empirical evaluation evidence."""
+    split_sha256 = _membership_sha256(scenario_ids)
+    events = [
+        {
+            "event": "run_started",
+            "evaluation_mode": "EMPIRICAL",
+            "split": partition,
+            "split_sha256": split_sha256,
+        }
+    ]
+    for scenario_id in scenario_ids:
+        events.extend(
+            [
+                {
+                    "event": "episode_started",
+                    "evaluation_mode": "EMPIRICAL",
+                    "scenario_id": scenario_id,
+                },
+                {
+                    "event": "policy_output",
+                    "scenario_id": scenario_id,
+                    "step": 0,
+                },
+                {
+                    "event": "step_result",
+                    "scenario_id": scenario_id,
+                    "record": {"step": 0},
+                },
+                {
+                    "event": "step_result",
+                    "scenario_id": scenario_id,
+                    "record": {"step": 1},
+                },
+                {
+                    "event": "episode_completed",
+                    "scenario_id": scenario_id,
+                    "result": {
+                        "scenario_id": scenario_id,
+                        "status": "ok",
+                        "scorable": True,
+                    },
+                },
+            ]
+        )
+    events.append(
+        {
+            "event": "run_completed",
+            "summary": {
+                "split": partition,
+                "split_sha256": split_sha256,
+                "scenario_count": len(scenario_ids),
+                "completed_episodes": len(scenario_ids),
+                "empirical_claim_allowed": True,
+            },
+        }
+    )
+    return events
 
 
 def _artifact(
@@ -29,10 +119,30 @@ def _artifact(
     adversarial_ids: list[str] | None = None,
     seed: int | None = None,
     protocol_sha256: str | None = None,
+    raw_scenario_ids: list[str] | None = None,
 ) -> Path:
+    if raw_scenario_ids is None and partition in {"val", "test", "leaderboard"}:
+        raw_scenario_ids = list(get_split(partition))
     raw_path = path.with_suffix(".jsonl")
     raw_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_path.write_text('{"prediction":"test"}\n', encoding="utf-8")
+    if raw_scenario_ids is None:
+        raw_rows = [{"prediction": "test"}]
+    elif variant == "Online GRPO RL":
+        raw_rows = _synthetic_g9_events(partition, raw_scenario_ids)
+    else:
+        raw_rows = _synthetic_raw_episode_rows(variant, raw_scenario_ids)
+    raw_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in raw_rows),
+        encoding="utf-8",
+    )
+    raw_path_field = (
+        "raw_trajectory_path" if variant == "Online GRPO RL" else "raw_predictions_path"
+    )
+    raw_hash_field = (
+        "raw_trajectory_sha256"
+        if variant == "Online GRPO RL"
+        else "raw_predictions_sha256"
+    )
     payload = {
         "run_id": path.stem,
         "variant": variant,
@@ -45,10 +155,12 @@ def _artifact(
         "avg_time_to_resolve_s": ttr,
         "avg_reward_contract": reward,
         "format_compliance_rate": 0.75,
-        "raw_predictions_path": str(raw_path),
-        "raw_predictions_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+        raw_path_field: str(raw_path),
+        raw_hash_field: hashlib.sha256(raw_path.read_bytes()).hexdigest(),
         "evaluator_source": {"git_sha": "b" * 40, "git_dirty": False},
     }
+    if raw_scenario_ids is not None:
+        payload["split_sha256"] = _membership_sha256(raw_scenario_ids)
     if adversarial_membership_sha256 is not None:
         payload["adversarial_membership_sha256"] = adversarial_membership_sha256
     if adversarial_ids is not None:
@@ -107,11 +219,17 @@ def _write_full_suite_inputs(
         for partition in REQUIRED_PARTITIONS:
             artifact_paths = []
             for run_index, reward in enumerate((0.5, 0.7), start=1):
+                raw_scenario_ids = (
+                    list(record["adversarial_ids"])
+                    if partition == "adversarial"
+                    else list(get_split(partition))
+                )
                 artifact = _artifact(
                     tmp_path / "artifacts" / f"{variant_index}-{partition}-{run_index}.json",
                     partition=partition,
                     variant=variant,
                     reward=reward,
+                    raw_scenario_ids=raw_scenario_ids,
                     adversarial_membership_sha256=(
                         membership_sha256 if partition == "adversarial" else None
                     ),
@@ -240,6 +358,65 @@ def test_aggregates_repeated_runs_with_ci_and_artifact_hashes(tmp_path):
     assert reward["mean"] == 0.5
     assert reward["ci95_half_width"] == pytest.approx(1.2706, abs=1e-5)
     assert result["artifacts"][0]["sha256"] == hashlib.sha256(first.read_bytes()).hexdigest()
+    assert result["episode_membership"]["scenario_ids"] == list(get_split("val"))
+    assert result["metrics_source"] == "unverified_artifact_summaries"
+    assert result["non_empirical"] is True
+    assert result["empirical_claim_allowed"] is False
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "out_of_order"])
+def test_public_aggregate_rejects_raw_episode_membership_mismatch(tmp_path, mutation):
+    artifact = _artifact(tmp_path / "public-mismatch.json")
+    rows = _synthetic_raw_episode_rows("SFT Model", list(get_split("val")))
+    if mutation == "missing":
+        rows.pop()
+    elif mutation == "duplicate":
+        rows[-1] = dict(rows[0])
+    else:
+        rows[0], rows[1] = rows[1], rows[0]
+    _rewrite_raw_output(artifact, "".join(json.dumps(row) + "\n" for row in rows))
+
+    with pytest.raises(ValueError, match="raw episode membership"):
+        aggregate_variant_partition("SFT Model", "val", [artifact])
+
+
+def test_public_aggregate_requires_expected_split_hash(tmp_path):
+    artifact = _artifact(tmp_path / "public-split-hash.json")
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    payload.pop("split_sha256")
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="split_sha256"):
+        aggregate_variant_partition("SFT Model", "val", [artifact])
+
+
+def test_public_aggregate_supports_g9_event_stream(tmp_path):
+    artifact = _artifact(
+        tmp_path / "public-g9.json",
+        variant="Online GRPO RL",
+        raw_scenario_ids=list(get_split("val")),
+    )
+
+    result = aggregate_variant_partition("Online GRPO RL", "val", [artifact])
+
+    assert result["episode_membership"]["scenario_ids"] == list(get_split("val"))
+    assert result["metrics_source"] == "unverified_artifact_summaries"
+
+
+@pytest.mark.parametrize(
+    ("variant", "partition", "message"),
+    [
+        ("Unknown Variant", "val", "unsupported variant"),
+        ("SFT Model", "train", "unsupported partition"),
+    ],
+)
+def test_public_aggregate_rejects_unsupported_variant_or_partition(
+    tmp_path, variant, partition, message
+):
+    artifact = _artifact(tmp_path / "unsupported.json")
+
+    with pytest.raises(ValueError, match=message):
+        aggregate_variant_partition(variant, partition, [artifact])
 
 
 def test_rejects_duplicate_run_artifacts(tmp_path):
@@ -304,11 +481,351 @@ def test_full_suite_uses_declared_artifacts_only(tmp_path):
         output_dir=tmp_path / "output",
         expected_adversarial_membership_sha256=membership_sha256,
     )
-    assert result["evaluation_mode"] == "empirical_aggregation"
-    assert result["non_empirical"] is False
+    assert result["evaluation_mode"] == "declared_artifact_aggregation"
+    assert result["non_empirical"] is True
+    assert result["metrics_source"] == "unverified_artifact_summaries"
     assert result["empirical_claim_allowed"] is False
     assert result["certification_status"] == "NOT_CERTIFIED"
     assert result["results"]["SFT Model"]["val"]["run_count"] == 2
+    for variant in REQUIRED_VARIANTS:
+        membership = result["results"][variant]["val"]["episode_membership"]
+        assert membership["scenario_ids"] == list(get_split("val"))
+        assert membership["scenario_ids_sha256"] == _membership_sha256(
+            list(get_split("val"))
+        )
+    leaderboard_ids = set(get_split("leaderboard"))
+    assert leaderboard_ids.intersection(get_split("train"))
+    assert leaderboard_ids.intersection(get_split("val"))
+    assert (
+        result["results"]["SFT + Recommender"]["leaderboard"]
+        ["episode_membership"]["interpretation"]
+        == "overlaps Train and Validation; not an independent held-out set"
+    )
+    assert result["results"]["Zero-Shot Baseline"]["adversarial"][
+        "episode_membership"
+    ]["scenario_ids"] == ["adv-test-only-001", "adv-test-only-002"]
+
+
+def _rewrite_raw_output(artifact_path: Path, contents: str) -> None:
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    raw_path = Path(
+        payload.get("raw_predictions_path") or payload["raw_trajectory_path"]
+    )
+    raw_path.write_text(contents, encoding="utf-8", newline="\n")
+    raw_hash_field = (
+        "raw_predictions_sha256"
+        if "raw_predictions_path" in payload
+        else "raw_trajectory_sha256"
+    )
+    payload[raw_hash_field] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "out_of_order"])
+def test_full_suite_rejects_raw_episode_membership_mismatch_without_output(
+    tmp_path, mutation
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "0-val-1.json"
+    expected_ids = list(get_split("val"))
+    rows = _synthetic_raw_episode_rows("Zero-Shot Baseline", expected_ids)
+    if mutation == "missing":
+        rows.pop()
+    elif mutation == "duplicate":
+        rows[-1] = dict(rows[0])
+    else:
+        rows[0], rows[1] = rows[1], rows[0]
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(row) + "\n" for row in rows),
+    )
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="raw episode membership"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+    assert not output_dir.exists()
+
+
+def test_full_suite_compares_adversarial_raw_ids_to_anchored_order(tmp_path):
+    manifest, _, membership_sha256, adversarial_artifacts = _write_full_suite_inputs(
+        tmp_path
+    )
+    artifact_path = adversarial_artifacts[0]
+    rows = _synthetic_raw_episode_rows(
+        "Zero-Shot Baseline",
+        ["adv-test-only-002", "adv-test-only-001"],
+    )
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(row) + "\n" for row in rows),
+    )
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="raw episode membership"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize("partition", REQUIRED_PARTITIONS)
+@pytest.mark.parametrize("corruption", ["missing", "mismatch"])
+def test_full_suite_requires_artifact_split_hash_for_each_partition(
+    tmp_path, partition, corruption
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / f"0-{partition}-1.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    if corruption == "missing":
+        artifact.pop("split_sha256")
+    else:
+        artifact["split_sha256"] = "0" * 64
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="split_sha256"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("variant_index", "marker_name", "marker_value"),
+    [
+        ("0", "evaluation_mode", "mock"),
+        ("0", "non_empirical", True),
+        ("0", "test_only_synthetic_fixture", True),
+        ("3", "evaluation_mode", "NON_EMPIRICAL"),
+        ("3", "non_empirical", True),
+        ("3", "test_only_synthetic_fixture", True),
+    ],
+)
+def test_full_suite_rejects_non_empirical_raw_markers(
+    tmp_path, variant_index, marker_name, marker_value
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / f"{variant_index}-val-1.json"
+    artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    raw_path = Path(
+        artifact_payload.get("raw_predictions_path")
+        or artifact_payload["raw_trajectory_path"]
+    )
+    records = [
+        json.loads(line)
+        for line in raw_path.read_text(encoding="utf-8").splitlines()
+    ]
+    records[0][marker_name] = marker_value
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(record) + "\n" for record in records),
+    )
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="non-empirical marker"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("marker_name", "marker_value"),
+    [
+        ("test_only_synthetic_fixture", "true"),
+        ("test_only_synthetic_fixture", False),
+        ("non_empirical", 1),
+        ("non_empirical", "false"),
+        ("empirical_claim_allowed", False),
+        ("empirical_claim_allowed", 1),
+        ("mock_eval", "false"),
+        ("evaluation_mode", "experimental"),
+        ("evaluation_mode", True),
+    ],
+)
+def test_full_suite_rejects_malformed_raw_evidence_markers(
+    tmp_path, marker_name, marker_value
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "0-val-1.json"
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    raw_path = Path(payload["raw_predictions_path"])
+    rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines()]
+    rows[0][marker_name] = marker_value
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(row) + "\n" for row in rows),
+    )
+
+    with pytest.raises(ValueError, match="marker|evaluation_mode"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+def test_full_suite_requires_empirical_mode_on_episode_rows(tmp_path):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "0-val-1.json"
+    rows = _synthetic_raw_episode_rows("Zero-Shot Baseline", list(get_split("val")))
+    rows[0].pop("evaluation_mode")
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(row) + "\n" for row in rows),
+    )
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="evaluation_mode='empirical'"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=output_dir,
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("raw_content", "message"),
+    [
+        (
+            '{"scenario_id":"single_fault/sf-006","scenario_id":"single_fault/sf-006"}\n',
+            "duplicate field",
+        ),
+        ("{malformed json}\n", "malformed JSONL"),
+        ('{"scenario_id":"single_fault/sf-006","value":NaN}\n', "non-finite"),
+    ],
+)
+def test_full_suite_rejects_malformed_raw_episode_jsonl(
+    tmp_path, raw_content, message
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "0-val-1.json"
+    _rewrite_raw_output(artifact_path, raw_content)
+    with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("duplicate_run_started", "duplicate run_started"),
+        ("interrupt", "interrupted"),
+        ("missing_start", "without an active episode"),
+        ("duplicate_start", "start"),
+        ("out_of_order_start", "membership mismatch"),
+        ("out_of_order_terminal", "without an active episode"),
+        ("duplicate_terminal", "without an active episode"),
+        ("missing_terminal", "run_completed occurred before the episode terminal"),
+        ("mismatched_result", "result scenario_id"),
+        ("cross_scenario", "cross-scenario"),
+        ("missing_run_complete", "run_completed"),
+    ],
+)
+def test_full_suite_rejects_invalid_g9_event_lifecycle(
+    tmp_path, mutation, message
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    events = [
+        json.loads(line)
+        for line in Path(
+            artifact_payload.get("raw_trajectory_path")
+            or artifact_payload["raw_predictions_path"]
+        )
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    first_start = next(
+        i for i, event in enumerate(events) if event["event"] == "episode_started"
+    )
+    first_terminal = next(
+        i for i, event in enumerate(events) if event["event"] == "episode_completed"
+    )
+    if mutation == "duplicate_run_started":
+        events.insert(1, dict(events[0]))
+    elif mutation == "interrupt":
+        events[first_terminal]["event"] = "episode_interrupted"
+    elif mutation == "missing_start":
+        events.pop(first_start)
+    elif mutation == "duplicate_start":
+        events.insert(first_start + 1, dict(events[first_start]))
+    elif mutation == "out_of_order_start":
+        events[first_start]["scenario_id"] = "single_fault/sf-007"
+    elif mutation == "out_of_order_terminal":
+        event = events.pop(first_terminal)
+        events.insert(first_start, event)
+    elif mutation == "duplicate_terminal":
+        events.insert(first_terminal + 1, dict(events[first_terminal]))
+    elif mutation == "missing_terminal":
+        last_terminal = max(
+            i for i, event in enumerate(events) if event["event"] == "episode_completed"
+        )
+        events.pop(last_terminal)
+    elif mutation == "mismatched_result":
+        events[first_terminal]["result"]["scenario_id"] = "single_fault/sf-007"
+    elif mutation == "cross_scenario":
+        policy_output = next(event for event in events if event["event"] == "policy_output")
+        policy_output["scenario_id"] = "single_fault/sf-007"
+    else:
+        events.pop()
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(event) + "\n" for event in events),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    ("limit_name", "limit", "message"),
+    [
+        ("MAX_RAW_OUTPUT_BYTES", 16, "exceeds 16 bytes"),
+        ("MAX_RAW_OUTPUT_LINE_BYTES", 16, "line 1 exceeds 16 bytes"),
+        ("MAX_RAW_OUTPUT_RECORDS", 1, "exceeds 1 records"),
+    ],
+)
+def test_full_suite_bounds_raw_jsonl_processing(
+    tmp_path, monkeypatch, limit_name, limit, message
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    monkeypatch.setattr(episode_membership, limit_name, limit)
+
+    with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
 
 
 def test_full_suite_requires_external_membership_hash_anchor(tmp_path):

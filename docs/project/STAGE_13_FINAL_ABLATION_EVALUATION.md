@@ -63,18 +63,60 @@ The public per-partition helper rejects direct adversarial aggregation; only
 the full-suite path may pass a membership record after checking the external
 digest. Its lower-level aggregator is internal and is not an approval API.
 
-An accepted artifact aggregation is still not gate certification: the output sets
-`empirical_claim_allowed` to `false` and `certification_status` to `NOT_CERTIFIED`.
-No approved real adversarial membership record or seed is checked in.
+## Raw Episode Membership Verification
 
-**Remaining provenance limitation:** the current artifact schema verifies raw
-prediction/trajectory bytes against their declared hashes, but does not standardize
-per-row adversarial episode IDs or recompute membership from those bytes. The runner
-therefore checks the artifact's declared membership against the anchored record; it
-cannot prove that the hashed raw episodes actually contain exactly those IDs. The
-operator-supplied digest is also a trust anchor, not a signed identity/approval
-record. A future evaluator schema must bind raw episode IDs to the membership record
-before scientific approval is possible. G13 remains **REOPENED**.
+The full-suite path derives ordered scenario membership from the same raw JSONL
+bytes whose SHA-256 is checked against each artifact. Each artifact must also carry
+a top-level `split_sha256` matching the SHA-256 of the expected ordered IDs for its
+partition. Validation, Test, and Leaderboard use the frozen config split; Adversarial
+uses the externally anchored membership list. The ordinary public aggregation helper
+applies the same frozen-ID, split-hash, and raw-format checks for Validation, Test,
+and Leaderboard; it rejects Adversarial requests.
+
+Parsing is bounded to 64 MiB per raw output, 2 MiB per line, and 100,000 records.
+Blank or malformed records, duplicate JSON object keys, non-finite JSON numbers,
+and non-object records fail closed. Explicit raw `evaluation_mode` values such as
+`mock`, `non_empirical`, `dry_run`, or `test`, `non_empirical: true`, and
+`test_only_synthetic_fixture: true` are rejected recursively. Row-based formats
+require each episode to declare `evaluation_mode: "empirical"`. No aggregate output
+is written until the complete matrix and all raw membership checks pass.
+
+The Zero-Shot Baseline, SFT Model, prospective SFT + Recommender, and prospective
+Full Pipeline formats require exactly one top-level `scenario_id` episode row per
+expected member, in order, with the empirical row marker. The Online GRPO RL format
+must be the G9 event stream:
+one leading `run_started`, one `episode_started` and one successful
+`episode_completed` per expected scenario, then one final `run_completed` summary
+whose frozen split digest, counts, and claim-eligibility flag agree. Step and other
+in-episode events must remain scoped to the active scenario; repeated step events
+never increase episode membership. Interruptions, missing, duplicate,
+nested, or out-of-order starts/terminals, mismatched terminal result IDs, and
+cross-scenario events are rejected.
+
+Validation, Test, and Leaderboard membership is derived from the ordered frozen
+configuration returned by `config.splits.get_split`, not from IDs declared in a
+summary. The Leaderboard contains members from both frozen Train and Validation;
+it is **not an independent held-out set**. Adversarial raw episode IDs must exactly
+match the ordered list in the externally SHA-256-anchored membership record. The
+artifact's declared list, seed, and protocol digest remain required but are not
+accepted as a substitute for parsing the raw episodes.
+
+The operator-supplied adversarial digest is a trust anchor, not a signed identity or
+approval record, and no approved real adversarial membership record or seed is
+checked in. `bench.sft_eval` currently writes empirical row modes but omits the
+summary-level `split_sha256`; its artifacts will therefore fail this new provenance
+requirement until that emitter is updated. This scoped G13 change does not modify
+the evaluator.
+
+Metrics remain arithmetic aggregations of values declared in the input summaries;
+they are not recomputed from raw episodes. Every accepted aggregate is explicitly
+labeled `evaluation_mode: declared_artifact_aggregation`,
+`non_empirical: true`, and `metrics_source: unverified_artifact_summaries`, while
+retaining `empirical_claim_allowed: false` and `certification_status: NOT_CERTIFIED`.
+The synthetic parser fixtures, including those for the two prospective variants
+without evaluators, only exercise the expected row/event schema and do not represent
+evaluation evidence. Objective metrics, their denominators, gate labels, and
+historical evidence are unchanged. G13 remains **REOPENED**.
 
 ## Historical Predetermined Output
 
@@ -87,10 +129,12 @@ adversarial membership record.
 ## Current Verification
 
 Local tests prove that incomplete matrices, mock/non-empirical inputs, partition mismatches,
-missing metrics, absent raw/source provenance, and absent or mismatched adversarial
-membership provenance fail closed. Positive fixtures use synthetic test-only membership
-and cannot establish scientific approval. Dry-run mode emits only a non-empirical execution
-plan.
+missing metrics, absent raw/source provenance, absent or mismatched artifact split hashes,
+mismatched ordered raw episode membership, explicit mock/non-empirical raw markers,
+malformed or over-bound JSONL, invalid G9 lifecycle ordering, and absent or mismatched
+adversarial membership provenance fail closed. Synthetic schema fixtures cover all five
+variants but cannot establish scientific approval or reproduce missing evaluators. Dry-run
+mode emits only a non-empirical execution plan.
 
 G13 can advance only after genuine prerequisite model/checkpoint and integrated-environment
 artifacts exist.

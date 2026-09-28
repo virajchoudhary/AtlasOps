@@ -232,6 +232,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "training/grpo_provenance.py",
         "training/grpo_reward.py",
         "bench/ablation_suite.py",
+        "bench/episode_membership.py",
         "tests/test_*.py",
         "tests/stage4_approval_process.py",
         "tests/g9_approval_process.py",

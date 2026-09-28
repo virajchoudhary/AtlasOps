@@ -505,6 +505,9 @@ class TestStage15SubmissionPackage:
         with pytest.raises(ValueError, match="cannot be inspected"):
             _matching_tracked_files(repo_root, ["tests/test_*.py"])
 
+    def test_stage13_raw_membership_parser_is_in_submission_inventory(self):
+        assert "bench/episode_membership.py" in collect_submission_assets()
+
     def test_checked_in_submission_manifest_integrity_and_asset_keys(self):
         data = json.loads(
             Path("artifacts/SUBMISSION_MANIFEST.json").read_text(encoding="utf-8")

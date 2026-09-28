@@ -1,0 +1,38 @@
+# Original README to current continuation: evidence matrix
+
+**Verdict: NOT_CERTIFIED.** This is a source-and-evidence comparison, not a
+declaration that the original hackathon results were reproduced. It compares
+the upstream README at `Harikishanth/AtlasOps`
+`bf9bd197c9f4a05ae55ade254802a9eef1a74356` with the continuation's
+software base `c695d84b81842a816589cd8533d38200e0bb2580` (through PR #84,
+before this README reconciliation). Future implementation changes require
+another comparison. The
+[Master Pipeline inventory](MASTER_PIPELINE_STATUS.md) and preserved raw
+evidence control gate status; this matrix does not close any gate.
+
+| Original README area | Current implementation or preserved provenance | Evidence still required for the original outcome |
+|---|---|---|
+| Architecture | The alert, Triage, Diagnosis, Approval, Remediation, Verifier, and Comms flow remains in `agents/coordinator.py`, with advisory RS inserted before remediation. The inherited GKE/MI300X diagram is a target architecture, not a current deployment. | G4 `NOT_PASSED`: a causally valid real incident, actual P1 decision, permitted mutation, objective resolution, durable evidence, and verified cleanup. Attempt 010 is a completed negative result; 009 and 011-014 are interrupted/inconclusive. |
+| Track 1: AI Agents & Agentic Workflows | Four roles, tool ACLs, correlation, circuit breaker, audit chain, and approval code have local tests. The G4 v3.4 host callback is prospective and tested with synthetic subprocesses. | Current healthy model/tool/cluster behavior and an independent live end-to-end result. Unit tests do not turn the upstream four-model/MI300X claim into team evidence. |
+| Track 2: Fine-Tuning on AMD GPUs | `training/sft.py`, `training/grpo.py`, rendering, provenance, and evaluation contracts exist. The AMD/ROCm stack and 72B judge in the original README are historical design claims. | G7 `PARTIAL`, G8 empirical evidence missing, G9 `REOPENED`: approved capable hardware, exact model/tokenizer identity, real training records and usable checkpoint inventories, then held-out evaluation. No current MI300X run is certified. |
+| Training Evidence | The 2,028-trajectory SFT, 236-episode GRPO, loss, accuracy, and timing figures in the original README remain upstream claims. Current G7 corpus is 64 scenario-derived synthetic demonstrations from 16 Train scenarios. | Real source-labelled trajectories, completed SFT and GRPO runs, checkpoint validation, and measured results. Historical charts and mock archive outputs cannot supply them. |
+| 20 Real SRE Tools | The current registry has 24 wrappers; role ACLs expose 19 and intentionally withhold 5. `agents/tool_policy.py` and tool tests establish local access and side-effect contracts. | Live backend reachability and safe behavior for each claimed integration. The historical G3 Kind acceptance had wrapper and trace-ingestion limitations; registration alone is not a successful tool call. |
+| 38 Chaos Scenarios + Infinite Adversarial Generation | G5 `PASS` freezes 28 YAML-backed scenarios with Train/Val/Test isolation. The separate bounded validator can save `GENERATED_UNAPPROVED` proposals outside the checkout; the 10/38 quantities are limits, and legacy `bench.runner` stays mock-only. | Reviewed source-frozen dynamic protocol, actual model-generated cases, CRD admission, causal novelty, safe controlled execution, and held-out adversarial evidence. No "infinite" empirical result exists. |
+| Production Guardrails | P1 control flow fails closed on rejection, timeout, and missing decision. G4 v3.4 repair, coordinator-backed G9 permits, and the opt-in standalone G9 host channel have synthetic process-boundary tests. Audit, breaker, and correlator exist. | Real authenticated operator decisions and cluster behavior, recovery after interruption, and an approved deployment threat model. Disabled-by-default standalone P1 mutation remains blocked; software tests are not live acceptance. |
+| Training Pipeline and Reward Contract | Direct G9 code sends the policy's parsed action to tools, settling, and the objective verifier. Its direct reward differs from the inherited four-agent 70/30 dense blend. Train-only SFT data is synthetic; the old trajectory generators are retired. | A completed G7 parent, safe serialized G9 rollouts and checkpoint, actual verifier-grounded reward, and no Test leakage. Software coupling and predetermined values do not prove policy improvement. |
+| Benchmark Results | Original 54% / 68% / 82% resolution and 0.481 / 0.601 / 0.729 judge-reward figures are retained as historical upstream claims. Invalid G6 returned predictions remain unscored, not zero-valued evidence. G6, G8, and G12 have implemented paths but lack empirical evidence; G13 is `REOPENED`. | An approved immutable model-serving identity for G6, genuine frozen-split zero-shot and checkpoint evaluations, complete measured five-variant by four-partition matrix, raw trajectories, provenance, uncertainty, and independent verification. |
+| Quick Start | Current README replaces obsolete GCP, injection, `--rocm`, and live benchmark shortcuts with local checks, a read-only console, and governed stage-specific commands. | Host-specific prerequisites and secrets must be checked before any controlled run. Running `--help`, static checks, or a mock benchmark does not establish G3 health or an empirical gate. |
+| Project Structure | Original modules and MIT attribution remain in Git history; the continuation adds RS, verifier, governed evaluators, and read-only presentation surfaces. Stage 15 hashes the selected source/evidence inventory as `NOT_CERTIFIED`. | G15 `PARTIAL`: final report and package must be reconciled after real results and an independent evidence review. Asset hashes prove bytes, not scientific correctness. |
+| Why AMD MI300X | The original 192 GB HBM3 co-hosting and throughput rationale remains historical. G3 used a local Kind path, and no current MI300X hardware or step-time validation is claimed. | Verify an approved model/training runtime on the eventual capable host; do not infer that a free API or a peer MacBook meets the BF16, memory, serving-identity, or cluster-concurrency contract without measurements. |
+| License | The original MIT license and upstream Git lineage remain present. G0 `PASS` records the frozen baseline and attribution. | Preserve MIT and source attribution in all later packages; no scientific result follows from license/provenance alone. |
+
+## Current acceptance boundary
+
+The software and read-only presentation can be made reviewable before a peer
+host is selected. The empirical G4, G6-G10, G12, and G13 outcomes cannot be
+completed *before* their governed real incident, model, training, feedback,
+and evaluation work occurs. This is a dependency, not permission to run it
+early or to turn mocks into measurements. G14 deployment is explicitly
+deferred by the operator. G15 final certification remains blocked by open
+scientific gates. No fault, P1 request, attempt-015 reservation, training,
+model download, or deployment is part of this comparison.

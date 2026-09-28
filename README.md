@@ -25,36 +25,44 @@ tags:
 > reproduced by this team. G4 is NOT_PASSED; G6/G8/G12 lack empirical evidence; G9/G13
 > are REOPENED. For a safe local presentation, use the read-only
 > [Stage 14 demo](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md) and the
-> [current gate inventory](docs/project/MASTER_PIPELINE_STATUS.md). The legacy
+> [current gate inventory](docs/project/MASTER_PIPELINE_STATUS.md). The
+> [original README comparison](docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md)
+> tracks each inherited promise against implementation and evidence. The legacy
 > `bench.runner` is mock-only and cannot operate a cluster.
 
-> **AMD Developer Hackathon 2026** | Real GKE cluster · Real Chaos Mesh · Real Prometheus alerts · AMD MI300X
+> **Original AMD Developer Hackathon 2026 project** | Upstream GKE, Chaos Mesh,
+> Prometheus, and MI300X claims below are historical, not current continuation results.
 
-[![CI](https://github.com/Harikishanth/AtlasOps/actions/workflows/ci.yml/badge.svg)](https://github.com/Harikishanth/AtlasOps/actions/workflows/ci.yml)
+[![Continuation CI](https://github.com/virajchoudhary/AtlasOps/actions/workflows/ci.yml/badge.svg)](https://github.com/virajchoudhary/AtlasOps/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![AMD MI300X](https://img.shields.io/badge/GPU-AMD%20MI300X%20192GB-red)](docs/MI300X_EVIDENCE.md)
 
-**Hackathon Space:** [lablab-ai-amd-developer-hackathon / atlas-ops](https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/atlas-ops) (`atlasops` without the hyphen hits **404**. If you recreated the Space under another slug, swap the link and set `ATLASOPS_PUBLIC_BASE_URL` to matching `*.hf.space` — see `docs/HF_SPACE_SETUP.md`.)
-
-> **For judges — live Discord:** Every scenario triggers Discord webhook posts (approval holds, remediation notices, run completion pings). **Join to watch runs alongside the HF Space demo:** **((https://discord.gg/GUyjT6m7bB))**
+**Historical upstream references:** [Hackathon Space](https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/atlas-ops) and [MI300X evidence narrative](docs/MI300X_EVIDENCE.md).
+Neither is a live continuation deployment or a verified team training result. The
+original README also advertised a Discord run feed; no current operator feed is
+promised by this fork.
 
 ---
 
 The inherited AtlasOps design gives 4 specialized AI agents an incident alert and access to 19 role-authorized SRE tools, backed by a registry of 24 wrappers. Live-cluster behavior remains to be reproduced by the continuation team.
 
-**Triage** acked the alert and mapped the blast radius in 47 seconds.  
-**Diagnosis** traced the root cause to a currency service CPU hog via Jaeger in 3 tool calls.  
-**Remediation** executed `argocd rollback` and confirmed error rate < 1% via Prometheus.  
-**Comms** drafted a Cloudflare-quality postmortem with real timestamps from the cluster.
+The original README reported that **Triage** acknowledged an alert in 47
+seconds, **Diagnosis** found a currency-service CPU hog in 3 tool calls,
+**Remediation** rolled back through Argo CD, and **Comms** drafted a
+postmortem. These are upstream claims, not continuation measurements.
 
-Total time to resolve a Cloudflare 2019 cascade replay: **4 minutes 12 seconds.**  
-A senior SRE on a good day: ~25 minutes.
+Its reported Cloudflare 2019 cascade replay time was **4 minutes 12 seconds**;
+the ~25-minute human comparison was an upstream estimate, not a controlled
+comparison in this project.
 
-This is **AtlasOps** — a multi-agent SRE platform designed to learn from SFT and online GRPO, with a prospective 72B adversarial scenario designer. The original MI300X training and dynamic benchmark claims have not been reproduced by this continuation; the current legacy benchmark runner is mock-only and does not generate scenarios.
+This is **AtlasOps** — a multi-agent SRE platform designed to learn from SFT and online GRPO, with a bounded, non-executing adversarial proposal generator. Its requested 72B judge identity is not attested. The original MI300X training and dynamic benchmark claims have not been reproduced by this continuation; the legacy benchmark runner is mock-only and does not generate scenarios.
 
 ---
 
 ## Architecture
+
+This is the inherited target architecture. The continuation has a historical
+local Kind G3 acceptance record, but has not certified a live G4 incident or
+deployed this GKE/MI300X configuration.
 
 ```mermaid
 flowchart LR
@@ -107,22 +115,29 @@ Full end-to-end sequence diagram with design rationale: [`docs/END_TO_END_FLOW.m
 ## Track Coverage
 
 ### Track 1 — AI Agents & Agentic Workflows
-AtlasOps is a purpose-built multi-agent framework for SRE automation. Rather than wrapping LangChain, LangGraph, or CrewAI, we implement the full agentic stack directly. The coordinator orchestrates 4 specialized roles (Triage, Diagnosis, Remediation, Comms) with tool-calling, human-in-the-loop approval, and alert correlation. Models: **Qwen2.5-7B × 4** (open-source, AMD MI300X co-hosted).
+AtlasOps retains a purpose-built multi-agent SRE coordinator. It orchestrates
+four specialized roles (Triage, Diagnosis, Remediation, Comms) with tool
+calling, human-in-the-loop approval, and alert correlation. The original
+design described **four Qwen2.5-7B role models co-hosted on MI300X**; this
+continuation has not reproduced that serving configuration.
 
-**Why no general-purpose framework?** Every feature below would require fighting the framework's own abstractions:
+The project owns these interfaces directly rather than relying on a general
+agent orchestration framework:
 
 - **Per-role tool ACLs** enforced at runtime (`ROLE_ALLOWED_TOOLS`) — triage cannot call `argocd_rollback`.
-- **Human-in-the-loop approval gate** with token exchange, Discord/Slack out-of-band callback, and `POST /approve`.
+- **Human-in-the-loop approval gate** with token exchange, out-of-band notification, and authenticated `POST /approve`.
 - **Circuit breaker** with *semantic* failure classification — rejecting remediation is a human decision, not a system failure, and does not trip the breaker.
-- **Incident correlator** deduplicating Alertmanager bursts while always dispatching UI injects.
-- **Dense per-step reward shaping** for GRPO training — each tool call scores against a contract (latency, correctness, safety).
+- **Incident correlator** deduplicating Alertmanager bursts; browser injection is retired.
+- **Reward contracts** with objective verifier authority; the direct-action
+  G9 scorer differs from the inherited four-agent dense/episode blend.
 - **HMAC-chained audit log** for every agent action.
-- **Single SSE stream** driving the real-time operator UI timeline.
+- **Single SSE stream** designed to drive the operator UI timeline.
 
-These require control over the HTTP call loop, message history, tool dispatch, and approval suspension points — all of which are opaque or absent in LangGraph/CrewAI out of the box.
+Local tests cover these interfaces, not the original live performance claims.
 
 ### Track 2 — Fine-Tuning on AMD GPUs
-Full fine-tuning pipeline on AMD hardware:
+The following is the upstream MI300X design stack, not a verified continuation
+training environment or a hardware requirement for the read-only local demo.
 
 | Component | Library |
 |---|---|
@@ -182,13 +197,15 @@ Tool exposure is separate from deployment availability. In particular, the Argo 
 | Cascade | 5 | currency latency → checkout timeout → frontend 5xx surge |
 | Multi-fault | 5 | 3 simultaneous faults + red herrings across namespaces |
 | Named Replays | 10 | Cloudflare 2019, AWS S3 2017, GitHub 2018, Discord 2022, Knight Capital 2012… |
-| **Dynamic adversarial (prospective)** | up to 10 in the design, none in the current mock runner | A 72B judge could design new Chaos Mesh YAML after validation and approval |
+| **Dynamic adversarial (prospective)** | up to 10 unapproved proposals per explicit batch; none executed | A bounded judge response can produce validated Chaos Mesh YAML outside the checkout |
 
 The static catalogue contains exactly 28 YAML-backed frozen scenarios. The
 upstream design allows up to 10 newly generated adversarial scenarios in a
-separate run, but the current legacy runner is mock-only and disables that
-generation path. Its 10/38 constants are limits, not proof of a generated run.
-Generated scenarios are not frozen catalogue members.
+separate run. The standalone [proposal generator](docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md)
+validates inputs and writes `GENERATED_UNAPPROVED` artifacts only; no judge
+run or CRD admission is evidenced. The legacy runner remains mock-only and
+disables generation. Its 10/38 constants are limits, not proof of a generated
+run. Generated proposals are not frozen catalogue members.
 
 ---
 
@@ -197,8 +214,14 @@ Generated scenarios are not frozen catalogue members.
 ### Human-in-the-loop Approval Gate
 - **P0**: manual runbook only — agents produce a step-by-step plan, no auto-execution
 - **P1**: explicit approval required; rejection, timeout, or missing decision blocks remediation
-- **P2/P3**: fully automatic
-- `POST /approval/callback` · `GET /approval/pending`
+- **P2/P3**: eligible for automatic policy handling only in governed execution
+- Authenticated `POST /approve` · `GET /approval/pending`
+
+Automatic policy classification does not enable cluster mutation by itself;
+governed entrypoints require an explicit live opt-in and named context. The
+host-only G4 and standalone G9 listeners bind to their own waiting processes;
+the in-cluster service has a separate gate. The G9 channel is explicitly
+opt-in and its synthetic tests do not establish a real operator decision.
 
 ### Circuit Breaker
 Hard stops runaway automation:
@@ -221,20 +244,23 @@ Every tool call, approval decision, and incident boundary is written to an appen
 ### SFT → Online GRPO on AMD MI300X
 
 ```
-5k trajectories (real GKE rollouts, teacher model)
+Train-only corpus (currently 64 scenario-derived synthetic demonstrations)
         ↓
-  QLoRA SFT  (Qwen2.5-7B, 4-bit NF4, LoRA r=16)
+  QLoRA SFT  (planned; no completed usable adapter)
         ↓
-  Online GRPO  (G=8 live GKE rollouts per step, DAPO loss)
+  Online GRPO  (planned; no completed usable adapter)
         ↓
-  Benchmark  (28 frozen; prospective generated scenarios require a separate governed path)
+  Benchmark  (28 frozen; measured model comparisons pending)
 ```
 
 The corrected GRPO code is designed for true online RL; a completed training run and usable checkpoint have not been verified. In a real authorized run, each training step would:
 1. Apply a real Chaos Mesh fault to an authorized controlled cluster
-2. Run G=8 parallel agent chain rollouts
-3. Score each with the reward contract (kubectl/promql verify real cluster state)
+2. Score policy completions in serialized fault/action/cleanup cycles on the shared cluster
+3. Execute each parsed structured action and score conclusive objective-verifier observations
 4. Compute GRPO advantages and update the policy
+
+The upstream 5k-trajectory target is not the current 64-example synthetic
+corpus. Neither is evidence of successful live training.
 
 ### What makes our training different from competitors
 
@@ -247,9 +273,15 @@ continuation training run or observed model improvement.
 | Loss | Standard GRPO | **DAPO** (distributional advantage — more stable on skewed rewards) |
 | Reward | Episode-level only | **Dense per-step** (progress delta per tool call) + episode contract |
 | Curriculum | Random / fixed | **Spaced repetition** (mastery tracking, [3→6→12→24→48] resurface intervals) |
-| Scenario generation | Static | **Dynamic adversarial design is prospective; current legacy runner disables it** |
+| Scenario generation | Static | **Bounded non-executing proposals exist; the legacy runner disables dynamic execution** |
 
 ### Reward Contract (Anti-Gaming)
+
+The formula below is the inherited four-agent episode/dense contract, not the
+current G9 direct-action scorer. Direct G9 uses `0.75` for verified resolution
+plus `0.25` times required-check coverage, minus `0.25` for a false resolution
+claim; an unscorable observation has no numeric reward. See the
+[Stage 9 contract](docs/project/STAGE_9_ONLINE_GRPO.md).
 
 ```
 R = 0.35 × resolve + 0.20 × evidence + 0.20 × safety + 0.15 × speed + 0.10 × comms
@@ -368,16 +400,23 @@ python -m bench.runner --model fixture --mock --adversarial 0
 # Real G6/G8/G9 evaluation uses the dedicated checkpoint and split evaluators.
 ```
 
-### 5. Train on AMD MI300X
+### 5. Prepare for training (not an authorized launch)
 ```bash
-# Set up MI300X (installs ROCm deps, downloads models)
-bash infra/setup_mi300x.sh
-
-# Legacy live trajectory generators are retired; use the frozen Train-split corpus
-# data/sft_corpus_train.jsonl and the Stage 7 reproducibility contract.
-python training/sft.py --model Qwen/Qwen2.5-7B-Instruct --rocm
-python training/grpo.py --model checkpoints/sft_v3 --rocm
+# Inspect the governed entrypoints without loading a model or contacting a cluster.
+python -m training.sft --help
+python -m training.grpo --help
 ```
+
+The old `--rocm` examples are not valid current commands. Stage 7 requires an
+explicit `--model-revision`, a resolved tokenizer revision (the
+`--tokenizer-revision` flag defaults to the model revision), a verified
+Train-only corpus, a new output path, and approved suitable hardware. Stage 9
+additionally requires
+a completed SFT parent, a named Kubernetes context, explicit live opt-in, and
+a reviewed P1 operator channel before any P1 mutation. See the
+[Stage 7 training contract](docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md)
+and [Stage 9 execution contract](docs/project/STAGE_9_ONLINE_GRPO.md).
+Neither entrypoint has produced a certified continuation checkpoint.
 
 ### 6. Run tests
 ```bash
@@ -410,7 +449,7 @@ atlasops/
 │   ├── circuit_breaker.py      # Hard limits on tool calls + mutations
 │   ├── correlator.py           # Alert storm deduplication
 │   ├── audit.py                # HMAC hash-chained audit trail
-│   ├── adversarial_designer.py # 72B judge → dynamic Chaos YAML
+│   ├── adversarial_designer.py # Validated, unapproved Chaos YAML proposals
 │   ├── judge.py                # Episode scoring
 │   ├── stream.py               # SSE thought streaming
 │   ├── prompts/                # triage / diagnosis / remediation / comms
@@ -422,12 +461,12 @@ atlasops/
 │   └── runtime.py              # Frozen scenarios · reward contract · CurriculumManager · StepRewardTracker
 ├── training/
 │   ├── sft.py                  # QLoRA SFT (4-bit NF4, LoRA r=16)
-│   ├── grpo.py                 # Online GRPO (DAPO loss, spaced-rep curriculum, dense rewards)
+│   ├── grpo.py                 # Prospective direct-action GRPO with objective reward
 │   └── generate_trajectories.py
 ├── scripts/
 │   └── release_gate.py         # Pre-submission readiness checker
 ├── static/
-│   └── index.html              # Custom dark ops console (SSE + service topology + Slack feed)
+│   └── index.html              # Read-only operator console
 ├── tests/                      # 100+ tests across tools, coordinator, bench, safety
 ├── docs/                       # Postmortems · MI300X evidence · benchmarks
 ├── infra/                      # GCP provisioning · Helm values
@@ -437,13 +476,18 @@ atlasops/
 
 ---
 
-## Why AMD MI300X
+## Upstream MI300X Rationale
 
-- **192 GB HBM3** — fits all 5 models simultaneously: 4 × Qwen2.5-7B-4bit (~4 GB each) + Qwen2.5-72B-4bit (~37 GB) = ~53 GB total. Impossible on A100 (80 GB OOM on 72B alone).
-- **Online GRPO needs low-latency inference** — each training step fires 8 live GKE rollouts. MI300X throughput keeps step time under 5 minutes.
-- **ROCm-native** — all training scripts target `--rocm`. Verified: `BitsAndBytesConfig` + `paged_adamw_8bit` on ROCm.
+- The original design cited 192 GB HBM3 for co-hosting four 7B roles and a
+  72B adversarial judge. Its sizing and comparative hardware claims have not
+  been reproduced by this team.
+- Low-latency inference matters for online RL, but the current direct-action
+  code serializes cluster rollouts; no MI300X step-time measurement is claimed.
+- ROCm dependency compatibility and usable BF16 training require verification
+  on the chosen approved host. The current training CLIs do not accept `--rocm`.
 
-See [docs/MI300X_EVIDENCE.md](docs/MI300X_EVIDENCE.md) for `rocm-smi` snapshots and memory breakdown.
+See the [upstream MI300X narrative](docs/MI300X_EVIDENCE.md) for historical
+snapshots, not current hardware certification.
 
 ---
 

@@ -68,6 +68,32 @@ class TestStage8SFTEvaluation:
         assert summary["resolution_rate"] > 0.0
         assert summary["avg_reward_contract"] > 0.50
 
+    @pytest.mark.parametrize(
+        ("split_name", "expected_sha256"),
+        [
+            ("val", "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4"),
+            ("test", "a5fc3603bddcae58aba315cd7b295995799eb3f819be940ecf75d95142b88386"),
+            (
+                "leaderboard",
+                "327a9204dbc22030b1cc6db63492188e2ba80c7b8e9931f42116f17f77e30013",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_mock_summary_records_frozen_ordered_split_digest(
+        self,
+        split_name,
+        expected_sha256,
+        tmp_path,
+    ):
+        summary = await evaluate_sft_split(
+            split_name,
+            mock=True,
+            output_dir=tmp_path,
+        )
+
+        assert summary["split_sha256"] == expected_sha256
+
     def test_split_isolation_invariant(self):
         val_scenarios = set(get_split("val"))
         test_scenarios = set(get_split("test"))

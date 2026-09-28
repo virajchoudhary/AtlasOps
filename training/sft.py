@@ -23,6 +23,7 @@ from training.sft_provenance import (
     mark_completed,
     mark_failed,
     mark_running,
+    snapshot_training_corpus,
     write_manifest_atomic,
 )
 from training.sft_rendering import TEMPLATE_PATH
@@ -111,9 +112,11 @@ def main() -> None:
             "so G8 and G9 can validate the completed adapter"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
+    corpus_snapshot = snapshot_training_corpus(corpus_path)
 
     manifest = create_run_manifest(
         corpus_path=corpus_path,
+        corpus_snapshot=corpus_snapshot,
         output_dir=output_dir,
         base_model=args.model,
         base_model_revision=args.model_revision,
@@ -126,7 +129,14 @@ def main() -> None:
     write_manifest_atomic(manifest_path, manifest)
 
     try:
-        from datasets import load_dataset
+        from datasets import Dataset
+
+        dataset = Dataset.from_list(list(corpus_snapshot.rows))
+        if args.role != "all":
+            dataset = dataset.filter(lambda row: row.get("role") == args.role)
+        if len(dataset) == 0:
+            raise ValueError(f"No training examples remain for role={args.role}")
+
         from peft import (
             LoraConfig,
             TaskType,
@@ -142,12 +152,6 @@ def main() -> None:
         from trl import SFTConfig, SFTTrainer
 
         set_seed(args.seed)
-        dataset = load_dataset("json", data_files=str(corpus_path), split="train")
-        if args.role != "all":
-            dataset = dataset.filter(lambda row: row.get("role") == args.role)
-        if len(dataset) == 0:
-            raise ValueError(f"No training examples remain for role={args.role}")
-
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_id,
             revision=tokenizer_revision,

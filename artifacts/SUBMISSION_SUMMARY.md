@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T18:52:05.584831+00:00`
+- **Generated**: `2026-09-28T18:57:26.884190+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -163,7 +163,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `4e4ad218ce345301...` | 4370 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6b648f935a3cf168...` | 4552 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `d60f4843c2438734...` | 5473 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `06289e0ec3b252e0...` | 2809 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
@@ -238,7 +238,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `fcc4bd53b53598df...` | 10382 |
-| `tests/test_sft_training_provenance.py` | `d7eabf4fd11265be...` | 13610 |
+| `tests/test_sft_training_provenance.py` | `4db923676b01c76a...` | 18270 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
@@ -270,8 +270,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_environment.py` | `a55f06dfac85bcdd...` | 29104 |
 | `training/grpo_provenance.py` | `178c7ce413d77cff...` | 18829 |
 | `training/grpo_reward.py` | `49fb98487c17ff90...` | 3019 |
-| `training/sft.py` | `29ff6fa2ae27ec89...` | 9091 |
-| `training/sft_provenance.py` | `db9cbb6a18bc8be5...` | 24681 |
+| `training/sft.py` | `31057645d75c1d36...` | 9199 |
+| `training/sft_provenance.py` | `a995d32eec36204e...` | 27844 |
 | `training/sft_rendering.py` | `dd036d8ca715065e...` | 10109 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |
 | `ui_read_model.py` | `859db572c2706d7d...` | 10012 |

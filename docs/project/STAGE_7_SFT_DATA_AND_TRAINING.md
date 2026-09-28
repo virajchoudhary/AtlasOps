@@ -51,6 +51,16 @@ against the frozen Train split and any adjacent corpus manifest's hash, split, a
 and uses the project-owned Qwen tool template with assistant-only loss. It writes planned,
 running, completed, failed, or interrupted state atomically and records:
 
+- Before writing the planned run manifest, it reads one bounded (16 MiB maximum),
+  redirect-free byte snapshot and validates the JSONL rows and frozen Train split from
+  that snapshot. The corpus hash, counts, and origin classification are derived from
+  those same bytes; `datasets.Dataset` is built from their parsed rows in memory. A later
+  change to the `--data` path cannot silently replace this run's input.
+- The run manifest still records the absolute source corpus path. G8 can recheck
+  those bytes when an exact approved corpus path is explicitly supplied, and
+  downgrades origin to `UNVERIFIED` if that path no longer matches. G9's parent
+  checkpoint validation does not supply an approved corpus path, so its data
+  origin remains `UNVERIFIED` rather than inheriting the training-time claim.
 - corpus, split, and template hashes;
 - adjacent corpus-manifest path and raw SHA-256, with its data-origin classification;
 - `UNVERIFIED` origin and a null synthetic flag when no verifiable classification exists.
@@ -58,7 +68,8 @@ running, completed, failed, or interrupted state atomically and records:
   SHA-256 and its exact 64-example, 16-scenario Train inventory; unsupported or
   conflicting origin claims remain unverified.
 - seed, hyperparameters, LoRA and quantization settings;
-- source SHA and dirty-state digest;
+- source SHA and dirty flag; G8/G9 reject dirty SFT source for empirical use
+  because a dirty checkout is not reproducible from its HEAD SHA alone;
 - runtime, package, and hardware metadata;
 - trainer state and loss history;
 - a hashed inventory of every completed adapter/checkpoint file.

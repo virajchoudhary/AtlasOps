@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -19,6 +21,8 @@ from training.sft_provenance import (
     mark_completed,
     mark_failed,
     mark_running,
+    normalize_training_data_provenance,
+    snapshot_training_corpus,
     write_manifest_atomic,
 )
 
@@ -32,7 +36,9 @@ def _lightweight_runtime_probe(monkeypatch):
     )
 
 
-def _manifest(tmp_path: Path) -> tuple[dict, Path, Path]:
+def _manifest(
+    tmp_path: Path, *, training_seed: int = TRAIN_SEED
+) -> tuple[dict, Path, Path]:
     corpus = tmp_path / "train.jsonl"
     corpus.write_text(
         "".join(
@@ -52,7 +58,8 @@ def _manifest(tmp_path: Path) -> tuple[dict, Path, Path]:
         tokenizer="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision="tokenizer-commit",
         role="all",
-        hyperparameters={"seed": TRAIN_SEED},
+        hyperparameters={"seed": training_seed},
+        seed=training_seed,
     )
     return manifest, output, manifest_path
 
@@ -83,6 +90,15 @@ def test_planned_manifest_captures_exact_inputs_and_source(tmp_path):
     assert manifest["source"]["git_sha"]
     assert manifest["output_dir"] == str(output.resolve())
     assert "packages" in manifest["environment"]
+
+
+def test_split_seed_is_independent_of_training_seed(tmp_path):
+    manifest, _, _ = _manifest(tmp_path, training_seed=17)
+
+    assert manifest["dataset"]["split_seed"] == TRAIN_SEED
+    assert manifest["dataset"]["split_scenarios"] == list(TRAIN_SPLIT)
+    assert manifest["training_seed"] == 17
+    assert manifest["hyperparameters"]["seed"] == 17
 
 
 def _generated_corpus(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
@@ -255,6 +271,106 @@ def test_sft_rejects_manifest_path_incompatible_with_evaluators(monkeypatch, tmp
     assert not (tmp_path / "external-manifest.json").exists()
 
 
+def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
+    monkeypatch,
+    tmp_path,
+):
+    from training import sft
+
+    corpus, corpus_manifest_path = _generated_corpus(tmp_path, monkeypatch)
+    original_bytes = corpus.read_bytes()
+    original_rows = [
+        json.loads(line)
+        for line in original_bytes.decode("utf-8").splitlines()
+        if line
+    ]
+    replacement_rows = [
+        {**row, "race_marker": "replacement"} for row in original_rows
+    ]
+    replacement_bytes = "".join(
+        json.dumps(row) + "\n" for row in replacement_rows
+    ).encode("utf-8")
+    output = tmp_path / "checkpoint"
+    captured: dict[str, list[dict]] = {}
+
+    def load_dataset(_format, *, data_files, split):
+        assert split == "train"
+        corpus.write_bytes(replacement_bytes)
+        captured["rows"] = [
+            json.loads(line)
+            for line in Path(data_files).read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        raise RuntimeError("stop before model loading")
+
+    class Dataset:
+        @classmethod
+        def from_list(cls, rows):
+            corpus.write_bytes(replacement_bytes)
+            captured["rows"] = rows
+            raise RuntimeError("stop before model loading")
+
+    datasets_module = types.ModuleType("datasets")
+    datasets_module.load_dataset = load_dataset
+    datasets_module.Dataset = Dataset
+    monkeypatch.setitem(sys.modules, "datasets", datasets_module)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "model-commit",
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop before model loading"):
+        sft.main()
+
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert captured["rows"] == original_rows
+    assert persisted["dataset"]["corpus_path"] == str(corpus.resolve())
+    assert persisted["dataset"]["corpus_sha256_canonical_lf"] == hashlib.sha256(
+        original_bytes.replace(b"\r\n", b"\n")
+    ).hexdigest()
+    assert persisted["dataset"]["total_examples"] == len(original_rows)
+    assert persisted["dataset"]["total_scenarios"] == len(TRAIN_SPLIT)
+    assert persisted["dataset"]["data_origin"] == "scenario_derived_synthetic"
+    assert persisted["dataset"]["synthetic"] is True
+    assert persisted["dataset"]["data_origin_source"] == (
+        "adjacent_corpus_manifest"
+    )
+    assert persisted["dataset"]["corpus_manifest"] == {
+        "present": True,
+        "path": str(corpus_manifest_path.resolve()),
+        "sha256": hashlib.sha256(corpus_manifest_path.read_bytes()).hexdigest(),
+    }
+    assert persisted["status"] == "failed"
+    assert persisted["failure"]["type"] == "RuntimeError"
+    assert persisted["failure"]["message"] == (
+        "SFT run failed; exception details are withheld"
+    )
+    assert corpus.read_bytes() == replacement_bytes
+    revalidated_dataset = normalize_training_data_provenance(
+        persisted["dataset"],
+        approved_corpus_path=corpus,
+    )
+    assert revalidated_dataset["data_origin"] == "UNVERIFIED"
+    assert revalidated_dataset["synthetic"] is None
+    assert (
+        revalidated_dataset["corpus_manifest"]["verification_status"]
+        == "corpus_hash_mismatch"
+    )
+
+
 def test_corpus_rejects_validation_or_test_scenarios(tmp_path):
     corpus = tmp_path / "leaky.jsonl"
     corpus.write_text(
@@ -263,6 +379,26 @@ def test_corpus_rejects_validation_or_test_scenarios(tmp_path):
     )
     with pytest.raises(ValueError, match="non-training scenario"):
         inspect_training_corpus(corpus)
+
+
+@pytest.mark.parametrize("redirect_type", ["symlink", "hardlink"])
+def test_training_corpus_snapshot_rejects_file_redirects(
+    tmp_path,
+    monkeypatch,
+    redirect_type,
+):
+    corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    redirected_path = tmp_path / f"{redirect_type}-corpus.jsonl"
+    try:
+        if redirect_type == "symlink":
+            redirected_path.symlink_to(corpus)
+        else:
+            os.link(corpus, redirected_path)
+    except OSError:
+        pytest.skip(f"{redirect_type} creation is unavailable on this host")
+
+    with pytest.raises(ValueError, match="redirect"):
+        snapshot_training_corpus(redirected_path)
 
 
 def test_running_and_completed_manifest_hash_checkpoint_files(tmp_path):

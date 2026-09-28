@@ -33,6 +33,10 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   and dataset hashes, source identity, seed, timestamps, runtime metadata, and model
   identity observations are persisted. Failed HTTP response bodies are not persisted;
   only a bounded error category, status, format, SHA-256, and byte length are retained.
+- A returned but invalid prediction records that inference produced a response while
+  leaving `diagnostic_metrics` null and the prediction unscored. Diagnostic averages
+  use only valid scored rows, record their count, and are null when none exist.
+  A failed call with no returned response remains distinct from a parse failure.
 - Completion responses are streamed with a 4 MiB raw-byte cap. Oversized responses stop
   at the limit and retain only a prefix hash, observed byte count, and truncation flag.
 - Finalized episode rows replace the initial JSONL atomically. If finalization fails,

@@ -524,11 +524,14 @@ async def _evaluate_empirical_episode(
     started_at = datetime.now(UTC).isoformat()
 
     raw_text = ""
+    response_received = False
+    parse_attempted = False
     response_model_name: str | None = None
     response_model_name_verified: bool | None = None
     response_error: dict[str, Any] | None = None
     try:
         inference_result = await inference_fn(messages, model_name, generation_config)
+        response_received = True
         if isinstance(inference_result, InferenceResult):
             if inference_result.model_name != model_name:
                 response_model_name_verified = False
@@ -538,6 +541,7 @@ async def _evaluate_empirical_episode(
             response_model_name_verified = True
         else:
             raw_text = inference_result
+        parse_attempted = True
         prediction = _parse_prediction(raw_text)
         diagnostic_metrics = compute_diagnostic_f1(
             str(prediction["root_cause"]),
@@ -548,7 +552,7 @@ async def _evaluate_empirical_episode(
     except Exception as exc:  # noqa: BLE001
         # Preserve every inference or parsing failure; never fall back to mock output.
         prediction = None
-        diagnostic_metrics = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+        diagnostic_metrics = None
         status = "error"
         if isinstance(exc, InferenceResponseError):
             response_error = exc.response_error
@@ -560,7 +564,7 @@ async def _evaluate_empirical_episode(
         "tier": meta.tier,
         "status": status,
         "evaluation_mode": "empirical",
-        "empirical_inference_executed": status == "ok",
+        "empirical_inference_executed": response_received,
         "empirical_claim_allowed": False,
         "inference_backend": inference_backend,
         "observed_model_identity": observed_model_identity,
@@ -579,8 +583,12 @@ async def _evaluate_empirical_episode(
         "env_resolved": None,
         "resolved": None,
         "agent_claimed_resolved": None,
-        "outcome": "diagnosis_only" if status == "ok" else "inference_error",
-        "total_turns": 1 if status == "ok" else 0,
+        "outcome": (
+            "diagnosis_only" if status == "ok"
+            else "invalid_prediction" if parse_attempted
+            else "inference_error"
+        ),
+        "total_turns": 1 if response_received else 0,
         "time_to_resolve_s": None,
         "started_at": started_at,
         "completed_at": datetime.now(UTC).isoformat(),
@@ -798,18 +806,18 @@ async def evaluate_zero_shot_split(
         "non_empirical": selected_mode == "mock" or not configured_backend,
         "empirical_inference_executed": (
             selected_mode == "empirical"
-            and len(valid) == len(episodes)
             and bool(episodes)
+            and all(episode["empirical_inference_executed"] is True for episode in episodes)
         ),
         "empirical_claim_allowed": False,
         "model_identity_attestation": model_identity_attestation,
         "environment_resolution_evaluated": False,
         "resolution_rate": summary["resolution_rate"] if selected_mode == "mock" else None,
         "failed_scenarios": len(episodes) - len(valid),
-        "avg_diagnostic_f1": round(
-            sum(item["diagnostic_metrics"]["f1"] for item in episodes)
-            / max(len(episodes), 1),
-            4,
+        "diagnostic_scored_count": len(valid),
+        "avg_diagnostic_f1": (
+            round(sum(item["diagnostic_metrics"]["f1"] for item in valid) / len(valid), 4)
+            if valid else None
         ),
         "model_revision": model_revision or "not_applicable",
         "inference_backend": selected_backend if selected_mode == "empirical" else "mock",
@@ -835,15 +843,20 @@ async def evaluate_zero_shot_split(
         "raw_predictions_sha256": hashlib.sha256(episodes_file.read_bytes()).hexdigest(),
     }
     if selected_mode == "empirical":
-        diagnostic_by_tier: dict[str, dict[str, float | int]] = {}
+        diagnostic_by_tier: dict[str, dict[str, float | int | None]] = {}
         for tier in sorted({episode["tier"] for episode in episodes}):
             tier_rows = [episode for episode in episodes if episode["tier"] == tier]
+            tier_scored = [episode for episode in tier_rows if episode["status"] == "ok"]
             diagnostic_by_tier[tier] = {
                 "count": len(tier_rows),
-                "avg_diagnostic_f1": round(
-                    sum(row["diagnostic_metrics"]["f1"] for row in tier_rows)
-                    / max(len(tier_rows), 1),
-                    4,
+                "scored_count": len(tier_scored),
+                "avg_diagnostic_f1": (
+                    round(
+                        sum(row["diagnostic_metrics"]["f1"] for row in tier_scored)
+                        / len(tier_scored),
+                        4,
+                    )
+                    if tier_scored else None
                 ),
             }
         summary_updates.update(

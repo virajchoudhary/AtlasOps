@@ -74,10 +74,11 @@ def test_upstream_readme_comparison_covers_each_delivery_area_without_certifying
     ).read_text(encoding="utf-8")
 
     assert "bf9bd197c9f4a05ae55ade254802a9eef1a74356" in matrix
-    assert "7ed2bacb187577d1903a824254363c67e4b767dd" in matrix
-    assert "through PR #81" in matrix
+    assert "c695d84b81842a816589cd8533d38200e0bb2580" in matrix
+    assert "through PR #84" in matrix
     assert "GENERATED_UNAPPROVED" in matrix
     assert "opt-in standalone G9 host channel" in matrix
+    assert "Invalid G6 returned predictions remain unscored" in matrix
     for heading in (
         "Architecture",
         "Track 1",

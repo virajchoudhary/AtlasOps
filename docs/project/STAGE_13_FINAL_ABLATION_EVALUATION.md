@@ -103,10 +103,10 @@ accepted as a substitute for parsing the raw episodes.
 
 The operator-supplied adversarial digest is a trust anchor, not a signed identity or
 approval record, and no approved real adversarial membership record or seed is
-checked in. `bench.sft_eval` currently writes empirical row modes but omits the
-summary-level `split_sha256`; its artifacts will therefore fail this new provenance
-requirement until that emitter is updated. This scoped G13 change does not modify
-the evaluator.
+checked in. `bench.sft_eval` now records the ordered frozen split digest in its
+summary; this software compatibility does not supply a validated SFT checkpoint
+or a claimable empirical G8 artifact. The two integrated variants still lack
+dedicated evaluators.
 
 Metrics remain arithmetic aggregations of values declared in the input summaries;
 they are not recomputed from raw episodes. Every accepted aggregate is explicitly

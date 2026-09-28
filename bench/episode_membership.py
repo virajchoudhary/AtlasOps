@@ -118,6 +118,10 @@ def _parse_raw_jsonl(raw_bytes: bytes) -> list[dict[str, Any]]:
             raise ValueError(f"raw JSONL line {line_number} is not UTF-8") from exc
         except json.JSONDecodeError as exc:
             raise ValueError(f"raw JSONL line {line_number} is malformed JSONL") from exc
+        except RecursionError as exc:
+            raise ValueError(
+                f"raw JSONL line {line_number} exceeds nesting limit"
+            ) from exc
         except ValueError as exc:
             raise ValueError(f"raw JSONL line {line_number}: {exc}") from exc
         if not isinstance(record, dict):

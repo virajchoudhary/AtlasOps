@@ -710,7 +710,9 @@ def test_full_suite_requires_empirical_mode_on_episode_rows(tmp_path):
         ),
         ("{malformed json}\n", "malformed JSONL"),
         ('{"scenario_id":"single_fault/sf-006","value":NaN}\n', "non-finite"),
+        ("[" * 1200 + "0" + "]" * 1200 + "\n", "nesting limit"),
     ],
+    ids=["duplicate-key", "malformed-json", "non-finite", "deeply-nested"],
 )
 def test_full_suite_rejects_malformed_raw_episode_jsonl(
     tmp_path, raw_content, message

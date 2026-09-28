@@ -1904,6 +1904,8 @@ def _stop_port_forwards(processes: list[subprocess.Popen]) -> None:
 
 def _start_port_forwards(
     specs: list[tuple[str, str, int, int]],
+    *,
+    settle_seconds: float = 0,
 ) -> list[subprocess.Popen]:
     processes: list[subprocess.Popen] = []
     try:
@@ -1918,6 +1920,8 @@ def _start_port_forwards(
                     stderr=subprocess.DEVNULL,
                 )
             )
+        if settle_seconds:
+            time.sleep(settle_seconds)
     except BaseException:
         _stop_port_forwards(processes)
         raise
@@ -1977,28 +1981,31 @@ async def _run_experiment() -> dict[str, Any]:
         ("jaeger", "jaeger", 16686, 16686),
         ("argocd", "argocd-server", 18080, 80),
     ]
-    pf_procs = _start_port_forwards(pf_specs)
-    time.sleep(3)  # noqa: ASYNC251
+    pf_procs = _start_port_forwards(pf_specs, settle_seconds=3)
 
-    evidence: dict[str, Any] = {
-        "experiment_id": EXPERIMENT_ID,
-        "scenario_id": SCENARIO_ID,
-        "tier": "single_fault",
-        **stage4_evidence_metadata(),
-        "started_at": start_time,
-        "phases": {},
-    }
+    try:
+        evidence: dict[str, Any] = {
+            "experiment_id": EXPERIMENT_ID,
+            "scenario_id": SCENARIO_ID,
+            "tier": "single_fault",
+            **stage4_evidence_metadata(),
+            "started_at": start_time,
+            "phases": {},
+        }
 
-    def abort_before_fault(phase: str) -> dict[str, Any]:
-        released = release_experiment_reservation(reservation)
-        evidence["attempt_state"] = "RELEASED_PRE_FAULT"
-        evidence["reservation_released"] = released
-        evidence["outcome"] = "INVALID"
-        evidence["failure_phase"] = phase
-        evidence["completed_at"] = datetime.now(UTC).isoformat()
-        prefault_path = _persist_stage4_prefault_failure(evidence)
-        evidence["prefault_evidence"] = prefault_path
-        return evidence
+        def abort_before_fault(phase: str) -> dict[str, Any]:
+            released = release_experiment_reservation(reservation)
+            evidence["attempt_state"] = "RELEASED_PRE_FAULT"
+            evidence["reservation_released"] = released
+            evidence["outcome"] = "INVALID"
+            evidence["failure_phase"] = phase
+            evidence["completed_at"] = datetime.now(UTC).isoformat()
+            prefault_path = _persist_stage4_prefault_failure(evidence)
+            evidence["prefault_evidence"] = prefault_path
+            return evidence
+    except BaseException:
+        _stop_port_forwards(pf_procs)
+        raise
 
     try:
         # Phase 0: Telemetry readiness gate — strictly BEFORE any reservation.
@@ -2127,6 +2134,18 @@ async def _run_experiment() -> dict[str, Any]:
         # Treat an apply timeout/error as potentially side-effecting until
         # postflight proves the target resource is absent.
         _current_main_sha(expected_sha=main_sha)
+        immediate_chaos_check = run_kubectl(
+            ["get", CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        )
+        immediate_observation = _chaos_state_observation(immediate_chaos_check)
+        evidence["phases"]["immediate_pre_apply_chaos_check"] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "active_chaos_count": immediate_observation["count"],
+            "verified_zero": immediate_observation["verified_zero"],
+            "result": immediate_chaos_check,
+        }
+        if not immediate_observation["verified_zero"]:
+            return abort_before_fault("immediate_pre_apply_chaos_not_zero")
         fault_crossed = True
         inject_res = run_kubectl(["apply", "-f", manifest_path])
         injection_success = inject_res.get("success") is True

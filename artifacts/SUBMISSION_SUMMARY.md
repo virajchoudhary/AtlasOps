@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T08:36:28.788205+00:00`
+- **Generated**: `2026-09-28T08:48:40.879906+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -149,7 +149,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
-| `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `896bb15325033327...` | 7909 |
+| `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `043dd1f3109cb08f...` | 8353 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `e6ee5dacc9679120...` | 26128 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
@@ -176,7 +176,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `scripts/package_submission.py` | `80b50e717284190f...` | 12552 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `5deaeec192b580db...` | 12070 |
-| `scripts/run_stage4_golden_incident.py` | `6092e459f251a4ae...` | 98626 |
+| `scripts/run_stage4_golden_incident.py` | `cb442ffea89f2cd5...` | 99511 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
 | `static/console.js` | `277ba766de0a84b2...` | 64395 |
 | `static/index.html` | `d2d907afdfd046c5...` | 4760 |
@@ -249,7 +249,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage4_f1_envelope_contract.py` | `12d60e468e760a64...` | 5200 |
 | `tests/test_stage4_grounding_evidence.py` | `c6feaab32aabda8c...` | 1472 |
 | `tests/test_stage4_model_selection.py` | `dea87ab61b7be494...` | 6249 |
-| `tests/test_stage4_preflight_contract.py` | `8c805c8194b19db5...` | 27906 |
+| `tests/test_stage4_preflight_contract.py` | `8582a9082e024d79...` | 33085 |
 | `tests/test_stage4_telemetry_readiness.py` | `40246fa1582f6d15...` | 16291 |
 | `tests/test_stage5_scenario_splits_and_truth.py` | `af7025be02ca7b27...` | 5364 |
 | `tests/test_stage6_zero_shot_baseline.py` | `483ea70196282110...` | 6032 |

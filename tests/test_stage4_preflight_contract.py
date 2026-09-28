@@ -474,6 +474,71 @@ def test_new_chaos_after_reservation_releases_marker_before_apply(
     assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 
+@pytest.mark.parametrize(
+    "final_result",
+    [
+        {"success": True, "stdout": '{"items":[{"kind":"StressChaos"}]}'},
+        {"success": False, "stdout": '{"items":[]}'},
+    ],
+)
+def test_final_chaos_read_after_source_check_blocks_apply(
+    isolated_runner, monkeypatch, final_result,
+):
+    experiment_id = "EXP-STAGE4-SF002-FINAL-CHAOS-DRIFT"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    events = []
+    monkeypatch.setattr(
+        runner, "_current_main_sha",
+        lambda **_kwargs: events.append("source") or MAIN_SHA,
+    )
+    _install_mocked_preflight_edges(monkeypatch)
+
+    def kubectl(args, timeout=20):
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        events.append("chaos_read")
+        if events.count("chaos_read") == 3:
+            return final_result
+        return {"success": True, "stdout": '{"items":[]}'}
+
+    def reserve(*_args, **_kwargs):
+        events.append("reserve")
+        return {
+            "experiment_id": experiment_id,
+            "state": runner.ATTEMPT_STATE_RESERVED,
+            "reservation_token": "synthetic-reservation-token",
+            "protocol_profile": {"model": {"name": runner.SELECTED_STAGE4_AGENT_MODEL}},
+            "protocol_fingerprint": "synthetic-protocol-fingerprint",
+            "main_sha": MAIN_SHA,
+        }
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    monkeypatch.setattr(runner, "reserve_experiment_attempt", reserve)
+    monkeypatch.setattr(
+        runner, "_persist_stage4_preflight_evidence",
+        lambda *_args: events.append("durable_preflight") or "synthetic-preflight",
+    )
+    monkeypatch.setattr(
+        runner, "release_experiment_reservation",
+        lambda *_args: events.append("release") or True,
+    )
+    monkeypatch.setattr(
+        runner, "_persist_stage4_prefault_failure",
+        lambda *_args: events.append("prefault_evidence") or "synthetic-prefault",
+    )
+    result = asyncio.run(runner._run_experiment())
+
+    assert events == [
+        "source", "source", "chaos_read", "reserve", "chaos_read",
+        "durable_preflight", "source", "chaos_read", "release", "prefault_evidence",
+    ]
+    assert result["failure_phase"] == "immediate_pre_apply_chaos_not_zero"
+    assert result["reservation_released"] is True
+    assert result["attempt_state"] == "RELEASED_PRE_FAULT"
+    assert result["phases"]["immediate_pre_apply_chaos_check"]["result"] == final_result
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
+
+
 class _ProcessStub:
     def terminate(self):
         return None
@@ -516,6 +581,79 @@ def test_partial_port_forward_startup_cleans_started_process(
     with pytest.raises(OSError, match="synthetic second forward failure"):
         asyncio.run(runner._run_experiment())
     assert events == ["start", "start", "terminate", "wait"]
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
+
+
+def test_port_forward_startup_interrupt_cleans_every_started_process(
+    isolated_runner, monkeypatch,
+):
+    experiment_id = "EXP-STAGE4-SF002-INTERRUPTED-FORWARD"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    events = []
+
+    class StartedForward:
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout=None):
+            events.append("wait")
+
+    def popen(*_args, **_kwargs):
+        events.append("start")
+        return StartedForward()
+
+    def interrupted_sleep(_seconds):
+        events.append("settle")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner.subprocess, "Popen", popen)
+    monkeypatch.setattr(runner.time, "sleep", interrupted_sleep)
+    monkeypatch.setattr(
+        runner, "wait_for_telemetry_readiness",
+        lambda: pytest.fail("telemetry read after interrupted startup"),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(runner._run_experiment())
+    assert events == (
+        ["start"] * 5 + ["settle"] + ["terminate"] * 5 + ["wait"] * 5
+    )
+    assert not Path(runner._attempt_marker_path(experiment_id)).exists()
+
+
+def test_port_forwards_stop_if_evidence_setup_is_interrupted(
+    isolated_runner, monkeypatch,
+):
+    experiment_id = "EXP-STAGE4-SF002-INTERRUPTED-EVIDENCE"
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
+    monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    events = []
+
+    class StartedForward:
+        def terminate(self):
+            events.append("terminate")
+
+        def wait(self, timeout=None):
+            events.append("wait")
+
+    monkeypatch.setattr(
+        runner.subprocess, "Popen",
+        lambda *_args, **_kwargs: events.append("start") or StartedForward(),
+    )
+    monkeypatch.setattr(
+        runner, "stage4_evidence_metadata",
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        runner, "wait_for_telemetry_readiness",
+        lambda: pytest.fail("telemetry read after interrupted evidence setup"),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(runner._run_experiment())
+    assert events == ["start"] * 5 + ["terminate"] * 5 + ["wait"] * 5
     assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 

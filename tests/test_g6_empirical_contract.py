@@ -46,6 +46,58 @@ def test_invalid_confidence_is_not_scored_as_numeric_inference(tmp_path, confide
     assert all(row["error"].startswith("ValueError: invalid_response") for row in rows)
     assert all(row["empirical_claim_allowed"] is False for row in rows)
     assert all(row["raw_model_response"] for row in rows)
+    assert all(row["empirical_inference_executed"] is True for row in rows)
+    assert all(row["diagnostic_metrics"] is None for row in rows)
+    assert all(row["outcome"] == "invalid_prediction" and row["total_turns"] == 1 for row in rows)
+    assert summary["empirical_inference_executed"] is True
+    assert summary["diagnostic_scored_count"] == 0
+    assert summary["avg_diagnostic_f1"] is None
+    assert all(
+        tier["scored_count"] == 0 and tier["avg_diagnostic_f1"] is None
+        for tier in summary["per_tier"].values()
+    )
+
+
+def test_diagnostic_average_excludes_invalid_returned_predictions(tmp_path):
+    calls = 0
+
+    async def inference(_messages, _model_name, _generation_config):
+        nonlocal calls
+        calls += 1
+        return json.dumps({
+            "root_cause": "service saturation under load",
+            "affected_services": ["paymentservice"],
+            "confidence": 0.6 if calls == 1 else math.nan,
+        })
+
+    output = tmp_path / "mixed"
+    summary = asyncio.run(zero_shot.evaluate_zero_shot_split(
+        "val",
+        mode="empirical",
+        model_revision="synthetic-test-revision",
+        output_dir=output,
+        inference_fn=inference,
+    ))
+    rows = [
+        json.loads(line)
+        for line in (output / "results_per_episode.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    scored = [row for row in rows if row["status"] == "ok"]
+    assert calls == len(VAL_SPLIT)
+    assert len(scored) == 1
+    assert summary["failed_scenarios"] == len(VAL_SPLIT) - 1
+    assert summary["diagnostic_scored_count"] == 1
+    assert summary["avg_diagnostic_f1"] == round(scored[0]["diagnostic_metrics"]["f1"], 4)
+    assert sum(tier["scored_count"] for tier in summary["per_tier"].values()) == 1
+    assert all(
+        tier["avg_diagnostic_f1"] is None
+        for tier in summary["per_tier"].values()
+        if tier["scored_count"] == 0
+    )
+    assert summary["empirical_inference_executed"] is True
+    assert summary["empirical_claim_allowed"] is False
 
 
 @pytest.mark.parametrize("confidence", [0, 0.4, 1])
@@ -871,6 +923,8 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
     assert calls == len(VAL_SPLIT)
     assert summary["failed_scenarios"] == len(VAL_SPLIT)
     assert summary["empirical_inference_executed"] is False
+    assert summary["diagnostic_scored_count"] == 0
+    assert summary["avg_diagnostic_f1"] is None
     rows = [
         json.loads(line)
         for line in (tmp_path / "results_per_episode.jsonl")
@@ -878,6 +932,8 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
         .splitlines()
     ]
     assert all(row["status"] == "error" for row in rows)
+    assert all(row["empirical_inference_executed"] is False for row in rows)
+    assert all(row["diagnostic_metrics"] is None for row in rows)
     assert all(row["evaluation_mode"] == "empirical" for row in rows)
     assert all("mock" not in row for row in rows)
     assert all(row["error"] == "RuntimeError: inference_failure; details redacted" for row in rows)

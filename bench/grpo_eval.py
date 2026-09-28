@@ -16,12 +16,18 @@ import math
 import os
 import re
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from agents.approval import ApprovalGate
+from agents.approval_http import (
+    OPERATOR_APPROVAL_TIMEOUT_SECONDS,
+    loopback_approval_server,
+)
 from agents.coordinator import _check_tool_policy
 from agents.tools import TOOL_REGISTRY
 from agents.verifier import verify_environment
@@ -32,6 +38,7 @@ from config.splits import get_split
 from training.grpo_environment import (
     DirectPolicyEnvironment,
     parse_policy_action,
+    policy_action_requires_operator_approval,
     require_live_kube_context,
     uses_builtin_tool_registry,
 )
@@ -697,6 +704,7 @@ async def evaluate_grpo_episode(
     event_sink: Callable[[dict[str, Any]], None] | None = None,
     execute_actions: bool = False,
     kube_context: str | None = None,
+    approval_gate: ApprovalGate | None = None,
 ) -> dict[str, Any]:
     """Run one trajectory, submitting each raw completion as one environment step.
 
@@ -707,6 +715,8 @@ async def evaluate_grpo_episode(
     mode = evaluation_mode.upper()
     if mode not in {"EMPIRICAL", "NON_EMPIRICAL"}:
         raise ValueError("evaluation_mode must be EMPIRICAL or NON_EMPIRICAL")
+    if mode == "NON_EMPIRICAL" and approval_gate is not None:
+        raise ValueError("NON_EMPIRICAL G9 evaluation cannot use an operator approval gate")
     if mode == "NON_EMPIRICAL" and (
         isinstance(environment, DirectPolicyEnvironment)
         or uses_builtin_tool_registry(getattr(environment, "tool_registry", None))
@@ -732,12 +742,21 @@ async def evaluate_grpo_episode(
         raise TypeError("G9 evaluation requires an explicit one-step environment interface")
     if mode == "EMPIRICAL" and not _authoritative_environment(environment, live_context):
         raise ValueError("Empirical G9 evaluation requires the built-in tool and environment verifier")
+    if approval_gate is not None and environment._action_approval_gate is not approval_gate:
+        raise ValueError("Empirical G9 operator gate must be bound to its environment")
     if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
         raise ValueError("Evaluation seed must be a non-negative integer")
     if not isinstance(max_steps, int) or isinstance(max_steps, bool) or max_steps <= 0:
         raise ValueError("max_steps must be a positive integer")
     config = _normalize_generation_config(generation_config)
     state = _public_policy_state(initial_state)
+    if mode == "EMPIRICAL":
+        triage = state.get("triage")
+        state["triage"] = {
+            **(triage if isinstance(triage, dict) else {}),
+            "severity": "P1",
+        }
+        state["incident_id"] = f"g9-eval-{uuid.uuid4().hex}"
     episode_started = time.monotonic()
     started_at = _utc_now()
     trajectory: list[dict[str, Any]] = []
@@ -799,7 +818,11 @@ async def evaluate_grpo_episode(
             emit({"event": "episode_interrupted", "scenario_id": scenario_id, "step": step_index})
             raise
         except Exception as exc:  # noqa: BLE001 - preserve model/runtime failures in the trajectory
-            failure = f"policy_generation_error: {type(exc).__name__}: {exc}"
+            failure = (
+                f"policy_generation_error: {type(exc).__name__}"
+                if mode == "EMPIRICAL"
+                else f"policy_generation_error: {type(exc).__name__}: {exc}"
+            )
             emit(
                 {
                     "event": "step_failure",
@@ -838,12 +861,59 @@ async def evaluate_grpo_episode(
         # Persist the exact proposal before submitting it to an environment that may mutate state.
         emit(proposal)
 
+        approval_record = None
+        permit = None
+        if (
+            approval_gate is not None
+            and parsed_action is not None
+            and policy_action_requires_operator_approval(parsed_action, state)
+        ):
+            try:
+                request = approval_gate.request_action(
+                    incident_id=state["incident_id"],
+                    severity="P1",
+                    action=parsed_action,
+                    operator_scope={
+                        "kube_context": live_context,
+                        "scenario_id": scenario_id,
+                    },
+                )
+            except (TypeError, ValueError, RuntimeError) as exc:
+                approval_record = {"decision": "request_failed", "error_type": type(exc).__name__}
+            else:
+                emit({
+                    "event": "approval_requested",
+                    "scenario_id": scenario_id,
+                    "step": step_index,
+                    "incident_id": state["incident_id"],
+                    "action_digest": request.action_digest,
+                })
+                decision, permit = await approval_gate.wait_for_action_decision(
+                    state["incident_id"], request_token=request.token
+                )
+                approval_record = {
+                    "decision": decision.get("status"),
+                    "approved_by": decision.get("approved_by"),
+                    "action_digest": request.action_digest,
+                }
+            emit({
+                "event": "approval_decision",
+                "scenario_id": scenario_id,
+                "step": step_index,
+                "approval": approval_record,
+            })
+
         try:
+            step_kwargs = (
+                {"_action_approval_permit": permit}
+                if approval_gate is not None else {}
+            )
             environment_result = await _maybe_await(
                 environment.step(
                     completion_text,
                     scenario_id=scenario_id,
                     state=state,
+                    **step_kwargs,
                 )
             )
         except asyncio.CancelledError:
@@ -862,6 +932,7 @@ async def evaluate_grpo_episode(
                 "state": state,
                 "raw_policy_output": completion_text,
                 "parsed_action": parsed_action,
+                "approval": approval_record,
                 "parse_error": parse_error,
                 "submitted_at": _utc_now(),
                 "environment_result": None,
@@ -949,6 +1020,7 @@ async def evaluate_grpo_episode(
             "state": state,
             "raw_policy_output": completion_text,
             "parsed_action": parsed_action,
+            "approval": approval_record,
             "parse_error": parse_error,
             "executed_action": (
                 result_mapping.get("executed_actions", [None])[0]
@@ -1122,6 +1194,7 @@ async def evaluate_grpo_split(
     device: str | None = None,
     execute_actions: bool = False,
     kube_context: str | None = None,
+    approval_gate: ApprovalGate | None = None,
 ) -> dict[str, Any]:
     """Evaluate a frozen split; real evaluation never falls back to mocks.
 
@@ -1130,6 +1203,8 @@ async def evaluate_grpo_split(
     writes outputs marked NON_EMPIRICAL.
     """
     if mock:
+        if approval_gate is not None:
+            raise ValueError("Mock mode cannot use an operator approval gate")
         if checkpoint is not None:
             raise ValueError("Mock mode cannot be combined with an empirical checkpoint")
         return await _evaluate_mock_split(
@@ -1152,6 +1227,8 @@ async def evaluate_grpo_split(
         raise ValueError(
             "Empirical G9 evaluation requires the built-in tools with the selected Kubernetes context"
         )
+    if approval_gate is not None and environment._action_approval_gate is not approval_gate:
+        raise ValueError("Empirical G9 operator gate must be bound to its environment")
     if output_dir is None:
         raise ValueError("Empirical G9 evaluation requires an explicit output directory")
     if split_name.strip().lower() == "train":
@@ -1194,6 +1271,7 @@ async def evaluate_grpo_split(
                     "execute_actions": execute_actions,
                     "kube_context": kube_context,
                 },
+                "operator_approval_enabled": approval_gate is not None,
                 "provenance": provenance.to_record(),
                 "evaluator_source": evaluator_source,
             }
@@ -1213,6 +1291,7 @@ async def evaluate_grpo_split(
                     event_sink=persist,
                     execute_actions=execute_actions,
                     kube_context=kube_context,
+                    approval_gate=approval_gate,
                 )
                 episode["split"] = split_name
                 episode["split_sha256"] = split_sha256
@@ -1240,7 +1319,7 @@ async def evaluate_grpo_split(
                     "resolved": False,
                     "env_resolved": False,
                     "reward": None,
-                    "failure": f"{type(exc).__name__}: {exc}",
+                    "failure": f"{type(exc).__name__}",
                     "seed": seed + index,
                     "generation_config": config,
                     "started_at": _utc_now(),
@@ -1325,6 +1404,7 @@ async def evaluate_grpo_split(
                 "execute_actions": execute_actions,
                 "kube_context": kube_context,
             },
+            "operator_approval_enabled": approval_gate is not None,
             "provenance": provenance.to_record(),
             "evaluator_source": evaluator_source,
             "model": provenance.base_model["id"],
@@ -1420,11 +1500,17 @@ def main() -> None:
     parser.add_argument("--device")
     parser.add_argument("--execute-actions", action="store_true", help="Allow policy actions to reach the configured environment tools")
     parser.add_argument("--kube-context", help="Named Kubernetes context for every G9 tool and verifier call")
+    parser.add_argument(
+        "--enable-p1-approval", action="store_true",
+        help="Start a same-process localhost operator channel for exact P1 actions",
+    )
     parser.add_argument("--mock", action="store_true", help="Run deterministic NON_EMPIRICAL compatibility fixtures")
     parser.add_argument("--model", default="qwen2.5:7b-instruct-grpo", help="NON_EMPIRICAL compatibility label")
     args = parser.parse_args()
 
     if args.mock:
+        if args.enable_p1_approval:
+            parser.error("--mock cannot be combined with --enable-p1-approval")
         asyncio.run(
             evaluate_grpo_split(
                 args.split,
@@ -1446,28 +1532,48 @@ def main() -> None:
         )
     except (PermissionError, ValueError) as exc:
         parser.error(str(exc))
-    asyncio.run(
-        evaluate_grpo_split(
-            args.split,
-            checkpoint=args.checkpoint,
-            state_provider=lambda scenario_id: _load_public_state(args.state_dir, scenario_id),
-            environment=DirectPolicyEnvironment(
-                execute_live_chaos=args.execute_actions,
-                kube_context=kube_context,
-            ),
-            seed=args.seed,
-            generation_config={
-                "max_new_tokens": args.max_new_tokens,
-                "temperature": args.temperature,
-                "top_p": args.top_p,
-            },
-            max_steps=args.max_steps,
-            output_dir=args.output_dir,
-            device=args.device,
-            execute_actions=args.execute_actions,
-            kube_context=kube_context,
+    if args.enable_p1_approval and not os.getenv("ATLASOPS_API_KEY", "").strip():
+        parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
+
+    async def evaluate_with_operator_channel():
+        gate = (
+            ApprovalGate(timeout_seconds=OPERATOR_APPROVAL_TIMEOUT_SECONDS)
+            if args.enable_p1_approval else None
         )
-    )
+
+        async def run():
+            return await evaluate_grpo_split(
+                args.split,
+                checkpoint=args.checkpoint,
+                state_provider=lambda scenario_id: _load_public_state(args.state_dir, scenario_id),
+                environment=DirectPolicyEnvironment(
+                    execute_live_chaos=args.execute_actions,
+                    kube_context=kube_context,
+                    _action_approval_gate=gate,
+                ),
+                seed=args.seed,
+                generation_config={
+                    "max_new_tokens": args.max_new_tokens,
+                    "temperature": args.temperature,
+                    "top_p": args.top_p,
+                },
+                max_steps=args.max_steps,
+                output_dir=args.output_dir,
+                device=args.device,
+                execute_actions=args.execute_actions,
+                kube_context=kube_context,
+                approval_gate=gate,
+            )
+
+        if gate is None:
+            return await run()
+        async with loopback_approval_server(
+            gate, os.environ["ATLASOPS_API_KEY"].strip()
+        ) as base_url:
+            log.warning("G9 host operator approval endpoint: %s/approval/pending", base_url)
+            return await run()
+
+    asyncio.run(evaluate_with_operator_channel())
 
 
 if __name__ == "__main__":

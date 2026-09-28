@@ -49,9 +49,7 @@ from scripts.run_stage4_golden_incident import (
 
 def _attempt_root() -> str:
     root = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "scratch"
-        / "stage4-attempt-tests"
+        pathlib.Path(os.environ["_ATLASOPS_TEST_ATTEMPT_ROOT"])
         / uuid.uuid4().hex
     )
     root.mkdir(parents=True, exist_ok=True)
@@ -72,6 +70,15 @@ def test_experiment_id_cannot_escape_evidence_root(tmp_path, experiment_id):
 
 @pytest.fixture(autouse=True)
 def isolated_protocol_runtime(monkeypatch, tmp_path):
+    monkeypatch.setenv("_ATLASOPS_TEST_ATTEMPT_ROOT", str(tmp_path / "attempts"))
+    monkeypatch.setenv("TRAJECTORIES_DIR", str(tmp_path / "trajectories"))
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "synthetic-stage4-test-secret")
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    import agents.tools.comms as comms
+
+    monkeypatch.setattr(comms, "_LOG_PATH", tmp_path / "slack_posts.jsonl")
+    monkeypatch.setattr(comms, "SLACK_WEBHOOK", "")
+    monkeypatch.setattr(comms, "DISCORD_WEBHOOK", "")
     postmortem_dir = tmp_path / "postmortems"
     postmortem_dir.mkdir()
     monkeypatch.setenv("POSTMORTEM_DIR", str(postmortem_dir))
@@ -657,6 +664,10 @@ def _preflight_record() -> dict:
         "phases": {
             "telemetry_readiness": {"ready": True},
             "baseline": {"baseline_healthy": True},
+            "pre_reservation_chaos_check": {
+                "verified_zero": True,
+                "result": {"success": True, "stdout": json.dumps({"items": []})},
+            },
         },
     }
 
@@ -672,6 +683,7 @@ def test_clean_preflight_must_be_verified_and_persisted_immutably(tmp_path):
     )
     record = json.loads(path.read_text(encoding="utf-8"))
     assert record["zero_chaos_preflight"]["verified_zero"] is True
+    assert record["zero_chaos_pre_reservation"]["verified_zero"] is True
     assert evidence["preflight_evidence"]["persisted_before_injection"] is True
     with pytest.raises(RuntimeError, match="overwrite Stage 4 preflight"):
         _persist_stage4_preflight_evidence(
@@ -687,6 +699,27 @@ def test_preflight_does_not_persist_when_zero_chaos_query_failed(tmp_path):
         _persist_stage4_preflight_evidence(
             evidence,
             {"success": False, "stdout": json.dumps({"items": []})},
+            root=str(tmp_path),
+        )
+    assert not list((tmp_path / "artifacts" / "evidence" / "stage4").glob("*.preflight.json"))
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_preflight_refuses_missing_or_failed_pre_reservation_chaos(
+    tmp_path, missing,
+):
+    evidence = _preflight_record()
+    if missing:
+        evidence["phases"].pop("pre_reservation_chaos_check")
+    else:
+        evidence["phases"]["pre_reservation_chaos_check"] = {
+            "verified_zero": True,
+            "result": {"success": False, "stdout": json.dumps({"items": []})},
+        }
+    with pytest.raises(RuntimeError, match="incomplete or unverified"):
+        _persist_stage4_preflight_evidence(
+            evidence,
+            {"success": True, "stdout": json.dumps({"items": []})},
             root=str(tmp_path),
         )
     assert not list((tmp_path / "artifacts" / "evidence" / "stage4").glob("*.preflight.json"))

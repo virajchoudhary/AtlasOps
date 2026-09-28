@@ -17,10 +17,14 @@ The required relationship is:
   are policy checked and executed; no second operational model is invoked.
 - P1 requires explicit approval. The coordinator-backed `rl_policy` path requests
   approval for the exact parsed tool and arguments, then consumes a one-use
-  incident/action-bound permit. Standalone training and evaluation do not yet
-  expose a positive operator channel and keep P1 mutation blocked. P0 remains
-  manual; unknown alert severity cannot enter the automatic P2 path. P2/P3
-  follow the configured automatic approval policy.
+  incident/action-bound permit. Standalone training and evaluation now have a
+  prospective [host-local operator channel](G9_PROTOCOL_STANDALONE_P1_APPROVAL.md)
+  behind a separate `--enable-p1-approval` opt-in and explicit environment key.
+  Its synthetic process-boundary tests are not live operator evidence. Without
+  that opt-in, P1 mutation stays blocked. Evaluation treats untrusted
+  public-state severity as P1 for mutation. P0 remains manual; unknown alert
+  severity cannot enter the automatic P2 path. P2/P3 in training follow the
+  configured policy only with authoritative alert severity.
 - Rollback and Chaos stop require matching positive live history/resource observations
   immediately before the mutation.
 - The environment executes at most one mutation before settling and verifier observation.
@@ -29,6 +33,9 @@ The required relationship is:
   another rollout starts. Failed attempts remain in the raw rollout ledger.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
+- A missing real alert or failed fault application yields an unscorable failed
+  rollout with null reward and stops training; it is not a zero-valued policy
+  outcome.
 - The prospective direct-action reward uses only conclusive objective verifier
   checks: `0.75` for verified resolution plus `0.25` times required-check
   coverage, minus `0.25` for a false resolution claim. Multi-step evaluation
@@ -67,9 +74,12 @@ are not trained-policy measurements.
 
 ## Current Verification
 
-Local tests cover direct action execution, approval and policy blocking, verifier authority,
+Local tests cover direct action execution, approval and policy blocking, the
+prospective host-local callback, verifier authority,
 settling order, resolved termination, Train/Val/Test isolation, checkpoint integrity, raw
 trajectory preservation, and mock isolation. Real training requires an approved model,
-the ML dependency stack, and a controlled live environment with serialized mutations.
+the ML dependency stack, a reviewed operator protocol, and a controlled live
+environment with serialized mutations. No standalone positive P1 decision has
+been observed in a real experiment.
 
 **Gate G9 Status: REOPENED**

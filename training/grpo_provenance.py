@@ -198,6 +198,24 @@ def validate_training_summary(
         raise ValueError("Training summary generation configuration differs from the run manifest")
     if summary.get("live_execution") != training.get("live_execution"):
         raise ValueError("Training summary live execution differs from the run manifest")
+    operator_approval = training.get("operator_approval")
+    if operator_approval is not None:
+        if (
+            not isinstance(operator_approval, Mapping)
+            or set(operator_approval) != {"mode", "timeout_seconds", "identity"}
+            or operator_approval.get("mode") not in {
+                "disabled", "loopback_exact_action_v1",
+            }
+            or operator_approval.get("timeout_seconds") != (
+                300 if operator_approval.get("mode") == "loopback_exact_action_v1"
+                else None
+            )
+            or operator_approval.get("identity")
+            != "operator_supplied_name_not_independent_attestation"
+        ):
+            raise ValueError("GRPO operator approval profile is invalid")
+        if summary.get("operator_approval") != dict(operator_approval):
+            raise ValueError("Training summary operator approval differs from the run manifest")
 
 
 def validate_optuna_best(

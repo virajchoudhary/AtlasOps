@@ -38,6 +38,7 @@ class ApprovalRequest:
     action: dict[str, Any] | None = None
     action_digest: str | None = None
     action_summary: str | None = None
+    operator_scope: dict[str, str] | None = None
     waiter_active: bool = False
     event: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -58,6 +59,8 @@ class ApprovalRequest:
             )
             record["action_digest"] = self.action_digest
             record["action_summary"] = self.action_summary
+            if self.operator_scope is not None:
+                record["operator_scope"] = dict(self.operator_scope)
         return record
 
 
@@ -115,6 +118,7 @@ class ApprovalGate:
         incident_id: str,
         severity: str,
         action: Mapping[str, Any],
+        operator_scope: Mapping[str, str] | None = None,
     ) -> ApprovalRequest:
         if incident_id in self._pending_by_incident:
             raise RuntimeError("An approval request is already pending for this incident")
@@ -138,6 +142,14 @@ class ApprovalGate:
             )
         )
         action_summary = f"{tool} arguments={canonical_arguments}"
+        scope = None
+        if operator_scope is not None:
+            scope = dict(operator_scope)
+            if (
+                set(scope) != {"kube_context", "scenario_id"}
+                or any(not isinstance(value, str) or not value.strip() for value in scope.values())
+            ):
+                raise ValueError("Operator scope requires a Kubernetes context and scenario ID")
         return self._register_request(
             ApprovalRequest(
                 incident_id=incident_id,
@@ -146,6 +158,7 @@ class ApprovalGate:
                 action=action_record,
                 action_digest=digest,
                 action_summary=action_summary,
+                operator_scope=scope,
             )
         )
 

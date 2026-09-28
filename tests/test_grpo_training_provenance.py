@@ -16,6 +16,7 @@ from training.grpo_provenance import (
     has_verified_final_rollout,
     persist_status,
     validate_sft_parent,
+    validate_training_summary,
 )
 from training.sft_provenance import (
     canonical_json_sha256,
@@ -118,6 +119,27 @@ def _planned_manifest():
     }
     manifest["training"]["hyperparameter_selection"] = "requested"
     return manifest
+
+
+def test_operator_approval_profile_must_match_training_summary():
+    training = _planned_manifest()["training"]
+    training["operator_approval"] = {
+        "mode": "loopback_exact_action_v1",
+        "timeout_seconds": 300,
+        "identity": "operator_supplied_name_not_independent_attestation",
+    }
+    summary = {
+        "requested_hyperparameters": training["requested_hyperparameters"],
+        "effective_hyperparameters": training["effective_hyperparameters"],
+        "hyperparameter_selection": training["hyperparameter_selection"],
+        "generation_config": training["generation_config"],
+        "live_execution": training["live_execution"],
+        "operator_approval": {"mode": "disabled", "timeout_seconds": None},
+    }
+    with pytest.raises(ValueError, match="operator approval"):
+        validate_training_summary(training, summary)
+    summary["operator_approval"] = training["operator_approval"]
+    validate_training_summary(training, summary)
 
 
 def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
@@ -542,6 +564,7 @@ def test_main_records_optuna_effective_hyperparameters_separately(
                 "hyperparameter_selection": "optuna",
                 "generation_config": run_manifest["training"]["generation_config"],
                 "live_execution": run_manifest["training"]["live_execution"],
+                "operator_approval": run_manifest["training"]["operator_approval"],
             }),
             encoding="utf-8",
         )
@@ -843,7 +866,10 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         "beta": 0.01,
         "num_generations": 4,
     }
-    assert observed["reward_options"] == expected_live_execution
+    assert observed["reward_options"] == {
+        **expected_live_execution,
+        "operator_approval_enabled": False,
+    }
     assert {
         key: observed["model_options"][key]
         for key in expected_live_execution

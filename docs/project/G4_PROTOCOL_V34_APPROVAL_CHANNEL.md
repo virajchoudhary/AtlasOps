@@ -54,14 +54,20 @@ These are platform/control-path faults, not evidence of a model outcome.
   successful cluster-wide zero-Chaos observation must all pass before writing
   a reservation marker. A failed or nonempty Chaos read returns
   `PREFLIGHT_ABORT / NOT_RESERVED` without injection. After reservation and
-  profile observation, the runner reads the cluster-wide Chaos inventory
-  again immediately before apply. Drift releases the unused reservation.
-  The durable preflight record requires both raw successful zero-Chaos reads;
-  a claimed `verified_zero` field cannot replace either observation.
+  profile observation, the runner reads the cluster-wide Chaos inventory for
+  the durable preflight record. After persisting that record and rechecking the
+  approved source, it reads the inventory a third time immediately before
+  apply. Failure or drift releases the unused reservation and records the
+  final read in the pre-fault failure evidence; a successful final read is
+  retained in the primary attempt evidence. The durable preflight record
+  requires the first two raw successful zero-Chaos reads; a claimed
+  `verified_zero` field cannot replace either observation. This final read
+  does not lock the cluster against another actor changing it afterward.
 - Host-local port-forwards are scoped to this runner. A partial startup
-  failure terminates and waits for the processes already launched; normal
-  exit and preflight abort also stop them. A failed tunnel cannot leave an
-  unaccounted helper running while the attempt remains unreserved.
+  failure or interruption during startup settling terminates and waits for
+  the processes already launched; normal exit and preflight abort also stop
+  them. A failed tunnel cannot leave an unaccounted helper running while the
+  attempt remains unreserved.
 - The runner starts an authenticated HTTP listener on an ephemeral
   `127.0.0.1` port in the **same event loop and process** as `handle_incident`.
   Only `POST /approve` and `GET /approval/pending` are exposed. The listener

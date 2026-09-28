@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T04:50:03.962620+00:00`
+- **Generated**: `2026-09-28T05:10:11.189204+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -134,7 +134,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/grpo_eval.py` | `f50d531c56849fdf...` | 66595 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `f6b12f8eb75b88af...` | 25633 |
-| `bench/zero_shot_baseline.py` | `0fd29bd11f415b3c...` | 35215 |
+| `bench/zero_shot_baseline.py` | `6a5dbaf4829e0546...` | 35314 |
 | `config/g4_protocol.py` | `93d21d216180ca98...` | 21155 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
 | `config/scenario_catalog.py` | `6d94db05f8d2e956...` | 27577 |
@@ -158,7 +158,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
-| `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `c226e170dc119c75...` | 3958 |
+| `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `6460361f5f31b9c8...` | 4039 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6b648f935a3cf168...` | 4552 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `06289e0ec3b252e0...` | 2809 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
@@ -207,7 +207,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g4_protocol_profile.py` | `062b4869df3fc22e...` | 19476 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `79debd0c2024bea2...` | 22071 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `91ffe657a66083a0...` | 24216 |
-| `tests/test_g6_empirical_contract.py` | `a1c4b822a9bf80ea...` | 29670 |
+| `tests/test_g6_empirical_contract.py` | `7d94404a2e426ff3...` | 31302 |
 | `tests/test_g8_empirical_contract.py` | `2f358c8dd141fdab...` | 22972 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
 | `tests/test_g9_direct_policy_environment.py` | `e9ba20e24448d60d...` | 48704 |

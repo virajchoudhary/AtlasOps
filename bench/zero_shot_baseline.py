@@ -14,6 +14,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import math
 import os
 import platform
 import re
@@ -394,7 +395,11 @@ def _parse_prediction(raw_text: str) -> dict[str, Any]:
     if not isinstance(affected, list) or not all(isinstance(item, str) for item in affected):
         raise ValueError("affected_services must be a list of strings")
     confidence = payload.get("confidence")
-    if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
+    if (
+        type(confidence) not in (int, float)
+        or (type(confidence) is float and not math.isfinite(confidence))
+        or not 0.0 <= confidence <= 1.0
+    ):
         raise ValueError("confidence must be a number between 0 and 1")
     return payload
 

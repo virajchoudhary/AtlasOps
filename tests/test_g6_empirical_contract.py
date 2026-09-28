@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import math
 
 import httpx
 import pytest
@@ -12,6 +14,48 @@ import pytest
 import bench.zero_shot_baseline as zero_shot
 from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import VAL_SPLIT
+
+
+@pytest.mark.parametrize(
+    "confidence", [True, False, math.nan, math.inf, -math.inf, -0.1, 1.1, 10**500]
+)
+def test_invalid_confidence_is_not_scored_as_numeric_inference(tmp_path, confidence):
+    async def inference(_messages, _model_name, _generation_config):
+        return json.dumps({
+            "root_cause": "service saturation under load",
+            "affected_services": ["paymentservice"],
+            "confidence": confidence,
+        })
+
+    output = tmp_path / "run"
+    summary = asyncio.run(zero_shot.evaluate_zero_shot_split(
+        "val",
+        mode="empirical",
+        model_revision="synthetic-test-revision",
+        output_dir=output,
+        inference_fn=inference,
+    ))
+    rows = [
+        json.loads(line)
+        for line in (output / "results_per_episode.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert summary["failed_scenarios"] == len(VAL_SPLIT)
+    assert all(row["status"] == "error" and row["prediction"] is None for row in rows)
+    assert all(row["error"].startswith("ValueError: invalid_response") for row in rows)
+    assert all(row["empirical_claim_allowed"] is False for row in rows)
+    assert all(row["raw_model_response"] for row in rows)
+
+
+@pytest.mark.parametrize("confidence", [0, 0.4, 1])
+def test_finite_numeric_confidence_remains_valid(confidence):
+    prediction = zero_shot._parse_prediction(json.dumps({
+        "root_cause": "service saturation under load",
+        "affected_services": ["paymentservice"],
+        "confidence": confidence,
+    }))
+    assert prediction["confidence"] == confidence
 
 
 def _prediction(root_cause: str = "service saturation under load") -> str:

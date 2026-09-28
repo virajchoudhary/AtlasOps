@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T06:14:59.275396+00:00`
+- **Generated**: `2026-09-28T08:46:47.003089+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -37,6 +37,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `.gitattributes` | `0de5fcd2ce928d3c...` | 1102 |
 | `AGENTS.md` | `6c3eefb051f5c3e6...` | 6096 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
+| `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
 | `README.md` | `831eda64debd1565...` | 24853 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
@@ -175,7 +176,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `dfa755ec233b3346...` | 12663 |
+| `scripts/package_submission.py` | `765f8ad94fa5affe...` | 12682 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `5deaeec192b580db...` | 12070 |
 | `scripts/run_stage4_golden_incident.py` | `6092e459f251a4ae...` | 98626 |
@@ -200,7 +201,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
-| `tests/test_claim_integrity.py` | `6ae4b090317d803c...` | 4208 |
+| `tests/test_claim_integrity.py` | `8d7f3b52c63df0e5...` | 4492 |
 | `tests/test_coordinator.py` | `c2a702c7f581ee19...` | 18422 |
 | `tests/test_coordinator_import_side_effects.py` | `9b07ef640ae58481...` | 1095 |
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
@@ -243,7 +244,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `651b270f91be7d16...` | 23045 |
+| `tests/test_stage15_submission_package.py` | `bde19296c6ee6f5f...` | 23068 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `b8e71a61a1bd6ce1...` | 5447 |
 | `tests/test_stage4_causal_contract.py` | `619ffdeab94f9e55...` | 38363 |

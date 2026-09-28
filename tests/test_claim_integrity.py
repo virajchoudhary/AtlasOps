@@ -98,3 +98,10 @@ def test_upstream_readme_comparison_covers_each_delivery_area_without_certifying
         assert gate in matrix
     assert "NOT_CERTIFIED" in matrix
     assert "does not close" in matrix
+
+
+def test_inherited_blog_is_explicitly_historical():
+    blog = Path("BLOG.md").read_text(encoding="utf-8")
+    assert "Historical upstream narrative" in blog
+    assert "not reproduced results of this continuation" in blog
+    assert "UPSTREAM_README_CURRENT_GAP_MATRIX.md" in blog

@@ -136,6 +136,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "AGENTS.md",
         ".gitattributes",
         "BENCHMARKS.md",
+        "BLOG.md",
         "Makefile",
         "pyproject.toml",
         "README.md",

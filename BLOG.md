@@ -2,6 +2,13 @@
 
 *AMD Developer Hackathon 2026 | May 7–10, 2026*
 
+> **Historical upstream narrative.** This article preserves the original
+> hackathon team's account. Its GKE, MI300X, model-training, and benchmark
+> claims are not reproduced results of this continuation. See the
+> [current evidence comparison](docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md)
+> and [gate inventory](docs/project/MASTER_PIPELINE_STATUS.md) before
+> presenting any of these statements as current project outcomes.
+
 ---
 
 ## The Problem We Were Actually Trying to Solve

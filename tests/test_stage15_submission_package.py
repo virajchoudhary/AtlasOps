@@ -100,6 +100,7 @@ class TestStage15SubmissionPackage:
             "static/vendor/lucide.min.js",
             "static/vendor/LUCIDE-LICENSE",
             "AGENTS.md",
+            "BLOG.md",
             "docs/slides.md",
             "docs/media/console-overview-20260926.png",
             "docs/media/gradio-demo-20260926.png",

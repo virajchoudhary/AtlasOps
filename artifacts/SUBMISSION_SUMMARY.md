@@ -3,7 +3,7 @@
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-28T09:05:10.209239+00:00`
+- **Generated**: `2026-09-28T18:20:10.506445+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -104,7 +104,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/models/hybrid_recommender_synthetic_v2.json` | `21243d035fc2a972...` | 2192 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
-| `bench/ablation_suite.py` | `957c4bc2ee0a3d1f...` | 12406 |
+| `bench/ablation_suite.py` | `a0bea0616cb47b61...` | 20696 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -157,7 +157,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `85a2d06ee0203366...` | 3946 |
-| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `cb1c07a038e191ae...` | 2220 |
+| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `80fa3056d135dd9c...` | 4707 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
@@ -242,7 +242,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
-| `tests/test_stage13_ablation_suite.py` | `1e9c229c401d18a6...` | 8746 |
+| `tests/test_stage13_ablation_suite.py` | `e348dc86a74fee68...` | 18954 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
 | `tests/test_stage15_submission_package.py` | `bde19296c6ee6f5f...` | 23068 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |

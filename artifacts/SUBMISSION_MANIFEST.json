@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T09:05:10.209239+00:00",
+  "generated_at": "2026-09-28T18:20:10.506445+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -138,8 +138,8 @@
       "size_bytes": 3946
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
-      "sha256": "cb1c07a038e191aeaeaf2cfc7a6a1cea2061380a6ecc03a29ab51d165ee4b57d",
-      "size_bytes": 2220
+      "sha256": "80fa3056d135dd9c6d0d3b4cf0affbbf368477c2742d689fd39f4dd667b46631",
+      "size_bytes": 4707
     },
     "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
       "sha256": "5eb9a8df01f8ca6f038833a610fce2eaa93433b4db5b5c36920b3c4df3317811",
@@ -690,8 +690,8 @@
       "size_bytes": 3019
     },
     "bench/ablation_suite.py": {
-      "sha256": "957c4bc2ee0a3d1f89e52e0b3fe67fa6d4616983fb850530c030951b420d017c",
-      "size_bytes": 12406
+      "sha256": "a0bea0616cb47b6146f7e77df231f105f67e2b0e526635d8b45322b108cf0192",
+      "size_bytes": 20696
     },
     "tests/test_adversarial_designer.py": {
       "sha256": "79f017da4584c3828ee273659787bc19c9f51ec182df3cfc5fba2f8f9a52e034",
@@ -906,8 +906,8 @@
       "size_bytes": 5945
     },
     "tests/test_stage13_ablation_suite.py": {
-      "sha256": "1e9c229c401d18a64a0e10440c8939022b6deb0905cae96d503caad3a5cb8f89",
-      "size_bytes": 8746
+      "sha256": "e348dc86a74fee6829808b25aa98a4e700c7c035405dd288b59d6c0111b2d36b",
+      "size_bytes": 18954
     },
     "tests/test_stage14_demo_safety.py": {
       "sha256": "de91c0aa698264b7bdb1c5feaa234eb3bdbe7e715c5f85eb79b3b4a6699f1af3",

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T21:28:42.802314+00:00",
+  "generated_at": "2026-09-29T21:31:52.727860+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 257,
+  "asset_count": 266,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
@@ -156,6 +156,10 @@
       "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",
       "size_bytes": 4806
     },
+    "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md": {
+      "sha256": "c94fb7146a9f89a9be748bdcf24e7d3d0c513eec794b4e79928807f70f64544b",
+      "size_bytes": 5918
+    },
     "docs/project/GAI_RL_SCOPE_REVISION.md": {
       "sha256": "24b83eaf30f831cc83e297114b172b913e125ec231e2f0a12fda5bd700a5d378",
       "size_bytes": 4993
@@ -185,8 +189,8 @@
       "size_bytes": 6589
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
-      "sha256": "00ab24e18a05178f8306f0e843dc9155df363941faaedd995fcc72cbafd49ad2",
-      "size_bytes": 10543
+      "sha256": "633eeda73f7b091f3e365f17d014a6d98bec3b4ac6d25ea55cf242067b026003",
+      "size_bytes": 10891
     },
     "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
       "sha256": "5eb9a8df01f8ca6f038833a610fce2eaa93433b4db5b5c36920b3c4df3317811",
@@ -476,6 +480,22 @@
       "sha256": "5e19ee339d7db28499a9404bb49f5822cf1769b3ae0b14ba128aaa70495a04fd",
       "size_bytes": 37892
     },
+    "bench/candidate_adapters.py": {
+      "sha256": "52d089fcfbfcaa8a410474b372423336bdc3c49db98fed70343ad8d56b52d9ec",
+      "size_bytes": 24545
+    },
+    "bench/candidate_lineage.py": {
+      "sha256": "396ff6d389f2b83631d8b5b50c6a08c74f9df42317dbd48a9d6a2825eb956aa9",
+      "size_bytes": 28333
+    },
+    "bench/candidate_measurement.py": {
+      "sha256": "920e73560ddd162a888d5e9698a1a3b788a8d362db8b4d8402e86bccc3834702",
+      "size_bytes": 38684
+    },
+    "bench/candidate_replay.py": {
+      "sha256": "9fe0862cd332bdf56d0f4c4ff7ce877abb3d310ae83e5c5e4a357e080bd33cfb",
+      "size_bytes": 44483
+    },
     "bench/runner.py": {
       "sha256": "6e75db82c21d1ad54783e569687b010c4fcd5a26d346f1a4302d4e4e02c3c191",
       "size_bytes": 15551
@@ -685,8 +705,8 @@
       "size_bytes": 41003
     },
     "scripts/package_submission.py": {
-      "sha256": "14228cc9f893e36a612aab764d13276e5e73a986d1c51fdb1144bc9aba8fc28f",
-      "size_bytes": 14017
+      "sha256": "5cfb28c70db9bdbd9c0ebac1acdd0308e1be6e1825d8042db8adc1c627e312cb",
+      "size_bytes": 14240
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -783,6 +803,22 @@
     "tests/test_bootstrap_lifecycle.py": {
       "sha256": "68956a108f630f7c9cc201e8d54a04db63bb3cc6bc7e526493c46de26b5d94f5",
       "size_bytes": 29227
+    },
+    "tests/test_candidate_adapters.py": {
+      "sha256": "312a7853a9e1dd723ccf81e35f5b672506a3841a68bfaee2d46718e2485960cb",
+      "size_bytes": 22276
+    },
+    "tests/test_candidate_lineage.py": {
+      "sha256": "c9082ca28b7ae2a337c9ea442055d77baa450f0630ef11d934d57deeabe6e2c1",
+      "size_bytes": 16072
+    },
+    "tests/test_candidate_measurement.py": {
+      "sha256": "f0549c53b5359791b8bcbfd81d9d3be1ea64964d7229cecb0fe55d4fc79a3525",
+      "size_bytes": 34087
+    },
+    "tests/test_candidate_replay.py": {
+      "sha256": "3f2abe358ca49dbaea59bf9c57f3fbafc1b8c7846d1cb133768a7fea1e5829a5",
+      "size_bytes": 39143
     },
     "tests/test_chaos_manifests.py": {
       "sha256": "28f20b4ad5be7030b93074360b84dc96ac4d37749cda9a416fd2bc85ef411799",

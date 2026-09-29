@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T21:28:42.802314+00:00`
+- **Generated**: `2026-09-29T21:31:52.727860+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -109,6 +109,10 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
 | `bench/ablation_suite.py` | `825866a09a865725...` | 26652 |
+| `bench/candidate_adapters.py` | `52d089fcfbfcaa8a...` | 24545 |
+| `bench/candidate_lineage.py` | `396ff6d389f2b836...` | 28333 |
+| `bench/candidate_measurement.py` | `920e73560ddd162a...` | 38684 |
+| `bench/candidate_replay.py` | `9fe0862cd332bdf5...` | 44483 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -161,6 +165,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md` | `63529cd8a08ca3ba...` | 4806 |
+| `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md` | `c94fb7146a9f89a9...` | 5918 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md` | `feeb5552c0d125f0...` | 3748 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `7fdf84c84710caf5...` | 6522 |
@@ -173,7 +178,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `d0989c81494b0b1a...` | 2043 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `be17afca2427c7e1...` | 2043 |
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `6a6a8e3e83c2f210...` | 6589 |
-| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `00ab24e18a05178f...` | 10543 |
+| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `633eeda73f7b091f...` | 10891 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
@@ -192,7 +197,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `14228cc9f893e36a...` | 14017 |
+| `scripts/package_submission.py` | `5cfb28c70db9bdbd...` | 14240 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
 | `scripts/run_g12_integrated_episode.py` | `d76a71740c94de9e...` | 41003 |
 | `scripts/run_stage4_golden_incident.py` | `9eb3cb163a790562...` | 100400 |
@@ -215,6 +220,10 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_audit.py` | `7a2a10bda3a28e61...` | 3176 |
 | `tests/test_bench_runner.py` | `90bcee2d80aa5bff...` | 19865 |
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
+| `tests/test_candidate_adapters.py` | `312a7853a9e1dd72...` | 22276 |
+| `tests/test_candidate_lineage.py` | `c9082ca28b7ae2a3...` | 16072 |
+| `tests/test_candidate_measurement.py` | `f0549c53b5359791...` | 34087 |
+| `tests/test_candidate_replay.py` | `3f2abe358ca49dba...` | 39143 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_chaos_tools.py` | `5224b2bdc06bb15f...` | 9033 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |

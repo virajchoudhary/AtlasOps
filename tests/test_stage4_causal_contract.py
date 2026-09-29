@@ -131,7 +131,20 @@ class TestStage4CausalPredicate:
                     {
                         "tool": "promql_query",
                         "args": {"query": "paymentservice_cpu"},
-                        "output": {"success": True, "result": [{"value": 0.9}]},
+                        "output": {
+                            "success": True,
+                            "resultType": "vector",
+                            "result": [
+                                {
+                                    "metric": {"pod": "paymentservice-0"},
+                                    "value": [1, "0.9"],
+                                }
+                            ],
+                            "has_data": True,
+                            "series_present": True,
+                            "no_series": False,
+                            "evidence_status": "series_present",
+                        },
                     }
                 ],
                 "final": {
@@ -258,6 +271,49 @@ class TestStage4CausalPredicate:
         )
         assert eval_res["gate_g4_pass"] is False
         assert eval_res["criteria"]["8_approval_satisfied"] is False
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            {
+                "success": False,
+                "error_class": "promql_query_error",
+                "evidence_status": "query_error",
+                "has_data": False,
+                "series_present": False,
+                "no_series": False,
+            },
+            {
+                "success": True,
+                "resultType": "vector",
+                "result": [],
+                "has_data": False,
+                "series_present": False,
+                "no_series": True,
+                "evidence_status": "no_series",
+            },
+        ],
+    )
+    def test_causal_predicate_rejects_diagnosis_without_metric_samples(
+        self, output
+    ) -> None:
+        inc = self._make_valid_incident_result()
+        inc["diagnosis"]["trajectory"][0]["output"] = output
+        inc["grounding_validation"]["diagnosis"] = validate_evidence_grounding(
+            inc["diagnosis"]
+        )
+
+        eval_res = evaluate_causal_g4_predicate(
+            baseline_healthy=True,
+            injection_success=True,
+            fault_observed=True,
+            incident_result=inc,
+            harness_repaired_pre_verification=False,
+            primary_evidence_persisted=True,
+        )
+
+        assert eval_res["criteria"]["7_diagnosis_truth_match"] is False
+        assert eval_res["gate_g4_pass"] is False
 
     def test_causal_predicate_fails_if_diagnosis_targets_wrong_service(self) -> None:
         inc = self._make_valid_incident_result()

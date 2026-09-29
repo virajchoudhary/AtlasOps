@@ -124,9 +124,12 @@ scientifically complete.
 - `artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md` indexes preserved outcomes. Attempt 010 records approval timeout alongside `8_approval_satisfied=true`; this is an inconsistency, not human approval evidence. Exhausting an attempt budget does not close G4.
 - The prospective [v3.4 approval channel](G4_PROTOCOL_V34_APPROVAL_CHANNEL.md)
   repairs the host-process P1 callback and fail-closed external secret loading
-  in code. Its synthetic tests do not establish a real operator decision,
-  resolved environment, cleanup, or G4 PASS. A future attempt 015 requires a
-  fresh ignored-ledger and poison-latch check before any reservation.
+  in code. The later [v3.5 causal-evidence candidate](G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md)
+  distinguishes active Chaos states and positive metric samples in local
+  contracts without changing frozen v3.3 or historical records. Synthetic
+  tests establish neither a real operator decision nor resolved environment,
+  cleanup, or G4 PASS. A future attempt 015 requires a fresh ignored-ledger
+  and poison-latch check before any reservation.
 
 ### Gate G5: Scenario Truth and Benchmark Splits — [PASS]
 - `config/scenario_catalog.py`, `config/splits.py`, and `tests/test_stage5_scenario_splits_and_truth.py` define/check 28 frozen manifests, hashes, verifier coverage and disjoint Train(16)/Val(6)/Test(6) populations.

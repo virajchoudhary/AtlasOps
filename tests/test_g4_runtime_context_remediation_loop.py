@@ -160,8 +160,11 @@ def test_chaos_inventory_is_generic_observation_only(monkeypatch):
                         "labels": {"purpose": "test"},
                     },
                     "status": {
-                        "experiment": {"phase": "Running"},
-                        "conditions": [],
+                        "experiment": {"containerRecords": [{"phase": "Injected"}]},
+                        "conditions": [
+                            {"type": "Paused", "status": "False"},
+                            {"type": "AllRecovered", "status": "False"},
+                        ],
                     },
                 }],
             }),

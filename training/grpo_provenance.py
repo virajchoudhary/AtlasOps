@@ -18,9 +18,16 @@ from typing import Any
 from config.splits import TRAIN_SPLIT
 from training.grpo_environment import require_live_kube_context
 from training.sft_provenance import (
+    TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+    TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
     canonical_json_sha256,
     file_sha256,
+    has_redirecting_path_component,
+    resolve_tokenizer_revision,
     runtime_environment,
+    validate_hf_commit_revision,
+    validate_hf_reference,
+    validate_resolved_hf_commit,
     write_manifest_atomic,
 )
 
@@ -52,6 +59,422 @@ OPTUNA_TUNED_HYPERPARAMETERS = {
     "beta": "beta",
     "num_generations": "num_generations",
 }
+MODEL_REVISION_BASIS_LOADER_MATCH = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+
+
+class RunPlanMismatch(ValueError):
+    """A direct G9 invocation differs from the request persisted by the CLI."""
+
+
+def _plan_values_equal(left: Any, right: Any) -> bool:
+    try:
+        return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(
+            right,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def validate_grpo_model_references(
+    *,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+) -> None:
+    """Apply the G7 repository-id and immutable-commit contract to G9 inputs."""
+    validate_hf_reference(model_id, model_revision, label="base model")
+    validate_hf_reference(tokenizer_id, tokenizer_revision, label="tokenizer")
+
+
+def validate_new_output_directory(path: Path) -> Path:
+    """Validate that a prospective output path is fresh and has no redirects."""
+    output_dir = Path(os.path.abspath(Path(path).expanduser()))
+    if has_redirecting_path_component(output_dir):
+        raise ValueError(
+            "GRPO output path must not contain symlink, reparse, or hard-link redirects"
+        )
+    if output_dir.exists():
+        raise FileExistsError(f"GRPO output directory already exists: {output_dir}")
+    return output_dir
+
+
+def claim_new_output_directory(path: Path) -> Path:
+    """Atomically claim a fresh output directory without reusing an existing run."""
+    output_dir = validate_new_output_directory(path)
+    output_dir.mkdir(parents=True, exist_ok=False)
+    if has_redirecting_path_component(output_dir):
+        raise ValueError(
+            "GRPO output path must not contain symlink, reparse, or hard-link redirects"
+        )
+    return output_dir
+
+
+def validate_tokenizer_loader_revision(
+    tokenizer: Any,
+    *,
+    requested_revision: str,
+) -> tuple[str, str]:
+    """Verify an exposed tokenizer pin, or preserve the honest pinned-loader basis."""
+    init_kwargs = getattr(tokenizer, "init_kwargs", None)
+    exposed_revision = (
+        init_kwargs.get("_commit_hash")
+        if isinstance(init_kwargs, Mapping)
+        else None
+    )
+    return resolve_tokenizer_revision(requested_revision, exposed_revision)
+
+
+def resolve_loader_provenance(
+    model: Any,
+    tokenizer: Any,
+    *,
+    model_revision: str,
+    tokenizer_revision: str,
+) -> dict[str, Any]:
+    """Verify loader-reported commits and return evidence for this loaded pair."""
+    validate_hf_commit_revision(model_revision, label="Requested base model revision")
+    resolved_model_revision = validate_resolved_hf_commit(
+        model_revision,
+        getattr(getattr(model, "config", None), "_commit_hash", None),
+        label="base model",
+    )
+    resolved_tokenizer_revision, tokenizer_revision_basis = (
+        validate_tokenizer_loader_revision(
+            tokenizer,
+            requested_revision=tokenizer_revision,
+        )
+    )
+    return {
+        "base_model": {
+            "resolved_revision": resolved_model_revision,
+            "resolved_revision_basis": MODEL_REVISION_BASIS_LOADER_MATCH,
+        },
+        "tokenizer": {
+            "resolved_revision": resolved_tokenizer_revision,
+            "resolved_revision_basis": tokenizer_revision_basis,
+        },
+    }
+
+
+def record_loader_provenance(
+    path: Path,
+    *,
+    model: Any,
+    tokenizer: Any,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+) -> dict[str, Any]:
+    """Persist verified loader identity while the GRPO run is still in progress."""
+    validate_grpo_model_references(
+        model_id=model_id,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
+    identity = resolve_loader_provenance(
+        model,
+        tokenizer,
+        model_revision=model_revision,
+        tokenizer_revision=tokenizer_revision,
+    )
+    manifest_path = Path(path)
+    if has_redirecting_path_component(manifest_path):
+        raise ValueError("GRPO run manifest path must not contain redirects")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "running":
+        raise RuntimeError("GRPO loader identity requires a running, claimed run")
+
+    for key, expected_id, expected_revision in (
+        ("base_model", model_id, model_revision),
+        ("tokenizer", tokenizer_id, tokenizer_revision),
+    ):
+        record = manifest.get(key)
+        if (
+            not isinstance(record, dict)
+            or record.get("id") != expected_id
+            or record.get("requested_revision") != expected_revision
+        ):
+            raise ValueError(f"GRPO {key} identity differs from the run manifest")
+
+    now = datetime.now(UTC).isoformat()
+    for key in ("base_model", "tokenizer"):
+        record = dict(manifest[key])
+        observed = identity[key]
+        existing_revision = record.get("resolved_revision")
+        if existing_revision not in (None, observed["resolved_revision"]):
+            raise ValueError(f"GRPO loader returned inconsistent {key} revisions")
+        existing_basis = record.get("resolved_revision_basis")
+        new_basis = observed["resolved_revision_basis"]
+        if key == "tokenizer" and existing_basis in {
+            TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+            TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+        } and new_basis in {
+            TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+            TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+        }:
+            if TOKENIZER_REVISION_BASIS_LOADER_MATCH in {existing_basis, new_basis}:
+                new_basis = TOKENIZER_REVISION_BASIS_LOADER_MATCH
+        elif existing_basis not in (None, new_basis):
+            raise ValueError(f"GRPO loader returned inconsistent {key} revision basis")
+        record["resolved_revision"] = observed["resolved_revision"]
+        record["resolved_revision_basis"] = new_basis
+        manifest[key] = record
+
+    manifest["model_loading"] = {
+        "status": "verified",
+        "verified_at": now,
+    }
+    write_manifest_atomic(manifest_path, manifest)
+    return manifest
+
+
+def validate_loader_provenance(manifest: Mapping[str, Any]) -> None:
+    """Reject completion unless a loader verified the pinned model/tokenizer pair."""
+    model = manifest.get("base_model")
+    tokenizer = manifest.get("tokenizer")
+    loading = manifest.get("model_loading")
+    if (
+        not isinstance(model, Mapping)
+        or not isinstance(tokenizer, Mapping)
+        or not isinstance(loading, Mapping)
+        or loading.get("status") != "verified"
+        or not isinstance(loading.get("verified_at"), str)
+        or not loading["verified_at"]
+    ):
+        raise ValueError("GRPO run lacks loader-verified model/tokenizer provenance")
+    validate_hf_reference(
+        model.get("id"),
+        model.get("requested_revision"),
+        label="base model",
+    )
+    validate_hf_reference(
+        tokenizer.get("id"),
+        tokenizer.get("requested_revision"),
+        label="tokenizer",
+    )
+    if model.get("resolved_revision_basis") != MODEL_REVISION_BASIS_LOADER_MATCH:
+        raise ValueError("GRPO base model loader commit was not verified")
+    validate_resolved_hf_commit(
+        model["requested_revision"],
+        model.get("resolved_revision"),
+        label="base model",
+    )
+    tokenizer_basis = tokenizer.get("resolved_revision_basis")
+    if tokenizer_basis not in {
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+        TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+    }:
+        raise ValueError("GRPO tokenizer loader revision basis is missing or invalid")
+    if tokenizer_basis == TOKENIZER_REVISION_BASIS_LOADER_MATCH:
+        validate_resolved_hf_commit(
+            tokenizer["requested_revision"],
+            tokenizer.get("resolved_revision"),
+            label="tokenizer",
+        )
+    else:
+        validate_hf_commit_revision(
+            tokenizer.get("resolved_revision"),
+            label="Resolved tokenizer revision",
+        )
+        if tokenizer["resolved_revision"] != tokenizer["requested_revision"]:
+            raise ValueError("GRPO tokenizer pin differs from the requested revision")
+
+
+def mark_training_started(
+    manifest_path: Path,
+    *,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+    sft_parent: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Persist a one-shot execution marker and reject reuse of partial run outputs."""
+    manifest_path = Path(manifest_path)
+    if has_redirecting_path_component(manifest_path):
+        raise ValueError("GRPO run manifest path must not contain redirects")
+    if not manifest_path.is_file():
+        raise FileNotFoundError("GRPO training requires a claimed run manifest")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "running":
+        raise RuntimeError("GRPO training requires a running run manifest")
+    training = manifest.get("training")
+    if not isinstance(training, dict):
+        raise RuntimeError("GRPO training manifest lacks training provenance")
+    if training.get("execution_started_at"):
+        raise FileExistsError("GRPO run execution was already started; resume is disabled")
+    for key, expected_id, expected_revision in (
+        ("base_model", model_id, model_revision),
+        ("tokenizer", tokenizer_id, tokenizer_revision),
+    ):
+        record = manifest.get(key)
+        if (
+            not isinstance(record, dict)
+            or record.get("id") != expected_id
+            or record.get("requested_revision") != expected_revision
+        ):
+            raise ValueError(f"GRPO {key} identity differs from the run manifest")
+    if manifest.get("sft_parent") != dict(sft_parent):
+        raise ValueError("GRPO SFT parent changed after the run was planned")
+    allowed_files = {manifest_path.name}
+    unexpected = sorted(
+        entry.name
+        for entry in manifest_path.parent.iterdir()
+        if entry.name not in allowed_files
+    )
+    if unexpected:
+        raise FileExistsError(
+            "GRPO output contains prior run artifacts; resume and overwrite are disabled"
+        )
+    training["execution_started_at"] = datetime.now(UTC).isoformat()
+    manifest["training"] = training
+    write_manifest_atomic(manifest_path, manifest)
+    return manifest
+
+
+def require_started_grpo_run(
+    output_dir: Path,
+    *,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+    sft_parent: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Require an in-progress, one-shot run before a caller can start Optuna."""
+    output_dir = Path(os.path.abspath(Path(output_dir).expanduser()))
+    if has_redirecting_path_component(output_dir):
+        raise ValueError("GRPO output path must not contain redirects")
+    manifest_path = output_dir / MANIFEST_NAME
+    if has_redirecting_path_component(manifest_path) or not manifest_path.is_file():
+        raise FileNotFoundError("Optuna requires the claimed GRPO run manifest")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    training = manifest.get("training") if isinstance(manifest, dict) else None
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("status") != "running"
+        or not isinstance(training, dict)
+        or not training.get("execution_started_at")
+    ):
+        raise RuntimeError("Optuna requires a running, one-shot GRPO execution")
+    for key, expected_id, expected_revision in (
+        ("base_model", model_id, model_revision),
+        ("tokenizer", tokenizer_id, tokenizer_revision),
+    ):
+        record = manifest.get(key)
+        if (
+            not isinstance(record, dict)
+            or record.get("id") != expected_id
+            or record.get("requested_revision") != expected_revision
+        ):
+            raise ValueError(f"Optuna {key} identity differs from the run manifest")
+    if manifest.get("sft_parent") != dict(sft_parent):
+        raise ValueError("Optuna SFT parent changed after the run was planned")
+    unexpected = sorted(
+        entry.name
+        for entry in output_dir.iterdir()
+        if entry.name != MANIFEST_NAME
+    )
+    if unexpected:
+        raise FileExistsError(
+            "GRPO output contains prior Optuna artifacts; resume is disabled"
+        )
+    return manifest
+
+
+def validate_sft_parent_matches_run(
+    manifest_path: Path,
+    sft_parent: Mapping[str, Any],
+) -> None:
+    """Ensure the completed SFT checkpoint is the exact parent recorded at planning."""
+    manifest_path = Path(manifest_path)
+    if has_redirecting_path_component(manifest_path):
+        raise ValueError("GRPO run manifest path must not contain redirects")
+    if not manifest_path.is_file():
+        raise FileNotFoundError("GRPO run manifest missing before model loading")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("status") != "running"
+        or manifest.get("sft_parent") != dict(sft_parent)
+    ):
+        raise ValueError("GRPO SFT parent changed after the run was planned")
+
+
+def validate_grpo_run_plan(
+    manifest_path: Path,
+    *,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+    sft_parent: Mapping[str, Any],
+    training_fields: Mapping[str, Any],
+    requested_hyperparameters: Mapping[str, Any],
+    require_started: bool,
+    exact_hyperparameters: bool = True,
+) -> dict[str, Any]:
+    """Bind direct training/search arguments to the already persisted G9 request."""
+    manifest_path = Path(manifest_path)
+    if has_redirecting_path_component(manifest_path) or not manifest_path.is_file():
+        raise RunPlanMismatch("persisted G9 run manifest is missing or redirected")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    training = manifest.get("training") if isinstance(manifest, dict) else None
+    if not isinstance(manifest, dict) or manifest.get("status") != "running":
+        raise RunPlanMismatch("persisted G9 run is not in the running state")
+    if not isinstance(training, dict):
+        raise RunPlanMismatch("persisted G9 training plan is missing")
+    has_started = bool(training.get("execution_started_at"))
+    if has_started is not require_started:
+        phase = "started" if require_started else "not yet started"
+        raise RunPlanMismatch(f"persisted G9 run must be {phase}")
+
+    for key, expected_id, expected_revision in (
+        ("base_model", model_id, model_revision),
+        ("tokenizer", tokenizer_id, tokenizer_revision),
+    ):
+        record = manifest.get(key)
+        if (
+            not isinstance(record, Mapping)
+            or record.get("id") != expected_id
+            or record.get("requested_revision") != expected_revision
+        ):
+            raise RunPlanMismatch(f"{key} identity differs from the persisted G9 training plan")
+    if not _plan_values_equal(manifest.get("sft_parent"), dict(sft_parent)):
+        raise RunPlanMismatch("SFT parent differs from the persisted G9 training plan")
+
+    for key, expected in training_fields.items():
+        if not _plan_values_equal(training.get(key), expected):
+            raise RunPlanMismatch(f"training {key} differs from the persisted G9 training plan")
+
+    recorded_requested = training.get("requested_hyperparameters")
+    recorded_legacy = training.get("hyperparameters")
+    if (
+        not isinstance(recorded_requested, Mapping)
+        or not isinstance(recorded_legacy, Mapping)
+        or not _plan_values_equal(dict(recorded_legacy), dict(recorded_requested))
+    ):
+        raise RunPlanMismatch("requested hyperparameter records are inconsistent")
+    if exact_hyperparameters:
+        matches = _plan_values_equal(
+            dict(recorded_requested),
+            dict(requested_hyperparameters),
+        )
+    else:
+        matches = all(
+            _plan_values_equal(recorded_requested.get(key), value)
+            for key, value in requested_hyperparameters.items()
+        )
+    if not matches:
+        raise RunPlanMismatch(
+            "requested hyperparameters differ from the persisted G9 training plan"
+        )
+    return manifest
 
 
 def validate_sft_parent(
@@ -63,6 +486,12 @@ def validate_sft_parent(
     tokenizer_revision: str,
 ) -> dict[str, Any]:
     """Bind GRPO to the completed, byte-validated G7 adapter."""
+    validate_grpo_model_references(
+        model_id=model_id,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
     from bench.sft_eval import _load_checkpoint_manifest
 
     checkpoint = checkpoint.expanduser().resolve()
@@ -76,6 +505,11 @@ def validate_sft_parent(
         or tokenizer["resolved_revision"] != tokenizer_revision
     ):
         raise ValueError("GRPO base model/tokenizer must match the completed SFT checkpoint")
+    if tokenizer.get("resolved_revision_basis") not in {
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+        TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+    }:
+        raise ValueError("SFT tokenizer revision provenance basis is missing or invalid")
     if manifest["source"].get("git_dirty") is not False:
         raise ValueError("GRPO requires an SFT checkpoint trained from clean source")
     return {
@@ -85,6 +519,10 @@ def validate_sft_parent(
         "training_source_sha": manifest["source"]["git_sha"],
         "train_corpus_sha256": manifest["dataset"]["corpus_sha256_canonical_lf"],
         "train_split_sha256": manifest["dataset"]["split_sha256"],
+        "base_model_id": base["id"],
+        "base_model_revision": base["resolved_revision"],
+        "tokenizer_id": tokenizer["id"],
+        "tokenizer_revision": tokenizer["resolved_revision"],
     }
 
 
@@ -280,8 +718,12 @@ def create_run_manifest(
         kube_context,
         opt_in_flag="--execute-live-chaos",
     )
-    if not all((model_id, model_revision, tokenizer_id, tokenizer_revision)):
-        raise ValueError("Exact base model and tokenizer identities are required")
+    validate_grpo_model_references(
+        model_id=model_id,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
     if seed < 0:
         raise ValueError("GRPO seed must be nonnegative")
     if not sft_parent or not all(
@@ -289,6 +731,13 @@ def create_run_manifest(
         for key in ("checkpoint_path", "manifest_sha256", "checkpoint_tree_sha256", "train_split_sha256")
     ):
         raise ValueError("GRPO requires validated SFT checkpoint provenance")
+    if (
+        sft_parent.get("base_model_id") != model_id
+        or sft_parent.get("base_model_revision") != model_revision
+        or sft_parent.get("tokenizer_id") != tokenizer_id
+        or sft_parent.get("tokenizer_revision") != tokenizer_revision
+    ):
+        raise ValueError("GRPO SFT parent must match the exact base model/tokenizer pins")
     if sft_parent["train_split_sha256"] != canonical_json_sha256(list(TRAIN_SPLIT)):
         raise ValueError("SFT parent Train split differs from frozen GRPO Train split")
     selected_ids = [row.get("scenario_id") for row in prompt_rows]
@@ -319,8 +768,18 @@ def create_run_manifest(
                 "kube_context": kube_context,
             },
         },
-        "base_model": {"id": model_id, "resolved_revision": model_revision},
-        "tokenizer": {"id": tokenizer_id, "resolved_revision": tokenizer_revision},
+        "base_model": {
+            "id": model_id,
+            "requested_revision": model_revision,
+            "resolved_revision": None,
+            "resolved_revision_basis": None,
+        },
+        "tokenizer": {
+            "id": tokenizer_id,
+            "requested_revision": tokenizer_revision,
+            "resolved_revision": None,
+            "resolved_revision_basis": None,
+        },
         "source": source_identity(),
         "sft_parent": sft_parent,
         "splits": {
@@ -836,6 +1295,12 @@ def persist_status(
                 effective_hyperparameters=effective_hyperparameters,
                 live_execution=expected_live_execution,
             )
+        try:
+            validate_loader_provenance(updated)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "Completed GRPO run requires loader-verified model/tokenizer provenance"
+            ) from exc
         updated["checkpoint"] = checkpoint_inventory(path.parent)
         updated["completed_at"] = updated["updated_at"]
     write_manifest_atomic(path, updated)

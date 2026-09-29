@@ -147,10 +147,20 @@ and a documented interruption response. G4 is still `NOT_PASSED`.
 No live fault, P1 request, or model training is authorized by this runbook.
 
 After those *separate* approvals, the operator must select a new output
-directory. The G9 CLI accepts an existing directory but rejects an existing
-run manifest and final rollout ledger; it does not enforce full directory
-freshness. The CLI requires `--sft-checkpoint`, exact model/tokenizer revision
-arguments, `--execute-live-chaos` and a named `--kube-context`. P1 needs the
+directory. The G9 CLI rejects existing and redirected output paths and
+claims a fresh directory exclusively only after validating full immutable
+model/tokenizer commit pins, repository IDs, and the completed SFT parent.
+The G9 tokenizer and base-model loaders refuse Hub remote Python. The SFT
+parent inventory and persisted run binding are checked again immediately
+before PEFT reads the adapter; path-based reads still leave a narrow
+post-check replacement window that needs an approved stable storage
+boundary for any empirical run.
+Its one-shot execution marker prevents direct training from resuming that
+run. Direct training must match the persisted seed, configuration, live
+context and operator profile; a mismatch fails before work without
+changing the existing run. Positive Optuna calls are deferred before
+any model, output or live work. The CLI also requires
+`--execute-live-chaos` and a named `--kube-context`. P1 needs the
 separately opted-in same-process operator channel and a securely supplied
 `ATLASOPS_API_KEY`; rejection, timeout and missing decision remain blocked.
 Do not put the secret in arguments or print it. The checked-in default
@@ -170,14 +180,17 @@ and verify zero active Chaos before the next rollout. Stop on missing real
 alert/fault, inconclusive environment, failed cleanup or lost operator
 channel; keep reward null where observation is unscorable.
 
-**Recovery:** G9 refuses an existing run manifest or final rollout ledger.
-It does not implement a validated resume command. Preserve the failed
-attempt and run a separately reviewed fresh attempt in a new directory
-only after cluster safety and attribution are re-established. Never reuse
-an interrupted ledger as a completed checkpoint.
+**Recovery:** G9 refuses any existing output directory and does not
+implement a validated resume command. After its one-shot marker, caught
+direct-entrypoint and CLI failures or interrupts persist a terminal status;
+hard termination may still leave a partial directory without a final
+record. Preserve that attempt and run a separately reviewed fresh attempt
+in a new directory only after cluster safety and attribution are
+re-established. Never reuse an interrupted ledger as a completed checkpoint.
 
 **Exit:** a completed G9 adapter with independently checked checkpoint
-inventory, SFT parent hashes, source/config/seed, raw rollout ledger,
+inventory, SFT parent hashes, source/config/seed, loader identity basis,
+raw rollout ledger,
 cleanup and failure records. A trained adapter is still not a G9 empirical
 evaluation or a scientific PASS.
 

@@ -6,6 +6,10 @@ requirement. This prospective revision supersedes the RS-required portions of
 the adopted v2.2 working specification for future work. It does not rewrite
 the v2.2 review copies, the partial G13 v0.2 decision record, frozen protocols,
 or historical experiments. No new empirical gate passes by changing scope.
+The separately preserved
+[G13 common measurement v0.3 draft](G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md)
+is an older, unapproved RS-inclusive planning snapshot. It remains in the
+submission inventory for provenance, not as the current three-arm protocol.
 
 ## Required system and learning path
 

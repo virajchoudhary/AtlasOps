@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T22:47:04.938808+00:00",
+  "generated_at": "2026-09-29T23:02:25.368172+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -213,8 +213,8 @@
       "size_bytes": 5770
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "303c737c4fec192d7bfce248a43b405e38a0ec91bcac4a3b351075d9261f9be6",
-      "size_bytes": 8282
+      "sha256": "dadc175285eaa0c9959b2af10bd466b92caf1b0e4a9d8eddfc802f884cc79473",
+      "size_bytes": 8443
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
       "sha256": "bf9ce0d05e8bc4c073473059b3806b2f753525b2494297d9da953ddb18638087",
@@ -713,8 +713,8 @@
       "size_bytes": 18205
     },
     "training/sft.py": {
-      "sha256": "32a59d3342a753b0d7be5ee1a1b4225d8c8e5f7c77ba35b4702c6a0b9b36cd7b",
-      "size_bytes": 11837
+      "sha256": "a455c42e3cc03197c671f4d37fadfb569a9546f7e0cca976d384eaa2eeeba5b7",
+      "size_bytes": 12489
     },
     "training/build_sft_dataset.py": {
       "sha256": "237323d639d21a7b07d2e7cf0fbd2a51f3b2bb44b9da513a13e8c0d0801cb2eb",
@@ -993,8 +993,8 @@
       "size_bytes": 12630
     },
     "tests/test_sft_training_provenance.py": {
-      "sha256": "b0948a540423cc918ad3394b4b60f998e6ed5c60149ca9a46f487eabb55939d1",
-      "size_bytes": 45867
+      "sha256": "ec0914b9e6f259fb9117a78535fd01592882574089ae70d4c7bce27235f6805a",
+      "size_bytes": 47467
     },
     "tests/test_stage10_rs_data_and_baselines.py": {
       "sha256": "a9c08a6fc88350c9e5b04c5ae701a70438757ee0d940f49e987ecc521f9884df",

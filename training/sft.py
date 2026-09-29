@@ -20,6 +20,7 @@ from config.splits import TRAIN_SEED
 from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
     canonical_bytes_sha256,
+    canonical_json_sha256,
     create_run_manifest,
     file_sha256,
     has_redirecting_path_component,
@@ -47,6 +48,25 @@ TARGET_MODULES = [
     "up_proj",
     "down_proj",
 ]
+
+_SYNTHETIC_TEACHER_CONTENT_SHA256 = (
+    "bb5c2638ca014cca28005b2f29f794d0fe01637948c857f993b90806143f0a04"
+)
+
+
+def _teacher_content_sha256(rows: tuple[dict[str, Any], ...]) -> str:
+    content = sorted(
+        (
+            {
+                "scenario_id": row["scenario_id"],
+                "role": row["role"],
+                "messages": row["messages"],
+            }
+            for row in rows
+        ),
+        key=lambda row: (row["scenario_id"], row["role"]),
+    )
+    return canonical_json_sha256(content)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -169,6 +189,8 @@ def main() -> None:
     if (
         canonical_bytes_sha256(corpus_snapshot.raw_bytes)
         == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+        or _teacher_content_sha256(corpus_snapshot.rows)
+        == _SYNTHETIC_TEACHER_CONTENT_SHA256
     ):
         raise ValueError(
             "SFT training admission rejected the canonical Train corpus for every role"

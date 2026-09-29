@@ -639,6 +639,50 @@ def test_sft_rejects_canonical_synthetic_corpus_for_every_role_before_output_or_
     assert attempted_ml_imports == []
 
 
+@pytest.mark.parametrize(
+    "variant",
+    ["blank_lines", "bare_cr", "json_whitespace", "reordered", "metadata_only"],
+)
+def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
+    monkeypatch, tmp_path, variant
+):
+    source_corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    original = source_corpus.read_bytes()
+    rows = [json.loads(line) for line in original.decode("utf-8").splitlines()]
+    if variant == "blank_lines":
+        altered = original.replace(b"\r\n", b"\n\n")
+    elif variant == "bare_cr":
+        altered = original.replace(b"\r\n", b"\r")
+    else:
+        if variant == "reordered":
+            rows.reverse()
+        elif variant == "metadata_only":
+            rows[0]["judge"]["critique"] = "Formatting-only fixture variant"
+        altered = (
+            "\n".join(
+                json.dumps(row, sort_keys=True, separators=(",", ":"))
+                for row in rows
+            )
+            + "\n"
+        ).encode("utf-8")
+    candidate_dir = tmp_path / "reserialized"
+    candidate_dir.mkdir()
+    corpus = candidate_dir / "train.jsonl"
+    corpus.write_bytes(altered)
+    assert canonical_bytes_sha256(altered) != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch, corpus, output, extra_args=("--role", "triage")
+    )
+
+    with pytest.raises(ValueError, match="canonical Train corpus"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
 @pytest.mark.parametrize("role", ["all", "remediation"])
 def test_sft_rejects_selected_role_acl_violation_before_output_or_ml_import(
     monkeypatch,

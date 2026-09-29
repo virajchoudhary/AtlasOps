@@ -82,10 +82,12 @@ planned, running, completed, failed, or interrupted state atomically and records
 
 - Before claiming output or importing ML dependencies, it rejects selected
   training rows whose assistant tool calls are absent from the runtime role
-  allowlist. It also rejects the known 64-row synthetic corpus hash for
-  every role. Default all-role and remediation selections would additionally
-  fail on `k8s_delete_pod`; neither check defines or approves a future P1
-  training-data protocol.
+  allowlist. It also rejects the known 64-row synthetic corpus for every
+  role by its canonical-LF byte digest or an equivalent parsed
+  scenario/role/message fingerprint, independent of row order, JSONL
+  formatting, and unused reward metadata. Default all-role and remediation
+  selections would additionally fail on `k8s_delete_pod`; neither check
+  defines or approves a future P1 training-data protocol.
 - Before writing the planned run manifest, it reads one bounded (16 MiB maximum),
   redirect-free byte snapshot and validates the JSONL rows and frozen Train split from
   that snapshot, then builds the planned manifest before exclusively creating

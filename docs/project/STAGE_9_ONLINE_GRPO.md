@@ -31,6 +31,10 @@ The required relationship is:
 - A serialized training rollout requires a verified zero-Chaos preflight. Cleanup targets
   only its selected scenario manifest and must verify zero active Chaos resources before
   another rollout starts. Failed attempts remain in the raw rollout ledger.
+  If cleanup fails after an action/verifier result exists, the failure row
+  retains that result and its action/settling evidence while marking the
+  attempt unscorable with null reward. The batch aborts; retained evidence
+  cannot be scored as a resolved episode or retroactively prove cleanup.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
 - A missing real alert or failed fault application yields an unscorable failed

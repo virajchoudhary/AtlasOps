@@ -140,13 +140,19 @@ def _preflight_output_paths(
         resolved_output_dir / "results_summary.json",
         resolved_evidence_dir / f"zero_shot_{split_name}_summary.json",
     )
+    directory_paths = (resolved_output_dir, resolved_evidence_dir)
+    if any(
+        output_file == directory or output_file in directory.parents
+        for directory in directory_paths
+        for output_file in output_files
+    ):
+        raise ValueError("G6 directory conflicts with an output filename")
 
     try:
         repo_root = REPO_ROOT.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise ValueError("Unable to safely resolve the G6 repository root") from exc
 
-    directory_paths = (resolved_output_dir, resolved_evidence_dir)
     tracked_evidence_dir = (
         repo_root / "artifacts/evidence/mock_archive/stage6"
     ).resolve(strict=False)

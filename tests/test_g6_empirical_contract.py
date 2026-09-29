@@ -317,6 +317,46 @@ async def test_injected_empirical_rejects_occupied_destinations_before_inference
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["mock", "empirical"])
+@pytest.mark.parametrize(
+    "conflicting_name",
+    [
+        "results_per_episode.jsonl",
+        "results_summary.json",
+        "results_summary.json/nested",
+    ],
+)
+async def test_output_directory_cannot_become_another_output_filename(
+    tmp_path, monkeypatch, mode, conflicting_name
+):
+    output_dir = tmp_path / "run"
+    evidence_dir = output_dir / conflicting_name
+    calls = []
+
+    async def mock_runner(_scenario_id, *, mock):
+        calls.append("mock-runner")
+        return {}
+
+    async def inference(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return _prediction()
+
+    monkeypatch.setattr(zero_shot, "run_scenario", mock_runner)
+    with pytest.raises(ValueError, match="directory.*output filename"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode=mode,
+            model_revision="synthetic-test-revision",
+            output_dir=output_dir,
+            evidence_dir=evidence_dir,
+            inference_fn=inference,
+        )
+
+    assert calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
 async def test_output_symlink_cannot_redirect_to_tracked_historical_path(
     tmp_path,
     monkeypatch,

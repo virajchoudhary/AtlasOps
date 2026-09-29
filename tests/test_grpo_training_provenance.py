@@ -991,6 +991,8 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
             str(tmp_path / "sft"),
             "--output",
             str(output_dir),
+            "--batch-size",
+            "2",
             "--execute-live-chaos",
             "--kube-context",
             "kind-atlasops-test",
@@ -1040,6 +1042,8 @@ def test_cli_rejects_unavailable_failure_persistence_before_output(
             str(tmp_path / "sft"),
             "--output",
             str(output_dir),
+            "--batch-size",
+            "2",
             "--execute-live-chaos",
             "--kube-context",
             "kind-atlasops-test",
@@ -1064,12 +1068,23 @@ def test_cli_rejects_unavailable_failure_persistence_before_output(
     assert not output_dir.exists()
 
 
-def test_main_records_optuna_effective_hyperparameters_separately(
+def test_main_records_requested_hyperparameters_for_non_optuna_run(
     monkeypatch, tmp_path
 ):
     from training import grpo
 
     output_dir = tmp_path / "run"
+    requested = {
+        "tiers": ["cascade", "multi_fault", "named_replays"],
+        "learning_rate": 1e-6,
+        "beta": 0.04,
+        "batch_size": 2,
+        "num_generations": 8,
+        "max_steps": 200,
+        "gradient_accumulation_steps": 4,
+        "optuna_trials": 0,
+    }
+    effective = {**requested, "max_completion_length": 512}
     monkeypatch.setattr(
         sys,
         "argv",
@@ -1089,10 +1104,12 @@ def test_main_records_optuna_effective_hyperparameters_separately(
             "0.000001",
             "--beta",
             "0.04",
+            "--batch-size",
+            "2",
             "--num-generations",
             "8",
-            "--optuna",
-            "1",
+            "--grad-accum",
+            "4",
             "--execute-live-chaos",
             "--kube-context",
             "kind-atlasops-test",
@@ -1100,21 +1117,13 @@ def test_main_records_optuna_effective_hyperparameters_separately(
     )
     monkeypatch.setattr(grpo, "validate_sft_parent", lambda *_args, **_kwargs: _parent())
     monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
-    effective = {
-        "tiers": ["cascade", "multi_fault", "named_replays"],
-        "learning_rate": 2e-6,
-        "beta": 0.02,
-        "batch_size": 1,
-        "num_generations": 4,
-        "max_steps": 200,
-        "gradient_accumulation_steps": 4,
-        "optuna_trials": 1,
-        "max_completion_length": 512,
-    }
 
     def complete_fake_training(args, run_dir):
         run_manifest = json.loads((run_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
         assert run_manifest["status"] == "running"
+        assert run_manifest["training"]["requested_hyperparameters"] == requested
+        assert run_manifest["training"]["effective_hyperparameters"] is None
+        assert run_manifest["training"]["hyperparameter_selection"] == "pending"
         (run_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
         (run_dir / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
         (run_dir / "rollout_trajectories.jsonl").write_text(
@@ -1150,26 +1159,14 @@ def test_main_records_optuna_effective_hyperparameters_separately(
         )
         summary = _valid_training_summary(run_manifest["training"])
         summary["effective_hyperparameters"] = effective
-        summary["hyperparameter_selection"] = "optuna"
+        summary["hyperparameter_selection"] = "requested"
         (run_dir / "training_summary.json").write_text(
             json.dumps(summary),
             encoding="utf-8",
         )
-        (run_dir / "optuna_best.json").write_text(
-            json.dumps({
-                "params": {
-                    "lr": effective["learning_rate"],
-                    "beta": effective["beta"],
-                    "num_generations": effective["num_generations"],
-                },
-                "value": 0.5,
-                "live_execution": run_manifest["training"]["live_execution"],
-            }),
-            encoding="utf-8",
-        )
         return {
             "effective_hyperparameters": effective,
-            "hyperparameter_selection": "optuna",
+            "hyperparameter_selection": "requested",
         }
 
     monkeypatch.setattr(grpo, "run_training", complete_fake_training)
@@ -1178,11 +1175,70 @@ def test_main_records_optuna_effective_hyperparameters_separately(
     completed = json.loads((output_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
     training = completed["training"]
     assert completed["status"] == "completed"
-    assert training["hyperparameter_selection"] == "optuna"
-    assert training["requested_hyperparameters"]["learning_rate"] == 1e-6
-    assert training["requested_hyperparameters"]["beta"] == 0.04
-    assert training["requested_hyperparameters"]["num_generations"] == 8
+    assert training["hyperparameter_selection"] == "requested"
+    assert training["requested_hyperparameters"] == requested
     assert training["effective_hyperparameters"] == effective
+    assert {row["path"] for row in completed["checkpoint"]["files"]} == {
+        "adapter_config.json",
+        "adapter_model.safetensors",
+        "rollout_trajectories.jsonl",
+        "training_summary.json",
+    }
+    assert not (output_dir / "optuna_best.json").exists()
+
+
+def test_cli_defers_optuna_before_trial_model_live_start_or_output(
+    monkeypatch, tmp_path, capsys
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--tokenizer-revision",
+            TOKENIZER_COMMIT,
+            "--sft-checkpoint",
+            str(tmp_path / "sft"),
+            "--output",
+            str(output_dir),
+            "--optuna",
+            "1",
+            "--execute-live-chaos",
+            "--kube-context",
+            "kind-atlasops-test",
+        ],
+    )
+
+    def unexpected_start(*_args, **_kwargs):
+        pytest.fail("deferred Optuna reached a training, trial, or live-start boundary")
+
+    for name in (
+        "_require_live_execution",
+        "require_stable_failure_persistence",
+        "validate_sft_parent",
+        "build_direct_action_prompts",
+        "load_model_and_tokenizer",
+        "run_training",
+        "run_optuna_search",
+    ):
+        monkeypatch.setattr(grpo, name, unexpected_start)
+
+    with pytest.raises(SystemExit) as exc:
+        grpo.main()
+
+    error = capsys.readouterr().err
+    assert exc.value.code == 2
+    assert "Optuna GRPO search is deferred pending an explicitly approved" in error
+    assert "pinned TRL 0.19.1's divisibility rule" in error
+    assert "No trials were started and no replacement hyperparameters were selected" in error
+    assert not output_dir.exists()
 
 
 @pytest.mark.parametrize(
@@ -1272,11 +1328,30 @@ def test_direct_run_training_validates_before_model_load_or_output(
     assert not output_dir.exists()
 
 
-def test_direct_optuna_search_requires_live_execution_before_output(tmp_path):
+def test_direct_optuna_search_defers_before_live_validation_or_output(
+    monkeypatch, tmp_path
+):
     from training import grpo
 
     output_dir = tmp_path / "optuna"
-    with pytest.raises(PermissionError, match="--execute-live-chaos"):
+    monkeypatch.setattr(
+        grpo,
+        "_require_live_execution",
+        lambda *_args, **_kwargs: pytest.fail(
+            "live preflight ran before deferred Optuna validation"
+        ),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "load_model_and_tokenizer",
+        lambda *_args, **_kwargs: pytest.fail(
+            "model load started before deferred Optuna validation"
+        ),
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="Optuna GRPO search is deferred pending an explicitly approved",
+    ) as exc:
         grpo.run_optuna_search(
             "Qwen/Qwen2.5-7B-Instruct",
             ["single_fault"],
@@ -1286,6 +1361,9 @@ def test_direct_optuna_search_requires_live_execution_before_output(tmp_path):
             TOKENIZER_COMMIT,
             tmp_path / "sft",
         )
+    assert "No trials were started and no replacement hyperparameters were selected" in str(
+        exc.value
+    )
     assert not output_dir.exists()
 
 
@@ -1312,174 +1390,100 @@ def test_model_loader_requires_live_opt_in_before_tokenizer_load(monkeypatch, tm
     assert calls == []
 
 
-def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
+def test_run_training_defers_optuna_before_live_model_or_search(
+    monkeypatch, tmp_path
+):
     from training import grpo
 
-    monkeypatch.setattr(grpo, "_HAS_TORCH_RL", False)
-    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
-    observed = {}
     args = Namespace(
         execute_live_chaos=True,
         kube_context=" kind-atlasops-test ",
         tiers="single_fault",
         seed=42,
         optuna=1,
+        batch_size=2,
+        grad_accum=4,
+        num_generations=8,
         model="Qwen/Qwen2.5-7B-Instruct",
         model_revision=MODEL_COMMIT,
         tokenizer=None,
         tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
     )
+    output_dir = tmp_path / "run"
 
-    class StopAtOptuna(RuntimeError):
-        pass
+    def unexpected_start(*_args, **_kwargs):
+        pytest.fail("deferred Optuna reached a training or live-start boundary")
 
-    def stop_at_optuna(*_args, **kwargs):
-        observed.update(kwargs)
-        raise StopAtOptuna
+    monkeypatch.setattr(grpo, "_require_live_execution", unexpected_start)
+    monkeypatch.setattr(grpo, "load_model_and_tokenizer", unexpected_start)
+    monkeypatch.setattr(grpo, "run_optuna_search", unexpected_start)
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", unexpected_start)
 
-    monkeypatch.setattr(grpo, "run_optuna_search", stop_at_optuna)
-    with pytest.raises(StopAtOptuna):
-        grpo.run_training(args, tmp_path / "run")
+    with pytest.raises(
+        RuntimeError,
+        match="Optuna GRPO search is deferred pending an explicitly approved",
+    ) as exc:
+        grpo.run_training(args, output_dir)
 
-    assert observed["execute_live_chaos"] is True
-    assert observed["kube_context"] == "kind-atlasops-test"
+    assert "No trials were started and no replacement hyperparameters were selected" in str(
+        exc.value
+    )
+    assert not output_dir.exists()
 
 
-def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_path):
+def test_optuna_search_does_not_start_trials_even_with_live_opt_in(
+    monkeypatch, tmp_path
+):
     from types import ModuleType, SimpleNamespace
 
     from training import grpo
 
-    observed = {}
+    trial_starts = []
 
-    class Trial:
-        number = 0
-
-        def suggest_float(self, name, *_args, **_kwargs):
-            return {"lr": 1e-6, "beta": 0.01}[name]
-
-        def suggest_categorical(self, _name, choices):
-            return choices[0]
-
-    class Study:
-        def __init__(self):
-            self.best_params = {
-                "lr": 1e-6,
-                "beta": 0.01,
-                "num_generations": 4,
-            }
-            self.best_value = 0.5
-
-        def optimize(self, objective, *, n_trials):
-            assert n_trials == 1
-            objective(Trial())
-
-    class Sampler:
-        def __init__(self, *, seed):
-            assert seed == 42
+    def unexpected_trial_start(*_args, **_kwargs):
+        trial_starts.append(True)
+        pytest.fail("Optuna study or trial started before its batch budget was approved")
 
     optuna = ModuleType("optuna")
     optuna.logging = SimpleNamespace(
         WARNING="warning",
         set_verbosity=lambda _level: None,
     )
-    optuna.Trial = Trial
-    optuna.samplers = SimpleNamespace(TPESampler=Sampler)
-    optuna.create_study = lambda **_kwargs: Study()
+    optuna.samplers = SimpleNamespace(TPESampler=unexpected_trial_start)
+    optuna.create_study = unexpected_trial_start
+    optuna.Trial = unexpected_trial_start
     monkeypatch.setitem(sys.modules, "optuna", optuna)
 
-    datasets = ModuleType("datasets")
+    def unexpected_start(*_args, **_kwargs):
+        pytest.fail("deferred Optuna reached a model or live-start boundary")
 
-    class Dataset:
-        @staticmethod
-        def from_list(rows):
-            return rows
-
-    datasets.Dataset = Dataset
-    monkeypatch.setitem(sys.modules, "datasets", datasets)
-
-    class FakeRewardFunction:
-        def __init__(
-            self,
-            _tiers,
-            *,
-            rollout_log_path,
-            rollout_phase,
-            trial_number,
-            effective_hyperparameters,
-            **kwargs,
-        ):
-            observed["reward_options"] = kwargs
-            observed["rollout_log_path"] = rollout_log_path
-            observed["rollout_phase"] = rollout_phase
-            observed["trial_number"] = trial_number
-            observed["effective_hyperparameters"] = effective_hyperparameters
-
-    class FakeTrainer:
-        def __init__(self, **_kwargs):
-            self.state = SimpleNamespace(log_history=[{"rewards/mean": 0.5}])
-
-        def train(self):
-            pass
-
-    def fake_load_model(*_args, **kwargs):
-        observed["model_options"] = kwargs
-        return object(), object()
-
-    monkeypatch.setattr(grpo, "OnlineRewardFunction", FakeRewardFunction)
-    monkeypatch.setattr(grpo, "load_model_and_tokenizer", fake_load_model)
-    monkeypatch.setattr(grpo, "GRPOConfig", lambda **kwargs: kwargs)
-    monkeypatch.setattr(grpo, "GRPOTrainer", FakeTrainer)
+    monkeypatch.setattr(grpo, "_require_live_execution", unexpected_start)
+    monkeypatch.setattr(grpo, "load_model_and_tokenizer", unexpected_start)
     output_dir = tmp_path / "optuna"
-    result = grpo.run_optuna_search(
-        "Qwen/Qwen2.5-7B-Instruct",
-        ["single_fault"],
-        output_dir,
-        MODEL_COMMIT,
-        "Qwen/Qwen2.5-7B-Instruct",
-        TOKENIZER_COMMIT,
-        tmp_path / "sft",
-        n_trials=1,
-        execute_live_chaos=True,
-        kube_context=" kind-atlasops-test ",
-    )
 
-    expected_live_execution = {
-        "execute_live_chaos": True,
-        "kube_context": "kind-atlasops-test",
-    }
-    assert result == {
-        "lr": 1e-6,
-        "beta": 0.01,
-        "num_generations": 4,
-    }
-    assert observed["reward_options"] == {
-        **expected_live_execution,
-        "operator_approval_enabled": False,
-    }
-    assert {
-        key: observed["model_options"][key]
-        for key in expected_live_execution
-    } == expected_live_execution
-    assert observed["rollout_log_path"] == (
-        output_dir / "optuna_trials" / "trial_0" / "rollout_trajectories.jsonl"
+    with pytest.raises(
+        RuntimeError,
+        match="Optuna GRPO search is deferred pending an explicitly approved",
+    ) as exc:
+        grpo.run_optuna_search(
+            "Qwen/Qwen2.5-7B-Instruct",
+            ["single_fault"],
+            output_dir,
+            MODEL_COMMIT,
+            "Qwen/Qwen2.5-7B-Instruct",
+            TOKENIZER_COMMIT,
+            tmp_path / "sft",
+            n_trials=1,
+            execute_live_chaos=True,
+            kube_context=" kind-atlasops-test ",
+        )
+
+    assert "No trials were started and no replacement hyperparameters were selected" in str(
+        exc.value
     )
-    assert observed["rollout_phase"] == "optuna_trial"
-    assert observed["trial_number"] == 0
-    assert observed["effective_hyperparameters"] == {
-        "tiers": ["single_fault"],
-        "learning_rate": 1e-6,
-        "beta": 0.01,
-        "batch_size": 1,
-        "num_generations": 4,
-        "max_steps": 10,
-        "gradient_accumulation_steps": 1,
-        "max_completion_length": 256,
-    }
-    assert json.loads(
-        (output_dir / "optuna_best.json").read_text(encoding="utf-8")
-    )["live_execution"] == expected_live_execution
+    assert trial_starts == []
+    assert not output_dir.exists()
 
 
 def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):

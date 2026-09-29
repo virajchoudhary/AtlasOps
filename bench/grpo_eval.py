@@ -1179,6 +1179,14 @@ async def _evaluate_mock_split(
     return summary
 
 
+def _require_empirical_validation_split(split_name: str) -> None:
+    if split_name.strip().lower() not in {"val", "train"}:
+        raise ValueError(
+            "Empirical G9 development evaluation is Validation-only; "
+            "Test and Leaderboard splits are blocked"
+        )
+
+
 async def evaluate_grpo_split(
     split_name: str,
     model_name: str = "qwen2.5:7b-instruct-grpo",
@@ -1212,6 +1220,7 @@ async def evaluate_grpo_split(
             model_name=model_name,
             output_dir=Path(output_dir) if output_dir is not None else None,
         )
+    _require_empirical_validation_split(split_name)
     kube_context = require_live_kube_context(
         execute_actions,
         kube_context,
@@ -1520,6 +1529,10 @@ def main() -> None:
             )
         )
         return
+    try:
+        _require_empirical_validation_split(args.split)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not args.checkpoint or not args.state_dir or not args.output_dir:
         parser.error("Empirical mode requires --checkpoint, --state-dir, and --output-dir")
     if not args.execute_actions:

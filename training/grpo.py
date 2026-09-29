@@ -579,23 +579,35 @@ class OnlineRewardFunction:
                 log.warning("Rollout %d failed (%s)", i + 1, type(exc).__name__)
                 failure_reason = f"rollout_exception:{type(exc).__name__}"
             finally:
-                if not reset_chaos(
-                    scenario_id,
-                    execute_live_chaos=self.execute_live_chaos,
-                    kube_context=kube_context,
-                ):
-                    self._persist_rollout({
+                cleanup_exception_type = None
+                try:
+                    cleanup_verified = reset_chaos(
+                        scenario_id,
+                        execute_live_chaos=self.execute_live_chaos,
+                        kube_context=kube_context,
+                    )
+                except Exception as exc:
+                    cleanup_verified = False
+                    cleanup_exception_type = type(exc).__name__
+                if not cleanup_verified:
+                    cleanup_failure = {
                         "scenario_id": scenario_id,
                         "tier": tier,
                         "status": "failed",
                         "failure": "scenario_cleanup_unverified",
                         "prior_failure": failure_reason,
-                        "policy_completion": completion,
+                        "scorable": False,
                         "reward": None,
-                    })
+                        "cleanup_exception_type": cleanup_exception_type,
+                    }
+                    if result is not None:
+                        cleanup_failure["rollout_result"] = result
+                    else:
+                        cleanup_failure["policy_completion"] = completion
+                    self._persist_rollout(cleanup_failure)
                     raise RuntimeError(
                         f"GRPO scenario cleanup was not verified: {scenario_id}"
-                    )
+                    ) from None
             await asyncio.sleep(10)   # let the cluster fully stabilise
 
             if result is None:

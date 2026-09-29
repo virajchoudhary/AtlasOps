@@ -12,9 +12,10 @@ from types import SimpleNamespace
 import pytest
 
 from config.splits import TRAIN_SPLIT
-from training import sft_rendering
+from training import sft_provenance, sft_rendering
 from training.generate_trajectories import SFT_EXAMPLE_FORMAT
-from training import sft_provenance
+
+MODEL_COMMIT = "a" * 40
 
 
 class StopBeforeTraining(RuntimeError):
@@ -117,10 +118,10 @@ def _install_training_stubs(monkeypatch, captured: dict) -> None:
     tokenizer = SimpleNamespace(
         pad_token="pad",
         eos_token="eos",
-        init_kwargs={},
+        init_kwargs={"_commit_hash": MODEL_COMMIT},
     )
     model = SimpleNamespace(
-        config=SimpleNamespace(_commit_hash="stub-model-revision"),
+        config=SimpleNamespace(_commit_hash=MODEL_COMMIT),
         print_trainable_parameters=lambda: None,
     )
 
@@ -193,7 +194,7 @@ def _set_sft_args(
             "--model",
             "Qwen/Qwen2.5-7B-Instruct",
             "--model-revision",
-            "model-commit",
+            MODEL_COMMIT,
             "--data",
             str(corpus_path),
             "--output",

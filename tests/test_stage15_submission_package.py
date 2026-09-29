@@ -127,6 +127,10 @@ class TestStage15SubmissionPackage:
             "docs/project/FINAL_PIPELINE_V22_STATUS.md",
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",
+            "docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md",
+            "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md",
+            "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md",
+            "docs/project/G7_G13_DECISION_REGISTER.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",
             "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
             "tests/stage4_approval_process.py",
@@ -557,6 +561,36 @@ class TestStage15SubmissionPackage:
         assert "cannot yet retain every A1 eligible negative outcome" in record
         assert "G13 stays `REOPENED`" in record
         assert "`NOT_CERTIFIED`" in record
+
+    def test_g7_g13_preparation_is_packaged_without_approving_execution(self):
+        paths = {
+            "docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md",
+            "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md",
+            "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md",
+            "docs/project/G7_G13_DECISION_REGISTER.md",
+        }
+        assert paths <= collect_submission_assets().keys()
+        contract = Path(
+            "docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md"
+        ).read_text(encoding="utf-8")
+        readiness = Path(
+            "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md"
+        ).read_text(encoding="utf-8")
+        runbook = Path(
+            "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md"
+        ).read_text(encoding="utf-8")
+        decisions = Path(
+            "docs/project/G7_G13_DECISION_REGISTER.md"
+        ).read_text(encoding="utf-8")
+        assert "PROPOSED / NOT APPROVED / NOT FROZEN / NON-EXECUTABLE" in contract
+        assert "Items 1-4 retain their selected A directions" in contract
+        assert "G13 `REOPENED`" in contract
+        assert "TRAINING NOT AUTHORIZED" in readiness
+        assert "G9 `REOPENED`" in readiness
+        assert "FUTURE EXECUTION PLAN / NOT AUTHORIZED" in runbook
+        assert "G4 is still `NOT_PASSED`" in runbook
+        assert "REVIEW DRAFT / NO NEW APPROVALS" in decisions
+        assert "Stage 15 remains `NOT_CERTIFIED`" in decisions
 
     def test_presentation_keeps_empirical_claims_open(self):
         slides = Path("docs/slides.md").read_text(encoding="utf-8")

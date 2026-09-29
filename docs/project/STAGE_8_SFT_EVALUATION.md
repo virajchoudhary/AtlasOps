@@ -15,7 +15,10 @@ exists in the current evidence set, so G8 has no empirical model result.
   entrypoint has no override for them.
 - Empirical mode requires an explicit output directory; implicit mock output is
   isolated under a unique non-empirical run directory.
-- Every declared checkpoint file and aggregate tree hash is verified before loading.
+- The completed manifest is parsed and SHA-256 hashed from the same bounded
+  byte snapshot. Every declared checkpoint file and aggregate tree hash is
+  verified at preflight and again during lazy loading, including immediately
+  before the PEFT adapter load. A changed manifest or adapter fails closed.
 - The training corpus origin, synthetic flag, and adjacent corpus-manifest provenance are
   validated and carried into the evaluation summary. Older manifests without these fields
   and unsupported or conflicting origin claims are reported as `UNVERIFIED`.
@@ -31,7 +34,11 @@ exists in the current evidence set, so G8 has no empirical model result.
   `UNVERIFIED`.
 - Scenario-derived synthetic training data is disclosed but does not by itself prevent
   empirical model inference or diagnosis scoring.
-- The base model and tokenizer use the revisions recorded by training.
+- The base model and tokenizer require full recorded 40-character commit SHAs.
+  The lazy loader uses those revisions and `local_files_only=True` for
+  tokenizer, base model, and adapter reads; the approved remote preparation
+  must populate the local cache separately before G8 evaluation. The file
+  checks cannot eliminate concurrent replacement after the last validation.
 - Validation truth is withheld until after raw generation and then used only
   for scoring. Mock fixtures for other named splits remain explicitly
   non-empirical and do not establish held-out performance.
@@ -51,9 +58,11 @@ historical mock output, not SFT checkpoint performance.
 ## Current Verification
 
 Local tests cover required mode and checkpoint selection, incomplete and tampered
-checkpoint rejection, path containment, truth withholding, raw-response persistence,
-failure retention, early non-Validation refusal, and artifact isolation. A real
-Validation evaluation depends on a legitimate
-completed G7 checkpoint.
+checkpoint rejection, a changed manifest between preflight and lazy loading,
+cache-only pinned loader arguments, path containment, truth withholding,
+raw-response persistence, failure retention, early non-Validation refusal,
+and artifact isolation. They use fake loaders and do not independently reload
+a real QLoRA adapter. A real Validation evaluation still depends on a legitimate
+completed G7 checkpoint, approved local cache, and independent adapter reload.
 
 **Gate G8 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

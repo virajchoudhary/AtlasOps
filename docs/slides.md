@@ -17,14 +17,14 @@ style: |
 
 ## Project continuation and real-validation status
 
-26 September 2026
+Scope updated 29 September 2026
 
-Reviewed code baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`
+Historical presentation evidence baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`
 
 <small>University team continuation of Harikishanth/AtlasOps, upstream baseline
 `bf9bd197c9f4a05ae55ade254802a9eef1a74356`. MIT attribution retained.</small>
 
-<!-- Source: AGENTS.md; docs/project/MASTER_PIPELINE_STATUS.md; main at 8560a8c before the presentation merge. -->
+<!-- Source: AGENTS.md; docs/project/GAI_RL_SCOPE_REVISION.md; historical main at 8560a8c before the presentation merge. -->
 
 ---
 
@@ -43,14 +43,14 @@ unverified. It is not a successful remediation demonstration.
 ## Incident decision path
 
 1. An alert reaches Triage and Diagnosis.
-2. The recommender offers advisory runbooks based on scenario-derived data.
-3. The safety gate requires explicit P1 approval before remediation.
-4. A trained GRPO policy, when one exists, must propose one structured action
+2. The safety gate requires explicit P1 approval before remediation.
+3. A trained GRPO policy, when one exists, must propose one structured action
    through the tool ACL and environment adapter.
-5. The objective verifier determines resolution before Comms records the result.
+4. The objective verifier determines resolution before Comms records the result.
 
 The direct policy-action software path has local test coverage. **No completed
 GRPO checkpoint or real integrated episode has been verified.**
+The historical runbook recommender is optional advisory research.
 
 <!-- Source: agents/coordinator.py; agents/tool_policy.py; training/grpo_environment.py; docs/project/MASTER_PIPELINE_STATUS.md. -->
 
@@ -65,8 +65,8 @@ GRPO checkpoint or real integrated episode has been verified.**
   mutation policy. These are locally tested software contracts.
 - CI for the reviewed code baseline passed frontend contracts and Python
   3.11/3.12, including the full unit suite.
-- G10/G11 recommender results use a small scenario-derived interaction set.
-  They are not historical operator feedback.
+- G10/G11 are out of the current GAI + RL scope. Their preserved recommender
+  results use a small scenario-derived set, not historical operator feedback.
 - The submission inventory verifies file integrity and remains
   **NOT_CERTIFIED**.
 
@@ -101,8 +101,8 @@ failed, so the present cluster state cannot be inferred from those records.
 - G9 needs a real policy checkpoint and governed environment rollouts. Local
   direct-action tests do not establish trained-policy performance.
 - G12 needs that checkpoint and a live, clean controlled environment.
-- G13 needs measured artifacts for five variants across Validation, Test,
-  Leaderboard, and a predeclared adversarial partition.
+- G13 plans three matched arms: base GAI, SFT, and SFT+GRPO. It needs raw
+  outcome evidence and a reviewed frozen protocol before any Test campaign.
 
 No new model or full-pipeline metric was measured for this deck.
 
@@ -114,8 +114,8 @@ No new model or full-pipeline metric was measured for this deck.
 
 ![Read-only Gradio evidence browser](media/gradio-demo-20260926.png)
 
-Show the gate inventory, inspect the preserved G4 negative and interrupted
-attempts, then explore advisory runbook ranking. The scenario selector reads a
+Show the gate inventory and inspect the preserved G4 negative and interrupted
+attempts. Optional historical runbook ranking remains separate. The scenario selector reads a
 checked-in manifest; it does not inject Chaos. The Gradio launcher binds to
 localhost without a public share link by default.
 

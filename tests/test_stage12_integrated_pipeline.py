@@ -1,16 +1,15 @@
-"""Tests for Stage 12: Integrate GAI + RS + RL (Gate G12).
+"""Tests for the optional Stage 12 recommender extension (Gate G12).
 
 Validates:
-1. Complete Multi-Agent Pipeline Dataflow: Alert -> Triage -> Diagnosis -> RS -> Remediation -> Verification -> Comms.
-2. Coordinator correctly invokes HybridRecommender between Diagnosis and Remediation.
-3. Remediation Agent receives ranked candidate runbooks with suggested tools and executable actions.
-4. Full incident trajectory captures recommender telemetry.
-5. Recommender failure fail-open resilience.
+1. Explicit opt-in invokes HybridRecommender between Diagnosis and Remediation.
+2. Remediation receives advisory runbooks without treating them as approval.
+3. Recommender failure does not block the required GAI + RL path.
 """
 
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -24,9 +23,16 @@ class TestStage12IntegratedPipeline:
         monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
         monkeypatch.setenv("TRAJECTORIES_DIR", str(tmp_path / "trajectories"))
 
+    @pytest.mark.parametrize("recommender_enabled", [False, True])
     @pytest.mark.asyncio
-    async def test_coordinator_handle_incident_invokes_recommender(self, monkeypatch):
+    async def test_coordinator_handle_incident_invokes_recommender(
+        self, monkeypatch, recommender_enabled
+    ):
         import agents.coordinator as coord
+        if recommender_enabled:
+            monkeypatch.setenv("ATLASOPS_RECOMMENDER_ENABLED", "1")
+        else:
+            monkeypatch.delenv("ATLASOPS_RECOMMENDER_ENABLED", raising=False)
 
         alert = {
             "commonLabels": {"alertname": "KubeMemoryOvercommit"},
@@ -62,13 +68,14 @@ class TestStage12IntegratedPipeline:
             elif role == "diagnosis":
                 return {"role": "diagnosis", "trajectory": [], "final": mock_diagnosis_final}
             elif role == "remediation":
-                # Verify that Remediation Agent received recommended runbooks from Stage 12 RS step!
                 assert "recommended_runbooks" in user_input
-                assert len(user_input["recommended_runbooks"]) > 0
-                top_rb = user_input["recommended_runbooks"][0]
-                assert top_rb["runbook_id"] == "RB-POD-OOM"
-                assert "suggested_tools" in top_rb
-                assert "actions" in top_rb
+                if recommender_enabled:
+                    top_rb = user_input["recommended_runbooks"][0]
+                    assert top_rb["runbook_id"] == "RB-POD-OOM"
+                    assert "suggested_tools" in top_rb
+                    assert "actions" in top_rb
+                else:
+                    assert user_input["recommended_runbooks"] == []
                 return {"role": "remediation", "trajectory": [], "final": mock_remediation_final}
             elif role == "comms":
                 return {"role": "comms", "trajectory": [], "final": mock_comms_final}
@@ -92,12 +99,25 @@ class TestStage12IntegratedPipeline:
         assert result["env_resolved"] is True
         assert "recommender" in result
         assert "recommended_runbooks" in result["recommender"]
-        assert len(result["recommender"]["recommended_runbooks"]) == 3
-        assert result["recommender"]["recommended_runbooks"][0]["runbook_id"] == "RB-POD-OOM"
+        assert result["recommender"]["status"] == (
+            "executed" if recommender_enabled else "disabled"
+        )
+        if recommender_enabled:
+            assert len(result["recommender"]["recommended_runbooks"]) == 3
+            assert result["recommender"]["recommended_runbooks"][0]["runbook_id"] == "RB-POD-OOM"
+        else:
+            assert result["recommender"]["recommended_runbooks"] == []
+
+    def test_remediation_prompt_treats_rankings_as_optional(self):
+        prompt = Path("agents/prompts/remediation.md").read_text(encoding="utf-8")
+        assert "`recommended_runbooks` may be empty" in prompt
+        assert "Do not invent a recommendation" in prompt
+        assert "ranking never grants approval" in prompt
 
     @pytest.mark.asyncio
     async def test_recommender_fails_open_gracefully(self, monkeypatch):
         import agents.coordinator as coord
+        monkeypatch.setenv("ATLASOPS_RECOMMENDER_ENABLED", "1")
 
         alert = {
             "commonLabels": {"alertname": "UnknownAlert"},

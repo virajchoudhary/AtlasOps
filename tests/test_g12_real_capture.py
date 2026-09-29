@@ -285,6 +285,7 @@ def _collect_fixture(
     tmp_path,
     remediation,
     *,
+    include_recommender: bool = True,
     cleanup_sidecar=_NO_CLEANUP_SIDECAR,
     prefault_sidecar: bytes | None = None,
     primary_incident_anchors=INCIDENT_ANCHORS,
@@ -316,13 +317,17 @@ def _collect_fixture(
         "incident_anchors": INCIDENT_ANCHORS,
         "triage": {"final": {"severity": "P1"}},
         "diagnosis": {"final": {"root_cause": "observed pressure"}},
-        "recommender": {"recommended_runbooks": [{"runbook_id": "RB-1"}]},
         "approval": {"decision": "approved"},
         "remediation": remediation,
         "settling": {"settled": False},
         "verification": {"env_resolved": False},
         "comms": {"final": {"summary": "Unresolved"}},
     }
+    if include_recommender:
+        incident["recommender"] = {
+            "status": "executed",
+            "recommended_runbooks": [{"runbook_id": "RB-1"}],
+        }
     (evidence_dir / f"{EXPERIMENT_ID}.json").write_text(
         json.dumps(primary), encoding="utf-8"
     )
@@ -356,6 +361,27 @@ def _collect_fixture(
         checkpoint_postflight_verified=True,
     )
     return manifest, bundle
+
+
+def test_capture_accepts_missing_recommender_without_certifying_or_scoring(tmp_path):
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+        include_recommender=False,
+    )
+
+    trajectory_asset = manifest["assets"][f"trajectory-{INCIDENT_ID}.json"]
+    preserved = (bundle / trajectory_asset["path"]).read_bytes()
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["reward"] is None
+    assert manifest["time_to_resolve_s"] is None
+    assert manifest["record_fields_present"]["recommender"] is False
+    assert "recommender" not in json.loads(preserved)
+    assert trajectory_asset["sha256"] == hashlib.sha256(preserved).hexdigest()
+    assert trajectory_asset["size_bytes"] == len(preserved)
 
 
 def test_cli_requires_explicit_live_execution_before_any_work(monkeypatch, tmp_path):

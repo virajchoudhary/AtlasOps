@@ -1,5 +1,11 @@
 # Pipeline v2.2 adoption and evidence status
 
+**Current scope amendment:** The later project-lead
+[GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS as a final
+requirement. This file retains the v2.2 adoption provenance and applies the
+amendment to the current gate inventory below. The original review copies,
+v0.2 partial G13 choices and historical RS evidence remain unchanged.
+
 **Working specification for non-live work:** The project lead adopted Sections
 1-24 and 26-27 of the 29 September 2026 AtlasOps Master Implementation,
 Validation & Deployment Pipeline v2.2. Section 25 is a prospective Stage 13
@@ -49,10 +55,10 @@ evidence. A historical PASS is scoped to its recorded conditions.
 | G7 | PARTIAL | `artifacts/evidence/stage7/sft_corpus_manifest.json` records 64 synthetic Train-only examples, not a completed run. `training/sft.py` still needs an independently loadable real adapter and training record. |
 | G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `bench/sft_eval.py`, `tests/test_stage8_sft_eval.py`; ordered split digest is recorded, but there is no verified G7 checkpoint result. Historical Stage 8 outputs are mock. |
 | G9 | REOPENED | `training/grpo.py`, `training/grpo_environment.py`, `bench/grpo_eval.py`, `tests/test_stage9_grpo_pipeline.py`; direct-action software exists, not a completed trained adapter or held-out real evaluation. |
-| G10 | PARTIAL | `artifacts/evidence/stage10/rs_dataset_manifest.json` and `recommender/dataset.py`; scenario-derived interactions do not establish historical operator feedback. Retain the 28-row historical and separate 21-row corrected synthetic cohorts. |
-| G11 | PASS (bounded offline) | `recommender/hybrid.py`, `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`; four synthetic Test rows support only small-data ranking, not incident resolution improvement. |
-| G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `agents/coordinator.py`, `scripts/run_g12_integrated_episode.py`; recommendation and exact policy-action/status capture have local tests. A real checkpoint/environment episode and incremental influence are missing. |
-| G13 | REOPENED | `bench/ablation_suite.py`, `bench/episode_membership.py`, `tests/test_stage13_ablation_suite.py`; raw ordered membership and hashes are checked, but declared summary metrics are not independently recomputed from raw episodes. The five-variant/four-partition measured matrix, two integrated evaluators, and approved adversarial membership/seed are missing. See [prospective v0.1](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md). |
+| G10 | OUT_OF_SCOPE | Historical `artifacts/evidence/stage10/rs_dataset_manifest.json` and `recommender/dataset.py`; former PARTIAL, with no historical operator feedback. Retain both 28-row and corrected 21-row synthetic cohorts. |
+| G11 | OUT_OF_SCOPE | Historical bounded-offline PASS in `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`; four synthetic Test rows support small-data ranking only, not incident resolution improvement. |
+| G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `agents/coordinator.py`, `scripts/run_g12_integrated_episode.py`; direct policy-action/status capture is locally tested. RS is optional, not a GAI + RL prerequisite. A real checkpoint/environment episode is missing. |
+| G13 | REOPENED | `bench/ablation_suite.py`, `bench/episode_membership.py`; the prospective base/SFT/SFT+GRPO three-arm matrix has no independently recomputed raw incident outcomes, common eligible population, approved adversarial membership/seed, or frozen protocol. Historical five-arm output remains non-empirical. See [v0.3](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md) and the preserved [partial v0.2 record](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md). |
 | G14 | PARTIAL | `app.py`, `dashboard.py`, `demo/launcher.py`, `tests/test_stage14_demo_safety.py`; read-only software is not a fresh peer-host safe deployment or operator sign-off. Deployment is deferred. |
 | G15 | PARTIAL / NOT_CERTIFIED | `scripts/package_submission.py`, `artifacts/SUBMISSION_MANIFEST.json`, `artifacts/SUBMISSION_SUMMARY.md`; hashes establish inventory integrity, not scientific certification. Regenerate after each accepted source/evidence change. |
 
@@ -61,24 +67,27 @@ is inferred from this matrix.
 
 ## Decisions and work order
 
-1. **D1 recorded:** v2.2 Sections 1-24 and 26-27 adopted for non-live work.
-   Retain the v1.1 local Kind instructions as a historical setup reference.
+1. **D1 recorded and later scope-amended:** v2.2 Sections 1-24 and 26-27
+   were adopted for non-live work; RS-required portions are superseded by
+   the GAI + RL direction. Retain the v1.1 Kind instructions as a historical
+   setup reference and G10/G11 as optional archived work.
 2. **D2 partial, D3 pending:** the project lead selected the recommended
-   A directions for measurement items 1-4; the exact failure taxonomy,
+   A directions for measurement items 1-4 in the former five-arm proposal;
+   the arm count and RS requirement are superseded. The exact failure taxonomy,
    common scorer implementation/hash, category/clock mapping, budgets and
    independent evaluation sign-off are not frozen. The single
    [v0.2 partial decision record](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md)
    preserves the choices and remaining fields. Adversarial source, actual
    membership and seed, Test access and live execution remain unapproved.
-3. **Safe software lane:** finish file-level README/evidence audit, test the
-   package and gate labels, design common raw episode normalizers, add
-   fail-closed validators, and implement the missing V3/V5 evaluator contracts
-   behind non-live fixtures. Preserve mock/source labels. A measured Stage 13
-   claim cannot use declared summary values alone.
+3. **Safe software lane:** reconcile the GAI + RL runtime, README, package
+   and gate labels; design common raw episode normalizers and fail-closed
+   validators for base, SFT and SFT+GRPO. Preserve mock/source labels and
+   historical V3/V5 material. A measured Stage 13 claim cannot use declared
+   summary values alone.
 4. **Prerequisite empirical lane (separate authorization):** fresh G3 host,
    model and operator preflight; causally valid G4; immutable-serving G6;
    real G7/G8 checkpoint and comparison; serialized direct-action G9;
-   real G12 integration; then approved G13 Test and adversarial campaigns.
+   real GAI + RL G12 integration; then approved G13 Test and adversarial campaigns.
    Do not reserve 015, request P1, inject faults, train, or access quarantined
    outcomes from this adoption.
 5. **Deployment lane (deferred):** G14 peer-host safe-mode/operator and

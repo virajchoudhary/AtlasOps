@@ -8,7 +8,7 @@
   };
   const main = document.getElementById("main");
   const state = {
-    data: {}, loading: true, updated: null, details: {}, liveRecommendations: {}, incidentSearch: "",
+    data: {}, loading: true, updated: null, details: {}, incidentSearch: "",
     incidentSort: "newest", evaluationFilter: "all", runbookSearch: "",
     scenarioSearch: "", scenarioTier: "all",
     quickResults: [], quickIndex: 0, pendingFocus: null
@@ -73,7 +73,7 @@
         <p class="process-inspector-note">${safe(selected.note)}</p>
       </div></section>`;
   }
-  const referenceSteps = lifecycle.map(([title, glyph, note]) => ({
+  const referenceSteps = lifecycle.filter(([title]) => title !== "Recommendation").map(([title, glyph, note]) => ({
     title, icon: glyph, note, status: "Reference stage", tone: "reference"
   }));
 
@@ -101,7 +101,6 @@
   let refreshRun = 0;
   async function refresh() {
     const run = ++refreshRun;
-    state.liveRecommendations = {};
     if (!Object.keys(state.data).length) {
       state.loading = true;
       render();
@@ -296,53 +295,8 @@
   }
 
   function liveIncidentSteps(item, audit, auditAvailable) {
-    return window.AtlasOpsLiveIncident.projectLiveIncident(item, audit, auditAvailable, lifecycle);
-  }
-
-  function loadLiveRecommendations(item, query) {
-    const key = JSON.stringify(query);
-    const id = item.incident_id;
-    if (state.liveRecommendations[id]?.key === key) return;
-    const pending = { key, loading: true };
-    state.liveRecommendations[id] = pending;
-    request("/api/recommender/recommend", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(query)
-    }).then(value => {
-      if (state.liveRecommendations[id] !== pending) return;
-      state.liveRecommendations[id] = { key, value };
-      if (route().kind === "live" && route().id === id) render();
-    }).catch(err => {
-      if (state.liveRecommendations[id] !== pending) return;
-      state.liveRecommendations[id] = { key, error: err.message };
-      if (route().kind === "live" && route().id === id) render();
-    });
-  }
-
-  function liveRecommendationSection(item) {
-    const caption = "Scenario-derived ranking, not a recorded agent decision or recovery probability";
-    const query = window.AtlasOpsLiveIncident.recommendationQuery?.(item);
-    if (!query) return section("Advisory runbooks", caption,
-      empty("Ranking unavailable", "A single observed alert and service are required for this query.", "list-ordered"));
-    loadLiveRecommendations(item, query);
-    const result = state.liveRecommendations[item.incident_id];
-    let body;
-    if (result.loading) {
-      body = `<div class="loading-state"><span class="spinner"></span>Ranking advisory runbooks</div>`;
-    } else if (result.error) {
-      body = empty("Ranking unavailable", `The runbook service could not be read: ${result.error}.`, "triangle-alert");
-    } else {
-      const recommendations = Array.isArray(result.value?.recommendations)
-        ? result.value.recommendations.slice(0, 3) : [];
-      body = recommendations.length ? `<div class="list-stack">${recommendations.map((rec, index) =>
-        `<div class="evidence-row"><div>
-          <button class="row-button" data-runbook="${escapeHtml(rec.runbook_id)}">${index + 1}. ${safe(rec.title)}</button>
-          <div class="meta-note">${safe(rec.runbook_id)} / ${safe(rec.explanation)}</div>
-        </div>${badge("Advisory", "info")}</div>`).join("")}</div>` :
-        empty("No ranked suggestions", "The runbook service returned no suggestions for this context.", "list-ordered");
-    }
-    return section("Advisory runbooks", caption,
-      `<p class="meta-note">Observed query: ${safe(query.alert_name)} / ${safe(query.service)}. This does not authorize action.</p>${body}`);
+    return window.AtlasOpsLiveIncident.projectLiveIncident(item, audit, auditAvailable, lifecycle)
+      .filter(step => step.title !== "Recommendation");
   }
 
   function liveDetail(id) {
@@ -367,7 +321,6 @@
       processView(steps, "Observed lifecycle",
         "Audited activity is not phase completion. Only objective verification can establish resolution.",
         "Live observation") +
-      liveRecommendationSection(item) +
       section("Audit activity", "A log entry is not an environment-verification verdict",
         audit.length ? `<div class="surface table-scroll"><table><thead><tr><th>Time</th><th>Role</th><th>Event</th><th>Policy</th><th>Result</th></tr></thead><tbody>
         ${audit.slice().reverse().map(entry => `<tr><td>${fmtTime(entry.ts)}</td><td>${safe(entry.agent_role)}</td>
@@ -482,16 +435,16 @@
   const roles = [
     ["Triage", "Classifies incoming alerts and affected services.", "Agent", "triage"],
     ["Diagnosis", "Investigates root cause from tools and observations.", "Agent", "diagnosis"],
-    ["Recommender", "Ranks scenario-derived runbooks as advisory options.", "Advisory", "recommender"],
+    ["Runbook recommender (optional)", "Ranks scenario-derived runbooks outside the required GAI + RL path.", "Optional advisory", "recommender"],
     ["Remediation policy", "Checks target, tool, and approval constraints.", "Safety control", "remediation"],
     ["Environment verifier", "Checks observed state after action; verdict governs resolution.", "Authority", "verifier"],
     ["Comms", "Records incident updates after verification.", "Agent", "comms"]
   ];
   function agentsPage() {
     const entries = val("audit")?.entries;
-    return head("AUTOMATION", "Agents", "Roles in the incident chain; this view does not assert that any agent is online.") +
+    return head("AUTOMATION", "Agents", "Core roles plus an optional runbook recommender; this view does not assert that any agent is online.") +
       `<div class="notice">Generative agents propose. Safety controls authorize. Environment verification decides success.</div>` +
-      section("Execution roles", "Runtime activity and model identity are not proven by a role definition",
+      section("Core and advisory roles", "Runtime activity and model identity are not proven by a role definition",
         `<div class="list-stack">${roles.map(([name, description, type, key]) => {
           const latest = entries?.filter(entry => entry.agent_role === key)
             .reduce((a, b) => !a || b.ts > a.ts ? b : a, null);
@@ -527,7 +480,7 @@
   const evaluationGroups = [
     ["Foundation & environment", 0, 5, "Provenance, local environment, and the golden incident"],
     ["Model development", 6, 9, "Zero-shot, SFT, and GRPO"],
-    ["Runbook recommendation", 10, 11, "Dataset and bounded ranker evaluation"],
+    ["Optional historical runbook ranking", 10, 11, "G10-G11 describe out-of-scope RS work; they are not required GAI + RL gates"],
     ["Integration & delivery", 12, 15, "Pipeline, ablation, demo, and submission"]
   ];
   const gateNotes = {
@@ -536,10 +489,10 @@
     G7: "A corpus and configuration exist, but usable checkpoint provenance is unverified.",
     G8: "The preserved evaluation is deterministic mock output, not demonstrated SFT improvement.",
     G9: "Direct-action software is locally tested. Real training, checkpoint, and evaluation remain missing.",
-    G10: "The interactions are scenario-derived and do not constitute historical operator feedback.",
-    G11: "PASS applies to bounded ranking on a small scenario-derived dataset, not broad recovery performance.",
+    G10: "OUT_OF_SCOPE for GAI + RL completion; the historical interactions are scenario-derived, not operator feedback.",
+    G11: "OUT_OF_SCOPE for GAI + RL completion; historical bounded ranking on a small scenario-derived dataset is not broad recovery evidence.",
     G12: "Local integration tests do not establish a real checkpoint and environment run.",
-    G13: "The preserved matrix contains predetermined profiles, not measured ablation results.",
+    G13: "The preserved five-arm matrix is predetermined historical/non-empirical output, not a measured comparison or the required three-arm result.",
     G14: "The demo is read-only; deployment safety is not certified by code alone.",
     G15: "The package inventory is NOT_CERTIFIED while empirical gates remain open."
   };
@@ -603,12 +556,12 @@
   }
 
   function runbooksPage() {
-    return head("OPERATIONS LIBRARY", "Runbooks", "Catalog entries and advisory recommendations; no action can be executed here.") +
+    return head("OPTIONAL EXTENSION", "Runbooks", "Historical RS research artifact, outside the required GAI + RL path; no action can be executed here.") +
       section("Find a runbook", "12 catalog definitions; availability and execution validation are not asserted",
         `<label class="field grow">Search catalog<input id="runbook-search" type="search" value="${escapeHtml(state.runbookSearch)}" placeholder="ID, title, category"></label>
         <div id="runbook-list" style="margin-top:14px">${val("catalog") ? runbookList() :
           empty("Catalog unavailable", "The repository catalog could not be read.", "file-warning")}</div>`) +
-      section("Advisory ranking", "Scenario-derived training interactions, not historical feedback or recovery probabilities",
+      section("Optional advisory ranking", "Scenario-derived interactions, not historical feedback or recovery probabilities",
         `<form id="recommend-form" class="surface surface-pad">
         <div class="controls"><label class="field">Alert name<input name="alert_name" required value="KubeMemoryOvercommit"></label>
         <label class="field">Service<input name="service" required value="frontend"></label>
@@ -624,8 +577,8 @@
     const areas = [
       ["Model evaluations", "Archived mock outputs, not empirical performance"],
       ["Training provenance", "Corpus and configuration, not a validated checkpoint"],
-      ["Recommender", "Scenario-derived interaction and ranker evidence"],
-      ["Ablation", "Predetermined historical output, not a measured comparison"],
+      ["Recommender", "Optional historical RS work; not a required GAI + RL dependency"],
+      ["Ablation", "Historical, predetermined, non-empirical five-arm profiles; not the required three-arm comparison"],
       ["Environment", "Historical local acceptance, not current cluster health"],
       ["Submission", "Asset integrity without scientific certification"]
     ];

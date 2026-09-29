@@ -17,6 +17,13 @@ from bench.ablation_suite import (
     run_full_ablation_suite,
 )
 
+EXPECTED_G13_VARIANTS = (
+    "Zero-Shot Baseline",
+    "SFT Model",
+    "SFT + GRPO",
+)
+GRPO_VARIANT_INDEX = EXPECTED_G13_VARIANTS.index("SFT + GRPO")
+
 
 def _membership_sha256(scenario_ids: list[str]) -> str:
     content = json.dumps(
@@ -139,7 +146,7 @@ def _artifact(
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     if raw_scenario_ids is None:
         raw_rows = [{"prediction": "test"}]
-    elif variant == "Online GRPO RL":
+    elif variant == "SFT + GRPO":
         raw_rows = _synthetic_g9_events(
             partition,
             raw_scenario_ids,
@@ -158,11 +165,11 @@ def _artifact(
         encoding="utf-8",
     )
     raw_path_field = (
-        "raw_trajectory_path" if variant == "Online GRPO RL" else "raw_predictions_path"
+        "raw_trajectory_path" if variant == "SFT + GRPO" else "raw_predictions_path"
     )
     raw_hash_field = (
         "raw_trajectory_sha256"
-        if variant == "Online GRPO RL"
+        if variant == "SFT + GRPO"
         else "raw_predictions_sha256"
     )
     payload = {
@@ -181,7 +188,7 @@ def _artifact(
         raw_hash_field: hashlib.sha256(raw_path.read_bytes()).hexdigest(),
         "evaluator_source": {"git_sha": "b" * 40, "git_dirty": False},
     }
-    if variant == "Online GRPO RL":
+    if variant == "SFT + GRPO":
         payload["provenance"] = {
             "base_model": {"id": "checkpoint-a"},
             "live_execution": {"execute_live_chaos": True},
@@ -241,7 +248,7 @@ def _write_full_suite_inputs(
 
     variants = {}
     adversarial_artifacts = []
-    for variant_index, variant in enumerate(REQUIRED_VARIANTS):
+    for variant_index, variant in enumerate(EXPECTED_G13_VARIANTS):
         partitions = {}
         for partition in REQUIRED_PARTITIONS:
             artifact_paths = []
@@ -367,7 +374,7 @@ def test_rejects_tampered_raw_output(tmp_path):
 def test_rejects_variant_and_dirty_source(tmp_path):
     artifact = _artifact(tmp_path / "wrong-variant.json")
     with pytest.raises(ValueError, match="variant"):
-        aggregate_variant_partition("Online GRPO RL", "val", [artifact])
+        aggregate_variant_partition("SFT + GRPO", "val", [artifact])
     payload = json.loads(artifact.read_text(encoding="utf-8"))
     payload["evaluator_source"]["git_dirty"] = True
     artifact.write_text(json.dumps(payload), encoding="utf-8")
@@ -420,11 +427,11 @@ def test_public_aggregate_requires_expected_split_hash(tmp_path):
 def test_public_aggregate_supports_g9_event_stream(tmp_path):
     artifact = _artifact(
         tmp_path / "public-g9.json",
-        variant="Online GRPO RL",
+        variant="SFT + GRPO",
         raw_scenario_ids=list(get_split("val")),
     )
 
-    result = aggregate_variant_partition("Online GRPO RL", "val", [artifact])
+    result = aggregate_variant_partition("SFT + GRPO", "val", [artifact])
 
     assert result["episode_membership"]["scenario_ids"] == list(get_split("val"))
     assert result["metrics_source"] == "unverified_artifact_summaries"
@@ -434,6 +441,7 @@ def test_public_aggregate_supports_g9_event_stream(tmp_path):
     ("variant", "partition", "message"),
     [
         ("Unknown Variant", "val", "unsupported variant"),
+        ("Online GRPO RL", "val", "unsupported variant"),
         ("SFT Model", "train", "unsupported partition"),
     ],
 )
@@ -492,7 +500,7 @@ def test_rejects_invalid_optional_runbook_rate(tmp_path, value):
 def test_rejects_malformed_manifest_artifact_paths(tmp_path):
     variants = {
         variant: {partition: ["missing.json"] for partition in REQUIRED_PARTITIONS}
-        for variant in REQUIRED_VARIANTS
+        for variant in EXPECTED_G13_VARIANTS
     }
     variants["SFT Model"]["val"] = [123, "missing.json"]
     manifest = tmp_path / "ablation-inputs.json"
@@ -512,9 +520,11 @@ def test_full_suite_uses_declared_artifacts_only(tmp_path):
     assert result["non_empirical"] is True
     assert result["metrics_source"] == "unverified_artifact_summaries"
     assert result["empirical_claim_allowed"] is False
+    assert result["cross_arm_lineage_verified"] is False
     assert result["certification_status"] == "NOT_CERTIFIED"
     assert result["results"]["SFT Model"]["val"]["run_count"] == 2
-    for variant in REQUIRED_VARIANTS:
+    assert tuple(result["results"]) == EXPECTED_G13_VARIANTS
+    for variant in EXPECTED_G13_VARIANTS:
         membership = result["results"][variant]["val"]["episode_membership"]
         assert membership["scenario_ids"] == list(get_split("val"))
         assert membership["scenario_ids_sha256"] == _membership_sha256(
@@ -524,7 +534,7 @@ def test_full_suite_uses_declared_artifacts_only(tmp_path):
     assert leaderboard_ids.intersection(get_split("train"))
     assert leaderboard_ids.intersection(get_split("val"))
     assert (
-        result["results"]["SFT + Recommender"]["leaderboard"]
+        result["results"]["SFT Model"]["leaderboard"]
         ["episode_membership"]["interpretation"]
         == "overlaps Train and Validation; not an independent held-out set"
     )
@@ -634,9 +644,9 @@ def test_full_suite_requires_artifact_split_hash_for_each_partition(
         ("0", "evaluation_mode", "mock"),
         ("0", "non_empirical", True),
         ("0", "test_only_synthetic_fixture", True),
-        ("3", "evaluation_mode", "NON_EMPIRICAL"),
-        ("3", "non_empirical", True),
-        ("3", "test_only_synthetic_fixture", True),
+        (str(GRPO_VARIANT_INDEX), "evaluation_mode", "NON_EMPIRICAL"),
+        (str(GRPO_VARIANT_INDEX), "non_empirical", True),
+        (str(GRPO_VARIANT_INDEX), "test_only_synthetic_fixture", True),
     ],
 )
 def test_full_suite_rejects_non_empirical_raw_markers(
@@ -776,7 +786,7 @@ def test_full_suite_rejects_invalid_g9_event_lifecycle(
     tmp_path, mutation, message
 ):
     manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
-    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact_path = tmp_path / "artifacts" / f"{GRPO_VARIANT_INDEX}-val-1.json"
     artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     events = [
         json.loads(line)
@@ -851,7 +861,7 @@ def test_full_suite_rejects_g9_raw_artifact_identity_mismatch(
     tmp_path, location, field, replacement
 ):
     manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
-    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact_path = tmp_path / "artifacts" / f"{GRPO_VARIANT_INDEX}-val-1.json"
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     if location == "artifact":
         artifact[field] = replacement
@@ -881,7 +891,7 @@ def test_full_suite_rejects_g9_raw_artifact_identity_mismatch(
 
 def test_full_suite_rejects_g9_nested_bool_number_identity_mismatch(tmp_path):
     manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
-    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact_path = tmp_path / "artifacts" / f"{GRPO_VARIANT_INDEX}-val-1.json"
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     events = [
         json.loads(line)
@@ -1091,6 +1101,39 @@ def test_full_suite_rejects_incomplete_matrix(tmp_path):
             manifest_path=manifest,
             output_dir=tmp_path / "output",
         )
+
+
+def test_required_matrix_has_exact_gai_rl_arm_labels():
+    assert REQUIRED_VARIANTS == EXPECTED_G13_VARIANTS
+
+
+def test_full_suite_rejects_extra_manifest_variant(tmp_path):
+    variants = {variant: {} for variant in EXPECTED_G13_VARIANTS}
+    variants["SFT + Recommender"] = {}
+    manifest = tmp_path / "ablation-inputs.json"
+    manifest.write_text(json.dumps({"variants": variants}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported variants"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+        )
+    assert not (tmp_path / "output").exists()
+
+
+def test_full_suite_rejects_duplicate_manifest_variant_keys(tmp_path):
+    manifest = tmp_path / "ablation-inputs.json"
+    manifest.write_text(
+        '{"variants":{"SFT + GRPO":{},"SFT + GRPO":{}}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+        )
+    assert not (tmp_path / "output").exists()
 
 
 def test_dry_run_never_contains_metrics(tmp_path):

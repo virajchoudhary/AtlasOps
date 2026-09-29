@@ -18,12 +18,15 @@ def test_readme_tool_counts_match_runtime_policy():
 def test_open_gates_are_not_presented_as_certified_results():
     statuses = declared_gate_statuses()
     assert any(status != "PASS" for status in statuses.values())
+    assert statuses["G10"] == statuses["G11"] == "OUT_OF_SCOPE"
 
     readme = Path("README.md").read_text(encoding="utf-8")
     audit = Path("docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md").read_text(
         encoding="utf-8"
     )
     assert "Current continuation status: NOT_CERTIFIED" in readme
+    assert "revised the required scope to GAI + RL" in readme
+    assert "Genuine five-arm results remain" not in readme
     assert "short_description: Evidence-led multi-agent SRE research demo (not certified)" in readme
     assert "responding to real GKE incidents" not in readme
     assert "certified across all" not in readme

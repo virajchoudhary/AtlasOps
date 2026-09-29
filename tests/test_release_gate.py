@@ -74,7 +74,7 @@ def _workspace(
     manifest_status: str = "NOT_CERTIFIED",
     empirical_metrics: object = None,
 ) -> None:
-    statuses = statuses or {}
+    statuses = {"G10": "OUT_OF_SCOPE", "G11": "OUT_OF_SCOPE", **(statuses or {})}
     for relative_path in (
         "docs/AMD_FINAL_DELIVERY_SCORECARD_AND_REWARD_SPEC.md",
         "docs/MI300X_EVIDENCE.md",
@@ -238,7 +238,7 @@ def test_not_certified_manifest_fails_strict_with_all_gate_statuses_passing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "workspace"
-    _workspace(root)
+    _workspace(root, statuses={"G10": "OUT_OF_SCOPE", "G11": "OUT_OF_SCOPE"})
 
     exit_code, report = _run_strict(root, tmp_path / "release.md", monkeypatch)
 
@@ -250,6 +250,58 @@ def test_not_certified_manifest_fails_strict_with_all_gate_statuses_passing(
     assert "[PASS] `G0-G15 declared gate inventory`" in report
     assert "[FAIL] `Scientific certification`" in report
     assert "NOT_CERTIFIED" in report
+
+
+def test_out_of_scope_gates_are_excluded_without_counting_as_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    _workspace(root, statuses={"G10": "OUT_OF_SCOPE", "G11": "OUT_OF_SCOPE"})
+    monkeypatch.setattr(release_gate, "ROOT", root)
+
+    result = release_gate.check_gate_status_inventory()
+
+    assert result.status == "PASS"
+    assert "fourteen required" in result.details
+    assert "not passed" in result.details
+
+
+def test_scope_exclusion_does_not_hide_an_open_required_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    _workspace(root, statuses={
+        "G4": "NOT_PASSED",
+        "G10": "OUT_OF_SCOPE",
+        "G11": "OUT_OF_SCOPE",
+    })
+    monkeypatch.setattr(release_gate, "ROOT", root)
+
+    result = release_gate.check_gate_status_inventory()
+
+    assert result.status == "FAIL"
+    assert "G4=NOT_PASSED" in result.details
+    assert "G10/G11 are OUT_OF_SCOPE" in result.details
+
+
+def test_out_of_scope_cannot_be_assigned_to_another_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    _workspace(root, statuses={
+        "G9": "OUT_OF_SCOPE",
+        "G10": "OUT_OF_SCOPE",
+        "G11": "OUT_OF_SCOPE",
+    })
+    monkeypatch.setattr(release_gate, "ROOT", root)
+
+    result = release_gate.check_gate_status_inventory()
+
+    assert result.status == "FAIL"
+    assert "exactly G10/G11" in result.details
 
 
 def test_strict_fails_for_open_declared_gate(

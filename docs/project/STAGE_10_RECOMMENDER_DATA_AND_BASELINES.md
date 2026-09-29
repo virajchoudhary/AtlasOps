@@ -1,5 +1,10 @@
 # Stage 10: Build RS Data and Baselines (Gate G10)
 
+**Current scope: OUT_OF_SCOPE / retained optional historical research.**
+The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes G10 as a
+final prerequisite. The original bounded results and classification below
+are historical, not a new empirical PASS.
+
 **Status: PARTIAL (bounded synthetic benchmark implemented; historical data missing)**
 
 AtlasOps contains a 12-runbook catalogue plus Random, Popularity, and BM25 baseline

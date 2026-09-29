@@ -8,7 +8,10 @@ the upstream README at `Harikishanth/AtlasOps`
 reviewed 29 September 2026). Future implementation changes require another
 comparison. The
 [Master Pipeline inventory](MASTER_PIPELINE_STATUS.md) and preserved raw
-evidence control gate status; this matrix does not close any gate.
+evidence control gate status; this matrix does not close any gate. The later
+[GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS (G10/G11) from
+the final requirements. Original README and historical RS outputs retain their
+period-specific meaning, not current gate status.
 
 | Original README area | Current implementation or preserved provenance | Evidence still required for the original outcome |
 |---|---|---|
@@ -60,20 +63,20 @@ in [the adopted v2.2 addendum](FINAL_PIPELINE_V22_STATUS.md).
 | Real online GRPO G=8, 236 episodes, 60 steps and 9h34m (`Training Evidence`) | UPSTREAM HISTORICAL CLAIM | Frozen README/charts; current `training/grpo.py`, `training/grpo_environment.py`, `training/grpo_reward.py`, `tests/test_stage9_grpo_pipeline.py` | The corrected direct-action software does not supply completed training or reproduced gains. |
 | Direct policy action -> environment -> verifier -> reward (`Training Pipeline`) | IMPLEMENTED | `training/grpo.py`, `training/grpo_environment.py`, `bench/grpo_eval.py`, `tests/test_stage9_grpo_pipeline.py` | G9 remains `REOPENED`: real G7 parent, serialized rollouts, completed G9 checkpoint and held-out evidence missing. |
 | Dense 70/30 reward blend, DAPO, spaced curriculum and competitor advantage (`Reward Contract`) | UPSTREAM HISTORICAL CLAIM | Frozen README formula; current direct-action `training/grpo_reward.py` and `docs/project/STAGE_9_ONLINE_GRPO.md` describe a distinct objective scorer | No team reward-policy effectiveness or superiority claim; common G13 scorer is unapproved. |
-| 54/68/82% resolution and 0.481/0.601/0.729 reward (`Benchmark Results`) | UPSTREAM HISTORICAL CLAIM | Frozen README; `artifacts/evidence/mock_archive/stage6/`, `stage8/`, `stage9/` and `artifacts/evidence/stage13/ablation_benchmark_results.json` are mock/predetermined, not reproductions | No raw real five-arm comparison or independent recomputation. |
+| 54/68/82% resolution and 0.481/0.601/0.729 reward (`Benchmark Results`) | UPSTREAM HISTORICAL CLAIM | Frozen README; `artifacts/evidence/mock_archive/stage6/`, `stage8/`, `stage9/` and `artifacts/evidence/stage13/ablation_benchmark_results.json` are mock/predetermined, not reproductions | No raw real current three-arm comparison or independent recomputation. |
 | Baseline and SFT frozen-split evaluators (`Benchmark Results`) | IMPLEMENTED | `bench/zero_shot_baseline.py`, `bench/sft_eval.py`, `tests/test_stage6_zero_shot_baseline.py`, `tests/test_stage8_sft_eval.py` | G6/G8 empirical evidence and immutable model/checkpoint identity absent. |
-| Full five-arm Test/Leaderboard/adversarial comparison (`Benchmark Results`) | MISSING | `bench/ablation_suite.py`, `bench/episode_membership.py`, `tests/test_stage13_ablation_suite.py` check artifact schema, hashes and ordered raw membership; summaries are explicitly `unverified_artifact_summaries` | Dedicated V3/V5 evaluators, common raw metric recomputation and approved adversarial membership/seed absent; G13 `REOPENED`. |
+| Current three-arm Test/Leaderboard/adversarial comparison (`Benchmark Results`) | MISSING | `bench/ablation_suite.py`, `bench/episode_membership.py`, `tests/test_stage13_ablation_suite.py` check artifact schema, hashes and ordered raw membership; summaries are explicitly `unverified_artifact_summaries`. Historical V3/V5 RS arms remain archived. | Comparable base/SFT/SFT+GRPO integrated outcomes, common raw metric recomputation, frozen protocol and approved adversarial membership/seed absent; G13 `REOPENED`. |
 | Operator web inject/cleanup and live Space demo (`Quick Start`) | INTENTIONALLY SUPERSEDED | `README.md`, `app.py`, `static/index.html`, `demo/launcher.py`, `tests/test_app_endpoints.py` describe a read-only first screen and governed operational APIs | No public/live demo or cluster control is authorized by UI availability. |
 | GCP provisioning and MI300X prerequisite (`Quick Start`) | OUTSIDE APPROVED SCOPE | `infra/setup.sh` is retained as optional portability; `infra/local/setup_local.sh` is the cost-free canonical check/apply path | No cloud deployment, paid compute or peer-host training now. |
 | Release readiness PASS as proof of scientific completion (`Quick Start`) | INTENTIONALLY SUPERSEDED | `scripts/release_gate.py`, `scripts/package_submission.py`, `artifacts/SUBMISSION_SUMMARY.md`, `tests/test_stage15_submission_package.py` | Current asset inventory is `NOT_CERTIFIED`; artifact presence/hash is not experimental proof. |
-| Added RS and independent verifier (not original README requirements) | IMPLEMENTED | `recommender/hybrid.py`, `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`, `agents/verifier.py`, `tests/test_stage11_hybrid_recommender.py`, `tests/test_verifier.py` | G11 PASS is bounded synthetic ranking; G12 real incremental incident contribution missing. |
+| Added RS and independent verifier (not original README requirements) | RS OUT_OF_SCOPE / VERIFIER IMPLEMENTED | `recommender/hybrid.py`, `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`, `agents/verifier.py`, `tests/test_stage11_hybrid_recommender.py`, `tests/test_verifier.py` | The former G11 PASS is bounded historical synthetic ranking. G12 now requires GAI + RL without RS; objective verifier evidence is still needed. |
 | Upstream attribution, MIT and source lineage (`License`) | VERIFIED WITH RAW EVIDENCE (provenance only) | `LICENSE`, `docs/project/UPSTREAM_BASELINE.md`, Git ancestor `bf9bd197c9f4a05ae55ade254802a9eef1a74356` | License/ancestry verification does not certify any model or experiment. |
 
 ## Current acceptance boundary
 
 The software and read-only presentation can be made reviewable before a peer
-host is selected. The empirical G4, G6-G10, G12, and G13 outcomes cannot be
-completed *before* their governed real incident, model, training, feedback,
+host is selected. The empirical G4, G6-G9, G12, and G13 outcomes cannot be
+completed *before* their governed real incident, model, training,
 and evaluation work occurs. This is a dependency, not permission to run it
 early or to turn mocks into measurements. G14 deployment is explicitly
 deferred by the operator. G15 final certification remains blocked by open

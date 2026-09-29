@@ -33,9 +33,7 @@ REQUIRED_METRICS = (
 REQUIRED_VARIANTS = (
     "Zero-Shot Baseline",
     "SFT Model",
-    "SFT + Recommender",
-    "Online GRPO RL",
-    "Full Pipeline (GAI + RS + RL)",
+    "SFT + GRPO",
 )
 REQUIRED_PARTITIONS = ("val", "test", "leaderboard", "adversarial")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
@@ -61,7 +59,7 @@ _T_975_DF_1_TO_30 = (
 def _raw_episode_format_for_variant(variant: str) -> str:
     if variant not in REQUIRED_VARIANTS:
         raise ValueError(f"unsupported variant for raw episode membership: {variant!r}")
-    return "g9_event_stream" if variant == "Online GRPO RL" else "episode_rows"
+    return "g9_event_stream" if variant == "SFT + GRPO" else "episode_rows"
 
 
 def _sha256(path: Path) -> str:
@@ -93,6 +91,15 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     for key, value in pairs:
         if key in record:
             raise ValueError(f"Adversarial membership record has duplicate field {key!r}")
+        record[key] = value
+    return record
+
+
+def _unique_manifest_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in record:
+            raise ValueError(f"Ablation manifest has duplicate field {key!r}")
         record[key] = value
     return record
 
@@ -493,13 +500,19 @@ def aggregate_variant_partition(
 
 
 def load_ablation_manifest(path: Path) -> dict[str, dict[str, list[Path]]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_manifest_json_object,
+    )
     variants = payload.get("variants")
     if not isinstance(variants, dict) or not variants:
         raise ValueError("Ablation manifest requires a non-empty variants object")
     missing_variants = sorted(set(REQUIRED_VARIANTS).difference(variants))
     if missing_variants:
         raise ValueError(f"Ablation manifest is missing variants: {missing_variants}")
+    extra_variants = sorted(set(variants).difference(REQUIRED_VARIANTS))
+    if extra_variants:
+        raise ValueError(f"Ablation manifest contains unsupported variants: {extra_variants}")
     normalized = {}
     for variant in REQUIRED_VARIANTS:
         partitions = variants[variant]
@@ -591,6 +604,7 @@ def run_full_ablation_suite(
             "non_empirical": True,
             "metrics_source": "unverified_artifact_summaries",
             "empirical_claim_allowed": False,
+            "cross_arm_lineage_verified": False,
             "certification_status": "NOT_CERTIFIED",
             "created_at": datetime.now(UTC).isoformat(),
             "input_manifest": str(resolved_manifest_path),

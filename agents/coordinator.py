@@ -1957,34 +1957,52 @@ async def handle_incident(
 
         # ── Stage 12: Integrated Recommender System Step ──────────────────────
         recommended_runbooks: list[dict[str, Any]] = []
-        try:
-            from recommender.hybrid import HybridRecommender
+        recommender_status = "disabled"
+        if os.getenv("ATLASOPS_RECOMMENDER_ENABLED") == "1":
+            recommender_status = "unavailable"
+            try:
+                from recommender.hybrid import HybridRecommender
 
-            ckpt_path = Path(
-                os.getenv(
-                    "ATLASOPS_RECOMMENDER_CHECKPOINT",
-                    "artifacts/models/hybrid_recommender_synthetic_v2.json",
+                ckpt_path = Path(
+                    os.getenv(
+                        "ATLASOPS_RECOMMENDER_CHECKPOINT",
+                        "artifacts/models/hybrid_recommender_synthetic_v2.json",
+                    )
                 )
-            )
-            if not ckpt_path.is_file():
-                raise FileNotFoundError(f"Recommender checkpoint missing: {ckpt_path}")
-            recommender_model = HybridRecommender.load_checkpoint(ckpt_path)
+                if not ckpt_path.is_file():
+                    raise FileNotFoundError(
+                        f"Recommender checkpoint missing: {ckpt_path}"
+                    )
+                recommender_model = HybridRecommender.load_checkpoint(ckpt_path)
 
-            rec_query = {
-                "alertname": alert.get("commonLabels", {}).get("alertname", ""),
-                "affected_services": triage.get("final", {}).get("affected_services", []),
-                "symptoms_text": diagnosis.get("final", {}).get("root_cause", ""),
-            }
-            recs = recommender_model.recommend_runbooks(rec_query, k=3)
-            recommended_runbooks = [rec.to_dict() for rec in recs]
-            thought_emit(
-                "remediation",
-                "tool_call",
-                f"Recommender System recommended {len(recommended_runbooks)} runbooks: {', '.join(r['runbook_id'] for r in recommended_runbooks)}",
-                tool="runbook_recommender",
-            )
-        except Exception as e:
-            log.warning("Runbook recommender execution failed: %s", e)
+                rec_query = {
+                    "alertname": alert.get("commonLabels", {}).get("alertname", ""),
+                    "affected_services": triage.get("final", {}).get(
+                        "affected_services", []
+                    ),
+                    "symptoms_text": diagnosis.get("final", {}).get(
+                        "root_cause", ""
+                    ),
+                }
+                recs = recommender_model.recommend_runbooks(rec_query, k=3)
+                recommended_runbooks = [rec.to_dict() for rec in recs]
+                recommender_status = "executed"
+            except Exception as e:
+                log.warning("Runbook recommender execution failed: %s", e)
+            else:
+                try:
+                    thought_emit(
+                        "remediation",
+                        "tool_call",
+                        f"Recommender System recommended {len(recommended_runbooks)} runbooks: {', '.join(r['runbook_id'] for r in recommended_runbooks)}",
+                        tool="runbook_recommender",
+                    )
+                except Exception as e:
+                    log.warning("Runbook recommender telemetry failed: %s", e)
+        recommender_record = {
+            "status": recommender_status,
+            "recommended_runbooks": recommended_runbooks,
+        }
 
         remediation_input = {
             "incident_id": incident_id,
@@ -2431,7 +2449,7 @@ async def handle_incident(
             "approval": approval_record,
             "triage": triage,
             "diagnosis": diagnosis,
-            "recommender": {"recommended_runbooks": recommended_runbooks},
+            "recommender": recommender_record,
             "remediation": remediation,
             "verification": verification_dict,
             "settling": settling_report,

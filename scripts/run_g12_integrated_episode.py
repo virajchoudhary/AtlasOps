@@ -813,6 +813,10 @@ def collect_bundle(
         "remediation", "settling", "verification", "comms",
     )
     for key in required_fields:
+        if key == "recommender" and (
+            incident is None or incident.get(key) is None
+        ):
+            continue
         if incident is None or incident.get(key) is None:
             problems.append(f"{key}_missing")
     remediation = _object((incident or {}).get("remediation"))
@@ -841,9 +845,34 @@ def collect_bundle(
     policy = _object(remediation.get("final"))
     if policy.get("policy_backend") != "checkpoint":
         problems.append("checkpoint_policy_execution_unverified")
-    recommendations = _object((incident or {}).get("recommender")).get("recommended_runbooks")
-    if not isinstance(recommendations, list) or not recommendations:
-        problems.append("recommender_output_missing")
+    recommender = (incident or {}).get("recommender")
+    if recommender is not None:
+        if not isinstance(recommender, dict):
+            problems.append("recommender_malformed")
+        else:
+            recommender_status = recommender.get("status")
+            recommendations = recommender.get("recommended_runbooks")
+            if (
+                recommender_status is not None
+                and (
+                    not isinstance(recommender_status, str)
+                    or recommender_status
+                    not in {"disabled", "unavailable", "executed"}
+                )
+            ):
+                problems.append("recommender_status_invalid")
+            has_recommendations = "recommended_runbooks" in recommender
+            if has_recommendations and not isinstance(recommendations, list):
+                problems.append("recommender_output_malformed")
+            if recommender_status is not None and not has_recommendations:
+                problems.append("recommender_output_malformed")
+            if (
+                isinstance(recommender_status, str)
+                and recommender_status in {"disabled", "unavailable"}
+                and isinstance(recommendations, list)
+                and recommendations
+            ):
+                problems.append("recommender_status_output_mismatch")
     if incident and incident.get("incident_id") != incident_id:
         problems.append("incident_identity_mismatch")
 

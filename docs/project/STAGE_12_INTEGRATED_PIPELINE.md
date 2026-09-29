@@ -1,17 +1,22 @@
-# Stage 12: Integrate GAI + RS + RL (Gate G12)
+# Stage 12: Integrate GAI + RL (Gate G12)
 
 **Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**
 
-The coordinator supports the intended integrated sequence:
+The required path follows the later
+[GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md):
 
-`Alert -> Triage -> Diagnosis -> observed evidence -> Recommender Top-K -> Approval/Safety -> RL policy -> one action -> tool result -> settling -> verifier -> next state or Comms`
+`Alert -> Triage -> Diagnosis -> observed evidence -> Approval/Safety -> RL policy -> one action -> tool result -> settling -> verifier -> next state or Comms`
 
 ## Runtime Contract
 
 - Original incident identity and alert anchors remain present throughout the flow.
 - Benchmark truth is stripped from model and policy input.
-- The recommender loads a reviewed checkpoint, uses observed query fields, and remains
-  advisory. Missing recommendations do not become remediation truth.
+- The historical recommender is an explicit optional advisory path, not a
+  prerequisite. Disabled or missing recommendations do not become remediation
+  truth, an approval decision, or an invalid GAI + RL capture.
+  `ATLASOPS_RECOMMENDER_ENABLED=1` explicitly enables it; the default is off.
+  The incident record retains `disabled`, `unavailable`, or `executed` status
+  and a compatibility `recommended_runbooks` list.
 - `ATLASOPS_REMEDIATION_BACKEND=rl_policy` selects the policy path and requires
   `ATLASOPS_RL_POLICY_CHECKPOINT` for checkpoint-backed use. Both injected
   and checkpoint-backed live policy paths require
@@ -26,14 +31,14 @@ The coordinator supports the intended integrated sequence:
 - Comms receives the verified resolution state.
 - Injected policy tests are labeled `NON_EMPIRICAL`.
 
-The default agent remediation backend remains available for the existing runtime. The
-recommender is an advisory enhancement and its failure is recorded rather than treated as
-approval or ground truth.
+The default agent remediation backend remains available for the existing runtime. An
+opted-in recommender remains advisory and its failure is recorded rather than
+treated as approval or ground truth.
 
 ## Current Verification
 
-Local integration tests cover identity preservation, hidden benchmark fields, advisory
-recommendations, exact action execution, approval and ACL ordering, one mutation per
+Local integration tests cover identity preservation, hidden benchmark fields, optional
+advisory recommendations, exact action execution, approval and ACL ordering, one mutation per
 verification step, next-state feedback, resolved termination, Comms state, and provenance.
 
 A real end-to-end run still requires a valid G9 checkpoint, a healthy controlled environment,

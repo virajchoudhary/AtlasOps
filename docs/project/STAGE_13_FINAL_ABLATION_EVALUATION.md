@@ -2,8 +2,12 @@
 
 **Status: REOPENED**
 
-The ablation runner is now artifact driven. The required empirical artifact matrix does not
-exist, so no final model comparison is currently supported.
+The ablation runner is artifact driven. The later
+[GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) and prospective
+[v0.3 amendment](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md) replace
+the former RS-inclusive five-arm requirement with three arms. Neither is a
+frozen experimental protocol. The required empirical artifact matrix does
+not exist, so no final model comparison is currently supported.
 
 ## Required Matrix
 
@@ -11,9 +15,15 @@ Every run must cover each required variant:
 
 1. Zero-Shot Baseline
 2. SFT Model
-3. SFT + Recommender
-4. Online GRPO RL
-5. Full Pipeline (GAI + RS + RL)
+3. SFT + GRPO
+
+The old V3 and V5 RS-bearing arms and five-arm predetermined artifact remain
+historical, non-empirical research, not required variants. The new V4 arm
+must use the same SFT parent as V2. Changing labels does not produce
+comparable incident outcomes from the current diagnosis-only G6/G8 outputs.
+The current runner validates artifact identity one arm at a time and does
+not yet enforce this cross-arm lineage; its output is nonclaimable until a
+reviewed frozen lineage schema and check exist.
 
 Each variant must provide empirical artifacts for Validation, Test, Leaderboard, and
 Adversarial partitions. Every artifact must:
@@ -81,10 +91,9 @@ and non-object records fail closed. Explicit raw `evaluation_mode` values such a
 require each episode to declare `evaluation_mode: "empirical"`. No aggregate output
 is written until the complete matrix and all raw membership checks pass.
 
-The Zero-Shot Baseline, SFT Model, prospective SFT + Recommender, and prospective
-Full Pipeline formats require exactly one top-level `scenario_id` episode row per
-expected member, in order, with the empirical row marker. The Online GRPO RL format
-must be the G9 event stream:
+The Zero-Shot Baseline and SFT Model formats require exactly one top-level
+`scenario_id` episode row per expected member, in order, with the empirical
+row marker. The SFT + GRPO format must be the G9 event stream:
 one leading `run_started`, one `episode_started` and one successful
 `episode_completed` per expected scenario, then one final `run_completed` summary
 whose frozen split digest, counts, and claim-eligibility flag agree. Step and other
@@ -123,10 +132,13 @@ No A1 incident eligibility, A2 reward, A3 alert-to-verifier TTR, expected
 membership denominator, or scientific metric is inferred or computed.
 
 This interface does not replace or relax `derive_raw_scenario_ids` or the
-ablation acceptance path. Those strict consumers continue to require complete,
+ablation acceptance path. Those strict consumers still require complete,
 ordered expected membership, matching artifact identity, claimable successful
 episodes, and a final valid `run_completed`; non-claimable, failed, unscorable,
-and interrupted streams remain ineligible for aggregation.
+and interrupted streams remain ineligible for aggregation today. This
+success-only restriction is an unresolved mismatch with the prospective A1
+direction, under which genuine model failures remain eligible negatives. It
+must be resolved under a reviewed invalidation protocol before empirical use.
 
 Validation, Test, and Leaderboard membership is derived from the ordered frozen
 configuration returned by `config.splits.get_split`, not from IDs declared in a
@@ -140,18 +152,17 @@ The operator-supplied adversarial digest is a trust anchor, not a signed identit
 approval record, and no approved real adversarial membership record or seed is
 checked in. `bench.sft_eval` now records the ordered frozen split digest in its
 summary; this software compatibility does not supply a validated SFT checkpoint
-or a claimable empirical G8 artifact. The two integrated variants still lack
-dedicated evaluators.
+or a claimable empirical G8 artifact. A comparable integrated evaluator for
+all three required arms is still absent.
 
 Metrics remain arithmetic aggregations of values declared in the input summaries;
 they are not recomputed from raw episodes. Every accepted aggregate is explicitly
 labeled `evaluation_mode: declared_artifact_aggregation`,
 `non_empirical: true`, and `metrics_source: unverified_artifact_summaries`, while
 retaining `empirical_claim_allowed: false` and `certification_status: NOT_CERTIFIED`.
-The synthetic parser fixtures, including those for the two prospective variants
-without evaluators, only exercise the expected row/event schema and do not represent
-evaluation evidence. Objective metrics, their denominators, gate labels, and
-historical evidence are unchanged. G13 remains **REOPENED**.
+Synthetic parser fixtures only exercise the expected row/event schema and do
+not represent evaluation evidence. Objective metrics, their denominators,
+and historical evidence are unchanged. G13 remains **REOPENED**.
 
 ## Historical Predetermined Output
 
@@ -167,8 +178,9 @@ Local tests prove that incomplete matrices, mock/non-empirical inputs, partition
 missing metrics, absent raw/source provenance, absent or mismatched artifact split hashes,
 mismatched ordered raw episode membership, explicit mock/non-empirical raw markers,
 malformed or over-bound JSONL, invalid G9 lifecycle ordering, and absent or mismatched
-adversarial membership provenance fail closed. Synthetic schema fixtures cover all five
-variants but cannot establish scientific approval or reproduce missing evaluators. Dry-run
+adversarial membership provenance fail closed. Synthetic schema fixtures cover
+the three prospective arms but cannot establish scientific approval or
+reproduce missing evaluators. Dry-run
 mode emits only a non-empirical execution plan.
 
 G13 can advance only after genuine prerequisite model/checkpoint and integrated-environment

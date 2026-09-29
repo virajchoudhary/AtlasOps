@@ -5,6 +5,9 @@ This governance document records the repository's alignment with the adopted non
 > **Current Working Specification (non-live):**
 > *AtlasOps Intelligence | Master Implementation, Validation & Deployment Pipeline v2.2* (29 September 2026), Sections 1-24 and 26-27, adopted by the project lead.
 > Section 25 remains a prospective, **unapproved** Stage 13 measurement proposal.
+> The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) supersedes
+> RS-required portions for current non-live work. G10/G11 are retained as
+> historical optional research, not final completion gates.
 > The dated [v1.1 Free-First local setup reference](PIPELINE_V1_1_FREE_FIRST.md) and v1.0 remain historical; neither is erased by this adoption.
 > **Upstream Baseline:**
 > `Harikishanth/AtlasOps` frozen at commit [`bf9bd197c9f4a05ae55ade254802a9eef1a74356`](https://github.com/Harikishanth/AtlasOps/commit/bf9bd197c9f4a05ae55ade254802a9eef1a74356).
@@ -23,7 +26,8 @@ This governance document records the repository's alignment with the adopted non
 > 2. **Implementation vs. Gate Closure**: The presence of downstream code, scripts, or documentation in the repository does *not* mean the corresponding stage gate has passed. Gates pass only upon independent verification with reproducible evidence.
 > 3. **Evidence Precedence**: Executable behavior and preserved evidence outrank prose status claims, including this document. Mock/deterministic outputs and predetermined metrics cannot close empirical gates; environment verification is authoritative for resolution. Preserve negative experiments.
 > 4. **Canonical Progression Order**:
->    $$\text{Environment (G3)} \rightarrow \text{Golden Incident (G4)} \rightarrow \text{Split Freeze (G5)} \rightarrow \text{Zero-Shot (G6)} \rightarrow \text{SFT (G7/G8)} \rightarrow \text{Corrected GRPO (G9)} \rightarrow \text{RS (G10/G11)} \rightarrow \text{Integration (G12)} \rightarrow \text{Final Evaluation (G13)}$$
+>    $$\text{Environment (G3)} \rightarrow \text{Golden Incident (G4)} \rightarrow \text{Split Freeze (G5)} \rightarrow \text{Zero-Shot (G6)} \rightarrow \text{SFT (G7/G8)} \rightarrow \text{Corrected GRPO (G9)} \rightarrow \text{GAI + RL Integration (G12)} \rightarrow \text{Final Evaluation (G13)}$$
+>    G10/G11 retain their numbered historical RS record outside this required path.
 
 ---
 
@@ -43,9 +47,11 @@ NOT_PASSED records an unmet gate; REOPENED withdraws an unsupported previous PAS
 IMPLEMENTED / EMPIRICAL EVIDENCE MISSING separates software from experimental proof;
 PARTIAL preserves completed work while recording missing deliverables.
 Downstream implementation can exist while upstream empirical gates remain open.
-The research pipeline is not scientifically complete.
+`OUT_OF_SCOPE` is not a PASS or a scientific result; it excludes the retained
+RS gates from the current completion dependency. The research pipeline is not
+scientifically complete.
 
-## Canonical Stage & Gate Sequence (Pipeline v2.2 working specification)
+## Canonical Stage & Gate Sequence (v2.2 with GAI + RL scope revision)
 
 | Stage | Name | Gate | Target / Deliverable | Current Status |
 |---|---|---|---|---|
@@ -59,10 +65,10 @@ The research pipeline is not scientifically complete.
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (corpus/configuration exists; successful trained checkpoint unverified) |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (deterministic mock evaluation; no demonstrated SFT improvement) |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (direct-action software contract implemented; real training/checkpoint/evaluation missing) |
-| **Stage 10** | Build RS data and baselines | **G10** | Compile historical incident & runbook dataset for Recommender Systems; evaluate baseline recommenders. | **PARTIAL** (scenario-derived dataset and algorithmic evaluation exist; historical incident feedback is absent) |
-| **Stage 11** | Train hybrid recommender | **G11** | Develop and train collaborative/content-based top-K runbook recommender. | **PASS** (bounded hybrid fitting/ranking evaluation on the same small dataset) |
-| **Stage 12** | Integrate GAI + RS + RL | **G12** | Full multi-agent pipeline with integrated Recommender System step between Diagnosis and Remediation. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (direct policy integration is locally tested; real checkpoint/environment execution missing) |
-| **Stage 13** | Run final ablation and stress evaluation | **G13** | Full benchmark evaluation across predetermined comparison family: stabilized AtlasOps baseline, SFT, corrected GRPO, +RS, full GAI+RS+RL, unseen final-test and held-out adversarial evaluation. | **REOPENED** (hardcoded profiles are not actual ablation/stress evidence) |
+| **Stage 10** | Historical RS data and baselines | **G10** | Retained optional dataset and baseline research; no longer a final prerequisite. | **OUT_OF_SCOPE** (formerly PARTIAL; scenario-derived data do not establish historical feedback) |
+| **Stage 11** | Historical hybrid recommender | **G11** | Retained optional small-data ranking research; no longer a final prerequisite. | **OUT_OF_SCOPE** (former PASS was bounded synthetic offline ranking, not incident resolution) |
+| **Stage 12** | Integrate GAI + RL | **G12** | Multi-agent safety/approval, direct policy action and objective verifier without an RS dependency. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (local software path; real checkpoint/environment execution missing) |
+| **Stage 13** | Final ablation and stress evaluation | **G13** | Matched base GAI, SFT and SFT + GRPO comparisons with independently recomputed raw evidence under a future frozen protocol. | **REOPENED** (old five-arm profiles are historical, not actual evaluation) |
 | **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **PARTIAL** (UI/demo helpers exist; safe deployment not established by code alone) |
 | **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (report/package implementation exists; scientific certification and submission unestablished) |
 
@@ -144,24 +150,24 @@ The research pipeline is not scientifically complete.
 - New trainer provenance records declared and loaded model revisions, frozen Train hash, source state, seed/configuration, rollout ledger, and a hashed completed adapter inventory. `bench/grpo_eval.py` validates this record and rejects missing or incomplete checkpoints; its mock path is explicitly non-empirical.
 - No completed GRPO training run, usable local adapter, or safe real evaluation was obtained. Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/` remain mock evidence. G9 remains reopened pending real authorized trajectories, training, and held-out evaluation.
 
-### Gate G10: Build RS Data and Baselines — [PARTIAL]
+### Gate G10: Historical RS Data and Baselines — [OUT_OF_SCOPE]
 - Retain bounded algorithmic work: 12 runbooks, scenario-derived interaction generation, Random/Popularity/BM25 baselines and ranking metrics in `recommender/`. Evaluation fits on Train rows and scores separate splits.
 - The original saved Stage 10 result remains historical: 28 scenario-derived rows covering 4 of 12 runbooks, with BM25 Test Hit@3=0.8333 and MRR@3=0.7500. It is not a new measurement or historical user feedback.
 - The corrected generator excludes seven scenarios without a defensible single runbook label. The new local corpus has 21 rows (Train 12, Validation 5, Test 4) across 9 runbooks; its manifest records source/split hashes, exclusions, and `historical_user_feedback=false`. Custom dataset output now writes its own adjacent manifest, leaving the prior canonical Stage 10 manifest byte-preserved.
-- The historical incident-to-runbook feedback required by G10 has not been obtained. Synthetic baseline measurements establish only the bounded offline algorithmic result.
+- The historical incident-to-runbook feedback formerly required by G10 has not been obtained. Synthetic baseline measurements establish only the bounded offline algorithmic result. This work is optional under the current GAI + RL scope, not a final gate.
 
-### Gate G11: Train Hybrid Recommender — [PASS]
+### Gate G11: Historical Hybrid Recommender — [OUT_OF_SCOPE]
 - `recommender/hybrid.py` fits content, service/alert co-occurrence and global priors without benchmark tier as a runtime feature. `recommender/train_hybrid.py` performs Train-only fitting, rejects wrong frozen-split assignments, and records corpus, source, and checkpoint hashes.
-- Retain the original saved checkpoint and Stage 11 metrics as historical synthetic results. The newly saved `rs_hybrid_eval_synthetic_v2.json` records Test Hit@3=1.0000 and MRR@3=0.7083 on four scenario-derived Test rows; BM25 Hit@3=0.7500 and MRR@3=0.6250 on the same rows. The small sample and synthetic labels do not establish broad superiority or historical-feedback learning.
+- Retain the original saved checkpoint and Stage 11 metrics as historical synthetic results. The newly saved `rs_hybrid_eval_synthetic_v2.json` records Test Hit@3=1.0000 and MRR@3=0.7083 on four scenario-derived Test rows; BM25 Hit@3=0.7500 and MRR@3=0.6250 on the same rows. The former bounded-offline PASS is historical, not a current gate status. The small sample and synthetic labels do not establish broad superiority or historical-feedback learning.
 
-### Gate G12: Integrate GAI + RS + RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
-- `agents/coordinator.py` inserts recommendations between Diagnosis and Remediation and supplies `recommended_runbooks`. Its default recommender checkpoint is the newly labeled synthetic v2 artifact; a missing checkpoint leaves recommendations unavailable rather than fitting the old mixed-split dataset.
+### Gate G12: Integrate GAI + RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
+- The required path has no recommender dependency. The existing recommender checkpoint and `recommended_runbooks` remain optional advisory compatibility behavior, not approval or remediation truth.
 - An explicit `rl_policy` backend loads a provenance-checked G9 checkpoint and executes its exact structured actions through approval, tool policy, settling, and verification. Local injected-policy tests prove control flow but are non-empirical. Complete end-to-end validation still depends on a real G9 checkpoint and live evidence.
 - The governed G12 capture wrapper reuses the Stage 4 harness, preserves raw attempt and coordinator records with hashes, and never certifies a gate from capture alone. It has not run with a real checkpoint or cluster in this continuation.
 
 ### Gate G13: Run Final Ablation and Stress Evaluation — [REOPENED]
 - `bench/ablation_suite.py` now consumes variant episode artifacts and rejects incomplete or unsupported real comparisons; it does not supply model-name constant metrics as empirical results.
-- Preserve `artifacts/evidence/stage13/ablation_benchmark_results.json` as historical predetermined output. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings. Actual variant execution with valid checkpoints, independent verification, and held-out stress provenance is still required.
+- Preserve `artifacts/evidence/stage13/ablation_benchmark_results.json` as historical predetermined five-arm output. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings. The new required three-arm comparison needs valid checkpoints, independently recomputed raw outcomes, and approved held-out stress provenance under a frozen protocol.
 
 ### Gate G14: Deploy Final Demo Safely — [PARTIAL]
 - The local Gradio demo in `dashboard.py` and `demo/launcher.py` is read-only. Scenario selection and cleanup guidance execute no kubectl command, inject no fault, and claim no simulated incident outcome. It displays the checked-in G0-G15 status and selected preserved G4 negative/interrupted attempts with source hashes.
@@ -193,6 +199,7 @@ The research pipeline is not scientifically complete.
 > The original evidence reconciliation was performed on 2026-09-06; the later
 > source/evidence snapshots above do not assert current live service health.
 > **Pipeline v2.2** Sections 1-24 and 26-27 are the adopted non-live working
-> specification. Its Section 25 remains **PROPOSED / NOT APPROVED**.
+> specification as revised by the later GAI + RL scope direction. Its Section
+> 25 remains **PROPOSED / NOT APPROVED**.
 > **Pipeline v1.1 Free-First** (16 August 2026) retains its historical local
 > setup contract; **v1.0** (11 August 2026) is the prior historical record.

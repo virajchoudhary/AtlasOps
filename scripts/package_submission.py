@@ -30,6 +30,7 @@ ALLOWED_GATE_STATES = {
     "REOPENED",
     "NOT_PASSED",
     "BLOCKED",
+    "OUT_OF_SCOPE",
 }
 
 
@@ -156,6 +157,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/FINAL_PIPELINE_V22_STATUS.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",
+        "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md",
+        "docs/project/GAI_RL_SCOPE_REVISION.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
         "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md",
@@ -264,14 +267,17 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         "project_repository": "virajchoudhary/AtlasOps",
         "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
         "pipeline_version": "v2.2",
+        "scope_revision": "GAI + RL (RS optional historical research)",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "NOT_CERTIFIED",
         "gate_status_source": str(MASTER_STATUS_PATH.as_posix()),
         "gate_statuses_declared": gates,
         "academic_workstreams": [
             "Generative AI: Multi-Agent Incident Response & Trajectory Synthesis",
-            "Recommender Systems: Hybrid Top-K Runbook Recommendation",
             "Reinforcement Learning: Online Group Relative Policy Optimization (GRPO)",
+        ],
+        "historical_optional_workstreams": [
+            "Recommender Systems: bounded scenario-derived runbook ranking",
         ],
         "empirical_metrics": None,
         "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
@@ -300,7 +306,7 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
         "",
         f"- **Project Repository**: `{manifest['project_repository']}`",
         f"- **Upstream Baseline**: `{manifest['upstream_baseline']}`",
-        f"- **Working Pipeline**: `{manifest['pipeline_version']}` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)",
+        f"- **Working Pipeline**: `{manifest['pipeline_version']}` with [{manifest['scope_revision']}](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen",
         f"- **Certification**: **{manifest['status']}**",
         f"- **Generated**: `{manifest['generated_at']}`",
         f"- **Gate inventory source**: `{manifest['gate_status_source']}`",
@@ -315,7 +321,7 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
     lines.extend([
         "",
         "G3 PASS is historical local Kind acceptance with wrapper and tracing caveats; it does not establish current cluster health.",
-        "G11 PASS is bounded to small scenario-derived synthetic offline ranking, not real incident improvement.",
+        "G10/G11 OUT_OF_SCOPE retain historical scenario-derived RS evidence; the former bounded G11 PASS was not real incident improvement.",
         "",
         manifest["metric_note"],
         "Asset hashes establish file integrity, not scientific gate closure.",

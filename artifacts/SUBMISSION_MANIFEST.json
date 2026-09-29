@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
-  "generated_at": "2026-09-29T10:06:49.971678+00:00",
+  "generated_at": "2026-09-29T12:32:06.532228+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -662,8 +662,8 @@
       "size_bytes": 17618
     },
     "training/sft.py": {
-      "sha256": "31057645d75c1d365ceef4c1257674527dfc0abec14638cd71da101c9ce85f54",
-      "size_bytes": 9199
+      "sha256": "29c7abbc32d5d20b7cdfd467266bb866ed6aec85045d6376b83273c62ef6113d",
+      "size_bytes": 9411
     },
     "training/build_sft_dataset.py": {
       "sha256": "237323d639d21a7b07d2e7cf0fbd2a51f3b2bb44b9da513a13e8c0d0801cb2eb",
@@ -914,8 +914,8 @@
       "size_bytes": 10382
     },
     "tests/test_sft_training_provenance.py": {
-      "sha256": "4db923676b01c76a61237817a4b7298daf68b5dadc1dcc33c855c9bb78b54e1c",
-      "size_bytes": 18270
+      "sha256": "38309744fbf9f4d13b9c5f0443a1faa3a2041cea2101b62772f136930ba514e8",
+      "size_bytes": 22750
     },
     "tests/test_stage10_rs_data_and_baselines.py": {
       "sha256": "a9c08a6fc88350c9e5b04c5ae701a70438757ee0d940f49e987ecc521f9884df",

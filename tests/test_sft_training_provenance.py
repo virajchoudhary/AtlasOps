@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import os
@@ -269,6 +270,149 @@ def test_sft_rejects_manifest_path_incompatible_with_evaluators(monkeypatch, tmp
         sft.main()
     assert not output.exists()
     assert not (tmp_path / "external-manifest.json").exists()
+
+
+def _write_training_corpus(path: Path) -> Path:
+    path.write_text(
+        "".join(
+            json.dumps({"scenario_id": scenario_id, "role": "triage"}) + "\n"
+            for scenario_id in TRAIN_SPLIT
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _prepare_sft_output_cli(monkeypatch, corpus_path: Path, output_path: Path):
+    from training import sft
+
+    attempted_ml_imports = []
+    original_import = builtins.__import__
+    ml_packages = {"datasets", "peft", "transformers", "trl"}
+
+    def block_ml_imports(name, *args, **kwargs):
+        if name.split(".", 1)[0] in ml_packages:
+            attempted_ml_imports.append(name)
+            raise AssertionError("training dependencies must not be imported")
+        return original_import(name, *args, **kwargs)
+
+    snapshot_calls = []
+    original_snapshot = sft.snapshot_training_corpus
+
+    def record_snapshot(path):
+        snapshot_calls.append(path)
+        return original_snapshot(path)
+
+    monkeypatch.setattr(builtins, "__import__", block_ml_imports)
+    monkeypatch.setattr(sft, "snapshot_training_corpus", record_snapshot)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "model-commit",
+            "--data",
+            str(corpus_path),
+            "--output",
+            str(output_path),
+        ],
+    )
+    return sft, snapshot_calls, attempted_ml_imports
+
+
+def test_sft_refuses_existing_populated_output_without_touching_run(
+    monkeypatch,
+    tmp_path,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    output.mkdir()
+    manifest_path = output / "sft_run_manifest.json"
+    manifest_bytes = b'{"run_id":"previous-run","status":"completed"}\n'
+    manifest_path.write_bytes(manifest_bytes)
+    checkpoint_path = output / "adapter_model.safetensors"
+    checkpoint_bytes = b"existing checkpoint"
+    checkpoint_path.write_bytes(checkpoint_bytes)
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+    )
+
+    with pytest.raises(FileExistsError):
+        sft.main()
+
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+    assert manifest_path.read_bytes() == manifest_bytes
+    assert checkpoint_path.read_bytes() == checkpoint_bytes
+    assert {path.name for path in output.iterdir()} == {
+        "adapter_model.safetensors",
+        "sft_run_manifest.json",
+    }
+
+
+def test_sft_rejects_existing_empty_output_directory(monkeypatch, tmp_path):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "empty-checkpoint"
+    output.mkdir()
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+    )
+
+    with pytest.raises(FileExistsError):
+        sft.main()
+
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+    assert list(output.iterdir()) == []
+
+
+@pytest.mark.parametrize("redirected_component", ["output", "parent"])
+def test_sft_rejects_redirected_output_before_snapshot_or_training_import(
+    monkeypatch,
+    tmp_path,
+    redirected_component,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    target_parent = tmp_path / "target-parent"
+    target_parent.mkdir()
+    redirected_target = target_parent / "checkpoint"
+
+    if redirected_component == "output":
+        redirected_target.mkdir()
+        output = tmp_path / "redirected-checkpoint"
+        output.parent.mkdir(exist_ok=True)
+    else:
+        output = tmp_path / "redirected-parent" / "checkpoint"
+    try:
+        if redirected_component == "output":
+            output.symlink_to(redirected_target, target_is_directory=True)
+        else:
+            output.parent.symlink_to(target_parent, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation is unavailable: {exc}")
+
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+    )
+
+    with pytest.raises(ValueError, match="redirect"):
+        sft.main()
+
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+    if redirected_component == "output":
+        assert list(redirected_target.iterdir()) == []
+    else:
+        assert not redirected_target.exists()
 
 
 def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(

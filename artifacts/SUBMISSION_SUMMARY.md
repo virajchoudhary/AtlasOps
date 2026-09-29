@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T20:54:10.102507+00:00`
+- **Generated**: `2026-09-29T21:20:19.071755+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -109,10 +109,10 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
 | `bench/ablation_suite.py` | `825866a09a865725...` | 26652 |
-| `bench/candidate_adapters.py` | `903f790a14537bfc...` | 24283 |
+| `bench/candidate_adapters.py` | `52d089fcfbfcaa8a...` | 24545 |
 | `bench/candidate_lineage.py` | `396ff6d389f2b836...` | 28333 |
-| `bench/candidate_measurement.py` | `8b5448ea354652c6...` | 36785 |
-| `bench/candidate_replay.py` | `8e48a1b8900acf07...` | 44115 |
+| `bench/candidate_measurement.py` | `920e73560ddd162a...` | 38684 |
+| `bench/candidate_replay.py` | `9fe0862cd332bdf5...` | 44483 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -144,7 +144,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
 | `bench/grpo_eval.py` | `960fcfec00bbf3bc...` | 67057 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
-| `bench/sft_eval.py` | `d60ccd019ef51189...` | 27470 |
+| `bench/sft_eval.py` | `e89c673f6c30d60d...` | 27472 |
 | `bench/zero_shot_baseline.py` | `5e19ee339d7db284...` | 37892 |
 | `config/g4_protocol.py` | `40b2e975b59fb615...` | 23488 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
@@ -165,12 +165,12 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md` | `63529cd8a08ca3ba...` | 4806 |
-| `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md` | `096c8894b520b2b6...` | 5542 |
+| `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md` | `c94fb7146a9f89a9...` | 5918 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md` | `feeb5552c0d125f0...` | 3748 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `7fdf84c84710caf5...` | 6522 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `034d1152ebf02796...` | 12327 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `d80631ae52edb68a...` | 11357 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `95338657309a8de2...` | 12409 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `bedb4cadf5a05f93...` | 11459 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
@@ -220,10 +220,10 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_audit.py` | `7a2a10bda3a28e61...` | 3176 |
 | `tests/test_bench_runner.py` | `90bcee2d80aa5bff...` | 19865 |
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
-| `tests/test_candidate_adapters.py` | `9df121179b918d48...` | 18503 |
+| `tests/test_candidate_adapters.py` | `312a7853a9e1dd72...` | 22276 |
 | `tests/test_candidate_lineage.py` | `c9082ca28b7ae2a3...` | 16072 |
-| `tests/test_candidate_measurement.py` | `e8f1539794bb8de6...` | 32879 |
-| `tests/test_candidate_replay.py` | `b0beb75aad02730c...` | 35568 |
+| `tests/test_candidate_measurement.py` | `f0549c53b5359791...` | 34087 |
+| `tests/test_candidate_replay.py` | `3f2abe358ca49dba...` | 39143 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_chaos_tools.py` | `5224b2bdc06bb15f...` | 9033 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
@@ -241,7 +241,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g4_runtime_context_remediation_loop.py` | `3e23f0441e3645d1...` | 22261 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `a2e857f98851c770...` | 34823 |
 | `tests/test_g6_empirical_contract.py` | `969c91c1a1fe7862...` | 42778 |
-| `tests/test_g8_empirical_contract.py` | `b80b110901701696...` | 30936 |
+| `tests/test_g8_empirical_contract.py` | `1331b8f0b2044019...` | 30938 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
 | `tests/test_g9_direct_policy_environment.py` | `bee411e0106356ae...` | 59478 |
 | `tests/test_g9_direct_reward.py` | `ffd2dec95752c473...` | 11614 |
@@ -266,7 +266,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `a0e173cfd46960b9...` | 10667 |
 | `tests/test_sft_trainer_handoff.py` | `79083e8f49541e70...` | 12611 |
-| `tests/test_sft_training_provenance.py` | `94f1dfe31f9685d6...` | 37492 |
+| `tests/test_sft_training_provenance.py` | `c8bc36f05e22a3e2...` | 37901 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
@@ -298,7 +298,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_environment.py` | `8b9916d31829a9fe...` | 29947 |
 | `training/grpo_provenance.py` | `35d52b5dff9d3846...` | 32290 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
-| `training/sft.py` | `d5c5e1a7dd804810...` | 11449 |
+| `training/sft.py` | `61e906c70ea307d4...` | 11451 |
 | `training/sft_provenance.py` | `3b8c62edbfe8d97a...` | 32055 |
 | `training/sft_rendering.py` | `b8b1ac8d241b09b4...` | 10334 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |

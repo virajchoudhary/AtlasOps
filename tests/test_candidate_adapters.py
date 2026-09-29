@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 
 import pytest
 
 from bench.candidate_adapters import adapt_three_arm_raw
+from bench.candidate_measurement import measure_candidate_episode
 from bench.episode_membership import ordered_scenario_ids_sha256
 
 
 SCENARIO_ID = "synthetic/sf-001"
 SOURCE_IDENTITY = {"run_id": "synthetic-run", "model": "synthetic-model"}
+REQUIRED_CHECK_IDS = ["deployment_ready", "latency_below_threshold"]
 
 
 def _jsonl(records: list[dict]) -> bytes:
@@ -36,6 +39,48 @@ def _adapt(
         expected_sha256=hashlib.sha256(raw).hexdigest(),
         source_identity=SOURCE_IDENTITY if source_identity is None else source_identity,
     )
+
+
+def _eligible_measurement_episode(episode: dict) -> dict:
+    # Synthetic admission context exercises diagnosis scoring only; it is not
+    # asserted to originate in either native adapter format.
+    admission_events = [
+        {"event": "fault_authorization", "authorized": True},
+        {"event": "fault_observation", "observed": True},
+        {
+            "event": "alert_delivery",
+            "delivered": True,
+            "recorded_at": "2026-09-29T12:00:00Z",
+        },
+    ]
+    result = deepcopy(episode)
+    if not any(event["event"] == "pre_action_verification" for event in result["events"]):
+        admission_events.append(
+            {
+                "event": "pre_action_verification",
+                "verification": {
+                    "verification_status": "failed",
+                    "env_resolved": False,
+                    "checks": [
+                        {"check_id": check_id, "passed": False}
+                        for check_id in REQUIRED_CHECK_IDS
+                    ],
+                },
+            }
+        )
+    result["events"] = admission_events + result["events"]
+    return result
+
+
+def _measurement_contract() -> dict:
+    return {
+        "schema_version": 1,
+        "contract_version": "candidate-v1-synthetic-test",
+        "required_verifier_check_ids": REQUIRED_CHECK_IDS.copy(),
+        "expected_diagnosis_by_scenario": {SCENARIO_ID: "network_partition"},
+        "diagnosis_label_mapping": {"packet loss": "network_partition"},
+        "clock_source": "recorded_at",
+    }
 
 
 @pytest.mark.parametrize(
@@ -90,6 +135,63 @@ def test_diagnosis_rows_preserve_failures_without_inventing_incident_evidence(
     assert "private-truth-not-for-policy" not in json.dumps(episode)
     if status == "ok":
         assert episode["events"][0]["label"] == "packet loss"
+
+
+def test_g9_adapter_marks_diagnosis_unavailable_and_scorer_keeps_it_null_when_eligible():
+    events = _g9_events()
+
+    adapted = _adapt(events, "SFT + GRPO")
+
+    episode = adapted["episodes"][0]
+    raw_refs = deepcopy(episode["raw_refs"])
+    assert episode["diagnosis_observation"] == {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": adapted["source_sha256"],
+        "raw_refs": raw_refs,
+    }
+    assert not any(event["event"] == "diagnosis_output" for event in episode["events"])
+    assert adapted["raw_records"] == events
+
+    measured = measure_candidate_episode(
+        _eligible_measurement_episode(episode),
+        _measurement_contract(),
+    )
+
+    assert measured["eligibility"]["status"] == "eligible"
+    assert measured["diagnosis"] == {
+        "correct": None,
+        "score": None,
+        "expected_category": "network_partition",
+        "mapped_category": None,
+        "raw_label": None,
+        "reason": "g9_diagnosis_not_observed",
+    }
+    assert measured["raw_episode"]["raw_refs"] == raw_refs
+    assert measured["raw_episode"]["source_sha256"] == adapted["source_sha256"]
+
+
+@pytest.mark.parametrize("variant", ["Zero-Shot Baseline", "SFT Model"])
+def test_missing_native_model_prediction_remains_diagnosis_negative_when_eligible(variant):
+    row = {
+        "scenario_id": SCENARIO_ID,
+        "evaluation_mode": "empirical",
+        "status": "error",
+        "prediction": None,
+    }
+
+    adapted = _adapt([row], variant)
+    episode = _eligible_measurement_episode(adapted["episodes"][0])
+
+    measured = measure_candidate_episode(episode, _measurement_contract())
+
+    assert measured["eligibility"]["status"] == "eligible"
+    assert measured["diagnosis"]["correct"] is False
+    assert measured["diagnosis"]["score"] == 0.0
+    assert measured["diagnosis"]["raw_label"] is None
+    assert measured["diagnosis"]["reason"] == "missing_or_invalid_diagnosis_output"
+    assert episode.get("diagnosis_observation") is None
 
 
 @pytest.mark.parametrize("variant", ["Zero-Shot Baseline", "SFT Model"])

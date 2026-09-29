@@ -707,6 +707,113 @@ def test_replay_rejects_nested_final_test_scope_aliases(scope_key, scope_value):
         _replay_common(rows)
 
 
+@pytest.mark.parametrize(
+    "scope_key",
+    [
+        "dataset",
+        "dataset_name",
+        "dataset_partition",
+        "dataset_split",
+        "datasetName",
+        "datasetPartition",
+        "datasetSplit",
+    ],
+)
+@pytest.mark.parametrize(
+    "scope_location",
+    ["run_descriptor", "measurement_contract", "raw_episode", "raw_event"],
+)
+def test_public_replay_rejects_final_test_dataset_scope_aliases(
+    scope_key,
+    scope_location,
+):
+    candidate_schema, runs, pins, scorer_sha256, contract_sha256 = _candidate_inputs()
+    measurement_contract = _measurement_contract()
+    row_episodes = [
+        (arm, _worked_episode(arm, pins[arm]))
+        for arm in ARM_ORDER
+    ]
+
+    if scope_location == "run_descriptor":
+        runs[0]["metadata"] = {scope_key: "final-test"}
+    elif scope_location == "measurement_contract":
+        measurement_contract["metadata"] = {scope_key: "final-test"}
+        contract_sha256 = _canonical_sha256(measurement_contract)
+        candidate_schema["measurement_contract_sha256"] = contract_sha256
+        for run in runs:
+            run["measurement_contract_sha256"] = contract_sha256
+    elif scope_location == "raw_episode":
+        row_episodes[0][1][scope_key] = "final-test"
+    else:
+        row_episodes[0][1]["events"].append(
+            {"event": "source_metadata", scope_key: "final-test"}
+        )
+
+    rows = _common_rows(row_episodes)
+    with pytest.raises(ValueError, match="final Test"):
+        replay_candidate_comparison(
+            runs,
+            candidate_schema,
+            measurement_contract,
+            source_pins=pins,
+            comparison_scorer_sha256=scorer_sha256,
+            measurement_contract_sha256=contract_sha256,
+            common_episode_rows=rows,
+            expected_common_episode_rows_sha256=_sha256(rows),
+            partition="validation",
+        )
+
+
+def test_replay_allows_synthetic_dataset_and_unrelated_metadata():
+    _, _, pins, _, _ = _candidate_inputs()
+    rows = []
+    for arm in ARM_ORDER:
+        episode = _worked_episode(arm, pins[arm])
+        episode["dataset"] = "synthetic/replay-001"
+        episode["metadata"] = {"note": "final-test appears in unrelated prose"}
+        rows.append((arm, episode))
+
+    result = _replay_common(_common_rows(rows))
+
+    assert result["scenario_ids"] == [SCENARIO_ID]
+
+
+@pytest.mark.parametrize("arm", ARM_ORDER[:2])
+def test_common_replay_rejects_g9_diagnosis_observation_on_g6_g8_before_scoring(
+    arm,
+    monkeypatch,
+):
+    _, _, pins, _, _ = _candidate_inputs()
+    episode = _worked_episode(arm, pins[arm])
+    episode["events"] = [
+        event for event in episode["events"] if event["event"] != "diagnosis_output"
+    ]
+    episode["diagnosis_observation"] = {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": episode["source_sha256"],
+        "raw_refs": deepcopy(episode["raw_refs"]),
+    }
+    scored_episodes = []
+    measure_candidate_episode = candidate_measurement.measure_candidate_episode
+
+    def record_measurement(raw_episode, measurement_contract):
+        scored_episodes.append(raw_episode)
+        return measure_candidate_episode(raw_episode, measurement_contract)
+
+    monkeypatch.setattr(
+        candidate_measurement,
+        "measure_candidate_episode",
+        record_measurement,
+    )
+
+    with pytest.raises(ValueError, match=r"diagnosis_observation.*SFT \+ GRPO"):
+        _replay_common(_common_rows([(arm, episode)]))
+
+    assert scored_episodes == []
+
+
 def test_replay_rejects_test_scope_in_supplied_contract_metadata():
     candidate_schema, runs, pins, scorer_sha256, contract_sha256 = _candidate_inputs()
     candidate_schema["evaluation_contract"]["split"] = "test"

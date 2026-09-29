@@ -455,6 +455,13 @@ def _adapt_g9_episode(
     raw_events = observed["events"]
     lines = [source_lines[id(event)] for event in raw_events]
     episode = _episode_base(observed["scenario_id"], source_sha256, identity_fields, lines)
+    episode["diagnosis_observation"] = {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": source_sha256,
+        "raw_refs": deepcopy(episode["raw_refs"]),
+    }
     for event, line in zip(raw_events, lines, strict=True):
         name = event["event"]
         raw_ref = {"source_sha256": source_sha256, "line": line}

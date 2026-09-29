@@ -46,6 +46,8 @@ def measure_candidate_episode(
     ``diagnosis_output``, ``action_result``, ``post_action_verification``,
     ``cleanup_started``, ``model_failure``, ``infrastructure_failure``, and
     ``episode_interrupted``. Events may contain additional source fields.
+    An optional ``diagnosis_observation`` can declare a source-bound diagnosis
+    limitation when the adapter's source format does not expose a label.
 
     The contract requires ``schema_version``, ``contract_version``,
     ``required_verifier_check_ids``, ``expected_diagnosis_by_scenario``,
@@ -109,6 +111,7 @@ def measure_candidate_episode(
         scenario_id,
         indexed_events,
         candidate_contract,
+        episode.get("diagnosis_observation"),
     )
     ttr = _time_to_recovery(
         admission,
@@ -194,6 +197,30 @@ def _validate_episode(raw_episode: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"raw_episode event {index} requires a non-empty event name")
         if "scenario_id" in event and event["scenario_id"] != scenario_id:
             raise ValueError(f"raw_episode event {index} scenario_id conflicts with the episode")
+    diagnosis_observation = episode.get("diagnosis_observation")
+    if diagnosis_observation is not None:
+        if not isinstance(diagnosis_observation, Mapping):
+            raise ValueError("raw_episode diagnosis_observation must be a mapping")
+        if set(diagnosis_observation) != {
+            "status",
+            "reason",
+            "source_format",
+            "source_sha256",
+            "raw_refs",
+        }:
+            raise ValueError("raw_episode diagnosis_observation has unsupported fields")
+        if (
+            diagnosis_observation.get("status") != "unavailable"
+            or diagnosis_observation.get("reason") != "g9_diagnosis_not_observed"
+            or diagnosis_observation.get("source_format") != "g9_event_stream"
+        ):
+            raise ValueError("raw_episode diagnosis_observation is not a supported G9 limitation")
+        if diagnosis_observation.get("source_sha256") != source_sha256:
+            raise ValueError("raw_episode diagnosis_observation source SHA-256 mismatch")
+        if diagnosis_observation.get("raw_refs") != episode["raw_refs"]:
+            raise ValueError("raw_episode diagnosis_observation raw references mismatch")
+        if any(event.get("event") == "diagnosis_output" for event in events):
+            raise ValueError("diagnosis observation conflicts with diagnosis_output")
     return episode
 
 
@@ -781,6 +808,7 @@ def _score_diagnosis(
     scenario_id: str,
     indexed_events: list[tuple[int, str, Mapping[str, Any]]],
     contract: Mapping[str, Any],
+    diagnosis_observation: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     if admission["status"] != "eligible":
         return {
@@ -800,6 +828,15 @@ def _score_diagnosis(
             "mapped_category": None,
             "raw_label": None,
             "reason": "expected_diagnosis_label_missing_from_contract",
+        }
+    if diagnosis_observation is not None:
+        return {
+            "correct": None,
+            "score": None,
+            "expected_category": expected,
+            "mapped_category": None,
+            "raw_label": None,
+            "reason": diagnosis_observation["reason"],
         }
     outputs = [event for _, name, event in indexed_events if name == "diagnosis_output"]
     if len(outputs) > 1:

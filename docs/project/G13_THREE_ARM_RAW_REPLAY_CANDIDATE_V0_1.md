@@ -54,25 +54,32 @@ diagnosis macro-F1/confusion, censor durations and survival estimates,
 independent-run intervals, and adjudicated exclusions are **not**
 established by this candidate.
 
+Native G9 events do not expose a supported diagnosis label, so their
+diagnosis score remains null with an explicit source-bound reason rather
+than a fabricated miss. An eligible G6/G8 missing model prediction remains
+a diagnosis negative; a G9-only unavailability marker on either arm is
+rejected. Explicit final-Test dataset labels are refused even when a caller
+supplies `validation` as the comparison partition.
+
 ## Byte anchors
 
-The following hashes identify the local candidate at software commit
-`587f9ad4346d0e8e201fb67aad70eb5f2cea5c45`. They are SHA-256 of raw Python
-source bytes, not model, checkpoint, evaluator-run, or evidence hashes.
+The following hashes identify the current review candidate source bytes.
+They are SHA-256 of raw Python source bytes, not model, checkpoint,
+evaluator-run, or evidence hashes.
 `comparison_scorer_sha256` is SHA-256 of canonical JSON for the ordered
 five-entry runtime source manifest (`path`, `sha256`), using sorted keys,
 compact separators and UTF-8:
 
 | Source | SHA-256 |
 | :--- | :--- |
-| `bench/candidate_adapters.py` | `903f790a14537bfcd4c7e19b2b3f579674d487a9af43964d53956a2a4e8f5e2b` |
+| `bench/candidate_adapters.py` | `52d089fcfbfcaa8a410474b372423336bdc3c49db98fed70343ad8d56b52d9ec` |
 | `bench/candidate_lineage.py` | `396ff6d389f2b83631d8b5b50c6a08c74f9df42317dbd48a9d6a2825eb956aa9` |
-| `bench/candidate_measurement.py` | `8b5448ea354652c6e45024a463f53702919e94908c92a52995932d08cff49552` |
-| `bench/candidate_replay.py` | `8e48a1b8900acf071596c932bf524a6855b187ad14249d9dc3d295b739a70daa` |
+| `bench/candidate_measurement.py` | `920e73560ddd162a888d5e9698a1a3b788a8d362db8b4d8402e86bccc3834702` |
+| `bench/candidate_replay.py` | `9fe0862cd332bdf56d0f4c4ff7ce877abb3d310ae83e5c5e4a357e080bd33cfb` |
 | `bench/episode_membership.py` | `c598ab421638db9cf94c2f827c39e2023cc81eb47e413160db68289e853015c8` |
 
 `comparison_scorer_sha256`:
-`3a985d697a5a4c314bd30be258160da633b9ca3ac67a1a6c9ebc4239c8e38758`.
+`0a0f4c38313354f07862b16102919b97f78023c71e4f62817bb1203b1faca140`.
 
 The synthetic `tests/test_candidate_replay.py::_measurement_contract()`
 fixture has canonical JSON SHA-256

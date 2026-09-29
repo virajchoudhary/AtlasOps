@@ -685,6 +685,39 @@ def test_missing_and_invalid_diagnosis_outputs_count_as_misses():
         assert measured["diagnosis"]["score"] == 0.0
 
 
+def test_missing_diagnosis_after_eligible_model_failure_remains_a_negative():
+    events = [
+        *_admission_events(),
+        {"event": "model_failure", "reason": "synthetic generation error"},
+    ]
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+
+    assert measured["eligibility"]["status"] == "eligible"
+    assert measured["diagnosis"]["correct"] is False
+    assert measured["diagnosis"]["score"] == 0.0
+    assert measured["diagnosis"]["reason"] == "missing_or_invalid_diagnosis_output"
+
+
+def test_g9_unavailable_diagnosis_marker_conflicting_with_output_is_rejected():
+    raw_episode = _episode(
+        [
+            *_admission_events(),
+            {"event": "diagnosis_output", "label": "packet loss"},
+        ]
+    )
+    raw_episode["diagnosis_observation"] = {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": raw_episode["source_sha256"],
+        "raw_refs": deepcopy(raw_episode["raw_refs"]),
+    }
+
+    with pytest.raises(ValueError, match="diagnosis observation conflicts with diagnosis_output"):
+        measure_candidate_episode(raw_episode, _contract())
+
+
 def test_multiple_diagnosis_outputs_are_ambiguous_and_all_raw_labels_are_retained():
     events = [
         *_admission_events(),

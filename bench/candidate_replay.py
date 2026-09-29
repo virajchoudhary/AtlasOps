@@ -318,6 +318,10 @@ def _normalize_scope_label(value: str) -> str:
 
 def _is_scope_field(normalized_key: str) -> bool:
     explicit = {
+        "dataset",
+        "dataset_name",
+        "dataset_partition",
+        "dataset_split",
         "partition",
         "partition_label",
         "partition_name",
@@ -559,6 +563,11 @@ def _parse_common_episode_rows(
             raise ValueError(f"common_episode_rows line {line_number} has an unknown arm")
         if not isinstance(episode, Mapping):
             raise ValueError(f"common_episode_rows line {line_number} episode must be an object")
+        if episode.get("diagnosis_observation") is not None and arm != _ARM_ORDER[2]:
+            raise ValueError(
+                f"common_episode_rows line {line_number} diagnosis_observation marker "
+                f"is only valid for {_ARM_ORDER[2]}"
+            )
         scenario_id = episode.get("scenario_id")
         if not isinstance(scenario_id, str):
             raise ValueError(f"common_episode_rows line {line_number} scenario_id must be text")

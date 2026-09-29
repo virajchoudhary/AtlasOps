@@ -540,7 +540,13 @@ def _install_fake_sft_dependencies(
     resolved_model_revision,
     resolved_tokenizer_revision,
 ):
-    calls = {"tokenizer": [], "model": [], "trainer": 0}
+    calls = {
+        "tokenizer": [],
+        "tokenizer_kwargs": [],
+        "model": [],
+        "model_kwargs": [],
+        "trainer": 0,
+    }
 
     class Dataset:
         def __init__(self, rows):
@@ -600,12 +606,14 @@ def _install_fake_sft_dependencies(
         @staticmethod
         def from_pretrained(source, *, revision, **kwargs):
             calls["tokenizer"].append((source, revision))
+            calls["tokenizer_kwargs"].append(kwargs)
             return FakeTokenizer()
 
     class AutoModelForCausalLM:
         @staticmethod
         def from_pretrained(source, *, revision, **kwargs):
             calls["model"].append((source, revision))
+            calls["model_kwargs"].append(kwargs)
             return FakeModel()
 
     transformers_module.AutoTokenizer = AutoTokenizer
@@ -744,6 +752,12 @@ def test_sft_records_exact_loader_commits_before_training(
     assert calls["model"] == [
         ("Qwen/Qwen2.5-7B-Instruct", MODEL_COMMIT)
     ]
+    assert [
+        kwargs.get("trust_remote_code") for kwargs in calls["tokenizer_kwargs"]
+    ] == [False]
+    assert [
+        kwargs.get("trust_remote_code") for kwargs in calls["model_kwargs"]
+    ] == [False]
     assert calls["trainer"] == 1
 
 

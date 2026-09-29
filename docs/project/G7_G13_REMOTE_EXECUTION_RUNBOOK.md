@@ -29,7 +29,8 @@ package versions and hashes, disk quota and checkpoint retention. Estimate
 model/cache, optimizer, dataset, temporary checkpoints, rollout ledgers and
 logs **before** any multi-GB transfer. Do not put tokens, kubeconfigs,
 provider credentials or model keys in command arguments or tracked files.
-Pin and review code loaded with `trust_remote_code=True`.
+G7 and G8 loaders set `trust_remote_code=False`; do not bypass that setting.
+A model requiring custom Hub Python needs a separate reviewed authorization.
 
 **Exit:** signed run intent with clean full Git SHA, immutable model/tokenizer
 revisions, approved environment digest, seed/budgets, output root, security
@@ -84,7 +85,7 @@ full pin passed as its `revision` with the explicit
 `PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED` basis.
 Any exposed tokenizer hash must match. This is not independent weight or
 serving attestation; the project lead must still approve exact commits,
-license, remote code, and any future weight transfer before loading.
+license and any future weight transfer before loading.
 
 **Recovery:** after the planned manifest has been written, an interruption
 or caught training exception records `interrupted`/`failed` status. Preserve

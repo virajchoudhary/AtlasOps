@@ -43,9 +43,18 @@ The required relationship is:
   reward and cannot establish a completed empirical checkpoint. The older
   four-agent 70/30 contract/dense blend is not the direct-action scorer; absent
   role summaries or judge fields are never invented to make that blend run.
+- A verifier check's `required` flag defaults to `true` only when omitted.
+  Present values must be actual Booleans. `false` denotes an optional check;
+  malformed null, string, or numeric flags make the environment observation
+  unscorable and are rejected by the scorer before calculating coverage.
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- A `completed` manifest requires a training summary with an actual positive
+  integer `total_steps` and a `trainer_log_history` list before checkpoint
+  inventory acceptance. This is structural evidence of optimizer progress,
+  not a quality threshold, a matched run identity, or proof of a usable model.
+  Failed and interrupted records remain separate negative evidence.
 - Training requires a completed G7 SFT adapter. The trainer validates its full file
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent
@@ -57,6 +66,11 @@ Empirical evaluation requires a completed real-environment GRPO checkpoint and v
 the entire checkpoint inventory and SFT parent before model loading. It preserves public state, raw policy
 output, parsed and executed action, actual tool result, verifier result, reward decomposition,
 next state, timestamps, and failures. Benchmark truth is rejected from policy input.
+Empirical G9 development evaluation is Validation-only. Test and the overlapping
+Leaderboard are rejected by the API and CLI before live context, split,
+checkpoint, state, inference, or output access. A future final comparison
+requires a separately reviewed protocol and explicit final-Test authorization;
+this entrypoint has no bypass.
 The empirical path requires the built-in tool/verifier adapter and a failed, reachable
 pre-action verifier reading for the active fault. Injected environment adapters cannot
 produce claim-eligible empirical summaries.

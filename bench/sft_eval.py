@@ -33,8 +33,10 @@ log = logging.getLogger("sft_eval")
 RESULTS_DIR = Path("bench/results")
 EVIDENCE_DIR = Path("artifacts/evidence/stage8")
 MODES = frozenset({"mock", "empirical"})
+MAX_SFT_RUN_MANIFEST_BYTES = 1024 * 1024
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
+FULL_COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 SPLIT_SEEDS = {
     "val": VAL_SEED,
     "test": TEST_SEED,
@@ -178,7 +180,15 @@ def _load_checkpoint_manifest(
         raise ValueError("Checkpoint provenance manifest must not be a symlink")
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Checkpoint provenance manifest missing: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    with manifest_path.open("rb") as stream:
+        manifest_bytes = stream.read(MAX_SFT_RUN_MANIFEST_BYTES + 1)
+    if len(manifest_bytes) > MAX_SFT_RUN_MANIFEST_BYTES:
+        raise ValueError(
+            "Checkpoint provenance manifest exceeds the maximum size of "
+            f"{MAX_SFT_RUN_MANIFEST_BYTES} bytes"
+        )
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
         raise ValueError("Checkpoint provenance schema_version must be 1")
     if manifest.get("status") != "completed":
@@ -188,12 +198,19 @@ def _load_checkpoint_manifest(
         raise ValueError("Checkpoint provenance lacks a file inventory")
     for identity in ("base_model", "tokenizer"):
         record = manifest.get(identity)
-        if (
-            not isinstance(record, dict)
-            or not record.get("id")
-            or not record.get("resolved_revision")
-        ):
+        if not isinstance(record, dict):
             raise ValueError(f"Checkpoint provenance lacks resolved {identity} revision")
+        if not isinstance(record.get("id"), str) or not record["id"].strip():
+            raise ValueError(f"Checkpoint provenance lacks {identity} id")
+        revision = record.get("resolved_revision")
+        if (
+            not isinstance(revision, str)
+            or FULL_COMMIT_SHA_RE.fullmatch(revision) is None
+        ):
+            raise ValueError(
+                f"Checkpoint provenance {identity}.resolved_revision must be a "
+                "full immutable commit SHA"
+            )
     dataset = manifest.get("dataset")
     if not isinstance(dataset, dict) or dataset.get("split") != "train":
         raise ValueError("Checkpoint provenance must identify the frozen Train split")
@@ -275,18 +292,27 @@ def _load_checkpoint_manifest(
         raise ValueError("SFT checkpoint is missing adapter_config.json")
     if not any((checkpoint / name).is_file() for name in ADAPTER_WEIGHT_NAMES):
         raise ValueError("SFT checkpoint is missing adapter model weights")
-    return manifest, _file_sha256(manifest_path)
+    return manifest, manifest_sha256
 
 
 class LocalSFTInference:
     """Lazy local base-model plus PEFT-adapter inference."""
 
-    def __init__(self, manifest: dict[str, Any]):
+    def __init__(self, manifest: dict[str, Any], manifest_sha256: str):
         self.manifest = manifest
+        self.manifest_sha256 = manifest_sha256
         self._model: Any = None
         self._tokenizer: Any = None
 
+    def _revalidate_checkpoint(self, checkpoint: Path) -> None:
+        _, current_manifest_sha256 = _load_checkpoint_manifest(checkpoint)
+        if current_manifest_sha256 != self.manifest_sha256:
+            raise ValueError("Checkpoint provenance manifest changed after preflight")
+
     def _load(self, checkpoint: Path) -> None:
+        checkpoint = checkpoint.resolve()
+        self._revalidate_checkpoint(checkpoint)
+
         import torch
         from peft import PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -297,6 +323,7 @@ class LocalSFTInference:
             tokenizer_record["id"],
             revision=tokenizer_record["resolved_revision"],
             trust_remote_code=True,
+            local_files_only=True,
         )
         base_model = AutoModelForCausalLM.from_pretrained(
             base["id"],
@@ -304,8 +331,14 @@ class LocalSFTInference:
             torch_dtype=torch.bfloat16,
             device_map="auto",
             trust_remote_code=True,
+            local_files_only=True,
         )
-        self._model = PeftModel.from_pretrained(base_model, str(checkpoint))
+        self._revalidate_checkpoint(checkpoint)
+        self._model = PeftModel.from_pretrained(
+            base_model,
+            str(checkpoint),
+            local_files_only=True,
+        )
         self._model.eval()
 
     async def __call__(
@@ -413,6 +446,11 @@ async def evaluate_sft_split(
 ) -> dict[str, Any]:
     """Evaluate an SFT checkpoint over one frozen benchmark partition."""
     selected_mode = _resolve_mode(mode, mock)
+    if selected_mode == "empirical" and split_name != "val":
+        raise ValueError(
+            "Empirical G8 evaluation is Validation-only; final-Test and leaderboard "
+            "evaluation require a separately reviewed protocol"
+        )
     scenario_ids = get_split(split_name)
     if selected_mode == "empirical" and output_dir is None:
         raise ValueError("Empirical mode requires an explicit unique output_dir")
@@ -428,7 +466,7 @@ async def evaluate_sft_split(
             approved_corpus_path=approved_corpus_path,
         )
         if configured_backend:
-            inference_fn = LocalSFTInference(manifest)
+            inference_fn = LocalSFTInference(manifest, manifest_hash)
 
     generation_config = {
         "temperature": temperature,

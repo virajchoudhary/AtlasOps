@@ -14,6 +14,7 @@ import pytest
 
 from config.splits import TEST_SPLIT, TRAIN_SEED, TRAIN_SPLIT
 from training import sft_provenance
+from training.generate_trajectories import SFT_EXAMPLE_FORMAT
 from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
     canonical_file_sha256,
@@ -24,8 +25,12 @@ from training.sft_provenance import (
     mark_running,
     normalize_training_data_provenance,
     snapshot_training_corpus,
+    validate_hf_reference,
     write_manifest_atomic,
 )
+
+MODEL_COMMIT = "a" * 40
+TOKENIZER_COMMIT = "b" * 40
 
 
 @pytest.fixture(autouse=True)
@@ -55,9 +60,9 @@ def _manifest(
         corpus_path=corpus,
         output_dir=output,
         base_model="Qwen/Qwen2.5-7B-Instruct",
-        base_model_revision="model-commit",
+        base_model_revision=MODEL_COMMIT,
         tokenizer="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="tokenizer-commit",
+        tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
         hyperparameters={"seed": training_seed},
         seed=training_seed,
@@ -69,8 +74,8 @@ def test_planned_manifest_captures_exact_inputs_and_source(tmp_path):
     manifest, output, _ = _manifest(tmp_path)
 
     assert manifest["status"] == "planned"
-    assert manifest["base_model"]["requested_revision"] == "model-commit"
-    assert manifest["tokenizer"]["requested_revision"] == "tokenizer-commit"
+    assert manifest["base_model"]["requested_revision"] == MODEL_COMMIT
+    assert manifest["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
     assert manifest["dataset"]["split"] == "train"
     assert manifest["dataset"]["split_scenarios"] == list(TRAIN_SPLIT)
     assert manifest["dataset"]["observed_scenarios"] == sorted(TRAIN_SPLIT)
@@ -127,9 +132,9 @@ def _create_manifest_for_corpus(corpus: Path, output_dir: Path) -> dict:
         corpus_path=corpus,
         output_dir=output_dir,
         base_model="Qwen/Qwen2.5-7B-Instruct",
-        base_model_revision="model-commit",
+        base_model_revision=MODEL_COMMIT,
         tokenizer="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="tokenizer-commit",
+        tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
         hyperparameters={"seed": TRAIN_SEED},
     )
@@ -165,8 +170,9 @@ def test_adjacent_corpus_origin_is_validated_and_preserved(
     (run_output / "adapter_model.safetensors").write_bytes(b"adapter-fixture")
     running = mark_running(
         run,
-        resolved_model_revision="resolved-model-commit",
-        resolved_tokenizer_revision="resolved-tokenizer-commit",
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     completed = mark_completed(
         running,
@@ -231,7 +237,7 @@ def test_corpus_hash_is_newline_stable(tmp_path):
     assert canonical_file_sha256(crlf) == canonical_file_sha256(lf)
 
 
-def test_exact_revisions_are_required(tmp_path):
+def test_full_immutable_hugging_face_revisions_are_required(tmp_path):
     corpus = tmp_path / "train.jsonl"
     corpus.write_text(
         "".join(
@@ -241,14 +247,25 @@ def test_exact_revisions_are_required(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="base model revision"):
+    with pytest.raises(ValueError, match="full 40-character"):
         create_run_manifest(
             corpus_path=corpus,
             output_dir=tmp_path / "out",
             base_model="model",
-            base_model_revision="",
+            base_model_revision="main",
             tokenizer="tokenizer",
-            tokenizer_revision="revision",
+            tokenizer_revision=TOKENIZER_COMMIT,
+            role="all",
+            hyperparameters={},
+        )
+    with pytest.raises(ValueError, match="full 40-character"):
+        create_run_manifest(
+            corpus_path=corpus,
+            output_dir=tmp_path / "out",
+            base_model="model",
+            base_model_revision=MODEL_COMMIT,
+            tokenizer="tokenizer",
+            tokenizer_revision="refs/heads/main",
             role="all",
             hyperparameters={},
         )
@@ -261,7 +278,7 @@ def test_sft_rejects_manifest_path_incompatible_with_evaluators(monkeypatch, tmp
     monkeypatch.setattr(sys, "argv", [
         "sft.py",
         "--model", "Qwen/Qwen2.5-7B-Instruct",
-        "--model-revision", "model-commit",
+        "--model-revision", MODEL_COMMIT,
         "--data", str(tmp_path / "missing-corpus.jsonl"),
         "--output", str(output),
         "--provenance-output", str(tmp_path / "external-manifest.json"),
@@ -275,7 +292,19 @@ def test_sft_rejects_manifest_path_incompatible_with_evaluators(monkeypatch, tmp
 def _write_training_corpus(path: Path) -> Path:
     path.write_text(
         "".join(
-            json.dumps({"scenario_id": scenario_id, "role": "triage"}) + "\n"
+            json.dumps(
+                {
+                    "format": SFT_EXAMPLE_FORMAT,
+                    "scenario_id": scenario_id,
+                    "role": "triage",
+                    "messages": [
+                        {"role": "system", "content": "generic system placeholder"},
+                        {"role": "user", "content": "Diagnose the test incident."},
+                        {"role": "assistant", "content": "Investigate the service."},
+                    ],
+                }
+            )
+            + "\n"
             for scenario_id in TRAIN_SPLIT
         ),
         encoding="utf-8",
@@ -283,7 +312,15 @@ def _write_training_corpus(path: Path) -> Path:
     return path
 
 
-def _prepare_sft_output_cli(monkeypatch, corpus_path: Path, output_path: Path):
+def _prepare_sft_output_cli(
+    monkeypatch,
+    corpus_path: Path,
+    output_path: Path,
+    *,
+    model: str = "Qwen/Qwen2.5-7B-Instruct",
+    model_revision: str = MODEL_COMMIT,
+    extra_args: tuple[str, ...] = (),
+):
     from training import sft
 
     attempted_ml_imports = []
@@ -311,16 +348,458 @@ def _prepare_sft_output_cli(monkeypatch, corpus_path: Path, output_path: Path):
         [
             "sft.py",
             "--model",
-            "Qwen/Qwen2.5-7B-Instruct",
+            model,
             "--model-revision",
-            "model-commit",
+            model_revision,
             "--data",
             str(corpus_path),
             "--output",
             str(output_path),
+            *extra_args,
         ],
     )
     return sft, snapshot_calls, attempted_ml_imports
+
+
+@pytest.mark.parametrize(
+    ("model_revision", "extra_args"),
+    [
+        ("main", ()),
+        (MODEL_COMMIT, ("--tokenizer-revision", "refs/heads/main")),
+    ],
+)
+def test_sft_rejects_mutable_revisions_before_output_or_training_import(
+    monkeypatch,
+    tmp_path,
+    model_revision,
+    extra_args,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        model_revision=model_revision,
+        extra_args=extra_args,
+    )
+
+    with pytest.raises(ValueError, match="full 40-character"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+
+
+def test_sft_rejects_local_model_snapshot_before_output_or_training_import(
+    monkeypatch,
+    tmp_path,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    local_model = tmp_path / "model-snapshot"
+    local_model.mkdir()
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        model=str(local_model),
+    )
+
+    with pytest.raises(ValueError, match="Local base model paths are unsupported"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "https://huggingface.co/org/model",
+        "org/../model",
+        "org/model/nested",
+        "invalid--repo",
+        "invalid..repo",
+        "invalid-repo.git",
+    ],
+)
+def test_sft_rejects_non_hugging_face_repository_ids_before_output_or_load(
+    monkeypatch,
+    tmp_path,
+    model,
+):
+    monkeypatch.chdir(tmp_path)
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        model=model,
+    )
+
+    with pytest.raises(ValueError, match="valid Hugging Face repository id"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+
+
+def test_nonexistent_owner_repo_is_treated_as_a_repository_id(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    reference = "atlasops-missing-owner-fixture-2026/nonexistent-model"
+    assert not Path(reference).exists()
+
+    validate_hf_reference(reference, MODEL_COMMIT, label="base model")
+
+
+def test_sft_cli_help_describes_repository_ids_and_immutable_commits(
+    monkeypatch,
+    capsys,
+):
+    from training import sft
+
+    monkeypatch.setattr(sys, "argv", ["sft.py", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        sft._parse_args()
+
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert exc.value.code == 0
+    normalized_help = help_text.casefold()
+    assert "hugging face repository id" in normalized_help
+    assert "local paths are unsupported" in normalized_help
+    assert "full 40-character immutable hugging face commit sha" in normalized_help
+
+
+def test_sft_requires_separate_tokenizer_pin_before_output_or_training_import(
+    monkeypatch,
+    tmp_path,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        extra_args=("--tokenizer", "test-org/tokenizer"),
+    )
+
+    with pytest.raises(ValueError, match="explicit --tokenizer-revision"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == []
+    assert attempted_ml_imports == []
+
+
+def test_sft_invalid_corpus_does_not_create_run_output(monkeypatch, tmp_path):
+    corpus = tmp_path / "leaky.jsonl"
+    corpus.write_text(
+        json.dumps({"scenario_id": TEST_SPLIT[0], "role": "triage"}) + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+    )
+
+    with pytest.raises(ValueError, match="non-training scenario"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+def test_sft_missing_corpus_does_not_create_run_output(monkeypatch, tmp_path):
+    corpus = tmp_path / "missing.jsonl"
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+    )
+
+    with pytest.raises(FileNotFoundError, match="SFT corpus not found"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+def _install_fake_sft_dependencies(
+    monkeypatch,
+    *,
+    resolved_model_revision,
+    resolved_tokenizer_revision,
+):
+    calls = {"tokenizer": [], "model": [], "trainer": 0}
+
+    class Dataset:
+        def __init__(self, rows):
+            self.rows = rows
+
+        @classmethod
+        def from_list(cls, rows):
+            return cls(rows)
+
+        def filter(self, predicate):
+            self.rows = [row for row in self.rows if predicate(row)]
+            return self
+
+        def __len__(self):
+            return len(self.rows)
+
+    class FakeTokenizer:
+        def __init__(self):
+            self.pad_token = "pad"
+            self.eos_token = "eos"
+            self.chat_template = None
+            self.init_kwargs = {}
+            if resolved_tokenizer_revision is not None:
+                self.init_kwargs["_commit_hash"] = resolved_tokenizer_revision
+
+    class FakeModel:
+        def __init__(self):
+            self.config = types.SimpleNamespace(
+                _commit_hash=resolved_model_revision,
+            )
+
+        def print_trainable_parameters(self):
+            pass
+
+    class SFTConfig:
+        def __init__(self, *, assistant_only_loss, **kwargs):
+            self.assistant_only_loss = assistant_only_loss
+            self.kwargs = kwargs
+
+    class SFTTrainer:
+        def __init__(self, **kwargs):
+            calls["trainer"] += 1
+            raise RuntimeError("stop before fake training")
+
+    datasets_module = types.ModuleType("datasets")
+    datasets_module.Dataset = Dataset
+
+    peft_module = types.ModuleType("peft")
+    peft_module.LoraConfig = lambda **kwargs: kwargs
+    peft_module.TaskType = types.SimpleNamespace(CAUSAL_LM="CAUSAL_LM")
+    peft_module.get_peft_model = lambda model, config: model
+    peft_module.prepare_model_for_kbit_training = lambda model: model
+
+    transformers_module = types.ModuleType("transformers")
+
+    class AutoTokenizer:
+        @staticmethod
+        def from_pretrained(source, *, revision, **kwargs):
+            calls["tokenizer"].append((source, revision))
+            return FakeTokenizer()
+
+    class AutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(source, *, revision, **kwargs):
+            calls["model"].append((source, revision))
+            return FakeModel()
+
+    transformers_module.AutoTokenizer = AutoTokenizer
+    transformers_module.AutoModelForCausalLM = AutoModelForCausalLM
+    transformers_module.BitsAndBytesConfig = lambda **kwargs: kwargs
+    transformers_module.set_seed = lambda seed: None
+
+    trl_module = types.ModuleType("trl")
+    trl_module.SFTConfig = SFTConfig
+    trl_module.SFTTrainer = SFTTrainer
+
+    for name, module in (
+        ("datasets", datasets_module),
+        ("peft", peft_module),
+        ("transformers", transformers_module),
+        ("trl", trl_module),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("resolved_model_revision", "resolved_tokenizer_revision", "message"),
+    [
+        (None, MODEL_COMMIT, "Loaded base model revision"),
+        ("c" * 40, MODEL_COMMIT, "does not match the requested"),
+        (MODEL_COMMIT, "d" * 40, "does not match the requested"),
+    ],
+)
+def test_sft_rejects_missing_or_mismatched_loader_commit_identity(
+    monkeypatch,
+    tmp_path,
+    resolved_model_revision,
+    resolved_tokenizer_revision,
+    message,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    calls = _install_fake_sft_dependencies(
+        monkeypatch,
+        resolved_model_revision=resolved_model_revision,
+        resolved_tokenizer_revision=resolved_tokenizer_revision,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(ValueError, match=message):
+        from training import sft
+
+        sft.main()
+
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["base_model"]["resolved_revision"] is None
+    if resolved_tokenizer_revision == MODEL_COMMIT:
+        assert persisted["tokenizer"]["resolved_revision"] == MODEL_COMMIT
+        assert persisted["tokenizer"]["resolved_revision_basis"] == (
+            "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+        )
+    else:
+        assert persisted["tokenizer"]["resolved_revision"] is None
+        assert persisted["tokenizer"]["resolved_revision_basis"] is None
+    assert "model_loaded_at" not in persisted
+    assert calls["trainer"] == 0
+    if resolved_tokenizer_revision == MODEL_COMMIT:
+        assert len(calls["model"]) == 1
+    else:
+        assert calls["model"] == []
+
+
+def test_sft_records_exact_loader_commits_before_training(
+    monkeypatch,
+    tmp_path,
+):
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    calls = _install_fake_sft_dependencies(
+        monkeypatch,
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--tokenizer",
+            "test-org/tokenizer",
+            "--tokenizer-revision",
+            TOKENIZER_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop before fake training"):
+        from training import sft
+
+        sft.main()
+
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["base_model"]["requested_revision"] == MODEL_COMMIT
+    assert persisted["base_model"]["resolved_revision"] == MODEL_COMMIT
+    assert persisted["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision_basis"] == (
+        "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+    )
+    assert calls["tokenizer"] == [
+        ("test-org/tokenizer", TOKENIZER_COMMIT)
+    ]
+    assert calls["model"] == [
+        ("Qwen/Qwen2.5-7B-Instruct", MODEL_COMMIT)
+    ]
+    assert calls["trainer"] == 1
+
+
+def test_sft_records_pinned_tokenizer_revision_when_loader_exposes_no_hash(
+    monkeypatch,
+    tmp_path,
+):
+    from training import sft
+
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    calls = _install_fake_sft_dependencies(
+        monkeypatch,
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=None,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--tokenizer",
+            "test-org/tokenizer",
+            "--tokenizer-revision",
+            TOKENIZER_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop before fake training"):
+        sft.main()
+
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["base_model"]["resolved_revision"] == MODEL_COMMIT
+    assert persisted["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision_basis"] == (
+        "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
+    )
+    assert calls["tokenizer"] == [
+        ("test-org/tokenizer", TOKENIZER_COMMIT)
+    ]
+    assert calls["model"] == [
+        ("Qwen/Qwen2.5-7B-Instruct", MODEL_COMMIT)
+    ]
+    assert calls["trainer"] == 1
 
 
 def test_sft_refuses_existing_populated_output_without_touching_run(
@@ -466,7 +945,7 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
             "--model",
             "Qwen/Qwen2.5-7B-Instruct",
             "--model-revision",
-            "model-commit",
+            MODEL_COMMIT,
             "--data",
             str(corpus),
             "--output",
@@ -480,7 +959,14 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
     persisted = json.loads(
         (output / "sft_run_manifest.json").read_text(encoding="utf-8")
     )
-    assert captured["rows"] == original_rows
+    assert [row["scenario_id"] for row in captured["rows"]] == [
+        row["scenario_id"] for row in original_rows
+    ]
+    assert all(
+        row["provenance"]["scenario_id"] == row["scenario_id"]
+        for row in captured["rows"]
+    )
+    assert all("race_marker" not in row for row in captured["rows"])
     assert persisted["dataset"]["corpus_path"] == str(corpus.resolve())
     assert persisted["dataset"]["corpus_sha256_canonical_lf"] == hashlib.sha256(
         original_bytes.replace(b"\r\n", b"\n")
@@ -549,8 +1035,9 @@ def test_running_and_completed_manifest_hash_checkpoint_files(tmp_path):
     manifest, output, manifest_path = _manifest(tmp_path)
     running = mark_running(
         manifest,
-        resolved_model_revision="resolved-model-commit",
-        resolved_tokenizer_revision="resolved-tokenizer-commit",
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     assert running["status"] == "running"
 
@@ -567,7 +1054,7 @@ def test_running_and_completed_manifest_hash_checkpoint_files(tmp_path):
 
     persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert persisted["status"] == "completed"
-    assert persisted["base_model"]["resolved_revision"] == "resolved-model-commit"
+    assert persisted["base_model"]["resolved_revision"] == MODEL_COMMIT
     assert persisted["trainer_state"]["global_step"] == 4
     assert persisted["training_history"] == [{"loss": 1.25, "step": 4}]
     assert persisted["checkpoint"]["total_files"] == 2

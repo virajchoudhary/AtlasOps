@@ -76,18 +76,24 @@ settings, package/driver/runtime metadata, GPU memory, source state,
 dataset/template hashes, trainer history, failures and full checkpoint
 inventory. The canonical `sft_run_manifest.json` must remain inside the
 adapter directory and end `completed` only after saved files are hashed.
-The CLI checks revision strings for presence, not immutable commit identity;
-independently resolve and verify the approved model/tokenizer commits before
-loading weights.
+The SFT CLI requires full 40-character model/tokenizer commit pins and
+rejects local paths or mutable aliases before claiming output. It requires
+the model loader's exposed commit to match. The pinned tokenizer loader
+may not return a commit hash; in that case the manifest records the
+full pin passed as its `revision` with the explicit
+`PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED` basis.
+Any exposed tokenizer hash must match. This is not independent weight or
+serving attestation; the project lead must still approve exact commits,
+license, remote code, and any future weight transfer before loading.
 
 **Recovery:** after the planned manifest has been written, an interruption
 or caught training exception records `interrupted`/`failed` status. Preserve
-that manifest, directory and any epoch checkpoints. The exclusive output
-directory is created and the corpus snapshot is read **before** the planned
-manifest and failure-recording `try` block; a redirect/path or snapshot
-failure can leave no run manifest, possibly with an empty claimed directory.
-Preserve the error and inspect that path without relabeling it a recorded
-training attempt. The CLI has no `--resume` option and calls
+that manifest, directory and any epoch checkpoints. Revision, path and
+bounded corpus/manifest preflight now precede exclusive output-directory
+creation, so invalid preflight input does not claim the run path. A failure
+between directory creation and planned-manifest persistence can still leave
+a claimed directory without a manifest; preserve and inspect it rather than
+relabeling it a recorded training attempt. The CLI has no `--resume` option and calls
 `trainer.train()` without a resume argument. Its merged output guard
 requires a previously nonexistent path, rejects redirects, and claims the
 final directory exclusively. Do not pre-create even an empty output

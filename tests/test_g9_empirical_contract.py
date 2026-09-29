@@ -34,6 +34,9 @@ from training.sft_provenance import (
     write_manifest_atomic,
 )
 
+MODEL_COMMIT = "f" * 40
+TOKENIZER_COMMIT = "e" * 40
+
 
 def _canonical_sha256(value: object) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -53,16 +56,17 @@ def _checkpoint_with_manifest(root: Path) -> Path:
         corpus_path=corpus,
         output_dir=sft_checkpoint,
         base_model="org/base",
-        base_model_revision="base-revision",
+        base_model_revision=MODEL_COMMIT,
         tokenizer="org/base",
-        tokenizer_revision="tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
         hyperparameters={},
     )
     sft_manifest = run_sft(
         sft_manifest,
-        resolved_model_revision="base-revision",
-        resolved_tokenizer_revision="tokenizer-revision",
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     sft_manifest["source"] = {"git_sha": "c" * 40, "git_dirty": False}
     (sft_checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
@@ -79,9 +83,9 @@ def _checkpoint_with_manifest(root: Path) -> Path:
     sft_parent = validate_sft_parent(
         sft_checkpoint,
         model_id="org/base",
-        model_revision="base-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer_id="org/base",
-        tokenizer_revision="tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
     )
 
     checkpoint = root / "checkpoint"
@@ -143,6 +147,8 @@ def _checkpoint_with_manifest(root: Path) -> Path:
             "effective_hyperparameters": effective_hyperparameters,
             "hyperparameter_selection": "requested",
             "generation_config": {"max_completion_length": 256},
+            "total_steps": 1,
+            "trainer_log_history": [],
             "live_execution": {
                 "execute_live_chaos": True,
                 "kube_context": "kind-atlasops-test",
@@ -182,8 +188,8 @@ def _checkpoint_with_manifest(root: Path) -> Path:
                 "kube_context": "kind-atlasops-test",
             },
         },
-        "base_model": {"id": "org/base", "resolved_revision": "base-revision"},
-        "tokenizer": {"id": "org/base", "resolved_revision": "tokenizer-revision"},
+        "base_model": {"id": "org/base", "resolved_revision": MODEL_COMMIT},
+        "tokenizer": {"id": "org/base", "resolved_revision": TOKENIZER_COMMIT},
         "source": {"code_sha": "a" * 40, "source_state": "clean"},
         "sft_parent": sft_parent,
         "splits": {
@@ -818,6 +824,36 @@ def test_local_policy_factory_requires_live_context_before_checkpoint_read(
         )
 
 
+@pytest.mark.parametrize("split_name", ["test", "leaderboard"])
+@pytest.mark.asyncio
+async def test_empirical_split_refuses_non_validation_before_access(
+    monkeypatch, tmp_path, split_name
+):
+    def forbidden_access(*_args, **_kwargs):
+        pytest.fail("non-validation empirical split accessed protected evaluation resources")
+
+    monkeypatch.setattr(grpo_eval_module, "require_live_kube_context", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "get_split", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "validate_grpo_checkpoint", forbidden_access)
+    monkeypatch.setattr(
+        grpo_eval_module.LocalGRPOPolicy,
+        "from_checkpoint",
+        classmethod(forbidden_access),
+    )
+
+    output_dir = tmp_path / "must-not-be-created"
+    with pytest.raises(ValueError, match="Validation-only"):
+        await evaluate_grpo_split(
+            split_name,
+            checkpoint=tmp_path / "missing-checkpoint",
+            state_provider=lambda _scenario_id: forbidden_access(),
+            environment=None,
+            output_dir=output_dir,
+        )
+
+    assert not output_dir.exists()
+
+
 @pytest.mark.parametrize(
     ("extra_flags", "message"),
     [
@@ -856,6 +892,48 @@ def test_cli_rejects_incomplete_live_execution_before_starting_async_work(
 
     assert exc.value.code == 2
     assert message in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize("split_name", ["test", "leaderboard"])
+def test_empirical_cli_refuses_non_validation_before_live_setup(
+    monkeypatch, tmp_path, capsys, split_name
+):
+    def forbidden_access(*_args, **_kwargs):
+        pytest.fail("non-validation empirical CLI reached protected evaluation resources")
+
+    output_dir = tmp_path / "must-not-be-created"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo_eval.py",
+            "--split",
+            split_name,
+            "--checkpoint",
+            str(tmp_path / "missing-checkpoint"),
+            "--state-dir",
+            str(tmp_path / "states"),
+            "--output-dir",
+            str(output_dir),
+            "--execute-actions",
+            "--kube-context",
+            "kind-atlasops-test",
+        ],
+    )
+    monkeypatch.setattr(grpo_eval_module, "require_live_kube_context", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "get_split", forbidden_access)
+    monkeypatch.setattr(
+        grpo_eval_module.LocalGRPOPolicy,
+        "from_checkpoint",
+        classmethod(forbidden_access),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        grpo_eval_module.main()
+
+    assert exc.value.code == 2
+    assert "Validation-only" in capsys.readouterr().err
     assert not output_dir.exists()
 
 

@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T06:11:26.143884+00:00`
+- **Generated**: `2026-09-29T09:06:58.481752+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -156,8 +156,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
-| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `3f54b293824791d0...` | 7582 |
+| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `6915be88c0191752...` | 7792 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
+| `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `563fccf306232582...` | 3855 |
@@ -184,7 +185,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `5d0bd469122e004c...` | 13300 |
+| `scripts/package_submission.py` | `02cadee762809f07...` | 13369 |
 | `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
 | `scripts/run_g12_integrated_episode.py` | `b805a8221d55c015...` | 39748 |
 | `scripts/run_stage4_golden_incident.py` | `8c58102bb235a950...` | 100325 |
@@ -252,7 +253,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
 | `tests/test_stage13_ablation_suite.py` | `24270271d10a7ad1...` | 41932 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `b322a59ae4c5a418...` | 23681 |
+| `tests/test_stage15_submission_package.py` | `6bd669b1cd9fa665...` | 24556 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `d8697de76a455da8...` | 5445 |
 | `tests/test_stage4_causal_contract.py` | `619ffdeab94f9e55...` | 38363 |

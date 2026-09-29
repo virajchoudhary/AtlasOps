@@ -126,6 +126,7 @@ class TestStage15SubmissionPackage:
             "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
             "docs/project/FINAL_PIPELINE_V22_STATUS.md",
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
+            "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",
             "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
             "tests/stage4_approval_process.py",
@@ -541,6 +542,21 @@ class TestStage15SubmissionPackage:
         for g_idx in range(1, 16):
             gate_tag = f"**G{g_idx}**"
             assert gate_tag in content, f"Missing Gate G{g_idx} in MASTER_PIPELINE_STATUS.md"
+
+    def test_g13_partial_decision_does_not_freeze_protocol(self):
+        record = Path(
+            "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md"
+        ).read_text(encoding="utf-8")
+        assert "PARTIAL PROJECT-LEAD APPROVAL / NOT FROZEN / NON-EXECUTABLE" in record
+        assert "recommended A choices for items 1-4" in record
+        assert "Item 5 pending" in record
+        assert "Item 6 pending" in record
+        assert "Item 7 deferred" in record
+        assert "Empirical G6 and G8 outputs are diagnosis-only" in record
+        assert "non-empirical markers exclude them from A1/A2 claims" in record
+        assert "cannot yet retain every A1 eligible negative outcome" in record
+        assert "G13 stays `REOPENED`" in record
+        assert "`NOT_CERTIFIED`" in record
 
     def test_presentation_keeps_empirical_claims_open(self):
         slides = Path("docs/slides.md").read_text(encoding="utf-8")

@@ -606,11 +606,16 @@ class TestStage15SubmissionPackage:
         amendment = Path(
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md"
         ).read_text(encoding="utf-8")
+        scope = Path(
+            "docs/project/GAI_RL_SCOPE_REVISION.md"
+        ).read_text(encoding="utf-8")
         assert "NOT FROZEN" in amendment
         assert "V1: Zero-Shot Baseline" in amendment
         assert "V2: SFT Model" in amendment
         assert "V4: SFT + GRPO" in amendment
         assert "Neither record authorizes final-Test access" in amendment
+        assert "G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md" in scope
+        assert "older, unapproved RS-inclusive planning snapshot" in scope
 
     def test_presentation_keeps_empirical_claims_open(self):
         slides = Path("docs/slides.md").read_text(encoding="utf-8")

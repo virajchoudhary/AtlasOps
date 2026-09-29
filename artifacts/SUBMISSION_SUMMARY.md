@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T13:23:51.980822+00:00`
+- **Generated**: `2026-09-29T13:28:04.913835+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -260,7 +260,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
 | `tests/test_stage13_ablation_suite.py` | `d93d6fd48d0560ed...` | 43463 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `a3116ea7a366106b...` | 27620 |
+| `tests/test_stage15_submission_package.py` | `86a5bfe2736d6060...` | 27882 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `d8697de76a455da8...` | 5445 |
 | `tests/test_stage4_causal_contract.py` | `619ffdeab94f9e55...` | 38363 |

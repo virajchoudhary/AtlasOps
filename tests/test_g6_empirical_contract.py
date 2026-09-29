@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import math
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -22,6 +23,7 @@ from config.splits import VAL_SPLIT
 def test_invalid_confidence_is_not_scored_as_numeric_inference(tmp_path, confidence):
     async def inference(_messages, _model_name, _generation_config):
         return json.dumps({
+            "severity": "P1",
             "root_cause": "service saturation under load",
             "affected_services": ["paymentservice"],
             "confidence": confidence,
@@ -65,6 +67,7 @@ def test_diagnostic_average_excludes_invalid_returned_predictions(tmp_path):
         nonlocal calls
         calls += 1
         return json.dumps({
+            "severity": "P1",
             "root_cause": "service saturation under load",
             "affected_services": ["paymentservice"],
             "confidence": 0.6 if calls == 1 else math.nan,
@@ -103,6 +106,7 @@ def test_diagnostic_average_excludes_invalid_returned_predictions(tmp_path):
 @pytest.mark.parametrize("confidence", [0, 0.4, 1])
 def test_finite_numeric_confidence_remains_valid(confidence):
     prediction = zero_shot._parse_prediction(json.dumps({
+        "severity": "P1",
         "root_cause": "service saturation under load",
         "affected_services": ["paymentservice"],
         "confidence": confidence,
@@ -118,6 +122,243 @@ def _prediction(root_cause: str = "service saturation under load") -> str:
             "root_cause": root_cause,
             "confidence": 0.4,
         }
+    )
+
+
+def _set_clean_source_provenance(monkeypatch):
+    monkeypatch.setattr(
+        zero_shot,
+        "_source_provenance",
+        lambda: {"git_sha": "c" * 40, "git_dirty": False},
+    )
+
+
+@pytest.mark.parametrize("severity", ["P0", "P1", "P2", "P3"])
+def test_prediction_accepts_each_defined_severity(severity):
+    payload = json.loads(_prediction())
+    payload["severity"] = severity
+
+    prediction = zero_shot._parse_prediction(json.dumps(payload))
+
+    assert prediction["severity"] == severity
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value", "omit"),
+    [
+        ("severity", None, False),
+        ("severity", "P4", False),
+        ("severity", "p1", False),
+        ("severity", 1, False),
+        ("severity", None, True),
+        ("affected_services", None, True),
+        ("affected_services", "paymentservice", False),
+        ("affected_services", [1], False),
+        ("affected_services", [""], False),
+    ],
+)
+async def test_invalid_required_prediction_fields_are_not_scored(
+    tmp_path,
+    field,
+    value,
+    omit,
+):
+    payload = json.loads(_prediction())
+    if omit:
+        payload.pop(field)
+    else:
+        payload[field] = value
+    raw_prediction = json.dumps(payload)
+
+    async def inference(_messages, _model_name, _generation_config):
+        return raw_prediction
+
+    output_dir = tmp_path / "invalid-prediction"
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        mode="empirical",
+        model_revision="synthetic-test-revision",
+        output_dir=output_dir,
+        inference_fn=inference,
+    )
+    rows = [
+        json.loads(line)
+        for line in (output_dir / "results_per_episode.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+
+    assert summary["failed_scenarios"] == len(VAL_SPLIT)
+    assert summary["diagnostic_scored_count"] == 0
+    assert summary["avg_diagnostic_f1"] is None
+    assert all(row["status"] == "error" for row in rows)
+    assert all(row["outcome"] == "invalid_prediction" for row in rows)
+    assert all(row["prediction"] is None for row in rows)
+    assert all(row["diagnostic_metrics"] is None for row in rows)
+    assert all(row["raw_model_response"] == raw_prediction for row in rows)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("split_name", ["test", " TEST "])
+async def test_empirical_test_split_is_refused_before_resolution_or_output(
+    tmp_path,
+    monkeypatch,
+    split_name,
+):
+    calls = []
+    output_dir = tmp_path / "unauthorized-test"
+
+    def resolve_split(_split_name):
+        calls.append("split")
+        return VAL_SPLIT
+
+    async def infer(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return _prediction()
+
+    monkeypatch.setattr(zero_shot, "get_split", resolve_split)
+
+    with pytest.raises(ValueError, match="test split"):
+        await zero_shot.evaluate_zero_shot_split(
+            split_name,
+            mode="empirical",
+            model_revision="synthetic-test-revision",
+            output_dir=output_dir,
+            inference_fn=infer,
+        )
+
+    assert calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_configured_empirical_requires_clean_source_before_model_observation(
+    tmp_path,
+    monkeypatch,
+):
+    calls = []
+    output_dir = tmp_path / "dirty-source"
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    def dirty_source():
+        calls.append("source")
+        return {"git_sha": "a" * 40, "git_dirty": True}
+
+    async def observe_model(_model_name):
+        calls.append("identity")
+        return {"name": "qwen2.5:7b-instruct", "digest": "a" * 64}
+
+    async def infer(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return zero_shot.InferenceResult(_prediction(), "qwen2.5:7b-instruct")
+
+    monkeypatch.setattr(zero_shot, "_source_provenance", dirty_source)
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", observe_model)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", infer)
+
+    with pytest.raises(RuntimeError, match="clean Git source"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_revision="a" * 64,
+            mode="empirical",
+            output_dir=output_dir,
+        )
+
+    assert calls == ["source"]
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("postflight", "status", "unchanged"),
+    [
+        ({"git_sha": "a" * 40, "git_dirty": False}, "unchanged", True),
+        ({"git_sha": "b" * 40, "git_dirty": False}, "changed", False),
+        ({"git_sha": "a" * 40, "git_dirty": True}, "changed", False),
+    ],
+)
+async def test_configured_empirical_records_source_preflight_and_postflight(
+    tmp_path,
+    monkeypatch,
+    postflight,
+    status,
+    unchanged,
+):
+    model_name = "qwen2.5:7b-instruct"
+    digest = "a" * 64
+    preflight = {"git_sha": "a" * 40, "git_dirty": False}
+    source_values = iter([preflight, postflight])
+    events = []
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+
+    def source_provenance():
+        events.append("source")
+        return next(source_values)
+
+    async def observe_model(_model_name):
+        events.append("identity")
+        return {"name": model_name, "digest": digest}
+
+    async def infer(_messages, _model_name, _generation_config):
+        events.append("inference")
+        return zero_shot.InferenceResult(_prediction(), model_name)
+
+    monkeypatch.setattr(zero_shot, "_source_provenance", source_provenance)
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", observe_model)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", infer)
+
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        model_name=model_name,
+        model_revision=digest,
+        mode="empirical",
+        output_dir=tmp_path / "source-provenance",
+    )
+
+    assert events[0] == "source"
+    assert events[-1] == "source"
+    assert events.index("inference") > events.index("identity")
+    assert summary["source"] == preflight
+    assert summary["source_preflight"] == preflight
+    assert summary["source_postflight"] == postflight
+    assert summary["source_provenance_status"] == status
+    assert summary["source_unchanged"] is unchanged
+    assert summary["empirical_claim_allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_split_and_dataset_hashes_are_frozen_before_inference(
+    tmp_path,
+):
+    scenario_id = VAL_SPLIT[0]
+    original_metadata = SCENARIO_CATALOG[scenario_id]
+    changed_metadata = replace(original_metadata, manifest_sha256="f" * 64)
+    changed = False
+
+    async def inference(_messages, _model_name, _generation_config):
+        nonlocal changed
+        if not changed:
+            SCENARIO_CATALOG[scenario_id] = changed_metadata
+            changed = True
+        return _prediction()
+
+    try:
+        summary = await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="empirical",
+            model_revision="synthetic-test-revision",
+            output_dir=tmp_path / "hashes",
+            inference_fn=inference,
+        )
+    finally:
+        SCENARIO_CATALOG[scenario_id] = original_metadata
+
+    assert summary["split_sha256"] == (
+        "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4"
+    )
+    assert summary["dataset_sha256"] == (
+        "1322805985556d197bddee8d5a036a01dcc773e00972ba37c0d9708443b1fce6"
     )
 
 
@@ -246,6 +487,7 @@ async def test_configured_backend_rejects_unverified_model_before_output(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
 
     async def wrong_identity(_model_name):
         return {"name": "qwen2.5:7b-instruct", "digest": "b" * 64}
@@ -449,6 +691,7 @@ async def test_unverifiable_preflight_fails_before_creating_run_output(
         failure=httpx.ConnectError("endpoint detail must not be retained"),
     )
     monkeypatch.setenv("VLLM_BASE", "http://localhost:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
 
     with pytest.raises(RuntimeError, match="ConnectError"):
         await zero_shot.evaluate_zero_shot_split(
@@ -667,6 +910,7 @@ async def test_transient_alias_with_matching_observations_stays_nonclaimable(
         return zero_shot.InferenceResult(_prediction(), model_name)
 
     monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
     monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
     monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
 
@@ -726,6 +970,7 @@ async def test_episode_finalize_replace_failure_preserves_prior_raw_rows(
         raise OSError("simulated atomic replace failure")
 
     monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
     monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
     monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
     monkeypatch.setattr(zero_shot.os, "replace", fail_replace)
@@ -774,6 +1019,7 @@ async def test_configured_empirical_identity_drift_makes_run_nonclaimable(
         return zero_shot.InferenceResult(_prediction(), model_name)
 
     monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
     monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
     monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
 
@@ -824,6 +1070,7 @@ async def test_unverifiable_final_identity_recheck_makes_run_nonclaimable(
         return zero_shot.InferenceResult(_prediction(), model_name)
 
     monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    _set_clean_source_provenance(monkeypatch)
     monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
     monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
 

@@ -1084,6 +1084,7 @@ def _diagnosis_is_evidence_backed(incident_result: dict[str, Any]) -> bool:
         and persisted_grounding == computed_grounding
         and computed_grounding.get("grounded") is True
         and computed_grounding.get("citation_count", 0) > 0
+        and computed_grounding.get("promql_citations_with_samples", 0) > 0
         and not computed_grounding.get("violations")
     )
     return identifies_target and identifies_fault and target_is_anchored and grounded_citations

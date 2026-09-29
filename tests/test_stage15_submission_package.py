@@ -125,6 +125,7 @@ class TestStage15SubmissionPackage:
             "config/splits.py",
             "agents/verifier.py",
             "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
+            "docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md",
             "docs/project/IMPLEMENTATION_STATUS.md",
             "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md",
             "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",

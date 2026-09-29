@@ -403,7 +403,20 @@ def _valid_incident() -> dict:
             {
                 "tool": "promql_query",
                 "args": {"query": "paymentservice_cpu_usage"},
-                "output": {"success": True, "result": [{"value": "0.6"}]},
+                "output": {
+                    "success": True,
+                    "resultType": "vector",
+                    "result": [
+                        {
+                            "metric": {"pod": "paymentservice-0"},
+                            "value": [1, "0.6"],
+                        }
+                    ],
+                    "has_data": True,
+                    "series_present": True,
+                    "no_series": False,
+                    "evidence_status": "series_present",
+                },
             }
         ],
     }

@@ -343,6 +343,15 @@ async def test_live_environment_scopes_context_to_chaos_and_verifier_calls(monke
                             "name": "experiment-1",
                             "namespace": "chaos-mesh",
                         },
+                        "status": {
+                            "conditions": [
+                                {"type": "Paused", "status": "False"},
+                                {"type": "AllRecovered", "status": "False"},
+                            ],
+                            "experiment": {
+                                "containerRecords": [{"phase": "Injected"}],
+                            },
+                        },
                     }]
                 }),
                 stderr="",

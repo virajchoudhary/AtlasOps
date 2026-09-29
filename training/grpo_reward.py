@@ -27,7 +27,10 @@ def score_direct_action_step(
     for check in checks:
         if not isinstance(check, Mapping) or type(check.get("passed")) is not bool:
             raise ValueError("Direct-action reward received an invalid objective check")
-        if check.get("required", True) is True:
+        required_flag = check.get("required", True)
+        if type(required_flag) is not bool:
+            raise ValueError("Direct-action reward received an invalid required flag")
+        if required_flag:
             required.append(check)
     if not required:
         raise ValueError("Direct-action reward requires a required objective check")

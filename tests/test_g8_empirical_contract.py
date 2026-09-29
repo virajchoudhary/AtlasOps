@@ -622,7 +622,7 @@ def test_lazy_sft_loads_use_exact_revisions_and_disable_network_access(
         {
             "revision": "b" * 40,
             "local_files_only": True,
-            "trust_remote_code": True,
+            "trust_remote_code": False,
         },
     )
     assert loader_calls[1][0:2] == (
@@ -634,7 +634,7 @@ def test_lazy_sft_loads_use_exact_revisions_and_disable_network_access(
         "torch_dtype": "bfloat16",
         "device_map": "auto",
         "local_files_only": True,
-        "trust_remote_code": True,
+        "trust_remote_code": False,
     }
     assert loader_calls[2][0] == "adapter"
     assert loader_calls[2][1][1] == str(checkpoint.resolve())

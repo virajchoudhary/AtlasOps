@@ -210,7 +210,7 @@ def main() -> None:
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_id,
             revision=tokenizer_revision,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         tokenizer_init_kwargs = getattr(tokenizer, "init_kwargs", None)
         resolved_tokenizer_revision, resolved_tokenizer_revision_basis = (
@@ -241,7 +241,7 @@ def main() -> None:
             revision=args.model_revision,
             quantization_config=quantization,
             device_map="auto",
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         resolved_model_revision = validate_resolved_hf_commit(
             args.model_revision,

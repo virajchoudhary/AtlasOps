@@ -18,6 +18,7 @@ import math
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,143 @@ SPLIT_SEEDS = {
 }
 OLLAMA_IDENTITY_TIMEOUT_SECONDS = 10.0
 MAX_G6_INFERENCE_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+def _is_reparse_path(path: Path, metadata: os.stat_result) -> bool:
+    if stat.S_ISLNK(metadata.st_mode):
+        return True
+    if getattr(metadata, "st_file_attributes", 0) & 0x400:
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if callable(is_junction):
+        try:
+            return bool(is_junction())
+        except OSError as exc:
+            raise ValueError("Unable to safely inspect a G6 output path") from exc
+    return False
+
+
+def _resolve_output_directory(path: Path, label: str) -> Path:
+    absolute = Path(os.path.abspath(path))
+    if absolute == Path(absolute.anchor):
+        raise ValueError(f"G6 {label} cannot be a filesystem root")
+
+    component = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        component /= part
+        try:
+            metadata = component.lstat()
+        except FileNotFoundError:
+            break
+        except OSError as exc:
+            raise ValueError(f"Unable to safely inspect G6 {label}") from exc
+        if _is_reparse_path(component, metadata):
+            raise ValueError(f"G6 {label} cannot contain a symlink, junction, or reparse point")
+        if component == absolute and not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError(f"G6 {label} must be a directory")
+
+    try:
+        return absolute.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"Unable to safely resolve G6 {label}") from exc
+
+
+def _tracked_repository_paths(repo_root: Path) -> set[str]:
+    try:
+        index_paths = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "--cached", "-z"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        head_paths = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", "-z", "HEAD"],
+            capture_output=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError("Unable to verify G6 output paths against tracked files") from exc
+    return {
+        os.fsdecode(path)
+        for listing in (index_paths, head_paths)
+        for path in listing.split(b"\0")
+        if path
+    }
+
+
+def _repository_relative_path(path: Path, repo_root: Path) -> str | None:
+    try:
+        return path.relative_to(repo_root).as_posix()
+    except ValueError:
+        return None
+
+
+def _preflight_output_paths(
+    output_dir: Path,
+    evidence_dir: Path,
+    split_name: str,
+) -> tuple[Path, Path]:
+    resolved_output_dir = _resolve_output_directory(output_dir, "output_dir")
+    resolved_evidence_dir = _resolve_output_directory(evidence_dir, "evidence_dir")
+    output_files = (
+        resolved_output_dir / "results_per_episode.jsonl",
+        resolved_output_dir / "results_summary.json",
+        resolved_evidence_dir / f"zero_shot_{split_name}_summary.json",
+    )
+    directory_paths = (resolved_output_dir, resolved_evidence_dir)
+    if any(
+        output_file == directory or output_file in directory.parents
+        for directory in directory_paths
+        for output_file in output_files
+    ):
+        raise ValueError("G6 directory conflicts with an output filename")
+
+    try:
+        repo_root = REPO_ROOT.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError("Unable to safely resolve the G6 repository root") from exc
+
+    tracked_evidence_dir = (
+        repo_root / "artifacts/evidence/mock_archive/stage6"
+    ).resolve(strict=False)
+    if any(
+        directory == tracked_evidence_dir or tracked_evidence_dir in directory.parents
+        for directory in directory_paths
+    ):
+        raise ValueError("G6 output directories cannot target protected historical Stage 6 evidence")
+
+    if any(
+        _repository_relative_path(path, repo_root) is not None
+        for path in (*directory_paths, *output_files)
+    ):
+        tracked_paths = _tracked_repository_paths(repo_root)
+        if os.name == "nt":
+            tracked_paths = {path.casefold() for path in tracked_paths}
+        for directory in directory_paths:
+            relative = _repository_relative_path(directory, repo_root)
+            if relative is None:
+                continue
+            key = relative.casefold() if os.name == "nt" else relative
+            prefix = "" if key == "." else f"{key.rstrip('/')}/"
+            if any(path == key or path.startswith(prefix) for path in tracked_paths):
+                raise ValueError("G6 output directories cannot overlap tracked repository files")
+        for output_file in output_files:
+            relative = _repository_relative_path(output_file, repo_root)
+            if relative is None:
+                continue
+            key = relative.casefold() if os.name == "nt" else relative
+            if key in tracked_paths:
+                raise ValueError("G6 output destinations cannot replace tracked repository files")
+
+    for output_file in output_files:
+        try:
+            output_file.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError("Unable to safely inspect a G6 output destination") from exc
+        raise ValueError(f"G6 output destination is already occupied: {output_file.name}")
+
+    return resolved_output_dir, resolved_evidence_dir
 
 
 @dataclass(frozen=True)
@@ -674,6 +812,25 @@ async def evaluate_zero_shot_split(
         and not os.getenv("VLLM_BASE", "").strip()
     ):
         raise RuntimeError("Empirical mode requires VLLM_BASE")
+
+    split_seed = SPLIT_SEEDS[split_name]
+    tag = f"zero_shot_{split_name}_{Path(model_name).name.replace(':', '_')}"
+    started_at = datetime.now(UTC)
+    run_id = f"{tag}-{started_at.strftime('%Y%m%d_%H%M%S_%f')}"
+    requested_output_dir = (
+        Path(output_dir)
+        if output_dir is not None
+        else RESULTS_DIR / "non_empirical" / "zero_shot_baseline" / split_name / run_id
+    )
+    requested_evidence_dir = (
+        Path(evidence_dir) if evidence_dir is not None else requested_output_dir
+    )
+    out_dir, resolved_evidence_dir = _preflight_output_paths(
+        requested_output_dir,
+        requested_evidence_dir,
+        split_name,
+    )
+
     model_revision_digest: str | None = None
     source_preflight: dict[str, Any] | None = None
     if selected_mode == "empirical" and configured_backend:
@@ -701,7 +858,6 @@ async def evaluate_zero_shot_split(
             model_revision_digest,
         )
 
-    split_seed = SPLIT_SEEDS[split_name]
     generation_config = {
         "temperature": temperature,
         "top_p": top_p,
@@ -709,11 +865,6 @@ async def evaluate_zero_shot_split(
         "seed": split_seed,
         "timeout_seconds": timeout_seconds,
     }
-    tag = f"zero_shot_{split_name}_{Path(model_name).name.replace(':', '_')}"
-    started_at = datetime.now(UTC)
-    run_id = f"{tag}-{started_at.strftime('%Y%m%d_%H%M%S_%f')}"
-    out_dir = output_dir or (RESULTS_DIR / "non_empirical" / "zero_shot_baseline" / split_name / run_id)
-    resolved_evidence_dir = evidence_dir or out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     resolved_evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -922,14 +1073,13 @@ async def evaluate_zero_shot_split(
     summary.update(summary_updates)
 
     summary_path = out_dir / "results_summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
+    summary_text = json.dumps(summary, indent=2) + "\n"
+    with summary_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(summary_text)
     evidence_path = resolved_evidence_dir / f"zero_shot_{split_name}_summary.json"
     if evidence_path != summary_path:
-        evidence_path.write_text(
-            json.dumps(summary, indent=2) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
+        with evidence_path.open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(summary_text)
     return summary
 
 

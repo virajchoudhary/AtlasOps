@@ -7,6 +7,8 @@ import base64
 import hashlib
 import json
 import math
+import shutil
+import subprocess
 from dataclasses import replace
 
 import httpx
@@ -131,6 +133,257 @@ def _set_clean_source_provenance(monkeypatch):
         "_source_provenance",
         lambda: {"git_sha": "c" * 40, "git_dirty": False},
     )
+
+
+def _tracked_stage6_fixture(tmp_path):
+    repo_root = tmp_path / "fixture-repository"
+    archive_dir = repo_root / "artifacts/evidence/mock_archive/stage6"
+    archive_dir.mkdir(parents=True)
+    source_dir = zero_shot.REPO_ROOT / "artifacts/evidence/mock_archive/stage6"
+    frozen_bytes = {}
+    for filename in ("zero_shot_val_summary.json", "zero_shot_test_summary.json"):
+        source = source_dir / filename
+        destination = archive_dir / filename
+        frozen_bytes[filename] = source.read_bytes()
+        shutil.copyfile(source, destination)
+
+    subprocess.run(
+        ["git", "-C", str(repo_root), "init", "--quiet"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "add",
+            "--",
+            "artifacts/evidence/mock_archive/stage6",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "-c",
+            "user.name=AtlasOps test fixture",
+            "-c",
+            "user.email=atlasops-fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return repo_root, archive_dir, frozen_bytes
+
+
+def _snapshot_files(directory):
+    return {
+        path.relative_to(directory).as_posix(): path.read_bytes()
+        for path in directory.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.asyncio
+async def test_mock_mode_rejects_tracked_historical_output_without_side_effects(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root, archive_dir, frozen_bytes = _tracked_stage6_fixture(tmp_path)
+    monkeypatch.setattr(zero_shot, "REPO_ROOT", repo_root)
+    calls = []
+
+    async def mock_runner(_scenario_id, *, mock):
+        calls.append("mock-runner")
+        return {}
+
+    async def inference(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return _prediction()
+
+    monkeypatch.setattr(zero_shot, "run_scenario", mock_runner)
+    before = _snapshot_files(archive_dir)
+
+    with pytest.raises(ValueError, match="tracked|historical"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="mock",
+            output_dir=archive_dir,
+            inference_fn=inference,
+        )
+
+    assert calls == []
+    assert before == frozen_bytes
+    assert _snapshot_files(archive_dir) == frozen_bytes
+    assert not (archive_dir / "results_per_episode.jsonl").exists()
+    assert not (archive_dir / "results_summary.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_configured_empirical_rejects_tracked_evidence_dir_before_observation(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root, archive_dir, frozen_bytes = _tracked_stage6_fixture(tmp_path)
+    monkeypatch.setattr(zero_shot, "REPO_ROOT", repo_root)
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    events = []
+
+    def source_provenance():
+        events.append("source")
+        return {"git_sha": "a" * 40, "git_dirty": False}
+
+    async def observe_model(_model_name):
+        events.append("identity")
+        return {
+            "name": "qwen2.5:7b-instruct",
+            "digest": "a" * 64,
+        }
+
+    async def inference(_messages, _model_name, _generation_config):
+        events.append("inference")
+        return zero_shot.InferenceResult(
+            _prediction(),
+            "qwen2.5:7b-instruct",
+        )
+
+    monkeypatch.setattr(zero_shot, "_source_provenance", source_provenance)
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", observe_model)
+    monkeypatch.setattr(zero_shot, "openai_compatible_inference", inference)
+    output_dir = tmp_path / "safe-output"
+    before = _snapshot_files(archive_dir)
+
+    with pytest.raises(ValueError, match="tracked|historical"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="empirical",
+            model_revision=f"sha256:{'a' * 64}",
+            output_dir=output_dir,
+            evidence_dir=archive_dir,
+        )
+
+    assert events == []
+    assert not output_dir.exists()
+    assert before == frozen_bytes
+    assert _snapshot_files(archive_dir) == frozen_bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "destination_name",
+    [
+        "results_per_episode.jsonl",
+        "results_summary.json",
+        "zero_shot_val_summary.json",
+    ],
+)
+async def test_injected_empirical_rejects_occupied_destinations_before_inference(
+    tmp_path,
+    destination_name,
+):
+    output_dir = tmp_path / "run"
+    evidence_dir = tmp_path / "evidence"
+    destination_dir = evidence_dir if destination_name.startswith("zero_shot_") else output_dir
+    destination_dir.mkdir(parents=True)
+    destination = destination_dir / destination_name
+    destination.write_bytes(b"pre-existing output\n")
+    before = _snapshot_files(tmp_path)
+    calls = []
+
+    async def inference(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return _prediction()
+
+    with pytest.raises(ValueError, match="occupied|already exists"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="empirical",
+            model_revision="synthetic-test-revision",
+            output_dir=output_dir,
+            evidence_dir=evidence_dir,
+            inference_fn=inference,
+        )
+
+    assert calls == []
+    assert _snapshot_files(tmp_path) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["mock", "empirical"])
+@pytest.mark.parametrize(
+    "conflicting_name",
+    [
+        "results_per_episode.jsonl",
+        "results_summary.json",
+        "results_summary.json/nested",
+    ],
+)
+async def test_output_directory_cannot_become_another_output_filename(
+    tmp_path, monkeypatch, mode, conflicting_name
+):
+    output_dir = tmp_path / "run"
+    evidence_dir = output_dir / conflicting_name
+    calls = []
+
+    async def mock_runner(_scenario_id, *, mock):
+        calls.append("mock-runner")
+        return {}
+
+    async def inference(_messages, _model_name, _generation_config):
+        calls.append("inference")
+        return _prediction()
+
+    monkeypatch.setattr(zero_shot, "run_scenario", mock_runner)
+    with pytest.raises(ValueError, match="directory.*output filename"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode=mode,
+            model_revision="synthetic-test-revision",
+            output_dir=output_dir,
+            evidence_dir=evidence_dir,
+            inference_fn=inference,
+        )
+
+    assert calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_output_symlink_cannot_redirect_to_tracked_historical_path(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root, archive_dir, frozen_bytes = _tracked_stage6_fixture(tmp_path)
+    monkeypatch.setattr(zero_shot, "REPO_ROOT", repo_root)
+    redirected_output = tmp_path / "archive-link"
+    try:
+        redirected_output.symlink_to(archive_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable in this test environment")
+    calls = []
+
+    async def mock_runner(_scenario_id, *, mock):
+        calls.append("mock-runner")
+        return {}
+
+    monkeypatch.setattr(zero_shot, "run_scenario", mock_runner)
+    with pytest.raises(ValueError, match="link|reparse|symlink|junction"):
+        await zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="mock",
+            output_dir=redirected_output,
+        )
+
+    assert calls == []
+    assert _snapshot_files(archive_dir) == frozen_bytes
 
 
 @pytest.mark.parametrize("severity", ["P0", "P1", "P2", "P3"])

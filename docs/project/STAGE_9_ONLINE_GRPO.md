@@ -58,12 +58,13 @@ The required relationship is:
   completed matching SFT parent before exclusively claiming a fresh,
   nonredirected output directory. A one-shot execution marker prevents
   direct retry or implicit resume. On supported hosts, caught direct/CLI
-  failures and interrupts retain terminal status. Optional Optuna trials
-  carry the declared seed but remain separately gated live rollouts.
-- Direct training and Optuna entrypoints compare their seed, requested
-  hyperparameters or trial count, live context, approval profile, and model
-  lineage with the persisted plan before beginning work. A mismatched
-  preflight call does not terminalize an already-started run.
+  failures and interrupts retain terminal status. Positive Optuna trials
+  are deferred before model, output or live work.
+- Direct training compares its seed, requested hyperparameters, live
+  context, approval profile, and model lineage with the persisted plan
+  before beginning work. A mismatched preflight call does not terminalize
+  an already-started run. Direct Optuna refuses positive trials rather
+  than selecting unapproved settings.
 - Completion also requires matching loader-exposed base-model commit
   provenance. A tokenizer hash, if exposed, must match; otherwise its
   manifest basis explicitly says the full loader-argument pin was not
@@ -83,7 +84,8 @@ The required relationship is:
   raw files remain, with no partial-file hash claim. Raw content stays out of
   the manifest. The live training CLI rejects hosts without stable
   directory-handle support before creating run output or applying a fault;
-  direct training and Optuna entrypoints apply the same capability guard.
+  direct training applies the same guard. Positive Optuna requests are
+  refused before reaching that capability boundary or any live work.
   None of this makes a failed run resumable or claimable.
 - A `completed` manifest requires a training summary with an actual positive
   integer `total_steps` and a `trainer_log_history` list before checkpoint
@@ -94,6 +96,16 @@ The required relationship is:
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent
   checkpoint and manifest hashes, which are revalidated before G9 evaluation.
+- The single-writer Train prompt source is map-style so repeated generation-group
+  indices use one scenario until verifier feedback updates the curriculum. The
+  next consumed group can then sample from the updated Train-only distribution;
+  local tests cover that cache boundary, not an actual TRL training step.
+  The pinned TRL 0.19.1 generation batch must be divisible by
+  `num_generations`. The checked-in `batch_size=1`, `grad_accum=4`,
+  `num_generations=8` default fails that preflight before output or model load.
+  Optuna's fixed one-by-one trial batches with four or eight generations are
+  explicitly deferred pending an approved compatible budget. No parameters
+  are silently replaced, and neither path establishes G9 training readiness.
 
 ## Evaluator Contract
 

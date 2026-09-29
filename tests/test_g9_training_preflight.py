@@ -43,6 +43,8 @@ def _cli_argv(
         tokenizer_id,
         "--tokenizer-revision",
         tokenizer_revision,
+        "--batch-size",
+        "2",
         "--sft-checkpoint",
         str(sft_checkpoint),
         "--output",

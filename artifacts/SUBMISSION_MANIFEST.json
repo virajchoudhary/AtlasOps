@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T20:11:00.017019+00:00",
+  "generated_at": "2026-09-29T21:00:04.559153+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -141,12 +141,12 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "9b57104baa09d7c4548b49a2234cb7b207f9a8f0c0686fa20c06638a29e78911",
-      "size_bytes": 11090
+      "sha256": "730f13e8f10fcc78859b5e57ecfd62faeed1693fa373261370ae1c1b89edff09",
+      "size_bytes": 11415
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "b945cb8252ba449590870913c4811aba5a7e813107d80917d5849330734a3842",
-      "size_bytes": 12470
+      "sha256": "1beb63b13252e2f28ea443d31ee5e0dd933dadf14eb98f3d6763cf5fdba7fad6",
+      "size_bytes": 12828
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
       "sha256": "7fdf84c84710caf53058716c80694911f04d8b3063f3e4b73e8eb4889b7b775b",
@@ -217,8 +217,8 @@
       "size_bytes": 4101
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "afc33fc172154220a462eac87e3419fc6a79dd7330d5fe9326f1620b5f1a271c",
-      "size_bytes": 8598
+      "sha256": "d231b0d14cd3ef9afd5d07d584b7d4dc7bb9feff0ef7224284d6b89ba1361324",
+      "size_bytes": 9443
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -721,8 +721,8 @@
       "size_bytes": 32055
     },
     "training/grpo.py": {
-      "sha256": "dea530fa58f9f731525ae2ca24105dde9d4c8d5f2e31ff860243312a7455efe6",
-      "size_bytes": 53461
+      "sha256": "f46d1b7ff744186f5ebf4306972e33c8070aeb93d7ebeedb36d5a56ef165afe0",
+      "size_bytes": 51727
     },
     "training/grpo_environment.py": {
       "sha256": "8b9916d31829a9fe2befff5883ba85dc9b0666aa2cd6a60b590a1439f1180769",
@@ -873,12 +873,12 @@
       "size_bytes": 37749
     },
     "tests/test_g9_training_preflight.py": {
-      "sha256": "d43585e75ff933655dd3dd2982c4cf77492ef7db690ad202fbb740d780d4b5f8",
-      "size_bytes": 14558
+      "sha256": "cfdcfaff8166b3255d26347328ba7bfe6a0918d1f2a2acdb21a1f7c7e5b720f4",
+      "size_bytes": 14595
     },
     "tests/test_grpo_training_provenance.py": {
-      "sha256": "b0031143658c73ee3c9ebd459338e51bbc9436dd576b31ca5db983d62d21ad19",
-      "size_bytes": 84034
+      "sha256": "c5fcdcd7ed1912a72bab938e89ad621cce0d953fe101950340082abf2baa443e",
+      "size_bytes": 74886
     },
     "tests/test_hf_space_env.py": {
       "sha256": "74a310256bb3582089ee319c8d27c90b929b7d1a9515946eda161318eb21ebb6",
@@ -1037,8 +1037,8 @@
       "size_bytes": 6524
     },
     "tests/test_stage9_grpo_pipeline.py": {
-      "sha256": "5a8ccf28e799ce6d94026543a7d4e0bf10e0ac8cf449fc3ace9c2d37ed2ea983",
-      "size_bytes": 4777
+      "sha256": "ce18c95e63131e938e13dcb78879437816279ff3272b60844a5af29f40b30d5a",
+      "size_bytes": 13900
     },
     "tests/test_tool_policy_contract.py": {
       "sha256": "15f377b269d769da88eb23aca0e28d69eac1f0f79a87cef529e8d26b74900bcb",

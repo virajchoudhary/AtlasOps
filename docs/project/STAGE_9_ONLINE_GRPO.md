@@ -54,6 +54,21 @@ The required relationship is:
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- Non-live preflight requires full immutable model/tokenizer commit pins and a
+  completed matching SFT parent before exclusively claiming a fresh,
+  nonredirected output directory. A one-shot execution marker prevents
+  direct retry or implicit resume. On supported hosts, caught direct/CLI
+  failures and interrupts retain terminal status. Positive Optuna trials
+  are deferred before model, output or live work.
+- Direct training compares its seed, requested hyperparameters, live
+  context, approval profile, and model lineage with the persisted plan
+  before beginning work. A mismatched preflight call does not terminalize
+  an already-started run. Direct Optuna refuses positive trials rather
+  than selecting unapproved settings.
+- Completion also requires matching loader-exposed base-model commit
+  provenance. A tokenizer hash, if exposed, must match; otherwise its
+  manifest basis explicitly says the full loader-argument pin was not
+  independently returned. Neither record establishes served-model identity.
 - Safely persisted failed and interrupted manifests leave `checkpoint` null.
   On POSIX hosts with supported stable directory handles, they inventory only
   extant, regular, single-link rollout-ledger and training-summary files by
@@ -68,7 +83,9 @@ The required relationship is:
   interrupted transition is not persisted: the prior running manifest and
   raw files remain, with no partial-file hash claim. Raw content stays out of
   the manifest. The live training CLI rejects hosts without stable
-  directory-handle support before creating run output or applying a fault.
+  directory-handle support before creating run output or applying a fault;
+  direct training applies the same guard. Positive Optuna requests are
+  refused before reaching that capability boundary or any live work.
   None of this makes a failed run resumable or claimable.
 - A `completed` manifest requires a training summary with an actual positive
   integer `total_steps` and a `trainer_log_history` list before checkpoint

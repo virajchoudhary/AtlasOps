@@ -19,6 +19,17 @@ def _verification(*, resolved: bool = False):
     }
 
 
+def _resolved_verification_with_malformed_optional_check(required):
+    return {
+        "verification_status": "passed",
+        "env_resolved": True,
+        "checks": [
+            {"name": "workload", "required": True, "passed": True},
+            {"name": "malformed_optional", "required": required, "passed": False},
+        ],
+    }
+
+
 def test_reachable_negative_retains_objective_partial_credit():
     score = score_direct_action_step(_verification(), agent_claimed_resolved=False)
 
@@ -56,6 +67,36 @@ def test_verifier_status_must_agree_with_required_checks(status, resolved, passe
 
     with pytest.raises(ValueError, match="required checks"):
         score_direct_action_step(verification, agent_claimed_resolved=False)
+
+
+@pytest.mark.parametrize(
+    "required",
+    [None, "false", 0, 1, 0.0, 1.0],
+    ids=["none", "string", "zero", "one", "float-zero", "float-one"],
+)
+def test_direct_reward_rejects_non_boolean_required_flags(required):
+    verification = _resolved_verification_with_malformed_optional_check(required)
+
+    with pytest.raises(ValueError, match="required flag"):
+        score_direct_action_step(verification, agent_claimed_resolved=False)
+
+
+def test_direct_reward_defaults_missing_required_flag_to_true_and_honors_false():
+    verification = {
+        "verification_status": "passed",
+        "env_resolved": True,
+        "checks": [
+            {"name": "default_required", "passed": True},
+            {"name": "optional", "required": False, "passed": False},
+        ],
+    }
+
+    score = score_direct_action_step(verification, agent_claimed_resolved=False)
+
+    assert score["required_checks"] == 1
+    assert score["passed_required_checks"] == 1
+    assert score["required_check_coverage"] == 1.0
+    assert score["total"] == 1.0
 
 
 def test_episode_reward_is_mean_of_observed_step_rewards():

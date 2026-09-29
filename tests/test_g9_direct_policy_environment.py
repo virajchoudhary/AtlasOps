@@ -148,6 +148,108 @@ async def test_builtin_settle_accepts_stable_conclusive_failed_observation(monke
     assert clock.now == 1.0
 
 
+@pytest.mark.parametrize(
+    "required",
+    [None, "false", 0, 1, 0.0, 1.0],
+    ids=["none", "string", "zero", "one", "float-zero", "float-one"],
+)
+def test_builtin_settle_rejects_non_boolean_required_flags(monkeypatch, required):
+    clock = _FakeSettleClock()
+
+    def verifier(**_kwargs):
+        return {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "workload_ready", "required": True, "passed": True},
+                {
+                    "name": "malformed_optional",
+                    "required": required,
+                    "passed": False,
+                },
+            ],
+            "observed_metrics": {},
+        }
+
+    environment, _executed, state = _built_in_settle_environment(
+        monkeypatch, verifier, clock
+    )
+    result = asyncio.run(
+        environment.step(
+            _completion(
+                tool="kubectl_scale",
+                arguments={
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                },
+                agent_claimed_resolved=False,
+            ),
+            scenario_id="single_fault/sf-002",
+            state=state,
+        ),
+    )
+
+    assert result["status"] == "unscorable"
+    assert result["scorable"] is False
+    assert result["env_resolved"] is False
+    assert result["settling"]["failure"] == "post_action_objective_observation_invalid"
+
+
+def test_builtin_settle_defaults_missing_required_flag_and_honors_false(monkeypatch):
+    clock = _FakeSettleClock()
+
+    def verifier(**_kwargs):
+        return {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "default_required", "passed": True},
+                {"name": "optional", "required": False, "passed": False},
+            ],
+            "observed_metrics": {},
+        }
+
+    environment, _executed, state = _built_in_settle_environment(
+        monkeypatch, verifier, clock
+    )
+    result = asyncio.run(
+        environment.step(
+            _completion(
+                tool="kubectl_scale",
+                arguments={
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                },
+                agent_claimed_resolved=False,
+            ),
+            scenario_id="single_fault/sf-002",
+            state=state,
+        ),
+    )
+
+    assert result["status"] == "ok"
+    assert result["scorable"] is True
+    assert result["env_resolved"] is True
+    assert result["settling"]["observations"][-1]["checks"] == [
+        {
+            "name": "default_required",
+            "target": None,
+            "required": True,
+            "passed": True,
+            "observed": None,
+        },
+        {
+            "name": "optional",
+            "target": None,
+            "required": False,
+            "passed": False,
+            "observed": None,
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_builtin_settle_timeout_is_unscorable_when_objective_outcomes_change(
     monkeypatch,
@@ -628,6 +730,84 @@ async def test_exact_policy_action_executes_once_then_verifies():
     assert len(result["executed_actions"]) == 1
     assert result["env_resolved"] is True
     assert result["resolved"] is True
+
+
+@pytest.mark.parametrize("required", [None, "false", 0, 1])
+@pytest.mark.asyncio
+async def test_injected_verifier_malformed_required_flag_is_unscorable(required):
+    environment = DirectPolicyEnvironment(
+        tool_registry={"kubectl_scale": lambda **_kwargs: {"success": True}},
+        policy_check=lambda *_args: None,
+        verifier=lambda **_kwargs: {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "workload", "required": True, "passed": True},
+                {"name": "malformed_optional", "required": required, "passed": False},
+            ],
+        },
+        settle=lambda: {"settled": True},
+        **LIVE_EXECUTION,
+    )
+    state = _state()
+    state["triage"]["severity"] = "P2"
+
+    result = await environment.step(
+        _completion(
+            tool="kubectl_scale",
+            arguments={
+                "deployment": "paymentservice",
+                "replicas": 2,
+                "namespace": "default",
+            },
+            agent_claimed_resolved=False,
+        ),
+        scenario_id="single_fault/sf-002",
+        state=state,
+    )
+
+    assert result["status"] == "unscorable"
+    assert result["scorable"] is False
+    assert result["env_resolved"] is False
+    assert result["settling"]["failure"] == "post_action_objective_observation_invalid"
+
+
+@pytest.mark.asyncio
+async def test_injected_verifier_valid_required_flags_remain_scorable():
+    environment = DirectPolicyEnvironment(
+        tool_registry={"kubectl_scale": lambda **_kwargs: {"success": True}},
+        policy_check=lambda *_args: None,
+        verifier=lambda **_kwargs: {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "default_required", "passed": True},
+                {"name": "optional", "required": False, "passed": False},
+            ],
+        },
+        settle=lambda: {"settled": True},
+        **LIVE_EXECUTION,
+    )
+    state = _state()
+    state["triage"]["severity"] = "P2"
+
+    result = await environment.step(
+        _completion(
+            tool="kubectl_scale",
+            arguments={
+                "deployment": "paymentservice",
+                "replicas": 2,
+                "namespace": "default",
+            },
+            agent_claimed_resolved=False,
+        ),
+        scenario_id="single_fault/sf-002",
+        state=state,
+    )
+
+    assert result["status"] == "ok"
+    assert result["scorable"] is True
+    assert result["env_resolved"] is True
 
 
 @pytest.mark.asyncio

@@ -362,6 +362,9 @@ def test_sft_role_filter_prepares_all_rows_then_hands_only_diagnosis_to_trainer(
         row for row in source_rows if row["role"] == "diagnosis"
     ]
     assert len(prepare_calls) == len(source_rows)
+    assert [(row["scenario_id"], row["role"]) for row in prepare_calls] == [
+        (row["scenario_id"], row["role"]) for row in source_rows
+    ]
     assert len(trainer_rows) == len(expected_diagnosis_rows)
     assert [row["scenario_id"] for row in trainer_rows] == [
         row["scenario_id"] for row in expected_diagnosis_rows

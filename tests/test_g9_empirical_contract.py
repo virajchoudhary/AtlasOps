@@ -147,6 +147,8 @@ def _checkpoint_with_manifest(root: Path) -> Path:
             "effective_hyperparameters": effective_hyperparameters,
             "hyperparameter_selection": "requested",
             "generation_config": {"max_completion_length": 256},
+            "total_steps": 1,
+            "trainer_log_history": [],
             "live_execution": {
                 "execute_live_chaos": True,
                 "kube_context": "kind-atlasops-test",

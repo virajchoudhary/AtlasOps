@@ -50,6 +50,21 @@ The required relationship is:
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- Non-live preflight requires full immutable model/tokenizer commit pins and a
+  completed matching SFT parent before exclusively claiming a fresh,
+  nonredirected output directory. A one-shot execution marker prevents
+  direct retry or implicit resume; caught direct/CLI failures and interrupts
+  retain terminal status. Optional Optuna trials carry the declared seed
+  but remain separately gated live rollouts.
+- Completion also requires matching loader-exposed base-model commit
+  provenance. A tokenizer hash, if exposed, must match; otherwise its
+  manifest basis explicitly says the full loader-argument pin was not
+  independently returned. Neither record establishes served-model identity.
+- A `completed` manifest requires a training summary with an actual positive
+  integer `total_steps` and a `trainer_log_history` list before checkpoint
+  inventory acceptance. This is structural evidence of optimizer progress,
+  not a quality threshold, a matched run identity, or proof of a usable model.
+  Failed and interrupted records remain separate negative evidence.
 - Training requires a completed G7 SFT adapter. The trainer validates its full file
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent

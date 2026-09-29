@@ -6,6 +6,8 @@ import asyncio
 import hashlib
 import json
 import os
+import sys
+from types import ModuleType
 from pathlib import Path
 
 import pytest
@@ -48,12 +50,12 @@ def _checkpoint(tmp_path: Path, *, status: str = "completed") -> Path:
         "base_model": {
             "id": "Qwen/Qwen2.5-7B-Instruct",
             "requested_revision": "base-revision",
-            "resolved_revision": "base-revision",
+            "resolved_revision": "a" * 40,
         },
         "tokenizer": {
             "id": "Qwen/Qwen2.5-7B-Instruct",
             "requested_revision": "tokenizer-revision",
-            "resolved_revision": "tokenizer-revision",
+            "resolved_revision": "b" * 40,
         },
         "dataset": {
             "split": "train",
@@ -76,6 +78,44 @@ def _checkpoint(tmp_path: Path, *, status: str = "completed") -> Path:
         encoding="utf-8",
     )
     return checkpoint
+
+
+def _install_fake_model_loaders(monkeypatch, calls):
+    torch = ModuleType("torch")
+    torch.bfloat16 = "bfloat16"
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    class AutoTokenizer:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            calls.append(("tokenizer", args, kwargs))
+            return object()
+
+    class AutoModelForCausalLM:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            calls.append(("base", args, kwargs))
+            return object()
+
+    transformers = ModuleType("transformers")
+    transformers.AutoTokenizer = AutoTokenizer
+    transformers.AutoModelForCausalLM = AutoModelForCausalLM
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+    class Model:
+        def eval(self):
+            return self
+
+    class PeftModel:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            calls.append(("adapter", args, kwargs))
+            return Model()
+
+    peft = ModuleType("peft")
+    peft.PeftModel = PeftModel
+    monkeypatch.setitem(sys.modules, "peft", peft)
+    return AutoModelForCausalLM
 
 
 def _classify_checkpoint_dataset(checkpoint: Path) -> None:
@@ -146,6 +186,73 @@ def _prediction() -> str:
             "confidence": 0.5,
         }
     )
+
+
+def test_checkpoint_manifest_digest_is_bound_to_validated_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    original_bytes = manifest_path.read_bytes()
+    changed_manifest = json.loads(original_bytes.decode("utf-8"))
+    changed_manifest["base_model"]["resolved_revision"] = "d" * 40
+    changed_bytes = json.dumps(changed_manifest).encode("utf-8")
+    state = {"mutated": False}
+    original_open = Path.open
+
+    class MutatingReader:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            raw = self.stream.read(size)
+            if not state["mutated"]:
+                state["mutated"] = True
+                self.stream.close()
+                with original_open(manifest_path, "wb") as target:
+                    target.write(changed_bytes)
+            return raw
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+    def mutate_after_snapshot(path, mode="r", *args, **kwargs):
+        stream = original_open(path, mode, *args, **kwargs)
+        if path == manifest_path and mode in {"r", "rb"}:
+            return MutatingReader(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", mutate_after_snapshot)
+
+    manifest, manifest_sha256 = sft_eval._load_checkpoint_manifest(checkpoint)
+
+    assert state["mutated"] is True
+    assert manifest["base_model"]["resolved_revision"] == "a" * 40
+    assert manifest_sha256 == hashlib.sha256(original_bytes).hexdigest()
+    with original_open(manifest_path, "rb") as current:
+        assert current.read() == changed_bytes
+    with pytest.raises(ValueError, match="manifest changed after preflight"):
+        sft_eval.LocalSFTInference(manifest, manifest_sha256)._revalidate_checkpoint(
+            checkpoint
+        )
+
+
+def test_checkpoint_run_manifest_read_has_a_size_limit(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    with manifest_path.open("wb") as stream:
+        stream.truncate(sft_eval.MAX_SFT_RUN_MANIFEST_BYTES + 1)
+
+    with pytest.raises(ValueError, match="exceeds the maximum size"):
+        sft_eval._load_checkpoint_manifest(checkpoint)
 
 
 def test_checkpoint_manifest_downgrades_unsupported_origin_to_unverified(tmp_path):
@@ -254,6 +361,18 @@ async def test_checkpoint_inventory_rejects_path_escape(tmp_path):
             checkpoint=checkpoint,
             output_dir=tmp_path / "output",
         )
+
+
+@pytest.mark.parametrize("identity", ["base_model", "tokenizer"])
+def test_checkpoint_requires_immutable_model_revisions(tmp_path, identity):
+    checkpoint = _checkpoint(tmp_path)
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[identity]["resolved_revision"] = "main"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="full immutable commit SHA"):
+        sft_eval._load_checkpoint_manifest(checkpoint)
 
 
 @pytest.mark.asyncio
@@ -436,6 +555,119 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
     )
 
 
+def test_lazy_sft_load_rejects_checkpoint_tampered_after_outer_preflight(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    original_validate = sft_eval._load_checkpoint_manifest
+    adapter_weights = checkpoint / "adapter_model.safetensors"
+    validation_calls = 0
+
+    def validate_then_tamper(path, **kwargs):
+        nonlocal validation_calls
+        validation_calls += 1
+        result = original_validate(path, **kwargs)
+        if validation_calls == 1:
+            adapter_weights.write_bytes(b"tampered after outer preflight")
+        return result
+
+    loader_calls = []
+    _install_fake_model_loaders(monkeypatch, loader_calls)
+    monkeypatch.setattr(sft_eval, "_load_checkpoint_manifest", validate_then_tamper)
+    monkeypatch.setattr(
+        sft_eval,
+        "_source_provenance",
+        lambda: {"git_sha": "c" * 40, "git_dirty": False},
+    )
+
+    summary = asyncio.run(
+        evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=tmp_path / "output",
+        )
+    )
+
+    assert validation_calls == 1 + len(VAL_SPLIT)
+    assert loader_calls == []
+    assert summary["failed_scenarios"] == len(VAL_SPLIT)
+    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_claim_allowed"] is False
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "output" / "sft_val_episodes.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["error_category"] == "invalid_value" for row in rows)
+
+
+def test_lazy_sft_loads_use_exact_revisions_and_disable_network_access(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    manifest, manifest_sha256 = sft_eval._load_checkpoint_manifest(checkpoint)
+    loader_calls = []
+    _install_fake_model_loaders(monkeypatch, loader_calls)
+
+    inference = sft_eval.LocalSFTInference(manifest, manifest_sha256)
+    inference._load(checkpoint)
+
+    assert loader_calls[0] == (
+        "tokenizer",
+        ("Qwen/Qwen2.5-7B-Instruct",),
+        {
+            "revision": "b" * 40,
+            "local_files_only": True,
+            "trust_remote_code": True,
+        },
+    )
+    assert loader_calls[1][0:2] == (
+        "base",
+        ("Qwen/Qwen2.5-7B-Instruct",),
+    )
+    assert loader_calls[1][2] == {
+        "revision": "a" * 40,
+        "torch_dtype": "bfloat16",
+        "device_map": "auto",
+        "local_files_only": True,
+        "trust_remote_code": True,
+    }
+    assert loader_calls[2][0] == "adapter"
+    assert loader_calls[2][1][1] == str(checkpoint.resolve())
+    assert loader_calls[2][2] == {"local_files_only": True}
+
+
+def test_lazy_sft_load_rechecks_adapter_before_peft_load(tmp_path, monkeypatch):
+    checkpoint = _checkpoint(tmp_path)
+    manifest, manifest_sha256 = sft_eval._load_checkpoint_manifest(checkpoint)
+    loader_calls = []
+    auto_model = _install_fake_model_loaders(monkeypatch, loader_calls)
+    load_base_model = auto_model.from_pretrained
+
+    def tamper_after_base_load(*args, **kwargs):
+        base_model = load_base_model(*args, **kwargs)
+        (checkpoint / "adapter_model.safetensors").write_bytes(
+            b"tampered while opening local base model"
+        )
+        return base_model
+
+    monkeypatch.setattr(
+        auto_model,
+        "from_pretrained",
+        staticmethod(tamper_after_base_load),
+    )
+
+    inference = sft_eval.LocalSFTInference(manifest, manifest_sha256)
+    with pytest.raises(ValueError, match="hash mismatch"):
+        inference._load(checkpoint)
+
+    assert [call[0] for call in loader_calls] == ["tokenizer", "base"]
+
+
 def test_synthetic_training_origin_does_not_block_checkpoint_backed_inference(
     tmp_path,
     monkeypatch,
@@ -449,7 +681,7 @@ def test_synthetic_training_origin_does_not_block_checkpoint_backed_inference(
     monkeypatch.setattr(
         sft_eval,
         "LocalSFTInference",
-        lambda manifest: local_backend,
+        lambda manifest, manifest_sha256: local_backend,
     )
     summary = asyncio.run(
         evaluate_sft_split(

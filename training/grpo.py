@@ -73,6 +73,7 @@ from training.grpo_provenance import (
     create_run_manifest,
     has_verified_final_rollout,
     persist_status,
+    require_stable_failure_persistence,
     validate_sft_parent,
 )
 from training.grpo_reward import score_direct_action_step
@@ -865,6 +866,7 @@ def main() -> None:
         parser.error(str(exc))
     args.kube_context = kube_context
     _require_single_writer()
+    require_stable_failure_persistence()
     if args.enable_p1_approval and not os.getenv("ATLASOPS_API_KEY", "").strip():
         parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
 
@@ -939,6 +941,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         getattr(args, "execute_live_chaos", False),
         getattr(args, "kube_context", None),
     )
+    require_stable_failure_persistence()
     rollout_path = output_dir / "rollout_trajectories.jsonl"
     if rollout_path.exists():
         raise FileExistsError(

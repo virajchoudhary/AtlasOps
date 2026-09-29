@@ -5,10 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import stat
 import subprocess
+import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from config.splits import TRAIN_SPLIT
@@ -23,6 +27,13 @@ from training.sft_provenance import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_NAME = "grpo_run_manifest.json"
 ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
+PARTIAL_ARTIFACT_NAMES = (
+    "rollout_trajectories.jsonl",
+    "training_summary.json",
+)
+MAX_PARTIAL_ARTIFACT_BYTES = 64 * 1024 * 1024
+MAX_PARTIAL_ARTIFACT_SECONDS = 5.0
+PARTIAL_ARTIFACT_HASH_CHUNK_BYTES = 1024 * 1024
 EFFECTIVE_HYPERPARAMETERS = frozenset(
     {
         "tiers",
@@ -348,6 +359,328 @@ def checkpoint_inventory(output_dir: Path) -> dict[str, Any]:
     }
 
 
+def _is_reparse_point(metadata: os.stat_result) -> bool:
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return stat.S_ISLNK(metadata.st_mode) or (
+        reparse_attribute != 0
+        and bool(getattr(metadata, "st_file_attributes", 0) & reparse_attribute)
+    )
+
+
+def _has_stable_identity(metadata: os.stat_result) -> bool:
+    return bool(metadata.st_dev and metadata.st_ino)
+
+
+def _same_file_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        _has_stable_identity(left)
+        and _has_stable_identity(right)
+        and left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+    )
+
+
+_STABLE_DIRECTORY_HANDLES_SUPPORTED = (
+    os.name != "nt"
+    and all(
+        function in getattr(os, "supports_dir_fd", set())
+        for function in (os.open, os.stat, os.rename, os.unlink)
+    )
+    and os.stat in getattr(os, "supports_follow_symlinks", set())
+    and all(
+        hasattr(os, flag)
+        for flag in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    )
+)
+
+
+def _supports_stable_directory_handles() -> bool:
+    return _STABLE_DIRECTORY_HANDLES_SUPPORTED
+
+
+def require_stable_failure_persistence() -> None:
+    if not _supports_stable_directory_handles():
+        raise RuntimeError(
+            "Live GRPO training requires stable directory-handle operations "
+            "to persist failed or interrupted evidence"
+        )
+
+
+def _open_stable_directory(
+    path: Path,
+    *,
+    deadline: float,
+) -> tuple[int | None, str | None]:
+    if not _supports_stable_directory_handles():
+        return None, "stable_directory_handle_unavailable"
+    absolute = Path(os.path.abspath(path))
+    if not absolute.anchor:
+        return None, "directory_open_failed"
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        current_fd = os.open(absolute.anchor, flags)
+    except OSError:
+        return None, "directory_open_failed"
+
+    for part in absolute.parts[1:]:
+        if monotonic() >= deadline:
+            os.close(current_fd)
+            return None, "time_limit_exceeded"
+        try:
+            child_fd = os.open(part, flags, dir_fd=current_fd)
+        except OSError:
+            try:
+                os.close(current_fd)
+            except OSError:
+                pass
+            return None, "directory_open_failed"
+        try:
+            os.close(current_fd)
+        except OSError:
+            os.close(child_fd)
+            return None, "directory_open_failed"
+        current_fd = child_fd
+    return current_fd, None
+
+
+def _unverified_partial_artifact(
+    name: str,
+    reason: str,
+    *,
+    presence: str = "unknown",
+) -> dict[str, str]:
+    return {"path": name, "presence": presence, "reason": reason}
+
+
+def _build_partial_inventory(
+    files: list[dict[str, Any]],
+    unverified: list[dict[str, str]],
+    bytes_hashed: int,
+    *,
+    inventory_status: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "files": files,
+        "unverified": unverified,
+        "tree_sha256": canonical_json_sha256(files),
+        "bytes_hashed": bytes_hashed,
+        "inventory_status": inventory_status or ("partial" if unverified else "complete"),
+        "limits": {
+            "max_total_bytes": MAX_PARTIAL_ARTIFACT_BYTES,
+            "max_duration_seconds": MAX_PARTIAL_ARTIFACT_SECONDS,
+        },
+    }
+
+
+def _unavailable_partial_inventory(reason: str) -> dict[str, Any]:
+    return _build_partial_inventory(
+        [],
+        [
+            _unverified_partial_artifact(name, reason)
+            for name in PARTIAL_ARTIFACT_NAMES
+        ],
+        0,
+        inventory_status="unavailable",
+    )
+
+
+def _require_run_directory_identity(
+    directory_fd: int,
+    manifest: dict[str, Any],
+    *,
+    allow_initial_binding: bool,
+) -> None:
+    metadata = os.fstat(directory_fd)
+    if not stat.S_ISDIR(metadata.st_mode) or not _has_stable_identity(metadata):
+        raise OSError("GRPO run directory identity is unavailable")
+    current = {"device": metadata.st_dev, "inode": metadata.st_ino}
+    expected = manifest.get("run_directory_identity")
+    if expected is None and allow_initial_binding:
+        manifest["run_directory_identity"] = current
+    elif expected != current:
+        raise OSError("GRPO run directory identity changed or was never bound")
+
+
+def _partial_artifact_record_at(
+    directory_fd: int,
+    name: str,
+    *,
+    remaining_bytes: int,
+    deadline: float,
+) -> tuple[dict[str, Any] | None, int, dict[str, str] | None]:
+    if monotonic() >= deadline:
+        return None, 0, _unverified_partial_artifact(name, "time_limit_exceeded")
+    try:
+        initial_metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None, 0, None
+    except OSError:
+        return None, 0, _unverified_partial_artifact(name, "artifact_stat_failed")
+    if _is_reparse_point(initial_metadata):
+        return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
+    if not stat.S_ISREG(initial_metadata.st_mode):
+        return None, 0, _unverified_partial_artifact(name, "not_regular_file", presence="present")
+    if initial_metadata.st_nlink != 1:
+        return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
+    if initial_metadata.st_size > remaining_bytes:
+        return None, 0, _unverified_partial_artifact(name, "max_total_bytes_exceeded", presence="present")
+
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        descriptor = os.open(name, flags, dir_fd=directory_fd)
+    except OSError:
+        return None, 0, _unverified_partial_artifact(name, "artifact_open_failed", presence="present")
+
+    bytes_read = 0
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if (
+            _is_reparse_point(opened_metadata)
+            or not stat.S_ISREG(opened_metadata.st_mode)
+        ):
+            return None, 0, _unverified_partial_artifact(name, "not_regular_file", presence="present")
+        if opened_metadata.st_nlink != 1:
+            return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
+        if not _same_file_identity(initial_metadata, opened_metadata):
+            return None, 0, _unverified_partial_artifact(name, "file_identity_unavailable", presence="present")
+        if (
+            initial_metadata.st_size != opened_metadata.st_size
+            or initial_metadata.st_mtime_ns != opened_metadata.st_mtime_ns
+        ):
+            return None, 0, _unverified_partial_artifact(name, "file_changed_during_read", presence="present")
+        if opened_metadata.st_size > remaining_bytes:
+            return None, 0, _unverified_partial_artifact(name, "max_total_bytes_exceeded", presence="present")
+
+        digest = hashlib.sha256()
+        while bytes_read < opened_metadata.st_size:
+            if monotonic() >= deadline:
+                return None, bytes_read, _unverified_partial_artifact(name, "time_limit_exceeded", presence="present")
+            chunk = os.read(
+                descriptor,
+                min(PARTIAL_ARTIFACT_HASH_CHUNK_BYTES, opened_metadata.st_size - bytes_read),
+            )
+            if not chunk:
+                break
+            digest.update(chunk)
+            bytes_read += len(chunk)
+
+        if monotonic() >= deadline:
+            return None, bytes_read, _unverified_partial_artifact(name, "time_limit_exceeded", presence="present")
+        final_metadata = os.fstat(descriptor)
+        current_metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None, bytes_read, _unverified_partial_artifact(name, "file_changed_during_read", presence="present")
+    except OSError:
+        return None, bytes_read, _unverified_partial_artifact(name, "artifact_read_failed", presence="present")
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+    if (
+        _is_reparse_point(current_metadata)
+        or opened_metadata.st_nlink != 1
+        or final_metadata.st_nlink != 1
+        or current_metadata.st_nlink != 1
+    ):
+        return None, bytes_read, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
+    if (
+        not _same_file_identity(opened_metadata, final_metadata)
+        or not _same_file_identity(opened_metadata, current_metadata)
+        or bytes_read != opened_metadata.st_size
+        or final_metadata.st_size != opened_metadata.st_size
+        or final_metadata.st_mtime_ns != opened_metadata.st_mtime_ns
+        or current_metadata.st_size != opened_metadata.st_size
+        or current_metadata.st_mtime_ns != opened_metadata.st_mtime_ns
+    ):
+        return None, bytes_read, _unverified_partial_artifact(name, "file_changed_during_read", presence="present")
+    return {
+        "path": name,
+        "size_bytes": bytes_read,
+        "sha256": digest.hexdigest(),
+    }, bytes_read, None
+
+
+def _inventory_partial_artifacts_at(
+    directory_fd: int,
+    *,
+    deadline: float,
+) -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    unverified: list[dict[str, str]] = []
+    bytes_hashed = 0
+    for index, name in enumerate(PARTIAL_ARTIFACT_NAMES):
+        if monotonic() >= deadline:
+            unverified.extend(
+                _unverified_partial_artifact(
+                    remaining_name,
+                    "time_limit_exceeded",
+                )
+                for remaining_name in PARTIAL_ARTIFACT_NAMES[index:]
+            )
+            break
+        record, bytes_read, skipped = _partial_artifact_record_at(
+            directory_fd,
+            name,
+            remaining_bytes=max(0, MAX_PARTIAL_ARTIFACT_BYTES - bytes_hashed),
+            deadline=deadline,
+        )
+        bytes_hashed += bytes_read
+        if record is not None:
+            files.append(record)
+        if skipped is not None:
+            unverified.append(skipped)
+    return _build_partial_inventory(files, unverified, bytes_hashed)
+
+
+def partial_artifact_inventory(output_dir: Path) -> dict[str, Any]:
+    """Inventory only allowlisted partial files through a stable directory handle."""
+    deadline = monotonic() + MAX_PARTIAL_ARTIFACT_SECONDS
+    opened, failure_reason = _open_stable_directory(output_dir, deadline=deadline)
+    if opened is None:
+        return _unavailable_partial_inventory(
+            failure_reason or "stable_directory_handle_unavailable"
+        )
+    try:
+        return _inventory_partial_artifacts_at(
+            opened,
+            deadline=deadline,
+        )
+    finally:
+        try:
+            os.close(opened)
+        except OSError:
+            pass
+
+
+def _write_manifest_atomic_at(
+    directory_fd: int,
+    name: str,
+    manifest: dict[str, Any],
+) -> None:
+    temporary_name = f".{name}.{uuid.uuid4().hex}.tmp"
+    payload = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    descriptor = os.open(temporary_name, flags, 0o600, dir_fd=directory_fd)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+        os.rename(
+            temporary_name,
+            name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+    except OSError:
+        try:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+        except OSError:
+            pass
+        raise
+
+
 def has_verified_final_rollout(
     path: Path,
     *,
@@ -433,6 +766,39 @@ def persist_status(
     updated["updated_at"] = datetime.now(UTC).isoformat()
     if error_type:
         updated["failure"] = {"error_type": error_type}
+    if status in {"planned", "running", "failed", "interrupted"}:
+        deadline = monotonic() + MAX_PARTIAL_ARTIFACT_SECONDS
+        opened, failure_reason = _open_stable_directory(
+            path.parent,
+            deadline=deadline,
+        )
+        if opened is None:
+            if status in {"planned", "running"} and not _supports_stable_directory_handles():
+                write_manifest_atomic(path, updated)
+                return updated
+            raise OSError(
+                "Cannot safely persist GRPO status without a stable "
+                f"directory handle ({failure_reason or 'directory_open_failed'})"
+            )
+        try:
+            _require_run_directory_identity(
+                opened,
+                updated,
+                allow_initial_binding=status in {"planned", "running"},
+            )
+            if status in {"failed", "interrupted"}:
+                updated["checkpoint"] = None
+                updated["partial_artifacts"] = _inventory_partial_artifacts_at(
+                    opened,
+                    deadline=deadline,
+                )
+            _write_manifest_atomic_at(opened, path.name, updated)
+        finally:
+            try:
+                os.close(opened)
+            except OSError:
+                pass
+        return updated
     if status == "completed":
         training = updated.get("training")
         if not isinstance(training, dict):

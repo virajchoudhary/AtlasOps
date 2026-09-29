@@ -317,14 +317,13 @@ comparison path.
 
 ---
 
-## University Continuation & Academic Roadmap (Master Pipeline v2.2)
+## University Continuation & Academic Roadmap (GAI + RL)
 
-This fork (`virajchoudhary/AtlasOps`) continues the upstream baseline (`bf9bd19`) under the G0-G15 Master Pipeline. The project lead adopted v2.2 Sections 1-24 and 26-27 for non-live work on 29 September 2026; its Section 25 Stage 13 measurement rules remain proposed and unapproved. Implementation is not certification: current gate statuses and missing empirical work are recorded in the [Master Pipeline inventory](docs/project/MASTER_PIPELINE_STATUS.md) and [v2.2 status addendum](docs/project/FINAL_PIPELINE_V22_STATUS.md).
+This fork (`virajchoudhary/AtlasOps`) continues the upstream baseline (`bf9bd19`) under the G0-G15 Master Pipeline. The project lead adopted v2.2 Sections 1-24 and 26-27 for non-live work on 29 September 2026, then [revised the required scope to GAI + RL](docs/project/GAI_RL_SCOPE_REVISION.md). Section 25 measurement rules remain proposed and unapproved. Implementation is not certification: current gate statuses and missing empirical work are recorded in the [Master Pipeline inventory](docs/project/MASTER_PIPELINE_STATUS.md) and [v2.2 status addendum](docs/project/FINAL_PIPELINE_V22_STATUS.md).
 
-1. **Generative AI Multi-Agent System**: Contract-bound state machine (`Alert → Triage → Diagnosis → Hybrid Recommender → Approval Gate → Remediation → Verifier → Comms`) with loss-masked SFT trajectories.
-2. **Recommender Systems (RS) Layer**: Tri-signal Hybrid Recommender ($S_{\text{content}} + S_{\text{collab}} + S_{\text{prior}}$) against 12 codified SRE runbooks. A bounded synthetic evaluation reached 100.0% Hit@3 on four scenario-derived Test rows; historical interaction feedback and broad real-world performance remain unverified.
-3. **Online Reinforcement Learning (GRPO)**: Normalized group advantage estimation ($A_i = \frac{r_i - \mu}{\sigma + \epsilon}$) with objective environment verifier ground truth.
-4. **Final Multi-Model Ablation Matrix (Held-Out Test Split)**: The Stage 13 runner checks ordered scenario IDs from hashed raw episode rows or G9 events against frozen splits and an externally anchored adversarial membership record. Its previously saved constant profiles are historical predetermined output, not an observed comparison. Metric summaries are not rederived from raw episodes; the two integrated-arm evaluators and an approved real adversarial population are absent. The frozen Leaderboard overlaps Train/Val and is not an independent held-out partition. Genuine five-arm results remain to be measured after their upstream gates pass.
+1. **Generative AI Multi-Agent System**: Contract-bound state machine (`Alert → Triage → Diagnosis → Approval Gate → Remediation → Verifier → Comms`) with Train-only, loss-masked SFT trajectories. The existing recommender is optional advisory research, not an incident gate.
+2. **Online Reinforcement Learning (GRPO)**: Direct structured policy action, safety/approval and objective environment verification before reward and next state. A completed trained policy is not yet evidenced.
+3. **Three-Arm Evaluation (prospective)**: Match base GAI, SFT and SFT+GRPO under common frozen membership and budgets. The Stage 13 runner checks ordered raw membership and hashes, but summary metrics are not yet rederived from raw outcomes; G6/G8 diagnosis-only rows cannot supply incident resolution. The old five-arm constant profiles are historical predetermined output, not an observed comparison. Adversarial population and final-Test authorization remain pending, and the frozen Leaderboard overlaps Train/Val. No three-arm empirical result is claimed.
 
 Full Academic Technical Report: [`docs/AtlasOps_Technical_Report.md`](docs/AtlasOps_Technical_Report.md) | Upstream Audit Report: [`docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md`](docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md)
 

@@ -7,6 +7,9 @@ select a compute provider, allocate a GPU, download weights, train a model,
 evaluate final Test, or certify an experimental gate. The project lead reports
 that the personal laptop cannot run the planned local 7B training workload.
 External hardware is a future, separately approved decision.
+The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS from
+the required comparison. The source SHA above is the original software-audit
+snapshot, not a freeze of the earlier five-arm proposal.
 
 The separate 29 September 2026 read-only hardware feasibility discussion
 recommended seeking a university BF16-capable allocation first, with
@@ -106,9 +109,11 @@ search itself executes live rollouts. Do not use it in a software preflight.
    P1 rejection/timeout/missing decision must remain blocked. Local tests
    and green CI are not live operator or cluster evidence.
 5. **Before final comparison:** freeze the common raw metric protocol,
-   scorer, evaluator matrix, adversarial admission/membership and Test
-   access with independent review. V3/V5 integrated empirical evaluators
-   are not yet implemented; G13 remains `REOPENED`.
+   scorer, three-arm evaluator matrix, adversarial admission/membership
+   and Test access with independent review. Cross-arm checkpoint lineage
+   and raw metric recomputation remain unverified; historical RS-bearing
+   V3/V5 evaluators are optional, not required blockers. G13 remains
+   `REOPENED`.
 
 ## Verification and Limitations
 
@@ -117,8 +122,8 @@ SFT lifecycle/checkpoint validation, G8 mode and raw-output isolation, and
 G9 direct-action/approval/reward/ledger contracts. Those tests use synthetic
 or mocked boundaries. The post-PR-98 `main` CI passed Python 3.11/3.12 and
 frontend checks at the review basis, but it did not train or reload a 7B
-adapter on an approved remote GPU, run a live incident, or certify a
-five-arm comparison. No provider quote or free-tier quota is treated as
+adapter on an approved remote GPU, run a live incident, or certify the
+current three-arm comparison. No provider quote or free-tier quota is treated as
 capacity reserved for this project.
 
 The companion [staged runbook](G7_G13_REMOTE_EXECUTION_RUNBOOK.md) describes

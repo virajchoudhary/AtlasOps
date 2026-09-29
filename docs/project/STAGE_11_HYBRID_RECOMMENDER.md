@@ -1,5 +1,10 @@
 # Stage 11: Train Hybrid Recommender (Gate G11)
 
+**Current scope: OUT_OF_SCOPE / retained optional historical research.**
+The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes G11 as a
+final prerequisite. The former bounded synthetic offline PASS below is
+historical, not a current gate status or real incident improvement.
+
 **Status: PASS within the bounded scenario-derived benchmark**
 
 The hybrid ranker combines lexical BM25, alert/service co-occurrence, and a global runbook

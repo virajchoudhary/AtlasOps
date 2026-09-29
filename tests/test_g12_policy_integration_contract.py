@@ -133,8 +133,21 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
     ("triage_severity", "alert_severity"),
     [("P2", "warning"), ("P1", "critical")],
 )
+@pytest.mark.parametrize(
+    ("recommender_mode", "expected_recommender_status"),
+    [
+        ("disabled", "disabled"),
+        ("unavailable", "unavailable"),
+        ("executed", "executed"),
+    ],
+)
 async def test_full_incident_path_uses_policy_action_and_verified_comms(
-    monkeypatch, tmp_path, triage_severity, alert_severity
+    monkeypatch,
+    tmp_path,
+    triage_severity,
+    alert_severity,
+    recommender_mode,
+    expected_recommender_status,
 ) -> None:
     import asyncio
 
@@ -147,6 +160,17 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
     monkeypatch.setenv("ATLASOPS_LIVE_JUDGE", "0")
     monkeypatch.setenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", "1")
     monkeypatch.setenv("KUBECONFIG_CONTEXT", METRICS_SERVER_CONTEXT)
+    if recommender_mode == "disabled":
+        monkeypatch.delenv("ATLASOPS_RECOMMENDER_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("ATLASOPS_RECOMMENDER_ENABLED", "1")
+        if recommender_mode == "unavailable":
+            monkeypatch.setenv(
+                "ATLASOPS_RECOMMENDER_CHECKPOINT",
+                str(tmp_path / "missing-recommender.json"),
+            )
+        else:
+            monkeypatch.delenv("ATLASOPS_RECOMMENDER_CHECKPOINT", raising=False)
     monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
     executed = []
     policy_states = []
@@ -258,9 +282,19 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
     )
 
     assert result["incident_id"] == "inc-original"
+    assert result["recommender"]["status"] == expected_recommender_status
+    assert result["recommender"]["recommended_runbooks"] == policy_states[0][
+        "recommended_runbooks"
+    ]
+    persisted = json.loads(
+        (tmp_path / "trajectories" / "inc-original.json").read_text(encoding="utf-8")
+    )
+    assert persisted["recommender"]["status"] == expected_recommender_status
     assert len(executed) == 2
     assert len(policy_states) == 2
-    assert policy_states[0]["recommended_runbooks"]
+    assert bool(policy_states[0]["recommended_runbooks"]) is (
+        recommender_mode == "executed"
+    )
     assert policy_states[1]["verification"]["env_resolved"] is False
     assert "expected_root_cause" not in json.dumps(policy_states)
     assert "single_fault/sf-002" not in json.dumps(policy_states)

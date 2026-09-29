@@ -2,9 +2,9 @@
 
 - **Project Repository**: `virajchoudhary/AtlasOps`
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
-- **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
+- **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T13:11:01.829560+00:00`
+- **Generated**: `2026-09-29T13:23:51.980822+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -21,15 +21,15 @@
 | G7 | PARTIAL |
 | G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING |
 | G9 | REOPENED |
-| G10 | PARTIAL |
-| G11 | PASS |
+| G10 | OUT_OF_SCOPE |
+| G11 | OUT_OF_SCOPE |
 | G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING |
 | G13 | REOPENED |
 | G14 | PARTIAL |
 | G15 | PARTIAL |
 
 G3 PASS is historical local Kind acceptance with wrapper and tracing caveats; it does not establish current cluster health.
-G11 PASS is bounded to small scenario-derived synthetic offline ranking, not real incident improvement.
+G10/G11 OUT_OF_SCOPE retain historical scenario-derived RS evidence; the former bounded G11 PASS was not real incident improvement.
 
 No full-pipeline empirical metric is certified by this asset inventory.
 Asset hashes establish file integrity, not scientific gate closure.
@@ -39,29 +39,29 @@ Asset hashes establish file integrity, not scientific gate closure.
 | Asset Path | SHA-256 Digest | Size (Bytes) |
 | :--- | :--- | :---: |
 | `.gitattributes` | `0de5fcd2ce928d3c...` | 1102 |
-| `AGENTS.md` | `6c3eefb051f5c3e6...` | 6096 |
+| `AGENTS.md` | `fec2b380e8dc8d27...` | 6416 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
 | `Makefile` | `34bbfe03619f49b1...` | 4129 |
-| `README.md` | `0bc711977b87885d...` | 25410 |
+| `README.md` | `d1c0e541a60bf5fa...` | 25145 |
 | `agents/_http_retry.py` | `e9e82a3ffa2d15f3...` | 5494 |
 | `agents/adversarial_designer.py` | `f6bc96059e6ca56a...` | 21393 |
 | `agents/approval.py` | `f8fd1975c2648f20...` | 9781 |
 | `agents/approval_http.py` | `60e3fb912a9b5c4b...` | 2990 |
-| `agents/coordinator.py` | `afcbd3fbbb9ea1c3...` | 116942 |
+| `agents/coordinator.py` | `84832e3549b71870...` | 117674 |
 | `agents/grounding.py` | `bd1141dd29d97a24...` | 6759 |
 | `agents/judge.py` | `b817d1433d43e70a...` | 7853 |
 | `agents/policy_remediation.py` | `22cc5faba3346fe9...` | 5897 |
 | `agents/prompts/comms.md` | `be58db4dcef9b422...` | 2662 |
 | `agents/prompts/diagnosis.md` | `26265a2007477eed...` | 2902 |
-| `agents/prompts/remediation.md` | `3945dfd98dfda25d...` | 4513 |
+| `agents/prompts/remediation.md` | `00d0d3b24ba00007...` | 4768 |
 | `agents/prompts/triage.md` | `956a1489758cb0fe...` | 2181 |
 | `agents/tool_policy.py` | `c7c755b1fa33c9b7...` | 2884 |
 | `agents/tools/argocd.py` | `5cfdad11258fcf68...` | 10784 |
 | `agents/tools/chaos.py` | `bdba977da1a3c657...` | 5801 |
 | `agents/tools/prometheus.py` | `dc8d87332f66dae8...` | 3586 |
 | `agents/verifier.py` | `850dc5f2f197887e...` | 37725 |
-| `app.py` | `d17466d5be9a5300...` | 17228 |
+| `app.py` | `5118800d6f05f244...` | 17568 |
 | `artifacts/evidence/.gitattributes` | `a5c3211d796d1d08...` | 880 |
 | `artifacts/evidence/recovery/2026-09-05-workspace-recovery.json` | `710fddcaeb2ea6c8...` | 22788 |
 | `artifacts/evidence/recovery/SETUP-03_COMMANDS.md` | `0819c3ffe5e9cfe6...` | 15741 |
@@ -108,7 +108,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/models/hybrid_recommender_synthetic_v2.json` | `21243d035fc2a972...` | 2192 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.manifest.json` | `57dfd45e856bf8f2...` | 9329 |
-| `bench/ablation_suite.py` | `98ed30d0f835d70d...` | 26115 |
+| `bench/ablation_suite.py` | `825866a09a865725...` | 26652 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -138,7 +138,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/chaos_manifests/single_fault/sf-007.yaml` | `3e15a122b34aed52...` | 440 |
 | `bench/chaos_manifests/single_fault/sf-008.yaml` | `41d3f6d2ed0278bb...` | 388 |
 | `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
-| `bench/grpo_eval.py` | `f50d531c56849fdf...` | 66595 |
+| `bench/grpo_eval.py` | `f32c6e246411c44d...` | 66591 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `19144a835431d797...` | 25705 |
 | `bench/zero_shot_baseline.py` | `9680c6609e3d4918...` | 35829 |
@@ -148,7 +148,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `config/splits.py` | `31c270e9596f9c35...` | 1421 |
 | `dashboard.py` | `7e4afc02551bf4d6...` | 23653 |
 | `demo/launcher.py` | `a9d51bc21b7e45dc...` | 1744 |
-| `docs/AtlasOps_Technical_Report.md` | `50a354b5e59e8e6b...` | 7749 |
+| `docs/AtlasOps_Technical_Report.md` | `d6a72d703dd29612...` | 8400 |
 | `docs/BENCHMARKS.md` | `f4054130730f4981...` | 2831 |
 | `docs/END_TO_END_FLOW.md` | `3e594773cf15c6b7...` | 5629 |
 | `docs/EXPERIMENT_REGISTRY.md` | `ed16f1e24448df98...` | 15637 |
@@ -156,21 +156,23 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
-| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `6915be88c0191752...` | 7792 |
+| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `9f69505df9470dcb...` | 8324 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
+| `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md` | `63529cd8a08ca3ba...` | 4806 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
-| `docs/project/G7_G13_DECISION_REGISTER.md` | `2113616c98f7fc96...` | 6126 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `a95ec45c0cf8b455...` | 11083 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `c2786feb34a2a77c...` | 10405 |
+| `docs/project/G7_G13_DECISION_REGISTER.md` | `7fdf84c84710caf5...` | 6522 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `82f7d251f1a4a412...` | 11476 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `3327ced34d7f834c...` | 10734 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
-| `docs/project/IMPLEMENTATION_STATUS.md` | `563fccf306232582...` | 3855 |
-| `docs/project/MASTER_PIPELINE_STATUS.md` | `b81678af41fd421e...` | 26579 |
-| `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
-| `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
-| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `c8d56d51a7da4b66...` | 6312 |
-| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `b58e981a136cf7c7...` | 9746 |
+| `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
+| `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
+| `docs/project/MASTER_PIPELINE_STATUS.md` | `5979e294e2a5de02...` | 27034 |
+| `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `d0989c81494b0b1a...` | 2043 |
+| `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `be17afca2427c7e1...` | 2043 |
+| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `6a6a8e3e83c2f210...` | 6589 |
+| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `00ab24e18a05178f...` | 10543 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
@@ -180,8 +182,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `445358d8a1f4f4e2...` | 2865 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
-| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `cbd5a8d174d5e2f0...` | 19834 |
-| `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
+| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `14b0ae256c863123...` | 20215 |
+| `docs/slides.md` | `c5bf2053fd4867ff...` | 5995 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
 | `pyproject.toml` | `97d22256c6f75f8b...` | 1383 |
@@ -189,13 +191,13 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
 | `recommender/hybrid.py` | `41cba4b3e6e0c5f6...` | 9135 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
-| `scripts/package_submission.py` | `630470ec6a8552a0...` | 13612 |
-| `scripts/release_gate.py` | `6054f5c6ed9362b6...` | 17618 |
-| `scripts/run_g12_integrated_episode.py` | `b805a8221d55c015...` | 39748 |
+| `scripts/package_submission.py` | `c109b1f57e3e6f61...` | 13958 |
+| `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
+| `scripts/run_g12_integrated_episode.py` | `d76a71740c94de9e...` | 41003 |
 | `scripts/run_stage4_golden_incident.py` | `8c58102bb235a950...` | 100325 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
-| `static/console.js` | `277ba766de0a84b2...` | 64395 |
-| `static/index.html` | `d2d907afdfd046c5...` | 4760 |
+| `static/console.js` | `27f4c68073251679...` | 62151 |
+| `static/index.html` | `2a7b6827b36a630b...` | 4771 |
 | `static/live-incident.js` | `141c4482bd54d61c...` | 4684 |
 | `static/live-incident.test.js` | `cc9e10c524e19752...` | 3551 |
 | `static/vendor/LUCIDE-LICENSE` | `1e7290b35280a048...` | 880 |
@@ -214,15 +216,15 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
-| `tests/test_claim_integrity.py` | `f3e82211785a111c...` | 5646 |
+| `tests/test_claim_integrity.py` | `963b522837714c2b...` | 5831 |
 | `tests/test_coordinator.py` | `c2a702c7f581ee19...` | 18422 |
 | `tests/test_coordinator_import_side_effects.py` | `9b07ef640ae58481...` | 1095 |
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |
-| `tests/test_frontend_ui.py` | `172e063d5e638158...` | 5251 |
-| `tests/test_g12_policy_integration_contract.py` | `7b11cd4d22f2e25c...` | 12449 |
-| `tests/test_g12_real_capture.py` | `8058ce2909c71e9d...` | 45180 |
+| `tests/test_frontend_ui.py` | `65ccf5bf652001cd...` | 6058 |
+| `tests/test_g12_policy_integration_contract.py` | `2b87c511518ac8b2...` | 13650 |
+| `tests/test_g12_real_capture.py` | `8a22d62857f1e87e...` | 46234 |
 | `tests/test_g13_lossless_g9_observations.py` | `e33a2fedbd3dd484...` | 12140 |
 | `tests/test_g4_protocol_profile.py` | `9da8823665e45dd1...` | 20017 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `79debd0c2024bea2...` | 22071 |
@@ -242,7 +244,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_kubectl_top_classification.py` | `f9300671869cef0f...` | 2383 |
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
-| `tests/test_release_gate.py` | `a48495a595203612...` | 12372 |
+| `tests/test_release_gate.py` | `911bb0b14d07deec...` | 13992 |
 | `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |
 | `tests/test_rs_runtime_query_isolation.py` | `6697c24640643f9e...` | 1945 |
@@ -255,10 +257,10 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_training_provenance.py` | `38309744fbf9f4d1...` | 22750 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
-| `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
-| `tests/test_stage13_ablation_suite.py` | `24270271d10a7ad1...` | 41932 |
+| `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
+| `tests/test_stage13_ablation_suite.py` | `d93d6fd48d0560ed...` | 43463 |
 | `tests/test_stage14_demo_safety.py` | `de91c0aa698264b7...` | 4345 |
-| `tests/test_stage15_submission_package.py` | `c3d8f31a279cd169...` | 26293 |
+| `tests/test_stage15_submission_package.py` | `a3116ea7a366106b...` | 27620 |
 | `tests/test_stage4_approval_channel.py` | `ec937815223eaf84...` | 13839 |
 | `tests/test_stage4_baseline_prereservation.py` | `d8697de76a455da8...` | 5445 |
 | `tests/test_stage4_causal_contract.py` | `619ffdeab94f9e55...` | 38363 |

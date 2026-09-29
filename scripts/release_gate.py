@@ -373,14 +373,30 @@ def check_gate_status_inventory() -> CheckResult:
             "readiness",
         )
 
-    open_gates = [f"{gate}={status}" for gate, status in statuses.items() if status != "PASS"]
+    out_of_scope = [gate for gate, status in statuses.items() if status == "OUT_OF_SCOPE"]
+    if out_of_scope != ["G10", "G11"]:
+        return CheckResult(
+            "G0-G15 declared gate inventory",
+            "FAIL",
+            "Current scope must declare exactly G10/G11 OUT_OF_SCOPE; found "
+            + (", ".join(out_of_scope) or "none")
+            + ". Scope exclusion is not a PASS.",
+            True,
+            "readiness",
+        )
+
+    open_gates = [
+        f"{gate}={status}"
+        for gate, status in statuses.items()
+        if status not in {"PASS", "OUT_OF_SCOPE"}
+    ]
     if open_gates:
         return CheckResult(
             "G0-G15 declared gate inventory",
             "FAIL",
             "Open declared gates: "
             + ", ".join(open_gates)
-            + ". A declared status is not independent certification evidence.",
+            + ". G10/G11 are OUT_OF_SCOPE, not passed gates. A declared status is not independent certification evidence.",
             True,
             "readiness",
         )
@@ -388,8 +404,8 @@ def check_gate_status_inventory() -> CheckResult:
     return CheckResult(
         "G0-G15 declared gate inventory",
         "PASS",
-        "All sixteen declared gate statuses are PASS. This status inventory is not "
-        "independent scientific certification evidence.",
+        "All fourteen required gate statuses are PASS; G10/G11 remain OUT_OF_SCOPE, "
+        "not passed. This inventory is not independent scientific certification evidence.",
         True,
         "readiness",
     )

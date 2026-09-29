@@ -1368,7 +1368,7 @@ async def evaluate_grpo_split(
         summary = {
             "schema_version": 1,
             "run_id": run_id,
-            "variant": "Online GRPO RL",
+            "variant": "SFT + GRPO",
             "evaluation_mode": "empirical",
             "empirical": True,
             "non_empirical": False,

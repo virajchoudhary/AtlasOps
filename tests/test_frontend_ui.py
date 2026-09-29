@@ -1,5 +1,6 @@
 """Automated contracts for the read-only product UI and existing API endpoints."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -51,13 +52,19 @@ class TestFrontendUIAndAPIs:
         assert 'data-scenario' in js
         assert 'data-process-step' in js
         assert "Objective checks did not establish resolution." in js
-        assert "liveRecommendationSection(item)" in js
-        assert "A single observed alert and service are required" in js
+        assert "liveRecommendationSection" not in js
+        assert "loadLiveRecommendations" not in js
+        assert 'filter(step => step.title !== "Recommendation")' in js
+        assert "OPTIONAL EXTENSION" in js
+        assert "outside the required GAI + RL path" in js
+        assert 'id="recommend-form"' in js
+        assert '"/api/recommender/recommend"' in js
         projection = Path("static/live-incident.js").read_text(encoding="utf-8")
         assert "approval_denied" in projection
         assert "Audit unavailable" in projection
         assert "No verdict exposed" in projection
         assert "recommendationQuery" in projection
+        assert ">Runbooks (optional)</a>" in content
         css = Path("static/console.css").read_text(encoding="utf-8")
         assert ".process-track" in css
         assert "prefers-reduced-motion: reduce" in css
@@ -106,10 +113,17 @@ class TestFrontendUIAndAPIs:
         assert len(recs[0]["suggested_tools"]) > 0
 
     def test_api_ablation_matrix_endpoint(self):
-        """Verify GET /api/ablation-matrix returns multi-model benchmark results."""
+        """The legacy ablation endpoint identifies historical synthetic output."""
+        artifact = Path("artifacts/evidence/stage13/ablation_benchmark_results.json")
+        artifact_sha_before = hashlib.sha256(artifact.read_bytes()).hexdigest()
         response = self.client.get("/api/ablation-matrix")
         assert response.status_code == 200
         data = response.json()
         assert "comparison_family" in data
         assert "partitions" in data
         assert "Full Pipeline (GAI + RS + RL)" in data["comparison_family"]
+        assert len(data["comparison_family"]) == 5
+        assert data["evidence_classification"] == "historical_non_empirical"
+        assert data["empirical"] is False
+        assert "Predetermined five-arm profiles" in data["evidence_note"]
+        assert hashlib.sha256(artifact.read_bytes()).hexdigest() == artifact_sha_before

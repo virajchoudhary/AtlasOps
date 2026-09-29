@@ -22,14 +22,18 @@ The project strategy is to repair, complete, reproduce, and validate the origina
 implementation before adding substantial original work. Do not casually redesign
 AtlasOps into an unrelated project.
 
-Academic workstreams are:
+The current project-lead [GAI + RL scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
+supersedes RS-required portions of the adopted v2.2 working specification.
+Current required academic workstreams are:
 
 - **Generative AI:** multi-agent reasoning, tool calling, diagnosis, eventual RAG and
   historical incident memory, incident communications, and postmortems.
-- **Recommender Systems:** a new remediation/runbook recommendation layer with its own
-  dataset, algorithms, and evaluation.
 - **Reinforcement Learning:** retain GRPO while correcting and validating the
   policy-environment-reward relationship.
+
+The existing Recommender Systems layer and its bounded synthetic evidence are
+historical, optional research; G10/G11 are `OUT_OF_SCOPE` for final completion.
+Do not delete or reclassify their historical results as empirical incident gains.
 
 ## Sources of truth
 
@@ -103,12 +107,12 @@ authorization. Estimate storage before any multi-GB operation.
   are unverified. Archived Stage 6/8/9 mock outputs cannot close empirical gates.
 - Stage 13's current aggregator rejects missing real variant metrics; the saved hardcoded
   profiles remain historical, and actual variant ablation/stress evaluation is missing.
-- Stage 10 custom dataset output now writes its own adjacent evidence manifest. The
-  historical-feedback dataset required by G10 is still missing.
+- Stage 10 custom dataset output now writes its own adjacent evidence manifest.
+  Historical-feedback data was never established; G10/G11 are no longer required.
 - SAFETY-01 makes P1 approval fail closed: only explicit approval permits remediation;
   timeout/rejection remain blocked with distinct persisted outcomes. Mock/unit control-flow
   coverage is not empirical G4 evidence or a certification of safe deployment.
-- Recommender implementation/evaluation exists. The original saved result used 28
+- Optional recommender implementation/evaluation exists. The original saved result used 28
   scenario-derived rows covering 4 runbooks; the corrected 21-row corpus covers 9 of
   12 runbooks. Neither is genuine historical interaction feedback.
 - Infrastructure scripts have static/local validation; real provisioning or portability

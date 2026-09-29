@@ -225,7 +225,14 @@ async def query_recommender_endpoint(body: RecommenderQueryRequest):
 async def get_ablation_matrix_endpoint():
     p = Path("artifacts/evidence/stage13/ablation_benchmark_results.json")
     if p.exists():
-        return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        payload["evidence_classification"] = "historical_non_empirical"
+        payload["empirical"] = False
+        payload["evidence_note"] = (
+            "Predetermined five-arm profiles retained for historical traceability; "
+            "not measured results or the required three-arm comparison."
+        )
+        return JSONResponse(payload)
     return JSONResponse({"error": "Ablation results not found"}, 404)
 
 

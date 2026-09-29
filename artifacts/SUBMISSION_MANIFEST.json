@@ -3,7 +3,8 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
-  "generated_at": "2026-09-29T13:11:01.829560+00:00",
+  "scope_revision": "GAI + RL (RS optional historical research)",
+  "generated_at": "2026-09-29T13:23:51.980822+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -17,8 +18,8 @@
     "G7": "PARTIAL",
     "G8": "IMPLEMENTED / EMPIRICAL EVIDENCE MISSING",
     "G9": "REOPENED",
-    "G10": "PARTIAL",
-    "G11": "PASS",
+    "G10": "OUT_OF_SCOPE",
+    "G11": "OUT_OF_SCOPE",
     "G12": "IMPLEMENTED / EMPIRICAL EVIDENCE MISSING",
     "G13": "REOPENED",
     "G14": "PARTIAL",
@@ -26,16 +27,18 @@
   },
   "academic_workstreams": [
     "Generative AI: Multi-Agent Incident Response & Trajectory Synthesis",
-    "Recommender Systems: Hybrid Top-K Runbook Recommendation",
     "Reinforcement Learning: Online Group Relative Policy Optimization (GRPO)"
+  ],
+  "historical_optional_workstreams": [
+    "Recommender Systems: bounded scenario-derived runbook ranking"
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 251,
+  "asset_count": 253,
   "assets": {
     "AGENTS.md": {
-      "sha256": "6c3eefb051f5c3e691db238c3c78754de8a6430cc33a0a9c26fe78f75758c3e8",
-      "size_bytes": 6096
+      "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
+      "size_bytes": 6416
     },
     ".gitattributes": {
       "sha256": "0de5fcd2ce928d3c78cdc1bb87dea8507296f8827d92ab63bcbd73542e34c201",
@@ -58,20 +61,20 @@
       "size_bytes": 1383
     },
     "README.md": {
-      "sha256": "0bc711977b87885dcda3eafb70415979512acc0d95fe8f0c429b3d8b349fa1f2",
-      "size_bytes": 25410
+      "sha256": "d1c0e541a60bf5fa2fb22251fe4d514bf512da4b15fc6c023a810409f548e95d",
+      "size_bytes": 25145
     },
     "app.py": {
-      "sha256": "d17466d5be9a530076c4d88fa39aa668e9582a1f045d799591eecf415a5be57b",
-      "size_bytes": 17228
+      "sha256": "5118800d6f05f2447a083ece89034df80d20af1535e66dcbc277241d132596f8",
+      "size_bytes": 17568
     },
     "ui_read_model.py": {
       "sha256": "859db572c2706d7d52b7a6b3696bb8a8f01c66d9de4696cae6159ef2da08f82f",
       "size_bytes": 10012
     },
     "docs/AtlasOps_Technical_Report.md": {
-      "sha256": "50a354b5e59e8e6b07e597aee915a5e7a91dce02d30bb8c91a332ffdd93782d5",
-      "size_bytes": 7749
+      "sha256": "d6a72d703dd29612487eacf4c099d105384605807a9583a01798cb94bcf58f66",
+      "size_bytes": 8400
     },
     "docs/BENCHMARKS.md": {
       "sha256": "f4054130730f4981dffcf815e83a2bae2c278a6179fb9d64920a371f2cd96488",
@@ -90,8 +93,8 @@
       "size_bytes": 8350
     },
     "docs/slides.md": {
-      "sha256": "04aa2ff18b4f2e4c8a731dedc76932b498763b71ec4c6e620e72356b61f66b72",
-      "size_bytes": 5890
+      "sha256": "c5bf2053fd4867ffa804026a97789e9833bf89b1337f329d24efca56a3b9064e",
+      "size_bytes": 5995
     },
     "docs/media/console-overview-20260926.png": {
       "sha256": "4e9d204e953ee2f9631dea331f421947fa5091e00b5f04ea7cf9ec681da75630",
@@ -106,8 +109,8 @@
       "size_bytes": 9031
     },
     "docs/project/IMPLEMENTATION_STATUS.md": {
-      "sha256": "563fccf30623258265234ff7c4ff79744dc47605e1008b4a0dd6f61f451422d9",
-      "size_bytes": 3855
+      "sha256": "17abdc2b0a036015ed403e2c99585bfd769f4915efd915b760d6a9650638f282",
+      "size_bytes": 4149
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -118,8 +121,8 @@
       "size_bytes": 4483
     },
     "docs/project/FINAL_PIPELINE_V22_STATUS.md": {
-      "sha256": "6915be88c0191752f4ac523ebc11944ab6afc0eb993230bb45644580b977fbb9",
-      "size_bytes": 7792
+      "sha256": "9f69505df9470dcb9840194b0987eb91a12c25bd94018728a44cd3a4e3f1fe0c",
+      "size_bytes": 8324
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md": {
       "sha256": "613bbdfe304225f0c330a959f2281aad9ecd39721d086a50ff59c2022f765ce0",
@@ -134,44 +137,52 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "c2786feb34a2a77cf9683ee08fcd1529e06b8a105babc82da2afdc7d3bc09e63",
-      "size_bytes": 10405
+      "sha256": "3327ced34d7f834c857eb12b5afc474f466d01f3106cf69e9f49a024a861db29",
+      "size_bytes": 10734
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "a95ec45c0cf8b4557e6c5b0f360fecb27596df7db32914ce09e7e39c111bed05",
-      "size_bytes": 11083
+      "sha256": "82f7d251f1a4a412c39c105dc68084c30a009655ec7dd65b308567dceaff33e4",
+      "size_bytes": 11476
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
-      "sha256": "2113616c98f7fc9618ba23a596bfc4400bcf73de987afdc210a1a0e661b39894",
-      "size_bytes": 6126
+      "sha256": "7fdf84c84710caf53058716c80694911f04d8b3063f3e4b73e8eb4889b7b775b",
+      "size_bytes": 6522
+    },
+    "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md": {
+      "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",
+      "size_bytes": 4806
+    },
+    "docs/project/GAI_RL_SCOPE_REVISION.md": {
+      "sha256": "24b83eaf30f831cc83e297114b172b913e125ec231e2f0a12fda5bd700a5d378",
+      "size_bytes": 4993
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "b81678af41fd421e3b2bc094bffa77d6ab5b432321430d130a9c49de46e98bb7",
-      "size_bytes": 26579
+      "sha256": "5979e294e2a5de02285ff0d6bffc07df219ce1c21092f128feb28c3edb750bdd",
+      "size_bytes": 27034
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
       "size_bytes": 10277
     },
     "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md": {
-      "sha256": "cbd5a8d174d5e2f0f37cbae51e1e57c2aac44f34e6744be8789418dbf66ebac3",
-      "size_bytes": 19834
+      "sha256": "14b0ae256c86312398cd02620d699327d635ef24aef046d55bc09e836c86dec6",
+      "size_bytes": 20215
     },
     "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
-      "sha256": "3a31a019bb01239225168e6ed1925499cf689f05b7c7344cf2106af46ad576b5",
-      "size_bytes": 1774
+      "sha256": "d0989c81494b0b1a70d22f2859c8352b0be056b9f6e7399c2a195e53b2df62ac",
+      "size_bytes": 2043
     },
     "docs/project/STAGE_11_HYBRID_RECOMMENDER.md": {
-      "sha256": "788de77730246d91c8fffcbc4d56106e8dd410be5a39ce7582969e57529d803b",
-      "size_bytes": 1751
+      "sha256": "be17afca2427c7e1a5e9a578b9824e98369fb215ceefc4448524c805e47e8893",
+      "size_bytes": 2043
     },
     "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
-      "sha256": "c8d56d51a7da4b66a4c2c3a57706935b17840e700ab249b40a6a26ce2f8e09dd",
-      "size_bytes": 6312
+      "sha256": "6a6a8e3e83c2f210595b662c64154bd824036769186aba94ed59fad991ba124c",
+      "size_bytes": 6589
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
-      "sha256": "b58e981a136cf7c71615cdd16ec679161fe15090107f9a9ef9ab1009f5b9d5f3",
-      "size_bytes": 9746
+      "sha256": "00ab24e18a05178f8306f0e843dc9155df363941faaedd995fcc72cbafd49ad2",
+      "size_bytes": 10543
     },
     "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
       "sha256": "5eb9a8df01f8ca6f038833a610fce2eaa93433b4db5b5c36920b3c4df3317811",
@@ -390,8 +401,8 @@
       "size_bytes": 7156
     },
     "agents/coordinator.py": {
-      "sha256": "afcbd3fbbb9ea1c31f56f9dd5916d82c3fa6d4aef6613e3635fab279d4b64e19",
-      "size_bytes": 116942
+      "sha256": "84832e3549b718705f4491ce6f10a9b0ee4eaf44f5600d722ddf854f8cb6fc28",
+      "size_bytes": 117674
     },
     "agents/adversarial_designer.py": {
       "sha256": "f6bc96059e6ca56ac502514db4d5d111d258e0acc6e1b41e8c5292c64bb1a130",
@@ -434,8 +445,8 @@
       "size_bytes": 2902
     },
     "agents/prompts/remediation.md": {
-      "sha256": "3945dfd98dfda25d056cdf98f1e4c02aa90adba0a9a3f54d8c6a7d05a46b1d51",
-      "size_bytes": 4513
+      "sha256": "00d0d3b24ba00007fd2e00d9c99f6c4ae9782cc6b42c495720648ec6c49bf344",
+      "size_bytes": 4768
     },
     "agents/prompts/triage.md": {
       "sha256": "956a1489758cb0fe9d7567728b6180e357825a2534c219ebb961fc9c51029f1d",
@@ -582,8 +593,8 @@
       "size_bytes": 25705
     },
     "bench/grpo_eval.py": {
-      "sha256": "f50d531c56849fdf3a9bf3c519b5baff6ebdeedf2c5ec7df2bd3e8b52ba0489a",
-      "size_bytes": 66595
+      "sha256": "f32c6e246411c44debaadad74f32dd8121ab4bbc90a9fe342639c4e4d3672235",
+      "size_bytes": 66591
     },
     "dashboard.py": {
       "sha256": "7e4afc02551bf4d68012712597ed5078cc1bd4fd76d4f2cebeb689f681266d2e",
@@ -602,16 +613,16 @@
       "size_bytes": 15804
     },
     "static/index.html": {
-      "sha256": "d2d907afdfd046c5b7b57cb47a6f15019f64d93c736a59353be1f9010e687f6a",
-      "size_bytes": 4760
+      "sha256": "2a7b6827b36a630b5bc9250ba782ec43dc76a647551932f7aaa4587e59fd7b2c",
+      "size_bytes": 4771
     },
     "static/console.css": {
       "sha256": "46419d9f0661838840d4561bd9e99ee8605a45ba2f9430bd7e102c95eeec2af3",
       "size_bytes": 23843
     },
     "static/console.js": {
-      "sha256": "277ba766de0a84b298d0c73c01eb7510bb4aaf783ea4c083da428627566f88bd",
-      "size_bytes": 64395
+      "sha256": "27f4c6807325167903638f70b1dc74dd715d4e0ac5ffb83dc654cbe54f76c687",
+      "size_bytes": 62151
     },
     "static/live-incident.js": {
       "sha256": "141c4482bd54d61c9f2554c02f695e285e1ff0f3ff31f0b3e93ceca58ac4dc42",
@@ -666,16 +677,16 @@
       "size_bytes": 100325
     },
     "scripts/run_g12_integrated_episode.py": {
-      "sha256": "b805a8221d55c015b6c5feae60c354a85fa795ee8f8827c80720034c73f1b787",
-      "size_bytes": 39748
+      "sha256": "d76a71740c94de9e58543ca9a6fe2a8ce1d100ca85d96ba5ee5e5d3f1c8e727b",
+      "size_bytes": 41003
     },
     "scripts/package_submission.py": {
-      "sha256": "630470ec6a8552a0ab6a340d2c9af57b720725172098459d7033e27d14ba94d8",
-      "size_bytes": 13612
+      "sha256": "c109b1f57e3e6f61bdb8c3a6048cd630e9306c130fd31fb80d23a14326a9f61f",
+      "size_bytes": 13958
     },
     "scripts/release_gate.py": {
-      "sha256": "6054f5c6ed9362b604e206784b5581cfd44527347d1b6dfb076228db24b22af7",
-      "size_bytes": 17618
+      "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
+      "size_bytes": 18205
     },
     "training/sft.py": {
       "sha256": "29c7abbc32d5d20b7cdfd467266bb866ed6aec85045d6376b83273c62ef6113d",
@@ -722,8 +733,8 @@
       "size_bytes": 3019
     },
     "bench/ablation_suite.py": {
-      "sha256": "98ed30d0f835d70d8611d6b790fefea84835cf24224df745cca7f25cb698943d",
-      "size_bytes": 26115
+      "sha256": "825866a09a865725da9e492b8e848608af8b181ffa4760988b64e3920a5e3fe9",
+      "size_bytes": 26652
     },
     "bench/episode_membership.py": {
       "sha256": "c598ab421638db9cf94c2f827c39e2023cc81eb47e413160db68289e853015c8",
@@ -778,8 +789,8 @@
       "size_bytes": 4714
     },
     "tests/test_claim_integrity.py": {
-      "sha256": "f3e82211785a111ca93a7e9c3c4ed9888114b644b0d60aba0c363e8fc93885c3",
-      "size_bytes": 5646
+      "sha256": "963b522837714c2bb9629b98ad1a90becb8ae645f028d445c939a642a20cf4ff",
+      "size_bytes": 5831
     },
     "tests/test_coordinator.py": {
       "sha256": "c2a702c7f581ee1964957e9b2c2a3b4fb9584448e636bfe4dd8e988bee7b2452",
@@ -802,16 +813,16 @@
       "size_bytes": 1001
     },
     "tests/test_frontend_ui.py": {
-      "sha256": "172e063d5e638158e2ad2599c255248ffce59e8b43edc5dc98ed66fcb1d9a222",
-      "size_bytes": 5251
+      "sha256": "65ccf5bf652001cdabe2d686d48244889f30ca7ae4a8b47a03c715a52cf5bc22",
+      "size_bytes": 6058
     },
     "tests/test_g12_policy_integration_contract.py": {
-      "sha256": "7b11cd4d22f2e25c828b70c4957da91e0920f38194eaedbdcd79562d61f7dab6",
-      "size_bytes": 12449
+      "sha256": "2b87c511518ac8b2a97df2a88f21951ce0634d94e2efa586effe915c639a740c",
+      "size_bytes": 13650
     },
     "tests/test_g12_real_capture.py": {
-      "sha256": "8058ce2909c71e9df025337294840ac06a55a3e36d468674913c7489372c3c50",
-      "size_bytes": 45180
+      "sha256": "8a22d62857f1e87e1b0c625f67e06f43236c617a3edfd7173c08a4c0cd185bfc",
+      "size_bytes": 46234
     },
     "tests/test_g13_lossless_g9_observations.py": {
       "sha256": "e33a2fedbd3dd4846359fbe4138f02a11f283543ab9183b54835c2fc5eb0f835",
@@ -890,8 +901,8 @@
       "size_bytes": 2664
     },
     "tests/test_release_gate.py": {
-      "sha256": "a48495a595203612138f701a83aa6ed3817e3309166191ca00ab75d53af6e29d",
-      "size_bytes": 12372
+      "sha256": "911bb0b14d07deec6925ddac0575703f2c14e1fdba94e85d234b80ad8fc95304",
+      "size_bytes": 13992
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",
@@ -942,20 +953,20 @@
       "size_bytes": 7650
     },
     "tests/test_stage12_integrated_pipeline.py": {
-      "sha256": "d3acd12c5d770d6080d0c9b1bb3cc74b560ed3a0c1753e46912adb1b1536e11a",
-      "size_bytes": 5945
+      "sha256": "16ae8b1f12602c66d85de596720d4e5a38e294ec552401ba3e021ea84c7ac022",
+      "size_bytes": 6706
     },
     "tests/test_stage13_ablation_suite.py": {
-      "sha256": "24270271d10a7ad11b90e7e9650ce47ab76550e532bc8d341174c000c6306119",
-      "size_bytes": 41932
+      "sha256": "d93d6fd48d0560ed7e25a1018e57f4b3386515697b808056d2f090f63a40e206",
+      "size_bytes": 43463
     },
     "tests/test_stage14_demo_safety.py": {
       "sha256": "de91c0aa698264b7bdb1c5feaa234eb3bdbe7e715c5f85eb79b3b4a6699f1af3",
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "c3d8f31a279cd16924f62dbf57a5fdf414d7e6f5a6bc9f2e2f27b368da340e32",
-      "size_bytes": 26293
+      "sha256": "a3116ea7a366106bb85a6d68e7f7b1ac34cd542516fc519b8b58f7b990fe7381",
+      "size_bytes": 27620
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

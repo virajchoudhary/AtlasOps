@@ -7,6 +7,9 @@ weights, use a cluster, access final Test, or deploy. Review basis:
 `56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`. The personal laptop is
 not a viable host for the planned local 7B workload; remote hardware and
 any cost require an explicit project-lead decision.
+The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) supersedes
+the earlier RS-inclusive arm count; the source SHA above identifies the
+original software review, not an approved five-arm campaign.
 
 Each phase has an entry gate and an exit artifact. A failed gate stops the
 sequence. Keep the original attempt, logs, checkpoints and raw outputs
@@ -174,12 +177,15 @@ operator opt-in. Its raw stream must retain failures and exact action to
 verifier lineage. Use Validation for development; do not use final Test to
 select settings or repair a checkpoint.
 
-The proposed five-arm V1-V5 comparison then needs dedicated V3 (SFT+RS)
-and V5 (GRPO+RS) empirical evaluators, matched checkpoints/budgets,
-independently frozen adversarial membership/seed, a reviewed and hashed
-common raw scorer, adjudicated eligibility, and explicitly authorized
-final-Test access. The existing Stage 13 aggregator checks membership but
-uses declared summary metrics; it cannot certify that comparison.
+The current prospective comparison has three matched arms: untouched base,
+SFT, and the same SFT parent plus corrected GRPO. It needs matched
+checkpoints/budgets, independently frozen adversarial membership/seed, a
+reviewed and hashed common raw scorer, adjudicated eligibility, and
+explicitly authorized final-Test access. The current Stage 13 aggregator
+checks three-arm artifact membership but uses declared summary metrics and
+does not verify cross-arm lineage; it cannot certify that comparison.
+The old RS-bearing V3/V5 paths remain historical optional research, not
+required evaluators for this scope.
 
 **Exit:** only a future, independently reviewed raw-row recomputation
 could support a gate decision. Preserve negative and interrupted attempts.

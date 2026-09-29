@@ -46,6 +46,11 @@ class TestStage15SubmissionPackage:
         manifest = build_submission_package(output_dir=tmp_path)
         assert manifest["project_name"] == "AtlasOps"
         assert manifest["pipeline_version"] == "v2.2"
+        assert manifest["scope_revision"] == "GAI + RL (RS optional historical research)"
+        assert manifest["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
+        assert manifest["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
+        assert len(manifest["academic_workstreams"]) == 2
+        assert len(manifest["historical_optional_workstreams"]) == 1
         assert manifest["status"] == "NOT_CERTIFIED"
         assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
         assert manifest["gate_statuses_declared"]["G13"] == "REOPENED"
@@ -62,9 +67,9 @@ class TestStage15SubmissionPackage:
         assert data["empirical_metrics"] is None
         summary = summary_path.read_text(encoding="utf-8")
         assert "NOT_CERTIFIED" in summary
-        assert "Section 25 proposed, not approved" in summary
+        assert "Section 25 and the measurement protocol are not frozen" in summary
         assert "G3 PASS is historical local Kind acceptance" in summary
-        assert "G11 PASS is bounded" in summary
+        assert "G10/G11 OUT_OF_SCOPE" in summary
         assert "100.0%" not in summary
 
     def test_technical_report_structure_and_completeness(self):
@@ -73,7 +78,7 @@ class TestStage15SubmissionPackage:
         content = report_path.read_text(encoding="utf-8")
 
         required_sections = [
-            "# AtlasOps: Autonomous Multi-Agent Incident Response",
+            "# AtlasOps: Multi-Agent Incident Response via Generative AI and Online Policy Optimization",
             "## Abstract",
             "## 1. Introduction & Background",
             "## 2. System Architecture & Multi-Agent Flow",
@@ -131,6 +136,8 @@ class TestStage15SubmissionPackage:
             "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md",
             "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md",
             "docs/project/G7_G13_DECISION_REGISTER.md",
+            "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md",
+            "docs/project/GAI_RL_SCOPE_REVISION.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",
             "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
             "tests/stage4_approval_process.py",
@@ -171,6 +178,9 @@ class TestStage15SubmissionPackage:
 
         assert data["status"] == "NOT_CERTIFIED"
         assert data["pipeline_version"] == "v2.2"
+        assert data["scope_revision"] == "GAI + RL (RS optional historical research)"
+        assert data["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
+        assert data["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
         assert data["gate_statuses_declared"]["G4"] == "NOT_PASSED"
         assert data["gate_statuses_declared"]["G15"] == "PARTIAL"
         assert data["empirical_metrics"] is None
@@ -592,12 +602,23 @@ class TestStage15SubmissionPackage:
         assert "REVIEW DRAFT / NO NEW APPROVALS" in decisions
         assert "Stage 15 remains `NOT_CERTIFIED`" in decisions
 
+    def test_gai_rl_scope_amendment_keeps_three_arm_protocol_unfrozen(self):
+        amendment = Path(
+            "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md"
+        ).read_text(encoding="utf-8")
+        assert "NOT FROZEN" in amendment
+        assert "V1: Zero-Shot Baseline" in amendment
+        assert "V2: SFT Model" in amendment
+        assert "V4: SFT + GRPO" in amendment
+        assert "Neither record authorizes final-Test access" in amendment
+
     def test_presentation_keeps_empirical_claims_open(self):
         slides = Path("docs/slides.md").read_text(encoding="utf-8")
         assert slides.count("\n---\n") == 8
-        assert "Reviewed code baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`" in slides
+        assert "Historical presentation evidence baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`" in slides
         assert "Current reviewed main:" not in slides
         assert "G4 remains NOT_PASSED" in slides
+        assert "G13 plans three matched arms" in slides
         assert "NOT_CERTIFIED" in slides
         assert "SFT + Online GRPO Trained" not in slides
         assert "One real GKE cluster. No simulations." not in slides

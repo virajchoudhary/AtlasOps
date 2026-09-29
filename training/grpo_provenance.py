@@ -187,6 +187,15 @@ def validate_training_summary(
 ) -> None:
     if not isinstance(summary, Mapping):
         raise TypeError("GRPO training summary must be an object")
+    total_steps = summary.get("total_steps")
+    if (
+        not isinstance(total_steps, int)
+        or isinstance(total_steps, bool)
+        or total_steps <= 0
+    ):
+        raise ValueError("Training summary total_steps must be a positive integer")
+    if not isinstance(summary.get("trainer_log_history"), list):
+        raise TypeError("Training summary trainer_log_history must be a list")
     requested, effective, selection = validate_hyperparameter_provenance(training)
     if summary.get("requested_hyperparameters") != requested:
         raise ValueError("Training summary requested hyperparameters differ from the run manifest")
@@ -442,7 +451,6 @@ def persist_status(
             "execute_live_chaos": True,
             "kube_context": selected_context,
         }
-        updated["checkpoint"] = checkpoint_inventory(path.parent)
         if not has_verified_final_rollout(
             path.parent / "rollout_trajectories.jsonl",
             live_execution=expected_live_execution,
@@ -462,6 +470,7 @@ def persist_status(
                 effective_hyperparameters=effective_hyperparameters,
                 live_execution=expected_live_execution,
             )
+        updated["checkpoint"] = checkpoint_inventory(path.parent)
         updated["completed_at"] = updated["updated_at"]
     write_manifest_atomic(path, updated)
     return updated

@@ -77,18 +77,23 @@ The CLI checks revision strings for presence, not immutable commit identity;
 independently resolve and verify the approved model/tokenizer commits before
 loading weights.
 
-**Recovery:** on interruption or exception, preserve the directory and
-manifest with its `interrupted`/`failed` status and any epoch checkpoints.
-The CLI has no `--resume` option and calls `trainer.train()` without a
-resume argument. The merged output guard requires a previously nonexistent
-path, rejects redirects, and claims the final directory exclusively before
-the corpus snapshot or manifest write. Do not pre-create even an empty
-output directory. This does not guard against a parent path being replaced
-between check and creation. Do not hand an incomplete adapter to G8/G9 or
-overwrite the old manifest. Diagnose the failure; a separately authorized
-retry uses a **new** output directory/run ID and records its relationship
-to the failed attempt. Implement and test a resume path in a separate
-review if true continuation is required.
+**Recovery:** after the planned manifest has been written, an interruption
+or caught training exception records `interrupted`/`failed` status. Preserve
+that manifest, directory and any epoch checkpoints. The exclusive output
+directory is created and the corpus snapshot is read **before** the planned
+manifest and failure-recording `try` block; a redirect/path or snapshot
+failure can leave no run manifest, possibly with an empty claimed directory.
+Preserve the error and inspect that path without relabeling it a recorded
+training attempt. The CLI has no `--resume` option and calls
+`trainer.train()` without a resume argument. Its merged output guard
+requires a previously nonexistent path, rejects redirects, and claims the
+final directory exclusively. Do not pre-create even an empty output
+directory. This does not guard against a parent path being replaced between
+check and creation. Do not hand an incomplete adapter to G8/G9 or overwrite
+the old manifest. Diagnose the failure; a separately authorized retry uses
+a **new** output directory/run ID and records its relationship to the
+failed attempt. Implement and test a resume path in a separate review if
+true continuation is required.
 
 **Exit:** independent process/host reload of the adapter against the
 pinned base/tokenizer, verified manifest and file hashes, readable trainer
@@ -131,9 +136,11 @@ operator/cleanup authority, zero-Chaos preflight, storage/compute budget
 and a documented interruption response. G4 is still `NOT_PASSED`.
 No live fault, P1 request, or model training is authorized by this runbook.
 
-After those *separate* approvals, the G9 CLI requires a new output
-directory, `--sft-checkpoint`, exact model/tokenizer revisions,
-`--execute-live-chaos` and a named `--kube-context`. P1 needs the
+After those *separate* approvals, the operator must select a new output
+directory. The G9 CLI accepts an existing directory but rejects an existing
+run manifest and final rollout ledger; it does not enforce full directory
+freshness. The CLI requires `--sft-checkpoint`, exact model/tokenizer revision
+arguments, `--execute-live-chaos` and a named `--kube-context`. P1 needs the
 separately opted-in same-process operator channel and a securely supplied
 `ATLASOPS_API_KEY`; rejection, timeout and missing decision remain blocked.
 Do not put the secret in arguments or print it. Keep Optuna disabled until

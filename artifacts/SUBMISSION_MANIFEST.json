@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
-  "generated_at": "2026-09-29T12:58:47.454998+00:00",
+  "generated_at": "2026-09-29T13:11:01.829560+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -138,8 +138,8 @@
       "size_bytes": 10405
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "eb5547b27ffc3a7d508eac85d84a5fd6738144c4f3877a8ca9a4aeec3e0d473b",
-      "size_bytes": 10551
+      "sha256": "a95ec45c0cf8b4557e6c5b0f360fecb27596df7db32914ce09e7e39c111bed05",
+      "size_bytes": 11083
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
       "sha256": "2113616c98f7fc9618ba23a596bfc4400bcf73de987afdc210a1a0e661b39894",

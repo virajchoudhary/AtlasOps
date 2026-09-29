@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T12:58:47.454998+00:00`
+- **Generated**: `2026-09-29T13:11:01.829560+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -162,7 +162,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `2113616c98f7fc96...` | 6126 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `eb5547b27ffc3a7d...` | 10551 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `a95ec45c0cf8b455...` | 11083 |
 | `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `c2786feb34a2a77c...` | 10405 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `563fccf306232582...` | 3855 |

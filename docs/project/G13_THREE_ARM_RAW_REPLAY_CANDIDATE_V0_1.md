@@ -4,7 +4,8 @@
 This is a review input for the GAI + RL scope amendment, not an approved
 scientific protocol or authority to read final Test, train, load weights,
 request P1 approval, inject faults, spend on compute, or deploy. G13 remains
-`REOPENED`; Stage 15 remains `NOT_CERTIFIED`. The v0.1-v0.3 protocol records,
+`REOPENED`; the G15 gate is `PARTIAL` and the submission package remains
+`NOT_CERTIFIED`. The v0.1-v0.3 protocol records,
 historical five-arm output, and frozen evidence are unchanged.
 
 ## Candidate measurement path
@@ -56,7 +57,7 @@ established by this candidate.
 ## Byte anchors
 
 The following hashes identify the local candidate at software commit
-`fa78f1aae7cbbba70697154eb7faaf0fdb8168d7`. They are SHA-256 of raw Python
+`587f9ad4346d0e8e201fb67aad70eb5f2cea5c45`. They are SHA-256 of raw Python
 source bytes, not model, checkpoint, evaluator-run, or evidence hashes.
 `comparison_scorer_sha256` is SHA-256 of canonical JSON for the ordered
 five-entry runtime source manifest (`path`, `sha256`), using sorted keys,
@@ -67,11 +68,11 @@ compact separators and UTF-8:
 | `bench/candidate_adapters.py` | `903f790a14537bfcd4c7e19b2b3f579674d487a9af43964d53956a2a4e8f5e2b` |
 | `bench/candidate_lineage.py` | `396ff6d389f2b83631d8b5b50c6a08c74f9df42317dbd48a9d6a2825eb956aa9` |
 | `bench/candidate_measurement.py` | `8b5448ea354652c6e45024a463f53702919e94908c92a52995932d08cff49552` |
-| `bench/candidate_replay.py` | `246e0f4635940d19d3f9c32b3386ee3465ea2514084dacef66b7c277dc7ca358` |
+| `bench/candidate_replay.py` | `8e48a1b8900acf071596c932bf524a6855b187ad14249d9dc3d295b739a70daa` |
 | `bench/episode_membership.py` | `c598ab421638db9cf94c2f827c39e2023cc81eb47e413160db68289e853015c8` |
 
 `comparison_scorer_sha256`:
-`4509a880c493ddc194d4869507d426c7ca3ad930457c1780f19b7564bcd6f327`.
+`3a985d697a5a4c314bd30be258160da633b9ca3ac67a1a6c9ebc4239c8e38758`.
 
 The synthetic `tests/test_candidate_replay.py::_measurement_contract()`
 fixture has canonical JSON SHA-256

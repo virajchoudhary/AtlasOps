@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T04:51:47.174323+00:00`
+- **Generated**: `2026-09-29T05:01:45.035649+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -175,7 +175,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `445358d8a1f4f4e2...` | 2865 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
-| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `1793f7439dd474e0...` | 19359 |
+| `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `da58943d3011732e...` | 19670 |
 | `docs/slides.md` | `04aa2ff18b4f2e4c...` | 5890 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |

@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T20:30:19.525381+00:00`
+- **Generated**: `2026-09-29T20:48:29.237902+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -140,7 +140,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
 | `bench/grpo_eval.py` | `960fcfec00bbf3bc...` | 67057 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
-| `bench/sft_eval.py` | `d60ccd019ef51189...` | 27470 |
+| `bench/sft_eval.py` | `e89c673f6c30d60d...` | 27472 |
 | `bench/zero_shot_baseline.py` | `5e19ee339d7db284...` | 37892 |
 | `config/g4_protocol.py` | `40b2e975b59fb615...` | 23488 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
@@ -164,8 +164,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md` | `feeb5552c0d125f0...` | 3748 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `7fdf84c84710caf5...` | 6522 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `034d1152ebf02796...` | 12327 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `d80631ae52edb68a...` | 11357 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `95338657309a8de2...` | 12409 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `bedb4cadf5a05f93...` | 11459 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
@@ -232,7 +232,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g4_runtime_context_remediation_loop.py` | `3e23f0441e3645d1...` | 22261 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `a2e857f98851c770...` | 34823 |
 | `tests/test_g6_empirical_contract.py` | `969c91c1a1fe7862...` | 42778 |
-| `tests/test_g8_empirical_contract.py` | `b80b110901701696...` | 30936 |
+| `tests/test_g8_empirical_contract.py` | `1331b8f0b2044019...` | 30938 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
 | `tests/test_g9_direct_policy_environment.py` | `bee411e0106356ae...` | 59478 |
 | `tests/test_g9_direct_reward.py` | `ffd2dec95752c473...` | 11614 |
@@ -257,7 +257,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `a0e173cfd46960b9...` | 10667 |
 | `tests/test_sft_trainer_handoff.py` | `79083e8f49541e70...` | 12611 |
-| `tests/test_sft_training_provenance.py` | `94f1dfe31f9685d6...` | 37492 |
+| `tests/test_sft_training_provenance.py` | `c8bc36f05e22a3e2...` | 37901 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
@@ -289,7 +289,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_environment.py` | `8b9916d31829a9fe...` | 29947 |
 | `training/grpo_provenance.py` | `35d52b5dff9d3846...` | 32290 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
-| `training/sft.py` | `d5c5e1a7dd804810...` | 11449 |
+| `training/sft.py` | `61e906c70ea307d4...` | 11451 |
 | `training/sft_provenance.py` | `3b8c62edbfe8d97a...` | 32055 |
 | `training/sft_rendering.py` | `b8b1ac8d241b09b4...` | 10334 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |

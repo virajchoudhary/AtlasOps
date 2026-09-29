@@ -45,10 +45,10 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   directory with adjacent manifest/config. A fresh 2026-09-30 audit found
   32 remediation tool calls to `k8s_delete_pod` and `environment_verify`,
   neither exposed to that role, and no P1 approval context in those rows.
-  The exact canonical fixture is rejected for every SFT training role,
-  but the stored-row fingerprint can be evaded by training-equivalent
-  representation changes. Do not execute training while that gap and D3
-  remain unresolved.
+  The exact canonical fixture and tested representation-only variants of
+  its assistant targets are rejected for every SFT training role. This is
+  not authenticated approval for other data; do not execute training while
+  D3 remains unresolved.
   All-role and remediation selections also contain disallowed tool calls;
   triage-only role-tool validity is not approval for a model-training pilot.
   This is a schema fixture, not a successful trajectory set or proof of

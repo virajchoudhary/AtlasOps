@@ -35,6 +35,7 @@ from training.sft_provenance import (
 )
 from training.sft_rendering import (
     TEMPLATE_PATH,
+    normalize_tool_arguments,
     prepare_example_for_training,
     validate_tool_call_role_acl,
 )
@@ -49,24 +50,33 @@ TARGET_MODULES = [
     "down_proj",
 ]
 
-_SYNTHETIC_TEACHER_CONTENT_SHA256 = (
-    "bb5c2638ca014cca28005b2f29f794d0fe01637948c857f993b90806143f0a04"
+# Known synthetic assistant targets after tool-argument normalization.
+_SYNTHETIC_ASSISTANT_TARGETS_SHA256 = (
+    "c6e7449f83fe55e20716db3e16743f47aa2273bea0b9261d69a0a398d3d1b311"
 )
 
 
-def _teacher_content_sha256(rows: tuple[dict[str, Any], ...]) -> str:
-    content = sorted(
-        (
-            {
-                "scenario_id": row["scenario_id"],
-                "role": row["role"],
-                "messages": row["messages"],
-            }
-            for row in rows
-        ),
-        key=lambda row: (row["scenario_id"], row["role"]),
-    )
-    return canonical_json_sha256(content)
+def _assistant_targets_sha256(rows: tuple[dict[str, Any], ...]) -> str:
+    targets = []
+    for row in rows:
+        assistant_turns = []
+        for message in row["messages"]:
+            if message.get("role") != "assistant":
+                continue
+            calls = []
+            for call in message.get("tool_calls") or []:
+                function = call["function"]
+                calls.append(
+                    {
+                        "name": function["name"],
+                        "arguments": normalize_tool_arguments(function["arguments"]),
+                    }
+                )
+            assistant_turns.append(
+                {"content": message.get("content") or "", "tool_calls": calls}
+            )
+        targets.append({"role": row["role"], "assistant_turns": assistant_turns})
+    return canonical_json_sha256(sorted(targets, key=canonical_json_sha256))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -189,8 +199,8 @@ def main() -> None:
     if (
         canonical_bytes_sha256(corpus_snapshot.raw_bytes)
         == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
-        or _teacher_content_sha256(corpus_snapshot.rows)
-        == _SYNTHETIC_TEACHER_CONTENT_SHA256
+        or _assistant_targets_sha256(corpus_snapshot.rows)
+        == _SYNTHETIC_ASSISTANT_TARGETS_SHA256
     ):
         raise ValueError(
             "SFT training admission rejected the canonical Train corpus for every role"

@@ -641,7 +641,17 @@ def test_sft_rejects_canonical_synthetic_corpus_for_every_role_before_output_or_
 
 @pytest.mark.parametrize(
     "variant",
-    ["blank_lines", "bare_cr", "json_whitespace", "reordered", "metadata_only"],
+    [
+        "blank_lines",
+        "bare_cr",
+        "json_whitespace",
+        "reordered",
+        "metadata_only",
+        "system_placeholder",
+        "tool_argument_whitespace",
+        "paired_call_ids",
+        "scenario_labels",
+    ],
 )
 def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
     monkeypatch, tmp_path, variant
@@ -659,6 +669,37 @@ def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
             rows.reverse()
         elif variant == "metadata_only":
             rows[0]["judge"]["critique"] = "Formatting-only fixture variant"
+        elif variant == "system_placeholder":
+            rows[0]["messages"][0]["content"] = "Different stored placeholder"
+        elif variant == "tool_argument_whitespace":
+            call = next(
+                message["tool_calls"][0]
+                for message in rows[0]["messages"]
+                if message.get("tool_calls")
+            )
+            arguments = call["function"]["arguments"]
+            call["function"]["arguments"] = json.dumps(
+                json.loads(arguments) if isinstance(arguments, str) else arguments,
+                indent=2,
+            )
+        elif variant == "paired_call_ids":
+            call = next(
+                message["tool_calls"][0]
+                for message in rows[0]["messages"]
+                if message.get("tool_calls")
+            )
+            old_id = call["id"]
+            call["id"] = f"{old_id}_rekeyed"
+            next(
+                message
+                for message in rows[0]["messages"]
+                if message.get("tool_call_id") == old_id
+            )["tool_call_id"] = call["id"]
+        elif variant == "scenario_labels":
+            rows[0]["scenario_id"], rows[4]["scenario_id"] = (
+                rows[4]["scenario_id"],
+                rows[0]["scenario_id"],
+            )
         altered = (
             "\n".join(
                 json.dumps(row, sort_keys=True, separators=(",", ":"))

@@ -58,11 +58,11 @@ adjacent provenance sidecars; do not substitute it for this complete
 external-output preparation.
 The current 64-row synthetic corpus passes those integrity checks but
 is not eligible for SFT training in any role. The current code rejects its
-exact bytes but does not yet reject all training-equivalent reserializations;
-do not execute the trainer while this admission gap remains. Its 16 P1 remediation
-rows have no approval context and contain 32 calls to tools absent from
-the remediation role's runtime
-allowlist. Use it only for non-model schema/rendering checks. Preserve its
+exact bytes and tested representation-only variants of its assistant
+targets, but this does not authenticate D3 approval for other data.
+Its 16 P1 remediation rows have no approval context and contain 32 calls
+to tools absent from the remediation role's runtime allowlist. Use it only
+for non-model schema/rendering checks. Preserve its
 bytes and tracked evidence; even triage-only ACL validity does not permit
 training on the known fixture. Obtain a new versioned, independently
 reviewed Train-only corpus with role-allowed tools and

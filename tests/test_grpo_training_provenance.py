@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 from argparse import Namespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +16,9 @@ from training.grpo_provenance import (
     checkpoint_inventory,
     create_run_manifest,
     has_verified_final_rollout,
+    mark_training_started,
     persist_status,
+    record_loader_provenance,
     validate_sft_parent,
     validate_training_summary,
 )
@@ -97,6 +100,10 @@ def _parent():
         "training_source_sha": "a" * 40,
         "train_corpus_sha256": "e" * 64,
         "train_split_sha256": canonical_json_sha256(list(TRAIN_SPLIT)),
+        "base_model_id": "Qwen/Qwen2.5-7B-Instruct",
+        "base_model_revision": MODEL_COMMIT,
+        "tokenizer_id": "Qwen/Qwen2.5-7B-Instruct",
+        "tokenizer_revision": TOKENIZER_COMMIT,
     }
 
 
@@ -211,6 +218,19 @@ def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
         }),
         encoding="utf-8",
     )
+    with pytest.raises(RuntimeError, match="loader-verified model/tokenizer provenance"):
+        persist_status(manifest_path, manifest, "completed")
+    manifest = record_loader_provenance(
+        manifest_path,
+        model=SimpleNamespace(config=SimpleNamespace(_commit_hash=MODEL_COMMIT)),
+        tokenizer=SimpleNamespace(init_kwargs={}),
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    assert manifest["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert manifest["tokenizer"]["resolved_revision_basis"] == TOKENIZER_PIN_ONLY_BASIS
     completed = persist_status(manifest_path, manifest, "completed")
     assert completed["status"] == "completed"
     assert {row["path"] for row in completed["checkpoint"]["files"]} == {
@@ -220,6 +240,42 @@ def test_completed_manifest_hashes_all_checkpoint_files(tmp_path):
         "training_summary.json",
     }
     assert completed["checkpoint"] == checkpoint_inventory(tmp_path)
+
+
+def test_repeated_loaders_preserve_strongest_tokenizer_revision_basis(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    model = SimpleNamespace(config=SimpleNamespace(_commit_hash=MODEL_COMMIT))
+    identity = {
+        "model_id": "Qwen/Qwen2.5-7B-Instruct",
+        "model_revision": MODEL_COMMIT,
+        "tokenizer_id": "Qwen/Qwen2.5-7B-Instruct",
+        "tokenizer_revision": TOKENIZER_COMMIT,
+    }
+
+    manifest = record_loader_provenance(
+        manifest_path,
+        model=model,
+        tokenizer=SimpleNamespace(init_kwargs={}),
+        **identity,
+    )
+    assert manifest["tokenizer"]["resolved_revision_basis"] == TOKENIZER_PIN_ONLY_BASIS
+
+    manifest = record_loader_provenance(
+        manifest_path,
+        model=model,
+        tokenizer=SimpleNamespace(init_kwargs={"_commit_hash": TOKENIZER_COMMIT}),
+        **identity,
+    )
+    assert manifest["tokenizer"]["resolved_revision_basis"] == TOKENIZER_LOADER_MATCH_BASIS
+
+    manifest = record_loader_provenance(
+        manifest_path,
+        model=model,
+        tokenizer=SimpleNamespace(init_kwargs={}),
+        **identity,
+    )
+    assert manifest["tokenizer"]["resolved_revision_basis"] == TOKENIZER_LOADER_MATCH_BASIS
 
 
 def test_completion_rejects_verified_optuna_ledger_without_final_rollout(tmp_path):
@@ -591,6 +647,17 @@ def test_main_records_optuna_effective_hyperparameters_separately(
             }),
             encoding="utf-8",
         )
+        record_loader_provenance(
+            run_dir / MANIFEST_NAME,
+            model=SimpleNamespace(config=SimpleNamespace(_commit_hash=MODEL_COMMIT)),
+            tokenizer=SimpleNamespace(
+                init_kwargs={"_commit_hash": TOKENIZER_COMMIT}
+            ),
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            model_revision=MODEL_COMMIT,
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision=TOKENIZER_COMMIT,
+        )
         return {
             "effective_hyperparameters": effective,
             "hyperparameter_selection": "optuna",
@@ -713,6 +780,28 @@ def test_direct_optuna_search_requires_live_execution_before_output(tmp_path):
     assert not output_dir.exists()
 
 
+def test_training_rejects_sft_parent_changed_after_run_was_planned(tmp_path):
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+
+    with pytest.raises(ValueError, match="SFT parent changed after the run was planned"):
+        mark_training_started(
+            manifest_path,
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            model_revision=MODEL_COMMIT,
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision=TOKENIZER_COMMIT,
+            sft_parent={**_parent(), "manifest_sha256": "1" * 64},
+        )
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "running"
+    assert "execution_started_at" not in saved["training"]
+
+
 def test_model_loader_requires_live_opt_in_before_tokenizer_load(monkeypatch, tmp_path):
     from training import grpo
 
@@ -740,12 +829,246 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
     from training import grpo
 
     monkeypatch.setattr(grpo, "_HAS_TORCH_RL", False)
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
     observed = {}
+    events = []
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: events.append(("load_dependencies", None)),
+    )
     args = Namespace(
         execute_live_chaos=True,
         kube_context=" kind-atlasops-test ",
         tiers="single_fault",
+        seed=917018,
+        optuna=1,
+        model="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer=None,
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_checkpoint=tmp_path / "sft",
+    )
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            distributed=None,
+            manual_seed=lambda seed: events.append(("torch_seed", seed)),
+        ),
+    )
+
+    class StopAtOptuna(RuntimeError):
+        pass
+
+    def stop_at_optuna(*_args, **kwargs):
+        observed.update(kwargs)
+        events.append(("optuna", kwargs.get("seed")))
+        raise StopAtOptuna
+
+    monkeypatch.setattr(grpo, "run_optuna_search", stop_at_optuna)
+    with pytest.raises(StopAtOptuna):
+        grpo.run_training(args, output_dir)
+
+    assert observed["execute_live_chaos"] is True
+    assert observed["kube_context"] == "kind-atlasops-test"
+    assert observed["seed"] == 917018
+    assert events == [
+        ("load_dependencies", None),
+        ("torch_seed", 917018),
+        ("optuna", 917018),
+    ]
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "failed"
+    assert saved["failure"]["error_type"] == "StopAtOptuna"
+
+
+def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
+    monkeypatch, tmp_path
+):
+    from types import ModuleType, SimpleNamespace
+
+    from training import grpo
+
+    observed = {}
+    monkeypatch.setattr(grpo, "_load_training_dependencies", lambda: None)
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "load_model_and_tokenizer",
+        lambda *_args, **_kwargs: (object(), object()),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "OnlineRewardFunction",
+        lambda *_args, **_kwargs: object(),
+    )
+    datasets = ModuleType("datasets")
+
+    class Dataset:
+        @staticmethod
+        def from_list(rows):
+            return rows
+
+    datasets.Dataset = Dataset
+    monkeypatch.setitem(sys.modules, "datasets", datasets)
+
+    def grpo_config(**kwargs):
+        observed["config_seed"] = kwargs["seed"]
+        return kwargs
+
+    class StopBeforeTraining(RuntimeError):
+        pass
+
+    class FakeTrainer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def train(self, *, resume_from_checkpoint):
+            observed["resume_from_checkpoint"] = resume_from_checkpoint
+            raise StopBeforeTraining("training intentionally not started")
+
+    monkeypatch.setattr(grpo, "GRPOConfig", grpo_config)
+    monkeypatch.setattr(grpo, "GRPOTrainer", FakeTrainer)
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            distributed=None,
+            manual_seed=lambda seed: observed.update(torch_seed=seed),
+        ),
+    )
+    args = Namespace(
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
+        tiers="single_fault",
+        seed=917018,
+        optuna=0,
+        model="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer=None,
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_checkpoint=tmp_path / "sft",
+        lr=1e-6,
+        beta=0.04,
+        batch_size=1,
+        num_generations=8,
+        max_steps=1,
+        grad_accum=4,
+        max_compl_len=256,
+    )
+
+    with pytest.raises(StopBeforeTraining, match="training intentionally not started"):
+        grpo.run_training(args, output_dir)
+
+    assert observed == {
+        "torch_seed": 917018,
+        "config_seed": 917018,
+        "resume_from_checkpoint": None,
+    }
+
+
+def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    args = Namespace(
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
+        tiers="single_fault",
         seed=42,
+        optuna=0,
+        model="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer=None,
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_checkpoint=tmp_path / "sft",
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        grpo.run_training(args, output_dir)
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "interrupted"
+    assert saved["failure"]["error_type"] == "KeyboardInterrupt"
+
+
+def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
+    events = []
+    distributed = SimpleNamespace(
+        is_available=lambda: True,
+        is_initialized=lambda: True,
+        get_world_size=lambda: 2,
+    )
+    torch = SimpleNamespace(
+        distributed=distributed,
+        manual_seed=lambda _seed: events.append("manual_seed"),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: sys.modules.__setitem__("torch", torch),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "run_optuna_search",
+        lambda *_args, **_kwargs: pytest.fail("Optuna ran before distributed recheck"),
+    )
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    args = Namespace(
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
+        tiers="single_fault",
+        seed=917018,
         optuna=1,
         model="Qwen/Qwen2.5-7B-Instruct",
         model_revision=MODEL_COMMIT,
@@ -754,19 +1077,13 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
         sft_checkpoint=tmp_path / "sft",
     )
 
-    class StopAtOptuna(RuntimeError):
-        pass
+    with pytest.raises(RuntimeError, match="G9 requires a single training process"):
+        grpo.run_training(args, output_dir)
 
-    def stop_at_optuna(*_args, **kwargs):
-        observed.update(kwargs)
-        raise StopAtOptuna
-
-    monkeypatch.setattr(grpo, "run_optuna_search", stop_at_optuna)
-    with pytest.raises(StopAtOptuna):
-        grpo.run_training(args, tmp_path / "run")
-
-    assert observed["execute_live_chaos"] is True
-    assert observed["kube_context"] == "kind-atlasops-test"
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "failed"
+    assert saved["failure"]["error_type"] == "RuntimeError"
+    assert events == []
 
 
 def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_path):
@@ -774,7 +1091,13 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
 
     from training import grpo
 
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
     observed = {}
+    monkeypatch.setattr(grpo, "_load_training_dependencies", lambda: None)
 
     class Trial:
         number = 0
@@ -843,8 +1166,8 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         def __init__(self, **_kwargs):
             self.state = SimpleNamespace(log_history=[{"rewards/mean": 0.5}])
 
-        def train(self):
-            pass
+        def train(self, *, resume_from_checkpoint):
+            observed["resume_from_checkpoint"] = resume_from_checkpoint
 
     def fake_load_model(*_args, **kwargs):
         observed["model_options"] = kwargs
@@ -852,9 +1175,34 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
 
     monkeypatch.setattr(grpo, "OnlineRewardFunction", FakeRewardFunction)
     monkeypatch.setattr(grpo, "load_model_and_tokenizer", fake_load_model)
-    monkeypatch.setattr(grpo, "GRPOConfig", lambda **kwargs: kwargs)
+
+    def fake_grpo_config(**kwargs):
+        observed["grpo_config_seed"] = kwargs["seed"]
+        return kwargs
+
+    monkeypatch.setattr(grpo, "GRPOConfig", fake_grpo_config)
     monkeypatch.setattr(grpo, "GRPOTrainer", FakeTrainer)
     output_dir = tmp_path / "optuna"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    mark_training_started(
+        manifest_path,
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_parent=_parent(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            distributed=None,
+            manual_seed=lambda seed: observed.update(torch_seed=seed),
+        ),
+    )
     result = grpo.run_optuna_search(
         "Qwen/Qwen2.5-7B-Instruct",
         ["single_fault"],
@@ -866,6 +1214,7 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         n_trials=1,
         execute_live_chaos=True,
         kube_context=" kind-atlasops-test ",
+        seed=917018,
     )
 
     expected_live_execution = {
@@ -877,6 +1226,9 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         "beta": 0.01,
         "num_generations": 4,
     }
+    assert observed["torch_seed"] == 917018
+    assert observed["resume_from_checkpoint"] is None
+    assert observed["grpo_config_seed"] == 917018
     assert observed["reward_options"] == {
         **expected_live_execution,
         "operator_approval_enabled": False,
@@ -905,6 +1257,93 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
     )["live_execution"] == expected_live_execution
 
 
+@pytest.mark.parametrize(
+    ("exception_type", "expected_status"),
+    [(RuntimeError, "failed"), (KeyboardInterrupt, "interrupted")],
+)
+def test_direct_optuna_failure_persists_terminal_state(
+    monkeypatch, tmp_path, exception_type, expected_status
+):
+    from types import ModuleType, SimpleNamespace
+
+    from training import grpo
+
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
+    monkeypatch.setattr(grpo, "_load_training_dependencies", lambda: None)
+
+    class Study:
+        def optimize(self, *_args, **_kwargs):
+            if exception_type is KeyboardInterrupt:
+                raise KeyboardInterrupt
+            raise RuntimeError("original Optuna failure")
+
+    optuna = ModuleType("optuna")
+    optuna.logging = SimpleNamespace(
+        WARNING="warning",
+        set_verbosity=lambda _level: None,
+    )
+    optuna.Trial = object
+    optuna.samplers = SimpleNamespace(TPESampler=lambda **_kwargs: object())
+    optuna.create_study = lambda **_kwargs: Study()
+    monkeypatch.setitem(sys.modules, "optuna", optuna)
+
+    output_dir = tmp_path / "optuna"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    persist_status(manifest_path, planned, "running")
+    mark_training_started(
+        manifest_path,
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_parent=_parent(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(distributed=None, manual_seed=lambda _seed: None),
+    )
+
+    if exception_type is KeyboardInterrupt:
+        with pytest.raises(KeyboardInterrupt):
+            grpo.run_optuna_search(
+                "Qwen/Qwen2.5-7B-Instruct",
+                ["single_fault"],
+                output_dir,
+                MODEL_COMMIT,
+                "Qwen/Qwen2.5-7B-Instruct",
+                TOKENIZER_COMMIT,
+                tmp_path / "sft",
+                n_trials=1,
+                execute_live_chaos=True,
+                kube_context="kind-atlasops-test",
+            )
+    else:
+        with pytest.raises(RuntimeError, match="original Optuna failure"):
+            grpo.run_optuna_search(
+                "Qwen/Qwen2.5-7B-Instruct",
+                ["single_fault"],
+                output_dir,
+                MODEL_COMMIT,
+                "Qwen/Qwen2.5-7B-Instruct",
+                TOKENIZER_COMMIT,
+                tmp_path / "sft",
+                n_trials=1,
+                execute_live_chaos=True,
+                kube_context="kind-atlasops-test",
+            )
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["status"] == expected_status
+    assert saved["failure"]["error_type"] == exception_type.__name__
+
+
 def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):
     checkpoint, parent = _sft_parent_record(tmp_path)
     assert parent["checkpoint_tree_sha256"]
@@ -916,6 +1355,22 @@ def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):
             model_revision=MODEL_COMMIT,
             tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
             tokenizer_revision=TOKENIZER_COMMIT,
+        )
+    with pytest.raises(ValueError, match="must match"):
+        validate_sft_parent(
+            checkpoint,
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            model_revision="a" * 40,
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision=TOKENIZER_COMMIT,
+        )
+    with pytest.raises(ValueError, match="must match"):
+        validate_sft_parent(
+            checkpoint,
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            model_revision=MODEL_COMMIT,
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision="b" * 40,
         )
     (checkpoint / "adapter_model.safetensors").write_bytes(b"tampered")
     with pytest.raises(ValueError, match="hash mismatch"):
@@ -973,6 +1428,10 @@ def test_pin_enforced_tokenizer_basis_passes_g8_and_g9_parent_validation(tmp_pat
         "training_source_sha",
         "train_corpus_sha256",
         "train_split_sha256",
+        "base_model_id",
+        "base_model_revision",
+        "tokenizer_id",
+        "tokenizer_revision",
     }
 
 
@@ -985,15 +1444,19 @@ def test_grpo_loader_trains_from_sft_adapter(monkeypatch, tmp_path):
     class Tokenizer:
         pad_token = None
         eos_token = "eos"
+        init_kwargs = {"_commit_hash": TOKENIZER_COMMIT}
 
         @classmethod
         def from_pretrained(cls, *args, **kwargs):
             return cls()
 
     class BaseModel:
-        @staticmethod
-        def from_pretrained(*args, **kwargs):
-            return object()
+        def __init__(self):
+            self.config = SimpleNamespace(_commit_hash=MODEL_COMMIT)
+
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            return cls()
 
     class AdapterModel:
         @staticmethod

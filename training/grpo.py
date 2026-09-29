@@ -28,26 +28,12 @@ import time
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-try:
-    from peft import PeftModel, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from trl import GRPOConfig, GRPOTrainer
-    _HAS_TORCH_RL = True
-except ImportError:
-    PeftModel = None  # type: ignore
-    prepare_model_for_kbit_training = None  # type: ignore
-    AutoModelForCausalLM = None  # type: ignore
-    AutoTokenizer = None  # type: ignore
-    BitsAndBytesConfig = None  # type: ignore
-    GRPOConfig = None  # type: ignore
-    GRPOTrainer = None  # type: ignore
-    _HAS_TORCH_RL = False
 
 from agents.approval import ApprovalGate
 from agents.approval_http import (
@@ -70,12 +56,30 @@ from training.grpo_environment import (
 )
 from training.grpo_provenance import (
     MANIFEST_NAME,
+    claim_new_output_directory,
     create_run_manifest,
     has_verified_final_rollout,
+    mark_training_started,
     persist_status,
+    record_loader_provenance,
+    require_started_grpo_run,
+    validate_grpo_model_references,
+    validate_new_output_directory,
     validate_sft_parent,
+    validate_sft_parent_matches_run,
+    validate_tokenizer_loader_revision,
 )
+from training.sft_provenance import validate_resolved_hf_commit
 from training.grpo_reward import score_direct_action_step
+
+PeftModel = None
+prepare_model_for_kbit_training = None
+AutoModelForCausalLM = None
+AutoTokenizer = None
+BitsAndBytesConfig = None
+GRPOConfig = None
+GRPOTrainer = None
+_HAS_TORCH_RL = False
 
 log = logging.getLogger(__name__)
 
@@ -132,17 +136,113 @@ def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[flo
     return [round((r - mean) / (std + eps), 4) for r in rewards]
 
 
-# ── QLoRA config ──────────────────────────────────────────────────────────────
+# ── Optional training dependencies ────────────────────────────────────────────
 
-if _HAS_TORCH_RL:
+BNBCONFIG = None
+
+
+def _load_training_dependencies() -> None:
+    """Load the optional model stack only after pins and parent provenance pass."""
+    global PeftModel, prepare_model_for_kbit_training
+    global AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    global GRPOConfig, GRPOTrainer, _HAS_TORCH_RL, BNBCONFIG
+    if _HAS_TORCH_RL:
+        return
+
+    from peft import PeftModel as peft_model
+    from peft import prepare_model_for_kbit_training as prepare_kbit_model
+    from transformers import AutoModelForCausalLM as auto_model
+    from transformers import AutoTokenizer as auto_tokenizer
+    from transformers import BitsAndBytesConfig as bnb_config
+    from trl import GRPOConfig as grpo_config
+    from trl import GRPOTrainer as grpo_trainer
+
+    PeftModel = peft_model
+    prepare_model_for_kbit_training = prepare_kbit_model
+    AutoModelForCausalLM = auto_model
+    AutoTokenizer = auto_tokenizer
+    BitsAndBytesConfig = bnb_config
+    GRPOConfig = grpo_config
+    GRPOTrainer = grpo_trainer
     BNBCONFIG = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype="bfloat16",
         bnb_4bit_use_double_quant=True,
     )
-else:
-    BNBCONFIG = None
+    _HAS_TORCH_RL = True
+
+
+def _ensure_model_loader_dependencies() -> None:
+    if any(
+        dependency is None
+        for dependency in (
+            AutoTokenizer,
+            AutoModelForCausalLM,
+            prepare_model_for_kbit_training,
+            PeftModel,
+        )
+    ):
+        _load_training_dependencies()
+
+
+def _persist_started_run_failure(
+    output_dir: Path,
+    status: str,
+    error: BaseException,
+) -> None:
+    manifest_path = Path(output_dir) / MANIFEST_NAME
+    try:
+        if not manifest_path.is_file():
+            return
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        training = manifest.get("training") if isinstance(manifest, dict) else None
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("status") != "running"
+            or not isinstance(training, dict)
+            or not training.get("execution_started_at")
+        ):
+            return
+        persist_status(
+            manifest_path,
+            manifest,
+            status,
+            error_type=type(error).__name__,
+        )
+    except Exception:
+        log.exception("Could not persist G9 %s state after %s", status, type(error).__name__)
+
+
+def _terminalize_started_run_on_exception(output_dir_position: int):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            output_dir = kwargs.get("output_dir")
+            if output_dir is None and len(args) > output_dir_position:
+                output_dir = args[output_dir_position]
+            try:
+                return function(*args, **kwargs)
+            except KeyboardInterrupt as exc:
+                if output_dir is not None:
+                    _persist_started_run_failure(
+                        Path(output_dir),
+                        "interrupted",
+                        exc,
+                    )
+                raise
+            except Exception as exc:
+                if output_dir is not None:
+                    _persist_started_run_failure(
+                        Path(output_dir),
+                        "failed",
+                        exc,
+                    )
+                raise
+
+        return wrapped
+
+    return decorate
 
 
 # ── Reward contract ───────────────────────────────────────────────────────────
@@ -625,6 +725,7 @@ class OnlineRewardFunction:
 
 # ── Optuna HP search ──────────────────────────────────────────────────────────
 
+@_terminalize_started_run_on_exception(output_dir_position=2)
 def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       model_revision: str, tokenizer_id: str, tokenizer_revision: str,
                       sft_checkpoint: Path,
@@ -632,9 +733,36 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       *,
                       execute_live_chaos: bool = False,
                       kube_context: str | None = None,
-                      operator_approval_enabled: bool = False) -> dict[str, Any]:
+                      operator_approval_enabled: bool = False,
+                      seed: int = 42) -> dict[str, Any]:
     _require_single_writer()
     kube_context = _require_live_execution(execute_live_chaos, kube_context)
+    validate_grpo_model_references(
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
+    sft_parent = validate_sft_parent(
+        sft_checkpoint,
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
+    require_started_grpo_run(
+        output_dir,
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+        sft_parent=sft_parent,
+    )
+    _load_training_dependencies()
+    _require_single_writer()
+    import torch
+
+    torch.manual_seed(seed)
     try:
         import optuna
     except ImportError:
@@ -657,22 +785,6 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             "gradient_accumulation_steps": 1,
             "max_completion_length": 256,
         }
-        reward_fn = OnlineRewardFunction(
-            tiers,
-            rollout_log_path=(
-                Path(output_dir)
-                / "optuna_trials"
-                / f"trial_{trial.number}"
-                / "rollout_trajectories.jsonl"
-            ),
-            execute_live_chaos=execute_live_chaos,
-            kube_context=kube_context,
-            rollout_phase="optuna_trial",
-            trial_number=trial.number,
-            effective_hyperparameters=effective_hyperparameters,
-            operator_approval_enabled=operator_approval_enabled,
-        )
-
         model, tokenizer = load_model_and_tokenizer(
             model_path,
             model_revision=model_revision,
@@ -681,26 +793,45 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             sft_checkpoint=sft_checkpoint,
             execute_live_chaos=execute_live_chaos,
             kube_context=kube_context,
+            manifest_path=Path(output_dir) / MANIFEST_NAME,
         )
 
         # Preserve the exact frozen Train scenario identity through TRL.
         from datasets import Dataset
+
         dataset = Dataset.from_list(build_direct_action_prompts(tiers))
+        rollout_dir = claim_new_output_directory(
+            Path(output_dir) / "optuna_trials" / f"trial_{trial.number}"
+        )
+        trial_output_dir = claim_new_output_directory(
+            Path(output_dir) / f"trial_{trial.number}"
+        )
+        reward_fn = OnlineRewardFunction(
+            tiers,
+            rollout_log_path=rollout_dir / "rollout_trajectories.jsonl",
+            execute_live_chaos=execute_live_chaos,
+            kube_context=kube_context,
+            rollout_phase="optuna_trial",
+            trial_number=trial.number,
+            effective_hyperparameters=effective_hyperparameters,
+            operator_approval_enabled=operator_approval_enabled,
+        )
 
         grpo_args = GRPOConfig(
-            output_dir=f"{output_dir}/trial_{trial.number}",
+            output_dir=str(trial_output_dir),
             learning_rate=lr,
             per_device_train_batch_size=1,
             gradient_accumulation_steps=1,
             bf16=True, max_steps=10, report_to=[], optim="paged_adamw_8bit",
             num_generations=num_gen, beta=beta, max_completion_length=256,
+            seed=seed,
         )
         trainer = GRPOTrainer(
             model=model, args=grpo_args, train_dataset=dataset,
             processing_class=tokenizer,
             reward_funcs=[reward_fn],
         )
-        trainer.train()
+        trainer.train(resume_from_checkpoint=None)
         logs = trainer.state.log_history
         rewards = [
             entry.get("rewards/mean", 0)
@@ -719,8 +850,10 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
             "kube_context": kube_context,
         },
     }
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    (Path(output_dir) / "optuna_best.json").write_text(json.dumps(best, indent=2))
+    best_path = Path(output_dir) / "optuna_best.json"
+    with best_path.open("x", encoding="utf-8") as stream:
+        json.dump(best, stream, indent=2)
+        stream.write("\n")
     log.info("Best HP: %s (value=%.4f)", study.best_params, study.best_value)
     return study.best_params
 
@@ -736,10 +869,32 @@ def load_model_and_tokenizer(
     sft_checkpoint: Path,
     execute_live_chaos: bool = False,
     kube_context: str | None = None,
+    manifest_path: Path | None = None,
 ):
+    validate_grpo_model_references(
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
     _require_live_execution(execute_live_chaos, kube_context)
+    sft_parent = validate_sft_parent(
+        sft_checkpoint,
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
+    if manifest_path is not None:
+        validate_sft_parent_matches_run(manifest_path, sft_parent)
+    _ensure_model_loader_dependencies()
+    _require_single_writer()
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_id, revision=tokenizer_revision, trust_remote_code=True
+    )
+    validate_tokenizer_loader_revision(
+        tokenizer,
+        requested_revision=tokenizer_revision,
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -752,6 +907,21 @@ def load_model_and_tokenizer(
         trust_remote_code=True,
         attn_implementation="flash_attention_2" if _flash_attn_available() else "eager",
     )
+    validate_resolved_hf_commit(
+        model_revision,
+        getattr(getattr(model, "config", None), "_commit_hash", None),
+        label="base model",
+    )
+    if manifest_path is not None:
+        record_loader_provenance(
+            manifest_path,
+            model=model,
+            tokenizer=tokenizer,
+            model_id=model_path,
+            model_revision=model_revision,
+            tokenizer_id=tokenizer_id,
+            tokenizer_revision=tokenizer_revision,
+        )
     model = prepare_model_for_kbit_training(model)
     model = PeftModel.from_pretrained(
         model, str(sft_checkpoint), is_trainable=True
@@ -845,6 +1015,16 @@ def main() -> None:
         help="Start a same-process localhost operator channel for exact P1 actions",
     )
     args = parser.parse_args()
+    tokenizer_id = args.tokenizer or args.model
+    try:
+        validate_grpo_model_references(
+            model_id=args.model,
+            model_revision=args.model_revision,
+            tokenizer_id=tokenizer_id,
+            tokenizer_revision=args.tokenizer_revision,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     try:
         kube_context = _require_live_execution(
             args.execute_live_chaos, args.kube_context
@@ -857,23 +1037,19 @@ def main() -> None:
         parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
 
     tiers      = [t.strip() for t in args.tiers.split(",")]
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = output_dir / MANIFEST_NAME
-    if manifest_path.exists():
-        raise FileExistsError(f"GRPO run manifest already exists: {manifest_path}")
+    output_dir = validate_new_output_directory(Path(args.output))
     sft_parent = validate_sft_parent(
         args.sft_checkpoint,
         model_id=args.model,
         model_revision=args.model_revision,
-        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_id=tokenizer_id,
         tokenizer_revision=args.tokenizer_revision,
     )
     prompt_rows = build_direct_action_prompts(tiers)
     manifest = create_run_manifest(
         model_id=args.model,
         model_revision=args.model_revision,
-        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_id=tokenizer_id,
         tokenizer_revision=args.tokenizer_revision,
         seed=args.seed,
         generation_config={"max_completion_length": args.max_compl_len},
@@ -901,10 +1077,13 @@ def main() -> None:
         ),
         "identity": "operator_supplied_name_not_independent_attestation",
     }
+    output_dir = claim_new_output_directory(output_dir)
+    manifest_path = output_dir / MANIFEST_NAME
     manifest = persist_status(manifest_path, manifest, "planned")
     try:
         manifest = persist_status(manifest_path, manifest, "running")
         run_result = run_training(args, output_dir)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["training"]["effective_hyperparameters"] = run_result[
             "effective_hyperparameters"
         ]
@@ -913,13 +1092,16 @@ def main() -> None:
         ]
         persist_status(manifest_path, manifest, "completed")
     except KeyboardInterrupt:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         persist_status(manifest_path, manifest, "interrupted", error_type="KeyboardInterrupt")
         raise
     except Exception as exc:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         persist_status(manifest_path, manifest, "failed", error_type=type(exc).__name__)
         raise
 
 
+@_terminalize_started_run_on_exception(output_dir_position=1)
 def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     """Execute the declared online training run after intent is persisted."""
     _require_single_writer()
@@ -927,17 +1109,41 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         getattr(args, "execute_live_chaos", False),
         getattr(args, "kube_context", None),
     )
+    tokenizer_id = args.tokenizer or args.model
+    validate_grpo_model_references(
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=args.tokenizer_revision,
+    )
+    sft_parent = validate_sft_parent(
+        args.sft_checkpoint,
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=args.tokenizer_revision,
+    )
+    manifest_path = Path(output_dir) / MANIFEST_NAME
     rollout_path = output_dir / "rollout_trajectories.jsonl"
     if rollout_path.exists():
         raise FileExistsError(
             f"Final GRPO rollout ledger already exists: {rollout_path}"
         )
+    mark_training_started(
+        manifest_path,
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=args.tokenizer_revision,
+        sft_parent=sft_parent,
+    )
     tiers = [tier.strip() for tier in args.tiers.split(",")]
     random.seed(args.seed)
-    if _HAS_TORCH_RL:
-        import torch
+    _load_training_dependencies()
+    _require_single_writer()
+    import torch
 
-        torch.manual_seed(args.seed)
+    torch.manual_seed(args.seed)
 
     # Optional Optuna search runs live rollouts against the configured cluster.
     best_hp: dict[str, Any] = {}
@@ -955,7 +1161,11 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
             execute_live_chaos=args.execute_live_chaos,
             kube_context=kube_context,
             operator_approval_enabled=getattr(args, "enable_p1_approval", False),
+            seed=args.seed,
         )
+
+    if args.optuna > 0:
+        torch.manual_seed(args.seed)
 
     lr      = best_hp.get("lr", args.lr)
     beta    = best_hp.get("beta", args.beta)
@@ -986,11 +1196,12 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     model, tokenizer = load_model_and_tokenizer(
         args.model,
         model_revision=args.model_revision,
-        tokenizer_id=args.tokenizer or args.model,
+        tokenizer_id=tokenizer_id,
         tokenizer_revision=args.tokenizer_revision,
         sft_checkpoint=args.sft_checkpoint,
         execute_live_chaos=args.execute_live_chaos,
         kube_context=kube_context,
+        manifest_path=manifest_path,
     )
 
     # Online reward function runs real serialized cluster rollouts during training.
@@ -1038,7 +1249,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
 
     log.info("Starting online GRPO against the configured Kubernetes environment...")
     log.info("Each step: apply chaos → G=%d rollouts → objective reward → gradient update", num_gen)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=None)
 
     if not rollout_path.is_file() or not has_verified_final_rollout(
         rollout_path,
@@ -1090,7 +1301,9 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         },
         "trainer_log_history": logs,
     }
-    (output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
+    with (output_dir / "training_summary.json").open("x", encoding="utf-8") as stream:
+        json.dump(summary, stream, indent=2)
+        stream.write("\n")
     log.info("Done. final_reward=%.4f | best=%.4f",
              summary["final_reward_mean"] or 0, summary["best_reward_mean"] or 0)
     return {

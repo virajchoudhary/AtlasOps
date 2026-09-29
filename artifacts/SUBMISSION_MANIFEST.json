@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T17:19:37.675707+00:00",
+  "generated_at": "2026-09-29T17:39:02.701540+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -217,8 +217,8 @@
       "size_bytes": 4101
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "c9dbfd7562262d03695c4ef94c357d749753cc11836ae27118f32d9215ee39fe",
-      "size_bytes": 5669
+      "sha256": "c7364cf8572e72a7f01c96687f27550d90f78b2039e4d6412125be30bdbf7bf5",
+      "size_bytes": 6043
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -729,8 +729,8 @@
       "size_bytes": 29947
     },
     "training/grpo_provenance.py": {
-      "sha256": "178c7ce413d77cff3d23595b0d852a346e00a684923247a030a214244dbbc8de",
-      "size_bytes": 18829
+      "sha256": "f2aebe89d46275d1837241e73279bd5977162ae6244bd941999d552f5574a0cd",
+      "size_bytes": 19228
     },
     "training/grpo_reward.py": {
       "sha256": "23e7cde82209595e9d47986d8cf807e8b491e7a83d780379c86fa006848cd806",
@@ -869,12 +869,12 @@
       "size_bytes": 11614
     },
     "tests/test_g9_empirical_contract.py": {
-      "sha256": "4cb35fe9e4a5bce6f549cb4f55a0bba62b29bb235d0ec8e71b0d408d6cdd5586",
-      "size_bytes": 37680
+      "sha256": "b9170b40462cc82e5b4344ffdc62f40ec26914a53d5cb101ddc4da3d8c0add4f",
+      "size_bytes": 37749
     },
     "tests/test_grpo_training_provenance.py": {
-      "sha256": "5fc8c6107692342383982f2c114e4d9fe5e3aaf858edb21a7764819ce88bdee2",
-      "size_bytes": 35128
+      "sha256": "43ac4e25d9525fff91801c7b98669f52fa76c19b7aa53202aef3eac1efa1f1a6",
+      "size_bytes": 39209
     },
     "tests/test_hf_space_env.py": {
       "sha256": "74a310256bb3582089ee319c8d27c90b929b7d1a9515946eda161318eb21ebb6",

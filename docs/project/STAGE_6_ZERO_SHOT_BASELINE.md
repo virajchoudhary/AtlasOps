@@ -60,6 +60,12 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   local Ollama identity attestation and can never be claimable empirical evidence.
 - An implicit mock output goes to a unique non-empirical directory and cannot update
   the canonical Stage 6 evidence path.
+- Explicit output and evidence directories are checked before model observation,
+  inference, directory creation, or writes. Tracked repository files, the frozen
+  Stage 6 mock archive, occupied output filenames, and detected path redirects
+  are rejected. Final summary files use exclusive creation. These preflight
+  checks protect against selected-path mistakes, not concurrent hostile
+  filesystem replacement after the check.
 
 ## Historical Outputs
 

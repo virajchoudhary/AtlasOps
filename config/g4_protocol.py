@@ -99,12 +99,12 @@ APPROVED_G4_V35_AGENT_PROMPT_SHA256 = {
     "comms": "be58db4dcef9b42296ef81217a22ec44842d608b25bc4ee6d29e39b0216f461c",
 }
 APPROVED_G4_V35_CAUSAL_SOURCE_SHA256 = {
-    "agents/tools/chaos.py": "bac2028104178b54ebe340f074ee1434e291b0918ea6f5582692bf3ba2fe5c7e",
+    "agents/tools/chaos.py": "089c5dec071ecac778ceb3b5c47f4a92cc71bd1dd3c9807dcd4785a3992dc059",
     "agents/grounding.py": "c228e7a4bce97f74f51529db94af0a3a22da23ac92ef89fda52f30f50add9df1",
     "scripts/run_stage4_golden_incident.py": "9eb3cb163a7905625b93a6c1456fc1e756ffc4d003b4aed8fb66e21f816d56b6",
 }
 APPROVED_G4_V35_CAUSAL_POLICY = {
-    "chaos_stop_precondition": "positively-active-resource-only",
+    "chaos_stop_precondition": "pinned-conditions-and-container-records-only",
     "unclassified_chaos": "fail-closed-not-zero",
     "diagnosis_metric_citation": "exact-query-successful-nonempty-finite-schema-valid-sample",
 }

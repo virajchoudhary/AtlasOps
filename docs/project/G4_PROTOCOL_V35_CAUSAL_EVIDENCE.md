@@ -9,7 +9,7 @@ request P1 approval, inject a fault, or establish live readiness.
 
 Marker: `G4-RECOVERY-V3.5-2026-09-29`
 (`g4-recovery-profile-v3.5`). Declared profile fingerprint:
-`272ff5da77470598f071e9b896774faf5678ad0efe6dce3b7355441ada034ea7`.
+`01467df37336b2cd3fb9c93148c782a1539c358f09d6f7e68c29ab7ca6fe7cd9`.
 The historical v3.4 profile fingerprint remains
 `885349a5083509d43ef5366d6157367e33a986fb0022c4c71eb8c4fa02ea10a3`;
 v3.3 and earlier fingerprints are unchanged.
@@ -19,8 +19,10 @@ v3.3 and earlier fingerprints are unchanged.
 - `chaos_list_experiments` preserves all supported observed resources in
   `inventory`, while `active_experiments` contains only positively active
   states. It checks the pinned Chaos Mesh 2.8.3 `containerRecords` and
-  `Paused`/`AllRecovered` conditions, as well as a global phase when supplied.
-  Finished or paused resources cannot authorize a stop. An unknown target,
+  `Paused`/`AllRecovered` conditions. A global `experiment.phase` is not in
+  that pinned schema; if supplied, it remains in raw inventory but cannot
+  classify an item as active or clean. Recovered or paused resources cannot
+  authorize a stop. An unknown target,
   malformed read or unavailable state cannot authorize a stop. A positively
   active target may still be stopped if another resource is unclassified;
   that other resource is not called clean or active. The Stage 4 pre-reservation

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T14:07:22.648535+00:00",
+  "generated_at": "2026-09-29T14:21:20.407233+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -109,8 +109,8 @@
       "size_bytes": 9031
     },
     "docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md": {
-      "sha256": "95398a6171329617f19d27d11d3474751649e949e7d59f2d10b5d183291880f9",
-      "size_bytes": 3637
+      "sha256": "feeb5552c0d125f074754c222156d2a4704db50ee121464b15075124c7cb74c5",
+      "size_bytes": 3748
     },
     "docs/project/IMPLEMENTATION_STATUS.md": {
       "sha256": "17abdc2b0a036015ed403e2c99585bfd769f4915efd915b760d6a9650638f282",
@@ -465,8 +465,8 @@
       "size_bytes": 10784
     },
     "agents/tools/chaos.py": {
-      "sha256": "bac2028104178b54ebe340f074ee1434e291b0918ea6f5582692bf3ba2fe5c7e",
-      "size_bytes": 13173
+      "sha256": "089c5dec071ecac778ceb3b5c47f4a92cc71bd1dd3c9807dcd4785a3992dc059",
+      "size_bytes": 12540
     },
     "agents/tools/prometheus.py": {
       "sha256": "dc8d87332f66dae8feea47f5728f4f734720be350ce3ef3c7a39e62b5ae342a2",
@@ -645,8 +645,8 @@
       "size_bytes": 880
     },
     "config/g4_protocol.py": {
-      "sha256": "2f902d504cc5a01d199b69402b4a878638ff0b6e05600239b7933b466cbc3c41",
-      "size_bytes": 23475
+      "sha256": "40b2e975b59fb615485898765128789e5b9ab5f2ecbe2f6d5028270af55074a7",
+      "size_bytes": 23488
     },
     "config/runtime.py": {
       "sha256": "96fe1d1834846cb36d70a165e0af316d873d6aa304cf98e1414248ae2c7d7721",
@@ -789,8 +789,8 @@
       "size_bytes": 5832
     },
     "tests/test_chaos_tools.py": {
-      "sha256": "dae79cbb8cd7abae6c154a81df68c89a0cca581755096c9a738c2fdea7c37461",
-      "size_bytes": 8540
+      "sha256": "5224b2bdc06bb15f329d28206d897663fe98025a195a9d7e14d05bb42d8b2e0a",
+      "size_bytes": 9033
     },
     "tests/test_circuit_breaker.py": {
       "sha256": "eb4f927ce31ffe65ab6c12cbf8a65541043cd6cea3b829d7b9e9859e62151272",
@@ -841,8 +841,8 @@
       "size_bytes": 21508
     },
     "tests/test_g4_runtime_context_remediation_loop.py": {
-      "sha256": "79debd0c2024bea2ea8c4c346573abdd298f01e7030748370d92c56f043827cc",
-      "size_bytes": 22071
+      "sha256": "3e23f0441e3645d1342c55c8cc0eede62a14d05976afb1f56676cc17ec7c90d3",
+      "size_bytes": 22261
     },
     "tests/test_g4_v31_transport_and_interruption.py": {
       "sha256": "a2e857f98851c770f7c8f4b4d74f76d169ddee22e8ba56283e5679221795a88f",

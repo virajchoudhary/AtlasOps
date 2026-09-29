@@ -50,6 +50,10 @@ def _chaos_activity_state(
     experiment: dict[str, Any],
 ) -> str:
     """Classify only positively active Chaos resources as stoppable."""
+    # Chaos Mesh 2.8.3 does not define this global phase field.
+    if phase is not None:
+        return "unknown"
+
     condition_states: dict[str, str] = {}
     for condition in conditions:
         condition_type = condition["type"].strip().casefold()
@@ -61,24 +65,6 @@ def _chaos_activity_state(
 
     paused = condition_states.get("paused")
     recovered = condition_states.get("allrecovered")
-
-    if phase is not None:
-        normalized_phase = phase.strip().casefold()
-        if normalized_phase == "running":
-            # Chaos Mesh 2.8.3 has no global phase; conflicting provider
-            # conditions cannot safely authorize a stop or prove a clean state.
-            if paused in {"true", "unknown"} or recovered in {"true", "unknown"}:
-                return "unknown"
-            return "active"
-        if normalized_phase == "finished":
-            if recovered in {"false", "unknown"}:
-                return "unknown"
-            return "inactive"
-        if normalized_phase == "paused":
-            if paused in {"false", "unknown"}:
-                return "unknown"
-            return "inactive"
-        return "unknown"
 
     if paused == "true":
         return "inactive"

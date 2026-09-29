@@ -56,26 +56,26 @@ def test_unavailable_chaos_api_is_not_reported_as_an_empty_inventory(monkeypatch
     assert "inventory_count" not in result
 
 
-def test_running_chaos_mesh_resource_is_the_only_stoppable_phase(monkeypatch):
+def test_unsupported_running_phase_alone_cannot_authorize_stop(monkeypatch):
     result = _observe(monkeypatch, {"items": [_resource(phase="Running")]})
 
     assert result["success"] is True
-    assert result["observation_status"] == "observed"
-    assert result["evidence_status"] == "active_experiments"
-    assert result["active_experiments"] == result["inventory"]
-    assert result["count"] == 1
+    assert result["observation_status"] == "unclassified"
+    assert result["evidence_status"] == "active_state_unknown"
+    assert result["active_experiments"] == []
+    assert result["count"] == 0
     assert result["inventory_count"] == 1
 
 
 @pytest.mark.parametrize("phase", ["Finished", "Paused"])
-def test_finished_or_paused_resources_remain_in_inventory_but_are_not_stoppable(
+def test_unsupported_phase_only_resources_remain_unclassified(
     monkeypatch, phase,
 ):
     result = _observe(monkeypatch, {"items": [_resource(phase=phase)]})
 
     assert result["success"] is True
-    assert result["observation_status"] == "observed"
-    assert result["evidence_status"] == "no_active_experiments"
+    assert result["observation_status"] == "unclassified"
+    assert result["evidence_status"] == "active_state_unknown"
     assert result["active_experiments"] == []
     assert result["inventory_count"] == 1
     assert result["inventory"][0]["status"]["phase"] == phase
@@ -92,7 +92,7 @@ def test_unknown_phase_is_not_active_or_reported_as_a_clean_observation(monkeypa
     assert result["inventory"][0]["status"]["phase"] == "FuturePhase"
 
 
-def test_paused_condition_overrides_a_running_phase(monkeypatch):
+def test_unsupported_running_phase_with_paused_condition_is_unclassified(monkeypatch):
     resource = _resource(phase="Running")
     resource["status"]["conditions"] = [{"type": "Paused", "status": "True"}]
 
@@ -104,6 +104,19 @@ def test_paused_condition_overrides_a_running_phase(monkeypatch):
     assert result["inventory"][0]["status"]["conditions"] == [
         {"type": "Paused", "status": "True"}
     ]
+
+
+def test_pinned_paused_condition_without_global_phase_is_inactive(monkeypatch):
+    resource = _resource(phase=None)
+    resource["status"]["conditions"] = [{"type": "Paused", "status": "True"}]
+
+    result = _observe(monkeypatch, {"items": [resource]})
+
+    assert result["success"] is True
+    assert result["observation_status"] == "observed"
+    assert result["evidence_status"] == "no_active_experiments"
+    assert result["active_experiments"] == []
+    assert result["inventory_count"] == 1
 
 
 def test_running_phase_with_all_recovered_condition_is_unclassified(monkeypatch):

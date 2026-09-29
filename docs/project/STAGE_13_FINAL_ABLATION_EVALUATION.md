@@ -99,6 +99,35 @@ match the separate artifact exactly. This binds its declared identity to the
 hash-checked raw stream, but matching declarations do not attest served model
 weights or independently validate its metrics.
 
+## Loss-Preserving G9 Observations
+
+`bench.episode_membership.normalize_g9_event_observations` is a separate,
+non-claimable preparation interface for inspecting a bounded G9 JSONL stream.
+Callers must supply the SHA-256 expected for the exact raw bytes. The result
+retains that digest, the complete parsed event sequence, each episode's ordered
+source events, and the source result object when present. Unknown fields and
+missing fields remain as observed; the normalizer does not fill them in.
+This digest comparison checks content integrity against the caller-supplied
+value; it is not provenance attestation, signed approval, or source
+authentication.
+
+The interface records structural outcomes emitted by G9 (`completed`, `failed`,
+`unscorable`, and `interrupted`). It also preserves an open episode as `partial`
+when the stream ends before a terminal event. A final `run_interrupted` remains
+an interruption, including a scenario interruption before `episode_started`;
+it is never converted to a completion. A structurally complete event stream is
+still only an observation: output is marked
+`evaluation_mode: NON_EMPIRICAL_OBSERVATION`, `non_empirical: true`,
+`empirical_claim_allowed: false`, and `certification_status: NOT_CERTIFIED`.
+No A1 incident eligibility, A2 reward, A3 alert-to-verifier TTR, expected
+membership denominator, or scientific metric is inferred or computed.
+
+This interface does not replace or relax `derive_raw_scenario_ids` or the
+ablation acceptance path. Those strict consumers continue to require complete,
+ordered expected membership, matching artifact identity, claimable successful
+episodes, and a final valid `run_completed`; non-claimable, failed, unscorable,
+and interrupted streams remain ineligible for aggregation.
+
 Validation, Test, and Leaderboard membership is derived from the ordered frozen
 configuration returned by `config.splits.get_split`, not from IDs declared in a
 summary. The Leaderboard contains members from both frozen Train and Validation;

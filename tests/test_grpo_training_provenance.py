@@ -32,6 +32,9 @@ from training.sft_provenance import (
     mark_running as run_sft,
 )
 
+MODEL_COMMIT = "f" * 40
+TOKENIZER_COMMIT = "e" * 40
+
 
 def _sft_parent_record(tmp_path):
     corpus = tmp_path / "train.jsonl"
@@ -46,16 +49,16 @@ def _sft_parent_record(tmp_path):
         corpus_path=corpus,
         output_dir=checkpoint,
         base_model="Qwen/Qwen2.5-7B-Instruct",
-        base_model_revision="resolved-model-revision",
+        base_model_revision=MODEL_COMMIT,
         tokenizer="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="resolved-tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
         hyperparameters={},
     )
     manifest = run_sft(
         manifest,
-        resolved_model_revision="resolved-model-revision",
-        resolved_tokenizer_revision="resolved-tokenizer-revision",
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
     )
     manifest["source"] = {"git_sha": "a" * 40, "git_dirty": False}
     (checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
@@ -72,9 +75,9 @@ def _sft_parent_record(tmp_path):
     return checkpoint, validate_sft_parent(
         checkpoint,
         model_id="Qwen/Qwen2.5-7B-Instruct",
-        model_revision="resolved-model-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="resolved-tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
     )
 
 
@@ -102,9 +105,9 @@ def _planned_manifest():
     }
     manifest = create_run_manifest(
         model_id="Qwen/Qwen2.5-7B-Instruct",
-        model_revision="resolved-model-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="resolved-tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         seed=42,
         generation_config={"max_completion_length": 256},
         hyperparameters=requested,
@@ -438,9 +441,9 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
             "--model",
             "Qwen/Qwen2.5-7B-Instruct",
             "--model-revision",
-            "resolved-model-revision",
+            MODEL_COMMIT,
             "--tokenizer-revision",
-            "resolved-tokenizer-revision",
+            TOKENIZER_COMMIT,
             "--sft-checkpoint",
             str(tmp_path / "sft"),
             "--output",
@@ -487,9 +490,9 @@ def test_main_records_optuna_effective_hyperparameters_separately(
             "--model",
             "Qwen/Qwen2.5-7B-Instruct",
             "--model-revision",
-            "resolved-model-revision",
+            MODEL_COMMIT,
             "--tokenizer-revision",
-            "resolved-tokenizer-revision",
+            TOKENIZER_COMMIT,
             "--sft-checkpoint",
             str(tmp_path / "sft"),
             "--output",
@@ -619,9 +622,9 @@ def test_cli_rejects_incomplete_live_execution_before_output_or_work(
             "--model",
             "Qwen/Qwen2.5-7B-Instruct",
             "--model-revision",
-            "resolved-model-revision",
+            MODEL_COMMIT,
             "--tokenizer-revision",
-            "resolved-tokenizer-revision",
+            TOKENIZER_COMMIT,
             "--sft-checkpoint",
             str(tmp_path / "sft"),
             "--output",
@@ -694,9 +697,9 @@ def test_direct_optuna_search_requires_live_execution_before_output(tmp_path):
             "Qwen/Qwen2.5-7B-Instruct",
             ["single_fault"],
             output_dir,
-            "resolved-model-revision",
+            MODEL_COMMIT,
             "Qwen/Qwen2.5-7B-Instruct",
-            "resolved-tokenizer-revision",
+            TOKENIZER_COMMIT,
             tmp_path / "sft",
         )
     assert not output_dir.exists()
@@ -717,9 +720,9 @@ def test_model_loader_requires_live_opt_in_before_tokenizer_load(monkeypatch, tm
     with pytest.raises(PermissionError, match="--execute-live-chaos"):
         grpo.load_model_and_tokenizer(
             "Qwen/Qwen2.5-7B-Instruct",
-            model_revision="resolved-model-revision",
+            model_revision=MODEL_COMMIT,
             tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-            tokenizer_revision="resolved-tokenizer-revision",
+            tokenizer_revision=TOKENIZER_COMMIT,
             sft_checkpoint=tmp_path / "sft",
         )
     assert calls == []
@@ -737,9 +740,9 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
         seed=42,
         optuna=1,
         model="Qwen/Qwen2.5-7B-Instruct",
-        model_revision="resolved-model-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer=None,
-        tokenizer_revision="resolved-tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
     )
 
@@ -848,9 +851,9 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         "Qwen/Qwen2.5-7B-Instruct",
         ["single_fault"],
         output_dir,
-        "resolved-model-revision",
+        MODEL_COMMIT,
         "Qwen/Qwen2.5-7B-Instruct",
-        "resolved-tokenizer-revision",
+        TOKENIZER_COMMIT,
         tmp_path / "sft",
         n_trials=1,
         execute_live_chaos=True,
@@ -902,18 +905,18 @@ def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):
         validate_sft_parent(
             checkpoint,
             model_id="another-model",
-            model_revision="resolved-model-revision",
+            model_revision=MODEL_COMMIT,
             tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-            tokenizer_revision="resolved-tokenizer-revision",
+            tokenizer_revision=TOKENIZER_COMMIT,
         )
     (checkpoint / "adapter_model.safetensors").write_bytes(b"tampered")
     with pytest.raises(ValueError, match="hash mismatch"):
         validate_sft_parent(
             checkpoint,
             model_id="Qwen/Qwen2.5-7B-Instruct",
-            model_revision="resolved-model-revision",
+            model_revision=MODEL_COMMIT,
             tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-            tokenizer_revision="resolved-tokenizer-revision",
+            tokenizer_revision=TOKENIZER_COMMIT,
         )
 
 
@@ -952,9 +955,9 @@ def test_grpo_loader_trains_from_sft_adapter(monkeypatch, tmp_path):
     monkeypatch.setattr(grpo, "_flash_attn_available", lambda: False)
     grpo.load_model_and_tokenizer(
         "Qwen/Qwen2.5-7B-Instruct",
-        model_revision="resolved-model-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
-        tokenizer_revision="resolved-tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=checkpoint,
         execute_live_chaos=True,
         kube_context="kind-atlasops-test",

@@ -34,6 +34,9 @@ from training.sft_provenance import (
     write_manifest_atomic,
 )
 
+MODEL_COMMIT = "f" * 40
+TOKENIZER_COMMIT = "e" * 40
+
 
 def _canonical_sha256(value: object) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -53,16 +56,16 @@ def _checkpoint_with_manifest(root: Path) -> Path:
         corpus_path=corpus,
         output_dir=sft_checkpoint,
         base_model="org/base",
-        base_model_revision="base-revision",
+        base_model_revision=MODEL_COMMIT,
         tokenizer="org/base",
-        tokenizer_revision="tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
         hyperparameters={},
     )
     sft_manifest = run_sft(
         sft_manifest,
-        resolved_model_revision="base-revision",
-        resolved_tokenizer_revision="tokenizer-revision",
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
     )
     sft_manifest["source"] = {"git_sha": "c" * 40, "git_dirty": False}
     (sft_checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
@@ -79,9 +82,9 @@ def _checkpoint_with_manifest(root: Path) -> Path:
     sft_parent = validate_sft_parent(
         sft_checkpoint,
         model_id="org/base",
-        model_revision="base-revision",
+        model_revision=MODEL_COMMIT,
         tokenizer_id="org/base",
-        tokenizer_revision="tokenizer-revision",
+        tokenizer_revision=TOKENIZER_COMMIT,
     )
 
     checkpoint = root / "checkpoint"
@@ -182,8 +185,8 @@ def _checkpoint_with_manifest(root: Path) -> Path:
                 "kube_context": "kind-atlasops-test",
             },
         },
-        "base_model": {"id": "org/base", "resolved_revision": "base-revision"},
-        "tokenizer": {"id": "org/base", "resolved_revision": "tokenizer-revision"},
+        "base_model": {"id": "org/base", "resolved_revision": MODEL_COMMIT},
+        "tokenizer": {"id": "org/base", "resolved_revision": TOKENIZER_COMMIT},
         "source": {"code_sha": "a" * 40, "source_state": "clean"},
         "sft_parent": sft_parent,
         "splits": {

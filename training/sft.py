@@ -25,6 +25,8 @@ from training.sft_provenance import (
     mark_failed,
     mark_running,
     snapshot_training_corpus,
+    validate_hf_reference,
+    validate_resolved_hf_commit,
     write_manifest_atomic,
 )
 from training.sft_rendering import TEMPLATE_PATH
@@ -42,12 +44,30 @@ TARGET_MODULES = [
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", required=True, help="Base model id/path")
-    parser.add_argument("--model-revision", required=True, help="Exact model revision or commit")
-    parser.add_argument("--tokenizer", help="Tokenizer id/path; defaults to --model")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="Hugging Face repository id; local paths are unsupported",
+    )
+    parser.add_argument(
+        "--model-revision",
+        required=True,
+        help="Full 40-character immutable Hugging Face commit SHA",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        help=(
+            "Hugging Face repository id; defaults to --model "
+            "(local paths are unsupported)"
+        ),
+    )
     parser.add_argument(
         "--tokenizer-revision",
-        help="Exact tokenizer revision; defaults to model revision",
+        help=(
+            "Full 40-character immutable Hugging Face commit SHA; defaults to "
+            "--model-revision "
+            "only when tokenizer and model use the same repository"
+        ),
     )
     parser.add_argument("--data", required=True, help="Path to JSONL SFT corpus")
     parser.add_argument("--output", required=True, help="Output directory for the LoRA adapter")
@@ -100,7 +120,26 @@ def main() -> None:
     output_dir = Path(args.output)
     corpus_path = Path(args.data)
     tokenizer_id = args.tokenizer or args.model
+    if (
+        args.tokenizer
+        and args.tokenizer != args.model
+        and not args.tokenizer_revision
+    ):
+        raise ValueError(
+            "An explicit --tokenizer-revision is required when --tokenizer selects "
+            "a different Hugging Face repository"
+        )
     tokenizer_revision = args.tokenizer_revision or args.model_revision
+    validate_hf_reference(
+        args.model,
+        args.model_revision,
+        label="base model",
+    )
+    validate_hf_reference(
+        tokenizer_id,
+        tokenizer_revision,
+        label="tokenizer",
+    )
     canonical_manifest_path = output_dir / "sft_run_manifest.json"
     manifest_path = (
         Path(args.provenance_output)
@@ -116,8 +155,14 @@ def main() -> None:
         raise ValueError(
             "SFT output path must not contain symlink, reparse, or hard-link redirects"
         )
-    output_dir.mkdir(parents=True, exist_ok=False)
+    if output_dir.exists():
+        raise FileExistsError(output_dir)
+
     corpus_snapshot = snapshot_training_corpus(corpus_path)
+    if args.role != "all" and not any(
+        row.get("role") == args.role for row in corpus_snapshot.rows
+    ):
+        raise ValueError(f"No training examples remain for role={args.role}")
 
     manifest = create_run_manifest(
         corpus_path=corpus_path,
@@ -131,6 +176,7 @@ def main() -> None:
         hyperparameters=_hyperparameters(args),
         seed=args.seed,
     )
+    output_dir.mkdir(parents=True, exist_ok=False)
     write_manifest_atomic(manifest_path, manifest)
 
     try:
@@ -162,6 +208,14 @@ def main() -> None:
             revision=tokenizer_revision,
             trust_remote_code=True,
         )
+        tokenizer_init_kwargs = getattr(tokenizer, "init_kwargs", None)
+        resolved_tokenizer_revision = validate_resolved_hf_commit(
+            tokenizer_revision,
+            tokenizer_init_kwargs.get("_commit_hash")
+            if isinstance(tokenizer_init_kwargs, dict)
+            else None,
+            label="tokenizer",
+        )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         tokenizer.chat_template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -179,6 +233,15 @@ def main() -> None:
             device_map="auto",
             trust_remote_code=True,
         )
+        resolved_model_revision = validate_resolved_hf_commit(
+            args.model_revision,
+            getattr(
+                getattr(model, "config", None),
+                "_commit_hash",
+                None,
+            ),
+            label="base model",
+        )
         model = prepare_model_for_kbit_training(model)
         model = get_peft_model(
             model,
@@ -193,18 +256,10 @@ def main() -> None:
         )
         model.print_trainable_parameters()
 
-        resolved_model_revision = (
-            getattr(getattr(model, "config", None), "_commit_hash", None)
-            or args.model_revision
-        )
-        resolved_tokenizer_revision = (
-            getattr(tokenizer, "init_kwargs", {}).get("_commit_hash")
-            or tokenizer_revision
-        )
         manifest = mark_running(
             manifest,
-            resolved_model_revision=str(resolved_model_revision),
-            resolved_tokenizer_revision=str(resolved_tokenizer_revision),
+            resolved_model_revision=resolved_model_revision,
+            resolved_tokenizer_revision=resolved_tokenizer_revision,
         )
         write_manifest_atomic(manifest_path, manifest)
 

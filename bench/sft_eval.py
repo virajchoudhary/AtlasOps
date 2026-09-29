@@ -322,7 +322,7 @@ class LocalSFTInference:
         self._tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_record["id"],
             revision=tokenizer_record["resolved_revision"],
-            trust_remote_code=True,
+            trust_remote_code=False,
             local_files_only=True,
         )
         base_model = AutoModelForCausalLM.from_pretrained(
@@ -330,7 +330,7 @@ class LocalSFTInference:
             revision=base["resolved_revision"],
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            trust_remote_code=True,
+            trust_remote_code=False,
             local_files_only=True,
         )
         self._revalidate_checkpoint(checkpoint)

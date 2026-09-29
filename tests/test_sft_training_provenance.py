@@ -14,6 +14,7 @@ import pytest
 
 from config.splits import TEST_SPLIT, TRAIN_SEED, TRAIN_SPLIT
 from training import sft_provenance
+from training.generate_trajectories import SFT_EXAMPLE_FORMAT
 from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
     canonical_file_sha256,
@@ -290,7 +291,19 @@ def test_sft_rejects_manifest_path_incompatible_with_evaluators(monkeypatch, tmp
 def _write_training_corpus(path: Path) -> Path:
     path.write_text(
         "".join(
-            json.dumps({"scenario_id": scenario_id, "role": "triage"}) + "\n"
+            json.dumps(
+                {
+                    "format": SFT_EXAMPLE_FORMAT,
+                    "scenario_id": scenario_id,
+                    "role": "triage",
+                    "messages": [
+                        {"role": "system", "content": "generic system placeholder"},
+                        {"role": "user", "content": "Diagnose the test incident."},
+                        {"role": "assistant", "content": "Investigate the service."},
+                    ],
+                }
+            )
+            + "\n"
             for scenario_id in TRAIN_SPLIT
         ),
         encoding="utf-8",

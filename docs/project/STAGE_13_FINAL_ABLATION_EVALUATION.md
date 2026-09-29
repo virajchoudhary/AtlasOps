@@ -93,6 +93,12 @@ never increase episode membership. Interruptions, missing, duplicate,
 nested, or out-of-order starts/terminals, mismatched terminal result IDs, and
 cross-scenario events are rejected.
 
+The G9 `run_started` evaluator source and checkpoint provenance and the
+`run_completed` summary's run ID, model, evaluator source, and provenance must
+match the separate artifact exactly. This binds its declared identity to the
+hash-checked raw stream, but matching declarations do not attest served model
+weights or independently validate its metrics.
+
 Validation, Test, and Leaderboard membership is derived from the ordered frozen
 configuration returned by `config.splits.get_split`, not from IDs declared in a
 summary. The Leaderboard contains members from both frozen Train and Validation;

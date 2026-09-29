@@ -80,6 +80,27 @@ def _reject_non_empirical_markers(value: Any) -> None:
             _reject_non_empirical_markers(item)
 
 
+def _same_json_value(left: Any, right: Any) -> bool:
+    pending = [(left, right)]
+    while pending:
+        current_left, current_right = pending.pop()
+        if type(current_left) is not type(current_right):
+            return False
+        if isinstance(current_left, dict):
+            if current_left.keys() != current_right.keys():
+                return False
+            pending.extend(
+                (current_left[key], current_right[key]) for key in current_left
+            )
+        elif isinstance(current_left, list):
+            if len(current_left) != len(current_right):
+                return False
+            pending.extend(zip(current_left, current_right, strict=True))
+        elif current_left != current_right:
+            return False
+    return True
+
+
 def _parse_raw_jsonl(raw_bytes: bytes) -> list[dict[str, Any]]:
     if len(raw_bytes) > MAX_RAW_OUTPUT_BYTES:
         raise ValueError(
@@ -201,6 +222,7 @@ def _extract_g9_event_membership(
     records: list[dict[str, Any]],
     expected_ids: list[str],
     partition: str,
+    artifact_identity: dict[str, Any],
 ) -> list[str]:
     first = records[0]
     if first.get("event") != "run_started":
@@ -214,6 +236,9 @@ def _extract_g9_event_membership(
         raise ValueError("G9 run_started split_sha256 does not match expected membership")
     if "scenario_id" in first:
         raise ValueError("G9 run_started cannot be scoped to one scenario_id")
+    for field in ("evaluator_source", "provenance"):
+        if not _same_json_value(first.get(field), artifact_identity[field]):
+            raise ValueError(f"G9 raw artifact identity mismatch: run_started.{field}")
 
     completed_ids: list[str] = []
     active_scenario_id: str | None = None
@@ -239,6 +264,11 @@ def _extract_g9_event_membership(
             summary = record.get("summary")
             if not isinstance(summary, dict):
                 raise ValueError("G9 run_completed requires a summary object")
+            for field in ("run_id", "model", "evaluator_source", "provenance"):
+                if not _same_json_value(summary.get(field), artifact_identity[field]):
+                    raise ValueError(
+                        f"G9 raw artifact identity mismatch: run_completed.{field}"
+                    )
             if (
                 summary.get("split") != partition
                 or summary.get("split_sha256") != expected_split_sha256
@@ -337,6 +367,7 @@ def derive_raw_scenario_ids(
     expected_ids: Sequence[str],
     partition: str,
     raw_format: str,
+    artifact_identity: dict[str, Any] | None = None,
 ) -> list[str]:
     """Derive and verify ordered membership in a supported raw JSONL format."""
     expected = _validate_expected_ids(expected_ids)
@@ -344,7 +375,23 @@ def derive_raw_scenario_ids(
     if raw_format == "episode_rows":
         return _extract_episode_rows(records, expected, partition)
     if raw_format == "g9_event_stream":
-        scenario_ids = _extract_g9_event_membership(records, expected, partition)
+        if (
+            not isinstance(artifact_identity, dict)
+            or any(
+                not isinstance(artifact_identity.get(name), str)
+                or not artifact_identity[name]
+                for name in ("run_id", "model")
+            )
+            or any(
+                not isinstance(artifact_identity.get(name), dict)
+                or not artifact_identity[name]
+                for name in ("evaluator_source", "provenance")
+            )
+        ):
+            raise ValueError("G9 artifact lacks run/model/source identity")
+        scenario_ids = _extract_g9_event_membership(
+            records, expected, partition, artifact_identity
+        )
         if scenario_ids != expected:
             raise ValueError(
                 f"raw episode membership mismatch for {partition}: expected "

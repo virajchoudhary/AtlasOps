@@ -45,7 +45,13 @@ def _synthetic_raw_episode_rows(
 
 
 def _synthetic_g9_events(
-    partition: str, scenario_ids: list[str]
+    partition: str,
+    scenario_ids: list[str],
+    *,
+    run_id: str,
+    model: str,
+    evaluator_source: dict,
+    provenance: dict,
 ) -> list[dict]:
     """Build synthetic G9 event fixtures, not empirical evaluation evidence."""
     split_sha256 = _membership_sha256(scenario_ids)
@@ -55,6 +61,8 @@ def _synthetic_g9_events(
             "evaluation_mode": "EMPIRICAL",
             "split": partition,
             "split_sha256": split_sha256,
+            "evaluator_source": evaluator_source,
+            "provenance": provenance,
         }
     ]
     for scenario_id in scenario_ids:
@@ -97,6 +105,10 @@ def _synthetic_g9_events(
             "summary": {
                 "split": partition,
                 "split_sha256": split_sha256,
+                "run_id": run_id,
+                "model": model,
+                "evaluator_source": evaluator_source,
+                "provenance": provenance,
                 "scenario_count": len(scenario_ids),
                 "completed_episodes": len(scenario_ids),
                 "empirical_claim_allowed": True,
@@ -128,7 +140,17 @@ def _artifact(
     if raw_scenario_ids is None:
         raw_rows = [{"prediction": "test"}]
     elif variant == "Online GRPO RL":
-        raw_rows = _synthetic_g9_events(partition, raw_scenario_ids)
+        raw_rows = _synthetic_g9_events(
+            partition,
+            raw_scenario_ids,
+            run_id=path.stem,
+            model="checkpoint-a",
+            evaluator_source={"git_sha": "b" * 40, "git_dirty": False},
+            provenance={
+                "base_model": {"id": "checkpoint-a"},
+                "live_execution": {"execute_live_chaos": True},
+            },
+        )
     else:
         raw_rows = _synthetic_raw_episode_rows(variant, raw_scenario_ids)
     raw_path.write_text(
@@ -159,6 +181,11 @@ def _artifact(
         raw_hash_field: hashlib.sha256(raw_path.read_bytes()).hexdigest(),
         "evaluator_source": {"git_sha": "b" * 40, "git_dirty": False},
     }
+    if variant == "Online GRPO RL":
+        payload["provenance"] = {
+            "base_model": {"id": "checkpoint-a"},
+            "live_execution": {"execute_live_chaos": True},
+        }
     if raw_scenario_ids is not None:
         payload["split_sha256"] = _membership_sha256(raw_scenario_ids)
     if adversarial_membership_sha256 is not None:
@@ -799,6 +826,77 @@ def test_full_suite_rejects_invalid_g9_event_lifecycle(
     )
 
     with pytest.raises(ValueError, match=message):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    ("location", "field", "replacement"),
+    [
+        ("run_started", "evaluator_source", {"git_sha": "c" * 40, "git_dirty": False}),
+        ("run_started", "provenance", {"base_model": {"id": "other-model"}}),
+        ("run_completed", "run_id", "another-run"),
+        ("run_completed", "run_id", None),
+        ("run_completed", "model", "other-model"),
+        ("run_completed", "evaluator_source", {"git_sha": "c" * 40, "git_dirty": False}),
+        ("run_completed", "provenance", {"base_model": {"id": "other-model"}}),
+        ("artifact", "model", "other-model"),
+    ],
+)
+def test_full_suite_rejects_g9_raw_artifact_identity_mismatch(
+    tmp_path, location, field, replacement
+):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    if location == "artifact":
+        artifact[field] = replacement
+        artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    else:
+        events = [
+            json.loads(line)
+            for line in Path(artifact["raw_trajectory_path"])
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        target = events[0] if location == "run_started" else events[-1]["summary"]
+        target[field] = replacement
+        _rewrite_raw_output(
+            artifact_path,
+            "".join(json.dumps(event) + "\n" for event in events),
+        )
+
+    with pytest.raises(ValueError, match="G9 raw artifact identity mismatch"):
+        run_full_ablation_suite(
+            manifest_path=manifest,
+            output_dir=tmp_path / "output",
+            expected_adversarial_membership_sha256=membership_sha256,
+        )
+    assert not (tmp_path / "output").exists()
+
+
+def test_full_suite_rejects_g9_nested_bool_number_identity_mismatch(tmp_path):
+    manifest, _, membership_sha256, _ = _write_full_suite_inputs(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "3-val-1.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    events = [
+        json.loads(line)
+        for line in Path(artifact["raw_trajectory_path"])
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    events[0]["provenance"]["live_execution"]["execute_live_chaos"] = 1
+    events[-1]["summary"]["provenance"]["live_execution"]["execute_live_chaos"] = 1
+    _rewrite_raw_output(
+        artifact_path,
+        "".join(json.dumps(event) + "\n" for event in events),
+    )
+
+    with pytest.raises(ValueError, match="G9 raw artifact identity mismatch"):
         run_full_ablation_suite(
             manifest_path=manifest,
             output_dir=tmp_path / "output",

@@ -148,6 +148,108 @@ async def test_builtin_settle_accepts_stable_conclusive_failed_observation(monke
     assert clock.now == 1.0
 
 
+@pytest.mark.parametrize(
+    "required",
+    [None, "false", 0, 1, 0.0, 1.0],
+    ids=["none", "string", "zero", "one", "float-zero", "float-one"],
+)
+def test_builtin_settle_rejects_non_boolean_required_flags(monkeypatch, required):
+    clock = _FakeSettleClock()
+
+    def verifier(**_kwargs):
+        return {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "workload_ready", "required": True, "passed": True},
+                {
+                    "name": "malformed_optional",
+                    "required": required,
+                    "passed": False,
+                },
+            ],
+            "observed_metrics": {},
+        }
+
+    environment, _executed, state = _built_in_settle_environment(
+        monkeypatch, verifier, clock
+    )
+    result = asyncio.run(
+        environment.step(
+            _completion(
+                tool="kubectl_scale",
+                arguments={
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                },
+                agent_claimed_resolved=False,
+            ),
+            scenario_id="single_fault/sf-002",
+            state=state,
+        ),
+    )
+
+    assert result["status"] == "unscorable"
+    assert result["scorable"] is False
+    assert result["env_resolved"] is False
+    assert result["settling"]["failure"] == "post_action_objective_observation_invalid"
+
+
+def test_builtin_settle_defaults_missing_required_flag_and_honors_false(monkeypatch):
+    clock = _FakeSettleClock()
+
+    def verifier(**_kwargs):
+        return {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "default_required", "passed": True},
+                {"name": "optional", "required": False, "passed": False},
+            ],
+            "observed_metrics": {},
+        }
+
+    environment, _executed, state = _built_in_settle_environment(
+        monkeypatch, verifier, clock
+    )
+    result = asyncio.run(
+        environment.step(
+            _completion(
+                tool="kubectl_scale",
+                arguments={
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                },
+                agent_claimed_resolved=False,
+            ),
+            scenario_id="single_fault/sf-002",
+            state=state,
+        ),
+    )
+
+    assert result["status"] == "ok"
+    assert result["scorable"] is True
+    assert result["env_resolved"] is True
+    assert result["settling"]["observations"][-1]["checks"] == [
+        {
+            "name": "default_required",
+            "target": None,
+            "required": True,
+            "passed": True,
+            "observed": None,
+        },
+        {
+            "name": "optional",
+            "target": None,
+            "required": False,
+            "passed": False,
+            "observed": None,
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_builtin_settle_timeout_is_unscorable_when_objective_outcomes_change(
     monkeypatch,
@@ -628,6 +730,84 @@ async def test_exact_policy_action_executes_once_then_verifies():
     assert len(result["executed_actions"]) == 1
     assert result["env_resolved"] is True
     assert result["resolved"] is True
+
+
+@pytest.mark.parametrize("required", [None, "false", 0, 1])
+@pytest.mark.asyncio
+async def test_injected_verifier_malformed_required_flag_is_unscorable(required):
+    environment = DirectPolicyEnvironment(
+        tool_registry={"kubectl_scale": lambda **_kwargs: {"success": True}},
+        policy_check=lambda *_args: None,
+        verifier=lambda **_kwargs: {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "workload", "required": True, "passed": True},
+                {"name": "malformed_optional", "required": required, "passed": False},
+            ],
+        },
+        settle=lambda: {"settled": True},
+        **LIVE_EXECUTION,
+    )
+    state = _state()
+    state["triage"]["severity"] = "P2"
+
+    result = await environment.step(
+        _completion(
+            tool="kubectl_scale",
+            arguments={
+                "deployment": "paymentservice",
+                "replicas": 2,
+                "namespace": "default",
+            },
+            agent_claimed_resolved=False,
+        ),
+        scenario_id="single_fault/sf-002",
+        state=state,
+    )
+
+    assert result["status"] == "unscorable"
+    assert result["scorable"] is False
+    assert result["env_resolved"] is False
+    assert result["settling"]["failure"] == "post_action_objective_observation_invalid"
+
+
+@pytest.mark.asyncio
+async def test_injected_verifier_valid_required_flags_remain_scorable():
+    environment = DirectPolicyEnvironment(
+        tool_registry={"kubectl_scale": lambda **_kwargs: {"success": True}},
+        policy_check=lambda *_args: None,
+        verifier=lambda **_kwargs: {
+            "verification_status": "passed",
+            "env_resolved": True,
+            "checks": [
+                {"name": "default_required", "passed": True},
+                {"name": "optional", "required": False, "passed": False},
+            ],
+        },
+        settle=lambda: {"settled": True},
+        **LIVE_EXECUTION,
+    )
+    state = _state()
+    state["triage"]["severity"] = "P2"
+
+    result = await environment.step(
+        _completion(
+            tool="kubectl_scale",
+            arguments={
+                "deployment": "paymentservice",
+                "replicas": 2,
+                "namespace": "default",
+            },
+            agent_claimed_resolved=False,
+        ),
+        scenario_id="single_fault/sf-002",
+        state=state,
+    )
+
+    assert result["status"] == "ok"
+    assert result["scorable"] is True
+    assert result["env_resolved"] is True
 
 
 @pytest.mark.asyncio
@@ -1115,6 +1295,137 @@ async def test_grpo_cleanup_failure_aborts_before_next_rollout(monkeypatch, tmp_
     record = json.loads(ledger.read_text(encoding="utf-8"))
     assert record["failure"] == "scenario_cleanup_unverified"
     assert record["prior_failure"] == "chaos_apply_failed"
+    assert record["policy_completion"] == _completion()
+
+
+@pytest.mark.parametrize(
+    ("cleanup_raises", "expected_cleanup_exception_type"),
+    [(False, None), (True, "RuntimeError")],
+    ids=["cleanup-unverified", "cleanup-exception"],
+)
+def test_grpo_cleanup_failure_preserves_rollout_evidence_and_stops_batch(
+    monkeypatch, tmp_path, cleanup_raises, expected_cleanup_exception_type
+):
+    from bench import runner
+
+    scenario_id = "single_fault/sf-002"
+    completions = [_completion(), _completion(agent_claimed_resolved=False)]
+    prompt = grpo._direct_action_prompt(scenario_id)
+    applied = []
+    cleanup_attempts = []
+    rollout_calls = []
+    evidence = {
+        "incident_id": "sentinel-incident",
+        "scenario_id": scenario_id,
+        "tier": "single_fault",
+        "status": "ok",
+        "scorable": True,
+        "policy_completion": completions[0],
+        "agent_claimed_resolved": False,
+        "action": {
+            "tool": "kubectl_scale",
+            "arguments": {
+                "deployment": "paymentservice",
+                "replicas": 2,
+                "namespace": "default",
+            },
+        },
+        "verification": {
+            "verification_status": "failed",
+            "env_resolved": False,
+            "checks": [{
+                "name": "workload_ready",
+                "target": "default/paymentservice",
+                "required": True,
+                "passed": False,
+                "observed": {"ready_replicas": 1, "desired_replicas": 2},
+            }],
+        },
+        "settling": {
+            "status": "settled",
+            "stable": True,
+            "stable_observations": 2,
+            "observations": [
+                {"verification_status": "failed", "env_resolved": False},
+                {"verification_status": "failed", "env_resolved": False},
+            ],
+        },
+    }
+
+    async def no_sleep(_seconds):
+        return None
+
+    cleanup_secret_marker = "synthetic-cleanup-secret-marker"
+
+    def fail_cleanup(selected, **_kwargs):
+        cleanup_attempts.append(selected)
+        if cleanup_raises:
+            raise RuntimeError(cleanup_secret_marker)
+        return False
+
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        grpo,
+        "apply_chaos",
+        lambda selected, **_kwargs: applied.append(selected) or True,
+    )
+    monkeypatch.setattr(grpo, "reset_chaos", fail_cleanup)
+    monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(
+        runner,
+        "wait_for_alert",
+        lambda: {"commonLabels": {"alertname": "HighCpuUsage"}, "synthetic": False},
+    )
+    ledger = tmp_path / "rollouts.jsonl"
+    hyperparameters = {"learning_rate": 1e-6, "beta": 0.01, "num_generations": 4}
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"],
+        rollout_log_path=ledger,
+        effective_hyperparameters=hyperparameters,
+        **LIVE_EXECUTION,
+    )
+
+    async def return_evidence(completion, selected_scenario, _tier, _alert):
+        rollout_calls.append((completion, selected_scenario))
+        return dict(evidence)
+
+    monkeypatch.setattr(reward_function, "_run_one_rollout", return_evidence)
+    try:
+        with pytest.raises(RuntimeError) as cleanup_error:
+            reward_function(
+                completions=completions,
+                prompts=[prompt, prompt],
+                scenario_id=[scenario_id, scenario_id],
+            )
+    finally:
+        reward_function._loop.close()
+
+    assert "cleanup was not verified" in str(cleanup_error.value)
+    assert cleanup_secret_marker not in str(cleanup_error.value)
+    assert applied == [scenario_id]
+    assert cleanup_attempts == [scenario_id]
+    assert rollout_calls == [(completions[0], scenario_id)]
+    records = [
+        json.loads(line)
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record["rollout_result"] == evidence
+    assert not (
+        set(evidence) - {"scenario_id", "tier", "status", "scorable"}
+    ).intersection(record)
+    assert record["status"] == "failed"
+    assert record["scorable"] is False
+    assert record["failure"] == "scenario_cleanup_unverified"
+    assert record["cleanup_exception_type"] == expected_cleanup_exception_type
+    assert record["reward"] is None
+    assert record["rollout_phase"] == "final_training"
+    assert record["trial_number"] is None
+    assert record["effective_hyperparameters"] == hyperparameters
+    assert record["live_execution"] == LIVE_EXECUTION
+    assert cleanup_secret_marker not in json.dumps(record)
+    assert grpo._has_verified_rollout(ledger) is False
 
 
 @pytest.mark.asyncio

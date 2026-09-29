@@ -31,6 +31,10 @@ The required relationship is:
 - A serialized training rollout requires a verified zero-Chaos preflight. Cleanup targets
   only its selected scenario manifest and must verify zero active Chaos resources before
   another rollout starts. Failed attempts remain in the raw rollout ledger.
+  If cleanup fails after an action/verifier result exists, the failure row
+  retains that result and its action/settling evidence while marking the
+  attempt unscorable with null reward. The batch aborts; retained evidence
+  cannot be scored as a resolved episode or retroactively prove cleanup.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
 - A missing real alert or failed fault application yields an unscorable failed
@@ -43,9 +47,34 @@ The required relationship is:
   reward and cannot establish a completed empirical checkpoint. The older
   four-agent 70/30 contract/dense blend is not the direct-action scorer; absent
   role summaries or judge fields are never invented to make that blend run.
+- A verifier check's `required` flag defaults to `true` only when omitted.
+  Present values must be actual Booleans. `false` denotes an optional check;
+  malformed null, string, or numeric flags make the environment observation
+  unscorable and are rejected by the scorer before calculating coverage.
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- Safely persisted failed and interrupted manifests leave `checkpoint` null.
+  On POSIX hosts with supported stable directory handles, they inventory only
+  extant, regular, single-link rollout-ledger and training-summary files by
+  relative path, byte size and SHA-256, with a 64 MiB total and a deadline
+  checked between bounded reads. Missing, redirected, changed, oversized or
+  timed-out files remain explicitly unverified. The manifest write uses the
+  same pinned directory, whose device and inode are bound at the first planned
+  or running status and checked again before a failed/interrupted transition.
+  A replacement directory or failure to write through the handle aborts
+  persistence instead of falling back to a mutable pathname. On Windows the
+  portable runtime cannot pin that directory identity, so the failed or
+  interrupted transition is not persisted: the prior running manifest and
+  raw files remain, with no partial-file hash claim. Raw content stays out of
+  the manifest. The live training CLI rejects hosts without stable
+  directory-handle support before creating run output or applying a fault.
+  None of this makes a failed run resumable or claimable.
+- A `completed` manifest requires a training summary with an actual positive
+  integer `total_steps` and a `trainer_log_history` list before checkpoint
+  inventory acceptance. This is structural evidence of optimizer progress,
+  not a quality threshold, a matched run identity, or proof of a usable model.
+  Failed and interrupted records remain separate negative evidence.
 - Training requires a completed G7 SFT adapter. The trainer validates its full file
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent

@@ -79,6 +79,16 @@ The required relationship is:
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent
   checkpoint and manifest hashes, which are revalidated before G9 evaluation.
+- The single-writer Train prompt source is map-style so repeated generation-group
+  indices use one scenario until verifier feedback updates the curriculum. The
+  next consumed group can then sample from the updated Train-only distribution;
+  local tests cover that cache boundary, not an actual TRL training step.
+  The pinned TRL 0.19.1 generation batch must be divisible by
+  `num_generations`. The checked-in `batch_size=1`, `grad_accum=4`,
+  `num_generations=8` default fails that preflight before output or model load.
+  Optuna's fixed one-by-one trial batches with four or eight generations are
+  explicitly deferred pending an approved compatible budget. No parameters
+  are silently replaced, and neither path establishes G9 training readiness.
 
 ## Evaluator Contract
 

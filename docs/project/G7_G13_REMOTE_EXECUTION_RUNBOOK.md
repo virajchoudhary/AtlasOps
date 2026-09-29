@@ -152,9 +152,15 @@ freshness. The CLI requires `--sft-checkpoint`, exact model/tokenizer revision
 arguments, `--execute-live-chaos` and a named `--kube-context`. P1 needs the
 separately opted-in same-process operator channel and a securely supplied
 `ATLASOPS_API_KEY`; rejection, timeout and missing decision remain blocked.
-Do not put the secret in arguments or print it. Keep Optuna disabled until
-its extra live rollouts are independently authorized. The default eight
-generations and 200 steps are **not** an approved resource budget.
+Do not put the secret in arguments or print it. The checked-in default
+batch size one and accumulation four cannot be divided into eight
+generations under pinned TRL 0.19.1, so the CLI rejects that configuration
+before output or model loading. Optuna's fixed one-by-one trial batches are
+also incompatible with four or eight generations and are explicitly
+deferred. Select no replacement settings here: a compatible generation
+batch and any extra live trials require a reviewed, separately approved
+protocol and resource budget. The 200-step default is **not** an approved
+execution budget.
 
 The exact completion must be the action policy-checked and executed. Save
 per-step public state, approval, tool result, settling, conclusive verifier,

@@ -397,6 +397,14 @@ def _supports_stable_directory_handles() -> bool:
     )
 
 
+def require_stable_failure_persistence() -> None:
+    if not _supports_stable_directory_handles():
+        raise RuntimeError(
+            "Live GRPO training requires stable directory-handle operations "
+            "to persist failed or interrupted evidence"
+        )
+
+
 def _open_stable_directory(
     path: Path,
     *,
@@ -495,6 +503,8 @@ def _partial_artifact_record_at(
         return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
     if not stat.S_ISREG(initial_metadata.st_mode):
         return None, 0, _unverified_partial_artifact(name, "not_regular_file", presence="present")
+    if initial_metadata.st_nlink != 1:
+        return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
     if initial_metadata.st_size > remaining_bytes:
         return None, 0, _unverified_partial_artifact(name, "max_total_bytes_exceeded", presence="present")
 
@@ -512,6 +522,8 @@ def _partial_artifact_record_at(
             or not stat.S_ISREG(opened_metadata.st_mode)
         ):
             return None, 0, _unverified_partial_artifact(name, "not_regular_file", presence="present")
+        if opened_metadata.st_nlink != 1:
+            return None, 0, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
         if not _same_file_identity(initial_metadata, opened_metadata):
             return None, 0, _unverified_partial_artifact(name, "file_identity_unavailable", presence="present")
         if (
@@ -549,7 +561,12 @@ def _partial_artifact_record_at(
         except OSError:
             pass
 
-    if _is_reparse_point(current_metadata):
+    if (
+        _is_reparse_point(current_metadata)
+        or opened_metadata.st_nlink != 1
+        or final_metadata.st_nlink != 1
+        or current_metadata.st_nlink != 1
+    ):
         return None, bytes_read, _unverified_partial_artifact(name, "path_redirect", presence="redirect")
     if (
         not _same_file_identity(opened_metadata, final_metadata)
@@ -646,32 +663,6 @@ def _write_manifest_atomic_at(
         raise
 
 
-def _mark_partial_inventory_unverified(
-    inventory: dict[str, Any],
-    reason: str,
-) -> None:
-    inventory["unverified"].extend(
-        _unverified_partial_artifact(
-            record["path"],
-            reason,
-            presence="present",
-        )
-        for record in inventory["files"]
-    )
-    inventory["files"] = []
-    known_paths = {record["path"] for record in inventory["unverified"]}
-    inventory["unverified"].extend(
-        _unverified_partial_artifact(
-            name,
-            reason,
-        )
-        for name in PARTIAL_ARTIFACT_NAMES
-        if name not in known_paths
-    )
-    inventory["tree_sha256"] = canonical_json_sha256([])
-    inventory["inventory_status"] = "partial"
-
-
 def has_verified_final_rollout(
     path: Path,
     *,
@@ -765,24 +756,16 @@ def persist_status(
             deadline=deadline,
         )
         if opened is None:
-            updated["partial_artifacts"] = _unavailable_partial_inventory(
-                failure_reason or "stable_directory_handle_unavailable"
+            raise OSError(
+                "Cannot safely persist GRPO failure status without a stable "
+                f"directory handle ({failure_reason or 'directory_open_failed'})"
             )
-            write_manifest_atomic(path, updated)
-            return updated
         try:
             updated["partial_artifacts"] = _inventory_partial_artifacts_at(
                 opened,
                 deadline=deadline,
             )
-            try:
-                _write_manifest_atomic_at(opened, path.name, updated)
-            except OSError:
-                _mark_partial_inventory_unverified(
-                    updated["partial_artifacts"],
-                    "manifest_write_failed",
-                )
-                write_manifest_atomic(path, updated)
+            _write_manifest_atomic_at(opened, path.name, updated)
         finally:
             try:
                 os.close(opened)

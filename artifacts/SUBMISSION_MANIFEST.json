@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T19:14:36.790986+00:00",
+  "generated_at": "2026-09-29T19:28:00.822421+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -217,8 +217,8 @@
       "size_bytes": 4101
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "fec8e9b916b2e3dac51d1ea04684db6bd4db618ad18b8006f820de7ac7ab0b58",
-      "size_bytes": 6984
+      "sha256": "01495b85a3281de03959fb90b522f36119e2b55bf967765c5c66699d0e90fbc4",
+      "size_bytes": 7374
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -721,16 +721,16 @@
       "size_bytes": 32055
     },
     "training/grpo.py": {
-      "sha256": "8fddec6b91f33c1a5bcae79b506d13fe7bc5bc15340a83eb0a8ebbba3abb2bde",
-      "size_bytes": 43679
+      "sha256": "b2033d0b7b9586e4c05a5846469b2dad567dc5ef05ba6adf8b8382efd5401a74",
+      "size_bytes": 43801
     },
     "training/grpo_environment.py": {
       "sha256": "8b9916d31829a9fe2befff5883ba85dc9b0666aa2cd6a60b590a1439f1180769",
       "size_bytes": 29947
     },
     "training/grpo_provenance.py": {
-      "sha256": "efceb2f7a8b549079a6c7f46b0ff73450e3dc1c7f789d727a9d21389dc4ff1b9",
-      "size_bytes": 31541
+      "sha256": "2fced37a6b8bfa5fdfd28a5c01a218bceca3302c680dff3bff46c92668b6a21a",
+      "size_bytes": 31207
     },
     "training/grpo_reward.py": {
       "sha256": "23e7cde82209595e9d47986d8cf807e8b491e7a83d780379c86fa006848cd806",
@@ -873,8 +873,8 @@
       "size_bytes": 37749
     },
     "tests/test_grpo_training_provenance.py": {
-      "sha256": "4fd50473ae15a042c39f61428451171e45b5185bce50bb5a66e2c3c173ecb6b6",
-      "size_bytes": 50054
+      "sha256": "d52c5dac7d8bb755f1d0316a1595ac75cc50a9bd89ecc911fe17fb57296efe1b",
+      "size_bytes": 55427
     },
     "tests/test_hf_space_env.py": {
       "sha256": "74a310256bb3582089ee319c8d27c90b929b7d1a9515946eda161318eb21ebb6",

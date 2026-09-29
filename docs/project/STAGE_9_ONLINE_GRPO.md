@@ -54,6 +54,22 @@ The required relationship is:
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- Safely persisted failed and interrupted manifests leave `checkpoint` null.
+  On POSIX hosts with supported stable directory handles, they inventory only
+  extant, regular, single-link rollout-ledger and training-summary files by
+  relative path, byte size and SHA-256, with a 64 MiB total and a deadline
+  checked between bounded reads. Missing, redirected, changed, oversized or
+  timed-out files remain explicitly unverified. The manifest write uses the
+  same pinned directory, whose device and inode are bound at the first planned
+  or running status and checked again before a failed/interrupted transition.
+  A replacement directory or failure to write through the handle aborts
+  persistence instead of falling back to a mutable pathname. On Windows the
+  portable runtime cannot pin that directory identity, so the failed or
+  interrupted transition is not persisted: the prior running manifest and
+  raw files remain, with no partial-file hash claim. Raw content stays out of
+  the manifest. The live training CLI rejects hosts without stable
+  directory-handle support before creating run output or applying a fault.
+  None of this makes a failed run resumable or claimable.
 - A `completed` manifest requires a training summary with an actual positive
   integer `total_steps` and a `trainer_log_history` list before checkpoint
   inventory acceptance. This is structural evidence of optimizer progress,
@@ -63,6 +79,16 @@ The required relationship is:
   inventory and clean source, checks the declared base model and tokenizer revisions,
   then loads the SFT adapter as trainable. The G9 manifest records the SFT parent
   checkpoint and manifest hashes, which are revalidated before G9 evaluation.
+- The single-writer Train prompt source is map-style so repeated generation-group
+  indices use one scenario until verifier feedback updates the curriculum. The
+  next consumed group can then sample from the updated Train-only distribution;
+  local tests cover that cache boundary, not an actual TRL training step.
+  The pinned TRL 0.19.1 generation batch must be divisible by
+  `num_generations`. The checked-in `batch_size=1`, `grad_accum=4`,
+  `num_generations=8` default fails that preflight before output or model load.
+  Optuna's fixed one-by-one trial batches with four or eight generations are
+  explicitly deferred pending an approved compatible budget. No parameters
+  are silently replaced, and neither path establishes G9 training readiness.
 
 ## Evaluator Contract
 

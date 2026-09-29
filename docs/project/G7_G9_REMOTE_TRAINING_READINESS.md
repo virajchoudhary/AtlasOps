@@ -77,12 +77,17 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
 | SFT to G9 | G9 requires `--sft-checkpoint`, matching base/tokenizer revisions and a completed parent inventory; its manifest binds parent hashes. | Do not substitute a base-model alias or mock adapter. G9 training still needs a controlled live environment and independent approval. |
 | Failure/restart | SFT persists interrupted/failed status and calls `trainer.train()` without a resume argument. Revision and bounded corpus preflight precede exclusive creation of a new output path; invalid input does not leave an orphan directory. G9 refuses an existing run manifest and final rollout ledger. | No proven in-place resume/replay-safe continuation exists. Preserve any claimed directory after a write/load interruption, failed manifest, or partial checkpoint; a new run needs a new output directory, reviewed recovery plan and distinct run ID. Parent-path replacement between checks and creation remains a portable-filesystem limitation. Do not relabel a partial run completed. |
 
-The G9 CLI defaults to eight generations, up to 200 steps, BF16 and paged
-8-bit AdamW. Each online reward invokes a serialized policy/environment
-rollout, with fault application, settling, verifier, and cleanup. The default
-settings do not establish a GPU-memory figure, duration, cost, number of
-successfully completed episodes, or resource availability. Optional Optuna
-search itself executes live rollouts. Do not use it in a software preflight.
+The G9 CLI declares eight generations, up to 200 steps, BF16 and paged
+8-bit AdamW, but its default batch size one with accumulation four is not
+divisible by eight generations under pinned TRL 0.19.1 and is rejected
+before output or model loading. Optuna's fixed one-by-one trial batch is
+also incompatible with its four/eight-generation options, so positive trial
+requests are explicitly deferred before any live rollout. A compatible
+generation budget requires separate review and approval; none is silently
+substituted. Each eventual online reward would invoke a serialized
+policy/environment rollout, with fault application, settling, verifier and
+cleanup. These settings establish no GPU-memory figure, duration, cost,
+completed episode count or resource availability.
 
 ## Current Gate Boundaries
 

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T16:56:28.167724+00:00",
+  "generated_at": "2026-09-29T17:12:09.484357+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -869,8 +869,8 @@
       "size_bytes": 11614
     },
     "tests/test_g9_empirical_contract.py": {
-      "sha256": "1741bfb468cb24914cd48486bbbd08412df4a89feb59ca4b82be6ed063c4b62b",
-      "size_bytes": 37577
+      "sha256": "250325b0d70851751f2d63a465d1e02de50408b5c65a043980525c75e14d0dee",
+      "size_bytes": 37646
     },
     "tests/test_grpo_training_provenance.py": {
       "sha256": "98e25dffa92584db129bb98e6bc517fb8e6dfcd3d1b6e4cddc6ed06a71197637",

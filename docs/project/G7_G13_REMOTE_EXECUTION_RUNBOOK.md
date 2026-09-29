@@ -150,6 +150,11 @@ After those *separate* approvals, the operator must select a new output
 directory. The G9 CLI rejects existing and redirected output paths and
 claims a fresh directory exclusively only after validating full immutable
 model/tokenizer commit pins, repository IDs, and the completed SFT parent.
+The G9 tokenizer and base-model loaders refuse Hub remote Python. The SFT
+parent inventory and persisted run binding are checked again immediately
+before PEFT reads the adapter; path-based reads still leave a narrow
+post-check replacement window that needs an approved stable storage
+boundary for any empirical run.
 Its one-shot execution marker prevents direct training from resuming that
 run. Direct training must match the persisted seed, configuration, live
 context and operator profile; a mismatch fails before work without

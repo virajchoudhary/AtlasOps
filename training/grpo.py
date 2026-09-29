@@ -850,7 +850,7 @@ def load_model_and_tokenizer(
     _ensure_model_loader_dependencies()
     _require_single_writer()
     tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_id, revision=tokenizer_revision, trust_remote_code=True
+        tokenizer_id, revision=tokenizer_revision, trust_remote_code=False
     )
     validate_tokenizer_loader_revision(
         tokenizer,
@@ -864,7 +864,7 @@ def load_model_and_tokenizer(
         revision=model_revision,
         quantization_config=BNBCONFIG,
         device_map="auto",
-        trust_remote_code=True,
+        trust_remote_code=False,
         attn_implementation="flash_attention_2" if _flash_attn_available() else "eager",
     )
     validate_resolved_hf_commit(
@@ -883,6 +883,17 @@ def load_model_and_tokenizer(
             tokenizer_revision=tokenizer_revision,
         )
     model = prepare_model_for_kbit_training(model)
+    current_sft_parent = validate_sft_parent(
+        sft_checkpoint,
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+    )
+    if current_sft_parent != sft_parent:
+        raise ValueError("GRPO SFT parent changed during base-model loading")
+    if manifest_path is not None:
+        validate_sft_parent_matches_run(manifest_path, current_sft_parent)
     model = PeftModel.from_pretrained(
         model, str(sft_checkpoint), is_trainable=True
     )

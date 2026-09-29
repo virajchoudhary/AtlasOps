@@ -12,7 +12,13 @@ from types import SimpleNamespace
 import pytest
 
 from config.splits import TRAIN_SPLIT
-from training.sft_provenance import canonical_json_sha256
+from training.sft_provenance import (
+    canonical_json_sha256,
+    create_run_manifest as create_sft_run_manifest,
+    mark_completed as complete_sft_run,
+    mark_running as start_sft_run,
+    write_manifest_atomic,
+)
 from training.grpo_provenance import (
     claim_new_output_directory,
     resolve_loader_provenance,
@@ -68,6 +74,49 @@ def _parent():
         "tokenizer_id": TOKENIZER_ID,
         "tokenizer_revision": TOKENIZER_COMMIT,
     }
+
+
+def _valid_sft_checkpoint(tmp_path):
+    corpus_path = tmp_path / "train.jsonl"
+    corpus_path.write_text(
+        "".join(
+            json.dumps({"scenario_id": scenario_id, "role": "triage"}) + "\n"
+            for scenario_id in TRAIN_SPLIT
+        ),
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "sft"
+    checkpoint.mkdir()
+    manifest = create_sft_run_manifest(
+        corpus_path=corpus_path,
+        output_dir=checkpoint,
+        base_model=MODEL_ID,
+        base_model_revision=MODEL_COMMIT,
+        tokenizer=TOKENIZER_ID,
+        tokenizer_revision=TOKENIZER_COMMIT,
+        role="all",
+        hyperparameters={},
+    )
+    manifest = start_sft_run(
+        manifest,
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
+    )
+    manifest["source"] = {"git_sha": "a" * 40, "git_dirty": False}
+    (checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
+    adapter_weights = checkpoint / "adapter_model.safetensors"
+    adapter_weights.write_bytes(b"sft-adapter-fixture")
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = complete_sft_run(
+        manifest,
+        output_dir=checkpoint,
+        manifest_path=manifest_path,
+        trainer_state={"global_step": 1},
+        training_history=[],
+    )
+    write_manifest_atomic(manifest_path, manifest)
+    return checkpoint, adapter_weights
 
 
 def test_importing_grpo_does_not_load_optional_training_libraries(monkeypatch):
@@ -272,10 +321,12 @@ def _install_fake_loader(
     *,
     model_commit=MODEL_COMMIT,
     tokenizer_commit=TOKENIZER_COMMIT,
+    on_model_load=None,
 ):
     from training import grpo
 
     calls = []
+    loader_kwargs = {}
 
     class FakeTokenizer:
         pad_token = "pad"
@@ -283,8 +334,9 @@ def _install_fake_loader(
         init_kwargs = {"_commit_hash": tokenizer_commit} if tokenizer_commit is not None else {}
 
         @classmethod
-        def from_pretrained(cls, *_args, **_kwargs):
+        def from_pretrained(cls, *_args, **kwargs):
             calls.append("tokenizer")
+            loader_kwargs["tokenizer"] = dict(kwargs)
             return cls()
 
     class FakeModel:
@@ -294,8 +346,11 @@ def _install_fake_loader(
             pass
 
         @classmethod
-        def from_pretrained(cls, *_args, **_kwargs):
+        def from_pretrained(cls, *_args, **kwargs):
             calls.append("model")
+            loader_kwargs["model"] = dict(kwargs)
+            if on_model_load is not None:
+                on_model_load()
             return cls()
 
     class FakeAdapter:
@@ -314,14 +369,14 @@ def _install_fake_loader(
         "validate_sft_parent",
         lambda *_args, **_kwargs: _parent(),
     )
-    return grpo, calls
+    return grpo, calls, loader_kwargs
 
 
 @pytest.mark.parametrize("model_commit", [None, "d" * 40])
 def test_model_loader_rejects_missing_or_mismatched_model_commit_before_adapter(
     monkeypatch, tmp_path, model_commit
 ):
-    grpo, calls = _install_fake_loader(
+    grpo, calls, _loader_kwargs = _install_fake_loader(
         monkeypatch,
         model_commit=model_commit,
     )
@@ -341,7 +396,7 @@ def test_model_loader_rejects_missing_or_mismatched_model_commit_before_adapter(
 
 
 def test_model_loader_rejects_mismatched_tokenizer_commit_before_model_load(monkeypatch, tmp_path):
-    grpo, calls = _install_fake_loader(
+    grpo, calls, _loader_kwargs = _install_fake_loader(
         monkeypatch,
         tokenizer_commit="d" * 40,
     )
@@ -361,7 +416,10 @@ def test_model_loader_rejects_mismatched_tokenizer_commit_before_model_load(monk
 
 
 def test_model_loader_records_full_tokenizer_pin_when_loader_exposes_no_hash(monkeypatch, tmp_path):
-    grpo, calls = _install_fake_loader(monkeypatch, tokenizer_commit=None)
+    grpo, calls, loader_kwargs = _install_fake_loader(
+        monkeypatch,
+        tokenizer_commit=None,
+    )
     model, tokenizer = grpo.load_model_and_tokenizer(
         MODEL_ID,
         model_revision=MODEL_COMMIT,
@@ -384,6 +442,161 @@ def test_model_loader_records_full_tokenizer_pin_when_loader_exposes_no_hash(mon
         "resolved_revision": TOKENIZER_COMMIT,
         "resolved_revision_basis": ("PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"),
     }
+    assert loader_kwargs["tokenizer"]["trust_remote_code"] is False
+    assert loader_kwargs["model"]["trust_remote_code"] is False
+
+
+def test_model_loader_revalidates_checkpoint_bytes_after_base_load_before_peft(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+    from training.grpo_provenance import validate_sft_parent
+
+    checkpoint, adapter_weights = _valid_sft_checkpoint(tmp_path)
+    sft_parent = validate_sft_parent(
+        checkpoint,
+        model_id=MODEL_ID,
+        model_revision=MODEL_COMMIT,
+        tokenizer_id=TOKENIZER_ID,
+        tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    run_manifest_path = tmp_path / "grpo_run_manifest.json"
+    run_manifest_path.write_text(
+        json.dumps({"status": "running", "sft_parent": sft_parent}),
+        encoding="utf-8",
+    )
+
+    def mutate_checkpoint():
+        adapter_weights.write_bytes(adapter_weights.read_bytes() + b"-changed")
+
+    _loader_grpo, calls, _loader_kwargs = _install_fake_loader(
+        monkeypatch,
+        on_model_load=mutate_checkpoint,
+    )
+    monkeypatch.setattr(grpo, "validate_sft_parent", validate_sft_parent)
+    monkeypatch.setattr(grpo, "record_loader_provenance", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(ValueError, match="Checkpoint hash mismatch"):
+        grpo.load_model_and_tokenizer(
+            MODEL_ID,
+            model_revision=MODEL_COMMIT,
+            tokenizer_id=TOKENIZER_ID,
+            tokenizer_revision=TOKENIZER_COMMIT,
+            sft_checkpoint=checkpoint,
+            execute_live_chaos=True,
+            kube_context="kind-atlasops-test",
+            manifest_path=run_manifest_path,
+        )
+
+    assert adapter_weights.read_bytes() == b"sft-adapter-fixture-changed"
+    assert calls == ["tokenizer", "model"]
+
+
+def test_model_loader_rejects_changed_sft_parent_after_base_load_before_peft(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+    from training.grpo_provenance import validate_sft_parent
+
+    checkpoint, _adapter_weights = _valid_sft_checkpoint(tmp_path)
+    run_manifest_path = tmp_path / "grpo_run_manifest.json"
+    sft_parent = validate_sft_parent(
+        checkpoint,
+        model_id=MODEL_ID,
+        model_revision=MODEL_COMMIT,
+        tokenizer_id=TOKENIZER_ID,
+        tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    run_manifest_path.write_text(
+        json.dumps({"status": "running", "sft_parent": sft_parent}),
+        encoding="utf-8",
+    )
+    sft_manifest_path = checkpoint / "sft_run_manifest.json"
+
+    def mutate_sft_parent():
+        sft_manifest = json.loads(sft_manifest_path.read_text(encoding="utf-8"))
+        sft_manifest["source"]["git_sha"] = "f" * 40
+        write_manifest_atomic(sft_manifest_path, sft_manifest)
+
+    _loader_grpo, calls, _loader_kwargs = _install_fake_loader(
+        monkeypatch,
+        on_model_load=mutate_sft_parent,
+    )
+    monkeypatch.setattr(grpo, "validate_sft_parent", validate_sft_parent)
+    monkeypatch.setattr(grpo, "record_loader_provenance", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(ValueError, match="SFT parent changed during base-model loading"):
+        grpo.load_model_and_tokenizer(
+            MODEL_ID,
+            model_revision=MODEL_COMMIT,
+            tokenizer_id=TOKENIZER_ID,
+            tokenizer_revision=TOKENIZER_COMMIT,
+            sft_checkpoint=checkpoint,
+            execute_live_chaos=True,
+            kube_context="kind-atlasops-test",
+            manifest_path=run_manifest_path,
+        )
+
+    current_parent = validate_sft_parent(
+        checkpoint,
+        model_id=MODEL_ID,
+        model_revision=MODEL_COMMIT,
+        tokenizer_id=TOKENIZER_ID,
+        tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    assert current_parent["training_source_sha"] == "f" * 40
+    assert current_parent != sft_parent
+    assert calls == ["tokenizer", "model"]
+
+
+def test_model_loader_rechecks_persisted_sft_parent_plan_before_peft(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+    from training.grpo_provenance import validate_sft_parent
+
+    checkpoint, _adapter_weights = _valid_sft_checkpoint(tmp_path)
+    sft_parent = validate_sft_parent(
+        checkpoint,
+        model_id=MODEL_ID,
+        model_revision=MODEL_COMMIT,
+        tokenizer_id=TOKENIZER_ID,
+        tokenizer_revision=TOKENIZER_COMMIT,
+    )
+    run_manifest_path = tmp_path / "grpo_run_manifest.json"
+    run_manifest_path.write_text(
+        json.dumps({"status": "running", "sft_parent": sft_parent}),
+        encoding="utf-8",
+    )
+
+    def mutate_run_plan():
+        run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+        run_manifest["sft_parent"] = {
+            **sft_parent,
+            "manifest_sha256": "f" * 64,
+        }
+        run_manifest_path.write_text(json.dumps(run_manifest), encoding="utf-8")
+
+    _loader_grpo, calls, _loader_kwargs = _install_fake_loader(
+        monkeypatch,
+        on_model_load=mutate_run_plan,
+    )
+    monkeypatch.setattr(grpo, "validate_sft_parent", validate_sft_parent)
+    monkeypatch.setattr(grpo, "record_loader_provenance", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(ValueError, match="GRPO SFT parent changed after the run was planned"):
+        grpo.load_model_and_tokenizer(
+            MODEL_ID,
+            model_revision=MODEL_COMMIT,
+            tokenizer_id=TOKENIZER_ID,
+            tokenizer_revision=TOKENIZER_COMMIT,
+            sft_checkpoint=checkpoint,
+            execute_live_chaos=True,
+            kube_context="kind-atlasops-test",
+            manifest_path=run_manifest_path,
+        )
+
+    assert calls == ["tokenizer", "model"]
 
 
 def test_interrupted_cli_output_is_preserved_and_cannot_be_retried(monkeypatch, tmp_path):

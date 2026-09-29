@@ -413,6 +413,11 @@ async def evaluate_sft_split(
 ) -> dict[str, Any]:
     """Evaluate an SFT checkpoint over one frozen benchmark partition."""
     selected_mode = _resolve_mode(mode, mock)
+    if selected_mode == "empirical" and split_name != "val":
+        raise ValueError(
+            "Empirical G8 evaluation is Validation-only; final-Test and leaderboard "
+            "evaluation require a separately reviewed protocol"
+        )
     scenario_ids = get_split(split_name)
     if selected_mode == "empirical" and output_dir is None:
         raise ValueError("Empirical mode requires an explicit unique output_dir")

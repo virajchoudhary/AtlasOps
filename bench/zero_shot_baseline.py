@@ -48,6 +48,7 @@ RESULTS_DIR = Path("bench/results")
 EVIDENCE_DIR = Path("artifacts/evidence/stage6")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVALUATION_MODES = frozenset({"mock", "empirical"})
+SEVERITY_LEVELS = frozenset({"P0", "P1", "P2", "P3"})
 SPLIT_SEEDS = {
     "train": TRAIN_SEED,
     "val": VAL_SEED,
@@ -391,9 +392,16 @@ def _parse_prediction(raw_text: str) -> dict[str, Any]:
     root_cause = payload.get("root_cause")
     if not isinstance(root_cause, str) or not root_cause.strip():
         raise ValueError("Model prediction requires a non-empty root_cause")
-    affected = payload.get("affected_services", [])
-    if not isinstance(affected, list) or not all(isinstance(item, str) for item in affected):
-        raise ValueError("affected_services must be a list of strings")
+    severity = payload.get("severity")
+    if not isinstance(severity, str) or severity not in SEVERITY_LEVELS:
+        raise ValueError("severity must be one of P0, P1, P2, P3")
+    if "affected_services" not in payload:
+        raise ValueError("Model prediction requires affected_services")
+    affected = payload["affected_services"]
+    if not isinstance(affected, list) or not all(
+        isinstance(item, str) and item.strip() for item in affected
+    ):
+        raise ValueError("affected_services must be a list of non-empty service names")
     confidence = payload.get("confidence")
     if (
         type(confidence) not in (int, float)
@@ -646,6 +654,8 @@ async def evaluate_zero_shot_split(
 ) -> dict[str, Any]:
     """Evaluate a frozen split in explicitly selected mock or empirical mode."""
     selected_mode = _resolve_mode(mode, mock)
+    if selected_mode == "empirical" and split_name.strip().lower() == "test":
+        raise ValueError("Empirical evaluation of the test split is not authorized")
     scenario_ids = get_split(split_name)
     if selected_mode == "empirical" and not model_revision:
         raise ValueError("Empirical mode requires an exact model_revision")
@@ -665,9 +675,23 @@ async def evaluate_zero_shot_split(
     ):
         raise RuntimeError("Empirical mode requires VLLM_BASE")
     model_revision_digest: str | None = None
-    observed_model_identity: dict[str, str] | None = None
+    source_preflight: dict[str, Any] | None = None
     if selected_mode == "empirical" and configured_backend:
         model_revision_digest = _requested_model_revision_digest(model_revision)
+        source_preflight = _source_provenance()
+        if source_preflight.get("git_dirty") is not False:
+            raise RuntimeError("Empirical mode requires a clean Git source worktree")
+
+    split_sha256 = _canonical_json_sha256(list(scenario_ids))
+    dataset_sha256 = _canonical_json_sha256(
+        {
+            scenario_id: SCENARIO_CATALOG[scenario_id].manifest_sha256
+            for scenario_id in scenario_ids
+        }
+    )
+
+    observed_model_identity: dict[str, str] | None = None
+    if selected_mode == "empirical" and configured_backend:
         observed_model_identity = _normalize_observed_model_identity(
             await observe_local_model_identity(model_name)
         )
@@ -792,6 +816,27 @@ async def evaluate_zero_shot_split(
                 episode["model_identity_attestation_status"] = "not_applicable"
                 episode["model_identity_recheck_status"] = "not_applicable"
 
+    source_postflight: dict[str, Any] | None = None
+    source_postflight_error: str | None = None
+    source_unchanged: bool | None = None
+    if selected_mode == "empirical" and configured_backend:
+        try:
+            source_postflight = _source_provenance()
+        except Exception as exc:  # noqa: BLE001
+            source_provenance_status = "unverifiable"
+            source_postflight_error = f"{type(exc).__name__}: source provenance recheck failed"
+        else:
+            source_unchanged = (
+                source_postflight == source_preflight
+                and source_postflight.get("git_dirty") is False
+            )
+            source_provenance_status = "unchanged" if source_unchanged else "changed"
+        source = source_preflight
+    else:
+        source_postflight = _source_provenance()
+        source_provenance_status = "not_applicable"
+        source = source_postflight
+
     if selected_mode == "empirical":
         _write_episode_rows_atomically(episodes_file, episodes)
 
@@ -824,14 +869,14 @@ async def evaluate_zero_shot_split(
         "generation_config": generation_config,
         "truth_withheld_during_inference": True,
         "split_seed": split_seed,
-        "split_sha256": _canonical_json_sha256(list(scenario_ids)),
-        "dataset_sha256": _canonical_json_sha256(
-            {
-                scenario_id: SCENARIO_CATALOG[scenario_id].manifest_sha256
-                for scenario_id in scenario_ids
-            }
-        ),
-        "source": _source_provenance(),
+        "split_sha256": split_sha256,
+        "dataset_sha256": dataset_sha256,
+        "source": source,
+        "source_preflight": source_preflight,
+        "source_postflight": source_postflight,
+        "source_provenance_status": source_provenance_status,
+        "source_unchanged": source_unchanged,
+        "source_postflight_error": source_postflight_error,
         "runtime": {
             "python": sys.version.split()[0],
             "platform": platform.platform(),

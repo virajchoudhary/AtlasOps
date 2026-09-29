@@ -8,6 +8,11 @@ exists in the current evidence set, so G8 has no empirical model result.
 ## Evaluation Contract
 
 - Empirical mode requires a completed Stage 7 provenance manifest.
+- Empirical G8 evaluation is Validation-only. `test` and `leaderboard` are
+  refused before split lookup, checkpoint inspection, inference, or output
+  creation. Final-Test access and any use of the overlapping Leaderboard
+  require a separately reviewed protocol and authorization; this Stage 8
+  entrypoint has no override for them.
 - Empirical mode requires an explicit output directory; implicit mock output is
   isolated under a unique non-empirical run directory.
 - Every declared checkpoint file and aggregate tree hash is verified before loading.
@@ -27,8 +32,9 @@ exists in the current evidence set, so G8 has no empirical model result.
 - Scenario-derived synthetic training data is disclosed but does not by itself prevent
   empirical model inference or diagnosis scoring.
 - The base model and tokenizer use the revisions recorded by training.
-- Validation/Test truth is withheld until after raw generation and then used only for
-  scoring.
+- Validation truth is withheld until after raw generation and then used only
+  for scoring. Mock fixtures for other named splits remain explicitly
+  non-empirical and do not establish held-out performance.
 - Raw requests, responses, parse failures, checkpoint identity, evaluator source,
   generation settings, split seed, and the SHA-256 digest of the exact ordered frozen
   split are persisted.
@@ -46,7 +52,8 @@ historical mock output, not SFT checkpoint performance.
 
 Local tests cover required mode and checkpoint selection, incomplete and tampered
 checkpoint rejection, path containment, truth withholding, raw-response persistence,
-failure retention, and artifact isolation. A real evaluation depends on a legitimate
+failure retention, early non-Validation refusal, and artifact isolation. A real
+Validation evaluation depends on a legitimate
 completed G7 checkpoint.
 
 **Gate G8 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

@@ -29,7 +29,7 @@ from training.sft_provenance import (
     validate_resolved_hf_commit,
     write_manifest_atomic,
 )
-from training.sft_rendering import TEMPLATE_PATH
+from training.sft_rendering import TEMPLATE_PATH, prepare_example_for_training
 
 TARGET_MODULES = [
     "q_proj",
@@ -182,7 +182,10 @@ def main() -> None:
     try:
         from datasets import Dataset
 
-        dataset = Dataset.from_list(list(corpus_snapshot.rows))
+        training_rows = [
+            prepare_example_for_training(row) for row in corpus_snapshot.rows
+        ]
+        dataset = Dataset.from_list(training_rows)
         if args.role != "all":
             dataset = dataset.filter(lambda row: row.get("role") == args.role)
         if len(dataset) == 0:

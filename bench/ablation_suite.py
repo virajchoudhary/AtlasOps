@@ -293,6 +293,14 @@ def _load_empirical_artifact(
     if expected_episode_ids is not None:
         if raw_format is None:
             raise ValueError("Raw episode membership validation requires an output format")
+        artifact_identity = (
+            {
+                name: payload.get(name)
+                for name in ("run_id", "model", "evaluator_source", "provenance")
+            }
+            if raw_format == "g9_event_stream"
+            else None
+        )
         with raw_path.open("rb") as raw_file:
             raw_bytes = raw_file.read(MAX_RAW_OUTPUT_BYTES + 1)
         if len(raw_bytes) > MAX_RAW_OUTPUT_BYTES:
@@ -306,6 +314,7 @@ def _load_empirical_artifact(
             expected_ids=expected_episode_ids,
             partition=expected_partition,
             raw_format=raw_format,
+            artifact_identity=artifact_identity,
         )
     elif _sha256(raw_path) != raw_output_hash.lower():
         raise ValueError(f"Artifact raw-output bytes do not match provenance: {path}")

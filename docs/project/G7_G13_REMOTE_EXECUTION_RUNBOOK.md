@@ -57,7 +57,9 @@ The ignored local `data/sft_corpus_train.jsonl` has matching bytes but no
 adjacent provenance sidecars; do not substitute it for this complete
 external-output preparation.
 The current 64-row synthetic corpus passes those integrity checks but
-must fail SFT training admission for every role. Its 16 P1 remediation
+is not eligible for SFT training in any role. The current code rejects its
+exact bytes but does not yet reject all training-equivalent reserializations;
+do not execute the trainer while this admission gap remains. Its 16 P1 remediation
 rows have no approval context and contain 32 calls to tools absent from
 the remediation role's runtime
 allowlist. Use it only for non-model schema/rendering checks. Preserve its

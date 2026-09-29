@@ -649,10 +649,11 @@ def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
     source_corpus, _ = _generated_corpus(tmp_path, monkeypatch)
     original = source_corpus.read_bytes()
     rows = [json.loads(line) for line in original.decode("utf-8").splitlines()]
+    lf_bytes = original.replace(b"\r\n", b"\n")
     if variant == "blank_lines":
-        altered = original.replace(b"\r\n", b"\n\n")
+        altered = lf_bytes.replace(b"\n", b"\n\n")
     elif variant == "bare_cr":
-        altered = original.replace(b"\r\n", b"\r")
+        altered = lf_bytes.replace(b"\n", b"\r")
     else:
         if variant == "reordered":
             rows.reverse()

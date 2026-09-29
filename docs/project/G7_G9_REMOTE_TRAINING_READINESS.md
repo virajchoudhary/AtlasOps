@@ -2,7 +2,7 @@
 
 **Status: NON-LIVE SOFTWARE REVIEW / TRAINING NOT AUTHORIZED / EMPIRICAL
 EVIDENCE MISSING.** Source basis:
-`fc677eedea1f42eeb94c67b80f691a595b25836b`. This assessment does not
+`56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`. This assessment does not
 select a compute provider, allocate a GPU, download weights, train a model,
 evaluate final Test, or certify an experimental gate. The project lead reports
 that the personal laptop cannot run the planned local 7B training workload.
@@ -72,7 +72,7 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
 | Dependencies | `pyproject.toml` has lower bounds for Torch, Transformers, TRL, PEFT, Datasets, Accelerate, vLLM and bitsandbytes. `requirements/train-constraints.txt` pins a set validated for SFT contract tests on Windows, not a completed GPU run; the dev lock excludes training. | Freeze an approved Linux/container environment and exact package/driver/CUDA or ROCm versions and hashes. Do not assume the Windows dev lock or Apple Silicon is a drop-in BF16/4-bit/vLLM training environment. Review `trust_remote_code=True` at the pinned revision. |
 | Checkpoint | SFT writes planned/running/completed/failed/interrupted manifest states and hashes its saved adapter inventory. G8/G9 reject incomplete, dirty-source or tampered completed parents for empirical use. | No completed usable adapter or independent reload result is preserved. Keep adapter, tokenizer, trainer state, full manifest, logs and source/corpus provenance together; verify hashes after transfer. |
 | SFT to G9 | G9 requires `--sft-checkpoint`, matching base/tokenizer revisions and a completed parent inventory; its manifest binds parent hashes. | Do not substitute a base-model alias or mock adapter. G9 training still needs a controlled live environment and independent approval. |
-| Failure/restart | SFT persists interrupted/failed status, but its CLI calls `trainer.train()` without a resume argument and does not refuse a pre-existing output directory; a repeat invocation can replace the prior manifest. G9 refuses an existing run manifest and final rollout ledger. | No proven in-place resume/replay-safe continuation exists. Preserve failed directories and raw ledgers; a new run needs a new output directory, reviewed recovery plan and distinct run ID. Do not relabel a partial run completed. |
+| Failure/restart | SFT persists interrupted/failed status and calls `trainer.train()` without a resume argument. The merged output guard requires a new path, rejects existing empty/populated or redirected paths, and exclusively creates the final directory. G9 refuses an existing run manifest and final rollout ledger. | No proven in-place resume/replay-safe continuation exists. Preserve failed directories and raw ledgers; a new run needs a new output directory, reviewed recovery plan and distinct run ID. Parent-path replacement between guard and creation remains a portable-filesystem limitation. Do not relabel a partial run completed. |
 
 The G9 CLI defaults to eight generations, up to 200 steps, BF16 and paged
 8-bit AdamW. Each online reward invokes a serialized policy/environment

@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T12:24:33.850134+00:00`
+- **Generated**: `2026-09-29T12:58:47.454998+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -157,13 +157,13 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `6915be88c0191752...` | 7792 |
-| `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `69c2121d22ff4ea4...` | 12133 |
+| `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
-| `docs/project/G7_G13_DECISION_REGISTER.md` | `acd64d2cae7dd4cc...` | 6126 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `164dd01735c2668e...` | 10425 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `156cf584b81a5966...` | 10281 |
+| `docs/project/G7_G13_DECISION_REGISTER.md` | `2113616c98f7fc96...` | 6126 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `eb5547b27ffc3a7d...` | 10551 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `c2786feb34a2a77c...` | 10405 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `563fccf306232582...` | 3855 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `b81678af41fd421e...` | 26579 |
@@ -252,7 +252,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `fcc4bd53b53598df...` | 10382 |
-| `tests/test_sft_training_provenance.py` | `4db923676b01c76a...` | 18270 |
+| `tests/test_sft_training_provenance.py` | `38309744fbf9f4d1...` | 22750 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `d3acd12c5d770d60...` | 5945 |
@@ -284,7 +284,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_environment.py` | `a55f06dfac85bcdd...` | 29104 |
 | `training/grpo_provenance.py` | `178c7ce413d77cff...` | 18829 |
 | `training/grpo_reward.py` | `49fb98487c17ff90...` | 3019 |
-| `training/sft.py` | `31057645d75c1d36...` | 9199 |
+| `training/sft.py` | `29c7abbc32d5d20b...` | 9411 |
 | `training/sft_provenance.py` | `a995d32eec36204e...` | 27844 |
 | `training/sft_rendering.py` | `dd036d8ca715065e...` | 10109 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |

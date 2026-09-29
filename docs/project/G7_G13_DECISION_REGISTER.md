@@ -1,7 +1,7 @@
 # G7-G13 remaining decision register
 
 **Status: REVIEW DRAFT / NO NEW APPROVALS.** Source basis:
-`fc677eedea1f42eeb94c67b80f691a595b25836b`.
+`56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`.
 The adopted v2.2 non-live scope and the [v0.2 A1-A4 partial
 directions](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md) are already
 recorded; this register does not reopen them. It does not approve a

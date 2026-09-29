@@ -20,6 +20,7 @@ from config.splits import TRAIN_SEED
 from training.sft_provenance import (
     create_run_manifest,
     file_sha256,
+    has_redirecting_path_component,
     mark_completed,
     mark_failed,
     mark_running,
@@ -111,7 +112,11 @@ def main() -> None:
             "SFT provenance output must be <output>/sft_run_manifest.json "
             "so G8 and G9 can validate the completed adapter"
         )
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if has_redirecting_path_component(output_dir):
+        raise ValueError(
+            "SFT output path must not contain symlink, reparse, or hard-link redirects"
+        )
+    output_dir.mkdir(parents=True, exist_ok=False)
     corpus_snapshot = snapshot_training_corpus(corpus_path)
 
     manifest = create_run_manifest(

@@ -8,7 +8,7 @@ implementation details, items 5-7, independent evaluation review, exact
 source/configuration hashes, and all execution authority remain outstanding.
 The original [v0.1 proposal](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md)
 and frozen experimental records are unchanged. Source review basis:
-`fc677eedea1f42eeb94c67b80f691a595b25836b`.
+`56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`.
 
 ## Problem Statement
 

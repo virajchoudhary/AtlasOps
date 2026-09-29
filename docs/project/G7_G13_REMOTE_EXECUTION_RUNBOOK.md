@@ -4,7 +4,7 @@
 non-live handoff, not a launch instruction for the current machine or a
 provider reservation. No command below was executed to train, load model
 weights, use a cluster, access final Test, or deploy. Review basis:
-`fc677eedea1f42eeb94c67b80f691a595b25836b`. The personal laptop is
+`56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`. The personal laptop is
 not a viable host for the planned local 7B workload; remote hardware and
 any cost require an explicit project-lead decision.
 
@@ -80,13 +80,15 @@ loading weights.
 **Recovery:** on interruption or exception, preserve the directory and
 manifest with its `interrupted`/`failed` status and any epoch checkpoints.
 The CLI has no `--resume` option and calls `trainer.train()` without a
-resume argument. It currently permits a pre-existing SFT output directory
-and can replace its manifest, so the operator must enforce a new empty
-directory until a reviewed software guard is merged. Do not hand an
-incomplete adapter to G8/G9 or overwrite the old manifest. Diagnose the failure; a separately authorized retry
-uses a **new** output directory/run ID and records its relationship to the
-failed attempt. Implement and test a resume path in a separate review if
-true continuation is required.
+resume argument. The merged output guard requires a previously nonexistent
+path, rejects redirects, and claims the final directory exclusively before
+the corpus snapshot or manifest write. Do not pre-create even an empty
+output directory. This does not guard against a parent path being replaced
+between check and creation. Do not hand an incomplete adapter to G8/G9 or
+overwrite the old manifest. Diagnose the failure; a separately authorized
+retry uses a **new** output directory/run ID and records its relationship
+to the failed attempt. Implement and test a resume path in a separate
+review if true continuation is required.
 
 **Exit:** independent process/host reload of the adapter against the
 pinned base/tokenizer, verified manifest and file hashes, readable trainer

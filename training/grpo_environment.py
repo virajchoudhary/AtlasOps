@@ -298,7 +298,10 @@ class DirectPolicyEnvironment:
         for check in checks:
             if not isinstance(check, Mapping) or not isinstance(check.get("passed"), bool):
                 raise ValueError("Verifier returned a malformed objective check")
-            required = check.get("required", True) is True
+            required_flag = check.get("required", True)
+            if type(required_flag) is not bool:
+                raise ValueError("Verifier returned a malformed required check flag")
+            required = required_flag
             failed_required = failed_required or (required and not check["passed"])
             signature_checks.append(
                 {
@@ -695,17 +698,34 @@ class DirectPolicyEnvironment:
                 )
             )
             verification = self._verification_record(verification_result)
-            if verification.get("verification_status") in {"inconclusive", "error"}:
+            checks = verification.get("checks")
+            invalid_checks = "checks" in verification and (
+                not isinstance(checks, list)
+                or not checks
+                or any(
+                    not isinstance(check, Mapping)
+                    or type(check.get("passed")) is not bool
+                    or type(check.get("required", True)) is not bool
+                    for check in checks
+                )
+            )
+            if invalid_checks or verification.get("verification_status") in {
+                "inconclusive", "error"
+            }:
                 unscorable_settling = {
                     "status": "unscorable",
                     "settled": False,
                     "stable": False,
                     "stable_observations": 0,
                     "observation_count": 1,
-                    "verification_status": verification["verification_status"],
+                    "verification_status": verification.get("verification_status"),
                     "last_verification": verification,
                     "observations": [],
-                    "failure": "post_action_verification_nonconclusive",
+                    "failure": (
+                        "post_action_objective_observation_invalid"
+                        if invalid_checks
+                        else "post_action_verification_nonconclusive"
+                    ),
                 }
                 return self._unscorable(
                     completion_text,

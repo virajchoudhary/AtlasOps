@@ -74,8 +74,16 @@ def test_upstream_readme_comparison_covers_each_delivery_area_without_certifying
     ).read_text(encoding="utf-8")
 
     assert "bf9bd197c9f4a05ae55ade254802a9eef1a74356" in matrix
-    assert "0f79a691457aa0d69cac52ae5668fc5fd1e9ef6c" in matrix
-    assert "through PR #93" in matrix
+    assert "39bb97ca23b9e9497360860c53b5d8cba36fd707" in matrix
+    assert "through PR #94" in matrix
+    assert (
+        "| Mandatory GKE provisioning (`Architecture`, `Quick Start`) | "
+        "INTENTIONALLY SUPERSEDED |"
+    ) in matrix
+    assert (
+        '| Online Boutique "11 microservices", Prometheus/Alertmanager, '
+        "Jaeger/OTel, Argo CD and Chaos Mesh (`Architecture`) | PARTIAL |"
+    ) in matrix
     assert "GENERATED_UNAPPROVED" in matrix
     assert "opt-in standalone G9 host channel" in matrix
     assert "Invalid G6 returned predictions remain unscored" in matrix

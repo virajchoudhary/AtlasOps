@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T20:04:43.304570+00:00",
+  "generated_at": "2026-09-29T20:30:19.525381+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -709,8 +709,8 @@
       "size_bytes": 411
     },
     "training/sft_rendering.py": {
-      "sha256": "dd036d8ca715065ef031911ad5529de9083668ea7ceea674ef755ed7a391b2da",
-      "size_bytes": 10109
+      "sha256": "b8b1ac8d241b09b4deffa74bd2e97a9b1f77d86a0a8a08294b2b62782c5ee84f",
+      "size_bytes": 10334
     },
     "training/templates/qwen2_5_tool_sft.jinja": {
       "sha256": "72c06246b2ce2bbdb5fa562aba7f83dfc4a92a443f2199aac74be50fa016d79f",
@@ -945,8 +945,8 @@
       "size_bytes": 6443
     },
     "tests/test_sft_template_wiring.py": {
-      "sha256": "fcc4bd53b53598df007887758edc728aa7aadda64e093aa4557a20ba842526e3",
-      "size_bytes": 10382
+      "sha256": "a0e173cfd46960b92c4eee2758b89fa28db4f42bf73a0f4229b95126f2ef03f5",
+      "size_bytes": 10667
     },
     "tests/test_sft_trainer_handoff.py": {
       "sha256": "79083e8f49541e70df2f089cab4acec89bcb77bf3c8c21e4c5d1ea53fa730b1a",

@@ -123,6 +123,11 @@ def validate_message_sequence(messages: list[dict[str, Any]]) -> None:
     for index, message in enumerate(messages):
         role = message.get("role")
         if role == "assistant":
+            if open_calls:
+                raise ValueError(
+                    f"message {index}: missing tool response for call id(s) "
+                    f"{sorted(open_calls)!r} before assistant turn"
+                )
             for tc in message.get("tool_calls") or []:
                 tc_id = tc.get("id")
                 fn = tc.get("function") or {}

@@ -7,7 +7,6 @@ Heavy tokenizer/loss-mask proofs live in test_sft_mask_proof.py.
 from __future__ import annotations
 
 import copy
-import json
 
 import pytest
 
@@ -146,11 +145,17 @@ class TestSequenceValidation:
         with pytest.raises(ValueError, match="missing tool response"):
             validate_message_sequence(msgs)
 
+    def test_tool_response_after_next_assistant_turn_rejected(self):
+        msgs = self._messages()
+        msgs.insert(2, {"role": "assistant", "content": "done"})
+        with pytest.raises(ValueError, match="missing tool response.*before assistant"):
+            validate_message_sequence(msgs)
+
     def test_duplicate_call_ids_rejected(self):
         msgs = self._messages()
         dup = copy.deepcopy(msgs[1])
         dup["tool_calls"][0]["id"] = "c1"
-        msgs.insert(2, dup)
+        msgs.append(dup)
         with pytest.raises(ValueError, match="duplicate"):
             validate_message_sequence(msgs)
 

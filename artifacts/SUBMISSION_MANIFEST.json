@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T14:49:25.535437+00:00",
+  "generated_at": "2026-09-29T15:25:25.972700+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -205,8 +205,8 @@
       "size_bytes": 8997
     },
     "docs/project/STAGE_6_ZERO_SHOT_BASELINE.md": {
-      "sha256": "4e4ad218ce3453011a29d3c261cb2424ed88876eab1dfb504682711a1c2dba12",
-      "size_bytes": 4370
+      "sha256": "24370eef025b1a0768de14377ef7dbac1aa381c85b0b6629ffccc2c5f86c78ad",
+      "size_bytes": 5339
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
       "sha256": "d60f4843c2438734558a64d280c173d60d7bd1799ddec1e6b64548c2f46feee4",
@@ -473,8 +473,8 @@
       "size_bytes": 3586
     },
     "bench/zero_shot_baseline.py": {
-      "sha256": "9680c6609e3d491867ce80e15f3e068e210148216e95a477fa80863de11b8ed3",
-      "size_bytes": 35829
+      "sha256": "5e19ee339d7db28499a9404bb49f5822cf1769b3ae0b14ba128aaa70495a04fd",
+      "size_bytes": 37892
     },
     "bench/runner.py": {
       "sha256": "6e75db82c21d1ad54783e569687b010c4fcd5a26d346f1a4302d4e4e02c3c191",
@@ -849,8 +849,8 @@
       "size_bytes": 34823
     },
     "tests/test_g6_empirical_contract.py": {
-      "sha256": "0470eeaad673949bc72d28349bd904013656a45eec85cd06dbd26e05195fdf03",
-      "size_bytes": 33592
+      "sha256": "192bb60fcb18a17f83b79062d62bc87696172e239c7d56e53f26b04cc1ea1bed",
+      "size_bytes": 41500
     },
     "tests/test_g8_empirical_contract.py": {
       "sha256": "f9933b62f10ecb979c7025f6314ceb29ec62dd491848df20918594bc9a3e4204",
@@ -1017,8 +1017,8 @@
       "size_bytes": 5364
     },
     "tests/test_stage6_zero_shot_baseline.py": {
-      "sha256": "483ea70196282110877d9a7a49b1ee4d98184df14c907825e1588dcb3e8c9570",
-      "size_bytes": 6032
+      "sha256": "18d250e216f899944f916c330eb5ea0f31c60faf7d477d45f36fe1ed3b4577be",
+      "size_bytes": 6188
     },
     "tests/test_stage7_sft_pipeline.py": {
       "sha256": "f5589d2ca93f37d6d773803394c6507290d00be69568c00ec52a326e895e61ee",

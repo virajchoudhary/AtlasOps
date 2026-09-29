@@ -85,6 +85,9 @@ class TestStage6ZeroShotBaseline:
     async def test_evaluate_zero_shot_test_split(self, tmp_path):
         summary = await evaluate_zero_shot_split("test", model_name="qwen2.5:7b-instruct", mock=True, output_dir=tmp_path)
         assert summary["split_name"] == "test"
+        assert summary["mock_eval"] is True
+        assert summary["non_empirical"] is True
+        assert summary["empirical_inference_executed"] is False
         assert summary["total_scenarios"] == len(TEST_SPLIT)
         assert summary["resolution_rate"] == 0.0
         assert len(summary["per_tier"]) == 4  # All 4 tiers represented in test split

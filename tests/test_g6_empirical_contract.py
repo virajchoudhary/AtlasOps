@@ -407,6 +407,7 @@ def _mock_completion_endpoint(
     status_code: int = 200,
     client_options=None,
     failure=None,
+    during_request=None,
 ):
     response = httpx.Response(
         status_code,
@@ -440,6 +441,8 @@ def _mock_completion_endpoint(
         )
         if failure is not None:
             raise failure
+        if during_request is not None:
+            during_request()
         return response
 
     monkeypatch.setattr(zero_shot.httpx, "AsyncClient", FakeAsyncClient)
@@ -899,30 +902,50 @@ async def test_transient_alias_with_matching_observations_stays_nonclaimable(
 ):
     model_name = "qwen2.5:7b-instruct"
     digest = "a" * 64
-    identity_checks = []
+    transient_digest = "b" * 64
+    base_url = "http://127.0.0.1:11434/v1"
+    tag_payload = {"models": [{"name": model_name, "digest": digest}]}
+    transient_served_digests = []
 
-    async def identity_observer(requested_name):
-        identity_checks.append(requested_name)
-        return {"name": requested_name, "digest": f"sha256:{digest}"}
+    def simulate_transient_alias_swap_and_revert():
+        if not transient_served_digests:
+            tag_payload["models"][0]["digest"] = transient_digest
+            transient_served_digests.append(tag_payload["models"][0]["digest"])
+            tag_payload["models"][0]["digest"] = digest
 
-    async def fake_inference(_messages, _model_name, _generation_config):
-        # A mutable alias could change and revert during inference; the API returns only its name.
-        return zero_shot.InferenceResult(_prediction(), model_name)
-
-    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("VLLM_BASE", base_url)
     _set_clean_source_provenance(monkeypatch)
-    monkeypatch.setattr(zero_shot, "observe_local_model_identity", identity_observer)
-    monkeypatch.setattr(zero_shot, "openai_compatible_inference", fake_inference)
+    completion_response, completion_calls = _mock_completion_endpoint(
+        monkeypatch,
+        {
+            "model": model_name,
+            "choices": [{"message": {"content": _prediction()}}],
+        },
+        during_request=simulate_transient_alias_swap_and_revert,
+    )
+    tag_requests = _mock_tags_endpoint(monkeypatch, tag_payload)
 
+    output_dir = tmp_path / "run"
     summary = await zero_shot.evaluate_zero_shot_split(
         "val",
         model_name=model_name,
         model_revision=f"sha256:{digest}",
         mode="empirical",
-        output_dir=tmp_path / "run",
+        output_dir=output_dir,
     )
 
-    assert identity_checks == [model_name, model_name]
+    assert transient_served_digests == [transient_digest]
+    assert tag_payload["models"][0]["digest"] == digest
+    assert tag_requests == [f"{base_url.removesuffix('/v1')}/api/tags"] * 2
+    assert len(completion_calls) == len(VAL_SPLIT)
+    assert all(
+        call["url"] == f"{base_url}/chat/completions"
+        and call["payload"]["model"] == model_name
+        and call["context"] == "g6-zero-shot"
+        for call in completion_calls
+    )
+    assert set(completion_response.json()) == {"model", "choices"}
+
     assert summary["empirical_inference_executed"] is True
     assert summary["empirical_claim_allowed"] is False
     assert summary["non_empirical"] is False
@@ -935,9 +958,10 @@ async def test_transient_alias_with_matching_observations_stays_nonclaimable(
     assert attestation["observed_before"]["digest"] == digest
     assert attestation["observed_after"]["digest"] == digest
     assert attestation["response_model_names"] == [model_name] * len(VAL_SPLIT)
+
     rows = [
         json.loads(line)
-        for line in (tmp_path / "run" / "results_per_episode.jsonl")
+        for line in (output_dir / "results_per_episode.jsonl")
         .read_text(encoding="utf-8")
         .splitlines()
     ]
@@ -945,9 +969,19 @@ async def test_transient_alias_with_matching_observations_stays_nonclaimable(
     assert all(
         row["model_identity_attestation_status"] == "alias_observed_not_immutable" for row in rows
     )
+    assert all(row["model_identity_recheck_status"] == "observations_match" for row in rows)
     assert all(row["response_model_name"] == model_name for row in rows)
     assert all(row["response_model_name_verified"] is True for row in rows)
     assert all(row["observed_model_identity"]["digest"] == digest for row in rows)
+
+    persisted_summary = json.loads(
+        (output_dir / "results_summary.json").read_text(encoding="utf-8")
+    )
+    assert persisted_summary["empirical_claim_allowed"] is False
+    assert (
+        persisted_summary["model_identity_attestation"]["status"] == "alias_observed_not_immutable"
+    )
+    assert persisted_summary["model_identity_attestation"]["immutable_serving_attestation"] is False
 
 
 @pytest.mark.asyncio

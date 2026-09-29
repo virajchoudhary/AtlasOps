@@ -63,6 +63,7 @@ from training.grpo_provenance import (
     mark_training_started,
     persist_status,
     record_loader_provenance,
+    require_stable_failure_persistence,
     require_started_grpo_run,
     validate_grpo_model_references,
     validate_grpo_run_plan,
@@ -818,6 +819,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
         tokenizer_revision=tokenizer_revision,
         sft_parent=sft_parent,
     )
+    require_stable_failure_persistence()
     _mark_run_attempt_started()
     _load_training_dependencies()
     _require_single_writer()
@@ -1094,6 +1096,7 @@ def main() -> None:
         parser.error(str(exc))
     args.kube_context = kube_context
     _require_single_writer()
+    require_stable_failure_persistence()
     if args.enable_p1_approval and not os.getenv("ATLASOPS_API_KEY", "").strip():
         parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
 
@@ -1213,6 +1216,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         require_started=False,
     )
     _require_single_writer()
+    require_stable_failure_persistence()
     rollout_path = output_dir / "rollout_trajectories.jsonl"
     if rollout_path.exists():
         raise FileExistsError(

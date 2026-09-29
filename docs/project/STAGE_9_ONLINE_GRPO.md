@@ -57,9 +57,9 @@ The required relationship is:
 - Non-live preflight requires full immutable model/tokenizer commit pins and a
   completed matching SFT parent before exclusively claiming a fresh,
   nonredirected output directory. A one-shot execution marker prevents
-  direct retry or implicit resume; caught direct/CLI failures and interrupts
-  retain terminal status. Optional Optuna trials carry the declared seed
-  but remain separately gated live rollouts.
+  direct retry or implicit resume. On supported hosts, caught direct/CLI
+  failures and interrupts retain terminal status. Optional Optuna trials
+  carry the declared seed but remain separately gated live rollouts.
 - Direct training and Optuna entrypoints compare their seed, requested
   hyperparameters or trial count, live context, approval profile, and model
   lineage with the persisted plan before beginning work. A mismatched
@@ -68,6 +68,23 @@ The required relationship is:
   provenance. A tokenizer hash, if exposed, must match; otherwise its
   manifest basis explicitly says the full loader-argument pin was not
   independently returned. Neither record establishes served-model identity.
+- Safely persisted failed and interrupted manifests leave `checkpoint` null.
+  On POSIX hosts with supported stable directory handles, they inventory only
+  extant, regular, single-link rollout-ledger and training-summary files by
+  relative path, byte size and SHA-256, with a 64 MiB total and a deadline
+  checked between bounded reads. Missing, redirected, changed, oversized or
+  timed-out files remain explicitly unverified. The manifest write uses the
+  same pinned directory, whose device and inode are bound at the first planned
+  or running status and checked again before a failed/interrupted transition.
+  A replacement directory or failure to write through the handle aborts
+  persistence instead of falling back to a mutable pathname. On Windows the
+  portable runtime cannot pin that directory identity, so the failed or
+  interrupted transition is not persisted: the prior running manifest and
+  raw files remain, with no partial-file hash claim. Raw content stays out of
+  the manifest. The live training CLI rejects hosts without stable
+  directory-handle support before creating run output or applying a fault;
+  direct training and Optuna entrypoints apply the same capability guard.
+  None of this makes a failed run resumable or claimable.
 - A `completed` manifest requires a training summary with an actual positive
   integer `total_steps` and a `trainer_log_history` list before checkpoint
   inventory acceptance. This is structural evidence of optimizer progress,

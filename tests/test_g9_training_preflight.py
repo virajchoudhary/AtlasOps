@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import importlib
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -183,6 +184,7 @@ def test_cli_rejects_local_tokenizer_path_before_optional_training_imports(
 def test_cli_rejects_sft_parent_mismatch_before_output_or_model_loading(monkeypatch, tmp_path):
     from training import grpo
 
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     output_dir = tmp_path / "run"
     monkeypatch.setattr(sys, "argv", _cli_argv(output_dir, tmp_path / "sft"))
 
@@ -210,6 +212,7 @@ def test_cli_rejects_sft_parent_mismatch_before_output_or_model_loading(monkeypa
 def test_cli_rejects_existing_output_before_reading_sft_parent(monkeypatch, tmp_path):
     from training import grpo
 
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     output_dir = tmp_path / "run"
     output_dir.mkdir()
     monkeypatch.setattr(sys, "argv", _cli_argv(output_dir, tmp_path / "sft"))
@@ -228,6 +231,7 @@ def test_cli_rejects_existing_output_before_reading_sft_parent(monkeypatch, tmp_
 def test_cli_rejects_redirected_output_before_reading_sft_parent(monkeypatch, tmp_path):
     from training import grpo
 
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     target = tmp_path / "target"
     target.mkdir()
     output_dir = tmp_path / "redirected"
@@ -403,6 +407,13 @@ def test_interrupted_cli_output_is_preserved_and_cannot_be_retried(monkeypatch, 
         raise KeyboardInterrupt
 
     monkeypatch.setattr(grpo, "run_training", interrupt)
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.main()
+        assert calls == []
+        assert not output_dir.exists()
+        return
+
     with pytest.raises(KeyboardInterrupt):
         grpo.main()
 
@@ -444,6 +455,13 @@ def test_cli_retains_outer_failure_status_write_after_direct_training_write(monk
         return persist_status(path, manifest, status, **kwargs)
 
     monkeypatch.setattr(grpo, "persist_status", track_status_write)
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.main()
+        assert status_writes == []
+        assert not output_dir.exists()
+        return
+
     with pytest.raises(RuntimeError, match="original load failure"):
         grpo.main()
 

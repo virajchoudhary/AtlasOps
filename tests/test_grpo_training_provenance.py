@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from argparse import Namespace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -619,17 +621,47 @@ def test_final_rollout_rejects_unscorable_or_unsettled_verification(
 
 
 @pytest.mark.parametrize(
-    ("status", "error_type"),
-    [("failed", "RuntimeError"), ("interrupted", "KeyboardInterrupt")],
+    ("status", "error_type", "include_summary"),
+    [
+        ("failed", "RuntimeError", True),
+        ("interrupted", "KeyboardInterrupt", False),
+        ("interrupted", "KeyboardInterrupt", True),
+    ],
 )
-def test_noncompleted_status_preserves_raw_rollout_evidence(
-    tmp_path, status, error_type
+def test_noncompleted_status_preserves_and_inventories_partial_evidence(
+    tmp_path, status, error_type, include_summary
 ):
     manifest_path = tmp_path / MANIFEST_NAME
     manifest = persist_status(manifest_path, _planned_manifest(), "running")
     rollout_path = tmp_path / "rollout_trajectories.jsonl"
-    raw_rollout = b'{"status":"interrupted","raw":"verbatim"}\n'
+    raw_rollout = (
+        b'{"status":"interrupted","raw":"verbatim",'
+        b'"private_marker":"rollout-secret-fixture"}\n'
+    )
     rollout_path.write_bytes(raw_rollout)
+    raw_summary = b'{"partial":true,"private_marker":"summary-secret-fixture"}\n'
+    summary_path = tmp_path / "training_summary.json"
+    if include_summary:
+        summary_path.write_bytes(raw_summary)
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "unrelated-secret.txt").write_text(
+        "not an allowed partial artifact",
+        encoding="utf-8",
+    )
+
+    if os.name == "nt":
+        with pytest.raises(OSError, match="stable directory handle"):
+            persist_status(
+                manifest_path,
+                manifest,
+                status,
+                error_type=error_type,
+            )
+        assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+        assert rollout_path.read_bytes() == raw_rollout
+        if include_summary:
+            assert summary_path.read_bytes() == raw_summary
+        return
 
     saved = persist_status(
         manifest_path,
@@ -641,7 +673,375 @@ def test_noncompleted_status_preserves_raw_rollout_evidence(
     assert saved["status"] == status
     assert saved["failure"]["error_type"] == error_type
     assert saved["checkpoint"] is None
+    expected_files = [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(raw_rollout),
+            "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+        }
+    ]
+    if include_summary:
+        expected_files.append(
+            {
+                "path": "training_summary.json",
+                "size_bytes": len(raw_summary),
+                "sha256": hashlib.sha256(raw_summary).hexdigest(),
+            }
+        )
+    assert saved["partial_artifacts"]["unverified"] == []
+    assert saved["partial_artifacts"]["files"] == expected_files
+    serialized_manifest = json.dumps(saved)
+    assert "rollout-secret-fixture" not in serialized_manifest
+    assert "summary-secret-fixture" not in serialized_manifest
+    assert "unrelated-secret.txt" not in serialized_manifest
     assert rollout_path.read_bytes() == raw_rollout
+    if include_summary:
+        assert summary_path.read_bytes() == raw_summary
+    persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == status
+    assert persisted["failure"]["error_type"] == error_type
+    assert persisted["checkpoint"] is None
+    assert persisted["partial_artifacts"]["files"] == expected_files
+    assert persisted["partial_artifacts"]["unverified"] == (
+        saved["partial_artifacts"]["unverified"]
+    )
+
+
+def test_failed_status_does_not_follow_redirected_partial_artifacts(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"status":"interrupted","raw":"verbatim"}\n'
+    rollout_path = tmp_path / "rollout_trajectories.jsonl"
+    rollout_path.write_bytes(raw_rollout)
+    summary_target = tmp_path / "external-summary.json"
+    raw_summary = b'{"private_marker":"redirect-target-secret-fixture"}\n'
+    summary_target.write_bytes(raw_summary)
+    summary_path = tmp_path / "training_summary.json"
+    try:
+        summary_path.symlink_to(summary_target)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    if os.name == "nt":
+        with pytest.raises(OSError, match="stable directory handle"):
+            persist_status(
+                manifest_path,
+                manifest,
+                "failed",
+                error_type="RuntimeError",
+            )
+        assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+    else:
+        saved = persist_status(
+            manifest_path,
+            manifest,
+            "failed",
+            error_type="RuntimeError",
+        )
+        assert saved["partial_artifacts"]["files"] == [
+            {
+                "path": "rollout_trajectories.jsonl",
+                "size_bytes": len(raw_rollout),
+                "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+            }
+        ]
+    serialized = (
+        manifest_path.read_text(encoding="utf-8")
+        if os.name == "nt"
+        else json.dumps(saved)
+    )
+    assert summary_target.read_bytes() == raw_summary
+    assert "redirect-target-secret-fixture" not in serialized
+    assert "external-summary.json" not in serialized
+
+
+def test_failed_status_keeps_partial_inventory_bound_during_parent_replacement(
+    monkeypatch, tmp_path
+):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    original_bytes = b'{"private_marker":"original-rollout-fixture"}\n'
+    replacement_bytes = b'{"private_marker":"replacement-rollout-secret"}\n'
+    (run_dir / "rollout_trajectories.jsonl").write_bytes(original_bytes)
+
+    if os.name == "nt":
+        with pytest.raises(OSError, match="stable directory handle"):
+            persist_status(
+                manifest_path,
+                manifest,
+                "failed",
+                error_type="RuntimeError",
+            )
+        assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+        assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == original_bytes
+        return
+
+    moved_dir = tmp_path / "moved-run"
+    real_open = os.open
+    replaced = False
+
+    def replace_parent_before_artifact_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal replaced
+        if (
+            not replaced
+            and Path(path).name == "rollout_trajectories.jsonl"
+        ):
+            replaced = True
+            run_dir.rename(moved_dir)
+            run_dir.mkdir()
+            (run_dir / "rollout_trajectories.jsonl").write_bytes(replacement_bytes)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(grpo_provenance.os, "open", replace_parent_before_artifact_open)
+    failed = persist_status(
+        manifest_path,
+        manifest,
+        "failed",
+        error_type="RuntimeError",
+    )
+
+    assert replaced is True
+    assert failed["status"] == "failed"
+    assert failed["checkpoint"] is None
+    assert failed["partial_artifacts"]["files"] == [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(original_bytes),
+            "sha256": hashlib.sha256(original_bytes).hexdigest(),
+        }
+    ]
+    assert failed["partial_artifacts"]["unverified"] == []
+    assert "replacement-rollout-secret" not in json.dumps(failed)
+    assert (moved_dir / "rollout_trajectories.jsonl").read_bytes() == original_bytes
+    assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == replacement_bytes
+    assert not (run_dir / MANIFEST_NAME).exists()
+    persisted = json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert persisted["status"] == "failed"
+    assert persisted["partial_artifacts"] == failed["partial_artifacts"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
+def test_failed_status_rejects_normal_directory_replacement_before_open(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    running = persist_status(manifest_path, _planned_manifest(), "running")
+    assert running["run_directory_identity"]["inode"] == run_dir.stat().st_ino
+    moved_dir = tmp_path / "moved-run"
+    run_dir.rename(moved_dir)
+    run_dir.mkdir()
+    replacement_bytes = b'{"private_marker":"replacement-secret"}\n'
+    (run_dir / "rollout_trajectories.jsonl").write_bytes(replacement_bytes)
+
+    with pytest.raises(OSError, match="run directory identity changed"):
+        persist_status(
+            manifest_path,
+            running,
+            "failed",
+            error_type="RuntimeError",
+        )
+
+    assert not manifest_path.exists()
+    persisted = json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert persisted["status"] == "running"
+    assert persisted["run_directory_identity"] == running["run_directory_identity"]
+    assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == replacement_bytes
+    assert "replacement-secret" not in json.dumps(persisted)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
+def test_failed_status_does_not_write_through_replaced_parent_on_error(
+    monkeypatch, tmp_path
+):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    (run_dir / "rollout_trajectories.jsonl").write_bytes(b"raw evidence\n")
+    moved_dir = tmp_path / "moved-run"
+
+    def fail_pinned_write(directory_fd, name, updated):
+        run_dir.rename(moved_dir)
+        run_dir.mkdir()
+        raise OSError("synthetic pinned write failure")
+
+    monkeypatch.setattr(grpo_provenance, "_write_manifest_atomic_at", fail_pinned_write)
+    with pytest.raises(OSError, match="synthetic pinned write failure"):
+        persist_status(manifest_path, manifest, "failed", error_type="RuntimeError")
+
+    assert not manifest_path.exists()
+    assert json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))[
+        "status"
+    ] == "running"
+    assert (moved_dir / "rollout_trajectories.jsonl").read_bytes() == b"raw evidence\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
+def test_failed_status_does_not_write_through_redirected_parent(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    moved_dir = tmp_path / "moved-run"
+    run_dir.rename(moved_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        run_dir.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    with pytest.raises(OSError, match="stable directory handle"):
+        persist_status(manifest_path, manifest, "failed", error_type="RuntimeError")
+
+    assert not (outside / MANIFEST_NAME).exists()
+    assert json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))[
+        "status"
+    ] == "running"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
+def test_failed_status_does_not_hash_hardlinked_partial_artifact(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    outside = tmp_path / "outside-secret"
+    raw = b"hardlinked-private-marker\n"
+    outside.write_bytes(raw)
+    os.link(outside, tmp_path / "rollout_trajectories.jsonl")
+
+    saved = persist_status(
+        manifest_path, manifest, "failed", error_type="RuntimeError"
+    )
+
+    assert saved["partial_artifacts"]["files"] == []
+    assert saved["partial_artifacts"]["unverified"] == [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "presence": "redirect",
+            "reason": "path_redirect",
+        }
+    ]
+    assert "hardlinked-private-marker" not in json.dumps(saved)
+    assert outside.read_bytes() == raw
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows fallback cannot verify file hashes")
+def test_failed_status_bounds_total_partial_artifact_bytes(monkeypatch, tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b"r" * 6
+    raw_summary = b"s" * 5
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    (tmp_path / "training_summary.json").write_bytes(raw_summary)
+    monkeypatch.setattr(grpo_provenance, "MAX_PARTIAL_ARTIFACT_BYTES", 8)
+
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "failed",
+        error_type="RuntimeError",
+    )
+
+    assert saved["partial_artifacts"]["limits"]["max_total_bytes"] == 8
+    assert saved["partial_artifacts"]["bytes_hashed"] == len(raw_rollout)
+    assert saved["partial_artifacts"]["files"] == [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(raw_rollout),
+            "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+        }
+    ]
+    assert saved["partial_artifacts"]["unverified"] == [
+        {
+            "path": "training_summary.json",
+            "presence": "present",
+            "reason": "max_total_bytes_exceeded",
+        }
+    ]
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+    assert (tmp_path / "training_summary.json").read_bytes() == raw_summary
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows fallback cannot verify file hashes")
+def test_failed_status_bounds_partial_artifact_inventory_duration(
+    monkeypatch, tmp_path
+):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"private_marker":"slow-rollout-fixture"}\n'
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    expired = False
+    real_open = os.open
+
+    def expire_after_artifact_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal expired
+        if dir_fd is None:
+            descriptor = real_open(path, flags, mode)
+        else:
+            descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if Path(path).name == "rollout_trajectories.jsonl":
+            expired = True
+        return descriptor
+
+    monkeypatch.setattr(grpo_provenance.os, "open", expire_after_artifact_open)
+    monkeypatch.setattr(grpo_provenance, "monotonic", lambda: 10.0 if expired else 0.0)
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "interrupted",
+        error_type="KeyboardInterrupt",
+    )
+
+    assert saved["partial_artifacts"]["limits"]["max_duration_seconds"] == (
+        grpo_provenance.MAX_PARTIAL_ARTIFACT_SECONDS
+    )
+    assert saved["partial_artifacts"]["bytes_hashed"] == 0
+    assert saved["partial_artifacts"]["files"] == []
+    assert saved["partial_artifacts"]["unverified"][0]["reason"] == (
+        "time_limit_exceeded"
+    )
+    assert "slow-rollout-fixture" not in json.dumps(saved)
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-specific stable-handle fallback")
+def test_windows_partial_artifacts_are_reported_unverified(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"private_marker":"windows-rollout-secret"}\n'
+    raw_summary = b'{"private_marker":"windows-summary-secret"}\n'
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    (tmp_path / "training_summary.json").write_bytes(raw_summary)
+
+    inventory = grpo_provenance.partial_artifact_inventory(tmp_path)
+    assert inventory["inventory_status"] == "unavailable"
+    assert inventory["files"] == []
+    assert {item["path"] for item in inventory["unverified"]} == {
+        "rollout_trajectories.jsonl",
+        "training_summary.json",
+    }
+    assert all(
+        item["reason"] == "stable_directory_handle_unavailable"
+        and item["presence"] == "unknown"
+        for item in inventory["unverified"]
+    )
+    with pytest.raises(OSError, match="stable directory handle"):
+        persist_status(
+            manifest_path,
+            manifest,
+            "interrupted",
+            error_type="KeyboardInterrupt",
+        )
+    serialized = manifest_path.read_text(encoding="utf-8")
+    assert json.loads(serialized)["status"] == "running"
+    assert "windows-rollout-secret" not in serialized
+    assert "windows-summary-secret" not in serialized
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+    assert (tmp_path / "training_summary.json").read_bytes() == raw_summary
 
 
 def _record_valid_loader(manifest_path):
@@ -676,6 +1076,7 @@ def test_adapter_config_without_weights_cannot_be_marked_completed(tmp_path):
         persist_status(manifest_path, manifest, "completed")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Live GRPO preflight requires POSIX handles")
 def test_training_failure_persists_failed_state_before_optional_ml_imports(
     monkeypatch, tmp_path
 ):
@@ -725,11 +1126,57 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
     }
 
 
+def test_cli_rejects_unavailable_failure_persistence_before_output(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--tokenizer-revision",
+            TOKENIZER_COMMIT,
+            "--sft-checkpoint",
+            str(tmp_path / "sft"),
+            "--output",
+            str(output_dir),
+            "--execute-live-chaos",
+            "--kube-context",
+            "kind-atlasops-test",
+        ],
+    )
+    monkeypatch.setattr(
+        grpo_provenance, "_supports_stable_directory_handles", lambda: False
+    )
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: pytest.fail("SFT parent read after failed preflight"),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "run_training",
+        lambda *_args, **_kwargs: pytest.fail("training started after failed preflight"),
+    )
+
+    with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+        grpo.main()
+    assert not output_dir.exists()
+
+
 def test_main_records_optuna_effective_hyperparameters_separately(
     monkeypatch, tmp_path
 ):
     from training import grpo
 
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     output_dir = tmp_path / "run"
     monkeypatch.setattr(
         sys,
@@ -760,6 +1207,7 @@ def test_main_records_optuna_effective_hyperparameters_separately(
         ],
     )
     monkeypatch.setattr(grpo, "validate_sft_parent", lambda *_args, **_kwargs: _parent())
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     effective = {
         "tiers": ["cascade", "multi_fault", "named_replays"],
         "learning_rate": 2e-6,
@@ -1054,6 +1502,14 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
         "planned",
     )
     persist_status(manifest_path, planned, "running")
+    manifest_before = manifest_path.read_bytes()
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.run_training(args, output_dir)
+        assert events == []
+        assert manifest_path.read_bytes() == manifest_before
+        assert list(output_dir.iterdir()) == [manifest_path]
+        return
     monkeypatch.setitem(
         sys.modules,
         "torch",
@@ -1208,6 +1664,7 @@ def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
         "planned",
     )
     persist_status(manifest_path, planned, "running")
+    manifest_before = manifest_path.read_bytes()
     monkeypatch.setitem(
         sys.modules,
         "torch",
@@ -1236,6 +1693,14 @@ def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
         grad_accum=4,
         max_compl_len=256,
     )
+
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.run_training(args, output_dir)
+        assert observed == {}
+        assert manifest_path.read_bytes() == manifest_before
+        assert list(output_dir.iterdir()) == [manifest_path]
+        return
 
     with pytest.raises(StopBeforeTraining, match="training intentionally not started"):
         grpo.run_training(args, output_dir)
@@ -1272,6 +1737,7 @@ def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
         "planned",
     )
     persist_status(manifest_path, planned, "running")
+    manifest_before = manifest_path.read_bytes()
     args = Namespace(
         execute_live_chaos=True,
         kube_context="kind-atlasops-test",
@@ -1292,6 +1758,13 @@ def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
         grad_accum=4,
         max_compl_len=256,
     )
+
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.run_training(args, output_dir)
+        assert manifest_path.read_bytes() == manifest_before
+        assert list(output_dir.iterdir()) == [manifest_path]
+        return
 
     with pytest.raises(KeyboardInterrupt):
         grpo.run_training(args, output_dir)
@@ -1325,7 +1798,7 @@ def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
     monkeypatch.setattr(
         grpo,
         "_load_training_dependencies",
-        lambda: sys.modules.__setitem__("torch", torch),
+        lambda: monkeypatch.setitem(sys.modules, "torch", torch),
     )
     monkeypatch.setattr(
         grpo,
@@ -1345,6 +1818,7 @@ def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
         "planned",
     )
     persist_status(manifest_path, planned, "running")
+    manifest_before = manifest_path.read_bytes()
     args = Namespace(
         execute_live_chaos=True,
         kube_context="kind-atlasops-test",
@@ -1366,6 +1840,14 @@ def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
         max_compl_len=256,
     )
 
+    if os.name == "nt":
+        with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+            grpo.run_training(args, output_dir)
+        assert events == []
+        assert manifest_path.read_bytes() == manifest_before
+        assert list(output_dir.iterdir()) == [manifest_path]
+        return
+
     with pytest.raises(RuntimeError, match="G9 requires a single training process"):
         grpo.run_training(args, output_dir)
 
@@ -1380,6 +1862,7 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
 
     from training import grpo
 
+    monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
     monkeypatch.setattr(
         grpo,
         "validate_sft_parent",
@@ -1638,6 +2121,10 @@ def test_direct_optuna_rejects_unplanned_request_without_mutation(
     ("exception_type", "expected_status"),
     [(RuntimeError, "failed"), (KeyboardInterrupt, "interrupted")],
 )
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Terminal Optuna persistence requires POSIX stable directory handles",
+)
 def test_direct_optuna_failure_persists_terminal_state(
     monkeypatch, tmp_path, exception_type, expected_status
 ):
@@ -1727,6 +2214,64 @@ def test_direct_optuna_failure_persists_terminal_state(
     saved = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert saved["status"] == expected_status
     assert saved["failure"]["error_type"] == exception_type.__name__
+
+
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="Windows-specific G9 capability refusal",
+)
+def test_direct_optuna_rejects_unsupported_failure_persistence_before_mutation(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: _parent(),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: pytest.fail("dependencies loaded after unsupported-host refusal"),
+    )
+    output_dir = tmp_path / "optuna"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(seed=917018, optuna_trials=1, include_operator_approval=True),
+        "planned",
+    )
+    persist_status(manifest_path, planned, "running")
+    mark_training_started(
+        manifest_path,
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_parent=_parent(),
+    )
+    before = manifest_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match="stable directory-handle operations"):
+        grpo.run_optuna_search(
+            "Qwen/Qwen2.5-7B-Instruct",
+            ["single_fault"],
+            output_dir,
+            MODEL_COMMIT,
+            "Qwen/Qwen2.5-7B-Instruct",
+            TOKENIZER_COMMIT,
+            tmp_path / "sft",
+            n_trials=1,
+            execute_live_chaos=True,
+            kube_context="kind-atlasops-test",
+            operator_approval_enabled=False,
+            seed=917018,
+        )
+
+    assert manifest_path.read_bytes() == before
+    assert list(output_dir.iterdir()) == [manifest_path]
 
 
 def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):

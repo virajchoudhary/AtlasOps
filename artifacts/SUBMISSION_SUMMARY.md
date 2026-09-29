@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T13:28:04.913835+00:00`
+- **Generated**: `2026-09-29T15:14:43.596893+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -178,7 +178,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `4e4ad218ce345301...` | 4370 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `d60f4843c2438734...` | 5473 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `8c581e2360ea788d...` | 5718 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `445358d8a1f4f4e2...` | 2865 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `48d034aca45427e0...` | 5031 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
@@ -254,7 +254,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_template_wiring.py` | `fcc4bd53b53598df...` | 10382 |
-| `tests/test_sft_training_provenance.py` | `38309744fbf9f4d1...` | 22750 |
+| `tests/test_sft_trainer_handoff.py` | `cfb31b9c73fb0af7...` | 12441 |
+| `tests/test_sft_training_provenance.py` | `53c80875494fe1bd...` | 23018 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
@@ -286,7 +287,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_environment.py` | `a55f06dfac85bcdd...` | 29104 |
 | `training/grpo_provenance.py` | `178c7ce413d77cff...` | 18829 |
 | `training/grpo_reward.py` | `49fb98487c17ff90...` | 3019 |
-| `training/sft.py` | `29c7abbc32d5d20b...` | 9411 |
+| `training/sft.py` | `d1625dd8d6b8bf5c...` | 9542 |
 | `training/sft_provenance.py` | `a995d32eec36204e...` | 27844 |
 | `training/sft_rendering.py` | `dd036d8ca715065e...` | 10109 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |

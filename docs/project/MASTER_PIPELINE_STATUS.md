@@ -1,17 +1,18 @@
 # AtlasOps Master Implementation Pipeline Status
 
-This governance document records the repository's alignment with the canonical external project specification:
+This governance document records the repository's alignment with the adopted non-live working specification:
 
-> **Canonical External Document:**
-> *AtlasOps Intelligence | Master Implementation Pipeline v1.1 Free-First* (dated 16 August 2026).
-> Pipeline v1.1 supersedes v1.0 for execution decisions. v1.0 remains the historical record.
+> **Current Working Specification (non-live):**
+> *AtlasOps Intelligence | Master Implementation, Validation & Deployment Pipeline v2.2* (29 September 2026), Sections 1-24 and 26-27, adopted by the project lead.
+> Section 25 remains a prospective, **unapproved** Stage 13 measurement proposal.
+> The dated [v1.1 Free-First local setup reference](PIPELINE_V1_1_FREE_FIRST.md) and v1.0 remain historical; neither is erased by this adoption.
 > **Upstream Baseline:**
 > `Harikishanth/AtlasOps` frozen at commit [`bf9bd197c9f4a05ae55ade254802a9eef1a74356`](https://github.com/Harikishanth/AtlasOps/commit/bf9bd197c9f4a05ae55ade254802a9eef1a74356).
 > **Fork:**
 > `virajchoudhary/AtlasOps`.
 
 > [!IMPORTANT]
-> **Pipeline v1.1 Free-First Execution Change:**
+> **Retained Free-First Environment Contract:**
 > The canonical Stage 3 environment is now a local Kind Kubernetes cluster on Windows/Docker Desktop/WSL2.
 > GKE/GCP is no longer required for canonical project execution. GKE remains as OPTIONAL portability code.
 > External service spend target: **$0**.
@@ -30,8 +31,12 @@ The original evidence reconciliation was performed on 2026-09-06 against main
 `fa2eed2bbb75eb81dedfecd6a80f3bc87915ee38` (including evidence recovery
 PR #58). The software/status inventory was reviewed again against main
 `eeec29b775fe9c3b12a6900d4851151ca6b49a8f` on 2026-09-27, including
-the prospective v3.4 approval repair in PR #69. Neither review is a new
-experiment, training run, service-health check, or re-execution of historical tests.
+the prospective v3.4 approval repair in PR #69. The v2.2 source/evidence
+reconciliation uses clean remote main
+`39bb97ca23b9e9497360860c53b5d8cba36fd707` on 2026-09-29.
+See the [v2.2 status and gap addendum](FINAL_PIPELINE_V22_STATUS.md) for the
+review basis and pending decisions. None of these reviews is a new experiment,
+training run, service-health check, or re-execution of historical tests.
 
 **State meanings:** PASS is limited to the evidence and scope stated below;
 NOT_PASSED records an unmet gate; REOPENED withdraws an unsupported previous PASS;
@@ -40,7 +45,7 @@ PARTIAL preserves completed work while recording missing deliverables.
 Downstream implementation can exist while upstream empirical gates remain open.
 The research pipeline is not scientifically complete.
 
-## Canonical Stage & Gate Sequence (Pipeline v1.1 Free-First)
+## Canonical Stage & Gate Sequence (Pipeline v2.2 working specification)
 
 | Stage | Name | Gate | Target / Deliverable | Current Status |
 |---|---|---|---|---|
@@ -185,7 +190,9 @@ The research pipeline is not scientifically complete.
 ---
 
 > [!NOTE]
-> This status document reflects source and preserved-evidence review as of 2026-09-06; it does not assert current live service health.
-> **Pipeline v1.1 Free-First** (16 August 2026) is the current canonical execution specification.
-> **Pipeline v1.0** (11 August 2026) remains the historical record of the original execution specification.
-> For the complete academic specification and methodology, refer to the external Master Implementation Pipeline documents.
+> The original evidence reconciliation was performed on 2026-09-06; the later
+> source/evidence snapshots above do not assert current live service health.
+> **Pipeline v2.2** Sections 1-24 and 26-27 are the adopted non-live working
+> specification. Its Section 25 remains **PROPOSED / NOT APPROVED**.
+> **Pipeline v1.1 Free-First** (16 August 2026) retains its historical local
+> setup contract; **v1.0** (11 August 2026) is the prior historical record.

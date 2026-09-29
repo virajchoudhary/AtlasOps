@@ -317,9 +317,9 @@ comparison path.
 
 ---
 
-## University Continuation & Academic Roadmap (Master Pipeline v1.1)
+## University Continuation & Academic Roadmap (Master Pipeline v2.2)
 
-This fork (`virajchoudhary/AtlasOps`) continues the upstream baseline (`bf9bd19`) under the 15-stage Master Pipeline. Implementation is not certification: current gate statuses and missing empirical work are recorded in the [Master Pipeline inventory](docs/project/MASTER_PIPELINE_STATUS.md).
+This fork (`virajchoudhary/AtlasOps`) continues the upstream baseline (`bf9bd19`) under the G0-G15 Master Pipeline. The project lead adopted v2.2 Sections 1-24 and 26-27 for non-live work on 29 September 2026; its Section 25 Stage 13 measurement rules remain proposed and unapproved. Implementation is not certification: current gate statuses and missing empirical work are recorded in the [Master Pipeline inventory](docs/project/MASTER_PIPELINE_STATUS.md) and [v2.2 status addendum](docs/project/FINAL_PIPELINE_V22_STATUS.md).
 
 1. **Generative AI Multi-Agent System**: Contract-bound state machine (`Alert → Triage → Diagnosis → Hybrid Recommender → Approval Gate → Remediation → Verifier → Comms`) with loss-masked SFT trajectories.
 2. **Recommender Systems (RS) Layer**: Tri-signal Hybrid Recommender ($S_{\text{content}} + S_{\text{collab}} + S_{\text{prior}}$) against 12 codified SRE runbooks. A bounded synthetic evaluation reached 100.0% Hit@3 on four scenario-derived Test rows; historical interaction feedback and broad real-world performance remain unverified.
@@ -348,9 +348,10 @@ the console. Provision protected local secret files and point
 bash infra/local/setup_local.sh --check
 ```
 The mutating `--apply` path requires a separate environment review and
-authorization. The [v1.1 Free-First execution specification](docs/project/PIPELINE_V1_1_FREE_FIRST.md)
-describes the local path; the Stage 3 operator guide still contains the older
-optional GKE procedure. `--check` probes local prerequisites, including Docker
+authorization. The retained [v1.1 Free-First local setup reference](docs/project/PIPELINE_V1_1_FREE_FIRST.md)
+describes the local path; v2.2 governs current project status and evidence
+standards. The Stage 3 operator guide still contains the older optional GKE
+procedure. `--check` probes local prerequisites, including Docker
 and secrets, but is not live G3 acceptance.
 
 ### 2. Open the operator console

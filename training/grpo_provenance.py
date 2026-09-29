@@ -380,21 +380,22 @@ def _same_file_identity(left: os.stat_result, right: os.stat_result) -> bool:
     )
 
 
-def _supports_stable_directory_handles() -> bool:
-    if os.name == "nt":
-        return False
-    directory_functions = getattr(os, "supports_dir_fd", set())
-    return (
-        all(
-            function in directory_functions
-            for function in (os.open, os.stat, os.rename, os.unlink)
-        )
-        and os.stat in getattr(os, "supports_follow_symlinks", set())
-        and all(
-            hasattr(os, flag)
-            for flag in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
-        )
+_STABLE_DIRECTORY_HANDLES_SUPPORTED = (
+    os.name != "nt"
+    and all(
+        function in getattr(os, "supports_dir_fd", set())
+        for function in (os.open, os.stat, os.rename, os.unlink)
     )
+    and os.stat in getattr(os, "supports_follow_symlinks", set())
+    and all(
+        hasattr(os, flag)
+        for flag in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    )
+)
+
+
+def _supports_stable_directory_handles() -> bool:
+    return _STABLE_DIRECTORY_HANDLES_SUPPORTED
 
 
 def require_stable_failure_persistence() -> None:
@@ -482,6 +483,23 @@ def _unavailable_partial_inventory(reason: str) -> dict[str, Any]:
         0,
         inventory_status="unavailable",
     )
+
+
+def _require_run_directory_identity(
+    directory_fd: int,
+    manifest: dict[str, Any],
+    *,
+    allow_initial_binding: bool,
+) -> None:
+    metadata = os.fstat(directory_fd)
+    if not stat.S_ISDIR(metadata.st_mode) or not _has_stable_identity(metadata):
+        raise OSError("GRPO run directory identity is unavailable")
+    current = {"device": metadata.st_dev, "inode": metadata.st_ino}
+    expected = manifest.get("run_directory_identity")
+    if expected is None and allow_initial_binding:
+        manifest["run_directory_identity"] = current
+    elif expected != current:
+        raise OSError("GRPO run directory identity changed or was never bound")
 
 
 def _partial_artifact_record_at(
@@ -748,23 +766,32 @@ def persist_status(
     updated["updated_at"] = datetime.now(UTC).isoformat()
     if error_type:
         updated["failure"] = {"error_type": error_type}
-    if status in {"failed", "interrupted"}:
-        updated["checkpoint"] = None
+    if status in {"planned", "running", "failed", "interrupted"}:
         deadline = monotonic() + MAX_PARTIAL_ARTIFACT_SECONDS
         opened, failure_reason = _open_stable_directory(
             path.parent,
             deadline=deadline,
         )
         if opened is None:
+            if status in {"planned", "running"} and not _supports_stable_directory_handles():
+                write_manifest_atomic(path, updated)
+                return updated
             raise OSError(
-                "Cannot safely persist GRPO failure status without a stable "
+                "Cannot safely persist GRPO status without a stable "
                 f"directory handle ({failure_reason or 'directory_open_failed'})"
             )
         try:
-            updated["partial_artifacts"] = _inventory_partial_artifacts_at(
+            _require_run_directory_identity(
                 opened,
-                deadline=deadline,
+                updated,
+                allow_initial_binding=status in {"planned", "running"},
             )
+            if status in {"failed", "interrupted"}:
+                updated["checkpoint"] = None
+                updated["partial_artifacts"] = _inventory_partial_artifacts_at(
+                    opened,
+                    deadline=deadline,
+                )
             _write_manifest_atomic_at(opened, path.name, updated)
         finally:
             try:

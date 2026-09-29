@@ -60,7 +60,9 @@ The required relationship is:
   relative path, byte size and SHA-256, with a 64 MiB total and a deadline
   checked between bounded reads. Missing, redirected, changed, oversized or
   timed-out files remain explicitly unverified. The manifest write uses the
-  same pinned directory; failure to open or write through that handle aborts
+  same pinned directory, whose device and inode are bound at the first planned
+  or running status and checked again before a failed/interrupted transition.
+  A replacement directory or failure to write through the handle aborts
   persistence instead of falling back to a mutable pathname. On Windows the
   portable runtime cannot pin that directory identity, so the failed or
   interrupted transition is not persisted: the prior running manifest and

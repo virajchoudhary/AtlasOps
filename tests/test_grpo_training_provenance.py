@@ -732,6 +732,35 @@ def test_failed_status_keeps_partial_inventory_bound_during_parent_replacement(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
+def test_failed_status_rejects_normal_directory_replacement_before_open(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    running = persist_status(manifest_path, _planned_manifest(), "running")
+    assert running["run_directory_identity"]["inode"] == run_dir.stat().st_ino
+    moved_dir = tmp_path / "moved-run"
+    run_dir.rename(moved_dir)
+    run_dir.mkdir()
+    replacement_bytes = b'{"private_marker":"replacement-secret"}\n'
+    (run_dir / "rollout_trajectories.jsonl").write_bytes(replacement_bytes)
+
+    with pytest.raises(OSError, match="run directory identity changed"):
+        persist_status(
+            manifest_path,
+            running,
+            "failed",
+            error_type="RuntimeError",
+        )
+
+    assert not manifest_path.exists()
+    persisted = json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert persisted["status"] == "running"
+    assert persisted["run_directory_identity"] == running["run_directory_identity"]
+    assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == replacement_bytes
+    assert "replacement-secret" not in json.dumps(persisted)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Requires POSIX directory handles")
 def test_failed_status_does_not_write_through_replaced_parent_on_error(
     monkeypatch, tmp_path
 ):

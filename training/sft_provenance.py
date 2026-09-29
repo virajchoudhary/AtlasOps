@@ -12,6 +12,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import stat
 import subprocess
 import sys
@@ -19,7 +20,7 @@ import tempfile
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from config.splits import TRAIN_SEED, TRAIN_SPLIT
@@ -38,6 +39,19 @@ MAX_VERIFIED_SFT_CORPUS_BYTES = 16 * 1024 * 1024
 MAX_VERIFIED_SFT_MANIFEST_BYTES = 1024 * 1024
 _DATA_ORIGIN_PROVENANCE_FIELDS = frozenset(
     {"data_origin", "synthetic", "data_origin_source", "corpus_manifest"}
+)
+_HF_COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
+# Mirror Hub repository-id validation without making the optional training stack a dependency.
+_HF_REPO_ID_PATTERN = re.compile(r"(?:\b[\w.-]+\b/)?\b[\w.-]{1,96}\b\Z")
+TOKENIZER_REVISION_BASIS_LOADER_MATCH = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+TOKENIZER_REVISION_BASIS_PIN_ENFORCED = (
+    "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
+)
+_TOKENIZER_REVISION_BASES = frozenset(
+    {
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+        TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+    }
 )
 
 
@@ -70,6 +84,99 @@ def file_sha256(path: Path) -> str:
 def canonical_json_sha256(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def validate_hf_commit_revision(revision: Any, *, label: str) -> None:
+    if not isinstance(revision, str) or _HF_COMMIT_SHA_PATTERN.fullmatch(revision) is None:
+        raise ValueError(
+            f"{label} must be a full 40-character immutable Hugging Face commit SHA"
+        )
+
+
+def validate_hf_reference(source: Any, revision: Any, *, label: str) -> None:
+    if (
+        not isinstance(source, str)
+        or not source.strip()
+        or source != source.strip()
+    ):
+        raise ValueError(f"{label} must be a valid Hugging Face repository id")
+    if "://" in source:
+        raise ValueError(
+            f"{label} must be a valid Hugging Face repository id; URLs are unsupported"
+        )
+    source_path = Path(source).expanduser()
+    windows_source_path = PureWindowsPath(source)
+    if (
+        source_path.is_absolute()
+        or windows_source_path.is_absolute()
+        or bool(windows_source_path.drive)
+        or source.startswith((".", "~"))
+        or "\\" in source
+    ):
+        raise ValueError(
+            f"Local {label} paths are unsupported; use a Hugging Face repository id "
+            "with a pinned commit"
+        )
+    if (
+        len(source) > 96
+        or source.count("/") > 1
+        or _HF_REPO_ID_PATTERN.fullmatch(source) is None
+        or "--" in source
+        or ".." in source
+        or source.endswith(".git")
+    ):
+        raise ValueError(
+            f"{label} must be a valid Hugging Face repository id "
+            "(one name or namespace/name; local paths are unsupported)"
+        )
+    if source_path.exists():
+        raise ValueError(
+            f"Local {label} paths are unsupported; use a Hugging Face repository id "
+            "with a pinned commit"
+        )
+    validate_hf_commit_revision(revision, label=f"{label} revision")
+
+
+def validate_resolved_hf_commit(
+    requested_revision: str,
+    resolved_revision: Any,
+    *,
+    label: str,
+) -> str:
+    validate_hf_commit_revision(
+        requested_revision,
+        label=f"Requested {label} revision",
+    )
+    validate_hf_commit_revision(
+        resolved_revision,
+        label=f"Loaded {label} revision",
+    )
+    if resolved_revision != requested_revision:
+        raise ValueError(
+            f"Loaded {label} commit does not match the requested immutable revision"
+        )
+    return resolved_revision
+
+
+def resolve_tokenizer_revision(
+    requested_revision: str,
+    exposed_revision: Any,
+) -> tuple[str, str]:
+    """Record the pinned tokenizer commit without overstating loader evidence."""
+    if exposed_revision is None:
+        validate_hf_commit_revision(
+            requested_revision,
+            label="Requested tokenizer revision",
+        )
+        return requested_revision, TOKENIZER_REVISION_BASIS_PIN_ENFORCED
+    return (
+        validate_resolved_hf_commit(
+            requested_revision,
+            exposed_revision,
+            label="tokenizer",
+        ),
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+    )
 
 
 def source_provenance() -> dict[str, Any]:
@@ -608,10 +715,16 @@ def create_run_manifest(
     hyperparameters: dict[str, Any],
     seed: int = TRAIN_SEED,
 ) -> dict[str, Any]:
-    if not base_model_revision.strip():
-        raise ValueError("An exact base model revision is required")
-    if not tokenizer_revision.strip():
-        raise ValueError("An exact tokenizer revision is required")
+    validate_hf_reference(
+        base_model,
+        base_model_revision,
+        label="base model",
+    )
+    validate_hf_reference(
+        tokenizer,
+        tokenizer_revision,
+        label="tokenizer",
+    )
 
     source_path = Path(os.path.abspath(corpus_path))
     if corpus_snapshot is None:
@@ -642,6 +755,7 @@ def create_run_manifest(
             "id": tokenizer,
             "requested_revision": tokenizer_revision,
             "resolved_revision": None,
+            "resolved_revision_basis": None,
         },
         "dataset": {
             "corpus_path": str(corpus_snapshot.source_path),
@@ -672,7 +786,20 @@ def mark_running(
     *,
     resolved_model_revision: str,
     resolved_tokenizer_revision: str,
+    resolved_tokenizer_revision_basis: str,
 ) -> dict[str, Any]:
+    if resolved_tokenizer_revision_basis not in _TOKENIZER_REVISION_BASES:
+        raise ValueError("SFT tokenizer revision provenance basis is missing or invalid")
+    validate_resolved_hf_commit(
+        manifest["base_model"]["requested_revision"],
+        resolved_model_revision,
+        label="base model",
+    )
+    validate_resolved_hf_commit(
+        manifest["tokenizer"]["requested_revision"],
+        resolved_tokenizer_revision,
+        label="tokenizer",
+    )
     updated = dict(manifest)
     updated["status"] = "running"
     updated["model_loaded_at"] = datetime.now(UTC).isoformat()
@@ -683,6 +810,7 @@ def mark_running(
     updated["tokenizer"] = {
         **manifest["tokenizer"],
         "resolved_revision": resolved_tokenizer_revision,
+        "resolved_revision_basis": resolved_tokenizer_revision_basis,
     }
     return updated
 

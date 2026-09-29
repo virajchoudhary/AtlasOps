@@ -46,14 +46,27 @@ real-data or empirical training launch command.
 
 ## Training Contract
 
-`training/sft.py` requires exact base-model and tokenizer revisions, verifies the corpus
-against the frozen Train split and any adjacent corpus manifest's hash, split, and counts,
-and uses the project-owned Qwen tool template with assistant-only loss. It writes planned,
-running, completed, failed, or interrupted state atomically and records:
+`training/sft.py` requires Hugging Face repository IDs and full 40-character
+model/tokenizer commit SHAs; local model paths and mutable revision aliases
+fail before the output directory is claimed. A separate tokenizer repository
+requires its own pin. The model loader's exposed commit hash must match
+the requested pin before the run advances to `running`. The pinned
+Transformers tokenizer loader may not expose a commit hash: when absent,
+the manifest records its requested full SHA as enforced by the loader's
+`revision` argument with
+`PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED` as the basis.
+Any exposed tokenizer hash must match; a mutable alias is never a fallback.
+This is not independent weight or serving identity, and a future authorized
+load may download uncached weights. The trainer verifies the corpus against the frozen
+Train split and any adjacent corpus manifest's hash, split, and counts, and
+uses the project-owned Qwen tool template with assistant-only loss. It writes
+planned, running, completed, failed, or interrupted state atomically and records:
 
 - Before writing the planned run manifest, it reads one bounded (16 MiB maximum),
   redirect-free byte snapshot and validates the JSONL rows and frozen Train split from
-  that snapshot. The corpus hash, counts, and origin classification are derived from
+  that snapshot, then builds the planned manifest before exclusively creating
+  the output directory. Invalid input does not strand an empty claimed run
+  directory. The corpus hash, counts, and origin classification are derived from
   those same bytes. Each parsed row is prepared once in memory with its
   canonical role prompt, tool schemas, and normalized tool-call arguments
   before `datasets.Dataset.from_list` hands it to `SFTTrainer`. The original
@@ -97,7 +110,8 @@ launch template, not authorization to train or evidence of a checkpoint.
 
 Local tests validate corpus integrity, split isolation, schema and tool-call pairing,
 template rendering, assistant-only masking, the exact stubbed trainer dataset
-handoff, lifecycle persistence, and checkpoint hashing.
+handoff, immutable revision preflight and fake-loader pin/basis checks,
+lifecycle persistence, and checkpoint hashing.
 Real SFT training remains unexecuted.
 
 **Gate G7 Status: PARTIAL**

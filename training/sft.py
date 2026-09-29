@@ -30,7 +30,11 @@ from training.sft_provenance import (
     validate_resolved_hf_commit,
     write_manifest_atomic,
 )
-from training.sft_rendering import TEMPLATE_PATH, prepare_example_for_training
+from training.sft_rendering import (
+    TEMPLATE_PATH,
+    prepare_example_for_training,
+    validate_tool_call_role_acl,
+)
 
 TARGET_MODULES = [
     "q_proj",
@@ -160,10 +164,14 @@ def main() -> None:
         raise FileExistsError(output_dir)
 
     corpus_snapshot = snapshot_training_corpus(corpus_path)
-    if args.role != "all" and not any(
-        row.get("role") == args.role for row in corpus_snapshot.rows
-    ):
+    training_source_rows = tuple(
+        row
+        for row in corpus_snapshot.rows
+        if args.role == "all" or row.get("role") == args.role
+    )
+    if not training_source_rows:
         raise ValueError(f"No training examples remain for role={args.role}")
+    validate_tool_call_role_acl(training_source_rows)
 
     manifest = create_run_manifest(
         corpus_path=corpus_path,
@@ -184,11 +192,9 @@ def main() -> None:
         from datasets import Dataset
 
         training_rows = [
-            prepare_example_for_training(row) for row in corpus_snapshot.rows
+            prepare_example_for_training(row) for row in training_source_rows
         ]
         dataset = Dataset.from_list(training_rows)
-        if args.role != "all":
-            dataset = dataset.filter(lambda row: row.get("role") == args.role)
         if len(dataset) == 0:
             raise ValueError(f"No training examples remain for role={args.role}")
 

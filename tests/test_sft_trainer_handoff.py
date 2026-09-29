@@ -321,7 +321,7 @@ def test_sft_rejects_malformed_snapshot_row_before_loading_model_or_trainer(
     assert run_manifest["dataset"]["synthetic"] is None
 
 
-def test_sft_role_filter_prepares_all_rows_then_hands_only_diagnosis_to_trainer(
+def test_sft_role_filter_prepares_only_selected_diagnosis_rows_for_trainer(
     monkeypatch,
     tmp_path,
 ):
@@ -362,9 +362,9 @@ def test_sft_role_filter_prepares_all_rows_then_hands_only_diagnosis_to_trainer(
     expected_diagnosis_rows = [
         row for row in source_rows if row["role"] == "diagnosis"
     ]
-    assert len(prepare_calls) == len(source_rows)
+    assert len(prepare_calls) == len(expected_diagnosis_rows)
     assert [(row["scenario_id"], row["role"]) for row in prepare_calls] == [
-        (row["scenario_id"], row["role"]) for row in source_rows
+        (row["scenario_id"], row["role"]) for row in expected_diagnosis_rows
     ]
     assert len(trainer_rows) == len(expected_diagnosis_rows)
     assert [row["scenario_id"] for row in trainer_rows] == [

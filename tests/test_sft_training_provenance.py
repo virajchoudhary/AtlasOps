@@ -517,6 +517,101 @@ def test_sft_invalid_corpus_does_not_create_run_output(monkeypatch, tmp_path):
     assert attempted_ml_imports == []
 
 
+@pytest.mark.parametrize("role", ["all", "remediation"])
+def test_sft_rejects_selected_role_acl_violation_before_output_or_ml_import(
+    monkeypatch,
+    tmp_path,
+    role,
+):
+    corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    assert canonical_file_sha256(corpus) == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    extra_args = () if role == "all" else ("--role", role)
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        extra_args=extra_args,
+    )
+
+    with pytest.raises(ValueError, match="SFT training admission rejected") as exc:
+        sft.main()
+
+    message = str(exc.value)
+    assert "role='remediation'" in message
+    assert "tool='k8s_delete_pod'" in message
+    assert "role ACL" in message
+    assert "failing-pod" not in message
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+def test_sft_role_filter_admits_only_selected_acl_rows_before_model_import(
+    monkeypatch,
+    tmp_path,
+):
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+    from training import sft
+
+    corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    assert canonical_file_sha256(corpus) == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    captured = {}
+    attempted_model_imports = []
+    original_import = builtins.__import__
+
+    class Dataset:
+        @classmethod
+        def from_list(cls, rows):
+            captured["rows"] = rows
+            raise RuntimeError("stop after dataset admission")
+
+    def block_model_imports(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"peft", "transformers", "trl"}:
+            attempted_model_imports.append(name)
+            raise AssertionError("model dependencies must not be imported")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(Dataset=Dataset))
+    monkeypatch.setattr(builtins, "__import__", block_model_imports)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+            "--role",
+            "triage",
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after dataset admission"):
+        sft.main()
+
+    rows = captured["rows"]
+    assert len(rows) == 16
+    assert {row["role"] for row in rows} == {"triage"}
+    assert all(
+        call["function"]["name"] in ROLE_ALLOWED_TOOLS["triage"]
+        for row in rows
+        for message in row["messages"]
+        for call in message.get("tool_calls") or []
+    )
+    assert attempted_model_imports == []
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+
+
 def test_sft_missing_corpus_does_not_create_run_output(monkeypatch, tmp_path):
     corpus = tmp_path / "missing.jsonl"
     output = tmp_path / "checkpoint"
@@ -921,6 +1016,7 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
         for line in original_bytes.decode("utf-8").splitlines()
         if line
     ]
+    selected_rows = [row for row in original_rows if row["role"] == "triage"]
     replacement_rows = [
         {**row, "race_marker": "replacement"} for row in original_rows
     ]
@@ -964,6 +1060,8 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
             str(corpus),
             "--output",
             str(output),
+            "--role",
+            "triage",
         ],
     )
 
@@ -974,8 +1072,9 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
         (output / "sft_run_manifest.json").read_text(encoding="utf-8")
     )
     assert [row["scenario_id"] for row in captured["rows"]] == [
-        row["scenario_id"] for row in original_rows
+        row["scenario_id"] for row in selected_rows
     ]
+    assert {row["role"] for row in captured["rows"]} == {"triage"}
     assert all(
         row["provenance"]["scenario_id"] == row["scenario_id"]
         for row in captured["rows"]

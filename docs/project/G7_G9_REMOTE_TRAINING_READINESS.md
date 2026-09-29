@@ -42,8 +42,13 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   `523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81`.
   `data/sft_corpus_train.jsonl` is ignored and absent in a clean checkout;
   `training.build_sft_dataset` reconstructs it in a chosen external output
-  directory with adjacent manifest/config. This is a starter corpus, not a
-  successful trajectory set or proof of downstream improvement.
+  directory with adjacent manifest/config. A fresh 2026-09-30 audit found
+  32 remediation tool calls to `k8s_delete_pod` and `environment_verify`,
+  neither exposed to that role, and no P1 approval context in those rows.
+  The default all-role and remediation training selections must reject it.
+  Triage-only role-tool validity is not approval for a model-training pilot.
+  This is a schema fixture, not a successful trajectory set or proof of
+  downstream improvement.
 - The builder excludes Validation and Test IDs and rejects redirected output
   into canonical evidence. Before training, independently verify exact bytes,
   rows, role distribution, Train membership, tool-call/observation pairing,

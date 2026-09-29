@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 
@@ -526,17 +528,33 @@ def test_final_rollout_rejects_unscorable_or_unsettled_verification(
 
 
 @pytest.mark.parametrize(
-    ("status", "error_type"),
-    [("failed", "RuntimeError"), ("interrupted", "KeyboardInterrupt")],
+    ("status", "error_type", "include_summary"),
+    [
+        ("failed", "RuntimeError", True),
+        ("interrupted", "KeyboardInterrupt", False),
+        ("interrupted", "KeyboardInterrupt", True),
+    ],
 )
-def test_noncompleted_status_preserves_raw_rollout_evidence(
-    tmp_path, status, error_type
+def test_noncompleted_status_preserves_and_inventories_partial_evidence(
+    tmp_path, status, error_type, include_summary
 ):
     manifest_path = tmp_path / MANIFEST_NAME
     manifest = persist_status(manifest_path, _planned_manifest(), "running")
     rollout_path = tmp_path / "rollout_trajectories.jsonl"
-    raw_rollout = b'{"status":"interrupted","raw":"verbatim"}\n'
+    raw_rollout = (
+        b'{"status":"interrupted","raw":"verbatim",'
+        b'"private_marker":"rollout-secret-fixture"}\n'
+    )
     rollout_path.write_bytes(raw_rollout)
+    raw_summary = b'{"partial":true,"private_marker":"summary-secret-fixture"}\n'
+    summary_path = tmp_path / "training_summary.json"
+    if include_summary:
+        summary_path.write_bytes(raw_summary)
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "unrelated-secret.txt").write_text(
+        "not an allowed partial artifact",
+        encoding="utf-8",
+    )
 
     saved = persist_status(
         manifest_path,
@@ -548,7 +566,265 @@ def test_noncompleted_status_preserves_raw_rollout_evidence(
     assert saved["status"] == status
     assert saved["failure"]["error_type"] == error_type
     assert saved["checkpoint"] is None
+    expected_files = [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(raw_rollout),
+            "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+        }
+    ]
+    if include_summary:
+        expected_files.append(
+            {
+                "path": "training_summary.json",
+                "size_bytes": len(raw_summary),
+                "sha256": hashlib.sha256(raw_summary).hexdigest(),
+            }
+        )
+    if os.name == "nt":
+        expected_files = []
+        assert saved["partial_artifacts"]["inventory_status"] == "unavailable"
+        assert saved["partial_artifacts"]["unverified"] == [
+            {
+                "path": name,
+                "presence": "unknown",
+                "reason": "stable_directory_handle_unavailable",
+            }
+            for name in grpo_provenance.PARTIAL_ARTIFACT_NAMES
+        ]
+    else:
+        assert saved["partial_artifacts"]["unverified"] == []
+    assert saved["partial_artifacts"]["files"] == expected_files
+    serialized_manifest = json.dumps(saved)
+    assert "rollout-secret-fixture" not in serialized_manifest
+    assert "summary-secret-fixture" not in serialized_manifest
+    assert "unrelated-secret.txt" not in serialized_manifest
     assert rollout_path.read_bytes() == raw_rollout
+    if include_summary:
+        assert summary_path.read_bytes() == raw_summary
+    persisted = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == status
+    assert persisted["failure"]["error_type"] == error_type
+    assert persisted["checkpoint"] is None
+    assert persisted["partial_artifacts"]["files"] == expected_files
+    assert persisted["partial_artifacts"]["unverified"] == (
+        saved["partial_artifacts"]["unverified"]
+    )
+
+
+def test_failed_status_does_not_follow_redirected_partial_artifacts(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"status":"interrupted","raw":"verbatim"}\n'
+    rollout_path = tmp_path / "rollout_trajectories.jsonl"
+    rollout_path.write_bytes(raw_rollout)
+    summary_target = tmp_path / "external-summary.json"
+    raw_summary = b'{"private_marker":"redirect-target-secret-fixture"}\n'
+    summary_target.write_bytes(raw_summary)
+    summary_path = tmp_path / "training_summary.json"
+    try:
+        summary_path.symlink_to(summary_target)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks unavailable: {error}")
+
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "failed",
+        error_type="RuntimeError",
+    )
+
+    if os.name == "nt":
+        assert saved["partial_artifacts"]["files"] == []
+        assert saved["partial_artifacts"]["inventory_status"] == "unavailable"
+    else:
+        assert saved["partial_artifacts"]["files"] == [
+            {
+                "path": "rollout_trajectories.jsonl",
+                "size_bytes": len(raw_rollout),
+                "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+            }
+        ]
+    assert summary_target.read_bytes() == raw_summary
+    assert "redirect-target-secret-fixture" not in json.dumps(saved)
+    assert "external-summary.json" not in json.dumps(saved)
+
+
+def test_failed_status_keeps_partial_inventory_bound_during_parent_replacement(
+    monkeypatch, tmp_path
+):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    manifest_path = run_dir / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    original_bytes = b'{"private_marker":"original-rollout-fixture"}\n'
+    replacement_bytes = b'{"private_marker":"replacement-rollout-secret"}\n'
+    (run_dir / "rollout_trajectories.jsonl").write_bytes(original_bytes)
+
+    if os.name == "nt":
+        failed = persist_status(
+            manifest_path,
+            manifest,
+            "failed",
+            error_type="RuntimeError",
+        )
+        assert failed["partial_artifacts"]["files"] == []
+        assert failed["partial_artifacts"]["inventory_status"] == "unavailable"
+        assert "replacement-rollout-secret" not in json.dumps(failed)
+        assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == original_bytes
+        return
+
+    moved_dir = tmp_path / "moved-run"
+    real_open = os.open
+    replaced = False
+
+    def replace_parent_before_artifact_open(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal replaced
+        if (
+            not replaced
+            and Path(path).name == "rollout_trajectories.jsonl"
+        ):
+            replaced = True
+            run_dir.rename(moved_dir)
+            run_dir.mkdir()
+            (run_dir / "rollout_trajectories.jsonl").write_bytes(replacement_bytes)
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(grpo_provenance.os, "open", replace_parent_before_artifact_open)
+    failed = persist_status(
+        manifest_path,
+        manifest,
+        "failed",
+        error_type="RuntimeError",
+    )
+
+    assert replaced is True
+    assert failed["status"] == "failed"
+    assert failed["checkpoint"] is None
+    assert failed["partial_artifacts"]["files"] == [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(original_bytes),
+            "sha256": hashlib.sha256(original_bytes).hexdigest(),
+        }
+    ]
+    assert failed["partial_artifacts"]["unverified"] == []
+    assert "replacement-rollout-secret" not in json.dumps(failed)
+    assert (moved_dir / "rollout_trajectories.jsonl").read_bytes() == original_bytes
+    assert (run_dir / "rollout_trajectories.jsonl").read_bytes() == replacement_bytes
+    assert not (run_dir / MANIFEST_NAME).exists()
+    persisted = json.loads((moved_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert persisted["status"] == "failed"
+    assert persisted["partial_artifacts"] == failed["partial_artifacts"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows fallback cannot verify file hashes")
+def test_failed_status_bounds_total_partial_artifact_bytes(monkeypatch, tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b"r" * 6
+    raw_summary = b"s" * 5
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    (tmp_path / "training_summary.json").write_bytes(raw_summary)
+    monkeypatch.setattr(grpo_provenance, "MAX_PARTIAL_ARTIFACT_BYTES", 8)
+
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "failed",
+        error_type="RuntimeError",
+    )
+
+    assert saved["partial_artifacts"]["limits"]["max_total_bytes"] == 8
+    assert saved["partial_artifacts"]["bytes_hashed"] == len(raw_rollout)
+    assert saved["partial_artifacts"]["files"] == [
+        {
+            "path": "rollout_trajectories.jsonl",
+            "size_bytes": len(raw_rollout),
+            "sha256": hashlib.sha256(raw_rollout).hexdigest(),
+        }
+    ]
+    assert saved["partial_artifacts"]["unverified"] == [
+        {
+            "path": "training_summary.json",
+            "presence": "present",
+            "reason": "max_total_bytes_exceeded",
+        }
+    ]
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+    assert (tmp_path / "training_summary.json").read_bytes() == raw_summary
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows fallback cannot verify file hashes")
+def test_failed_status_bounds_partial_artifact_inventory_duration(
+    monkeypatch, tmp_path
+):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"private_marker":"slow-rollout-fixture"}\n'
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    clock_calls = 0
+
+    def expired_clock():
+        nonlocal clock_calls
+        clock_calls += 1
+        return 0.0 if clock_calls == 1 else 10.0
+
+    monkeypatch.setattr(grpo_provenance, "monotonic", expired_clock)
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "interrupted",
+        error_type="KeyboardInterrupt",
+    )
+
+    assert saved["partial_artifacts"]["limits"]["max_duration_seconds"] == (
+        grpo_provenance.MAX_PARTIAL_ARTIFACT_SECONDS
+    )
+    assert saved["partial_artifacts"]["bytes_hashed"] == 0
+    assert saved["partial_artifacts"]["files"] == []
+    assert saved["partial_artifacts"]["unverified"][0]["reason"] == (
+        "time_limit_exceeded"
+    )
+    assert "slow-rollout-fixture" not in json.dumps(saved)
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-specific stable-handle fallback")
+def test_windows_partial_artifacts_are_reported_unverified(tmp_path):
+    manifest_path = tmp_path / MANIFEST_NAME
+    manifest = persist_status(manifest_path, _planned_manifest(), "running")
+    raw_rollout = b'{"private_marker":"windows-rollout-secret"}\n'
+    raw_summary = b'{"private_marker":"windows-summary-secret"}\n'
+    (tmp_path / "rollout_trajectories.jsonl").write_bytes(raw_rollout)
+    (tmp_path / "training_summary.json").write_bytes(raw_summary)
+
+    saved = persist_status(
+        manifest_path,
+        manifest,
+        "interrupted",
+        error_type="KeyboardInterrupt",
+    )
+
+    assert saved["checkpoint"] is None
+    assert saved["partial_artifacts"]["inventory_status"] == "unavailable"
+    assert saved["partial_artifacts"]["files"] == []
+    assert {item["path"] for item in saved["partial_artifacts"]["unverified"]} == {
+        "rollout_trajectories.jsonl",
+        "training_summary.json",
+    }
+    assert all(
+        item["reason"] == "stable_directory_handle_unavailable"
+        and item["presence"] == "unknown"
+        for item in saved["partial_artifacts"]["unverified"]
+    )
+    serialized = json.dumps(saved)
+    assert "windows-rollout-secret" not in serialized
+    assert "windows-summary-secret" not in serialized
+    assert (tmp_path / "rollout_trajectories.jsonl").read_bytes() == raw_rollout
+    assert (tmp_path / "training_summary.json").read_bytes() == raw_summary
 
 
 def test_missing_adapter_cannot_be_marked_completed(tmp_path):

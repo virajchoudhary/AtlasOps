@@ -50,6 +50,15 @@ The required relationship is:
 - Planned, running, completed, failed, and interrupted manifests bind model/tokenizer
   revisions, the full Train split hash plus selected prompt/scenario hashes, source
   state, seed, configuration, rollout ledger, trainer history, and checkpoint hashes.
+- Failed and interrupted manifests leave `checkpoint` null. On POSIX hosts
+  with supported stable directory handles, they inventory only extant,
+  regular, non-redirected rollout-ledger and training-summary files by
+  relative path, byte size and SHA-256, with a 64 MiB total and five-second
+  read limit. Missing, redirected, changed, oversized or timed-out files
+  remain explicitly unverified. On Windows the portable runtime cannot pin
+  that directory identity, so no partial-file hash is claimed and both paths
+  are recorded as unverified. Raw content stays out of the manifest. None of
+  this makes a failed run resumable or claimable.
 - A `completed` manifest requires a training summary with an actual positive
   integer `total_steps` and a `trainer_log_history` list before checkpoint
   inventory acceptance. This is structural evidence of optimizer progress,

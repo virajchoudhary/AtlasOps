@@ -691,6 +691,10 @@ def test_replay_rejects_final_test_partition(partition):
         ("test_set", ["synthetic/replay-001"]),
         ("testset", True),
         ("heldouttest", True),
+        ("is_test", True),
+        ("is_final_test", True),
+        ("isTest", True),
+        ("isFinalTest", True),
     ],
 )
 def test_replay_rejects_nested_final_test_scope_aliases(scope_key, scope_value):

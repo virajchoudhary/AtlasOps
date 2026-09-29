@@ -302,7 +302,8 @@ def _reject_final_test_scope(value: Any, label: str) -> None:
                 normalized_key = _normalize_scope_label(key)
                 if _is_scope_field(normalized_key) and _contains_final_test_label(item):
                     raise ValueError(f"{label}.{key} references the final Test partition")
-                if normalized_key in marker_keys and item is not None and item is not False:
+                marker_key = normalized_key.removeprefix("is_")
+                if marker_key in marker_keys and item is not None and item is not False:
                     raise ValueError(f"{label}.{key} marks the final Test partition")
             _reject_final_test_scope(item, f"{label}.{key}")
     elif isinstance(value, (list, tuple)):

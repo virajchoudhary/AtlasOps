@@ -61,6 +61,11 @@ Empirical evaluation requires a completed real-environment GRPO checkpoint and v
 the entire checkpoint inventory and SFT parent before model loading. It preserves public state, raw policy
 output, parsed and executed action, actual tool result, verifier result, reward decomposition,
 next state, timestamps, and failures. Benchmark truth is rejected from policy input.
+Empirical G9 development evaluation is Validation-only. Test and the overlapping
+Leaderboard are rejected by the API and CLI before live context, split,
+checkpoint, state, inference, or output access. A future final comparison
+requires a separately reviewed protocol and explicit final-Test authorization;
+this entrypoint has no bypass.
 The empirical path requires the built-in tool/verifier adapter and a failed, reachable
 pre-action verifier reading for the active fault. Injected environment adapters cannot
 produce claim-eligible empirical summaries.

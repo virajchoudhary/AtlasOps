@@ -2,8 +2,8 @@
   "project_name": "AtlasOps",
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
-  "pipeline_version": "v1.1",
-  "generated_at": "2026-09-28T23:18:14.830921+00:00",
+  "pipeline_version": "v2.2",
+  "generated_at": "2026-09-29T04:51:47.174323+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 242,
+  "asset_count": 245,
   "assets": {
     "AGENTS.md": {
       "sha256": "6c3eefb051f5c3e691db238c3c78754de8a6430cc33a0a9c26fe78f75758c3e8",
@@ -58,8 +58,8 @@
       "size_bytes": 1383
     },
     "README.md": {
-      "sha256": "97f7bd364d89bf2e68391a5003d6b4e0b344a9ea1388739b065f4a13684d18f8",
-      "size_bytes": 25107
+      "sha256": "0bc711977b87885dcda3eafb70415979512acc0d95fe8f0c429b3d8b349fa1f2",
+      "size_bytes": 25410
     },
     "app.py": {
       "sha256": "d17466d5be9a530076c4d88fa39aa668e9582a1f045d799591eecf415a5be57b",
@@ -80,6 +80,10 @@
     "docs/END_TO_END_FLOW.md": {
       "sha256": "3e594773cf15c6b72d467ac3166e47ccb735a7b856435685a80214e562502634",
       "size_bytes": 5629
+    },
+    "docs/EXPERIMENT_REGISTRY.md": {
+      "sha256": "ed16f1e24448df98bd347f1383f971e6386e7744861047c58ea6cfe9248a32e7",
+      "size_bytes": 15637
     },
     "docs/HF_SPACE_SETUP.md": {
       "sha256": "b9fd2597fb62d62092684e2616046246c6dc6b17b2f2d9195f70151a885beb90",
@@ -113,17 +117,25 @@
       "sha256": "856315008207a5e46a0daea8b6ca19801a7d14ffcb9b9e7c85e804463f378b38",
       "size_bytes": 4483
     },
+    "docs/project/FINAL_PIPELINE_V22_STATUS.md": {
+      "sha256": "3f54b293824791d09b586edadfff988c1714fc792ef760b62001a839f8be9cae",
+      "size_bytes": 7582
+    },
+    "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md": {
+      "sha256": "613bbdfe304225f0c330a959f2281aad9ecd39721d086a50ff59c2022f765ce0",
+      "size_bytes": 9884
+    },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "e6ee5dacc9679120d344c18edceec1d2716900004b7fbd0094eef52dfbfbd6cb",
-      "size_bytes": 26128
+      "sha256": "b81678af41fd421e3b2bc094bffa77d6ab5b432321430d130a9c49de46e98bb7",
+      "size_bytes": 26579
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
       "size_bytes": 10277
     },
     "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md": {
-      "sha256": "c562ac58a0e58ed87618b506a47b644b1019e36976c357ff2f7bd4e2079ee14f",
-      "size_bytes": 9283
+      "sha256": "1793f7439dd474e0be5a740720f40ab32a5dc6761cd1ba676bf0841bcb2a731d",
+      "size_bytes": 19359
     },
     "docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md": {
       "sha256": "3a31a019bb01239225168e6ed1925499cf689f05b7c7344cf2106af46ad576b5",
@@ -638,8 +650,8 @@
       "size_bytes": 39748
     },
     "scripts/package_submission.py": {
-      "sha256": "a7dc12fb412b35b7f990c042c7ab4a7ecb8cf16f84afcf66340cf41f83f3bf68",
-      "size_bytes": 12721
+      "sha256": "5d0bd469122e004c92fb95588460dc76963676d29b9f32502c99c0b93baf4c59",
+      "size_bytes": 13300
     },
     "scripts/release_gate.py": {
       "sha256": "6054f5c6ed9362b604e206784b5581cfd44527347d1b6dfb076228db24b22af7",
@@ -918,8 +930,8 @@
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "c5a9b9af4499296a2d1e9f13726463fae1af46fdf87d3e6cbf7d524799c93319",
-      "size_bytes": 23222
+      "sha256": "b322a59ae4c5a418a681a72ef41c95f27ca7bf3e0e073002d68a55f0cbe5c227",
+      "size_bytes": 23681
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

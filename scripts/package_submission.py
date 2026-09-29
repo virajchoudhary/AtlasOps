@@ -145,6 +145,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/AtlasOps_Technical_Report.md",
         "docs/BENCHMARKS.md",
         "docs/END_TO_END_FLOW.md",
+        "docs/EXPERIMENT_REGISTRY.md",
         "docs/HF_SPACE_SETUP.md",
         "docs/slides.md",
         "docs/media/*.png",
@@ -152,6 +153,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/IMPLEMENTATION_STATUS.md",
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
         "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
+        "docs/project/FINAL_PIPELINE_V22_STATUS.md",
+        "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
         "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md",
@@ -259,7 +262,7 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         "project_name": "AtlasOps",
         "project_repository": "virajchoudhary/AtlasOps",
         "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
-        "pipeline_version": "v1.1",
+        "pipeline_version": "v2.2",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "NOT_CERTIFIED",
         "gate_status_source": str(MASTER_STATUS_PATH.as_posix()),
@@ -296,6 +299,7 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
         "",
         f"- **Project Repository**: `{manifest['project_repository']}`",
         f"- **Upstream Baseline**: `{manifest['upstream_baseline']}`",
+        f"- **Working Pipeline**: `{manifest['pipeline_version']}` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)",
         f"- **Certification**: **{manifest['status']}**",
         f"- **Generated**: `{manifest['generated_at']}`",
         f"- **Gate inventory source**: `{manifest['gate_status_source']}`",
@@ -308,6 +312,9 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
     for gate, status in manifest["gate_statuses_declared"].items():
         lines.append(f"| {gate} | {status} |")
     lines.extend([
+        "",
+        "G3 PASS is historical local Kind acceptance with wrapper and tracing caveats; it does not establish current cluster health.",
+        "G11 PASS is bounded to small scenario-derived synthetic offline ranking, not real incident improvement.",
         "",
         manifest["metric_note"],
         "Asset hashes establish file integrity, not scientific gate closure.",

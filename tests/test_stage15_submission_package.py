@@ -45,6 +45,7 @@ class TestStage15SubmissionPackage:
     def test_submission_package_generator_creates_manifest_and_summary(self, tmp_path):
         manifest = build_submission_package(output_dir=tmp_path)
         assert manifest["project_name"] == "AtlasOps"
+        assert manifest["pipeline_version"] == "v2.2"
         assert manifest["status"] == "NOT_CERTIFIED"
         assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
         assert manifest["gate_statuses_declared"]["G13"] == "REOPENED"
@@ -61,6 +62,9 @@ class TestStage15SubmissionPackage:
         assert data["empirical_metrics"] is None
         summary = summary_path.read_text(encoding="utf-8")
         assert "NOT_CERTIFIED" in summary
+        assert "Section 25 proposed, not approved" in summary
+        assert "G3 PASS is historical local Kind acceptance" in summary
+        assert "G11 PASS is bounded" in summary
         assert "100.0%" not in summary
 
     def test_technical_report_structure_and_completeness(self):
@@ -102,6 +106,7 @@ class TestStage15SubmissionPackage:
             "AGENTS.md",
             "BLOG.md",
             "docs/slides.md",
+            "docs/EXPERIMENT_REGISTRY.md",
             "docs/media/console-overview-20260926.png",
             "docs/media/gradio-demo-20260926.png",
             "agents/_http_retry.py",
@@ -119,6 +124,8 @@ class TestStage15SubmissionPackage:
             "docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md",
             "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
             "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
+            "docs/project/FINAL_PIPELINE_V22_STATUS.md",
+            "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",
             "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",
             "tests/stage4_approval_process.py",
@@ -158,6 +165,7 @@ class TestStage15SubmissionPackage:
         assert packaged_scenario_manifests == frozen_manifest_paths
 
         assert data["status"] == "NOT_CERTIFIED"
+        assert data["pipeline_version"] == "v2.2"
         assert data["gate_statuses_declared"]["G4"] == "NOT_PASSED"
         assert data["gate_statuses_declared"]["G15"] == "PARTIAL"
         assert data["empirical_metrics"] is None

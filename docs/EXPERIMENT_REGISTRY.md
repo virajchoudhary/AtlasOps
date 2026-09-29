@@ -1,6 +1,6 @@
 # AtlasOps Experiment & Evaluation Registry
 
-This registry tracks all material empirical runs, benchmarks, and multi-agent evaluations conducted on AtlasOps under the governance rules of `AGENTS.md` and *Master Implementation Pipeline v1.1 Free-First*.
+This registry preserves dated run records under the governance rules in `AGENTS.md`. The project lead adopted *Master Implementation Pipeline v2.2* Sections 1-24 and 26-27 for current non-live status and evidence standards on 29 September 2026; Section 25 is still an unapproved proposal. Earlier runs retain their contemporaneous v1.1 protocol and wording. For present gate status, see [the master inventory](project/MASTER_PIPELINE_STATUS.md); G4 remains `NOT_PASSED`, not the historical "IN PROGRESS / BLOCKED" label on attempt 004 below.
 
 ---
 

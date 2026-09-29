@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T23:30:18.083278+00:00",
+  "generated_at": "2026-09-29T23:45:37.722147+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -141,12 +141,12 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "a245d2f4e9f8ec1526b2003f91e7232e26036d88514c18cbed372b643fd2fb73",
-      "size_bytes": 12222
+      "sha256": "c1347079d7700306252237f01d3f64921e4175e8f19190ee6e55f09220f0b141",
+      "size_bytes": 12452
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "1dd8fbf287b0dafb62daa21eebe1bc478659751eeac6c8e31d3d8ebc89e8c38c",
-      "size_bytes": 14055
+      "sha256": "9af400e4b638e73f90a6e1c15172d2ac31fc01927a28b8a6d6de632daa01617d",
+      "size_bytes": 14289
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
       "sha256": "486197ccac0102b139d49148f6c73e9e98da4bba3ebe4fe68573bb06e9d339ee",
@@ -213,8 +213,8 @@
       "size_bytes": 5770
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "6720200d459a7e7bc9f62f38664bf76c47a558137f6e97302587a2bcd0720945",
-      "size_bytes": 8764
+      "sha256": "8da1c24f0c03f441ca1d1d069d5bbb7f8d87f72d0fbc5e01318e4bd57f9135ff",
+      "size_bytes": 9204
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
       "sha256": "bf9ce0d05e8bc4c073473059b3806b2f753525b2494297d9da953ddb18638087",
@@ -713,8 +713,8 @@
       "size_bytes": 18205
     },
     "training/sft.py": {
-      "sha256": "b75e5ebdfd23ad998ea3f116afb660f08af265ea2f020a831aa460ee8e57b89c",
-      "size_bytes": 13082
+      "sha256": "b627afaa5b8cc1d533f83ca50419f8a7c69548425737ccfa79ae1c1dd6ff6cac",
+      "size_bytes": 13911
     },
     "training/build_sft_dataset.py": {
       "sha256": "237323d639d21a7b07d2e7cf0fbd2a51f3b2bb44b9da513a13e8c0d0801cb2eb",
@@ -993,8 +993,8 @@
       "size_bytes": 12630
     },
     "tests/test_sft_training_provenance.py": {
-      "sha256": "4f6f06d55c1c703b6bc4e1c30d768bcc71f0b3104485c4cc49c53212627ede8b",
-      "size_bytes": 48954
+      "sha256": "f86aaaa5190eceb4403a5c5fcf4da89803b303d2fc33b0c48139b65e85df5c75",
+      "size_bytes": 50403
     },
     "tests/test_stage10_rs_data_and_baselines.py": {
       "sha256": "a9c08a6fc88350c9e5b04c5ae701a70438757ee0d940f49e987ecc521f9884df",

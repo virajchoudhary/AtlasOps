@@ -725,6 +725,48 @@ def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
     assert attempted_ml_imports == []
 
 
+@pytest.mark.parametrize(
+    ("selected_role", "changed_role"),
+    [
+        ("triage", "comms"),
+        ("diagnosis", "comms"),
+        ("comms", "triage"),
+    ],
+)
+def test_sft_rejects_known_role_targets_when_other_role_changes(
+    monkeypatch, tmp_path, selected_role, changed_role
+):
+    source_corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    rows = [
+        json.loads(line)
+        for line in source_corpus.read_text(encoding="utf-8").splitlines()
+    ]
+    changed = next(row for row in rows if row["role"] == changed_role)
+    assistant = next(
+        message for message in changed["messages"] if message["role"] == "assistant"
+    )
+    assistant["content"] = "Different synthetic assistant target."
+    candidate_dir = tmp_path / "changed-other-role"
+    candidate_dir.mkdir()
+    corpus = candidate_dir / "train.jsonl"
+    corpus.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    assert canonical_file_sha256(corpus) != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch, corpus, output, extra_args=("--role", selected_role)
+    )
+
+    with pytest.raises(ValueError, match="canonical Train corpus"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
 @pytest.mark.parametrize("role", ["all", "remediation"])
 def test_sft_rejects_selected_role_acl_violation_before_output_or_ml_import(
     monkeypatch,

@@ -46,7 +46,10 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   32 remediation tool calls to `k8s_delete_pod` and `environment_verify`,
   neither exposed to that role, and no P1 approval context in those rows.
   The exact canonical fixture and tested representation-only variants of
-  its assistant targets are rejected for every SFT training role. This is
+  its assistant targets are rejected for every SFT training role, even when
+  an unrelated role changes. Selected-role target fingerprints are conservative:
+  a reviewed corpus with different context but identical teacher targets
+  can also be rejected pending a separate D3 admission mechanism. This is
   not authenticated approval for other data; do not execute training while
   D3 remains unresolved.
   All-role and remediation selections also contain disallowed tool calls;

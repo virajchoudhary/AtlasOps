@@ -59,7 +59,10 @@ external-output preparation.
 The current 64-row synthetic corpus passes those integrity checks but
 is not eligible for SFT training in any role. The current code rejects its
 exact bytes and tested representation-only variants of its assistant
-targets, but this does not authenticate D3 approval for other data.
+targets, including selected-role matches when another role changes. A
+different, reviewed context with the same teacher targets can be conservatively
+rejected too; resolve that through a separate D3 admission decision, not by
+disabling the guard. This does not authenticate D3 approval for other data.
 Its 16 P1 remediation rows have no approval context and contain 32 calls
 to tools absent from the remediation role's runtime allowlist. Use it only
 for non-model schema/rendering checks. Preserve its

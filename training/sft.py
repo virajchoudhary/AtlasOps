@@ -19,6 +19,7 @@ if __package__ in {None, ""}:
 from config.splits import TRAIN_SEED
 from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
+    SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS,
     canonical_bytes_sha256,
     canonical_json_sha256,
     create_run_manifest,
@@ -54,6 +55,12 @@ TARGET_MODULES = [
 _SYNTHETIC_ASSISTANT_TARGETS_SHA256 = (
     "c6e7449f83fe55e20716db3e16743f47aa2273bea0b9261d69a0a398d3d1b311"
 )
+_SYNTHETIC_ROLE_TARGETS_SHA256 = {
+    "triage": "4e22bb67807887f11e186ded1ebe9bf0de31d5379a8ab20f848bdbc71ac17900",
+    "diagnosis": "3679c1c00d353869de585314c6555fa773fdc1384624e914720a1e115c6bcd63",
+    "remediation": "e2c0ddd6678a7e41946c6d431c3210dc618a3f8ff09f04cf1569dd2a7d7c99a6",
+    "comms": "74e69f96d81adb5c5d97973b50f02d251c5019b841c76d378ccbcd376cd28b3e",
+}
 
 
 def _assistant_targets_sha256(rows: tuple[dict[str, Any], ...]) -> str:
@@ -196,15 +203,6 @@ def main() -> None:
         raise FileExistsError(output_dir)
 
     corpus_snapshot = snapshot_training_corpus(corpus_path)
-    if (
-        canonical_bytes_sha256(corpus_snapshot.raw_bytes)
-        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
-        or _assistant_targets_sha256(corpus_snapshot.rows)
-        == _SYNTHETIC_ASSISTANT_TARGETS_SHA256
-    ):
-        raise ValueError(
-            "SFT training admission rejected the canonical Train corpus for every role"
-        )
     training_source_rows = tuple(
         row
         for row in corpus_snapshot.rows
@@ -212,6 +210,26 @@ def main() -> None:
     )
     if not training_source_rows:
         raise ValueError(f"No training examples remain for role={args.role}")
+    known_role_targets = any(
+        len(role_rows) == SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS
+        and _assistant_targets_sha256(role_rows) == digest
+        for role, digest in _SYNTHETIC_ROLE_TARGETS_SHA256.items()
+        if (
+            role_rows := tuple(
+                row for row in training_source_rows if row.get("role") == role
+            )
+        )
+    )
+    if (
+        canonical_bytes_sha256(corpus_snapshot.raw_bytes)
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+        or _assistant_targets_sha256(corpus_snapshot.rows)
+        == _SYNTHETIC_ASSISTANT_TARGETS_SHA256
+        or known_role_targets
+    ):
+        raise ValueError(
+            "SFT training admission rejected the canonical Train corpus for every role"
+        )
     validate_tool_call_role_acl(training_source_rows)
 
     manifest = create_run_manifest(

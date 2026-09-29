@@ -49,11 +49,15 @@ real-data or empirical training launch command.
 `training/sft.py` requires Hugging Face repository IDs and full 40-character
 model/tokenizer commit SHAs; local model paths and mutable revision aliases
 fail before the output directory is claimed. A separate tokenizer repository
-requires its own pin. The loader's resolved commit hashes must match the
-requested pins before the run advances to `running`; a missing loader hash
-cannot fall back to the CLI value. This checks loader resolution, not
-independent weight or serving identity, and a future authorized load may
-download uncached weights. The trainer verifies the corpus against the frozen
+requires its own pin. The model loader's exposed commit hash must match
+the requested pin before the run advances to `running`. The pinned
+Transformers tokenizer loader may not expose a commit hash: when absent,
+the manifest records its requested full SHA as enforced by the loader's
+`revision` argument with
+`PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED` as the basis.
+Any exposed tokenizer hash must match; a mutable alias is never a fallback.
+This is not independent weight or serving identity, and a future authorized
+load may download uncached weights. The trainer verifies the corpus against the frozen
 Train split and any adjacent corpus manifest's hash, split, and counts, and
 uses the project-owned Qwen tool template with assistant-only loss. It writes
 planned, running, completed, failed, or interrupted state atomically and records:
@@ -106,7 +110,7 @@ launch template, not authorization to train or evidence of a checkpoint.
 
 Local tests validate corpus integrity, split isolation, schema and tool-call pairing,
 template rendering, assistant-only masking, the exact stubbed trainer dataset
-handoff, immutable revision preflight and fake-loader identity checks,
+handoff, immutable revision preflight and fake-loader pin/basis checks,
 lifecycle persistence, and checkpoint hashing.
 Real SFT training remains unexecuted.
 

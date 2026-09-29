@@ -172,6 +172,7 @@ def test_adjacent_corpus_origin_is_validated_and_preserved(
         run,
         resolved_model_revision=MODEL_COMMIT,
         resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     completed = mark_completed(
         running,
@@ -631,7 +632,6 @@ def _install_fake_sft_dependencies(
     [
         (None, MODEL_COMMIT, "Loaded base model revision"),
         ("c" * 40, MODEL_COMMIT, "does not match the requested"),
-        (MODEL_COMMIT, None, "Loaded tokenizer revision"),
         (MODEL_COMMIT, "d" * 40, "does not match the requested"),
     ],
 )
@@ -675,7 +675,14 @@ def test_sft_rejects_missing_or_mismatched_loader_commit_identity(
     )
     assert persisted["status"] == "failed"
     assert persisted["base_model"]["resolved_revision"] is None
-    assert persisted["tokenizer"]["resolved_revision"] is None
+    if resolved_tokenizer_revision == MODEL_COMMIT:
+        assert persisted["tokenizer"]["resolved_revision"] == MODEL_COMMIT
+        assert persisted["tokenizer"]["resolved_revision_basis"] == (
+            "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+        )
+    else:
+        assert persisted["tokenizer"]["resolved_revision"] is None
+        assert persisted["tokenizer"]["resolved_revision_basis"] is None
     assert "model_loaded_at" not in persisted
     assert calls["trainer"] == 0
     if resolved_tokenizer_revision == MODEL_COMMIT:
@@ -728,6 +735,64 @@ def test_sft_records_exact_loader_commits_before_training(
     assert persisted["base_model"]["resolved_revision"] == MODEL_COMMIT
     assert persisted["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
     assert persisted["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision_basis"] == (
+        "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+    )
+    assert calls["tokenizer"] == [
+        ("test-org/tokenizer", TOKENIZER_COMMIT)
+    ]
+    assert calls["model"] == [
+        ("Qwen/Qwen2.5-7B-Instruct", MODEL_COMMIT)
+    ]
+    assert calls["trainer"] == 1
+
+
+def test_sft_records_pinned_tokenizer_revision_when_loader_exposes_no_hash(
+    monkeypatch,
+    tmp_path,
+):
+    from training import sft
+
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    calls = _install_fake_sft_dependencies(
+        monkeypatch,
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=None,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--tokenizer",
+            "test-org/tokenizer",
+            "--tokenizer-revision",
+            TOKENIZER_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop before fake training"):
+        sft.main()
+
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["base_model"]["resolved_revision"] == MODEL_COMMIT
+    assert persisted["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert persisted["tokenizer"]["resolved_revision_basis"] == (
+        "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
+    )
     assert calls["tokenizer"] == [
         ("test-org/tokenizer", TOKENIZER_COMMIT)
     ]
@@ -972,6 +1037,7 @@ def test_running_and_completed_manifest_hash_checkpoint_files(tmp_path):
         manifest,
         resolved_model_revision=MODEL_COMMIT,
         resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     assert running["status"] == "running"
 

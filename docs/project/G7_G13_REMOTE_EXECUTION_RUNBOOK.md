@@ -77,11 +77,14 @@ dataset/template hashes, trainer history, failures and full checkpoint
 inventory. The canonical `sft_run_manifest.json` must remain inside the
 adapter directory and end `completed` only after saved files are hashed.
 The SFT CLI requires full 40-character model/tokenizer commit pins and
-rejects local paths or mutable aliases before claiming output. It checks the
-loader-resolved commits against those pins before marking the run `running`.
-This is not independent weight or serving attestation; the project lead must
-still approve exact commits, license, remote code, and any future weight
-transfer before loading.
+rejects local paths or mutable aliases before claiming output. It requires
+the model loader's exposed commit to match. The pinned tokenizer loader
+may not return a commit hash; in that case the manifest records the
+full pin passed as its `revision` with the explicit
+`PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED` basis.
+Any exposed tokenizer hash must match. This is not independent weight or
+serving attestation; the project lead must still approve exact commits,
+license, remote code, and any future weight transfer before loading.
 
 **Recovery:** after the planned manifest has been written, an interruption
 or caught training exception records `interrupted`/`failed` status. Preserve

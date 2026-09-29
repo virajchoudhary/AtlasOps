@@ -66,6 +66,7 @@ def _checkpoint_with_manifest(root: Path) -> Path:
         sft_manifest,
         resolved_model_revision=MODEL_COMMIT,
         resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     sft_manifest["source"] = {"git_sha": "c" * 40, "git_dirty": False}
     (sft_checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")

@@ -43,6 +43,16 @@ _DATA_ORIGIN_PROVENANCE_FIELDS = frozenset(
 _HF_COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 # Mirror Hub repository-id validation without making the optional training stack a dependency.
 _HF_REPO_ID_PATTERN = re.compile(r"(?:\b[\w.-]+\b/)?\b[\w.-]{1,96}\b\Z")
+TOKENIZER_REVISION_BASIS_LOADER_MATCH = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+TOKENIZER_REVISION_BASIS_PIN_ENFORCED = (
+    "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
+)
+_TOKENIZER_REVISION_BASES = frozenset(
+    {
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+        TOKENIZER_REVISION_BASIS_PIN_ENFORCED,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -146,6 +156,27 @@ def validate_resolved_hf_commit(
             f"Loaded {label} commit does not match the requested immutable revision"
         )
     return resolved_revision
+
+
+def resolve_tokenizer_revision(
+    requested_revision: str,
+    exposed_revision: Any,
+) -> tuple[str, str]:
+    """Record the pinned tokenizer commit without overstating loader evidence."""
+    if exposed_revision is None:
+        validate_hf_commit_revision(
+            requested_revision,
+            label="Requested tokenizer revision",
+        )
+        return requested_revision, TOKENIZER_REVISION_BASIS_PIN_ENFORCED
+    return (
+        validate_resolved_hf_commit(
+            requested_revision,
+            exposed_revision,
+            label="tokenizer",
+        ),
+        TOKENIZER_REVISION_BASIS_LOADER_MATCH,
+    )
 
 
 def source_provenance() -> dict[str, Any]:
@@ -724,6 +755,7 @@ def create_run_manifest(
             "id": tokenizer,
             "requested_revision": tokenizer_revision,
             "resolved_revision": None,
+            "resolved_revision_basis": None,
         },
         "dataset": {
             "corpus_path": str(corpus_snapshot.source_path),
@@ -754,7 +786,10 @@ def mark_running(
     *,
     resolved_model_revision: str,
     resolved_tokenizer_revision: str,
+    resolved_tokenizer_revision_basis: str,
 ) -> dict[str, Any]:
+    if resolved_tokenizer_revision_basis not in _TOKENIZER_REVISION_BASES:
+        raise ValueError("SFT tokenizer revision provenance basis is missing or invalid")
     validate_resolved_hf_commit(
         manifest["base_model"]["requested_revision"],
         resolved_model_revision,
@@ -775,6 +810,7 @@ def mark_running(
     updated["tokenizer"] = {
         **manifest["tokenizer"],
         "resolved_revision": resolved_tokenizer_revision,
+        "resolved_revision_basis": resolved_tokenizer_revision_basis,
     }
     return updated
 

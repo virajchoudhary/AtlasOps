@@ -24,6 +24,7 @@ from training.sft_provenance import (
     mark_completed,
     mark_failed,
     mark_running,
+    resolve_tokenizer_revision,
     snapshot_training_corpus,
     validate_hf_reference,
     validate_resolved_hf_commit,
@@ -212,13 +213,19 @@ def main() -> None:
             trust_remote_code=True,
         )
         tokenizer_init_kwargs = getattr(tokenizer, "init_kwargs", None)
-        resolved_tokenizer_revision = validate_resolved_hf_commit(
-            tokenizer_revision,
-            tokenizer_init_kwargs.get("_commit_hash")
-            if isinstance(tokenizer_init_kwargs, dict)
-            else None,
-            label="tokenizer",
+        resolved_tokenizer_revision, resolved_tokenizer_revision_basis = (
+            resolve_tokenizer_revision(
+                tokenizer_revision,
+                tokenizer_init_kwargs.get("_commit_hash")
+                if isinstance(tokenizer_init_kwargs, dict)
+                else None,
+            )
         )
+        manifest["tokenizer"]["resolved_revision"] = resolved_tokenizer_revision
+        manifest["tokenizer"]["resolved_revision_basis"] = (
+            resolved_tokenizer_revision_basis
+        )
+        write_manifest_atomic(manifest_path, manifest)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         tokenizer.chat_template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -263,6 +270,7 @@ def main() -> None:
             manifest,
             resolved_model_revision=resolved_model_revision,
             resolved_tokenizer_revision=resolved_tokenizer_revision,
+            resolved_tokenizer_revision_basis=resolved_tokenizer_revision_basis,
         )
         write_manifest_atomic(manifest_path, manifest)
 

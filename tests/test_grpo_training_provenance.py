@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from argparse import Namespace
@@ -34,9 +35,15 @@ from training.sft_provenance import (
 
 MODEL_COMMIT = "f" * 40
 TOKENIZER_COMMIT = "e" * 40
+TOKENIZER_LOADER_MATCH_BASIS = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
+TOKENIZER_PIN_ONLY_BASIS = "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
 
 
-def _sft_parent_record(tmp_path):
+def _sft_parent_record(
+    tmp_path,
+    *,
+    tokenizer_revision_basis: str = TOKENIZER_LOADER_MATCH_BASIS,
+):
     corpus = tmp_path / "train.jsonl"
     corpus.write_text(
         "".join(json.dumps({"scenario_id": scenario_id, "role": "triage"}) + "\n"
@@ -59,6 +66,7 @@ def _sft_parent_record(tmp_path):
         manifest,
         resolved_model_revision=MODEL_COMMIT,
         resolved_tokenizer_revision=TOKENIZER_COMMIT,
+        resolved_tokenizer_revision_basis=tokenizer_revision_basis,
     )
     manifest["source"] = {"git_sha": "a" * 40, "git_dirty": False}
     (checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
@@ -918,6 +926,54 @@ def test_grpo_parent_requires_byte_valid_sft_checkpoint(tmp_path):
             tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
             tokenizer_revision=TOKENIZER_COMMIT,
         )
+
+
+def test_pin_enforced_tokenizer_basis_passes_g8_and_g9_parent_validation(tmp_path):
+    checkpoint, g9_parent = _sft_parent_record(
+        tmp_path,
+        tokenizer_revision_basis=TOKENIZER_PIN_ONLY_BASIS,
+    )
+
+    from bench.sft_eval import _load_checkpoint_manifest
+
+    g8_manifest, g8_manifest_sha256 = _load_checkpoint_manifest(checkpoint)
+    manifest_bytes = (checkpoint / "sft_run_manifest.json").read_bytes()
+
+    assert g8_manifest_sha256 == hashlib.sha256(manifest_bytes).hexdigest()
+    assert g9_parent["manifest_sha256"] == g8_manifest_sha256
+    assert g9_parent["checkpoint_tree_sha256"] == (
+        g8_manifest["checkpoint"]["tree_sha256"]
+    )
+    assert g8_manifest["status"] == "completed"
+    assert g8_manifest["source"] == {"git_sha": "a" * 40, "git_dirty": False}
+    assert g8_manifest["dataset"]["split"] == "train"
+    assert g8_manifest["dataset"]["split_scenarios"] == list(TRAIN_SPLIT)
+    assert g8_manifest["dataset"]["split_sha256"] == canonical_json_sha256(
+        list(TRAIN_SPLIT)
+    )
+    assert g8_manifest["dataset"]["data_origin"] == "UNVERIFIED"
+    assert g8_manifest["dataset"]["synthetic"] is None
+    assert g8_manifest["base_model"]["resolved_revision"] == MODEL_COMMIT
+    assert g8_manifest["tokenizer"]["requested_revision"] == TOKENIZER_COMMIT
+    assert g8_manifest["tokenizer"]["resolved_revision"] == TOKENIZER_COMMIT
+    assert g8_manifest["tokenizer"]["resolved_revision_basis"] == (
+        TOKENIZER_PIN_ONLY_BASIS
+    )
+    assert g9_parent["train_corpus_sha256"] == (
+        g8_manifest["dataset"]["corpus_sha256_canonical_lf"]
+    )
+    assert g9_parent["train_split_sha256"] == canonical_json_sha256(
+        list(TRAIN_SPLIT)
+    )
+    # G9 binds the complete manifest bytes; it does not promote this basis to attestation.
+    assert set(g9_parent) == {
+        "checkpoint_path",
+        "manifest_sha256",
+        "checkpoint_tree_sha256",
+        "training_source_sha",
+        "train_corpus_sha256",
+        "train_split_sha256",
+    }
 
 
 def test_grpo_loader_trains_from_sft_adapter(monkeypatch, tmp_path):

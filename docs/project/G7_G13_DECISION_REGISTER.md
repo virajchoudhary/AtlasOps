@@ -37,6 +37,10 @@ protocol/source/configuration hashes, and superseded version. A general
 conversation approval is not a signed empirical protocol, access grant,
 spend authorization or live P1 decision. A failed or interrupted attempt
 remains visible after any later decision.
+The SFT runner's role-tool and known-fixture checks are technical admission
+only; passing them for a different corpus does not authenticate a project-lead
+D3 approval. Do not execute model training until that separate decision is
+recorded.
 
 The [proposed common contract](G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md),
 [training-readiness assessment](G7_G9_REMOTE_TRAINING_READINESS.md) and

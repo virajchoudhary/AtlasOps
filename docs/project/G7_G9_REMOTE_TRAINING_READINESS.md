@@ -45,8 +45,9 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   directory with adjacent manifest/config. A fresh 2026-09-30 audit found
   32 remediation tool calls to `k8s_delete_pod` and `environment_verify`,
   neither exposed to that role, and no P1 approval context in those rows.
-  The default all-role and remediation training selections must reject it.
-  Triage-only role-tool validity is not approval for a model-training pilot.
+  The known canonical fixture must be rejected for every SFT training role.
+  All-role and remediation selections also contain disallowed tool calls;
+  triage-only role-tool validity is not approval for a model-training pilot.
   This is a schema fixture, not a successful trajectory set or proof of
   downstream improvement.
 - The builder excludes Validation and Test IDs and rejects redirected output

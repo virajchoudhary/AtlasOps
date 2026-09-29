@@ -18,6 +18,8 @@ if __package__ in {None, ""}:
 
 from config.splits import TRAIN_SEED
 from training.sft_provenance import (
+    SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
+    canonical_bytes_sha256,
     create_run_manifest,
     file_sha256,
     has_redirecting_path_component,
@@ -164,6 +166,13 @@ def main() -> None:
         raise FileExistsError(output_dir)
 
     corpus_snapshot = snapshot_training_corpus(corpus_path)
+    if (
+        canonical_bytes_sha256(corpus_snapshot.raw_bytes)
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    ):
+        raise ValueError(
+            "SFT training admission rejected the canonical Train corpus for every role"
+        )
     training_source_rows = tuple(
         row
         for row in corpus_snapshot.rows

@@ -57,14 +57,14 @@ The ignored local `data/sft_corpus_train.jsonl` has matching bytes but no
 adjacent provenance sidecars; do not substitute it for this complete
 external-output preparation.
 The current 64-row synthetic corpus passes those integrity checks but
-fails default all-role and remediation training admission: 16 P1 remediation
-rows have no approval context
-and contain 32 calls to tools absent from the remediation role's runtime
+must fail SFT training admission for every role. Its 16 P1 remediation
+rows have no approval context and contain 32 calls to tools absent from
+the remediation role's runtime
 allowlist. Use it only for non-model schema/rendering checks. Preserve its
-bytes and tracked evidence; a triage-only ACL pass is not permission to
-train a model. Obtain a new versioned, independently reviewed Train-only
-corpus with role-allowed tools and approval/negative-outcome labels before
-moving to phase 2.
+bytes and tracked evidence; even triage-only ACL validity does not permit
+training on the known fixture. Obtain a new versioned, independently
+reviewed Train-only corpus with role-allowed tools and
+approval/negative-outcome labels before moving to phase 2.
 
 **Exit:** byte-preserved corpus, manifest, config, hash and independent
 Train-only check in an approved evidence store. Hash and split agreement

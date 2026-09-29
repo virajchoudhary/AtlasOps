@@ -821,6 +821,36 @@ def test_local_policy_factory_requires_live_context_before_checkpoint_read(
         )
 
 
+@pytest.mark.parametrize("split_name", ["test", "leaderboard"])
+@pytest.mark.asyncio
+async def test_empirical_split_refuses_non_validation_before_access(
+    monkeypatch, tmp_path, split_name
+):
+    def forbidden_access(*_args, **_kwargs):
+        pytest.fail("non-validation empirical split accessed protected evaluation resources")
+
+    monkeypatch.setattr(grpo_eval_module, "require_live_kube_context", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "get_split", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "validate_grpo_checkpoint", forbidden_access)
+    monkeypatch.setattr(
+        grpo_eval_module.LocalGRPOPolicy,
+        "from_checkpoint",
+        classmethod(forbidden_access),
+    )
+
+    output_dir = tmp_path / "must-not-be-created"
+    with pytest.raises(ValueError, match="Validation-only"):
+        await evaluate_grpo_split(
+            split_name,
+            checkpoint=tmp_path / "missing-checkpoint",
+            state_provider=lambda _scenario_id: forbidden_access(),
+            environment=None,
+            output_dir=output_dir,
+        )
+
+    assert not output_dir.exists()
+
+
 @pytest.mark.parametrize(
     ("extra_flags", "message"),
     [
@@ -859,6 +889,48 @@ def test_cli_rejects_incomplete_live_execution_before_starting_async_work(
 
     assert exc.value.code == 2
     assert message in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize("split_name", ["test", "leaderboard"])
+def test_empirical_cli_refuses_non_validation_before_live_setup(
+    monkeypatch, tmp_path, capsys, split_name
+):
+    def forbidden_access(*_args, **_kwargs):
+        pytest.fail("non-validation empirical CLI reached protected evaluation resources")
+
+    output_dir = tmp_path / "must-not-be-created"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "grpo_eval.py",
+            "--split",
+            split_name,
+            "--checkpoint",
+            str(tmp_path / "missing-checkpoint"),
+            "--state-dir",
+            str(tmp_path / "states"),
+            "--output-dir",
+            str(output_dir),
+            "--execute-actions",
+            "--kube-context",
+            "kind-atlasops-test",
+        ],
+    )
+    monkeypatch.setattr(grpo_eval_module, "require_live_kube_context", forbidden_access)
+    monkeypatch.setattr(grpo_eval_module, "get_split", forbidden_access)
+    monkeypatch.setattr(
+        grpo_eval_module.LocalGRPOPolicy,
+        "from_checkpoint",
+        classmethod(forbidden_access),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        grpo_eval_module.main()
+
+    assert exc.value.code == 2
+    assert "Validation-only" in capsys.readouterr().err
     assert not output_dir.exists()
 
 

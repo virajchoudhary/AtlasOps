@@ -35,12 +35,16 @@ from config.g4_protocol import (
     APPROVED_G4_V33_MODEL_DIGEST,
     APPROVED_G4_V33_PROTOCOL_PROFILE,
     APPROVED_G4_V33_TOOL_CONTRACT_SHA256,
+    APPROVED_G4_V34_PROTOCOL_PROFILE,
+    APPROVED_G4_V35_AGENT_PROMPT_SHA256,
+    APPROVED_G4_V35_CAUSAL_SOURCE_SHA256,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
     G4_V31_PROTOCOL_MARKER,
     G4_V33_PROTOCOL_MARKER,
     G4_V34_PROTOCOL_MARKER,
+    G4_V35_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -50,13 +54,13 @@ from config.g4_protocol import (
 )
 
 
-def test_approved_v34_profile_pins_model_and_host_approval_contract():
+def test_active_v35_profile_pins_model_approval_and_causal_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
         "name": APPROVED_G4_V33_MODEL,
         "digest": APPROVED_G4_V33_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V34_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V35_PROTOCOL_MARKER
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
@@ -69,6 +73,20 @@ def test_approved_v34_profile_pins_model_and_host_approval_contract():
         "authentication": "X-AtlasOps-Key",
         "restart": "fail-closed-memory-only",
     }
+    assert APPROVED_G4_PROTOCOL_PROFILE["agent_prompt_sha256"] == (
+        APPROVED_G4_V35_AGENT_PROMPT_SHA256
+    )
+    assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
+        APPROVED_G4_V35_CAUSAL_SOURCE_SHA256
+    )
+
+
+def test_historical_v34_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V34_PROTOCOL_PROFILE["protocol_marker"] == G4_V34_PROTOCOL_MARKER
+    assert "causal_evidence_policy" not in APPROVED_G4_V34_PROTOCOL_PROFILE
+    assert protocol_fingerprint(APPROVED_G4_V34_PROTOCOL_PROFILE) == (
+        "885349a5083509d43ef5366d6157367e33a986fb0022c4c71eb8c4fa02ea10a3"
+    )
 
 
 def test_historical_v33_profile_remains_exact_and_immutable():
@@ -265,6 +283,8 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
         "model",
         "approval_channel",
         "pre_t0_safety",
+        "agent_prompt_sha256",
+        "causal_evidence_policy",
         "diagnosis_prompt",
         "role_tool_contract",
         "f1_contract",
@@ -288,6 +308,24 @@ def test_v34_attempt_transition_terms_are_required_by_fingerprint():
     assert protocol_fingerprint(observed) != protocol_fingerprint(
         APPROVED_G4_PROTOCOL_PROFILE
     )
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(observed)
+
+
+@pytest.mark.parametrize(
+    "changed_name",
+    ["grounding.py", "chaos.py", "run_stage4_golden_incident.py", "remediation.md"],
+)
+def test_v35_rejects_causal_source_or_prompt_drift(monkeypatch, changed_name):
+    original_hash = protocol.file_sha256
+    monkeypatch.setattr(
+        protocol,
+        "file_sha256",
+        lambda path: "0" * 64 if path.name == changed_name else original_hash(path),
+    )
+    observed = _approved_observation()
+
+    assert observed != APPROVED_G4_PROTOCOL_PROFILE
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         protocol.validate_runtime_protocol_profile(observed)
 

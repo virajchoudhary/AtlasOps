@@ -9,7 +9,292 @@ preserving the raw model output untouched (preserve-and-score contract).
 import copy
 import json
 
+import pytest
+
 from agents.grounding import build_grounding_reports, validate_evidence_grounding
+
+_PROMQL_QUERY = "sum(rate(container_cpu_usage_seconds_total[5m]))"
+
+
+def _promql_doc(tool: str, output: dict, *, cite_query: bool = True) -> dict:
+    citation = {
+        "tool": tool,
+        "finding": "The metric query returned an observed sample.",
+    }
+    if cite_query:
+        citation["query"] = _PROMQL_QUERY
+    return {
+        "role": "diagnosis",
+        "trajectory": [
+            {
+                "role": "diagnosis",
+                "tool": tool,
+                "args": {"query": _PROMQL_QUERY},
+                "output": output,
+            }
+        ],
+        "final": {"root_cause": {"evidence": [citation]}},
+    }
+
+
+@pytest.mark.parametrize(
+    ("tool", "output"),
+    [
+        (
+            "promql_query",
+            {
+                "success": True,
+                "resultType": "vector",
+                "result": [{"metric": {"pod": "paymentservice-0"}, "value": [1, "0.5"]}],
+                "has_data": True,
+                "series_present": True,
+                "no_series": False,
+                "evidence_status": "series_present",
+            },
+        ),
+        (
+            "promql_query",
+            {
+                "success": True,
+                "resultType": "scalar",
+                "result": [1, "0.5"],
+                "has_data": True,
+                "series_present": True,
+                "no_series": False,
+                "evidence_status": "series_present",
+            },
+        ),
+        (
+            "promql_query_range",
+            {
+                "success": True,
+                "result": [
+                    {
+                        "metric": {"pod": "paymentservice-0"},
+                        "values": [[1, "0.4"], [2, "0.5"]],
+                    }
+                ],
+                "has_data": True,
+                "series_present": True,
+                "no_series": False,
+                "evidence_status": "series_present",
+            },
+        ),
+    ],
+)
+def test_nonempty_promql_sample_citation_is_counted(tool, output):
+    report = validate_evidence_grounding(_promql_doc(tool, output))
+
+    assert report["grounded"] is True
+    assert report["promql_citations_with_samples"] == 1
+    assert report["promql_citation_statuses"] == [
+        {"path": "final.root_cause.evidence[0]", "status": "series_present"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tool", "output", "status"),
+    [
+        (
+            "promql_query",
+            {
+                "success": False,
+                "error": "transport failed; bearer-secret-123",
+                "error_class": "promql_transport_error",
+                "evidence_status": "transport_error",
+                "has_data": False,
+                "series_present": False,
+                "no_series": False,
+            },
+            "transport_error",
+        ),
+        (
+            "promql_query",
+            {
+                "success": False,
+                "error": "invalid query; bearer-secret-123",
+                "error_class": "promql_query_error",
+                "evidence_status": "query_error",
+                "has_data": False,
+                "series_present": False,
+                "no_series": False,
+            },
+            "query_error",
+        ),
+        (
+            "promql_query_range",
+            {
+                "success": False,
+                "error": "invalid range query; bearer-secret-123",
+                "error_class": "promql_query_range_error",
+                "evidence_status": "query_error",
+                "has_data": False,
+                "series_present": False,
+                "no_series": False,
+            },
+            "query_error",
+        ),
+        (
+            "promql_query",
+            {
+                "success": False,
+                "error_class": ["unexpected"],
+                "evidence_status": "query_error",
+            },
+            "invalid_or_unavailable",
+        ),
+        (
+            "promql_query",
+            {
+                "success": False,
+                "error_class": "promql_query_error",
+                "evidence_status": "query_error",
+                "has_data": True,
+                "series_present": True,
+                "no_series": False,
+            },
+            "invalid_or_unavailable",
+        ),
+    ],
+)
+def test_failed_promql_citation_is_not_positive_and_error_is_sanitized(tool, output, status):
+    report = validate_evidence_grounding(_promql_doc(tool, output))
+
+    assert report["grounded"] is True
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"] == [
+        {"path": "final.root_cause.evidence[0]", "status": status}
+    ]
+    assert "bearer-secret-123" not in json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    ("tool", "wrong_error_class"),
+    [
+        ("promql_query", "promql_query_range_error"),
+        ("promql_query_range", "promql_query_error"),
+    ],
+)
+def test_mismatched_promql_error_class_is_invalid(tool, wrong_error_class):
+    output = {
+        "success": False,
+        "error_class": wrong_error_class,
+        "evidence_status": "query_error",
+        "has_data": False,
+        "series_present": False,
+        "no_series": False,
+    }
+    report = validate_evidence_grounding(_promql_doc(tool, output))
+
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"][0]["status"] == "invalid_or_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("tool", "result_type"),
+    [("promql_query", "vector"), ("promql_query_range", None)],
+)
+def test_empty_successful_promql_response_is_not_positive_evidence(tool, result_type):
+    output = {
+        "success": True,
+        "result": [],
+        "has_data": False,
+        "series_present": False,
+        "no_series": True,
+        "evidence_status": "no_series",
+    }
+    if result_type is not None:
+        output["resultType"] = result_type
+    report = validate_evidence_grounding(_promql_doc(tool, output))
+
+    assert report["grounded"] is True
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"] == [
+        {"path": "final.root_cause.evidence[0]", "status": "no_series"}
+    ]
+
+
+def test_inconsistent_promql_result_flags_fail_closed():
+    output = {
+        "success": True,
+        "resultType": "vector",
+        "result": [],
+        "has_data": True,
+        "series_present": True,
+        "no_series": False,
+        "evidence_status": "series_present",
+    }
+    report = validate_evidence_grounding(_promql_doc("promql_query", output))
+
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"][0]["status"] == "invalid_or_unavailable"
+
+
+def test_malformed_promql_sample_fails_closed():
+    output = {
+        "success": True,
+        "resultType": "vector",
+        "result": [{"metric": {}, "value": [1, "not numeric"]}],
+        "has_data": True,
+        "series_present": True,
+        "no_series": False,
+        "evidence_status": "series_present",
+    }
+    report = validate_evidence_grounding(_promql_doc("promql_query", output))
+
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"][0]["status"] == "invalid_or_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("tool", "sample"),
+    [
+        ("promql_query", [float("nan"), "0.5"]),
+        ("promql_query", ["Inf", "0.5"]),
+        ("promql_query", [1, float("inf")]),
+        ("promql_query", [1, "NaN"]),
+        ("promql_query", [1, "1e999"]),
+        ("promql_query_range", ["-Inf", "0.5"]),
+        ("promql_query_range", [1, "1e999"]),
+    ],
+)
+def test_nonfinite_promql_samples_fail_closed(tool, sample):
+    series = {"metric": {}}
+    output = {
+        "success": True,
+        "has_data": True,
+        "series_present": True,
+        "no_series": False,
+        "evidence_status": "series_present",
+    }
+    if tool == "promql_query":
+        series["value"] = sample
+        output["resultType"] = "vector"
+        output["result"] = [series]
+    else:
+        series["values"] = [sample]
+        output["result"] = [series]
+    report = validate_evidence_grounding(_promql_doc(tool, output))
+
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"][0]["status"] == "invalid_or_unavailable"
+
+
+def test_promql_sample_requires_an_exact_query_citation():
+    output = {
+        "success": True,
+        "resultType": "vector",
+        "result": [{"metric": {}, "value": [1, "0.5"]}],
+        "has_data": True,
+        "series_present": True,
+        "no_series": False,
+        "evidence_status": "series_present",
+    }
+    report = validate_evidence_grounding(_promql_doc("promql_query", output, cite_query=False))
+
+    assert report["grounded"] is True
+    assert report["promql_citations_with_samples"] == 0
+    assert report["promql_citation_statuses"][0]["status"] == "query_not_cited"
 
 
 def _doc_008_style() -> dict:

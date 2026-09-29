@@ -90,9 +90,28 @@ APPROVED_G4_V34_PRE_T0_SAFETY = {
     "kubectl_context": "explicit-per-command-no-global-switch",
 }
 
-# Active prospective v3.4 declaration; historical v3.3 remains frozen below.
-G4_PROTOCOL_MARKER = G4_V34_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V34_PROTOCOL_PROFILE_VERSION
+G4_V35_PROTOCOL_MARKER = "G4-RECOVERY-V3.5-2026-09-29"
+G4_V35_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.5"
+APPROVED_G4_V35_AGENT_PROMPT_SHA256 = {
+    "triage": "956a1489758cb0fe9d7567728b6180e357825a2534c219ebb961fc9c51029f1d",
+    "diagnosis": APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256,
+    "remediation": "00d0d3b24ba00007fd2e00d9c99f6c4ae9782cc6b42c495720648ec6c49bf344",
+    "comms": "be58db4dcef9b42296ef81217a22ec44842d608b25bc4ee6d29e39b0216f461c",
+}
+APPROVED_G4_V35_CAUSAL_SOURCE_SHA256 = {
+    "agents/tools/chaos.py": "bac2028104178b54ebe340f074ee1434e291b0918ea6f5582692bf3ba2fe5c7e",
+    "agents/grounding.py": "c228e7a4bce97f74f51529db94af0a3a22da23ac92ef89fda52f30f50add9df1",
+    "scripts/run_stage4_golden_incident.py": "9eb3cb163a7905625b93a6c1456fc1e756ffc4d003b4aed8fb66e21f816d56b6",
+}
+APPROVED_G4_V35_CAUSAL_POLICY = {
+    "chaos_stop_precondition": "positively-active-resource-only",
+    "unclassified_chaos": "fail-closed-not-zero",
+    "diagnosis_metric_citation": "exact-query-successful-nonempty-finite-schema-valid-sample",
+}
+
+# Active prospective v3.5 declaration; v3.4 and frozen v3.3 stay separate.
+G4_PROTOCOL_MARKER = G4_V35_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V35_PROTOCOL_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V33_MODEL
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256
@@ -170,6 +189,23 @@ def diagnosis_prompt_profile() -> dict[str, Any]:
         "path": "agents/prompts/diagnosis.md",
         "version": G4_PROTOCOL_PROFILE_VERSION,
         "sha256": file_sha256(DIAGNOSIS_PROMPT_PATH),
+    }
+
+
+def agent_prompt_hashes() -> dict[str, str]:
+    return {
+        role: file_sha256(REPO_ROOT / "agents" / "prompts" / f"{role}.md")
+        for role in APPROVED_G4_V35_AGENT_PROMPT_SHA256
+    }
+
+
+def causal_evidence_policy_profile() -> dict[str, Any]:
+    return {
+        **APPROVED_G4_V35_CAUSAL_POLICY,
+        "source_sha256": {
+            path: file_sha256(REPO_ROOT / path)
+            for path in APPROVED_G4_V35_CAUSAL_SOURCE_SHA256
+        },
     }
 
 
@@ -285,6 +321,8 @@ def build_runtime_protocol_profile(
         "llm_transport": llm_transport_profile(),
         "approval_channel": approval_channel_profile(),
         "pre_t0_safety": dict(APPROVED_G4_V34_PRE_T0_SAFETY),
+        "agent_prompt_sha256": agent_prompt_hashes(),
+        "causal_evidence_policy": causal_evidence_policy_profile(),
         "f1_contract": _f1_contract(),
         "scenario_fault_contract": _scenario_fault_contract(),
         "metrics_api": metrics_observation,
@@ -439,7 +477,22 @@ APPROVED_G4_V34_PROTOCOL_PROFILE: dict[str, Any] = {
     "pre_t0_safety": APPROVED_G4_V34_PRE_T0_SAFETY,
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V34_PROTOCOL_PROFILE
+APPROVED_G4_V35_PROTOCOL_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V34_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V35_PROTOCOL_MARKER,
+    "profile_version": G4_V35_PROTOCOL_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V34_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V35_PROTOCOL_PROFILE_VERSION,
+    },
+    "agent_prompt_sha256": APPROVED_G4_V35_AGENT_PROMPT_SHA256,
+    "causal_evidence_policy": {
+        **APPROVED_G4_V35_CAUSAL_POLICY,
+        "source_sha256": APPROVED_G4_V35_CAUSAL_SOURCE_SHA256,
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V35_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

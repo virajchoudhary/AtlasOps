@@ -63,10 +63,13 @@ is inferred from this matrix.
 
 1. **D1 recorded:** v2.2 Sections 1-24 and 26-27 adopted for non-live work.
    Retain the v1.1 local Kind instructions as a historical setup reference.
-2. **D2/D3 pending:** review the exact metric, invalid-run, reward, repeated-run,
-   and adversarial source/seed/membership options in
-   [the prospective decision sheet](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md).
-   No numeric option or actual adversarial population is approved by this file.
+2. **D2 partial, D3 pending:** the project lead selected the recommended
+   A directions for measurement items 1-4; the exact failure taxonomy,
+   common scorer implementation/hash, category/clock mapping, budgets and
+   independent evaluation sign-off are not frozen. The single
+   [v0.2 partial decision record](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md)
+   preserves the choices and remaining fields. Adversarial source, actual
+   membership and seed, Test access and live execution remain unapproved.
 3. **Safe software lane:** finish file-level README/evidence audit, test the
    package and gate labels, design common raw episode normalizers, add
    fail-closed validators, and implement the missing V3/V5 evaluator contracts

@@ -18,7 +18,7 @@ comparison or an experimental freeze.
 |---|---|---|---|
 | D1 | **Compute and cost:** host, entitlement, GPU/BF16/4-bit support, storage, duration/cost ceiling, security and retention | Measured compatibility and capacity on the selected environment; current quote or verified free/university entitlement; secure transfer and recovery design | **PENDING.** Personal laptop cannot host planned local 7B workload. No remote resource or paid budget is assumed. G7 training blocked. |
 | D2 | **Model/tokenizer:** keep Qwen2.5-7B or approve a changed base, with immutable model and tokenizer revisions | License/remote-code review, exact commit/digests, tokenizer/template compatibility and revised three-arm pairing if model changes | **PENDING.** CLI revision arguments do not select or attest a model. No weight download or silent small-model substitution. |
-| D3 | **Training data and G7 acceptance:** use the 64 synthetic Train-only examples for a bounded pilot or require more independently accepted Train trajectories; set independent reload criteria | Frozen corpus bytes/hash, quality/tool-pair audit, no Val/Test leakage, effective hyperparameters, package image and checkpoint retention | **PENDING.** The tracked corpus is synthetic, not a successful run. No completed adapter exists. |
+| D3 | **Training data and G7 acceptance:** approve a new versioned Train-only trajectory corpus and independent reload criteria before any SFT run | Frozen corpus bytes/hash, role-tool ACL and P1 approval/negative-outcome audit, no Val/Test leakage, effective hyperparameters, package image and checkpoint retention | **PENDING.** The 64-row synthetic fixture has 32 remediation calls to tools absent from the runtime role ACL and no P1 approval context; it is usable for non-model schema checks only, not a training pilot. No completed adapter exists. |
 | D4 | **A1 eligibility/invalidation:** exact authorized fault/observed alert start, post-start failure precedence, `INFRA_INVALID` evidence and signed reattempt rule | Proposed taxonomy with worked raw traces, independent adjudicator, retained negative/interrupted attempts and denominator replay | **A1 DIRECTION SELECTED, MECHANICS PROPOSED / NOT APPROVED.** No selective exclusion or final-Test rerun. |
 | D5 | **A2 common scorer:** per-step/episode unit, required-check set/coverage, false-claim mapping, missing fields, any clipping, source/config hash and three-arm replay | Versioned implementation, independent worked examples, raw-field coverage in base/SFT/SFT+GRPO, discrepancy check against submitted summaries | **A2 DIRECTION SELECTED, SCORER PROPOSED / NOT APPROVED.** G9 terms are a candidate, not a frozen common scorer. |
 | D6 | **A3 diagnosis/format/TTR:** label mapping, no-output and multi-fault handling, action/Comms schemas, alert-delivery clock, first conclusive verifier endpoint, precision and censoring | Raw event/schema examples for every arm, label isolation, clock correlation and independent test of invalid/unknown cases | **A3 DIRECTION SELECTED, MAPPINGS PROPOSED / NOT APPROVED.** G6/G8 diagnosis-only time is not incident TTR. |
@@ -37,6 +37,10 @@ protocol/source/configuration hashes, and superseded version. A general
 conversation approval is not a signed empirical protocol, access grant,
 spend authorization or live P1 decision. A failed or interrupted attempt
 remains visible after any later decision.
+The SFT runner's role-tool and known-fixture checks are technical admission
+only; passing them for a different corpus does not authenticate a project-lead
+D3 approval. Do not execute model training until that separate decision is
+recorded.
 
 The [proposed common contract](G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md),
 [training-readiness assessment](G7_G9_REMOTE_TRAINING_READINESS.md) and

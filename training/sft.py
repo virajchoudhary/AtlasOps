@@ -18,6 +18,10 @@ if __package__ in {None, ""}:
 
 from config.splits import TRAIN_SEED
 from training.sft_provenance import (
+    SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
+    SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS,
+    canonical_bytes_sha256,
+    canonical_json_sha256,
     create_run_manifest,
     file_sha256,
     has_redirecting_path_component,
@@ -30,7 +34,12 @@ from training.sft_provenance import (
     validate_resolved_hf_commit,
     write_manifest_atomic,
 )
-from training.sft_rendering import TEMPLATE_PATH, prepare_example_for_training
+from training.sft_rendering import (
+    TEMPLATE_PATH,
+    normalize_tool_arguments,
+    prepare_example_for_training,
+    validate_tool_call_role_acl,
+)
 
 TARGET_MODULES = [
     "q_proj",
@@ -41,6 +50,40 @@ TARGET_MODULES = [
     "up_proj",
     "down_proj",
 ]
+
+# Known synthetic assistant targets after tool-argument normalization.
+_SYNTHETIC_ASSISTANT_TARGETS_SHA256 = (
+    "c6e7449f83fe55e20716db3e16743f47aa2273bea0b9261d69a0a398d3d1b311"
+)
+_SYNTHETIC_ROLE_TARGETS_SHA256 = {
+    "triage": "4e22bb67807887f11e186ded1ebe9bf0de31d5379a8ab20f848bdbc71ac17900",
+    "diagnosis": "3679c1c00d353869de585314c6555fa773fdc1384624e914720a1e115c6bcd63",
+    "remediation": "e2c0ddd6678a7e41946c6d431c3210dc618a3f8ff09f04cf1569dd2a7d7c99a6",
+    "comms": "74e69f96d81adb5c5d97973b50f02d251c5019b841c76d378ccbcd376cd28b3e",
+}
+
+
+def _assistant_targets_sha256(rows: tuple[dict[str, Any], ...]) -> str:
+    targets = []
+    for row in rows:
+        assistant_turns = []
+        for message in row["messages"]:
+            if message.get("role") != "assistant":
+                continue
+            calls = []
+            for call in message.get("tool_calls") or []:
+                function = call["function"]
+                calls.append(
+                    {
+                        "name": function["name"],
+                        "arguments": normalize_tool_arguments(function["arguments"]),
+                    }
+                )
+            assistant_turns.append(
+                {"content": message.get("content") or "", "tool_calls": calls}
+            )
+        targets.append({"role": row["role"], "assistant_turns": assistant_turns})
+    return canonical_json_sha256(sorted(targets, key=canonical_json_sha256))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -160,10 +203,34 @@ def main() -> None:
         raise FileExistsError(output_dir)
 
     corpus_snapshot = snapshot_training_corpus(corpus_path)
-    if args.role != "all" and not any(
-        row.get("role") == args.role for row in corpus_snapshot.rows
-    ):
+    training_source_rows = tuple(
+        row
+        for row in corpus_snapshot.rows
+        if args.role == "all" or row.get("role") == args.role
+    )
+    if not training_source_rows:
         raise ValueError(f"No training examples remain for role={args.role}")
+    known_role_targets = any(
+        len(role_rows) == SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS
+        and _assistant_targets_sha256(role_rows) == digest
+        for role, digest in _SYNTHETIC_ROLE_TARGETS_SHA256.items()
+        if (
+            role_rows := tuple(
+                row for row in training_source_rows if row.get("role") == role
+            )
+        )
+    )
+    if (
+        canonical_bytes_sha256(corpus_snapshot.raw_bytes)
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+        or _assistant_targets_sha256(corpus_snapshot.rows)
+        == _SYNTHETIC_ASSISTANT_TARGETS_SHA256
+        or known_role_targets
+    ):
+        raise ValueError(
+            "SFT training admission rejected the canonical Train corpus for every role"
+        )
+    validate_tool_call_role_acl(training_source_rows)
 
     manifest = create_run_manifest(
         corpus_path=corpus_path,
@@ -184,11 +251,9 @@ def main() -> None:
         from datasets import Dataset
 
         training_rows = [
-            prepare_example_for_training(row) for row in corpus_snapshot.rows
+            prepare_example_for_training(row) for row in training_source_rows
         ]
         dataset = Dataset.from_list(training_rows)
-        if args.role != "all":
-            dataset = dataset.filter(lambda row: row.get("role") == args.role)
         if len(dataset) == 0:
             raise ValueError(f"No training examples remain for role={args.role}")
 

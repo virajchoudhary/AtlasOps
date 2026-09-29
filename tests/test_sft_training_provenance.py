@@ -17,6 +17,7 @@ from training import sft_provenance
 from training.generate_trajectories import SFT_EXAMPLE_FORMAT
 from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
+    canonical_bytes_sha256,
     canonical_file_sha256,
     create_run_manifest,
     inspect_training_corpus,
@@ -312,6 +313,99 @@ def _write_training_corpus(path: Path) -> Path:
     return path
 
 
+def _write_role_tool_training_corpus(
+    path: Path,
+    *,
+    invalid_remediation: bool = False,
+) -> tuple[Path, Path]:
+    rows = []
+    for index, scenario_id in enumerate(TRAIN_SPLIT):
+        for role in ("triage", "remediation", "comms"):
+            messages = [
+                {"role": "system", "content": "generic system placeholder"},
+                {"role": "user", "content": "Review the synthetic fixture incident."},
+            ]
+            if role == "comms":
+                messages.append(
+                    {"role": "assistant", "content": "Synthetic fixture update."}
+                )
+            else:
+                tool_name = (
+                    "alertmanager_list_alerts"
+                    if role == "triage"
+                    else "k8s_delete_pod" if invalid_remediation else "kubectl_get"
+                )
+                tool_arguments = (
+                    '{"pod_name":"forbidden-fixture-detail"}'
+                    if role == "remediation" and invalid_remediation
+                    else "{}"
+                )
+                call_id = f"fixture_{index}_{role}"
+                messages.extend(
+                    [
+                        {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": tool_arguments,
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "tool_name": tool_name,
+                            "content": "{}",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "Synthetic fixture result.",
+                        },
+                    ]
+                )
+            rows.append(
+                {
+                    "format": SFT_EXAMPLE_FORMAT,
+                    "scenario_id": scenario_id,
+                    "role": role,
+                    "fixture": (
+                        "noncanonical_synthetic_acl_invalid"
+                        if invalid_remediation
+                        else "noncanonical_synthetic_acl_valid"
+                    ),
+                    "messages": messages,
+                }
+            )
+
+    corpus_bytes = "".join(
+        json.dumps(row, sort_keys=True) + "\n" for row in rows
+    ).encode("utf-8")
+    path.write_bytes(corpus_bytes)
+    manifest_path = path.parent / "sft_corpus_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "data_origin": "scenario_derived_synthetic",
+                "synthetic": True,
+                "corpus_sha256_canonical_lf": canonical_bytes_sha256(corpus_bytes),
+                "total_examples": len(rows),
+                "total_scenarios": len(TRAIN_SPLIT),
+                "split": "train",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path, manifest_path
+
+
 def _prepare_sft_output_cli(
     monkeypatch,
     corpus_path: Path,
@@ -515,6 +609,268 @@ def test_sft_invalid_corpus_does_not_create_run_output(monkeypatch, tmp_path):
     assert not output.exists()
     assert snapshot_calls == [corpus]
     assert attempted_ml_imports == []
+
+
+@pytest.mark.parametrize("role", ["all", "triage", "diagnosis", "remediation", "comms"])
+def test_sft_rejects_canonical_synthetic_corpus_for_every_role_before_output_or_ml_import(
+    monkeypatch,
+    tmp_path,
+    role,
+):
+    corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    assert (
+        canonical_bytes_sha256(corpus.read_bytes())
+        == SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    )
+    output = tmp_path / "checkpoint"
+    extra_args = () if role == "all" else ("--role", role)
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        extra_args=extra_args,
+    )
+
+    with pytest.raises(ValueError, match="canonical Train corpus"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "blank_lines",
+        "bare_cr",
+        "json_whitespace",
+        "reordered",
+        "metadata_only",
+        "system_placeholder",
+        "tool_argument_whitespace",
+        "paired_call_ids",
+        "scenario_labels",
+    ],
+)
+def test_sft_rejects_reserialized_canonical_teacher_rows_before_output(
+    monkeypatch, tmp_path, variant
+):
+    source_corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    original = source_corpus.read_bytes()
+    rows = [json.loads(line) for line in original.decode("utf-8").splitlines()]
+    lf_bytes = original.replace(b"\r\n", b"\n")
+    if variant == "blank_lines":
+        altered = lf_bytes.replace(b"\n", b"\n\n")
+    elif variant == "bare_cr":
+        altered = lf_bytes.replace(b"\n", b"\r")
+    else:
+        if variant == "reordered":
+            rows.reverse()
+        elif variant == "metadata_only":
+            rows[0]["judge"]["critique"] = "Formatting-only fixture variant"
+        elif variant == "system_placeholder":
+            rows[0]["messages"][0]["content"] = "Different stored placeholder"
+        elif variant == "tool_argument_whitespace":
+            call = next(
+                message["tool_calls"][0]
+                for message in rows[0]["messages"]
+                if message.get("tool_calls")
+            )
+            arguments = call["function"]["arguments"]
+            call["function"]["arguments"] = json.dumps(
+                json.loads(arguments) if isinstance(arguments, str) else arguments,
+                indent=2,
+            )
+        elif variant == "paired_call_ids":
+            call = next(
+                message["tool_calls"][0]
+                for message in rows[0]["messages"]
+                if message.get("tool_calls")
+            )
+            old_id = call["id"]
+            call["id"] = f"{old_id}_rekeyed"
+            next(
+                message
+                for message in rows[0]["messages"]
+                if message.get("tool_call_id") == old_id
+            )["tool_call_id"] = call["id"]
+        elif variant == "scenario_labels":
+            rows[0]["scenario_id"], rows[4]["scenario_id"] = (
+                rows[4]["scenario_id"],
+                rows[0]["scenario_id"],
+            )
+        altered = (
+            "\n".join(
+                json.dumps(row, sort_keys=True, separators=(",", ":"))
+                for row in rows
+            )
+            + "\n"
+        ).encode("utf-8")
+    candidate_dir = tmp_path / "reserialized"
+    candidate_dir.mkdir()
+    corpus = candidate_dir / "train.jsonl"
+    corpus.write_bytes(altered)
+    assert canonical_bytes_sha256(altered) != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch, corpus, output, extra_args=("--role", "triage")
+    )
+
+    with pytest.raises(ValueError, match="canonical Train corpus"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+@pytest.mark.parametrize(
+    ("selected_role", "changed_role"),
+    [
+        ("triage", "comms"),
+        ("diagnosis", "comms"),
+        ("comms", "triage"),
+    ],
+)
+def test_sft_rejects_known_role_targets_when_other_role_changes(
+    monkeypatch, tmp_path, selected_role, changed_role
+):
+    source_corpus, _ = _generated_corpus(tmp_path, monkeypatch)
+    rows = [
+        json.loads(line)
+        for line in source_corpus.read_text(encoding="utf-8").splitlines()
+    ]
+    changed = next(row for row in rows if row["role"] == changed_role)
+    assistant = next(
+        message for message in changed["messages"] if message["role"] == "assistant"
+    )
+    assistant["content"] = "Different synthetic assistant target."
+    candidate_dir = tmp_path / "changed-other-role"
+    candidate_dir.mkdir()
+    corpus = candidate_dir / "train.jsonl"
+    corpus.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    assert canonical_file_sha256(corpus) != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    output = tmp_path / "checkpoint"
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch, corpus, output, extra_args=("--role", selected_role)
+    )
+
+    with pytest.raises(ValueError, match="canonical Train corpus"):
+        sft.main()
+
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+@pytest.mark.parametrize("role", ["all", "remediation"])
+def test_sft_rejects_selected_role_acl_violation_before_output_or_ml_import(
+    monkeypatch,
+    tmp_path,
+    role,
+):
+    corpus, _ = _write_role_tool_training_corpus(
+        tmp_path / "invalid-noncanonical.jsonl",
+        invalid_remediation=True,
+    )
+    assert (
+        canonical_file_sha256(corpus)
+        != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    )
+    output = tmp_path / "checkpoint"
+    extra_args = () if role == "all" else ("--role", role)
+    sft, snapshot_calls, attempted_ml_imports = _prepare_sft_output_cli(
+        monkeypatch,
+        corpus,
+        output,
+        extra_args=extra_args,
+    )
+
+    with pytest.raises(ValueError, match="SFT training admission rejected") as exc:
+        sft.main()
+
+    message = str(exc.value)
+    assert "role='remediation'" in message
+    assert "tool='k8s_delete_pod'" in message
+    assert "role ACL" in message
+    assert "forbidden-fixture-detail" not in message
+    assert not output.exists()
+    assert snapshot_calls == [corpus]
+    assert attempted_ml_imports == []
+
+
+def test_sft_role_filter_admits_only_selected_acl_rows_before_model_import(
+    monkeypatch,
+    tmp_path,
+):
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+    from training import sft
+
+    corpus, _ = _write_role_tool_training_corpus(tmp_path / "acl-valid.jsonl")
+    assert (
+        canonical_file_sha256(corpus)
+        != SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    )
+    output = tmp_path / "checkpoint"
+    captured = {}
+    attempted_model_imports = []
+    original_import = builtins.__import__
+
+    class Dataset:
+        @classmethod
+        def from_list(cls, rows):
+            captured["rows"] = rows
+            raise RuntimeError("stop after dataset admission")
+
+    def block_model_imports(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"peft", "transformers", "trl"}:
+            attempted_model_imports.append(name)
+            raise AssertionError("model dependencies must not be imported")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(Dataset=Dataset))
+    monkeypatch.setattr(builtins, "__import__", block_model_imports)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sft.py",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            MODEL_COMMIT,
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+            "--role",
+            "triage",
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="stop after dataset admission"):
+        sft.main()
+
+    # This proves only code-level admission and handoff; it does not authenticate
+    # or authorize a D3 human-approval decision.
+    rows = captured["rows"]
+    assert len(rows) == 16
+    assert {row["role"] for row in rows} == {"triage"}
+    assert all(
+        call["function"]["name"] in ROLE_ALLOWED_TOOLS["triage"]
+        for row in rows
+        for message in row["messages"]
+        for call in message.get("tool_calls") or []
+    )
+    assert attempted_model_imports == []
+    persisted = json.loads(
+        (output / "sft_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
 
 
 def test_sft_missing_corpus_does_not_create_run_output(monkeypatch, tmp_path):
@@ -914,13 +1270,19 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
 ):
     from training import sft
 
-    corpus, corpus_manifest_path = _generated_corpus(tmp_path, monkeypatch)
+    corpus, corpus_manifest_path = _write_role_tool_training_corpus(
+        tmp_path / "snapshot-race.jsonl"
+    )
     original_bytes = corpus.read_bytes()
+    assert canonical_bytes_sha256(original_bytes) != (
+        SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256
+    )
     original_rows = [
         json.loads(line)
         for line in original_bytes.decode("utf-8").splitlines()
         if line
     ]
+    selected_rows = [row for row in original_rows if row["role"] == "triage"]
     replacement_rows = [
         {**row, "race_marker": "replacement"} for row in original_rows
     ]
@@ -964,6 +1326,8 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
             str(corpus),
             "--output",
             str(output),
+            "--role",
+            "triage",
         ],
     )
 
@@ -974,8 +1338,9 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
         (output / "sft_run_manifest.json").read_text(encoding="utf-8")
     )
     assert [row["scenario_id"] for row in captured["rows"]] == [
-        row["scenario_id"] for row in original_rows
+        row["scenario_id"] for row in selected_rows
     ]
+    assert {row["role"] for row in captured["rows"]} == {"triage"}
     assert all(
         row["provenance"]["scenario_id"] == row["scenario_id"]
         for row in captured["rows"]
@@ -987,11 +1352,9 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
     ).hexdigest()
     assert persisted["dataset"]["total_examples"] == len(original_rows)
     assert persisted["dataset"]["total_scenarios"] == len(TRAIN_SPLIT)
-    assert persisted["dataset"]["data_origin"] == "scenario_derived_synthetic"
-    assert persisted["dataset"]["synthetic"] is True
-    assert persisted["dataset"]["data_origin_source"] == (
-        "adjacent_corpus_manifest"
-    )
+    assert persisted["dataset"]["data_origin"] == "UNVERIFIED"
+    assert persisted["dataset"]["synthetic"] is None
+    assert persisted["dataset"]["data_origin_source"] == "unverified"
     assert persisted["dataset"]["corpus_manifest"] == {
         "present": True,
         "path": str(corpus_manifest_path.resolve()),

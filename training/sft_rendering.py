@@ -90,6 +90,58 @@ def role_tool_schemas(role: str) -> list[dict[str, Any]]:
     return [_tool_schema(name) for name in sorted(ROLE_ALLOWED_TOOLS.get(role, frozenset()))]
 
 
+def validate_tool_call_role_acl(examples: list[dict[str, Any]]) -> None:
+    """Reject selected training calls that are not exposed to their runtime role."""
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+
+    for example in examples:
+        role = example.get("role")
+        if role not in SFT_ROLES:
+            raise ValueError(
+                f"SFT training admission rejected unsupported role={role!r}"
+            )
+        allowed_tools = ROLE_ALLOWED_TOOLS.get(role, frozenset())
+        messages = example.get("messages")
+        if not isinstance(messages, list):
+            raise ValueError(
+                f"SFT training admission requires message list for role={role!r}"
+            )
+        for message in messages:
+            if not isinstance(message, dict):
+                raise ValueError(
+                    f"SFT training admission requires message objects for role={role!r}"
+                )
+            if message.get("role") != "assistant":
+                continue
+            tool_calls = message.get("tool_calls") or []
+            if not isinstance(tool_calls, list):
+                raise ValueError(
+                    f"SFT training admission requires tool-call list for role={role!r}"
+                )
+            for tool_call in tool_calls:
+                function = (
+                    tool_call.get("function")
+                    if isinstance(tool_call, dict)
+                    else None
+                )
+                tool_name = (
+                    function.get("name")
+                    if isinstance(function, dict)
+                    else None
+                )
+                if not isinstance(tool_name, str) or not tool_name:
+                    raise ValueError(
+                        "SFT training admission rejected unnamed tool call "
+                        f"for role={role!r}"
+                    )
+                if tool_name not in allowed_tools:
+                    raise ValueError(
+                        "SFT training admission rejected "
+                        f"role={role!r} tool={tool_name!r}: tool is not allowed "
+                        "by the runtime role ACL"
+                    )
+
+
 def normalize_tool_arguments(raw: Any) -> dict[str, Any]:
     """Wire-format arguments -> semantic object for template rendering.
 

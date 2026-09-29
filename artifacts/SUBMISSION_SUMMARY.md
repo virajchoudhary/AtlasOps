@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` (Sections 1-24 and 26-27 adopted for non-live work; Section 25 proposed, not approved)
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-29T09:06:58.481752+00:00`
+- **Generated**: `2026-09-29T10:06:49.971678+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -137,7 +137,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/chaos_manifests/single_fault/sf-006.yaml` | `886e4873b3f71761...` | 393 |
 | `bench/chaos_manifests/single_fault/sf-007.yaml` | `3e15a122b34aed52...` | 440 |
 | `bench/chaos_manifests/single_fault/sf-008.yaml` | `41d3f6d2ed0278bb...` | 388 |
-| `bench/episode_membership.py` | `66efcf3ea9cd4a1f...` | 16316 |
+| `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
 | `bench/grpo_eval.py` | `f50d531c56849fdf...` | 66595 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `19144a835431d797...` | 25705 |
@@ -166,7 +166,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `3a31a019bb012392...` | 1774 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `788de77730246d91...` | 1751 |
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `c8d56d51a7da4b66...` | 6312 |
-| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `132ffd244a3ad974...` | 7987 |
+| `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `b58e981a136cf7c7...` | 9746 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
@@ -219,6 +219,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_frontend_ui.py` | `172e063d5e638158...` | 5251 |
 | `tests/test_g12_policy_integration_contract.py` | `7b11cd4d22f2e25c...` | 12449 |
 | `tests/test_g12_real_capture.py` | `8058ce2909c71e9d...` | 45180 |
+| `tests/test_g13_lossless_g9_observations.py` | `e33a2fedbd3dd484...` | 12140 |
 | `tests/test_g4_protocol_profile.py` | `9da8823665e45dd1...` | 20017 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `79debd0c2024bea2...` | 22071 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `a2e857f98851c770...` | 34823 |

@@ -3,7 +3,7 @@
   "project_repository": "virajchoudhary/AtlasOps",
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
-  "generated_at": "2026-09-29T09:06:58.481752+00:00",
+  "generated_at": "2026-09-29T10:06:49.971678+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -31,7 +31,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 246,
+  "asset_count": 247,
   "assets": {
     "AGENTS.md": {
       "sha256": "6c3eefb051f5c3e691db238c3c78754de8a6430cc33a0a9c26fe78f75758c3e8",
@@ -154,8 +154,8 @@
       "size_bytes": 6312
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
-      "sha256": "132ffd244a3ad974d2a5d5d0212989cfa702ac66dab7347244704faeef6ab993",
-      "size_bytes": 7987
+      "sha256": "b58e981a136cf7c71615cdd16ec679161fe15090107f9a9ef9ab1009f5b9d5f3",
+      "size_bytes": 9746
     },
     "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
       "sha256": "5eb9a8df01f8ca6f038833a610fce2eaa93433b4db5b5c36920b3c4df3317811",
@@ -710,8 +710,8 @@
       "size_bytes": 26115
     },
     "bench/episode_membership.py": {
-      "sha256": "66efcf3ea9cd4a1f1e1f513d4f9f3ebc52bec1daa4d35a934eda33a225f7f472",
-      "size_bytes": 16316
+      "sha256": "c598ab421638db9cf94c2f827c39e2023cc81eb47e413160db68289e853015c8",
+      "size_bytes": 26114
     },
     "tests/test_adversarial_designer.py": {
       "sha256": "79f017da4584c3828ee273659787bc19c9f51ec182df3cfc5fba2f8f9a52e034",
@@ -796,6 +796,10 @@
     "tests/test_g12_real_capture.py": {
       "sha256": "8058ce2909c71e9df025337294840ac06a55a3e36d468674913c7489372c3c50",
       "size_bytes": 45180
+    },
+    "tests/test_g13_lossless_g9_observations.py": {
+      "sha256": "e33a2fedbd3dd4846359fbe4138f02a11f283543ab9183b54835c2fc5eb0f835",
+      "size_bytes": 12140
     },
     "tests/test_g4_protocol_profile.py": {
       "sha256": "9da8823665e45dd1f878c4b7f782eb6b6924c168a61d9b139ee5c39275905947",

@@ -58,7 +58,9 @@ def _reject_non_finite_constant(value: str) -> None:
     raise ValueError(f"non-finite JSON constant {value!r}")
 
 
-def _reject_non_empirical_markers(value: Any) -> None:
+def _reject_non_empirical_markers(
+    value: Any, *, allow_nonclaimable: bool = False
+) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             normalized_key = key.casefold()
@@ -73,11 +75,16 @@ def _reject_non_empirical_markers(value: Any) -> None:
             if normalized_key == "mock_eval" and item is not False:
                 raise ValueError("non-empirical marker mock_eval")
             if normalized_key == "empirical_claim_allowed" and item is not True:
-                raise ValueError("non-empirical marker empirical_claim_allowed")
-            _reject_non_empirical_markers(item)
+                if not (allow_nonclaimable and item is False):
+                    raise ValueError("non-empirical marker empirical_claim_allowed")
+            _reject_non_empirical_markers(
+                item, allow_nonclaimable=allow_nonclaimable
+            )
     elif isinstance(value, list):
         for item in value:
-            _reject_non_empirical_markers(item)
+            _reject_non_empirical_markers(
+                item, allow_nonclaimable=allow_nonclaimable
+            )
 
 
 def _same_json_value(left: Any, right: Any) -> bool:
@@ -101,7 +108,9 @@ def _same_json_value(left: Any, right: Any) -> bool:
     return True
 
 
-def _parse_raw_jsonl(raw_bytes: bytes) -> list[dict[str, Any]]:
+def _parse_raw_jsonl(
+    raw_bytes: bytes, *, allow_nonclaimable: bool = False
+) -> list[dict[str, Any]]:
     if len(raw_bytes) > MAX_RAW_OUTPUT_BYTES:
         raise ValueError(
             f"raw JSONL exceeds {MAX_RAW_OUTPUT_BYTES} bytes"
@@ -134,7 +143,9 @@ def _parse_raw_jsonl(raw_bytes: bytes) -> list[dict[str, Any]]:
                 parse_float=_parse_finite_float,
                 parse_constant=_reject_non_finite_constant,
             )
-            _reject_non_empirical_markers(record)
+            _reject_non_empirical_markers(
+                record, allow_nonclaimable=allow_nonclaimable
+            )
         except UnicodeDecodeError as exc:
             raise ValueError(f"raw JSONL line {line_number} is not UTF-8") from exc
         except json.JSONDecodeError as exc:
@@ -359,6 +370,232 @@ def _extract_g9_event_membership(
     if not saw_run_completed:
         raise ValueError("G9 event stream lacks the final run_completed event")
     return completed_ids
+
+
+def normalize_g9_event_observations(
+    raw_bytes: bytes,
+    *,
+    expected_sha256: str,
+) -> dict[str, Any]:
+    """Normalize a hash-checked G9 stream without creating claimable evidence."""
+    if not isinstance(raw_bytes, bytes):
+        raise TypeError("raw G9 event stream must be bytes")
+    if (
+        not isinstance(expected_sha256, str)
+        or len(expected_sha256) != 64
+        or any(character not in "0123456789abcdefABCDEF" for character in expected_sha256)
+    ):
+        raise ValueError("expected SHA-256 must be 64 hexadecimal characters")
+
+    records = _parse_raw_jsonl(raw_bytes, allow_nonclaimable=True)
+    source_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    if source_sha256 != expected_sha256.casefold():
+        raise ValueError("raw G9 event stream SHA-256 mismatch")
+
+    if records[0].get("event") != "run_started":
+        raise ValueError("G9 event stream must begin with exactly one run_started")
+    if "scenario_id" in records[0]:
+        raise ValueError("G9 run_started cannot be scoped to one scenario_id")
+
+    episodes: list[dict[str, Any]] = []
+    episodes_by_id: dict[str, dict[str, Any]] = {}
+    active_scenario_id: str | None = None
+    run_outcome = "partial"
+    saw_run_terminal = False
+
+    def new_episode(
+        scenario_id: str, record: dict[str, Any], *, started: bool, outcome: str
+    ) -> dict[str, Any]:
+        episode = {
+            "scenario_id": scenario_id,
+            "started": started,
+            "outcome": outcome,
+            "events": [record],
+        }
+        episodes.append(episode)
+        episodes_by_id[scenario_id] = episode
+        return episode
+
+    for index, record in enumerate(records[1:], start=2):
+        event = record.get("event")
+        if not isinstance(event, str):
+            raise ValueError(f"G9 event record {index} requires an event name")
+        if saw_run_terminal:
+            raise ValueError("G9 run terminal event must be final")
+        if event == "run_started":
+            raise ValueError("G9 event stream contains a duplicate run_started")
+
+        if event == "run_completed":
+            if active_scenario_id is not None:
+                raise ValueError("G9 run_completed occurred before the episode terminal")
+            if "scenario_id" in record:
+                raise ValueError("G9 run_completed cannot be scoped to one scenario_id")
+            if any(episode["outcome"] == "interrupted" for episode in episodes):
+                raise ValueError("G9 run_completed cannot follow an interrupted episode")
+            run_outcome = "completed"
+            saw_run_terminal = True
+            continue
+
+        if event == "run_interrupted":
+            interrupted_id = _event_scenario_id(
+                record, label=f"G9 run_interrupted event {index}", required=False
+            )
+            if active_scenario_id is not None:
+                if (
+                    interrupted_id is not None
+                    and interrupted_id != active_scenario_id
+                ):
+                    raise ValueError(
+                        "G9 run_interrupted event contains a cross-scenario scenario_id"
+                    )
+                episode = episodes_by_id[active_scenario_id]
+                episode["events"].append(record)
+                episode["outcome"] = "interrupted"
+                active_scenario_id = None
+            elif interrupted_id is not None:
+                episode = episodes_by_id.get(interrupted_id)
+                if episode is None:
+                    new_episode(
+                        interrupted_id, record, started=False, outcome="interrupted"
+                    )
+                elif episode["outcome"] == "interrupted":
+                    episode["events"].append(record)
+                else:
+                    raise ValueError(
+                        "G9 run_interrupted event duplicates a terminal scenario"
+                    )
+            run_outcome = "interrupted"
+            saw_run_terminal = True
+            continue
+
+        if event == "episode_started":
+            if active_scenario_id is not None:
+                raise ValueError(
+                    "G9 event stream contains a duplicate or nested episode start"
+                )
+            scenario_id = _event_scenario_id(
+                record, label=f"G9 episode_started event {index}"
+            )
+            assert scenario_id is not None
+            if scenario_id in episodes_by_id:
+                raise ValueError("G9 event stream contains a duplicate scenario episode")
+            new_episode(scenario_id, record, started=True, outcome="in_progress")
+            active_scenario_id = scenario_id
+            continue
+
+        if event in _G9_TERMINAL_EVENTS:
+            event_scenario_id = _event_scenario_id(
+                record,
+                label=f"G9 terminal event {event!r}",
+                required=False,
+            )
+            result = record.get("result")
+            result_scenario_id = None
+            if isinstance(result, dict) and "scenario_id" in result:
+                result_scenario_id = _event_scenario_id(
+                    result, label=f"G9 {event} result"
+                )
+            if (
+                event_scenario_id is not None
+                and result_scenario_id is not None
+                and event_scenario_id != result_scenario_id
+            ):
+                raise ValueError("G9 result scenario_id does not match its episode")
+            if active_scenario_id is not None and any(
+                scenario_id is not None and scenario_id != active_scenario_id
+                for scenario_id in (event_scenario_id, result_scenario_id)
+            ):
+                raise ValueError("G9 terminal event contains a cross-scenario scenario_id")
+            if active_scenario_id is None and event not in {
+                "episode_failed",
+                "episode_unscorable",
+            }:
+                raise ValueError(
+                    f"G9 terminal event {event!r} occurred without an active episode"
+                )
+            terminal_scenario_id = (
+                active_scenario_id or event_scenario_id or result_scenario_id
+            )
+            if terminal_scenario_id is None:
+                raise ValueError(
+                    f"G9 terminal event {event!r} requires an observable scenario_id"
+                )
+            if (
+                terminal_scenario_id in episodes_by_id
+                and terminal_scenario_id != active_scenario_id
+            ):
+                raise ValueError("G9 event stream contains a duplicate scenario terminal")
+
+            outcome = event.removeprefix("episode_")
+            if isinstance(result, dict):
+                expected_status = {
+                    "completed": "ok",
+                    "failed": "failed",
+                    "unscorable": "unscorable",
+                }.get(outcome)
+                if (
+                    expected_status is not None
+                    and "status" in result
+                    and result["status"] != expected_status
+                ):
+                    raise ValueError(
+                        f"G9 {event} result status conflicts with its terminal event"
+                    )
+                expected_scorable = outcome == "completed"
+                if (
+                    outcome in {"completed", "failed", "unscorable"}
+                    and "scorable" in result
+                    and result["scorable"] is not expected_scorable
+                ):
+                    raise ValueError(
+                        f"G9 {event} result scorable flag conflicts with its terminal event"
+                    )
+
+            episode = episodes_by_id.get(terminal_scenario_id)
+            if episode is None:
+                episode = new_episode(
+                    terminal_scenario_id,
+                    record,
+                    started=False,
+                    outcome=outcome,
+                )
+            else:
+                episode["events"].append(record)
+                episode["outcome"] = outcome
+            episode["terminal_event"] = record
+            if "result" in record:
+                episode["result"] = result
+            active_scenario_id = None
+            continue
+
+        if event not in _G9_PROGRESS_EVENTS:
+            raise ValueError(f"G9 event stream contains unsupported event {event!r}")
+        if active_scenario_id is None:
+            raise ValueError(
+                f"G9 event {event!r} occurred without an active episode"
+            )
+        scenario_id = _event_scenario_id(
+            record, label=f"G9 progress event {event!r}", required=False
+        )
+        if scenario_id is not None and scenario_id != active_scenario_id:
+            raise ValueError("G9 progress event contains a cross-scenario scenario_id")
+        episodes_by_id[active_scenario_id]["events"].append(record)
+
+    if active_scenario_id is not None:
+        episodes_by_id[active_scenario_id]["outcome"] = "partial"
+
+    return {
+        "schema_version": 1,
+        "source_format": "g9_event_stream",
+        "source_sha256": source_sha256,
+        "evaluation_mode": "NON_EMPIRICAL_OBSERVATION",
+        "non_empirical": True,
+        "empirical_claim_allowed": False,
+        "certification_status": "NOT_CERTIFIED",
+        "run_outcome": run_outcome,
+        "raw_events": records,
+        "episodes": episodes,
+    }
 
 
 def derive_raw_scenario_ids(

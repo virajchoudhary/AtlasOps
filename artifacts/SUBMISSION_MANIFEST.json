@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T15:25:25.972700+00:00",
+  "generated_at": "2026-09-29T15:44:33.900039+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 255,
+  "asset_count": 256,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
@@ -209,8 +209,8 @@
       "size_bytes": 5339
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "d60f4843c2438734558a64d280c173d60d7bd1799ddec1e6b64548c2f46feee4",
-      "size_bytes": 5473
+      "sha256": "8c581e2360ea788dd27e3c4702192ad747831c19b030265ec944854fbe763cb0",
+      "size_bytes": 5718
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
       "sha256": "bf94fb75f634e367a4cd847893c45938c7e71e99d5774a51ed1432f7b0b7aee0",
@@ -693,8 +693,8 @@
       "size_bytes": 18205
     },
     "training/sft.py": {
-      "sha256": "29c7abbc32d5d20b7cdfd467266bb866ed6aec85045d6376b83273c62ef6113d",
-      "size_bytes": 9411
+      "sha256": "d1625dd8d6b8bf5cca31ec943cbc225a58b4d6c061c476c4700a59159a706f99",
+      "size_bytes": 9542
     },
     "training/build_sft_dataset.py": {
       "sha256": "237323d639d21a7b07d2e7cf0fbd2a51f3b2bb44b9da513a13e8c0d0801cb2eb",
@@ -948,9 +948,13 @@
       "sha256": "fcc4bd53b53598df007887758edc728aa7aadda64e093aa4557a20ba842526e3",
       "size_bytes": 10382
     },
+    "tests/test_sft_trainer_handoff.py": {
+      "sha256": "a89e94ea6f5e044efa3aa17cd416dc71af4de328357404e64835dc6b0c6271f5",
+      "size_bytes": 12589
+    },
     "tests/test_sft_training_provenance.py": {
-      "sha256": "38309744fbf9f4d13b9c5f0443a1faa3a2041cea2101b62772f136930ba514e8",
-      "size_bytes": 22750
+      "sha256": "53c80875494fe1bd0e857dab7fdd70b589077f46efecbca49f3947824a81c8a8",
+      "size_bytes": 23018
     },
     "tests/test_stage10_rs_data_and_baselines.py": {
       "sha256": "a9c08a6fc88350c9e5b04c5ae701a70438757ee0d940f49e987ecc521f9884df",

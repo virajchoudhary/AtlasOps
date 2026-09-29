@@ -480,7 +480,14 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
     persisted = json.loads(
         (output / "sft_run_manifest.json").read_text(encoding="utf-8")
     )
-    assert captured["rows"] == original_rows
+    assert [row["scenario_id"] for row in captured["rows"]] == [
+        row["scenario_id"] for row in original_rows
+    ]
+    assert all(
+        row["provenance"]["scenario_id"] == row["scenario_id"]
+        for row in captured["rows"]
+    )
+    assert all("race_marker" not in row for row in captured["rows"])
     assert persisted["dataset"]["corpus_path"] == str(corpus.resolve())
     assert persisted["dataset"]["corpus_sha256_canonical_lf"] == hashlib.sha256(
         original_bytes.replace(b"\r\n", b"\n")

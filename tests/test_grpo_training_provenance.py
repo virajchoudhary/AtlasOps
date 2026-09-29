@@ -108,23 +108,29 @@ def _parent():
     }
 
 
-def _planned_manifest():
+def _planned_manifest(
+    *,
+    seed=42,
+    optuna_trials=0,
+    tiers=None,
+    include_operator_approval=False,
+):
     requested = {
-        "tiers": ["single_fault"],
+        "tiers": tiers or ["single_fault"],
         "learning_rate": 1e-6,
         "beta": 0.04,
         "batch_size": 1,
         "num_generations": 8,
         "max_steps": 1,
         "gradient_accumulation_steps": 4,
-        "optuna_trials": 0,
+        "optuna_trials": optuna_trials,
     }
     manifest = create_run_manifest(
         model_id="Qwen/Qwen2.5-7B-Instruct",
         model_revision=MODEL_COMMIT,
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision=TOKENIZER_COMMIT,
-        seed=42,
+        seed=seed,
         generation_config={"max_completion_length": 256},
         hyperparameters=requested,
         execute_live_chaos=True,
@@ -137,7 +143,38 @@ def _planned_manifest():
         "max_completion_length": 256,
     }
     manifest["training"]["hyperparameter_selection"] = "requested"
+    if include_operator_approval:
+        manifest["training"]["operator_approval"] = {
+            "mode": "disabled",
+            "timeout_seconds": None,
+            "identity": "operator_supplied_name_not_independent_attestation",
+        }
     return manifest
+
+
+def _training_args(tmp_path, **overrides):
+    values = {
+        "execute_live_chaos": True,
+        "kube_context": "kind-atlasops-test",
+        "tiers": "single_fault",
+        "seed": 42,
+        "optuna": 0,
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "model_revision": MODEL_COMMIT,
+        "tokenizer": None,
+        "tokenizer_revision": TOKENIZER_COMMIT,
+        "sft_checkpoint": tmp_path / "sft",
+        "lr": 1e-6,
+        "beta": 0.04,
+        "batch_size": 1,
+        "num_generations": 8,
+        "max_steps": 1,
+        "grad_accum": 4,
+        "max_compl_len": 256,
+        "enable_p1_approval": False,
+    }
+    values.update(overrides)
+    return Namespace(**values)
 
 
 def _valid_training_summary(training):
@@ -995,11 +1032,27 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
         tokenizer=None,
         tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
+        lr=1e-6,
+        beta=0.04,
+        batch_size=1,
+        num_generations=8,
+        max_steps=1,
+        grad_accum=4,
+        max_compl_len=256,
+        enable_p1_approval=False,
     )
     output_dir = tmp_path / "run"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(
+            seed=917018,
+            optuna_trials=1,
+            include_operator_approval=True,
+        ),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     monkeypatch.setitem(
         sys.modules,
@@ -1033,6 +1086,66 @@ def test_run_training_passes_live_context_to_optuna(monkeypatch, tmp_path):
     saved = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert saved["status"] == "failed"
     assert saved["failure"]["error_type"] == "StopAtOptuna"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"seed": 917018, "optuna": 1}, id="seed-and-optuna-count"),
+        pytest.param({"tiers": "multi_fault"}, id="tiers"),
+        pytest.param({"lr": 2e-6}, id="learning-rate"),
+        pytest.param({"batch_size": True}, id="boolean-is-not-integer"),
+        pytest.param({"max_steps": 2}, id="max-steps"),
+        pytest.param({"max_compl_len": 128}, id="generation-config"),
+        pytest.param({"kube_context": "kind-atlasops-other"}, id="live-context"),
+        pytest.param({"enable_p1_approval": True}, id="approval-profile"),
+        pytest.param({"model": "other-org/model"}, id="model-id"),
+        pytest.param({"model_revision": "a" * 40}, id="model-revision"),
+        pytest.param({"tokenizer": "other-org/tokenizer"}, id="tokenizer-id"),
+        pytest.param({"tokenizer_revision": "b" * 40}, id="tokenizer-revision"),
+        pytest.param({"sft_parent": "changed"}, id="sft-parent"),
+    ],
+)
+def test_direct_run_training_rejects_unplanned_request_without_mutation(
+    monkeypatch, tmp_path, overrides
+):
+    from training import grpo
+
+    args_overrides = dict(overrides)
+    parent = _parent()
+    if args_overrides.pop("sft_parent", None):
+        parent = {**parent, "manifest_sha256": "1" * 64}
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: parent,
+    )
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: pytest.fail("training imports before plan validation"),
+    )
+    monkeypatch.setattr(
+        grpo,
+        "run_optuna_search",
+        lambda *_args, **_kwargs: pytest.fail("Optuna started before plan validation"),
+    )
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(include_operator_approval=True),
+        "planned",
+    )
+    persist_status(manifest_path, planned, "running")
+    before = manifest_path.read_bytes()
+
+    with pytest.raises(ValueError, match="persisted G9 training plan"):
+        grpo.run_training(_training_args(tmp_path, **args_overrides), output_dir)
+
+    assert manifest_path.read_bytes() == before
+    assert list(output_dir.iterdir()) == [manifest_path]
 
 
 def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
@@ -1089,7 +1202,11 @@ def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
     output_dir = tmp_path / "run"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(seed=917018, include_operator_approval=True),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     monkeypatch.setitem(
         sys.modules,
@@ -1110,6 +1227,7 @@ def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
         tokenizer=None,
         tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
+        enable_p1_approval=False,
         lr=1e-6,
         beta=0.04,
         batch_size=1,
@@ -1148,7 +1266,11 @@ def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
     output_dir = tmp_path / "run"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(include_operator_approval=True),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     args = Namespace(
         execute_live_chaos=True,
@@ -1161,6 +1283,14 @@ def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
         tokenizer=None,
         tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
+        enable_p1_approval=False,
+        lr=1e-6,
+        beta=0.04,
+        batch_size=1,
+        num_generations=8,
+        max_steps=1,
+        grad_accum=4,
+        max_compl_len=256,
     )
 
     with pytest.raises(KeyboardInterrupt):
@@ -1205,7 +1335,15 @@ def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
     output_dir = tmp_path / "run"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(
+            seed=917018,
+            optuna_trials=1,
+            include_operator_approval=True,
+        ),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     args = Namespace(
         execute_live_chaos=True,
@@ -1218,6 +1356,14 @@ def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
         tokenizer=None,
         tokenizer_revision=TOKENIZER_COMMIT,
         sft_checkpoint=tmp_path / "sft",
+        enable_p1_approval=False,
+        lr=1e-6,
+        beta=0.04,
+        batch_size=1,
+        num_generations=8,
+        max_steps=1,
+        grad_accum=4,
+        max_compl_len=256,
     )
 
     with pytest.raises(RuntimeError, match="G9 requires a single training process"):
@@ -1328,7 +1474,11 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
     output_dir = tmp_path / "optuna"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(seed=917018, optuna_trials=1, include_operator_approval=True),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     mark_training_started(
         manifest_path,
@@ -1357,6 +1507,7 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
         n_trials=1,
         execute_live_chaos=True,
         kube_context=" kind-atlasops-test ",
+        operator_approval_enabled=False,
         seed=917018,
     )
 
@@ -1401,6 +1552,89 @@ def test_optuna_rollouts_receive_and_record_selected_context(monkeypatch, tmp_pa
 
 
 @pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"seed": 917018, "n_trials": 1}, id="seed-and-trial-count"),
+        pytest.param({"seed": 917018}, id="seed"),
+        pytest.param({"n_trials": 1}, id="trial-count"),
+        pytest.param({"tiers": ["multi_fault"]}, id="tiers"),
+        pytest.param({"kube_context": "kind-atlasops-other"}, id="live-context"),
+        pytest.param({"operator_approval_enabled": True}, id="approval-profile"),
+        pytest.param({"model_id": "other-org/model"}, id="model-id"),
+        pytest.param({"model_revision": "a" * 40}, id="model-revision"),
+        pytest.param({"tokenizer_id": "other-org/tokenizer"}, id="tokenizer-id"),
+        pytest.param({"tokenizer_revision": "b" * 40}, id="tokenizer-revision"),
+        pytest.param({"sft_parent": "changed"}, id="sft-parent"),
+    ],
+)
+def test_direct_optuna_rejects_unplanned_request_without_mutation(
+    monkeypatch, tmp_path, overrides
+):
+    from training import grpo
+
+    parent = _parent()
+    if "sft_parent" in overrides:
+        parent = {**parent, "manifest_sha256": "1" * 64}
+    monkeypatch.setattr(
+        grpo,
+        "validate_sft_parent",
+        lambda *_args, **_kwargs: parent,
+    )
+    monkeypatch.setattr(
+        grpo,
+        "_load_training_dependencies",
+        lambda: pytest.fail("training imports before Optuna plan validation"),
+    )
+    output_dir = tmp_path / "optuna"
+    output_dir.mkdir()
+    manifest_path = output_dir / MANIFEST_NAME
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(include_operator_approval=True),
+        "planned",
+    )
+    persist_status(manifest_path, planned, "running")
+    mark_training_started(
+        manifest_path,
+        model_id="Qwen/Qwen2.5-7B-Instruct",
+        model_revision=MODEL_COMMIT,
+        tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+        tokenizer_revision=TOKENIZER_COMMIT,
+        sft_parent=_parent(),
+    )
+    before = manifest_path.read_bytes()
+    arguments = {
+        "model_id": "Qwen/Qwen2.5-7B-Instruct",
+        "model_revision": MODEL_COMMIT,
+        "tokenizer_id": "Qwen/Qwen2.5-7B-Instruct",
+        "tokenizer_revision": TOKENIZER_COMMIT,
+        "tiers": ["single_fault"],
+        "n_trials": 0,
+        "execute_live_chaos": True,
+        "kube_context": "kind-atlasops-test",
+        "operator_approval_enabled": False,
+        "seed": 42,
+    }
+    arguments.update(overrides)
+    arguments.pop("sft_parent", None)
+
+    with pytest.raises(ValueError, match="persisted G9 training plan"):
+        grpo.run_optuna_search(
+            arguments.pop("model_id"),
+            arguments.pop("tiers"),
+            output_dir,
+            arguments.pop("model_revision"),
+            arguments.pop("tokenizer_id"),
+            arguments.pop("tokenizer_revision"),
+            tmp_path / "sft",
+            **arguments,
+        )
+
+    assert manifest_path.read_bytes() == before
+    assert list(output_dir.iterdir()) == [manifest_path]
+
+
+@pytest.mark.parametrize(
     ("exception_type", "expected_status"),
     [(RuntimeError, "failed"), (KeyboardInterrupt, "interrupted")],
 )
@@ -1437,7 +1671,11 @@ def test_direct_optuna_failure_persists_terminal_state(
     output_dir = tmp_path / "optuna"
     output_dir.mkdir()
     manifest_path = output_dir / MANIFEST_NAME
-    planned = persist_status(manifest_path, _planned_manifest(), "planned")
+    planned = persist_status(
+        manifest_path,
+        _planned_manifest(seed=917018, optuna_trials=1, include_operator_approval=True),
+        "planned",
+    )
     persist_status(manifest_path, planned, "running")
     mark_training_started(
         manifest_path,
@@ -1466,6 +1704,8 @@ def test_direct_optuna_failure_persists_terminal_state(
                 n_trials=1,
                 execute_live_chaos=True,
                 kube_context="kind-atlasops-test",
+                operator_approval_enabled=False,
+                seed=917018,
             )
     else:
         with pytest.raises(RuntimeError, match="original Optuna failure"):
@@ -1480,6 +1720,8 @@ def test_direct_optuna_failure_persists_terminal_state(
                 n_trials=1,
                 execute_live_chaos=True,
                 kube_context="kind-atlasops-test",
+                operator_approval_enabled=False,
+                seed=917018,
             )
 
     saved = json.loads(manifest_path.read_text(encoding="utf-8"))

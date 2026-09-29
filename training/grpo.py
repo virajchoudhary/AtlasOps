@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextvars import ContextVar
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from functools import wraps
@@ -64,6 +65,7 @@ from training.grpo_provenance import (
     record_loader_provenance,
     require_started_grpo_run,
     validate_grpo_model_references,
+    validate_grpo_run_plan,
     validate_new_output_directory,
     validate_sft_parent,
     validate_sft_parent_matches_run,
@@ -82,6 +84,10 @@ GRPOTrainer = None
 _HAS_TORCH_RL = False
 
 log = logging.getLogger(__name__)
+_RUN_ATTEMPT_STATE: ContextVar[dict[str, bool] | None] = ContextVar(
+    "g9_run_attempt_state",
+    default=None,
+)
 
 
 def _require_live_execution(
@@ -93,6 +99,14 @@ def _require_live_execution(
         kube_context,
         opt_in_flag="--execute-live-chaos",
     )
+
+
+def _operator_approval_profile(enabled: bool) -> dict[str, Any]:
+    return {
+        "mode": "loopback_exact_action_v1" if enabled else "disabled",
+        "timeout_seconds": OPERATOR_APPROVAL_TIMEOUT_SECONDS if enabled else None,
+        "identity": "operator_supplied_name_not_independent_attestation",
+    }
 
 
 def _require_single_writer() -> None:
@@ -214,6 +228,12 @@ def _persist_started_run_failure(
         log.exception("Could not persist G9 %s state after %s", status, type(error).__name__)
 
 
+def _mark_run_attempt_started() -> None:
+    attempt = _RUN_ATTEMPT_STATE.get()
+    if attempt is not None:
+        attempt["started"] = True
+
+
 def _terminalize_started_run_on_exception(output_dir_position: int):
     def decorate(function):
         @wraps(function)
@@ -221,10 +241,12 @@ def _terminalize_started_run_on_exception(output_dir_position: int):
             output_dir = kwargs.get("output_dir")
             if output_dir is None and len(args) > output_dir_position:
                 output_dir = args[output_dir_position]
+            attempt = {"started": False}
+            token = _RUN_ATTEMPT_STATE.set(attempt)
             try:
                 return function(*args, **kwargs)
             except KeyboardInterrupt as exc:
-                if output_dir is not None:
+                if attempt["started"] and output_dir is not None:
                     _persist_started_run_failure(
                         Path(output_dir),
                         "interrupted",
@@ -232,13 +254,15 @@ def _terminalize_started_run_on_exception(output_dir_position: int):
                     )
                 raise
             except Exception as exc:
-                if output_dir is not None:
+                if attempt["started"] and output_dir is not None:
                     _persist_started_run_failure(
                         Path(output_dir),
                         "failed",
                         exc,
                     )
                 raise
+            finally:
+                _RUN_ATTEMPT_STATE.reset(token)
 
         return wrapped
 
@@ -735,7 +759,6 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       kube_context: str | None = None,
                       operator_approval_enabled: bool = False,
                       seed: int = 42) -> dict[str, Any]:
-    _require_single_writer()
     kube_context = _require_live_execution(execute_live_chaos, kube_context)
     validate_grpo_model_references(
         model_id=model_path,
@@ -743,12 +766,37 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
         tokenizer_id=tokenizer_id,
         tokenizer_revision=tokenizer_revision,
     )
+    expected_live_execution = {
+        "execute_live_chaos": execute_live_chaos,
+        "kube_context": kube_context,
+    }
     sft_parent = validate_sft_parent(
         sft_checkpoint,
         model_id=model_path,
         model_revision=model_revision,
         tokenizer_id=tokenizer_id,
         tokenizer_revision=tokenizer_revision,
+    )
+    validate_grpo_run_plan(
+        Path(output_dir) / MANIFEST_NAME,
+        model_id=model_path,
+        model_revision=model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+        sft_parent=sft_parent,
+        training_fields={
+            "seed": seed,
+            "live_execution": expected_live_execution,
+            "operator_approval": _operator_approval_profile(
+                operator_approval_enabled
+            ),
+        },
+        requested_hyperparameters={
+            "tiers": tiers,
+            "optuna_trials": n_trials,
+        },
+        require_started=True,
+        exact_hyperparameters=False,
     )
     require_started_grpo_run(
         output_dir,
@@ -758,6 +806,7 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
         tokenizer_revision=tokenizer_revision,
         sft_parent=sft_parent,
     )
+    _mark_run_attempt_started()
     _load_training_dependencies()
     _require_single_writer()
     import torch
@@ -1068,15 +1117,9 @@ def main() -> None:
         sft_parent=sft_parent,
         prompt_rows=prompt_rows,
     )
-    manifest["training"]["operator_approval"] = {
-        "mode": (
-            "loopback_exact_action_v1" if args.enable_p1_approval else "disabled"
-        ),
-        "timeout_seconds": (
-            OPERATOR_APPROVAL_TIMEOUT_SECONDS if args.enable_p1_approval else None
-        ),
-        "identity": "operator_supplied_name_not_independent_attestation",
-    }
+    manifest["training"]["operator_approval"] = _operator_approval_profile(
+        args.enable_p1_approval
+    )
     output_dir = claim_new_output_directory(output_dir)
     manifest_path = output_dir / MANIFEST_NAME
     manifest = persist_status(manifest_path, manifest, "planned")
@@ -1104,7 +1147,6 @@ def main() -> None:
 @_terminalize_started_run_on_exception(output_dir_position=1)
 def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     """Execute the declared online training run after intent is persisted."""
-    _require_single_writer()
     kube_context = _require_live_execution(
         getattr(args, "execute_live_chaos", False),
         getattr(args, "kube_context", None),
@@ -1123,7 +1165,42 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         tokenizer_id=tokenizer_id,
         tokenizer_revision=args.tokenizer_revision,
     )
+    tiers = [tier.strip() for tier in args.tiers.split(",")]
     manifest_path = Path(output_dir) / MANIFEST_NAME
+    requested_hyperparameters = {
+        "tiers": tiers,
+        "learning_rate": args.lr,
+        "beta": args.beta,
+        "batch_size": args.batch_size,
+        "num_generations": args.num_generations,
+        "max_steps": args.max_steps,
+        "gradient_accumulation_steps": args.grad_accum,
+        "optuna_trials": args.optuna,
+    }
+    validate_grpo_run_plan(
+        manifest_path,
+        model_id=args.model,
+        model_revision=args.model_revision,
+        tokenizer_id=tokenizer_id,
+        tokenizer_revision=args.tokenizer_revision,
+        sft_parent=sft_parent,
+        training_fields={
+            "seed": args.seed,
+            "generation_config": {
+                "max_completion_length": args.max_compl_len,
+            },
+            "live_execution": {
+                "execute_live_chaos": args.execute_live_chaos,
+                "kube_context": kube_context,
+            },
+            "operator_approval": _operator_approval_profile(
+                getattr(args, "enable_p1_approval", False)
+            ),
+        },
+        requested_hyperparameters=requested_hyperparameters,
+        require_started=False,
+    )
+    _require_single_writer()
     rollout_path = output_dir / "rollout_trajectories.jsonl"
     if rollout_path.exists():
         raise FileExistsError(
@@ -1137,7 +1214,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         tokenizer_revision=args.tokenizer_revision,
         sft_parent=sft_parent,
     )
-    tiers = [tier.strip() for tier in args.tiers.split(",")]
+    _mark_run_attempt_started()
     random.seed(args.seed)
     _load_training_dependencies()
     _require_single_writer()

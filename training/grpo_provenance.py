@@ -52,6 +52,21 @@ OPTUNA_TUNED_HYPERPARAMETERS = {
 MODEL_REVISION_BASIS_LOADER_MATCH = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
 
 
+class RunPlanMismatch(ValueError):
+    """A direct G9 invocation differs from the request persisted by the CLI."""
+
+
+def _plan_values_equal(left: Any, right: Any) -> bool:
+    try:
+        return json.dumps(left, sort_keys=True, separators=(",", ":")) == json.dumps(
+            right,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def validate_grpo_model_references(
     *,
     model_id: str,
@@ -379,6 +394,77 @@ def validate_sft_parent_matches_run(
         or manifest.get("sft_parent") != dict(sft_parent)
     ):
         raise ValueError("GRPO SFT parent changed after the run was planned")
+
+
+def validate_grpo_run_plan(
+    manifest_path: Path,
+    *,
+    model_id: str,
+    model_revision: str,
+    tokenizer_id: str,
+    tokenizer_revision: str,
+    sft_parent: Mapping[str, Any],
+    training_fields: Mapping[str, Any],
+    requested_hyperparameters: Mapping[str, Any],
+    require_started: bool,
+    exact_hyperparameters: bool = True,
+) -> dict[str, Any]:
+    """Bind direct training/search arguments to the already persisted G9 request."""
+    manifest_path = Path(manifest_path)
+    if has_redirecting_path_component(manifest_path) or not manifest_path.is_file():
+        raise RunPlanMismatch("persisted G9 run manifest is missing or redirected")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    training = manifest.get("training") if isinstance(manifest, dict) else None
+    if not isinstance(manifest, dict) or manifest.get("status") != "running":
+        raise RunPlanMismatch("persisted G9 run is not in the running state")
+    if not isinstance(training, dict):
+        raise RunPlanMismatch("persisted G9 training plan is missing")
+    has_started = bool(training.get("execution_started_at"))
+    if has_started is not require_started:
+        phase = "started" if require_started else "not yet started"
+        raise RunPlanMismatch(f"persisted G9 run must be {phase}")
+
+    for key, expected_id, expected_revision in (
+        ("base_model", model_id, model_revision),
+        ("tokenizer", tokenizer_id, tokenizer_revision),
+    ):
+        record = manifest.get(key)
+        if (
+            not isinstance(record, Mapping)
+            or record.get("id") != expected_id
+            or record.get("requested_revision") != expected_revision
+        ):
+            raise RunPlanMismatch(f"{key} identity differs from the persisted G9 training plan")
+    if not _plan_values_equal(manifest.get("sft_parent"), dict(sft_parent)):
+        raise RunPlanMismatch("SFT parent differs from the persisted G9 training plan")
+
+    for key, expected in training_fields.items():
+        if not _plan_values_equal(training.get(key), expected):
+            raise RunPlanMismatch(f"training {key} differs from the persisted G9 training plan")
+
+    recorded_requested = training.get("requested_hyperparameters")
+    recorded_legacy = training.get("hyperparameters")
+    if (
+        not isinstance(recorded_requested, Mapping)
+        or not isinstance(recorded_legacy, Mapping)
+        or not _plan_values_equal(dict(recorded_legacy), dict(recorded_requested))
+    ):
+        raise RunPlanMismatch("requested hyperparameter records are inconsistent")
+    if exact_hyperparameters:
+        matches = _plan_values_equal(
+            dict(recorded_requested),
+            dict(requested_hyperparameters),
+        )
+    else:
+        matches = all(
+            _plan_values_equal(recorded_requested.get(key), value)
+            for key, value in requested_hyperparameters.items()
+        )
+    if not matches:
+        raise RunPlanMismatch(
+            "requested hyperparameters differ from the persisted G9 training plan"
+        )
+    return manifest
 
 
 def validate_sft_parent(

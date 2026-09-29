@@ -150,8 +150,10 @@ directory. The G9 CLI rejects existing and redirected output paths and
 claims a fresh directory exclusively only after validating full immutable
 model/tokenizer commit pins, repository IDs, and the completed SFT parent.
 Its one-shot execution marker prevents a direct training or Optuna call
-from resuming that run. The CLI also requires `--execute-live-chaos` and a
-named `--kube-context`. P1 needs the
+from resuming that run. Direct calls must match the persisted seed,
+configuration, live context and operator profile; a mismatch fails before
+work without changing the existing run. The CLI also requires
+`--execute-live-chaos` and a named `--kube-context`. P1 needs the
 separately opted-in same-process operator channel and a securely supplied
 `ATLASOPS_API_KEY`; rejection, timeout and missing decision remain blocked.
 Do not put the secret in arguments or print it. Keep Optuna disabled until

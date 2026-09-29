@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-29T18:31:50.462169+00:00",
+  "generated_at": "2026-09-29T19:12:08.786903+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -145,8 +145,8 @@
       "size_bytes": 11090
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "a13b82f8f8236881ed3ada54bad2dc6cdf065b2956f2928211a993ba69c16ec5",
-      "size_bytes": 12312
+      "sha256": "b945cb8252ba449590870913c4811aba5a7e813107d80917d5849330734a3842",
+      "size_bytes": 12470
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
       "sha256": "7fdf84c84710caf53058716c80694911f04d8b3063f3e4b73e8eb4889b7b775b",
@@ -217,8 +217,8 @@
       "size_bytes": 4101
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "24c9203f84c3fc1ea13fdef866fc5607714481cfc65409a5ebb41c7d3101debf",
-      "size_bytes": 6742
+      "sha256": "1d0403d704003bcbee1106d8295567ac1cdc1d3ccc134f6471cd089721903887",
+      "size_bytes": 7021
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -721,16 +721,16 @@
       "size_bytes": 32055
     },
     "training/grpo.py": {
-      "sha256": "13810a6ba7af47b1f5f7bfed790ef4741b900d86717fdfe4287ca7cbc5393033",
-      "size_bytes": 50090
+      "sha256": "4c232bb00856b167a35367fe2b8572761999522bb6dd0bb671b1d39a568623d2",
+      "size_bytes": 52675
     },
     "training/grpo_environment.py": {
       "sha256": "8b9916d31829a9fe2befff5883ba85dc9b0666aa2cd6a60b590a1439f1180769",
       "size_bytes": 29947
     },
     "training/grpo_provenance.py": {
-      "sha256": "84f637d63a89528c9e179bb3729e5bd64e233ebad281f5ad362b66365de802de",
-      "size_bytes": 33923
+      "sha256": "73a200b1f0aca965c536777d00af870dfa30086a1d115851a81ca74cf001521d",
+      "size_bytes": 37424
     },
     "training/grpo_reward.py": {
       "sha256": "23e7cde82209595e9d47986d8cf807e8b491e7a83d780379c86fa006848cd806",
@@ -877,8 +877,8 @@
       "size_bytes": 13862
     },
     "tests/test_grpo_training_provenance.py": {
-      "sha256": "e4acc2d8808e40aad1b3527629e3194e4aa6150de8c1524f321ab06d051c489f",
-      "size_bytes": 55333
+      "sha256": "3ab2e93339dad24841ce0e99ca3d66e28db49f0e299ac4be49418af4930a829e",
+      "size_bytes": 63084
     },
     "tests/test_hf_space_env.py": {
       "sha256": "74a310256bb3582089ee319c8d27c90b929b7d1a9515946eda161318eb21ebb6",

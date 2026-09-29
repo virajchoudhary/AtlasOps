@@ -56,6 +56,10 @@ The required relationship is:
   direct retry or implicit resume; caught direct/CLI failures and interrupts
   retain terminal status. Optional Optuna trials carry the declared seed
   but remain separately gated live rollouts.
+- Direct training and Optuna entrypoints compare their seed, requested
+  hyperparameters or trial count, live context, approval profile, and model
+  lineage with the persisted plan before beginning work. A mismatched
+  preflight call does not terminalize an already-started run.
 - Completion also requires matching loader-exposed base-model commit
   provenance. A tokenizer hash, if exposed, must match; otherwise its
   manifest basis explicitly says the full loader-argument pin was not

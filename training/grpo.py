@@ -119,6 +119,35 @@ def _require_single_writer() -> None:
         raise RuntimeError("G9 requires a single training process")
 
 
+def validate_grpo_batch_configuration(
+    *,
+    per_device_train_batch_size: int,
+    gradient_accumulation_steps: int,
+    num_generations: int,
+) -> int:
+    """Validate the pinned TRL GRPO generation-group divisibility without changing budgets."""
+    values = {
+        "per_device_train_batch_size": per_device_train_batch_size,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "num_generations": num_generations,
+    }
+    for name, value in values.items():
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+
+    effective_prompt_batch_size = (
+        per_device_train_batch_size * gradient_accumulation_steps
+    )
+    if effective_prompt_batch_size % num_generations:
+        raise ValueError(
+            "Pinned TRL 0.19.1 requires the effective prompt batch "
+            f"({per_device_train_batch_size} * {gradient_accumulation_steps} * 1 process = "
+            f"{effective_prompt_batch_size}) to be divisible by num_generations={num_generations}. "
+            "No batch or generation values were changed."
+        )
+    return effective_prompt_batch_size
+
+
 def compute_grpo_advantages(rewards: list[float], eps: float = 1e-4) -> list[float]:
     """Compute group-relative advantages across G rollouts: A_i = (r_i - mean) / (std + eps)."""
     if not rewards:
@@ -306,6 +335,10 @@ class OnlineRewardFunction:
     3. Settles and scores conclusive objective verifier observations.
     4. Returns rewards for GRPO advantage computation
     """
+
+    @property
+    def __name__(self) -> str:
+        return "online_reward"
 
     def __init__(
         self,
@@ -625,6 +658,14 @@ class OnlineRewardFunction:
 
 # ── Optuna HP search ──────────────────────────────────────────────────────────
 
+_OPTUNA_DEFERRED_MESSAGE = (
+    "Optuna GRPO search is deferred pending an explicitly approved trial batch/generation budget. "
+    "Its fixed settings use per_device_train_batch_size=1 and gradient_accumulation_steps=1 "
+    "with num_generations in [4, 8], which violate pinned TRL 0.19.1's divisibility rule. "
+    "No trials were started and no replacement hyperparameters were selected."
+)
+
+
 def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       model_revision: str, tokenizer_id: str, tokenizer_revision: str,
                       sft_checkpoint: Path,
@@ -633,96 +674,11 @@ def run_optuna_search(model_path: str, tiers: list[str], output_dir: Path,
                       execute_live_chaos: bool = False,
                       kube_context: str | None = None,
                       operator_approval_enabled: bool = False) -> dict[str, Any]:
-    _require_single_writer()
-    kube_context = _require_live_execution(execute_live_chaos, kube_context)
-    try:
-        import optuna
-    except ImportError:
-        log.warning("optuna not installed — skipping HP search")
+    if n_trials < 0:
+        raise ValueError("n_trials must be non-negative")
+    if n_trials == 0:
         return {}
-
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-    def objective(trial: optuna.Trial) -> float:
-        lr      = trial.suggest_float("lr", 5e-7, 5e-6, log=True)
-        beta    = trial.suggest_float("beta", 0.001, 0.05, log=True)
-        num_gen = trial.suggest_categorical("num_generations", [4, 8])
-        effective_hyperparameters = {
-            "tiers": tiers,
-            "learning_rate": lr,
-            "beta": beta,
-            "batch_size": 1,
-            "num_generations": num_gen,
-            "max_steps": 10,
-            "gradient_accumulation_steps": 1,
-            "max_completion_length": 256,
-        }
-        reward_fn = OnlineRewardFunction(
-            tiers,
-            rollout_log_path=(
-                Path(output_dir)
-                / "optuna_trials"
-                / f"trial_{trial.number}"
-                / "rollout_trajectories.jsonl"
-            ),
-            execute_live_chaos=execute_live_chaos,
-            kube_context=kube_context,
-            rollout_phase="optuna_trial",
-            trial_number=trial.number,
-            effective_hyperparameters=effective_hyperparameters,
-            operator_approval_enabled=operator_approval_enabled,
-        )
-
-        model, tokenizer = load_model_and_tokenizer(
-            model_path,
-            model_revision=model_revision,
-            tokenizer_id=tokenizer_id,
-            tokenizer_revision=tokenizer_revision,
-            sft_checkpoint=sft_checkpoint,
-            execute_live_chaos=execute_live_chaos,
-            kube_context=kube_context,
-        )
-
-        # Preserve the exact frozen Train scenario identity through TRL.
-        from datasets import Dataset
-        dataset = Dataset.from_list(build_direct_action_prompts(tiers))
-
-        grpo_args = GRPOConfig(
-            output_dir=f"{output_dir}/trial_{trial.number}",
-            learning_rate=lr,
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=1,
-            bf16=True, max_steps=10, report_to=[], optim="paged_adamw_8bit",
-            num_generations=num_gen, beta=beta, max_completion_length=256,
-        )
-        trainer = GRPOTrainer(
-            model=model, args=grpo_args, train_dataset=dataset,
-            processing_class=tokenizer,
-            reward_funcs=[reward_fn],
-        )
-        trainer.train()
-        logs = trainer.state.log_history
-        rewards = [
-            entry.get("rewards/mean", 0)
-            for entry in logs if "rewards/mean" in entry
-        ]
-        return sum(rewards[-3:]) / max(len(rewards[-3:]), 1)
-
-    study = optuna.create_study(direction="maximize",
-                                sampler=optuna.samplers.TPESampler(seed=42))
-    study.optimize(objective, n_trials=n_trials)
-    best = {
-        "params": study.best_params,
-        "value": study.best_value,
-        "live_execution": {
-            "execute_live_chaos": execute_live_chaos,
-            "kube_context": kube_context,
-        },
-    }
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    (Path(output_dir) / "optuna_best.json").write_text(json.dumps(best, indent=2))
-    log.info("Best HP: %s (value=%.4f)", study.best_params, study.best_value)
-    return study.best_params
+    raise RuntimeError(_OPTUNA_DEFERRED_MESSAGE)
 
 
 # ── Model loading ─────────────────────────────────────────────────────────────
@@ -790,20 +746,76 @@ def _direct_action_prompt(scenario_id: str) -> str:
     return json.dumps(state, sort_keys=True)
 
 
+def _eligible_train_scenario_ids(tiers: list[str]) -> list[str]:
+    allowed_tiers = set(tiers)
+    scenario_ids = [
+        scenario_id
+        for scenario_id in get_split("train")
+        if SCENARIO_CATALOG[scenario_id].tier in allowed_tiers
+    ]
+    if not scenario_ids:
+        raise ValueError(f"No frozen training scenarios match tiers={sorted(allowed_tiers)}")
+    return scenario_ids
+
+
 def build_direct_action_prompts(tiers: list[str]) -> list[dict[str, str]]:
     """Build training-only prompts with their exact frozen scenario identity."""
-    allowed_tiers = set(tiers)
-    prompts = [
+    return [
         {
             "prompt": _direct_action_prompt(scenario_id),
             "scenario_id": scenario_id,
         }
-        for scenario_id in get_split("train")
-        if SCENARIO_CATALOG[scenario_id].tier in allowed_tiers
+        for scenario_id in _eligible_train_scenario_ids(tiers)
     ]
-    if not prompts:
-        raise ValueError(f"No frozen training scenarios match tiers={sorted(allowed_tiers)}")
-    return prompts
+
+
+def _sample_curriculum_prompt(
+    tiers: tuple[str, ...],
+    allowed_scenarios: frozenset[str],
+) -> dict[str, str]:
+    scenario_id, _tier = sample_scenario(list(tiers))
+    if scenario_id not in allowed_scenarios:
+        raise ValueError(
+            f"GRPO curriculum sampled scenario outside configured Train tiers: {scenario_id}"
+        )
+    return {
+        "prompt": _direct_action_prompt(scenario_id),
+        "scenario_id": scenario_id,
+    }
+
+
+class _CurriculumPromptMapDataset:
+    """Map-style prompt source for TRL's repeated-index generation sampler."""
+
+    def __init__(self, tiers: tuple[str, ...], scenario_ids: list[str]):
+        self.tiers = tiers
+        self.scenario_ids = frozenset(scenario_ids)
+        self.length = len(scenario_ids)
+        self.feedback_count = _curriculum.stats()["total_episodes"]
+        self.rows: dict[int, dict[str, str]] = {}
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __getitem__(self, index: int) -> dict[str, str]:
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < self.length:
+            raise IndexError(index)
+        # RepeatSampler reuses indices for a generation group; invalidate after reward feedback lands.
+        feedback_count = _curriculum.stats()["total_episodes"]
+        if feedback_count != self.feedback_count:
+            self.rows.clear()
+            self.feedback_count = feedback_count
+        if index not in self.rows:
+            self.rows[index] = _sample_curriculum_prompt(self.tiers, self.scenario_ids)
+        return dict(self.rows[index])
+
+
+def build_curriculum_prompt_dataset(tiers: list[str]):
+    """Create a lazily sampled map dataset compatible with pinned TRL 0.19.1."""
+    return _CurriculumPromptMapDataset(
+        tuple(tiers),
+        _eligible_train_scenario_ids(tiers),
+    )
 
 
 def _has_verified_rollout(path: Path) -> bool:
@@ -845,6 +857,19 @@ def main() -> None:
         help="Start a same-process localhost operator channel for exact P1 actions",
     )
     args = parser.parse_args()
+    if args.optuna > 0:
+        parser.error(_OPTUNA_DEFERRED_MESSAGE)
+    if args.optuna < 0:
+        parser.error("--optuna must be non-negative")
+    try:
+        _require_single_writer()
+        validate_grpo_batch_configuration(
+            per_device_train_batch_size=args.batch_size,
+            gradient_accumulation_steps=args.grad_accum,
+            num_generations=args.num_generations,
+        )
+    except (RuntimeError, ValueError) as exc:
+        parser.error(str(exc))
     try:
         kube_context = _require_live_execution(
             args.execute_live_chaos, args.kube_context
@@ -852,7 +877,6 @@ def main() -> None:
     except (PermissionError, ValueError) as exc:
         parser.error(str(exc))
     args.kube_context = kube_context
-    _require_single_writer()
     if args.enable_p1_approval and not os.getenv("ATLASOPS_API_KEY", "").strip():
         parser.error("--enable-p1-approval requires ATLASOPS_API_KEY in the environment")
 
@@ -922,10 +946,20 @@ def main() -> None:
 
 def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     """Execute the declared online training run after intent is persisted."""
+    optuna_trials = getattr(args, "optuna", 0)
+    if optuna_trials > 0:
+        raise RuntimeError(_OPTUNA_DEFERRED_MESSAGE)
+    if optuna_trials < 0:
+        raise ValueError("Optuna trial count must be non-negative")
     _require_single_writer()
     kube_context = _require_live_execution(
         getattr(args, "execute_live_chaos", False),
         getattr(args, "kube_context", None),
+    )
+    validate_grpo_batch_configuration(
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        num_generations=args.num_generations,
     )
     rollout_path = output_dir / "rollout_trajectories.jsonl"
     if rollout_path.exists():
@@ -939,29 +973,9 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
 
         torch.manual_seed(args.seed)
 
-    # Optional Optuna search runs live rollouts against the configured cluster.
-    best_hp: dict[str, Any] = {}
-    if args.optuna > 0:
-        log.info("Optuna HP search (%d trials × 10 live GKE rollouts each)...", args.optuna)
-        best_hp = run_optuna_search(
-            args.model,
-            tiers,
-            output_dir,
-            args.model_revision,
-            args.tokenizer or args.model,
-            args.tokenizer_revision,
-            args.sft_checkpoint,
-            n_trials=args.optuna,
-            execute_live_chaos=args.execute_live_chaos,
-            kube_context=kube_context,
-            operator_approval_enabled=getattr(args, "enable_p1_approval", False),
-        )
-
-    lr      = best_hp.get("lr", args.lr)
-    beta    = best_hp.get("beta", args.beta)
-    num_gen = best_hp.get("num_generations", args.num_generations)
-    if best_hp and not {"lr", "beta", "num_generations"} <= best_hp.keys():
-        raise RuntimeError("Optuna returned incomplete effective hyperparameters")
+    lr = args.lr
+    beta = args.beta
+    num_gen = args.num_generations
     requested_hyperparameters = {
         "tiers": tiers,
         "learning_rate": args.lr,
@@ -970,7 +984,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         "num_generations": args.num_generations,
         "max_steps": args.max_steps,
         "gradient_accumulation_steps": args.grad_accum,
-        "optuna_trials": args.optuna,
+        "optuna_trials": optuna_trials,
     }
     effective_hyperparameters = {
         **requested_hyperparameters,
@@ -979,7 +993,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         "num_generations": num_gen,
         "max_completion_length": args.max_compl_len,
     }
-    hyperparameter_selection = "optuna" if best_hp else "requested"
+    hyperparameter_selection = "requested"
 
     log.info("GRPO config: lr=%.2e beta=%.4f num_gen=%d tiers=%s", lr, beta, num_gen, tiers)
 
@@ -1004,15 +1018,16 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         operator_approval_enabled=getattr(args, "enable_p1_approval", False),
     )
 
-    # Every completion is parsed and executed as one exact structured action.
-    from datasets import Dataset
-    dataset = Dataset.from_list(build_direct_action_prompts(tiers))
+    # Each consumed prompt is sampled after the preceding verifier feedback.
+    dataset = build_curriculum_prompt_dataset(tiers)
 
     grpo_args = GRPOConfig(
         output_dir=str(output_dir),
         learning_rate=lr,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
+        dataloader_num_workers=0,
+        remove_unused_columns=False,
         bf16=True,
         logging_steps=5,
         save_strategy="steps",

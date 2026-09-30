@@ -158,6 +158,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
         "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
         "docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md",
+        "docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md",
         "docs/project/FINAL_PIPELINE_V22_STATUS.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",
@@ -286,6 +287,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "training/templates/qwen2_5_tool_sft.jinja",
         "training/sft_provenance.py",
         "training/grpo.py",
+        "training/grpo_observation_first.py",
         "training/grpo_environment.py",
         "training/grpo_provenance.py",
         "training/grpo_reward.py",
@@ -294,6 +296,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "tests/test_*.py",
         "tests/stage4_approval_process.py",
         "tests/g9_approval_process.py",
+        "tests/fixtures/trl_0191_observation_routing.txt",
+        "tests/fixtures/TRL_LICENSE.txt",
     ]
 
     repo_root = Path.cwd().resolve()

@@ -39,6 +39,16 @@ the current plan v3 SHA-256 is
 The v1 validator remains unchanged and rejects source drift. Only the
 preparation-approved pilot extension uses the pinned compatibility pair.
 
+CI run `36712830063` failed one new gate check with 2130 tests passing:
+Windows CRLF hashes for `requirements/train-constraints.txt` were not portable
+to Linux LF checkout bytes. Source hashes now retain raw identity and explicitly
+add canonical-LF identity; the gate requires the complete hash inventory.
+No provenance field is ignored. Fresh real token report v5 passed all 68 rows,
+raw SHA-256 `9eccf0353af2e60515b011b2b13d856dc2e68a51e76a5c4e09d53d5d0383b685`.
+Current plan v4 SHA-256 is
+`914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e`.
+The failed CI and earlier artifacts remain preserved; they are not acceptance.
+
 ## Spec
 
 The verifier independently checked the current files and confirmed:

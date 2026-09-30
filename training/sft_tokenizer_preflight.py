@@ -1089,6 +1089,10 @@ def run_preflight(
             "template_sha256": file_sha256(TEMPLATE_PATH),
             "implementation_sha256": implementation_hash,
             "implementation_file_sha256": hashes,
+            "implementation_file_sha256_canonical_lf": {
+                relative: canonical_bytes_sha256((REPO_ROOT / relative).read_bytes())
+                for relative in IMPLEMENTATION_PATHS
+            },
         },
         "summary": {
             "total_rows": len(rows),

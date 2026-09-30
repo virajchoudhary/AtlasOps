@@ -23,12 +23,12 @@ from training.sft_provenance import (
     canonical_bytes_sha256,
 )
 
-PLAN_PATH = REPO_ROOT / "config" / "sft_pilot_v3.json"
+PLAN_PATH = REPO_ROOT / "config" / "sft_pilot_v4.json"
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 REVISION = "a09a35458c702b33eeacc393d103063234e8bc28"
 CORPUS_HASH = "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd"
 MANIFEST_HASH = "35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c"
-PLAN_SHA256 = "a227ea6e45c0299ed5675785853a3b7de6087d8f4862397d8f410371304c7362"
+PLAN_SHA256 = "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e"
 EXECUTION_APPROVAL_SHA256: str | None = None
 
 
@@ -91,7 +91,7 @@ def validate_preparation(
         "requirements/sft-pilot-linux-py312.lock",
         "infra/training/sft-pilot/Dockerfile",
         "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json",
-        "artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json",
+        "artifacts/evidence/stage7/sft_tokenizer_preflight_v5.json",
         "training/templates/qwen2_5_tool_sft.jinja",
     }:
         raise ValueError("SFT pilot plan lacks required provenance artifacts")
@@ -122,7 +122,7 @@ def validate_preparation(
     for key, value in expected_fixed.items():
         if hyperparameters.get(key) != value:
             raise ValueError(f"SFT pilot fixed QLoRA setting differs: {key}")
-    report, _ = _read(REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json")
+    report, _ = _read(REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v5.json")
     if (
         report.get("schema_version") != "atlasops-sft-tokenizer-preflight-v1"
         or report.get("status") != "PASS"
@@ -135,10 +135,15 @@ def validate_preparation(
         or report.get("summary", {}).get("mask_contract_pass") is not True
     ):
         raise ValueError("SFT pilot all-row tokenizer preflight did not pass")
-    for relative, digest in report.get("artifacts", {}).get("implementation_file_sha256", {}).items():
+    from training.sft_tokenizer_preflight import IMPLEMENTATION_PATHS
+
+    source_hashes = report.get("artifacts", {}).get("implementation_file_sha256_canonical_lf", {})
+    if set(source_hashes) != set(IMPLEMENTATION_PATHS):
+        raise ValueError("SFT pilot preflight implementation inventory is incomplete")
+    for relative, digest in source_hashes.items():
         path = REPO_ROOT / relative
         raw, _ = _read_bounded_snapshot(path, 8 * 1024 * 1024)
-        if raw is None or hashlib.sha256(raw).hexdigest() != digest:
+        if raw is None or canonical_bytes_sha256(raw) != digest:
             raise ValueError("SFT pilot tokenizer implementation differs from checked preflight")
     rows = report.get("rows")
     if not isinstance(rows, list) or len(rows) != len(snapshot.rows):

@@ -249,6 +249,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "config/sft_pilot_v1.json",
         "config/sft_pilot_v2.json",
         "config/sft_pilot_v3.json",
+        "config/sft_pilot_v4.json",
         "requirements/sft-pilot-v1.in",
         "requirements/sft-pilot-linux-py312.lock",
         "infra/training/sft-pilot/Dockerfile",

@@ -100,6 +100,32 @@ def test_frozen_plan_and_preflight_integrity():
     assert result["execution_allowed"] is False
 
 
+def test_preflight_source_hashes_accept_linux_lf_checkout(monkeypatch):
+    original = sft_pilot_gate._read_bounded_snapshot
+
+    def linux_read(path, bound):
+        raw, status = original(path, bound)
+        if raw is not None and path == REPO_ROOT / "requirements/train-constraints.txt":
+            raw = raw.replace(b"\r\n", b"\n")
+        return raw, status
+
+    monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", linux_read)
+    plan = json.loads(sft_pilot_gate.PLAN_PATH.read_text())
+    settings = plan["hyperparameters"]
+    hyperparameters = sft._hyperparameters(SimpleNamespace(
+        epochs=settings["epochs"], lr=settings["learning_rate"],
+        batch_size=settings["batch_size"], grad_accum=settings["gradient_accumulation_steps"],
+        max_seq_len=settings["max_sequence_length"], seed=settings["seed"],
+    ))
+    result = sft_pilot_gate.validate_preparation(
+        snapshot_training_corpus(CORPUS), model=sft_pilot_gate.BASE_MODEL,
+        model_revision=sft_pilot_gate.REVISION, tokenizer=sft_pilot_gate.BASE_MODEL,
+        tokenizer_revision=sft_pilot_gate.REVISION, role="all",
+        hyperparameters=hyperparameters,
+    )
+    assert result["execution_allowed"] is False
+
+
 def test_plan_cannot_approve_execution_or_change_setting(monkeypatch, tmp_path):
     assert sft_pilot_gate.PLAN_PATH.is_file()
     original = json.loads(sft_pilot_gate.PLAN_PATH.read_text())

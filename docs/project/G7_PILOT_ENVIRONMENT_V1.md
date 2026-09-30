@@ -79,8 +79,8 @@ temporary-file requirements. If the verified estimate exceeds 80 GiB, stop
 and obtain a new explicit storage decision; do not silently raise the cap.
 This is a planning limit, not a claim that a particular host has that space.
 
-The [source-bound tokenizer preflight v4 report](../../artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json)
-(`sha256:64bd54a2f0e15ad9bf2b70f1c9a66147d02bc478cc566e1c39889ae8586ea4be`)
+The [source-bound tokenizer preflight v5 report](../../artifacts/evidence/stage7/sft_tokenizer_preflight_v5.json)
+(`sha256:9eccf0353af2e60515b011b2b13d856dc2e68a51e76a5c4e09d53d5d0383b685`)
 reports `PASS` for 68 rows, maximum input length 5,738 tokens, zero
 truncation, and a passing assistant-mask contract at `max_seq_length=8192`.
 It also records that held-out outcomes were not accessed and that no weights,
@@ -88,7 +88,7 @@ inference, or training were started. This is tokenizer/mask evidence only. The
 tokenizer's 32,768 position limit is not a training sequence-length
 recommendation or a GPU memory estimate. Do not rely on `training.sft`'s
 `2048` default implicitly.
-`config/sft_pilot_v3.json` binds the effective `max_sequence_length=8192`
+`config/sft_pilot_v4.json` binds the effective `max_sequence_length=8192`
 to that exact preflight evidence and the D3 preparation decision. No GPU
 memory-fit or execution readiness was measured.
 
@@ -128,7 +128,7 @@ uses `pip --isolated --only-binary=:all: --require-hashes` and an explicit
 PyPI index, followed by `pip check`. Image building was not performed here:
 the CUDA runtime wheels are multi-gigabyte. Record the resulting image digest
 and both the lock and Dockerfile SHA-256 values in
-`config/sft_pilot_v3.json` before any launch-gate review.
+`config/sft_pilot_v4.json` before any launch-gate review.
 
 The parent project contract remains authoritative. The existing
 [`G7 SFT Pilot Acceptance v1`](G7_SFT_PILOT_ACCEPTANCE_V1.md) still requires

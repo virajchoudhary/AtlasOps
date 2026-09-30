@@ -19,6 +19,139 @@ from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import VAL_SPLIT
 
 
+@pytest.mark.parametrize("mode", ["mock", "empirical"])
+@pytest.mark.parametrize(
+    ("parameter", "invalid_value"),
+    [
+        ("temperature", True),
+        ("temperature", None),
+        ("temperature", "0.1"),
+        ("temperature", math.nan),
+        ("temperature", math.inf),
+        ("temperature", -math.inf),
+        ("temperature", -0.1),
+        ("temperature", 10**500),
+        ("top_p", "1"),
+        ("top_p", True),
+        ("top_p", math.nan),
+        ("top_p", 0),
+        ("top_p", 1.01),
+        ("max_tokens", True),
+        ("max_tokens", 0),
+        ("max_tokens", "1"),
+        ("max_tokens", 1.0),
+        ("timeout_seconds", "1"),
+        ("timeout_seconds", True),
+        ("timeout_seconds", math.nan),
+        ("timeout_seconds", math.inf),
+        ("timeout_seconds", 0),
+    ],
+    ids=[
+        "temperature-bool",
+        "temperature-none",
+        "temperature-string",
+        "temperature-nan",
+        "temperature-infinity",
+        "temperature-negative-infinity",
+        "temperature-negative",
+        "temperature-overflowing-integer",
+        "top-p-string",
+        "top-p-bool",
+        "top-p-nan",
+        "top-p-zero",
+        "top-p-above-one",
+        "max-tokens-bool",
+        "max-tokens-zero",
+        "max-tokens-string",
+        "max-tokens-float",
+        "timeout-string",
+        "timeout-bool",
+        "timeout-nan",
+        "timeout-infinity",
+        "timeout-zero",
+    ],
+)
+def test_invalid_generation_parameters_are_rejected_before_split_or_output(
+    tmp_path,
+    monkeypatch,
+    mode,
+    parameter,
+    invalid_value,
+):
+    def unexpected_access(*_args, **_kwargs):
+        pytest.fail("generation validation must precede evaluation access")
+
+    monkeypatch.setattr(zero_shot, "get_split", unexpected_access)
+    monkeypatch.setattr(zero_shot, "_preflight_output_paths", unexpected_access)
+    monkeypatch.setattr(zero_shot, "observe_local_model_identity", unexpected_access)
+    output_dir = tmp_path / "not-created"
+
+    async def inference(*_args, **_kwargs):
+        pytest.fail("generation validation must precede inference")
+
+    with pytest.raises(ValueError, match=parameter):
+        asyncio.run(
+            zero_shot.evaluate_zero_shot_split(
+                "unknown-split",
+                mode=mode,
+                model_revision="test-revision",
+                output_dir=output_dir,
+                inference_fn=inference,
+                **{parameter: invalid_value},
+            )
+        )
+
+    assert not output_dir.exists()
+
+
+def test_empirical_test_split_refusal_precedes_invalid_generation_parameters(tmp_path):
+    with pytest.raises(ValueError, match="test split is not authorized"):
+        asyncio.run(
+            zero_shot.evaluate_zero_shot_split(
+                "test",
+                mode="empirical",
+                model_revision="test-revision",
+                output_dir=tmp_path / "not-created",
+                temperature=math.nan,
+            )
+        )
+
+
+def test_valid_generation_parameters_reach_inference_unchanged(tmp_path, monkeypatch):
+    generation_configs = []
+
+    async def inference(_messages, _model_name, generation_config):
+        generation_configs.append(generation_config.copy())
+        return _prediction()
+
+    monkeypatch.setattr(zero_shot, "get_split", lambda _split_name: [VAL_SPLIT[0]])
+    asyncio.run(
+        zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="empirical",
+            model_revision="test-revision",
+            output_dir=tmp_path / "valid-generation",
+            inference_fn=inference,
+            temperature=0,
+            top_p=1,
+            max_tokens=1,
+            timeout_seconds=0.25,
+        )
+    )
+
+    assert generation_configs == [
+        {
+            "temperature": 0,
+            "top_p": 1,
+            "max_tokens": 1,
+            "seed": zero_shot.SPLIT_SEEDS["val"],
+            "timeout_seconds": 0.25,
+        }
+    ]
+    assert type(generation_configs[0]["temperature"]) is int
+    assert type(generation_configs[0]["top_p"]) is int
+
+
 def _assert_raw_run_identity(summary, rows, model_name):
     assert summary["model"] == model_name
     assert summary["run_id"]

@@ -35,6 +35,8 @@ SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256 = (
 )
 SCENARIO_DERIVED_SYNTHETIC_TOTAL_EXAMPLES = 64
 SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS = 16
+REVIEW_CANDIDATE_SHA256 = "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd"
+REVIEW_CANDIDATE_ORIGIN = "scenario_derived_synthetic_review_candidate"
 MAX_VERIFIED_SFT_CORPUS_BYTES = 16 * 1024 * 1024
 MAX_VERIFIED_SFT_MANIFEST_BYTES = 1024 * 1024
 _DATA_ORIGIN_PROVENANCE_FIELDS = frozenset(
@@ -495,11 +497,22 @@ def _verify_recorded_corpus_manifest(
     ):
         return False, "metadata_mismatch"
 
-    if dataset.get("data_origin") == "scenario_derived_synthetic" and (
-        source_manifest.get("data_origin") != "scenario_derived_synthetic"
+    if dataset.get("data_origin") in {"scenario_derived_synthetic", REVIEW_CANDIDATE_ORIGIN} and (
+        source_manifest.get("data_origin") != dataset.get("data_origin")
         or source_manifest.get("synthetic") is not True
     ):
         return False, "origin_mismatch"
+    if source_manifest.get("data_origin") == REVIEW_CANDIDATE_ORIGIN:
+        try:
+            from training.sft_candidate_compatibility import validate_pilot_candidate
+
+            rows, inventory = _parse_training_corpus_bytes(corpus_bytes)
+            validate_pilot_candidate(
+                TrainingCorpusSnapshot(corpus_path, corpus_bytes, rows, inventory),
+                source_manifest,
+            )
+        except (TypeError, ValueError):
+            return False, "candidate_invalid"
     return True, "verified"
 
 
@@ -593,6 +606,15 @@ def normalize_training_data_provenance(
         and total_scenarios == SCENARIO_DERIVED_SYNTHETIC_TOTAL_SCENARIOS
         and manifest_content_verified
     )
+    known_synthetic_source = known_synthetic_source or (
+        data_origin == REVIEW_CANDIDATE_ORIGIN
+        and synthetic is True
+        and origin_source == "adjacent_corpus_manifest"
+        and normalized["corpus_sha256_canonical_lf"] == REVIEW_CANDIDATE_SHA256
+        and total_examples == 68
+        and total_scenarios == len(TRAIN_SPLIT)
+        and manifest_content_verified
+    )
     if not known_synthetic_source:
         normalized.update(
             {
@@ -609,6 +631,7 @@ def _corpus_manifest_provenance(
     *,
     corpus_sha256: str,
     corpus_inventory: dict[str, Any],
+    corpus_snapshot: TrainingCorpusSnapshot | None = None,
 ) -> dict[str, Any]:
     manifest_path = Path(
         os.path.abspath(corpus_path.parent / CORPUS_MANIFEST_NAME)
@@ -666,6 +689,17 @@ def _corpus_manifest_provenance(
         and data_origin == "scenario_derived_synthetic"
         and synthetic is True
     )
+    if (
+        corpus_sha256 == REVIEW_CANDIDATE_SHA256
+        and data_origin == REVIEW_CANDIDATE_ORIGIN
+        and synthetic is True
+    ):
+        from training.sft_candidate_compatibility import validate_pilot_candidate
+
+        if corpus_snapshot is None:
+            raise ValueError("Review candidate provenance requires the consumed corpus snapshot")
+        validate_pilot_candidate(corpus_snapshot, source_manifest)
+        is_known_synthetic_corpus = True
     if is_known_synthetic_corpus:
         origin_source = "adjacent_corpus_manifest"
     else:
@@ -738,6 +772,7 @@ def create_run_manifest(
         source_path,
         corpus_sha256=corpus_sha256,
         corpus_inventory=corpus_inventory,
+        corpus_snapshot=corpus_snapshot,
     )
     started_at = datetime.now(UTC).isoformat()
     return {

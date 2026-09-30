@@ -2,6 +2,18 @@
 
 **Status: PARTIAL**
 
+The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) accepts
+the frozen candidate's documented limitations for preparation only.
+`config/sft_pilot_v4.json` binds the exact model/tokenizer revision, complete
+dependency lock and final offline tokenizer report. All 68 rows pass masks at
+8192 tokens; 2048 requires truncating 54 rows and remains preserved as a negative
+preflight. `training.sft --preflight-only` verifies this plan without models,
+output creation or training. No execution permit is pinned.
+See [model identity](G7_D2_PINNED_MODEL_V1.md), [environment](G7_PILOT_ENVIRONMENT_V1.md)
+and [future run record](G7_PILOT_EXECUTION_RECORD_V1.md).
+Descriptions below about D3 being wholly pending describe the earlier
+corpus-preparation snapshot; the frozen corpus/audit itself is not rewritten.
+
 The new [D3 review candidate](G7_D3_CANDIDATE_REVIEW_V1.md) is separate from
 the historical fixture below. Its versioned corpus, provenance and independent
 quality review are review inputs, not scientific approval or a completed adapter.

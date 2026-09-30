@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from datetime import datetime
 from typing import Any
 
 from bench.episode_membership import (
@@ -16,6 +18,9 @@ from bench.episode_membership import (
 
 _ROW_VARIANTS = {"Zero-Shot Baseline", "SFT Model"}
 _G9_VARIANT = "SFT + GRPO"
+_G9_RFC3339_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$"
+)
 
 
 def adapt_three_arm_raw(
@@ -470,10 +475,12 @@ def _adapt_g9_episode(
                 {
                     "event": name,
                     "verification": _map_verification(event.get("verification")),
+                    **_g9_source_timestamp_metadata(event),
                     "raw_ref": raw_ref,
                 }
             )
         elif name == "step_result":
+            timestamp_metadata = _g9_source_timestamp_metadata(event)
             record = event.get("record")
             if not isinstance(record, Mapping):
                 raise ValueError("G9 step_result requires an objective record")
@@ -491,6 +498,7 @@ def _adapt_g9_episode(
                         "executed": executed,
                         "agent_claimed_resolved": claimed,
                         "parsed_action": deepcopy(action),
+                        **timestamp_metadata,
                         "raw_ref": raw_ref,
                     }
                 )
@@ -499,6 +507,7 @@ def _adapt_g9_episode(
                     {
                         "event": "post_action_verification",
                         "verification": _map_verification(record["verification"]),
+                        **timestamp_metadata,
                         "raw_ref": raw_ref,
                     }
                 )
@@ -507,6 +516,7 @@ def _adapt_g9_episode(
                     {
                         "event": "step_failure",
                         "reason": record["failure"],
+                        **timestamp_metadata,
                         "raw_ref": raw_ref,
                     }
                 )
@@ -524,10 +534,27 @@ def _adapt_g9_episode(
                         if isinstance(event.get("result"), Mapping)
                         else None
                     ),
+                    **_g9_source_timestamp_metadata(event),
                     "raw_ref": raw_ref,
                 }
             )
     return episode
+
+
+def _g9_source_timestamp_metadata(event: Mapping[str, Any]) -> dict[str, str]:
+    """Keep envelope persistence time as source metadata, never as an incident clock."""
+    if "recorded_at" not in event:
+        return {}
+    value = event["recorded_at"]
+    if not isinstance(value, str) or not _G9_RFC3339_RE.fullmatch(value):
+        raise ValueError("G9 event recorded_at must be a timezone-aware RFC 3339 string")
+    try:
+        timestamp = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+    except ValueError as exc:
+        raise ValueError("G9 event recorded_at is not a valid RFC 3339 timestamp") from exc
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError("G9 event recorded_at must include a timezone")
+    return {"source_event_recorded_at": value}
 
 
 def _g9_execution_observation(

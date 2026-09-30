@@ -25,6 +25,9 @@ safe-refusal supervision and explicitly identify the model stage as not invoked.
 
 ## Review Artifacts
 
+**Technical disposition: ready for project-lead review of a bounded synthetic
+SFT feasibility pilot, with limitations. Execution remains refused.**
+
 The immutable review bundle is
 `artifacts/evidence/stage7/candidates/train-candidate-v1/`.
 Its corpus and adjacent manifest anchor exact bytes, semantic row hashes, frozen
@@ -32,6 +35,27 @@ Train membership, recipe configuration, source Git commit and construction-file
 hashes. The independent quality report records counts and distributions, findings,
 duplication measures, and verification limitations. Each regeneration must use
 a fresh destination; never overwrite this bundle or prior evidence.
+
+| Identity | Frozen value |
+|---|---|
+| Version / schema | `train-candidate-v1` / `atlasops-sft-candidate-v1` |
+| Construction source Git SHA | `e802dd3a5522c30d3919952954e86827fa96caa1` |
+| Corpus raw and canonical-LF SHA-256 | `19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd` |
+| Adjacent manifest raw SHA-256 | `35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c` |
+| Rows / cases / Train scenarios | 68 / 17 / 16 |
+| Role counts | Triage 17, Diagnosis 17, Remediation 17, Comms 17 |
+| Paired tool calls | 147 |
+| Role-stage outcomes | blocked 10, failed 2, inconclusive 19, malformed 4, successful 16, unresolved 17 |
+| Approval distribution (rows) | P0 manual 4; P1 approved 12, rejected 4, timeout 4, missing 4, malformed 4; P2 auto 36 |
+| Severity distribution (rows) | P0 4, P1 28, P2 36 |
+| Tool-response success flags | true 144, false 3 |
+
+Outcome counts describe individual role-stage dispositions, not incident
+success rates. The manifest also contains ordered Train IDs, per-role outcomes
+and tool counts, tier counts, semantic hashes and canonical-LF construction-file
+hashes. The independent frozen review is
+`artifacts/evidence/stage7/candidates/train-candidate-v1/quality_audit.md`.
+This bundle does not approve D3.
 
 The technical validator checks all four roles against runtime ACLs, schemas,
 policy and evidence preconditions; P0 manual/P1 named approval semantics;
@@ -47,16 +71,20 @@ diagnosis, that synthetic patterns generalize, or that a trained adapter improve
   not create independent incidents or new empirical coverage.
 - Hand-authored recipes can teach generator-specific shortcuts and repeated
   patterns. Exact-duplicate rejection is not a complete semantic novelty measure.
-  A pre-freeze audit after Triage evidence-path revision found normalized
-  assistant-text similarity at least 0.90 in 0/136 Triage pairs, 19/136 Diagnosis
-  pairs, 33/136 Remediation pairs and 13/136 Comms pairs. These are heuristic
-  pair counts, not a validated novelty score. Diagnosis and Remediation remain
-  repetitive; the final frozen audit must recompute these values.
+  The frozen audit's joined-text heuristic found similarity at least 0.90 in
+  0/136 Triage pairs, 31/136 Diagnosis pairs, 33/136 Remediation pairs and
+  36/136 Comms pairs. A different pre-freeze normalization found 0, 19, 33,
+  and 13 respectively. These are method-sensitive diagnostics, not validated
+  novelty scores. Diagnosis, Remediation and Comms remain repetitive.
 - Scenario metadata influences simulated observations. No expected diagnosis,
   reward, judge label, scenario ID, or held-out outcome is placed in model
   messages, but this does not establish real-world distributional validity.
 - Simulated approvals demonstrate control flow only. They do not grant P1
   authority or validate a real operator channel.
+  Approval-blocked Comms examples describe the model role's refusal, not the
+  complete host notification trace. Runtime may send a separate coordinator
+  fallback notification when a webhook is configured; no-update wording in
+  those rows must be interpreted as scoped to the Comms role.
 - Local Jinja generation-span checks do not prove tokenizer-level masks or
   absence of truncation under the approved pinned remote training stack.
   The candidate now nests the action-bound verifier in the mutation's paired

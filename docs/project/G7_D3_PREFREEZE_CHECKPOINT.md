@@ -1,6 +1,7 @@
 # G7 / D3 Pre-Freeze Checkpoint
 
-**Incomplete goal. No immutable corpus artifact, D3 approval, PR or merge yet.**
+**Historical pre-freeze checkpoint. The records below describe the state before
+explicit commit authorization; see the resolution addendum at the end.**
 
 Verified remote main on 30 September 2026:
 `e9be62aec2ce9bb77014b94f69c5a73cf7c38cb6`.
@@ -92,3 +93,23 @@ IMPLEMENTED / EMPIRICAL EVIDENCE MISSING; G7/G14/G15 PARTIAL; G9/G13 REOPENED;
 G10/G11 OUT_OF_SCOPE; Stage 15 NOT_CERTIFIED. No weights, inference, training,
 paid compute, Kubernetes mutation, fault/P1 authorization or final-Test
 outcomes were accessed.
+
+## Source-Pinning Resolution
+
+The project lead explicitly authorized the requested commit, branch push,
+PR creation and merge conditioned on independent final review and passing CI.
+This did not approve D3, weights, inference, training or live operations.
+The source checkpoint `9c160c7` was committed and reconciled with new main
+`087a81132a1abb5ed2d69fdda501f85fd11a72db`, producing construction commit
+`e802dd3a5522c30d3919952954e86827fa96caa1`.
+The new no-clobber corpus bundle was then generated from that commit.
+Its raw/canonical-LF hash matched the final draft `19606e4f...`; the adjacent
+manifest pins all construction files and exact distributions.
+Frozen candidate tests passed 27/27, including the formerly skipped immutable
+artifact check. The earlier denied commit and Stage 15 failures remain historical
+negative records, not discarded or retroactively described as passing.
+
+For the current exact identity, review disposition and remaining scientific
+approval, use [the D3 review sheet](G7_D3_CANDIDATE_REVIEW_V1.md) and the frozen
+`artifacts/evidence/stage7/candidates/train-candidate-v1/quality_audit.md`.
+D3 remains PENDING and G7 PARTIAL.

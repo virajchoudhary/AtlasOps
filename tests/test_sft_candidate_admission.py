@@ -167,8 +167,7 @@ def test_stored_candidate_is_reproducible_and_review_only():
     from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
-    if not corpus.exists():
-        pytest.skip("versioned review bundle not yet frozen")
+    assert corpus.is_file(), "required versioned review corpus is missing"
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
     report = sft_candidate.validate_candidate_snapshot(snapshot, manifest)

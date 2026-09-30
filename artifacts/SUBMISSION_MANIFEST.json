@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T22:33:37.701323+00:00",
+  "generated_at": "2026-09-30T23:16:21.935059+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,15 +34,15 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 323,
+  "asset_count": 329,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
       "size_bytes": 6416
     },
     ".gitattributes": {
-      "sha256": "baff78b6342789d8d987052a1fe850a637e445010dd2930f49515b6314879957",
-      "size_bytes": 1650
+      "sha256": "d2be61018599d3ddc6c021088446b9a32dc4912a3bae18c71b03ac4333a74e11",
+      "size_bytes": 1753
     },
     ".github/workflows/ci.yml": {
       "sha256": "2e76e97d41e87a5e296052e3cdad2feef079fe61226a53f854aeb17acaea01f1",
@@ -135,6 +135,10 @@
     "docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md": {
       "sha256": "daf95dfa2d90f24b683b348739656270378d64fe67f350abeb63df97f1650b83",
       "size_bytes": 4705
+    },
+    "docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md": {
+      "sha256": "67d2e161c8594f37b5394c550d2b847a0c3147126fc022eaf7c1bedbd4766ebd",
+      "size_bytes": 4493
     },
     "docs/project/FINAL_PIPELINE_V22_STATUS.md": {
       "sha256": "b94ffd4cf482dc6bce9789d75cc6e38a247f5711102bdb2816a2d55943f32880",
@@ -241,8 +245,8 @@
       "size_bytes": 4993
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "31674affc25ad10f50d390386134f2e5e88d9ff26a703faee100d3fc95761984",
-      "size_bytes": 28554
+      "sha256": "b5801a3a3045bdf381e0f160049f2de2b8e9addcfa753effc8f75b61e1f63bcf",
+      "size_bytes": 28733
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
@@ -297,8 +301,8 @@
       "size_bytes": 7954
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "59f84b4e48f6ae09aba9340c0bc89a39affde74b1dac7f37b9cbd3de03123c7d",
-      "size_bytes": 12121
+      "sha256": "6b1ecddffc055cda6920c2b36aca3cf68591c51db1c545679e254341d2a0d373",
+      "size_bytes": 12408
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -873,8 +877,8 @@
       "size_bytes": 45882
     },
     "scripts/package_submission.py": {
-      "sha256": "d249751e48f108e7a21dd2682f2c8ccbd953887806eadb359ca002bca9687d07",
-      "size_bytes": 16411
+      "sha256": "8e00c0906ff936b4346f06c5706c3b76755a5301a36dc43ccc6cbf95c7867ee2",
+      "size_bytes": 16628
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -943,6 +947,10 @@
     "training/grpo.py": {
       "sha256": "d7d8e4bd208305677af1f97c4ffe0c62c1319bc91909019438c236c2c5c4f26b",
       "size_bytes": 60300
+    },
+    "training/grpo_observation_first.py": {
+      "sha256": "5b5dc9062daa97471e25f0cff320f518eb271289078b319fc10c2da288c8014f",
+      "size_bytes": 23132
     },
     "training/grpo_environment.py": {
       "sha256": "8826379511dacda3af33178a5f0152ea6efc7b19eb4332e6a0265e4d92721c2d",
@@ -1111,6 +1119,14 @@
     "tests/test_g9_training_preflight.py": {
       "sha256": "2d135056c3a8fd6d84970a4d853843b46b61450c2ceb91f5188168d4c6ff8698",
       "size_bytes": 26182
+    },
+    "tests/test_grpo_observation_first.py": {
+      "sha256": "910bd1bc0b7f3fffe54677ba3d26d208adc147b6367b71fe6d2af2b1d38f2132",
+      "size_bytes": 22017
+    },
+    "tests/test_grpo_observation_trl_routing.py": {
+      "sha256": "2e55a142969a089d8a6feef0dfc3b9d39eb43cec471db257c3d39f075785221a",
+      "size_bytes": 5588
     },
     "tests/test_grpo_training_provenance.py": {
       "sha256": "f6b35b6ef47822e836728cdcb409a6f4da8794c1d6c3c88ed8f5830ceaf857d5",
@@ -1327,6 +1343,14 @@
     "tests/g9_approval_process.py": {
       "sha256": "cb2f118d4a33e7a12d469f1b8369bd12d6fe0072e5b196aee006b28a2a511625",
       "size_bytes": 2307
+    },
+    "tests/fixtures/trl_0191_observation_routing.txt": {
+      "sha256": "94f14b68b6f5e70b885d3b5039d5b2b754d1bd89b7839ba49eb03189ae165ec1",
+      "size_bytes": 5562
+    },
+    "tests/fixtures/TRL_LICENSE.txt": {
+      "sha256": "1d90ecbf7bb80ff27ef67b7785f621480b652b82e46c72d8a5730b0db65bf355",
+      "size_bytes": 11355
     }
   }
 }

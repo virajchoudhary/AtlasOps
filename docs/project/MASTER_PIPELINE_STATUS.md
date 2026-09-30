@@ -164,7 +164,10 @@ scientifically complete.
   static catalogue prompts generate completions before the reward callback
   obtains the live incident alert. The
   [prospective observation-first repair](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
-  is not an approved protocol or implemented replacement. Exact action
+  is not an approved protocol or production replacement. The disconnected
+  [software candidate](G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md) tests
+  observation-before-generation routing without live callbacks or admission
+  changes. Exact action
   dispatch and verifier scoring alone do not establish observation-conditioned
   learning.
 - `training/grpo.py` now sends the policy completion to `DirectPolicyEnvironment` as the exact proposed action. That adapter checks approval and tool policy, executes at most one action, settles, and carries objective verifier fields into reward and curriculum updates.

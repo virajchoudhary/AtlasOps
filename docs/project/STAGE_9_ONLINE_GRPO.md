@@ -7,6 +7,11 @@ implemented. No real GRPO training run, completed adapter, or empirical evaluati
 currently preserved.
 
 **Training admission is blocked for a confirmed observation-order defect.**
+
+The [disconnected software candidate](G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md)
+tests the observation-before-generation hook with injected model-free
+boundaries. It is not wired into production training and does not remove
+this admission block or approve the prospective protocol.
 The preserved trainer generates completions from static catalogue alerts
 before its reward callback applies the fault and captures the real alert.
 Those completions are not conditioned on the observation used for execution.

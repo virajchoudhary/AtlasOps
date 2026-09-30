@@ -256,6 +256,7 @@ async def test_empirical_evaluation_rejects_hash_valid_non_strict_adapter_json(
         ("fan_in_fan_out", True),
         ("layers_to_transform", [0]),
         ("exclude_modules", ["q_proj"]),
+        ("trainable_token_indices", [1]),
     ],
 )
 @pytest.mark.asyncio

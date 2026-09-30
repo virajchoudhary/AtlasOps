@@ -502,7 +502,10 @@ def test_model_loader_revalidates_checkpoint_bytes_after_base_load_before_peft(
     assert calls == ["tokenizer", "model"]
 
 
-def test_invalid_sft_adapter_configuration_blocks_g9_before_any_loader(monkeypatch, tmp_path):
+@pytest.mark.parametrize("change", ["rank", "trainable_tokens"])
+def test_invalid_sft_adapter_configuration_blocks_g9_before_any_loader(
+    monkeypatch, tmp_path, change,
+):
     from training import grpo
     from training.grpo_provenance import validate_sft_parent
     from training.sft_provenance import checkpoint_inventory
@@ -510,7 +513,10 @@ def test_invalid_sft_adapter_configuration_blocks_g9_before_any_loader(monkeypat
     checkpoint, _ = _valid_sft_checkpoint(tmp_path)
     config_path = checkpoint / "adapter_config.json"
     config = json.loads(config_path.read_text())
-    config["r"] = 8
+    if change == "rank":
+        config["r"] = 8
+    else:
+        config["trainable_token_indices"] = [1]
     config_path.write_text(json.dumps(config), encoding="utf-8")
     manifest_path = checkpoint / "sft_run_manifest.json"
     manifest = json.loads(manifest_path.read_text())

@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T19:35:06.448099+00:00`
+- **Generated**: `2026-09-30T19:44:00.059241+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -158,7 +158,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
 | `bench/grpo_eval.py` | `960fcfec00bbf3bc...` | 67057 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
-| `bench/sft_eval.py` | `6f2b9adce3f24e51...` | 36558 |
+| `bench/sft_eval.py` | `80ad70c1a83b4aed...` | 36595 |
 | `bench/zero_shot_baseline.py` | `0b068d0287307c3b...` | 53565 |
 | `config/g4_protocol.py` | `676227c8326e0526...` | 25141 |
 | `config/runtime.py` | `96fe1d1834846cb3...` | 18567 |
@@ -285,12 +285,12 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g4_runtime_context_remediation_loop.py` | `3e23f0441e3645d1...` | 22261 |
 | `tests/test_g4_v31_transport_and_interruption.py` | `a2e857f98851c770...` | 34823 |
 | `tests/test_g6_empirical_contract.py` | `b4e20c0b3ddd533e...` | 63569 |
-| `tests/test_g8_empirical_contract.py` | `04c2d1776e588973...` | 46316 |
+| `tests/test_g8_empirical_contract.py` | `9bad3a72eb8d6b13...` | 46358 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
 | `tests/test_g9_direct_policy_environment.py` | `46452232a0190875...` | 87207 |
 | `tests/test_g9_direct_reward.py` | `1e2c5562f6b12aa9...` | 11861 |
 | `tests/test_g9_empirical_contract.py` | `908eb84b5f386432...` | 38277 |
-| `tests/test_g9_training_preflight.py` | `bbab676899664486...` | 23948 |
+| `tests/test_g9_training_preflight.py` | `a4ad6d01f81435ca...` | 24115 |
 | `tests/test_grpo_training_provenance.py` | `ca5632d07986fda7...` | 76870 |
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |
 | `tests/test_http_retry.py` | `d02cafae0d281658...` | 12800 |

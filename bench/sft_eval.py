@@ -57,6 +57,7 @@ _NEUTRAL_ADAPTER_SETTINGS = {
     "modules_to_save": None,
     "rank_pattern": {},
     "target_parameters": None,
+    "trainable_token_indices": None,
     "use_dora": False,
     "use_qalora": False,
     "use_rslora": False,

@@ -160,9 +160,10 @@ they are not recomputed from raw episodes. Every accepted aggregate is explicitl
 labeled `evaluation_mode: declared_artifact_aggregation`,
 `non_empirical: true`, and `metrics_source: unverified_artifact_summaries`, while
 retaining `empirical_claim_allowed: false` and `certification_status: NOT_CERTIFIED`.
-The separate [three-arm raw replay candidate](G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_3.md)
+The separate [three-arm raw replay candidate](G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_4.md)
 can compute only supported non-empirical candidate fields from hash-checked raw
-episodes and expose missing/adjudication populations. It does not change this
+episodes, expose missing/adjudication populations, and retain a source-line
+reference for an unscoped G9 run interruption. It does not change this
 runner's acceptance path, supply the absent integrated evaluators, or freeze a
 scientific protocol.
 Synthetic parser fixtures only exercise the expected row/event schema and do

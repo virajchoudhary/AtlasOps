@@ -1063,6 +1063,11 @@ def test_native_diagnosis_only_rows_remain_non_empirical_and_g8_identity_stays_u
         result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]["raw_bound_source_identity"]
         == declared[ARM_ORDER[2]]
     )
+    assert result["arms"][ARM_ORDER[2]]["source"]["terminal_record_ref"] == {
+        "event": "run_completed",
+        "source_sha256": _sha256(sources[ARM_ORDER[2]]),
+        "line": 6,
+    }
     g9_episode = result["arms"][ARM_ORDER[2]]["episodes"][0]
     assert result["evaluation_mode"] == "NON_EMPIRICAL"
     assert result["empirical_claim_allowed"] is False
@@ -1094,7 +1099,8 @@ def test_native_diagnosis_only_rows_remain_non_empirical_and_g8_identity_stays_u
     )
 
 
-def test_incomplete_g9_keeps_run_and_model_identity_unbound():
+@pytest.mark.parametrize("unscoped", [False, True], ids=["scoped", "unscoped"])
+def test_incomplete_g9_keeps_run_and_model_identity_unbound(unscoped):
     declared_rows = {
         arm: {
             "run_id": f"declared-run-{index}",
@@ -1107,12 +1113,16 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound():
         ARM_ORDER[1]: _jsonl([_native_diagnosis_row()]),
     }
     raw_g9_identity = {"run_id": "raw-run-not-terminal", "model": "raw-model"}
-    interrupted_events = _g9_native_events(raw_g9_identity)[:-2]
+    interrupted_events = (
+        _g9_native_events(raw_g9_identity)[:1]
+        if unscoped
+        else _g9_native_events(raw_g9_identity)[:-2]
+    )
     interrupted_events.append(
         {
             "event": "run_interrupted",
-            "scenario_id": SCENARIO_ID,
             "completed_episodes": 0,
+            **({} if unscoped else {"scenario_id": SCENARIO_ID}),
         }
     )
     sources[ARM_ORDER[2]] = _jsonl(interrupted_events)
@@ -1129,7 +1139,9 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound():
     }
 
     result = _replay_native(sources, pins)
-    identity_binding = result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]
+    g9_arm = result["arms"][ARM_ORDER[2]]
+    g9_source = g9_arm["source"]
+    identity_binding = g9_source["identity_binding"]
 
     assert identity_binding["status"] == "UNBOUND"
     assert identity_binding["caller_declared_source_identity"] == {
@@ -1140,3 +1152,31 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound():
         "run_id": None,
         "model": None,
     }
+    assert g9_source["terminal_record_ref"] == {
+        "event": "run_interrupted",
+        "source_sha256": pins[ARM_ORDER[2]]["source_sha256"],
+        "line": len(interrupted_events),
+    }
+    if unscoped:
+        assert g9_arm["episodes"] == []
+        assert g9_arm["observed_scenario_ids"] == []
+        assert g9_arm["missing_scheduled_ids"] == [SCENARIO_ID]
+    else:
+        assert [episode["scenario_id"] for episode in g9_arm["episodes"]] == [
+            SCENARIO_ID
+        ]
+    assert result["evaluation_mode"] == "NON_EMPIRICAL"
+    assert result["non_empirical"] is True
+    assert result["certification_status"] == "NOT_CERTIFIED"
+
+    no_terminal_sources = dict(sources)
+    no_terminal_sources[ARM_ORDER[2]] = _jsonl(_g9_native_events(raw_g9_identity)[:1])
+    no_terminal_pins = deepcopy(pins)
+    no_terminal_pins[ARM_ORDER[2]]["source_sha256"] = _sha256(
+        no_terminal_sources[ARM_ORDER[2]]
+    )
+    no_terminal_result = _replay_native(no_terminal_sources, no_terminal_pins)
+    no_terminal_arm = no_terminal_result["arms"][ARM_ORDER[2]]
+    assert no_terminal_arm["source"]["run_outcome"] == "partial"
+    assert no_terminal_arm["source"]["terminal_record_ref"] is None
+    assert no_terminal_arm["episodes"] == []

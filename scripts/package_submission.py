@@ -180,6 +180,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md",
         "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_2.md",
         "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_3.md",
+        "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_4.md",
         "docs/project/GAI_RL_SCOPE_REVISION.md",
         "docs/project/MASTER_PIPELINE_STATUS.md",
         "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md",

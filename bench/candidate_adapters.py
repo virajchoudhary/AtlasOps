@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -86,10 +88,11 @@ def adapt_three_arm_raw(
         records = _parse_raw_jsonl(raw_bytes, allow_nonclaimable=True)
         identity_fields = _row_source_identity_fields(
             records,
+            variant=variant,
             identity_declaration=identity_declaration,
         )
         episodes = [
-            _adapt_diagnosis_row(row, line, source_sha256, identity_fields)
+            _adapt_diagnosis_row(row, line, source_sha256, identity_fields, variant)
             for line, row in enumerate(records, start=1)
         ]
         for line, row in enumerate(records, start=1):
@@ -244,16 +247,36 @@ def _g9_event_identity_values(
 def _row_source_identity_fields(
     records: list[dict[str, Any]],
     *,
+    variant: str,
     identity_declaration: Mapping[str, Any],
 ) -> dict[str, Any]:
     raw_identity: dict[str, str | None] = {"run_id": None, "model": None}
+    incomplete_fields: set[str] = set()
     for line, record in enumerate(records, start=1):
+        if variant == "Zero-Shot Baseline":
+            for field in ("run_id", "model"):
+                value = record.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(
+                        f"raw episode row {line} requires non-empty requested {field}"
+                    )
+                if value != identity_declaration[field]:
+                    raise ValueError(f"raw episode identity mismatch: row {line} {field}")
+                current = raw_identity[field]
+                if current is not None and current != value:
+                    raise ValueError(
+                        f"raw episode rows contain conflicting requested {field} identities"
+                    )
+                raw_identity[field] = value
+            continue
         for field in ("run_id", "model"):
             values = _raw_identity_values(
                 record,
                 field,
                 label=f"raw episode row {line}",
             )
+            if not values:
+                incomplete_fields.add(field)
             for value in values:
                 declared = identity_declaration.get(field)
                 if declared is not None and value != declared:
@@ -262,6 +285,26 @@ def _row_source_identity_fields(
                 if current is not None and current != value:
                     raise ValueError(f"raw episode rows contain conflicting {field} identities")
                 raw_identity[field] = value
+    if variant == "Zero-Shot Baseline":
+        fields = _source_identity_fields(raw_identity, identity_declaration)
+        fields["source_identity_model_basis"] = "requested_model_name_only"
+        fields["source_identity_limitation"] = (
+            "requested model name does not attest the served model digest"
+        )
+        return fields
+    if incomplete_fields or any(value is None for value in raw_identity.values()):
+        missing_fields = [
+            field
+            for field in ("run_id", "model")
+            if field in incomplete_fields or raw_identity[field] is None
+        ]
+        raw_identity = {"run_id": None, "model": None}
+        fields = _source_identity_fields(raw_identity, identity_declaration)
+        if variant == "SFT Model":
+            fields["source_identity_limitation"] = (
+                f"raw rows lack {', '.join(missing_fields)}; identity remains UNBOUND"
+            )
+        return fields
     return _source_identity_fields(raw_identity, identity_declaration)
 
 
@@ -420,19 +463,19 @@ def _adapt_diagnosis_row(
     line: int,
     source_sha256: str,
     identity_fields: Mapping[str, Any],
+    variant: str,
 ) -> dict[str, Any]:
     scenario_id = row.get("scenario_id")
     if not isinstance(scenario_id, str) or not scenario_id:
         raise ValueError(f"raw episode row {line} requires scenario_id")
     episode = _episode_base(scenario_id, source_sha256, identity_fields, [line])
-    prediction = row.get("prediction")
-    label = prediction.get("root_cause") if isinstance(prediction, Mapping) else None
-    if row.get("status") == "ok" and isinstance(label, str) and label.strip():
+    if row.get("status") == "ok":
+        prediction = _validate_successful_diagnosis_row(row, line, variant)
         episode["events"].append(
             {
                 "event": "diagnosis_output",
                 "scenario_id": scenario_id,
-                "label": label,
+                "label": prediction["root_cause"],
                 "raw_ref": episode["raw_refs"][0],
             }
         )
@@ -449,6 +492,96 @@ def _adapt_diagnosis_row(
             }
         )
     return episode
+
+
+def _validate_successful_diagnosis_row(
+    row: Mapping[str, Any],
+    line: int,
+    variant: str,
+) -> dict[str, Any]:
+    raw_response = row.get("raw_model_response")
+    if not isinstance(raw_response, str):
+        raise ValueError(f"raw episode row {line} has invalid successful prediction")
+    try:
+        prediction_json = json.dumps(
+            row.get("prediction"),
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        parsed_prediction = _parse_candidate_diagnosis(prediction_json, variant)
+        raw_prediction = _parse_candidate_diagnosis(raw_response, variant)
+        parsed_canonical = json.dumps(
+            parsed_prediction,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        raw_canonical = json.dumps(
+            raw_prediction,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        raise ValueError(
+            f"raw episode row {line} has invalid successful prediction"
+        ) from None
+    if parsed_canonical != raw_canonical:
+        raise ValueError(
+            f"raw episode row {line} prediction differs from raw_model_response"
+        )
+    return raw_prediction
+
+
+def _unique_diagnostic_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate diagnostic JSON key")
+        value[key] = item
+    return value
+
+
+def _parse_candidate_diagnosis(raw_text: str, variant: str) -> dict[str, Any]:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, count=1)
+        text = re.sub(r"\s*```$", "", text, count=1)
+    prediction = json.loads(text, object_pairs_hook=_unique_diagnostic_object)
+    if not isinstance(prediction, dict):
+        raise ValueError("diagnostic response must be an object")
+    root_cause = prediction.get("root_cause")
+    if not isinstance(root_cause, str) or not root_cause.strip():
+        raise ValueError("diagnostic root cause is missing")
+    if prediction.get("severity") not in {"P0", "P1", "P2", "P3"}:
+        raise ValueError("diagnostic severity is invalid")
+    affected = prediction.get("affected_services")
+    if (
+        not isinstance(affected, list)
+        or (variant == "SFT Model" and not affected)
+        or any(not isinstance(item, str) or not item.strip() for item in affected)
+    ):
+        raise ValueError("diagnostic services are invalid")
+    confidence = prediction.get("confidence")
+    if variant == "Zero-Shot Baseline":
+        valid_type = type(confidence) in (int, float)
+    else:
+        valid_type = not isinstance(confidence, bool) and isinstance(
+            confidence, (int, float)
+        )
+    if not valid_type:
+        raise ValueError("diagnostic confidence is invalid")
+    try:
+        finite = math.isfinite(confidence)
+    except OverflowError:
+        finite = False
+    if not finite or not 0 <= confidence <= 1:
+        raise ValueError("diagnostic confidence is invalid")
+    return prediction
 
 
 def _adapt_g9_episode(

@@ -91,6 +91,23 @@ Recheck this contract at launch; this document does not enable training.
    review. The existing [`test_sft_mask_proof.py`](../../tests/test_sft_mask_proof.py)
    covers a synthetic example; it does not prove all approved rows or
    truncation behavior.
+   The non-live `training.sft_tokenizer_preflight` command checks the frozen
+   review candidate row by row with an already-cached tokenizer and a full
+   requested commit revision. For example, after separate tokenizer-file
+   staging authorization:
+
+   ```text
+   python -m training.sft_tokenizer_preflight --tokenizer Qwen/Qwen2.5-7B-Instruct --tokenizer-revision <full-40-character-commit> --max-seq-len 2048
+   ```
+
+   It requests local files only and emits a bounded technical report to
+   stdout without writing evidence or loading model weights. Its unit tests
+   use a deterministic fake tokenizer; they do not establish a real
+   pinned-tokenizer result. A requested commit and local-cache loader basis
+   are not an independent inventory of tokenizer bytes or D2 approval.
+   Preserve the actual output and separately hash the authorized local
+   tokenizer files in the later run record. An unavailable tokenizer or any
+   `UNVERIFIED`/refused row leaves this prerequisite unmet.
 3. **Remote runtime freeze.** On the approved NVIDIA host, record GPU model and
    memory, driver, CUDA runtime and PyTorch CUDA build, Python/OS, BF16
    capability, and the tested `bitsandbytes` version and 4-bit compatibility.

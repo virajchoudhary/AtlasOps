@@ -768,6 +768,15 @@ def _resolve_mode(mode: str | None, mock: bool | None) -> Literal["mock", "empir
     return (mode or compatibility_mode)  # type: ignore[return-value]
 
 
+def _is_finite_real(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _failed_request_execution_certainty(
     error: InferenceRequestError,
 ) -> Literal["not_executed", "unknown"]:
@@ -987,6 +996,20 @@ async def evaluate_zero_shot_split(
     selected_mode = _resolve_mode(mode, mock)
     if selected_mode == "empirical" and split_name.strip().lower() == "test":
         raise ValueError("Empirical evaluation of the test split is not authorized")
+    if not _is_finite_real(temperature) or temperature < 0:
+        raise ValueError(
+            "temperature must be a finite real number greater than or equal to 0"
+        )
+    if not _is_finite_real(top_p) or not 0 < top_p <= 1:
+        raise ValueError("top_p must be a finite real number in (0, 1]")
+    if (
+        not isinstance(max_tokens, int)
+        or isinstance(max_tokens, bool)
+        or max_tokens <= 0
+    ):
+        raise ValueError("max_tokens must be a positive integer")
+    if not _is_finite_real(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be a finite positive real number")
     scenario_ids = get_split(split_name)
     if selected_mode == "empirical" and not model_revision:
         raise ValueError("Empirical mode requires an exact model_revision")

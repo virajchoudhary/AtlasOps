@@ -643,7 +643,7 @@ class LocalSFTInference:
                 **inputs,
                 max_new_tokens=generation_config["max_new_tokens"],
                 do_sample=generation_config["temperature"] > 0,
-                temperature=max(generation_config["temperature"], 1e-6),
+                temperature=generation_config["temperature"],
                 top_p=generation_config["top_p"],
             )
         generated = output[0][inputs["input_ids"].shape[1] :]
@@ -719,6 +719,18 @@ async def evaluate_sft_split(
             "Empirical G8 evaluation is Validation-only; final-Test and leaderboard "
             "evaluation require a separately reviewed protocol"
         )
+    if not _finite_number(temperature) or temperature < 0:
+        raise ValueError(
+            "temperature must be a finite real number greater than or equal to 0"
+        )
+    if not _finite_number(top_p) or not 0 < top_p <= 1:
+        raise ValueError("top_p must be a finite real number in (0, 1]")
+    if (
+        not isinstance(max_new_tokens, int)
+        or isinstance(max_new_tokens, bool)
+        or max_new_tokens <= 0
+    ):
+        raise ValueError("max_new_tokens must be a positive integer")
     scenario_ids = get_split(split_name)
     if selected_mode == "empirical" and output_dir is None:
         raise ValueError("Empirical mode requires an explicit unique output_dir")

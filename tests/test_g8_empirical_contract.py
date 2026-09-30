@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import threading
+from contextlib import nullcontext
 from types import ModuleType
 from pathlib import Path
 
@@ -37,8 +38,178 @@ _LORA_TARGET_MODULES = [
 ]
 
 
+@pytest.mark.parametrize("mode", ["mock", "empirical"])
+@pytest.mark.parametrize(
+    ("parameter", "invalid_value"),
+    [
+        ("temperature", True),
+        ("temperature", None),
+        ("temperature", "0.1"),
+        ("temperature", float("nan")),
+        ("temperature", float("inf")),
+        ("temperature", -float("inf")),
+        ("temperature", -0.1),
+        ("temperature", 10**500),
+        ("top_p", "1"),
+        ("top_p", True),
+        ("top_p", float("nan")),
+        ("top_p", 0),
+        ("top_p", 1.01),
+        ("max_new_tokens", True),
+        ("max_new_tokens", None),
+        ("max_new_tokens", "1"),
+        ("max_new_tokens", 0),
+        ("max_new_tokens", 1.0),
+    ],
+    ids=[
+        "temperature-bool",
+        "temperature-none",
+        "temperature-string",
+        "temperature-nan",
+        "temperature-infinity",
+        "temperature-negative-infinity",
+        "temperature-negative",
+        "temperature-overflowing-integer",
+        "top-p-string",
+        "top-p-bool",
+        "top-p-nan",
+        "top-p-zero",
+        "top-p-above-one",
+        "max-new-tokens-bool",
+        "max-new-tokens-none",
+        "max-new-tokens-string",
+        "max-new-tokens-zero",
+        "max-new-tokens-float",
+    ],
+)
+def test_invalid_generation_parameters_are_rejected_before_split_or_checkpoint(
+    tmp_path,
+    monkeypatch,
+    mode,
+    parameter,
+    invalid_value,
+):
+    def unexpected_access(*_args, **_kwargs):
+        pytest.fail("generation validation must precede evaluation access")
+
+    monkeypatch.setattr(sft_eval, "get_split", unexpected_access)
+    monkeypatch.setattr(sft_eval, "_load_checkpoint_manifest", unexpected_access)
+    monkeypatch.setattr(sft_eval, "LocalSFTInference", unexpected_access)
+    output_dir = tmp_path / "not-created"
+
+    async def inference(*_args, **_kwargs):
+        pytest.fail("generation validation must precede inference")
+
+    with pytest.raises(ValueError, match=parameter):
+        asyncio.run(
+            evaluate_sft_split(
+                "val",
+                mode=mode,
+                checkpoint=tmp_path / "checkpoint",
+                output_dir=output_dir,
+                inference_fn=inference,
+                **{parameter: invalid_value},
+            )
+        )
+
+    assert not output_dir.exists()
+
+
+def test_valid_generation_parameters_are_passed_to_inference_unchanged(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    generation_configs = []
+
+    async def inference(_messages, _model_name, _checkpoint_path, generation_config):
+        generation_configs.append(generation_config.copy())
+        return _prediction()
+
+    monkeypatch.setattr(
+        sft_eval,
+        "get_split",
+        lambda _split_name: [VAL_SPLIT[0]],
+    )
+    asyncio.run(
+        evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=tmp_path / "valid-generation",
+            inference_fn=inference,
+            temperature=0,
+            top_p=1,
+            max_new_tokens=1,
+        )
+    )
+
+    assert generation_configs == [
+        {
+            "temperature": 0,
+            "top_p": 1,
+            "max_new_tokens": 1,
+            "seed": sft_eval.SPLIT_SEEDS["val"],
+        }
+    ]
+    assert type(generation_configs[0]["temperature"]) is int
+    assert type(generation_configs[0]["top_p"]) is int
+
+
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("temperature", [0, 0.25])
+def test_builtin_generation_preserves_valid_temperature_without_clamping(
+    monkeypatch, temperature,
+):
+    calls = []
+    torch = ModuleType("torch")
+    torch.manual_seed = lambda _: None
+    torch.no_grad = nullcontext
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    class InputIds:
+        shape = (1, 2)
+
+    class Inputs(dict):
+        def to(self, _device):
+            return self
+
+    class Output:
+        def __getitem__(self, _slice):
+            return [42]
+
+    class Tokenizer:
+        def apply_chat_template(self, *_args, **_kwargs):
+            return "synthetic prompt"
+
+        def __call__(self, *_args, **_kwargs):
+            return Inputs(input_ids=InputIds())
+
+        def decode(self, *_args, **_kwargs):
+            return "synthetic completion"
+
+    class Model:
+        device = "cpu"
+
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return [Output()]
+
+    inference = sft_eval.LocalSFTInference({}, "unused")
+    inference._model = Model()
+    inference._tokenizer = Tokenizer()
+    result = inference._generate([], Path("unused-checkpoint"), {
+        "seed": 2026, "temperature": temperature,
+        "top_p": 0.75, "max_new_tokens": 7,
+    })
+    assert result == "synthetic completion"
+    assert calls[0]["temperature"] == temperature
+    assert calls[0]["do_sample"] is (temperature > 0)
+    assert calls[0]["top_p"] == 0.75
+    assert calls[0]["max_new_tokens"] == 7
 
 
 def _adapter_config() -> dict:
@@ -968,6 +1139,7 @@ def test_empirical_final_splits_remain_blocked_before_output_creation(
                 checkpoint=checkpoint,
                 output_dir=output_dir,
                 inference_fn=inference,
+                temperature=float("nan"),
             )
         )
 

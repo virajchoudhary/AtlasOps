@@ -11,6 +11,10 @@ unapproved and does not change this evaluator or the gate status.
 ## Evaluation Contract
 
 - Empirical mode requires a completed Stage 7 provenance manifest.
+- Generation preflight rejects non-finite or negative temperature, `top_p`
+  outside `(0, 1]` and non-positive/non-integer token limits before split,
+  checkpoint, inference or output access. Booleans are not numeric settings.
+  Valid caller settings and existing defaults are preserved, not clamped.
 - Empirical G8 evaluation is Validation-only. `test` and `leaderboard` are
   refused before split lookup, checkpoint inspection, inference, or output
   creation. Final-Test access and any use of the overlapping Leaderboard

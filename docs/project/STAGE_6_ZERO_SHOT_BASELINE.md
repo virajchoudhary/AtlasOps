@@ -13,6 +13,10 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
 ## Evaluation Contract
 
 - Callers must explicitly select `mock` or `empirical`; there is no silent fallback.
+- Generation preflight rejects non-finite or negative temperature, `top_p`
+  outside `(0, 1]`, non-positive/non-integer token limits and non-finite or
+  non-positive timeouts before split, model or output access. Booleans are not
+  numeric settings. Valid caller settings are preserved, not clamped.
 - Empirical G6 refuses the final `test` split before split lookup, model
   observation, inference, or output creation. Final-Test access requires a
   separately reviewed protocol and authorization. Mock Test fixtures remain

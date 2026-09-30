@@ -46,8 +46,12 @@ The required relationship is:
   to this trail, and the ledger still requires an explicit rollout log path.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
-- A missing real alert or failed fault application yields an unscorable failed
-  rollout with null reward and stops training; it is not a zero-valued policy
+- A missing, synthetic, mismatched, or ambiguous observed alert cannot be
+  paired with the selected Train scenario for policy execution or reward.
+  The failed rollout retains a sanitized alert-query classification and
+  null reward; scenario-scoped cleanup still runs. A matching alert is a
+  necessary identity check, not independent proof of fault causation.
+  Failed fault application is likewise unscorable, not a zero-valued policy
   outcome.
 - The prospective direct-action reward uses only conclusive objective verifier
   checks: `0.75` for verified resolution plus `0.25` times required-check

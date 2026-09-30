@@ -1,6 +1,8 @@
 # G7-G13 remaining decision register
 
-**Status: REVIEW DRAFT / NO NEW APPROVALS.** Source basis:
+**Status: REVIEW REGISTER; D3 PREPARATION APPROVED, EXECUTION NOT APPROVED.**
+The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) records
+the project lead's exact limited decision. Historical source basis:
 `56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`.
 The adopted v2.2 non-live scope and the [v0.2 A1-A4 partial
 directions](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md) are already
@@ -16,9 +18,9 @@ comparison or an experimental freeze.
 
 | ID | Remaining project-lead decision | Required proposal and independent evidence before approval | Current state / blocked work |
 |---|---|---|---|
-| D1 | **Compute and cost:** host, entitlement, GPU/BF16/4-bit support, storage, duration/cost ceiling, security and retention | Measured compatibility and capacity on the selected environment; current quote or verified free/university entitlement; secure transfer and recovery design | **PENDING.** Personal laptop cannot host planned local 7B workload. No remote resource or paid budget is assumed. G7 training blocked. |
-| D2 | **Model/tokenizer:** keep Qwen2.5-7B or approve a changed base, with immutable model and tokenizer revisions | License/remote-code review, exact commit/digests, tokenizer/template compatibility and revised three-arm pairing if model changes | **PENDING.** CLI revision arguments do not select or attest a model. No weight download or silent small-model substitution. |
-| D3 | **Training data and G7 acceptance:** approve a new versioned Train-only trajectory corpus and independent reload criteria before any SFT run | Frozen corpus bytes/hash, role-tool ACL and P1 approval/negative-outcome audit, no Val/Test leakage, effective hyperparameters, package image and checkpoint retention | **PENDING.** New `train-candidate-v1` is a 68-row synthetic review candidate with immutable construction provenance and a separate [review sheet](G7_D3_CANDIDATE_REVIEW_V1.md). Technical readiness is not lead approval. The historical 64-row fixture remains rejected for training. No completed adapter exists. |
+| D1 | **Compute and cost:** host, entitlement, GPU/BF16/4-bit support, storage, duration/cost ceiling, security and retention | Measured compatibility and capacity on the selected environment; current quote or verified free/university entitlement; secure transfer and recovery design | **RECOMMENDATION PREPARED; RESOURCE AUTHORITY PENDING.** A100 80 GB preferred, L40S 48 GB conditional; [72-package hash-locked environment](G7_PILOT_ENVIRONMENT_V1.md). No host, capacity, money or image build is authorized. |
+| D2 | **Model/tokenizer:** keep Qwen2.5-7B or approve a changed base, with immutable model and tokenizer revisions | License/remote-code review, exact commit/digests, tokenizer/template compatibility and revised three-arm pairing if model changes | **IDENTITY RESOLVED FOR PREPARATION; WEIGHT TRANSFER PENDING.** Qwen model/tokenizer pin `a09a35458c702b33eeacc393d103063234e8bc28`; [metadata/license/tokenizer evidence](G7_D2_PINNED_MODEL_V1.md). No weights or training authorized. |
+| D3 | **Training data and G7 acceptance:** approve a new versioned Train-only trajectory corpus and independent reload criteria before any SFT run | Frozen corpus bytes/hash, role-tool ACL and P1 approval/negative-outcome audit, no Val/Test leakage, effective hyperparameters, package image and checkpoint retention | **APPROVED_FOR_PREPARATION.** Exact `train-candidate-v1` and audit limitations accepted by the lead; [record](G7_D3_PREPARATION_APPROVAL_V1.md). 8192-token all-row preflight and hash-bound launch plan prepared. Named execution permit remains absent; no adapter exists; historical fixture stays rejected. |
 | D4 | **A1 eligibility/invalidation:** exact authorized fault/observed alert start, post-start failure precedence, `INFRA_INVALID` evidence and signed reattempt rule | Proposed taxonomy with worked raw traces, independent adjudicator, retained negative/interrupted attempts and denominator replay | **A1 DIRECTION SELECTED, MECHANICS PROPOSED / NOT APPROVED.** No selective exclusion or final-Test rerun. |
 | D5 | **A2 common scorer:** per-step/episode unit, required-check set/coverage, false-claim mapping, missing fields, any clipping, source/config hash and three-arm replay | Versioned implementation, independent worked examples, raw-field coverage in base/SFT/SFT+GRPO, discrepancy check against submitted summaries | **A2 DIRECTION SELECTED, SCORER PROPOSED / NOT APPROVED.** G9 terms are a candidate, not a frozen common scorer. |
 | D6 | **A3 diagnosis/format/TTR:** label mapping, no-output and multi-fault handling, action/Comms schemas, alert-delivery clock, first conclusive verifier endpoint, precision and censoring | Raw event/schema examples for every arm, label isolation, clock correlation and independent test of invalid/unknown cases | **A3 DIRECTION SELECTED, MAPPINGS PROPOSED / NOT APPROVED.** G6/G8 diagnosis-only time is not incident TTR. |
@@ -34,9 +36,10 @@ comparison or an experimental freeze.
 The new [D3 candidate review sheet](G7_D3_CANDIDATE_REVIEW_V1.md) and
 [bounded SFT acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) prepare the
 data decision without approving it. Candidate technical checks and independent
-review do not promote D3 or G7. The runtime training entrypoint refuses pending
-candidate and unversioned input; a future narrowly reviewed hash-bound launch
-gate and explicit execution approval are required.
+review do not promote G7. The later D3 preparation record is authoritative
+only for preparation. The runtime accepts the exact hash-bound preparation plan
+through `--preflight-only`; training still requires a separately approved,
+reviewed, hash-pinned named execution record. Unversioned data remains rejected.
 
 For each future decision record the chosen option, rationale, scope, date,
 project-lead identity, independent reviewer and evidence links, exact

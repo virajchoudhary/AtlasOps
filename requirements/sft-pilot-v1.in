@@ -1,0 +1,21 @@
+# Direct environment for the bounded QLoRA SFT pilot.
+# The first eight pins preserve the SFT semantic contract validated in
+# requirements/train-constraints.txt. The explicit bitsandbytes pin enables
+# QLoRA; the five final pins cover the actual AtlasOps SFT runner import
+# boundary (coordinator API, HTTP clients, and tool-message rendering).
+# This is not an editable AtlasOps install and excludes dev, vLLM, GRPO,
+# evaluation, tracking, and optional cloud/dashboard extras.
+torch==2.7.1
+transformers==4.57.6
+trl==0.19.1
+peft==0.17.1
+datasets==4.8.5
+accelerate==1.14.0
+tokenizers==0.22.2
+huggingface-hub==0.36.2
+bitsandbytes==0.46.1
+fastapi==0.141.1
+pydantic==2.13.4
+httpx==0.28.1
+requests==2.34.2
+jinja2==3.1.6

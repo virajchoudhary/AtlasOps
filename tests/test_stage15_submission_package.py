@@ -632,7 +632,8 @@ class TestStage15SubmissionPackage:
         assert "G9 `REOPENED`" in readiness
         assert "FUTURE EXECUTION PLAN / NOT AUTHORIZED" in runbook
         assert "G4 is still `NOT_PASSED`" in runbook
-        assert "REVIEW DRAFT / NO NEW APPROVALS" in decisions
+        assert "D3 PREPARATION APPROVED, EXECUTION NOT APPROVED" in decisions
+        assert "**APPROVED_FOR_PREPARATION.**" in decisions
         assert "Stage 15 remains `NOT_CERTIFIED`" in decisions
 
     def test_gai_rl_scope_amendment_keeps_three_arm_protocol_unfrozen(self):

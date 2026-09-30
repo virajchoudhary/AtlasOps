@@ -35,8 +35,9 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   verifier predicates, and known remediation are withheld until scoring.
 - A returned prediction must contain a severity in `P0`–`P3`, an explicit
   list of non-empty affected-service names, non-empty root cause, and finite
-  numeric confidence. Invalid returned predictions retain their raw response
-  but are not scored.
+  numeric confidence. Duplicate JSON keys or non-finite JSON numbers at any
+  depth are invalid rather than last-value-wins or nonstandard JSON. Invalid
+  returned predictions retain their raw response but are not scored.
 - Raw requests, successful model text, parse failures, generation configuration, split
   and dataset hashes, source identity, seed, timestamps, runtime metadata, and model
   identity observations are persisted. Failed HTTP response bodies are not persisted;
@@ -86,8 +87,8 @@ proxy isolation, response-model matching, mutable-alias nonclaimability, atomic 
 finalization, bounded error fingerprints, raw-output provenance, failure retention,
 and finite numeric confidence validation (Booleans are not numeric predictions),
 required prediction schema, source drift classification, metric computation
-after inference, split isolation, early final-Test refusal, and artifact-path
-isolation. The
+after inference, duplicate/non-finite JSON rejection, split isolation, early
+final-Test refusal, and artifact-path isolation. The
 identity and inference endpoints in these tests are mocked; no model or network request
 is made. G6 still requires an approved immutable-serving attestation before its exact
 model evaluation can be claimable.

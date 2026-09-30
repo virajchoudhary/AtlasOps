@@ -518,12 +518,37 @@ def _sanitized_inference_error(exc: Exception) -> str:
     return "Exception: inference_failure; details redacted"
 
 
+def _unique_prediction_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError("duplicate prediction JSON key")
+        payload[key] = value
+    return payload
+
+
+def _finite_prediction_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("non-finite prediction JSON number")
+    return parsed
+
+
+def _reject_prediction_constant(_value: str) -> None:
+    raise ValueError("non-finite prediction JSON constant")
+
+
 def _parse_prediction(raw_text: str) -> dict[str, Any]:
     text = raw_text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, count=1)
         text = re.sub(r"\s*```$", "", text, count=1)
-    payload = json.loads(text)
+    payload = json.loads(
+        text,
+        object_pairs_hook=_unique_prediction_object,
+        parse_float=_finite_prediction_float,
+        parse_constant=_reject_prediction_constant,
+    )
     if not isinstance(payload, dict):
         raise TypeError("Model prediction must be a JSON object")
 

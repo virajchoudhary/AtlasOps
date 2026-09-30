@@ -37,6 +37,7 @@ MODES = frozenset({"mock", "empirical"})
 MAX_SFT_RUN_MANIFEST_BYTES = 1024 * 1024
 MAX_SFT_ADAPTER_CONFIG_BYTES = 1024 * 1024
 MAX_SFT_ADAPTER_CONFIG_DEPTH = 64
+MAX_SFT_PREDICTION_DEPTH = 64
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
 FULL_COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
@@ -353,12 +354,49 @@ def _messages(public_input: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def _unique_prediction_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    prediction: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in prediction:
+            raise ValueError("SFT prediction contains duplicate JSON keys")
+        prediction[key] = value
+    return prediction
+
+
+def _finite_prediction_float(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError("SFT prediction contains a non-finite JSON number")
+    return value
+
+
+def _reject_prediction_constant(_raw: str) -> None:
+    raise ValueError("SFT prediction contains a non-finite JSON constant")
+
+
 def _parse_prediction(raw_text: str) -> dict[str, Any]:
     text = raw_text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, count=1)
         text = re.sub(r"\s*```$", "", text, count=1)
-    prediction = json.loads(text)
+    try:
+        prediction = json.loads(
+            text,
+            object_pairs_hook=_unique_prediction_object,
+            parse_float=_finite_prediction_float,
+            parse_constant=_reject_prediction_constant,
+        )
+    except RecursionError as exc:
+        raise ValueError("SFT prediction JSON nesting is too deep") from exc
+    pending = [(prediction, 1)]
+    while pending:
+        current, depth = pending.pop()
+        if depth > MAX_SFT_PREDICTION_DEPTH:
+            raise ValueError("SFT prediction JSON nesting is too deep")
+        if isinstance(current, dict):
+            pending.extend((child, depth + 1) for child in current.values())
+        elif isinstance(current, list):
+            pending.extend((child, depth + 1) for child in current)
     if not isinstance(prediction, dict):
         raise TypeError("SFT prediction must be a JSON object")
     severity = prediction.get("severity")
@@ -736,7 +774,7 @@ async def evaluate_sft_split(
                     status = "ok"
                 except Exception as exc:  # noqa: BLE001
                     prediction = None
-                    diagnostic = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+                    diagnostic = {"precision": None, "recall": None, "f1": None}
                     status = "error"
                     error_category = _safe_exception_category(exc)
                 episode = {
@@ -794,10 +832,17 @@ async def evaluate_sft_split(
                 and bool(results)
             ),
             "failed_scenarios": len(results) - len(valid),
-            "avg_diagnostic_f1": round(
-                sum(row.get("diagnostic_f1", 0.0) for row in results)
-                / max(len(results), 1),
-                4,
+            "diagnostic_scored_count": len(valid) if selected_mode == "empirical" else None,
+            "diagnostic_f1_basis": (
+                "valid diagnostic responses only; secondary diagnostic"
+                if selected_mode == "empirical"
+                else "NON_EMPIRICAL deterministic mock fixture"
+            ),
+            "avg_diagnostic_f1": (
+                round(sum(row["diagnostic_f1"] for row in valid) / len(valid), 4)
+                if valid else None
+            ) if selected_mode == "empirical" else round(
+                sum(row.get("diagnostic_f1", 0.0) for row in results) / max(len(results), 1), 4
             ),
             "diagnostic_schema_conformance_rate": (
                 diagnostic_schema_conformance_rate
@@ -851,15 +896,17 @@ async def evaluate_sft_split(
         }
     )
     if selected_mode == "empirical":
-        diagnostic_by_tier: dict[str, dict[str, float | int]] = {}
+        diagnostic_by_tier: dict[str, dict[str, float | int | str | None]] = {}
         for tier in sorted({row["tier"] for row in results}):
             tier_rows = [row for row in results if row["tier"] == tier]
+            tier_scored = [row for row in tier_rows if row["status"] == "ok"]
             diagnostic_by_tier[tier] = {
                 "count": len(tier_rows),
-                "avg_diagnostic_f1": round(
-                    sum(row["diagnostic_f1"] for row in tier_rows)
-                    / max(len(tier_rows), 1),
-                    4,
+                "diagnostic_scored_count": len(tier_scored),
+                "diagnostic_f1_basis": "valid diagnostic responses only; secondary diagnostic",
+                "avg_diagnostic_f1": (
+                    round(sum(row["diagnostic_f1"] for row in tier_scored) / len(tier_scored), 4)
+                    if tier_scored else None
                 ),
             }
         summary.update(

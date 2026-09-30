@@ -1048,6 +1048,87 @@ def test_empirical_schema_conformance_counts_all_scheduled_outputs(
     assert loader_calls == []
 
 
+@pytest.mark.parametrize("invalid", ["duplicate", "nested_duplicate", "nan", "overflow", "deep"])
+def test_native_g8_strict_json_failures_retain_raw_without_diagnostic_score(
+    tmp_path, monkeypatch, invalid,
+):
+    checkpoint = _checkpoint(tmp_path)
+    monkeypatch.setattr(sft_eval, "get_split", lambda _: list(VAL_SPLIT[:1]))
+    raw = _prediction()
+    if invalid == "duplicate":
+        raw = raw.replace('"confidence":', '"confidence": 0.1, "confidence":', 1)
+    elif invalid == "nested_duplicate":
+        raw = raw[:-1] + ', "metadata": {"sample": 1, "sample": 2}}'
+    elif invalid == "nan":
+        raw = raw[:-1] + ', "metadata": {"sample": NaN}}'
+    elif invalid == "overflow":
+        raw = raw[:-1] + ', "metadata": {"sample": 1e999}}'
+    else:
+        raw = raw[:-1] + ', "metadata": ' + "[" * 1100 + "null" + "]" * 1100 + "}"
+
+    async def inference(*_args):
+        return raw
+
+    output = tmp_path / "output"
+    summary = asyncio.run(evaluate_sft_split(
+        "val", mode="empirical", checkpoint=checkpoint,
+        output_dir=output, inference_fn=inference,
+    ))
+    row = json.loads((output / "sft_val_episodes.jsonl").read_text())
+    assert row["status"] == "error"
+    assert row["raw_model_response"] == raw
+    assert row["prediction"] is None
+    assert row["diagnostic_f1"] is None
+    assert row["diagnostic_precision"] is None
+    assert row["diagnostic_recall"] is None
+    assert row["format_compliant"] is False
+    assert summary["diagnostic_schema_conformance_rate"] == 0.0
+    assert summary["failed_scenarios"] == 1
+    assert summary["avg_diagnostic_f1"] is None
+    assert summary["diagnostic_scored_count"] == 0
+    assert summary["diagnostic_f1_basis"] == "valid diagnostic responses only; secondary diagnostic"
+    assert summary["empirical_claim_allowed"] is False
+    tier = summary["per_tier"][SCENARIO_CATALOG[VAL_SPLIT[0]].tier]
+    assert tier["count"] == 1
+    assert tier["diagnostic_scored_count"] == 0
+    assert tier["avg_diagnostic_f1"] is None
+
+
+def test_native_g8_strict_json_preserves_valid_nested_metadata():
+    payload = json.loads(_prediction())
+    payload["metadata"] = {"samples": [None, True, False, 0, -1, 1.25, {"value": 100.0}]}
+    raw = json.dumps(payload)
+    assert sft_eval._parse_prediction(raw) == payload
+    assert sft_eval._parse_prediction(f"```json\n{raw}\n```") == payload
+
+
+def test_g8_secondary_diagnostic_mean_excludes_unscored_failures(tmp_path, monkeypatch):
+    checkpoint = _checkpoint(tmp_path)
+    ids = list(VAL_SPLIT[:2])
+    monkeypatch.setattr(sft_eval, "get_split", lambda _: ids)
+    prediction = json.loads(_prediction())
+    prediction["root_cause"] = SCENARIO_CATALOG[ids[0]].expected_root_cause
+    responses = iter([json.dumps(prediction), "{not-json"])
+
+    async def inference(*_args):
+        return next(responses)
+
+    output = tmp_path / "output"
+    summary = asyncio.run(evaluate_sft_split(
+        "val", mode="empirical", checkpoint=checkpoint,
+        output_dir=output, inference_fn=inference,
+    ))
+    rows = [json.loads(line) for line in (output / "sft_val_episodes.jsonl").read_text().splitlines()]
+    assert rows[0]["diagnostic_f1"] == 1.0
+    assert rows[1]["diagnostic_f1"] is None
+    assert summary["avg_diagnostic_f1"] == 1.0
+    assert summary["diagnostic_scored_count"] == 1
+    assert summary["diagnostic_schema_conformance_rate"] == 0.5
+    assert summary["failed_scenarios"] == 1
+    assert sum(tier["count"] for tier in summary["per_tier"].values()) == 2
+    assert sum(tier["diagnostic_scored_count"] for tier in summary["per_tier"].values()) == 1
+
+
 def test_lazy_sft_load_rejects_checkpoint_tampered_after_outer_preflight(
     tmp_path,
     monkeypatch,

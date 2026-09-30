@@ -161,6 +161,7 @@ class TestStage15SubmissionPackage:
             "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md",
             "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md",
             "docs/project/G7_G13_DECISION_REGISTER.md",
+            "docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md",
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md",
             "docs/project/GAI_RL_SCOPE_REVISION.md",
             "docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md",

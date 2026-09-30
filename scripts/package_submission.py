@@ -176,6 +176,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/G7_REMOTE_HOST_OPTIONS_V1.md",
         "docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md",
         "docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md",
+        "docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md",
         "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md",
         "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_2.md",

@@ -404,6 +404,91 @@ def test_prediction_accepts_each_defined_severity(severity):
     assert prediction["severity"] == severity
 
 
+@pytest.mark.parametrize(
+    "raw_prediction",
+    [
+        '{"severity":"P1","severity":"P2","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4}',
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,"confidence":0.4}',
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,'
+        '"metadata":[{"source":{"name":"synthetic","name":"synthetic"}}]}',
+    ],
+)
+def test_prediction_rejects_duplicate_json_keys_at_any_depth(raw_prediction):
+    with pytest.raises(ValueError, match="duplicate.*JSON key"):
+        zero_shot._parse_prediction(raw_prediction)
+
+
+@pytest.mark.parametrize(
+    "raw_prediction",
+    [
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,"metadata":{"value":NaN}}',
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,"metadata":[-Infinity]}',
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,"metadata":{"value":1e309}}',
+    ],
+)
+def test_prediction_rejects_nonfinite_json_at_any_depth(raw_prediction):
+    with pytest.raises(ValueError, match="non-finite prediction JSON"):
+        zero_shot._parse_prediction(raw_prediction)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_prediction",
+    [
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,'
+        '"metadata":{"source":"synthetic","source":"synthetic"}}',
+        '{"severity":"P1","root_cause":"service saturation under load",'
+        '"affected_services":["paymentservice"],"confidence":0.4,'
+        '"metadata":{"value":NaN}}',
+    ],
+)
+async def test_empirical_ambiguous_prediction_is_unscored_and_raw_response_preserved(
+    tmp_path,
+    raw_prediction,
+):
+    calls = 0
+
+    async def inference(_messages, _model_name, _generation_config):
+        nonlocal calls
+        calls += 1
+        return raw_prediction
+
+    output_dir = tmp_path / "duplicate-prediction"
+    summary = await zero_shot.evaluate_zero_shot_split(
+        "val",
+        mode="empirical",
+        model_revision="synthetic-test-revision",
+        output_dir=output_dir,
+        inference_fn=inference,
+    )
+    rows = [
+        json.loads(line)
+        for line in (output_dir / "results_per_episode.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+
+    assert calls == len(VAL_SPLIT)
+    assert summary["failed_scenarios"] == len(VAL_SPLIT)
+    assert summary["diagnostic_scored_count"] == 0
+    assert summary["avg_diagnostic_f1"] is None
+    assert all(row["status"] == "error" for row in rows)
+    assert all(row["outcome"] == "invalid_prediction" for row in rows)
+    assert all(row["prediction"] is None for row in rows)
+    assert all(row["diagnostic_metrics"] is None for row in rows)
+    assert all(row["empirical_inference_executed"] is True for row in rows)
+    assert all(row["inference_response_error"] is None for row in rows)
+    assert all(row["error"] == "ValueError: invalid_response; details redacted" for row in rows)
+    assert all(row["raw_model_response"] == raw_prediction for row in rows)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("field", "value", "omit"),

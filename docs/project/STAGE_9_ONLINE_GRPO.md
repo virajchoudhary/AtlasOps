@@ -6,6 +6,12 @@ The policy, environment, reward, provenance, and evaluator software contracts ar
 implemented. No real GRPO training run, completed adapter, or empirical evaluation is
 currently preserved.
 
+SFT-parent admission verifies both the checkpoint byte inventory and the
+consumed adapter configuration against recorded LoRA/base-model settings.
+Hash-matching but semantically inconsistent configs fail before any model
+loader; missing settings are not inferred. This is software admission, not
+evidence that an adapter has been independently loaded or trained.
+
 ## Policy-Environment-Reward Contract
 
 The required relationship is:

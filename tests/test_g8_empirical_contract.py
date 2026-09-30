@@ -22,16 +22,78 @@ from training.sft_provenance import (
     SCENARIO_DERIVED_SYNTHETIC_CORPUS_SHA256,
 )
 
+_BASE_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+_BASE_MODEL_REVISION = "a" * 40
+_TOKENIZER_REVISION = "b" * 40
+_LORA_TARGET_MODULES = [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+]
+
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _adapter_config() -> dict:
+    return {
+        "peft_type": "LORA",
+        "task_type": "CAUSAL_LM",
+        "base_model_name_or_path": _BASE_MODEL_ID,
+        "revision": None,
+        "r": 16,
+        "lora_alpha": 32,
+        "lora_dropout": 0.05,
+        "target_modules": list(_LORA_TARGET_MODULES),
+        "bias": "none",
+    }
+
+
+def _rewrite_adapter_config(checkpoint: Path, raw_config: str | bytes) -> None:
+    config_path = checkpoint / "adapter_config.json"
+    config_bytes = (
+        raw_config.encode("utf-8") if isinstance(raw_config, str) else raw_config
+    )
+    config_path.write_bytes(config_bytes)
+
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    files = [
+        {
+            "path": path.relative_to(checkpoint).as_posix(),
+            "size_bytes": path.stat().st_size,
+            "sha256": _sha(path),
+        }
+        for path in checkpoint.rglob("*")
+        if path.is_file() and path != manifest_path
+    ]
+    files.sort(key=lambda record: record["path"])
+    manifest["checkpoint"] = {
+        "files": files,
+        "tree_sha256": hashlib.sha256(
+            json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _nested_json_value(depth: int):
+    value = 0
+    for _ in range(depth):
+        value = [value]
+    return value
 
 
 def _checkpoint(tmp_path: Path, *, status: str = "completed") -> Path:
     checkpoint = tmp_path / "checkpoint"
     checkpoint.mkdir(parents=True)
     adapter_config = checkpoint / "adapter_config.json"
-    adapter_config.write_text('{"peft_type":"LORA"}', encoding="utf-8")
+    adapter_config.write_text(json.dumps(_adapter_config()), encoding="utf-8")
     adapter_weights = checkpoint / "adapter_model.safetensors"
     adapter_weights.write_bytes(b"checkpoint-bytes")
     files = [
@@ -48,14 +110,23 @@ def _checkpoint(tmp_path: Path, *, status: str = "completed") -> Path:
     manifest = {
         "status": status,
         "base_model": {
-            "id": "Qwen/Qwen2.5-7B-Instruct",
+            "id": _BASE_MODEL_ID,
             "requested_revision": "base-revision",
-            "resolved_revision": "a" * 40,
+            "resolved_revision": _BASE_MODEL_REVISION,
         },
         "tokenizer": {
-            "id": "Qwen/Qwen2.5-7B-Instruct",
+            "id": _BASE_MODEL_ID,
             "requested_revision": "tokenizer-revision",
-            "resolved_revision": "b" * 40,
+            "resolved_revision": _TOKENIZER_REVISION,
+        },
+        "hyperparameters": {
+            "lora": {
+                "r": 16,
+                "alpha": 32,
+                "dropout": 0.05,
+                "target_modules": list(_LORA_TARGET_MODULES),
+                "bias": "none",
+            }
         },
         "dataset": {
             "split": "train",
@@ -78,6 +149,206 @@ def _checkpoint(tmp_path: Path, *, status: str = "completed") -> Path:
         encoding="utf-8",
     )
     return checkpoint
+
+
+@pytest.mark.asyncio
+async def test_empirical_evaluation_rejects_hash_valid_adapter_config_mismatch(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    config = _adapter_config()
+    config["lora_alpha"] = 16
+    _rewrite_adapter_config(checkpoint, json.dumps(config))
+    inference_calls = []
+    loader_calls = []
+    _install_fake_model_loaders(monkeypatch, loader_calls)
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="adapter"):
+        await evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=output_dir,
+            inference_fn=inference,
+        )
+
+    assert inference_calls == []
+    assert loader_calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "raw_config",
+    [
+        "{}",
+        "[]",
+        "{not-json",
+        '{"peft_type":"LORA","peft_type":"LORA"}',
+        json.dumps(_adapter_config()).replace('"lora_alpha": 32', '"lora_alpha": NaN'),
+        json.dumps(_adapter_config()).replace('"lora_alpha": 32', '"lora_alpha": 1e999'),
+        json.dumps(
+            {
+                **_adapter_config(),
+                "nested": _nested_json_value(sft_eval.MAX_SFT_ADAPTER_CONFIG_DEPTH),
+            }
+        ),
+    ],
+    ids=[
+        "empty",
+        "non-object",
+        "malformed",
+        "duplicate-key",
+        "nan",
+        "overflowing-float",
+        "deep",
+    ],
+)
+@pytest.mark.asyncio
+async def test_empirical_evaluation_rejects_hash_valid_non_strict_adapter_json(
+    tmp_path,
+    raw_config,
+):
+    checkpoint = _checkpoint(tmp_path)
+    _rewrite_adapter_config(checkpoint, raw_config)
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="adapter"):
+        await evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=output_dir,
+            inference_fn=inference,
+        )
+
+    assert inference_calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("peft_type", "ADALORA"),
+        ("task_type", "SEQ_CLS"),
+        ("r", 8),
+        ("r", 0),
+        ("lora_dropout", 0.2),
+        ("target_modules", ["q_proj"]),
+        ("bias", "all"),
+        ("base_model_name_or_path", "other/base"),
+        ("revision", "c" * 40),
+        ("rank_pattern", {"q_proj": 8}),
+        ("alpha_pattern", {"q_proj": 16}),
+        ("modules_to_save", ["embed_tokens"]),
+        ("use_dora", True),
+        ("use_rslora", True),
+        ("fan_in_fan_out", True),
+        ("layers_to_transform", [0]),
+        ("exclude_modules", ["q_proj"]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_empirical_evaluation_rejects_hash_valid_nonuniform_adapter_config(
+    tmp_path,
+    field,
+    value,
+):
+    checkpoint = _checkpoint(tmp_path)
+    config = _adapter_config()
+    config[field] = value
+    _rewrite_adapter_config(checkpoint, json.dumps(config))
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="adapter"):
+        await evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=output_dir,
+            inference_fn=inference,
+        )
+
+    assert inference_calls == []
+    assert not output_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_empirical_evaluation_rejects_manifest_without_lora_contract(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("hyperparameters")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    output_dir = tmp_path / "output"
+    with pytest.raises(ValueError, match="hyperparameters.lora"):
+        await evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=output_dir,
+            inference_fn=inference,
+        )
+
+    assert inference_calls == []
+    assert not output_dir.exists()
+
+
+def test_adapter_target_modules_are_compared_without_order(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    config = _adapter_config()
+    config["target_modules"].reverse()
+    _rewrite_adapter_config(checkpoint, json.dumps(config))
+
+    manifest, _ = sft_eval._load_checkpoint_manifest(checkpoint)
+
+    assert manifest["hyperparameters"]["lora"]["target_modules"] == _LORA_TARGET_MODULES
+
+
+def test_adapter_base_model_metadata_may_be_absent_or_null(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    config = _adapter_config()
+    config.pop("base_model_name_or_path")
+    _rewrite_adapter_config(checkpoint, json.dumps(config))
+
+    sft_eval._load_checkpoint_manifest(checkpoint)
+    config.pop("revision")
+    _rewrite_adapter_config(checkpoint, json.dumps(config))
+
+    sft_eval._load_checkpoint_manifest(checkpoint)
+
+
+def test_adapter_config_read_has_a_size_limit(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    config = json.dumps(_adapter_config()).encode("utf-8")
+    oversized = config + b" " * (
+        sft_eval.MAX_SFT_ADAPTER_CONFIG_BYTES + 1 - len(config)
+    )
+    _rewrite_adapter_config(checkpoint, oversized)
+
+    with pytest.raises(ValueError, match="adapter_config.json exceeds the maximum size"):
+        sft_eval._load_checkpoint_manifest(checkpoint)
 
 
 def _install_fake_model_loaders(monkeypatch, calls):

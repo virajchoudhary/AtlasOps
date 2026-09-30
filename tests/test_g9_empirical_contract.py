@@ -60,7 +60,11 @@ def _checkpoint_with_manifest(root: Path) -> Path:
         tokenizer="org/base",
         tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
-        hyperparameters={},
+        hyperparameters={"lora": {
+            "r": 16, "alpha": 32, "dropout": 0.05,
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            "bias": "none",
+        }},
     )
     sft_manifest = run_sft(
         sft_manifest,
@@ -69,7 +73,13 @@ def _checkpoint_with_manifest(root: Path) -> Path:
         resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     sft_manifest["source"] = {"git_sha": "c" * 40, "git_dirty": False}
-    (sft_checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (sft_checkpoint / "adapter_config.json").write_text(json.dumps({
+        "peft_type": "LORA", "task_type": "CAUSAL_LM",
+        "base_model_name_or_path": "org/base",
+        "revision": None, "r": 16, "lora_alpha": 32, "lora_dropout": 0.05,
+        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        "bias": "none",
+    }), encoding="utf-8")
     (sft_checkpoint / "adapter_model.safetensors").write_bytes(b"sft-adapter-test")
     sft_manifest_path = sft_checkpoint / "sft_run_manifest.json"
     sft_manifest = complete_sft(

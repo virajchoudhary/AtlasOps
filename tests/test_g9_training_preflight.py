@@ -95,7 +95,11 @@ def _valid_sft_checkpoint(tmp_path):
         tokenizer=TOKENIZER_ID,
         tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
-        hyperparameters={},
+        hyperparameters={"lora": {
+            "r": 16, "alpha": 32, "dropout": 0.05,
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            "bias": "none",
+        }},
     )
     manifest = start_sft_run(
         manifest,
@@ -104,7 +108,13 @@ def _valid_sft_checkpoint(tmp_path):
         resolved_tokenizer_revision_basis="LOADER_EXPOSED_COMMIT_HASH_MATCH",
     )
     manifest["source"] = {"git_sha": "a" * 40, "git_dirty": False}
-    (checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "adapter_config.json").write_text(json.dumps({
+        "peft_type": "LORA", "task_type": "CAUSAL_LM",
+        "base_model_name_or_path": MODEL_ID,
+        "revision": None, "r": 16, "lora_alpha": 32, "lora_dropout": 0.05,
+        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        "bias": "none",
+    }), encoding="utf-8")
     adapter_weights = checkpoint / "adapter_model.safetensors"
     adapter_weights.write_bytes(b"sft-adapter-fixture")
     manifest_path = checkpoint / "sft_run_manifest.json"
@@ -490,6 +500,36 @@ def test_model_loader_revalidates_checkpoint_bytes_after_base_load_before_peft(
 
     assert adapter_weights.read_bytes() == b"sft-adapter-fixture-changed"
     assert calls == ["tokenizer", "model"]
+
+
+def test_invalid_sft_adapter_configuration_blocks_g9_before_any_loader(monkeypatch, tmp_path):
+    from training import grpo
+    from training.grpo_provenance import validate_sft_parent
+    from training.sft_provenance import checkpoint_inventory
+
+    checkpoint, _ = _valid_sft_checkpoint(tmp_path)
+    config_path = checkpoint / "adapter_config.json"
+    config = json.loads(config_path.read_text())
+    config["r"] = 8
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["checkpoint"] = checkpoint_inventory(checkpoint, manifest_path)
+    write_manifest_atomic(manifest_path, manifest)
+    _, calls, _ = _install_fake_loader(monkeypatch)
+    monkeypatch.setattr(grpo, "validate_sft_parent", validate_sft_parent)
+
+    with pytest.raises(ValueError, match="adapter"):
+        grpo.load_model_and_tokenizer(
+            MODEL_ID,
+            model_revision=MODEL_COMMIT,
+            tokenizer_id=TOKENIZER_ID,
+            tokenizer_revision=TOKENIZER_COMMIT,
+            sft_checkpoint=checkpoint,
+            execute_live_chaos=True,
+            kube_context="kind-atlasops-test",
+        )
+    assert calls == []
 
 
 def test_model_loader_rejects_changed_sft_parent_after_base_load_before_peft(

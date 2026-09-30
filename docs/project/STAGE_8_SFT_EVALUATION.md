@@ -24,6 +24,14 @@ unapproved and does not change this evaluator or the gate status.
   byte snapshot. Every declared checkpoint file and aggregate tree hash is
   verified at preflight and again during lazy loading, including immediately
   before the PEFT adapter load. A changed manifest or adapter fails closed.
+- The hash-verified `adapter_config.json` is also parsed from a bounded strict
+  JSON snapshot. LoRA type, causal-LM task, rank, alpha, dropout, target modules
+  and bias must match the training manifest; contradictory base-model/revision
+  metadata or non-neutral uniform-LoRA overrides are rejected. Missing recorded
+  LoRA settings are not filled with defaults. Optional null revision metadata
+  remains valid because the base loader uses the manifest's immutable revision.
+  G9 parent admission inherits this same check before model loading. Configuration
+  consistency does not prove adapter tensor compatibility or independent reload.
 - The training corpus origin, synthetic flag, and adjacent corpus-manifest provenance are
   validated and carried into the evaluation summary. Older manifests without these fields
   and unsupported or conflicting origin claims are reported as `UNVERIFIED`.

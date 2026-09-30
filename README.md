@@ -253,9 +253,15 @@ Train-only corpus (currently 64 scenario-derived synthetic demonstrations)
   Benchmark  (28 frozen; measured model comparisons pending)
 ```
 
-The corrected GRPO code is designed for true online RL; a completed training run and usable checkpoint have not been verified. In a real authorized run, each training step would:
+The GRPO code is intended for online RL; a completed training run and usable
+checkpoint have not been verified. A confirmed observation-order defect now
+blocks its training entrypoints: completions are generated from static
+catalogue alerts before the reward callback obtains the actual incident.
+The [observation-first repair proposal](docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
+is unapproved and non-executable. After its implementation, review and separate
+live authorization, each training step must:
 1. Apply a real Chaos Mesh fault to an authorized controlled cluster
-2. Score policy completions in serialized fault/action/cleanup cycles on the shared cluster
+2. Capture permitted public evidence before policy generation and bind each completion to that observation
 3. Execute each parsed structured action and score conclusive objective-verifier observations
 4. Compute GRPO advantages and update the policy
 

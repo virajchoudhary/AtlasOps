@@ -84,6 +84,12 @@ GRPOTrainer = None
 _HAS_TORCH_RL = False
 
 log = logging.getLogger(__name__)
+_G9_OBSERVATION_ORDER_BLOCK_MESSAGE = (
+    "G9 training is blocked because the current policy prompt is constructed from "
+    "static scenario-catalog data before the fault and actual alert are observed. "
+    "A prospective observation-first protocol revision must be approved and "
+    "implemented before G9 training can proceed."
+)
 _RUN_ATTEMPT_STATE: ContextVar[dict[str, bool] | None] = ContextVar(
     "g9_run_attempt_state",
     default=None,
@@ -107,6 +113,10 @@ def _operator_approval_profile(enabled: bool) -> dict[str, Any]:
         "timeout_seconds": OPERATOR_APPROVAL_TIMEOUT_SECONDS if enabled else None,
         "identity": "operator_supplied_name_not_independent_attestation",
     }
+
+
+def _require_g9_observation_order_protocol() -> None:
+    raise RuntimeError(_G9_OBSERVATION_ORDER_BLOCK_MESSAGE)
 
 
 def _require_single_writer() -> None:
@@ -1227,6 +1237,7 @@ def main() -> None:
         parser.error("--optuna must be non-negative")
     tokenizer_id = args.tokenizer or args.model
     try:
+        _require_g9_observation_order_protocol()
         _require_single_writer()
         validate_grpo_batch_configuration(
             per_device_train_batch_size=args.batch_size,
@@ -1319,6 +1330,7 @@ def run_training(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         raise RuntimeError(_OPTUNA_DEFERRED_MESSAGE)
     if optuna_trials < 0:
         raise ValueError("Optuna trial count must be non-negative")
+    _require_g9_observation_order_protocol()
     validate_grpo_batch_configuration(
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,

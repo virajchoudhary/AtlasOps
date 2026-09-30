@@ -45,6 +45,14 @@ TOKENIZER_LOADER_MATCH_BASIS = "LOADER_EXPOSED_COMMIT_HASH_MATCH"
 TOKENIZER_PIN_ONLY_BASIS = "PIN_ENFORCED_BY_LOADER_ARGUMENT/NOT_INDEPENDENTLY_RETURNED"
 
 
+@pytest.fixture
+def allow_legacy_body_for_unit_test(monkeypatch):
+    """Test-only opt-in for inspecting downstream preflight and lifecycle behavior."""
+    from training import grpo
+
+    monkeypatch.setattr(grpo, "_require_g9_observation_order_protocol", lambda: None)
+
+
 def _sft_parent_record(
     tmp_path,
     *,
@@ -1175,7 +1183,7 @@ def test_training_failure_persists_failed_state_before_optional_ml_imports(
 
 
 def test_cli_rejects_unavailable_failure_persistence_before_output(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -1222,7 +1230,7 @@ def test_cli_rejects_unavailable_failure_persistence_before_output(
 
 
 def test_main_records_requested_hyperparameters_for_non_optuna_run(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -1472,7 +1480,12 @@ def test_cli_rejects_incomplete_live_execution_before_output_or_work(
     ],
 )
 def test_direct_run_training_validates_before_model_load_or_output(
-    monkeypatch, tmp_path, execute_live_chaos, kube_context, error_type
+    monkeypatch,
+    tmp_path,
+    execute_live_chaos,
+    kube_context,
+    error_type,
+    allow_legacy_body_for_unit_test,
 ):
     from training import grpo
 
@@ -1494,6 +1507,51 @@ def test_direct_run_training_validates_before_model_load_or_output(
         grpo.run_training(args, output_dir)
 
     assert not output_dir.exists()
+
+
+def test_direct_run_training_blocks_unreviewed_observation_order_without_claims(
+    monkeypatch, tmp_path
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / grpo.MANIFEST_NAME
+    existing_manifest = b'{"status":"running","training":{"sentinel":"preserve"}}\n'
+    manifest_path.write_bytes(existing_manifest)
+    args = SimpleNamespace(
+        optuna=0,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-test",
+        enable_p1_approval=True,
+    )
+
+    def unexpected_work(*_args, **_kwargs):
+        pytest.fail("G9 admission or run state was touched before observation-order refusal")
+
+    for name in (
+        "_require_single_writer",
+        "validate_grpo_batch_configuration",
+        "_require_live_execution",
+        "validate_grpo_model_references",
+        "validate_sft_parent",
+        "validate_grpo_run_plan",
+        "mark_training_started",
+        "require_stable_failure_persistence",
+        "_load_training_dependencies",
+        "load_model_and_tokenizer",
+        "claim_new_output_directory",
+    ):
+        monkeypatch.setattr(grpo, name, unexpected_work)
+
+    with pytest.raises(
+        RuntimeError,
+        match="static scenario-catalog data.*prospective observation-first protocol revision",
+    ):
+        grpo.run_training(args, output_dir)
+
+    assert manifest_path.read_bytes() == existing_manifest
+    assert list(output_dir.iterdir()) == [manifest_path]
 
 
 def test_training_rejects_sft_parent_changed_after_run_was_planned(tmp_path):
@@ -1615,7 +1673,7 @@ def test_run_training_defers_optuna_before_live_model_or_search(
     ],
 )
 def test_direct_run_training_rejects_unplanned_request_without_mutation(
-    monkeypatch, tmp_path, overrides
+    monkeypatch, tmp_path, overrides, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -1658,7 +1716,7 @@ def test_direct_run_training_rejects_unplanned_request_without_mutation(
 
 
 def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from types import ModuleType, SimpleNamespace
 
@@ -1770,7 +1828,7 @@ def test_nondefault_seed_reaches_final_grpo_config_without_optuna(
 
 
 def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -1832,7 +1890,7 @@ def test_direct_run_training_keyboard_interrupt_persists_interrupted_state(
 
 
 def test_run_training_rechecks_distributed_state_after_lazy_torch_import(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 

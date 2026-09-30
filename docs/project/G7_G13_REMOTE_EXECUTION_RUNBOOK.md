@@ -221,6 +221,13 @@ evaluation before claiming the stated gate criterion is met.
 
 ## 4. Controlled G9 training and recovery - separate live gate
 
+**Software entrypoint also blocked:** the current trainer generates from static
+catalogue alerts before its reward callback observes the live incident. It
+cannot run even after resource approval until the
+[observation-first replacement](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
+is implemented and reviewed. The following paragraphs describe additional
+future execution requirements, not a way around that block.
+
 **Entry is currently CLOSED.** A real GRPO run requires the completed
 G7 parent, immutable model/tokenizer match, selected controlled cluster,
 fresh target acceptance, approved fault and alert procedure, approved

@@ -182,6 +182,8 @@ class TestStage9GRPOPipeline:
             lambda *_args, **_kwargs: pytest.fail("model loaded before GRPO batch validation"),
         )
 
+        # Inspect the preserved batch contract only; production observation admission stays closed.
+        monkeypatch.setattr(grpo, "_require_g9_observation_order_protocol", lambda: None)
         with pytest.raises(ValueError, match="divisible by num_generations"):
             grpo.run_training(args, output_dir)
 
@@ -190,6 +192,7 @@ class TestStage9GRPOPipeline:
     def test_main_rejects_default_batch_before_creating_output(
         self, monkeypatch, tmp_path, capsys
     ):
+        monkeypatch.setattr(grpo, "_require_g9_observation_order_protocol", lambda: None)
         output_dir = tmp_path / "run"
         monkeypatch.setattr(
             sys,

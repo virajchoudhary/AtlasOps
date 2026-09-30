@@ -160,6 +160,13 @@ scientifically complete.
 - Recovered outputs in `artifacts/evidence/mock_archive/stage8/` are deterministic mock evidence. Previously reported SFT gains and format compliance do not establish checkpoint performance or unlock validated RL training.
 
 ### Gate G9: Correct and Train Online GRPO — [REOPENED]
+- Training entrypoints are blocked for a confirmed observation-order defect:
+  static catalogue prompts generate completions before the reward callback
+  obtains the live incident alert. The
+  [prospective observation-first repair](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
+  is not an approved protocol or implemented replacement. Exact action
+  dispatch and verifier scoring alone do not establish observation-conditioned
+  learning.
 - `training/grpo.py` now sends the policy completion to `DirectPolicyEnvironment` as the exact proposed action. That adapter checks approval and tool policy, executes at most one action, settles, and carries objective verifier fields into reward and curriculum updates.
 - New trainer provenance records declared and loaded model revisions, frozen Train hash, source state, seed/configuration, rollout ledger, and a hashed completed adapter inventory. `bench/grpo_eval.py` validates this record and rejects missing or incomplete checkpoints; its mock path is explicitly non-empirical.
 - No completed GRPO training run, usable local adapter, or safe real evaluation was obtained. Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/` remain mock evidence. G9 remains reopened pending real authorized trajectories, training, and held-out evaluation.

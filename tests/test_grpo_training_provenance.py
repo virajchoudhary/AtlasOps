@@ -1132,7 +1132,7 @@ def test_adapter_config_without_weights_cannot_be_marked_completed(tmp_path):
 
 @pytest.mark.skipif(os.name == "nt", reason="Live GRPO preflight requires POSIX handles")
 def test_training_failure_persists_failed_state_before_optional_ml_imports(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -1422,7 +1422,7 @@ def test_cli_defers_optuna_before_trial_model_live_start_or_output(
     ],
 )
 def test_cli_rejects_incomplete_live_execution_before_output_or_work(
-    monkeypatch, tmp_path, capsys, live_args, error
+    monkeypatch, tmp_path, capsys, live_args, error, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 

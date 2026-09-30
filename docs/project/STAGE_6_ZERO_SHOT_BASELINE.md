@@ -41,6 +41,12 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   and dataset hashes, source identity, seed, timestamps, runtime metadata, and model
   identity observations are persisted. Failed HTTP response bodies are not persisted;
   only a bounded error category, status, format, SHA-256, and byte length are retained.
+- Every emitted episode row carries the generated `run_id` and requested `model`
+  tag also recorded in the run summary, including invalid and failed rows.
+  This binds rows to the requested run identity; it does not attest which
+  content digest served any generation. G13's non-empirical adapter checks
+  these row identities against caller declarations and revalidates successful
+  raw diagnostic responses before producing a diagnosis event.
 - Configured empirical inference requires a clean Git source before model
   observation and records its preflight and postflight source states. Split
   and dataset digests are captured before inference. A changed or unverifiable

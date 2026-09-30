@@ -56,6 +56,11 @@ exists in the current evidence set, so G8 has no empirical model result.
 - Raw requests, responses, parse failures, checkpoint identity, evaluator source,
   generation settings, split seed, and the SHA-256 digest of the exact ordered frozen
   split are persisted.
+- The separate G13 candidate adapter rechecks the native diagnostic response
+  schema and equality of raw and parsed successful output. Current G8 episode
+  rows do not bind both run and requested model identity; the adapter reports
+  them `UNBOUND` rather than inheriting a caller declaration. Neither check
+  supplies environment-resolution evidence.
 - Diagnosis-only evaluation leaves environment resolution, reward, safety, and time to
   resolve unevaluated.
 - Mock mode is explicitly non-empirical and does not update shared comparison evidence.

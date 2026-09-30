@@ -35,9 +35,33 @@ RESULTS_DIR = Path("bench/results")
 EVIDENCE_DIR = Path("artifacts/evidence/stage8")
 MODES = frozenset({"mock", "empirical"})
 MAX_SFT_RUN_MANIFEST_BYTES = 1024 * 1024
+MAX_SFT_ADAPTER_CONFIG_BYTES = 1024 * 1024
+MAX_SFT_ADAPTER_CONFIG_DEPTH = 64
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
 FULL_COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
+_NEUTRAL_ADAPTER_SETTINGS = {
+    "alpha_pattern": {},
+    "auto_mapping": None,
+    "corda_config": None,
+    "eva_config": None,
+    "exclude_modules": None,
+    "fan_in_fan_out": False,
+    "init_lora_weights": True,
+    "layer_replication": None,
+    "layers_pattern": None,
+    "layers_to_transform": None,
+    "lora_bias": False,
+    "loftq_config": {},
+    "megatron_config": None,
+    "modules_to_save": None,
+    "rank_pattern": {},
+    "target_parameters": None,
+    "trainable_token_indices": None,
+    "use_dora": False,
+    "use_qalora": False,
+    "use_rslora": False,
+}
 SPLIT_SEEDS = {
     "val": VAL_SEED,
     "test": TEST_SEED,
@@ -89,6 +113,178 @@ def _file_sha256(path: Path) -> str:
 def _canonical_json_sha256(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"SFT adapter config contains duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _strict_json_float(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError("SFT adapter config contains a non-finite JSON number")
+    return value
+
+
+def _reject_nonfinite_json_constant(raw: str) -> None:
+    raise ValueError(f"SFT adapter config contains non-finite JSON constant: {raw}")
+
+
+def _validate_adapter_config_depth(value: Any) -> None:
+    pending = [(value, 1)]
+    while pending:
+        current, depth = pending.pop()
+        if depth > MAX_SFT_ADAPTER_CONFIG_DEPTH:
+            raise ValueError("SFT adapter_config.json exceeds the maximum JSON depth")
+        if isinstance(current, dict):
+            pending.extend((child, depth + 1) for child in current.values())
+        elif isinstance(current, list):
+            pending.extend((child, depth + 1) for child in current)
+
+
+def _finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _adapter_target_modules(value: Any, *, label: str) -> set[str]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(module, str) or not module.strip() for module in value)
+        or len(value) != len(set(value))
+    ):
+        raise ValueError(f"SFT adapter {label} target_modules must be unique names")
+    return set(value)
+
+
+def _validate_adapter_config(config: dict[str, Any], manifest: dict[str, Any]) -> None:
+    if not config:
+        raise ValueError("SFT adapter_config.json must be a non-empty object")
+    if config.get("peft_type") != "LORA":
+        raise ValueError("SFT adapter config peft_type must be LORA")
+    if config.get("task_type") != "CAUSAL_LM":
+        raise ValueError("SFT adapter config task_type must be CAUSAL_LM")
+
+    hyperparameters = manifest.get("hyperparameters")
+    lora = hyperparameters.get("lora") if isinstance(hyperparameters, dict) else None
+    fields = {"r", "alpha", "dropout", "target_modules", "bias"}
+    if not isinstance(lora, dict) or not fields.issubset(lora):
+        raise ValueError(
+            "SFT adapter manifest lacks required hyperparameters.lora fields"
+        )
+
+    rank, alpha, dropout = (
+        lora["r"],
+        lora["alpha"],
+        lora["dropout"],
+    )
+    config_rank, config_alpha, config_dropout = (
+        config.get("r"),
+        config.get("lora_alpha"),
+        config.get("lora_dropout"),
+    )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in (rank, config_rank)
+    ):
+        raise ValueError("SFT adapter LoRA rank must be a positive integer")
+    if any(not _finite_number(value) or value <= 0 for value in (alpha, config_alpha)):
+        raise ValueError("SFT adapter LoRA alpha must be finite and positive")
+    if any(
+        not _finite_number(value) or not 0 <= value < 1
+        for value in (dropout, config_dropout)
+    ):
+        raise ValueError("SFT adapter LoRA dropout must be finite and in [0, 1)")
+    if (config_rank, config_alpha, config_dropout) != (rank, alpha, dropout):
+        raise ValueError("SFT adapter LoRA rank/alpha/dropout disagree with the manifest")
+
+    manifest_targets = _adapter_target_modules(
+        lora["target_modules"],
+        label="manifest",
+    )
+    config_targets = _adapter_target_modules(
+        config.get("target_modules"),
+        label="config",
+    )
+    if config_targets != manifest_targets:
+        raise ValueError("SFT adapter target_modules disagree with the manifest")
+
+    bias = lora["bias"]
+    if (
+        not isinstance(bias, str)
+        or bias not in {"none", "all", "lora_only"}
+        or config.get("bias") != bias
+    ):
+        raise ValueError("SFT adapter bias disagrees with the manifest")
+
+    base_model = manifest["base_model"]
+    optional_identity = {
+        "base_model_name_or_path": base_model["id"],
+        "revision": base_model["resolved_revision"],
+    }
+    for field, expected in optional_identity.items():
+        actual = config.get(field)
+        if actual is not None and (
+            not isinstance(actual, str)
+            or actual != expected
+            or (field == "revision" and FULL_COMMIT_SHA_RE.fullmatch(actual) is None)
+        ):
+            raise ValueError(f"SFT adapter config {field} disagrees with the manifest")
+
+    for field, neutral in _NEUTRAL_ADAPTER_SETTINGS.items():
+        if field not in config:
+            continue
+        actual = config[field]
+        matches = (
+            isinstance(actual, dict) and not actual
+            if isinstance(neutral, dict)
+            else type(actual) is type(neutral) and actual == neutral
+        )
+        if not matches:
+            raise ValueError(
+                f"SFT adapter config setting {field} conflicts with uniform LoRA"
+            )
+
+
+def _load_adapter_config(
+    checkpoint: Path,
+    *,
+    expected_sha256: str,
+    manifest: dict[str, Any],
+) -> None:
+    config_path = checkpoint / "adapter_config.json"
+    with config_path.open("rb") as stream:
+        config_bytes = stream.read(MAX_SFT_ADAPTER_CONFIG_BYTES + 1)
+    if len(config_bytes) > MAX_SFT_ADAPTER_CONFIG_BYTES:
+        raise ValueError(
+            "SFT adapter_config.json exceeds the maximum size of "
+            f"{MAX_SFT_ADAPTER_CONFIG_BYTES} bytes"
+        )
+    if hashlib.sha256(config_bytes).hexdigest() != expected_sha256:
+        raise ValueError("Checkpoint hash mismatch: adapter_config.json")
+    try:
+        config = json.loads(
+            config_bytes.decode("utf-8"),
+            object_pairs_hook=_strict_json_object,
+            parse_float=_strict_json_float,
+            parse_constant=_reject_nonfinite_json_constant,
+        )
+    except (RecursionError, ValueError) as exc:
+        raise ValueError("SFT adapter_config.json must be valid strict JSON") from exc
+    if not isinstance(config, dict):
+        raise ValueError("SFT adapter_config.json must be a JSON object")
+    _validate_adapter_config_depth(config)
+    _validate_adapter_config(config, manifest)
 
 
 def _source_provenance() -> dict[str, Any]:
@@ -311,10 +507,19 @@ def _load_checkpoint_manifest(
     tree_hash = _canonical_json_sha256(current_files)
     if tree_hash != checkpoint_record.get("tree_sha256"):
         raise ValueError("Checkpoint tree hash does not match provenance")
-    if not (checkpoint / "adapter_config.json").is_file():
+    adapter_config_path = checkpoint / "adapter_config.json"
+    if not adapter_config_path.is_file():
         raise ValueError("SFT checkpoint is missing adapter_config.json")
     if not any((checkpoint / name).is_file() for name in ADAPTER_WEIGHT_NAMES):
         raise ValueError("SFT checkpoint is missing adapter model weights")
+    adapter_config_record = expected_by_path.get("adapter_config.json")
+    if adapter_config_record is None:
+        raise ValueError("SFT adapter_config.json is missing from the checkpoint inventory")
+    _load_adapter_config(
+        checkpoint,
+        expected_sha256=adapter_config_record["sha256"],
+        manifest=manifest,
+    )
     return manifest, manifest_sha256
 
 

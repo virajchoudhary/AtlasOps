@@ -66,7 +66,11 @@ def _sft_parent_record(
         tokenizer="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision=TOKENIZER_COMMIT,
         role="all",
-        hyperparameters={},
+        hyperparameters={"lora": {
+            "r": 16, "alpha": 32, "dropout": 0.05,
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            "bias": "none",
+        }},
     )
     manifest = run_sft(
         manifest,
@@ -75,7 +79,13 @@ def _sft_parent_record(
         resolved_tokenizer_revision_basis=tokenizer_revision_basis,
     )
     manifest["source"] = {"git_sha": "a" * 40, "git_dirty": False}
-    (checkpoint / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "adapter_config.json").write_text(json.dumps({
+        "peft_type": "LORA", "task_type": "CAUSAL_LM",
+        "base_model_name_or_path": "Qwen/Qwen2.5-7B-Instruct",
+        "revision": None, "r": 16, "lora_alpha": 32, "lora_dropout": 0.05,
+        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        "bias": "none",
+    }), encoding="utf-8")
     (checkpoint / "adapter_model.safetensors").write_bytes(b"sft-adapter-fixture")
     manifest_path = checkpoint / "sft_run_manifest.json"
     manifest = complete_sft(
@@ -93,6 +103,41 @@ def _sft_parent_record(
         tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
         tokenizer_revision=TOKENIZER_COMMIT,
     )
+
+
+@pytest.mark.parametrize("change", ["empty", "rank", "alpha", "dropout", "targets", "base", "revision"])
+def test_sft_parent_rejects_hash_valid_but_inconsistent_adapter_config(tmp_path, change):
+    from training.sft_provenance import checkpoint_inventory as sft_inventory
+
+    checkpoint, _ = _sft_parent_record(tmp_path)
+    config_path = checkpoint / "adapter_config.json"
+    config = json.loads(config_path.read_text())
+    if change == "empty":
+        config = {}
+    else:
+        key, value = {
+            "rank": ("r", 8),
+            "alpha": ("lora_alpha", 16),
+            "dropout": ("lora_dropout", 0.2),
+            "targets": ("target_modules", ["q_proj"]),
+            "base": ("base_model_name_or_path", "other/base"),
+            "revision": ("revision", "a" * 40),
+        }[change]
+        config[key] = value
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    manifest_path = checkpoint / "sft_run_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["checkpoint"] = sft_inventory(checkpoint, manifest_path)
+    write_manifest_atomic(manifest_path, manifest)
+
+    with pytest.raises(ValueError, match="adapter"):
+        validate_sft_parent(
+            checkpoint,
+            model_id="Qwen/Qwen2.5-7B-Instruct",
+            model_revision=MODEL_COMMIT,
+            tokenizer_id="Qwen/Qwen2.5-7B-Instruct",
+            tokenizer_revision=TOKENIZER_COMMIT,
+        )
 
 
 def _parent():

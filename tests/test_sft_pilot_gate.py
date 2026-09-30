@@ -229,6 +229,14 @@ def test_future_valid_permit_uses_exact_host_and_single_gpu(monkeypatch, tmp_pat
     runtime.write_text(json.dumps({
         "image_digest": image, "hostname": "fake-approved-host",
         "package_versions": package_versions, "lock_sha256": "c" * 64,
+        "storage": {"free_bytes": 50 * 1024**3},
+        "os_package_inventory": {"status": "RECORDED"},
+    }))
+    attestation = tmp_path / "attestation.json"
+    attestation.write_text(json.dumps({
+        "image_digest": image, "hostname": "fake-approved-host",
+        "verified": True, "verified_by": "independent-fake-reviewer",
+        "persistent_storage_verified": True, "storage_quota_verified": True,
     }))
     plan = {
         "environment": {"package_versions": package_versions, "python_version": "3.12.11"},
@@ -270,6 +278,8 @@ def test_future_valid_permit_uses_exact_host_and_single_gpu(monkeypatch, tmp_pat
             "image_digest": image, "hostname": "fake-approved-host", "python_version": "3.12.11",
             "entitlement_verified": True, "storage_verified": True, "budget_approved": True,
             "runtime_manifest": str(runtime), "runtime_manifest_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+            "image_attestation": str(attestation),
+            "image_attestation_sha256": hashlib.sha256(attestation.read_bytes()).hexdigest(),
             "gpu_name": "fake-A100", "gpu_memory_bytes": 80 * 1024**3, "cuda_runtime": "12.6",
         },
         "model_files_manifest": str(inventory),

@@ -126,10 +126,15 @@ def parse_policy_action(completion_text: str) -> dict[str, Any]:
         raise ValueError("Policy action requires a tool name")
     if not isinstance(arguments, dict):
         raise TypeError("Policy action arguments must be a JSON object")
+    if "agent_claimed_resolved" not in payload:
+        raise ValueError("Policy action requires agent_claimed_resolved")
+    agent_claimed_resolved = payload["agent_claimed_resolved"]
+    if type(agent_claimed_resolved) is not bool:
+        raise TypeError("Policy action agent_claimed_resolved must be a JSON boolean")
     return {
         "tool": tool,
         "arguments": arguments,
-        "agent_claimed_resolved": payload.get("agent_claimed_resolved") is True,
+        "agent_claimed_resolved": agent_claimed_resolved,
     }
 
 

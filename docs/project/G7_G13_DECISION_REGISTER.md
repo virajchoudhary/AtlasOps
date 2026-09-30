@@ -31,6 +31,13 @@ comparison or an experimental freeze.
 
 ## Decision Record Requirements
 
+The new [D3 candidate review sheet](G7_D3_CANDIDATE_REVIEW_V1.md) and
+[bounded SFT acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) prepare the
+data decision without approving it. Candidate technical checks and independent
+review do not promote D3 or G7. The runtime training entrypoint refuses pending
+candidate and unversioned input; a future narrowly reviewed hash-bound launch
+gate and explicit execution approval are required.
+
 For each future decision record the chosen option, rationale, scope, date,
 project-lead identity, independent reviewer and evidence links, exact
 protocol/source/configuration hashes, and superseded version. A general

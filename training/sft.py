@@ -232,6 +232,10 @@ def main() -> None:
         )
     validate_tool_call_role_acl(training_source_rows)
 
+    from training.sft_candidate import refuse_unapproved_candidate
+
+    refuse_unapproved_candidate(corpus_snapshot)
+
     manifest = create_run_manifest(
         corpus_path=corpus_path,
         corpus_snapshot=corpus_snapshot,

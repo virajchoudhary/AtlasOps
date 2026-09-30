@@ -94,6 +94,11 @@ def _write_training_corpus(
 
 
 def _install_training_stubs(monkeypatch, captured: dict) -> None:
+    from training import sft_candidate
+
+    # Isolate downstream handoff tests from the review-only D3 launch gate.
+    monkeypatch.setattr(sft_candidate, "refuse_unapproved_candidate", lambda _snapshot: None)
+
     class Dataset(list):
         @classmethod
         def from_list(cls, rows):

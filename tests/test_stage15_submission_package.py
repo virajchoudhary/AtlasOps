@@ -41,6 +41,27 @@ def _git_attributes(paths: set[str] | list[str]) -> dict[str, dict[str, str]]:
     return attributes
 
 
+def test_g7_prefreeze_review_documents_are_selected_when_tracked(monkeypatch):
+    paths = [
+        "docs/project/G7_D3_INDEPENDENT_PREFREEZE_REVIEW.md",
+        "docs/project/G7_D3_PREFREEZE_CHECKPOINT.md",
+    ]
+
+    def indexed_files(args, **kwargs):
+        assert args == ["git", "ls-files", "-z"]
+        return SimpleNamespace(stdout=("\0".join(paths) + "\0").encode())
+
+    monkeypatch.setattr("scripts.package_submission.subprocess.run", indexed_files)
+    assets = collect_submission_assets()
+    assert set(assets) == set(paths)
+    for path in paths:
+        raw = Path(path).read_bytes()
+        assert assets[path] == {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+        }
+
+
 class TestStage15SubmissionPackage:
     def test_submission_package_generator_creates_manifest_and_summary(self, tmp_path):
         manifest = build_submission_package(output_dir=tmp_path)
@@ -159,6 +180,10 @@ class TestStage15SubmissionPackage:
             "artifacts/evidence/stage7/sft_corpus_manifest.json",
             "artifacts/evidence/stage7/sft_training_config.json",
             "training/build_sft_dataset.py",
+            "training/build_sft_candidate.py",
+            "training/sft_candidate.py",
+            "docs/project/G7_D3_CANDIDATE_REVIEW_V1.md",
+            "docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md",
             "training/sft_rendering.py",
             "training/templates/qwen2_5_tool_sft.jinja",
             "training/grpo_reward.py",

@@ -7,6 +7,11 @@ select a compute provider, allocate a GPU, download weights, train a model,
 evaluate final Test, or certify an experimental gate. The project lead reports
 that the personal laptop cannot run the planned local 7B training workload.
 External hardware is a future, separately approved decision.
+The [versioned D3 candidate review](G7_D3_CANDIDATE_REVIEW_V1.md) and
+[future G7 acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) supplement
+this historical readiness snapshot. The new candidate is synthetic and pending
+lead approval. Training now fails closed for both pending and unversioned input;
+the earlier description of technical admission alone is not a launch path.
 The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS from
 the required comparison. The source SHA above is the original software-audit
 snapshot, not a freeze of the earlier five-arm proposal.

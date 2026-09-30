@@ -957,6 +957,16 @@ def collect_bundle(
         )
     )
     policy = _object(remediation.get("final"))
+    if type(seed) is not int or seed < 0:
+        problems.append("policy_seed_request_malformed")
+    if "generation_seed" not in policy:
+        problems.append("policy_generation_seed_missing")
+    else:
+        observed_seed = policy["generation_seed"]
+        if type(observed_seed) is not int or observed_seed < 0:
+            problems.append("policy_generation_seed_malformed")
+        elif observed_seed != seed:
+            problems.append("policy_generation_seed_mismatch")
     if policy.get("policy_backend") != "checkpoint":
         problems.append("checkpoint_policy_execution_unverified")
     recommender = (incident or {}).get("recommender")

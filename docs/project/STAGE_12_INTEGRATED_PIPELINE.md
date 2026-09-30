@@ -72,6 +72,11 @@ interrupted evidence when present,
 and records their SHA-256 hashes, exact source SHA, checkpoint provenance, seed,
 model identity, policy origin, and missing fields. It revalidates the checkpoint
 inventory after the run and marks a changed or unavailable checkpoint incomplete.
+The requested policy seed and recorded
+`remediation.final.generation_seed` must be nonnegative exact integers
+and match. A malformed request or missing, malformed, or mismatched
+observation makes capture `INCOMPLETE` rather than presenting the
+request as execution provenance.
 It leaves reward and TTR
 unevaluated and always sets `empirical_claim_allowed=false` and
 `gate_certification=NOT_CERTIFIED`; a capture requires independent review before

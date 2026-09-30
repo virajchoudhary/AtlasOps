@@ -83,6 +83,13 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   validates the SFT parent, so training-time origin alone is not inherited
   as currently verified source provenance.
 
+- A non-live tokenizer-only preflight can inspect every frozen
+  `train-candidate-v1` row for assistant-mask attribution and length against
+  the proposed 2048-token ceiling using an already-local revision-pinned
+  tokenizer. No real pinned-tokenizer run or file inventory is recorded here.
+  Fake-tokenizer tests establish only validator control flow; they do not
+  approve D2/D3, weight transfer, or a training launch.
+
 ## Model, Training Stack and Reproducibility
 
 | Item | Current contract | Remote-readiness gap |

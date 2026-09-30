@@ -683,6 +683,8 @@ def evaluate_sft_mock_episode(scenario_id: str, model_name: str) -> dict[str, An
         "status": "ok",
         "evaluation_mode": "mock",
         "non_empirical": True,
+        "response_received": False,
+        "inference_execution_certainty": "not_executed",
         "resolved": is_resolved,
         "time_to_resolve_s": ttr,
         "total_turns": 3 if is_resolved else 4,
@@ -758,7 +760,10 @@ async def evaluate_sft_split(
                 public_input = _public_input(meta)
                 request_messages = _messages(public_input)
                 raw_text = ""
+                response_received = False
+                inference_execution_certainty = "unknown"
                 error_category = None
+                cancelled = False
                 try:
                     raw_text = await inference_fn(
                         request_messages,
@@ -766,12 +771,20 @@ async def evaluate_sft_split(
                         checkpoint,
                         generation_config,
                     )
+                    response_received = True
+                    inference_execution_certainty = "confirmed"
                     prediction = _parse_prediction(raw_text)
                     diagnostic = _compute_diagnostic_f1(
                         str(prediction["root_cause"]),
                         meta.expected_root_cause,
                     )
                     status = "ok"
+                except asyncio.CancelledError:
+                    prediction = None
+                    diagnostic = {"precision": None, "recall": None, "f1": None}
+                    status = "interrupted"
+                    error_category = "cancelled"
+                    cancelled = True
                 except Exception as exc:  # noqa: BLE001
                     prediction = None
                     diagnostic = {"precision": None, "recall": None, "f1": None}
@@ -784,6 +797,8 @@ async def evaluate_sft_split(
                     "evaluation_mode": "empirical",
                     "non_empirical": not configured_backend,
                     "empirical_claim_allowed": configured_backend and status == "ok",
+                    "response_received": response_received,
+                    "inference_execution_certainty": inference_execution_certainty,
                     "request_messages": request_messages,
                     "raw_model_response": raw_text,
                     "prediction": prediction,
@@ -800,13 +815,37 @@ async def evaluate_sft_split(
                 }
                 if error_category is not None:
                     episode["error_category"] = error_category
-                    episode["error"] = f"{error_category}: inference failed"
+                    episode["error"] = (
+                        "cancelled: inference outcome unknown"
+                        if cancelled
+                        else f"{error_category}: inference failed"
+                    )
             results.append(episode)
             stream.write(json.dumps(episode, sort_keys=True) + "\n")
+            if selected_mode == "empirical" and cancelled:
+                stream.flush()
+                raise asyncio.CancelledError
 
     tag = f"sft-{split_name}-{model_name.replace(':', '-').replace('/', '-')}"
     summary = _compute_summary(results, tag=tag, model=model_name)
     valid = [row for row in results if row.get("status") == "ok"]
+    scheduled_inference_count = len(results) if selected_mode == "empirical" else 0
+    inference_response_received_count = sum(
+        1 for row in results if row.get("response_received") is True
+    )
+    inference_execution_confirmed_count = sum(
+        1 for row in results if row.get("inference_execution_certainty") == "confirmed"
+    )
+    inference_execution_unknown_count = sum(
+        1 for row in results if row.get("inference_execution_certainty") == "unknown"
+    )
+    empirical_inference_executed = (
+        False
+        if selected_mode == "mock"
+        else True
+        if inference_execution_confirmed_count
+        else None
+    )
     diagnostic_schema_conformance_rate = round(
         sum(1 for row in results if row.get("format_compliant"))
         / max(len(results), 1),
@@ -820,10 +859,24 @@ async def evaluate_sft_split(
             "evaluation_mode": selected_mode,
             "mock_eval": selected_mode == "mock",
             "non_empirical": selected_mode == "mock" or not configured_backend,
-            "empirical_inference_executed": (
-                selected_mode == "empirical"
-                and len(valid) == len(results)
-                and bool(results)
+            "empirical_inference_executed": empirical_inference_executed,
+            "empirical_inference_executed_basis": (
+                "any scheduled empirical inference callback returned a response"
+                if selected_mode == "empirical"
+                else "mock mode does not execute empirical inference"
+            ),
+            "scheduled_inference_count": scheduled_inference_count,
+            "inference_response_received_count": inference_response_received_count,
+            "inference_execution_confirmed_count": (
+                inference_execution_confirmed_count
+            ),
+            "inference_execution_unknown_count": inference_execution_unknown_count,
+            "inference_execution_counts_basis": (
+                "Counts use all scheduled empirical scenarios; confirmed means a "
+                "response returned, unknown means no response returned and is not "
+                "proof of non-execution"
+                if selected_mode == "empirical"
+                else "No inference callbacks are scheduled in mock mode"
             ),
             "empirical_claim_allowed": (
                 selected_mode == "empirical"

@@ -59,6 +59,11 @@ unapproved and does not change this evaluator or the gate status.
   severity `P0`-`P3`, a non-empty list of non-empty service names, a non-empty
   root cause, and finite numeric confidence in `[0, 1]`. Boolean confidence is
   invalid despite Python's `bool`/`int` relationship.
+  Duplicate keys and non-finite numbers at any depth are invalid, including
+  unused metadata. Rejected responses retain raw text but no parsed prediction
+  or diagnostic score; they remain in the all-scheduled format denominator.
+  Prediction JSON depth is capped at 64 independently of the process recursion
+  limit; this parser limit does not change the scientific scoring formula.
 - `diagnostic_schema_conformance_rate` is the number of complete diagnostic
   responses divided by all scheduled outputs, including malformed responses
   and inference failures. In empirical mode, `format_compliance_rate` remains

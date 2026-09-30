@@ -1048,6 +1048,50 @@ def test_empirical_schema_conformance_counts_all_scheduled_outputs(
     assert loader_calls == []
 
 
+@pytest.mark.parametrize("invalid", ["duplicate", "nested_duplicate", "nan", "overflow", "deep"])
+def test_native_g8_strict_json_failures_retain_raw_without_diagnostic_score(
+    tmp_path, monkeypatch, invalid,
+):
+    checkpoint = _checkpoint(tmp_path)
+    monkeypatch.setattr(sft_eval, "get_split", lambda _: list(VAL_SPLIT[:1]))
+    raw = _prediction()
+    if invalid == "duplicate":
+        raw = raw.replace('"confidence":', '"confidence": 0.1, "confidence":', 1)
+    elif invalid == "nested_duplicate":
+        raw = raw[:-1] + ', "metadata": {"sample": 1, "sample": 2}}'
+    elif invalid == "nan":
+        raw = raw[:-1] + ', "metadata": {"sample": NaN}}'
+    elif invalid == "overflow":
+        raw = raw[:-1] + ', "metadata": {"sample": 1e999}}'
+    else:
+        raw = raw[:-1] + ', "metadata": ' + "[" * 1100 + "null" + "]" * 1100 + "}"
+
+    async def inference(*_args):
+        return raw
+
+    output = tmp_path / "output"
+    summary = asyncio.run(evaluate_sft_split(
+        "val", mode="empirical", checkpoint=checkpoint,
+        output_dir=output, inference_fn=inference,
+    ))
+    row = json.loads((output / "sft_val_episodes.jsonl").read_text())
+    assert row["status"] == "error"
+    assert row["raw_model_response"] == raw
+    assert row["prediction"] is None
+    assert row["format_compliant"] is False
+    assert summary["diagnostic_schema_conformance_rate"] == 0.0
+    assert summary["failed_scenarios"] == 1
+    assert summary["empirical_claim_allowed"] is False
+
+
+def test_native_g8_strict_json_preserves_valid_nested_metadata():
+    payload = json.loads(_prediction())
+    payload["metadata"] = {"samples": [None, True, False, 0, -1, 1.25, {"value": 100.0}]}
+    raw = json.dumps(payload)
+    assert sft_eval._parse_prediction(raw) == payload
+    assert sft_eval._parse_prediction(f"```json\n{raw}\n```") == payload
+
+
 def test_lazy_sft_load_rejects_checkpoint_tampered_after_outer_preflight(
     tmp_path,
     monkeypatch,

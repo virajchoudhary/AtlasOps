@@ -558,11 +558,18 @@ def _validate_g9_evaluator_identity_binding(
         if not isinstance(value, Mapping):
             raise ValueError(f"G9 raw evaluator provenance at {location} must be an object")
 
-        if "git_sha" in value:
-            raw_sha = value["git_sha"]
+        for key in ("code_sha", "git_sha"):
+            if key not in value:
+                continue
+            raw_sha = value[key]
             if not isinstance(raw_sha, str) or _GIT_SHA_RE.fullmatch(raw_sha) is None:
-                raise ValueError(f"G9 raw evaluator git_sha is malformed at {location}")
+                raise ValueError(f"G9 raw evaluator {key} is malformed at {location}")
             raw_commit_shas.append(raw_sha.casefold())
+        if "source_state" in value:
+            state = value["source_state"]
+            if not isinstance(state, str) or state not in {"clean", "dirty"}:
+                raise ValueError(f"G9 raw evaluator source_state is malformed at {location}")
+            raw_dirty_flags.append(state == "dirty")
         if "git_dirty" in value:
             raw_dirty = value["git_dirty"]
             if type(raw_dirty) is not bool:
@@ -575,7 +582,11 @@ def _validate_g9_evaluator_identity_binding(
                     f"G9 raw evaluator tree_sha256 at {location}",
                 )
             )
-        return "git_sha" in value and "git_dirty" in value
+        return (
+            "code_sha" in value and "source_state" in value
+        ) or (
+            "git_sha" in value and "git_dirty" in value
+        )
 
     start_complete = False
     terminal_complete = False

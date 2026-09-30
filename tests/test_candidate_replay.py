@@ -1193,6 +1193,47 @@ def test_native_g9_start_and_terminal_evaluator_metadata_must_agree():
 
 
 @pytest.mark.parametrize(
+    "producer_source",
+    [
+        {"code_sha": "4" * 40, "source_state": "clean"},
+        {"code_sha": "3" * 40, "source_state": "dirty", "dirty_diff_sha256": "a" * 64},
+        {"code_sha": "3" * 40, "source_state": False},
+        {"code_sha": "not-a-commit", "source_state": "clean"},
+        {
+            "code_sha": "4" * 40, "source_state": "clean",
+            "git_sha": "3" * 40, "git_dirty": False,
+        },
+    ],
+    ids=["commit", "dirty", "malformed-state", "malformed-commit", "conflicting-alias"],
+)
+def test_native_g9_producer_evaluator_mismatch_is_rejected(producer_source):
+    sources, pins, _ = _native_g9_replay_inputs(producer_source)
+    with pytest.raises(ValueError, match="G9 raw evaluator"):
+        _replay_native(sources, pins)
+
+
+def test_native_g9_actual_producer_identity_is_bound(monkeypatch):
+    from training import grpo_provenance
+
+    def git_output(*args, **kwargs):
+        if args == ("rev-parse", "HEAD"):
+            return "3" * 40 + "\n"
+        if args == ("status", "--porcelain"):
+            return ""
+        raise AssertionError(f"unexpected Git query: {args}")
+
+    monkeypatch.setattr(grpo_provenance, "_git_output", git_output)
+    producer_source = grpo_provenance.source_identity()
+    assert producer_source == {"code_sha": "3" * 40, "source_state": "clean"}
+    sources, pins, _ = _native_g9_replay_inputs(producer_source)
+    result = _replay_native(sources, pins)
+    binding = result["arms"][ARM_ORDER[2]]["source"]["evaluator_identity_binding"]
+    assert binding["status"] == "RAW_COMMIT_AND_DIRTY_MATCHED"
+    assert binding["raw_reported"] == {"git_sha": "3" * 40, "git_dirty": False}
+    assert binding["tree_sha256_status"] == "DESCRIPTOR_ONLY_NOT_RAW_BOUND"
+
+
+@pytest.mark.parametrize(
     "evaluator_source",
     [
         {},

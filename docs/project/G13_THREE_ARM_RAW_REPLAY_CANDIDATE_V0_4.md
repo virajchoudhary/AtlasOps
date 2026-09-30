@@ -43,12 +43,14 @@ independent source/model attestation, and a frozen protocol remain required.
 
 ## Later evaluator-identity consistency repair
 
-The native G9 replay now compares reported `evaluator_source.git_sha` and
-`git_dirty` with the independently validated run descriptor's evaluator
+The native G9 replay now compares the producer's `evaluator_source.code_sha`
+and `source_state` with the independently validated run descriptor's evaluator
 commit and clean-state declaration. Contradictory or malformed fields are
 rejected, including conflicting start and terminal metadata. Missing fields
 remain `UNBOUND`; they are not filled from the descriptor. The source summary
 reports `evaluator_identity_binding` separately from run/model identity.
+Legacy synthetic `git_sha`/`git_dirty` fields are checked too; if both schemas
+are present, contradictory values are rejected rather than preferring one.
 Its evaluator tree digest remains `DESCRIPTOR_ONLY_NOT_RAW_BOUND`, not an
 authenticated raw-source attestation.
 

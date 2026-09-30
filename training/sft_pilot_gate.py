@@ -254,6 +254,34 @@ def require_execution_authority(
         or runtime.get("lock_sha256") != plan["required_files"]["requirements/sft-pilot-linux-py312.lock"]
     ):
         raise ValueError("SFT execution host provenance mismatch")
+    image_attestation_path = host.get("image_attestation")
+    if not isinstance(image_attestation_path, str):
+        raise ValueError("SFT execution requires independent image attestation")
+    attestation, attestation_raw = _read(Path(image_attestation_path))
+    if (
+        hashlib.sha256(attestation_raw).hexdigest() != host.get("image_attestation_sha256")
+        or attestation.get("image_digest") != host["image_digest"]
+        or attestation.get("hostname") != host["hostname"]
+        or attestation.get("verified") is not True
+        or not isinstance(attestation.get("verified_by"), str)
+        or not attestation["verified_by"].strip()
+    ):
+        raise ValueError("SFT execution image attestation is missing or mismatched")
+    storage = runtime.get("storage", {})
+    if (
+        type(storage.get("free_bytes")) is not int
+        or storage["free_bytes"] < 20 * 1024**3
+        or attestation.get("persistent_storage_verified") is not True
+        or attestation.get("storage_quota_verified") is not True
+        or runtime.get("os_package_inventory", {}).get("status") != "RECORDED"
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            runtime.get("os_package_inventory", {}).get("sha256", ""),
+        ) is None
+        or attestation.get("os_package_inventory_sha256")
+        != runtime.get("os_package_inventory", {}).get("sha256")
+    ):
+        raise ValueError("SFT execution requires verified disk/quota and OS package provenance")
     existing_parent = output_dir.absolute().parent
     while not existing_parent.exists():
         existing_parent = existing_parent.parent

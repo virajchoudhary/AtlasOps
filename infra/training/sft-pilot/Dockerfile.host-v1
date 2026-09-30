@@ -1,0 +1,33 @@
+FROM --platform=linux/amd64 python:3.12.11-slim-bookworm@sha256:c00fc7b44d844b6da22861ec24af43968a5200eac4ec607b4725d585165d6b49
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Dated signed indexes freeze Git and its OS dependencies. HTTPS/signatures stay enabled.
+RUN rm -f /etc/apt/sources.list.d/debian.sources \
+    && printf '%s\n' \
+       'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260930T000000Z bookworm main' \
+       'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260930T000000Z bookworm-security main' \
+       > /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates openssh-server \
+    && dpkg-query -W > /opt/sft-os-packages.txt \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/AtlasOps
+COPY requirements/sft-pilot-linux-py312.lock /opt/sft-pilot-linux-py312.lock
+RUN python -m pip --isolated install \
+        --disable-pip-version-check \
+        --no-cache-dir \
+        --only-binary=:all: \
+        --require-hashes \
+        --index-url=https://pypi.org/simple \
+        -r /opt/sft-pilot-linux-py312.lock \
+    && python -m pip --isolated check \
+    && git --version
+
+COPY infra/training/sft-pilot/start-host.sh /usr/local/bin/start-sft-host
+RUN chmod 755 /usr/local/bin/start-sft-host
+
+# This image never begins training or opens a service automatically.
+CMD ["python", "-c", "pass"]

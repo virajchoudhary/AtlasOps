@@ -229,6 +229,15 @@ def test_future_valid_permit_uses_exact_host_and_single_gpu(monkeypatch, tmp_pat
     runtime.write_text(json.dumps({
         "image_digest": image, "hostname": "fake-approved-host",
         "package_versions": package_versions, "lock_sha256": "c" * 64,
+        "storage": {"free_bytes": 50 * 1024**3},
+        "os_package_inventory": {"status": "RECORDED", "sha256": "e" * 64},
+    }))
+    attestation = tmp_path / "attestation.json"
+    attestation.write_text(json.dumps({
+        "image_digest": image, "hostname": "fake-approved-host",
+        "verified": True, "verified_by": "independent-fake-reviewer",
+        "persistent_storage_verified": True, "storage_quota_verified": True,
+        "os_package_inventory_sha256": "e" * 64,
     }))
     plan = {
         "environment": {"package_versions": package_versions, "python_version": "3.12.11"},
@@ -270,6 +279,8 @@ def test_future_valid_permit_uses_exact_host_and_single_gpu(monkeypatch, tmp_pat
             "image_digest": image, "hostname": "fake-approved-host", "python_version": "3.12.11",
             "entitlement_verified": True, "storage_verified": True, "budget_approved": True,
             "runtime_manifest": str(runtime), "runtime_manifest_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(),
+            "image_attestation": str(attestation),
+            "image_attestation_sha256": hashlib.sha256(attestation.read_bytes()).hexdigest(),
             "gpu_name": "fake-A100", "gpu_memory_bytes": 80 * 1024**3, "cuda_runtime": "12.6",
         },
         "model_files_manifest": str(inventory),
@@ -281,6 +292,19 @@ def test_future_valid_permit_uses_exact_host_and_single_gpu(monkeypatch, tmp_pat
     result = sft_pilot_gate.require_execution_authority({"plan_sha256": "d" * 64}, permit, output_dir=output)
     assert result["run_id"] == "sft-pilot-test"
     assert not output.exists()
+    altered = json.loads(runtime.read_text())
+    altered["os_package_inventory"].pop("sha256")
+    runtime.write_text(json.dumps(altered))
+    approval["host"]["runtime_manifest_sha256"] = hashlib.sha256(runtime.read_bytes()).hexdigest()
+    permit.write_text(json.dumps(approval))
+    monkeypatch.setattr(sft_pilot_gate, "EXECUTION_APPROVAL_SHA256", hashlib.sha256(permit.read_bytes()).hexdigest())
+    with pytest.raises(ValueError, match="OS package"):
+        sft_pilot_gate.require_execution_authority({"plan_sha256": "d" * 64}, permit, output_dir=output)
+    altered["os_package_inventory"]["sha256"] = "e" * 64
+    runtime.write_text(json.dumps(altered))
+    approval["host"]["runtime_manifest_sha256"] = hashlib.sha256(runtime.read_bytes()).hexdigest()
+    permit.write_text(json.dumps(approval))
+    monkeypatch.setattr(sft_pilot_gate, "EXECUTION_APPROVAL_SHA256", hashlib.sha256(permit.read_bytes()).hexdigest())
     torch.cuda.device_count = lambda: 2
     with pytest.raises(ValueError, match="CUDA/BF16"):
         sft_pilot_gate.require_execution_authority({"plan_sha256": "d" * 64}, permit, output_dir=output)

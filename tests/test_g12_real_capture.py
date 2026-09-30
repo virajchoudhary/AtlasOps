@@ -553,11 +553,13 @@ def test_matching_generation_seed_remains_reviewable_without_a_gate_claim(tmp_pa
     assert manifest["time_to_resolve_s"] is None
 
 
-@pytest.mark.parametrize("requested_seed", [True, "17", 17.0, -1])
+@pytest.mark.parametrize(
+    "requested_seed", [True, "17", 17.0, -1, float("nan"), float("inf")]
+)
 def test_malformed_requested_seed_cannot_make_capture_reviewable(
     tmp_path, requested_seed
 ):
-    manifest, _bundle = _collect_fixture(
+    manifest, bundle = _collect_fixture(
         tmp_path,
         _complete_remediation([_complete_executed_negative_step()]),
         seed=requested_seed,
@@ -565,8 +567,11 @@ def test_malformed_requested_seed_cannot_make_capture_reviewable(
 
     assert manifest["status"] == "INCOMPLETE"
     assert "policy_seed_request_malformed" in manifest["problems"]
+    assert manifest["policy_seed"] is None
     assert manifest["empirical_claim_allowed"] is False
     assert manifest["reward"] is None
+    assert "NaN" not in (bundle / "g12_capture_manifest.json").read_text(encoding="utf-8")
+    assert "Infinity" not in (bundle / "g12_capture_manifest.json").read_text(encoding="utf-8")
 
 
 def test_guarded_pre_action_observation_survives_capture_without_gate_claim(tmp_path):

@@ -76,7 +76,8 @@ The requested policy seed and recorded
 `remediation.final.generation_seed` must be nonnegative exact integers
 and match. A malformed request or missing, malformed, or mismatched
 observation makes capture `INCOMPLETE` rather than presenting the
-request as execution provenance.
+request as execution provenance. Malformed requested seeds are null in
+the manifest rather than serialized as nonstandard JSON numbers.
 It leaves reward and TTR
 unevaluated and always sets `empirical_claim_allowed=false` and
 `gate_certification=NOT_CERTIFIED`; a capture requires independent review before

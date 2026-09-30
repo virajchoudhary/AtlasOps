@@ -476,6 +476,16 @@ def _adapt_native_sources(
             declaration,
             f"{arm} native source",
         )
+        terminal_record_ref = None
+        if arm == _ARM_ORDER[2]:
+            terminal_record = adapted["raw_records"][-1]
+            terminal_event = terminal_record.get("event")
+            if terminal_event in {"run_completed", "run_interrupted"}:
+                terminal_record_ref = {
+                    "event": terminal_event,
+                    "source_sha256": adapted["source_sha256"],
+                    "line": len(adapted["raw_records"]),
+                }
         if adapted["scheduled_scenario_ids"] != scenario_ids:
             raise ValueError(f"{arm} native source scheduled membership differs from schema")
         for episode in adapted["episodes"]:
@@ -497,6 +507,8 @@ def _adapt_native_sources(
             "source_sha256_status": "verified_against_raw_bytes",
             "run_outcome": adapted["run_outcome"],
         }
+        if arm == _ARM_ORDER[2]:
+            source_info_by_arm[arm]["terminal_record_ref"] = terminal_record_ref
     return episodes_by_arm, missing_by_arm, source_info_by_arm
 
 

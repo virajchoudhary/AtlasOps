@@ -503,7 +503,7 @@ async def evaluate_sft_split(
         RESULTS_DIR / "non_empirical" / "sft" / split_name
         / datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     )
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=selected_mode == "mock")
     episodes_file = out_dir / raw_file_name
 
     with episodes_file.open("x", encoding="utf-8", newline="\n") as stream:

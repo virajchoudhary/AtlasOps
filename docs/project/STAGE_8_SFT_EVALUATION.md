@@ -13,8 +13,10 @@ exists in the current evidence set, so G8 has no empirical model result.
   creation. Final-Test access and any use of the overlapping Leaderboard
   require a separately reviewed protocol and authorization; this Stage 8
   entrypoint has no override for them.
-- Empirical mode requires an explicit output directory; implicit mock output is
-  isolated under a unique non-empirical run directory.
+- Empirical mode requires an explicit, previously nonexistent output
+  directory, claimed exclusively before inference or artifact writes. An
+  existing empty directory or one containing a summary cannot be reused.
+  Implicit mock output remains isolated under a unique non-empirical run directory.
 - The completed manifest is parsed and SHA-256 hashed from the same bounded
   byte snapshot. Every declared checkpoint file and aggregate tree hash is
   verified at preflight and again during lazy loading, including immediately

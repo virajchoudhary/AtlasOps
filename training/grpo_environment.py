@@ -174,7 +174,16 @@ def _approval_allows_mutation(
 def _rollback_has_evidence(
     arguments: dict[str, Any], observation: Mapping[str, Any]
 ) -> bool:
-    if observation.get("success") is not True or not arguments.get("app") or not arguments.get("revision"):
+    observed_status = observation.get("observation_status")
+    if (
+        observation.get("success") is not True
+        or (
+            observed_status is not None
+            and (not isinstance(observed_status, str) or observed_status != "observed")
+        )
+        or not arguments.get("app")
+        or not arguments.get("revision")
+    ):
         return False
     history = observation.get("history") or []
     if not isinstance(history, list):
@@ -638,6 +647,7 @@ class DirectPolicyEnvironment:
             pre_action_observation = {
                 "tool": reader_name,
                 "success": read_result.get("success") is True,
+                "observation_status": read_result.get("observation_status"),
                 "history": read_result.get("history")
                 if tool == "argocd_rollback"
                 else None,
@@ -656,6 +666,7 @@ class DirectPolicyEnvironment:
                     f"{tool} target was not confirmed by the live observation",
                     completion_text,
                     action,
+                    pre_action_observation=pre_action_observation,
                 )
 
         tool_result = await _maybe_await(
@@ -765,12 +776,15 @@ class DirectPolicyEnvironment:
         reason: str,
         completion_text: str,
         action: dict[str, Any] | None = None,
+        *,
+        pre_action_observation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "status": "blocked",
             "scorable": True,
             "policy_completion": completion_text,
             "policy_action": action,
+            "pre_action_observation": pre_action_observation,
             "executed_actions": [],
             "verification": None,
             "env_resolved": False,

@@ -1110,6 +1110,47 @@ async def test_live_evidence_must_match_before_mutation():
     assert result["pre_action_observation"]["history"] == [{"id": 7, "revision": "hash"}]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("observed_status", ["unavailable", [], {}])
+async def test_rollback_invalid_read_status_blocks_mutation(observed_status):
+    executed = []
+    environment = DirectPolicyEnvironment(
+        tool_registry={
+            "argocd_rollback": lambda **kwargs: executed.append(kwargs),
+            "argocd_app_history": lambda app: {
+                "success": True,
+                "observation_status": observed_status,
+                "history": [{"id": 7}],
+                "access_token": "reader-secret-must-not-be-persisted",
+            },
+        },
+        policy_check=lambda role, tool, arguments, state: None,
+        **LIVE_EXECUTION,
+    )
+    state = _state()
+    state["triage"]["severity"] = "P2"
+
+    result = await environment.step(
+        _completion(
+            tool="argocd_rollback",
+            arguments={"app": "checkoutservice", "revision": "7"},
+        ),
+        scenario_id="single_fault/sf-002",
+        state=state,
+    )
+
+    assert executed == []
+    assert result["terminal_block"]["category"] == "missing_evidence"
+    assert result["pre_action_observation"] == {
+        "tool": "argocd_app_history",
+        "success": True,
+        "observation_status": observed_status,
+        "history": [{"id": 7}],
+        "active_experiments": None,
+    }
+    assert "reader-secret-must-not-be-persisted" not in json.dumps(result)
+
+
 def test_training_prompts_use_train_split_without_benchmark_truth():
     prompts = grpo.build_direct_action_prompts(
         ["single_fault", "cascade", "multi_fault", "named_replays"]

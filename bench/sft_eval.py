@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import subprocess
 from collections.abc import Awaitable, Callable
@@ -164,9 +165,31 @@ def _parse_prediction(raw_text: str) -> dict[str, Any]:
     prediction = json.loads(text)
     if not isinstance(prediction, dict):
         raise TypeError("SFT prediction must be a JSON object")
+    severity = prediction.get("severity")
+    if not isinstance(severity, str) or severity not in {"P0", "P1", "P2", "P3"}:
+        raise ValueError("SFT prediction requires a valid severity")
+    affected_services = prediction.get("affected_services")
+    if (
+        not isinstance(affected_services, list)
+        or not affected_services
+        or any(
+            not isinstance(service, str) or not service.strip()
+            for service in affected_services
+        )
+    ):
+        raise ValueError("SFT prediction requires non-empty affected service names")
     root_cause = prediction.get("root_cause")
     if not isinstance(root_cause, str) or not root_cause.strip():
         raise ValueError("SFT prediction requires a non-empty root_cause")
+    confidence = prediction.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise ValueError("SFT prediction confidence must be a finite number in [0, 1]")
+    try:
+        confidence_is_finite = math.isfinite(confidence)
+    except OverflowError:
+        confidence_is_finite = False
+    if not confidence_is_finite or not 0 <= confidence <= 1:
+        raise ValueError("SFT prediction confidence must be a finite number in [0, 1]")
     return prediction
 
 
@@ -541,6 +564,11 @@ async def evaluate_sft_split(
     tag = f"sft-{split_name}-{model_name.replace(':', '-').replace('/', '-')}"
     summary = _compute_summary(results, tag=tag, model=model_name)
     valid = [row for row in results if row.get("status") == "ok"]
+    diagnostic_schema_conformance_rate = round(
+        sum(1 for row in results if row.get("format_compliant"))
+        / max(len(results), 1),
+        4,
+    )
     summary.update(
         {
             "split": split_name,
@@ -566,10 +594,17 @@ async def evaluate_sft_split(
                 / max(len(results), 1),
                 4,
             ),
-            "format_compliance_rate": round(
-                sum(1 for row in valid if row.get("format_compliant"))
-                / max(len(valid), 1),
-                4,
+            "diagnostic_schema_conformance_rate": (
+                diagnostic_schema_conformance_rate
+                if selected_mode == "empirical"
+                else None
+            ),
+            "format_compliance_rate": diagnostic_schema_conformance_rate,
+            "format_compliance_basis": (
+                "G8 diagnostic JSON response schema conformance only; "
+                "not G13 common action/Comms format"
+                if selected_mode == "empirical"
+                else "NON_EMPIRICAL deterministic mock fixture; diagnostic schema not evaluated"
             ),
             "tool_arguments_valid_rate": (
                 round(

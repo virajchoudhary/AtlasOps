@@ -188,6 +188,49 @@ def _prediction() -> str:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "remove"),
+    [
+        ("severity", None, True),
+        ("severity", "P4", False),
+        ("affected_services", None, True),
+        ("affected_services", "checkout", False),
+        ("affected_services", [], False),
+        ("affected_services", [" "], False),
+        ("root_cause", None, True),
+        ("root_cause", "", False),
+        ("confidence", None, True),
+        ("confidence", True, False),
+        ("confidence", float("nan"), False),
+        ("confidence", float("inf"), False),
+        ("confidence", -0.1, False),
+        ("confidence", 1.1, False),
+        ("confidence", "0.5", False),
+    ],
+)
+def test_diagnostic_prediction_rejects_incomplete_or_invalid_schema(
+    field,
+    value,
+    remove,
+):
+    prediction = json.loads(_prediction())
+    if remove:
+        prediction.pop(field)
+    else:
+        prediction[field] = value
+
+    with pytest.raises(ValueError, match="SFT prediction"):
+        sft_eval._parse_prediction(json.dumps(prediction, allow_nan=True))
+
+
+@pytest.mark.parametrize("confidence", [0, 1])
+def test_diagnostic_prediction_accepts_confidence_endpoints(confidence):
+    prediction = json.loads(_prediction())
+    prediction["confidence"] = confidence
+
+    assert sft_eval._parse_prediction(json.dumps(prediction))["confidence"] == confidence
+
+
 def test_checkpoint_manifest_digest_is_bound_to_validated_snapshot(
     tmp_path,
     monkeypatch,
@@ -553,6 +596,80 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
         "resolution_rate" not in tier_metrics
         for tier_metrics in summary["per_tier"].values()
     )
+
+
+def test_empirical_schema_conformance_counts_all_scheduled_outputs(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    scenario_ids = list(VAL_SPLIT[:4])
+    monkeypatch.setattr(sft_eval, "get_split", lambda split_name: scenario_ids)
+    malformed_json = "{not-json"
+    invalid_schema = json.dumps(
+        {
+            "affected_services": ["checkout"],
+            "root_cause": "service resource saturation",
+            "confidence": 0.5,
+        }
+    )
+    responses = iter((_prediction(), invalid_schema, malformed_json))
+    loader_calls = []
+    _install_fake_model_loaders(monkeypatch, loader_calls)
+    inference_calls = 0
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        nonlocal inference_calls
+        response_index = inference_calls
+        inference_calls += 1
+        if response_index == 3:
+            raise RuntimeError("synthetic inference failure")
+        return next(responses)
+
+    summary = asyncio.run(
+        evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=tmp_path / "output",
+            inference_fn=inference,
+        )
+    )
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "output" / "sft_val_episodes.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert inference_calls == len(scenario_ids)
+    assert [row["format_compliant"] for row in rows] == [True, False, False, False]
+    assert rows[1]["raw_model_response"] == invalid_schema
+    assert rows[2]["raw_model_response"] == malformed_json
+    assert rows[3]["raw_model_response"] == ""
+    assert all(row["status"] == "error" for row in rows[1:])
+    assert [row["error_category"] for row in rows[1:]] == [
+        "invalid_value",
+        "invalid_json",
+        "runtime_error",
+    ]
+    assert rows[3]["error"] == "runtime_error: inference failed"
+    assert summary["failed_scenarios"] == 3
+    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_claim_allowed"] is False
+    assert summary["format_compliance_rate"] == 0.25
+    assert summary["diagnostic_schema_conformance_rate"] == 0.25
+    assert summary["format_compliance_basis"] == (
+        "G8 diagnostic JSON response schema conformance only; "
+        "not G13 common action/Comms format"
+    )
+    assert summary["environment_resolution_evaluated"] is False
+    assert summary["resolution_rate"] is None
+    assert summary["avg_reward_contract"] is None
+    assert summary["avg_time_to_resolve_s"] is None
+    assert all(row["resolved"] is None for row in rows)
+    assert all(row["time_to_resolve_s"] is None for row in rows)
+    assert loader_calls == []
 
 
 def test_lazy_sft_load_rejects_checkpoint_tampered_after_outer_preflight(

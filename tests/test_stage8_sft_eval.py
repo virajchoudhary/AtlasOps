@@ -48,6 +48,8 @@ class TestStage8SFTEvaluation:
 
         assert summary["total_scenarios"] == 6
         assert summary["format_compliance_rate"] == 1.0
+        assert summary["diagnostic_schema_conformance_rate"] is None
+        assert summary["format_compliance_basis"].startswith("NON_EMPIRICAL")
         assert summary["tool_arguments_valid_rate"] == 1.0
         assert summary["resolution_rate"] > 0.0
         assert summary["avg_reward_contract"] > 0.50

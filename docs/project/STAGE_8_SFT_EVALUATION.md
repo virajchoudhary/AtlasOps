@@ -4,6 +4,9 @@
 
 The SFT evaluator is checkpoint-backed and fail closed. No valid completed SFT checkpoint
 exists in the current evidence set, so G8 has no empirical model result.
+The master pre-RL resolution criterion is not met by this diagnosis-only path;
+the [D12 decision proposal](G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md) remains
+unapproved and does not change this evaluator or the gate status.
 
 ## Evaluation Contract
 

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T16:14:46.322154+00:00",
+  "generated_at": "2026-09-30T16:45:36.722300+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 321,
+  "asset_count": 322,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
@@ -157,8 +157,8 @@
       "size_bytes": 14328
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
-      "sha256": "f603c2b2d205bf9ebeb9989dfc7eca6896bd62324e7d4c90a2e13ebd11484437",
-      "size_bytes": 8026
+      "sha256": "bef94fe30306bf51ffc3c2865e18a515f582c69d1668cd0f316b7e421930b1c0",
+      "size_bytes": 8112
     },
     "docs/project/G7_D3_CANDIDATE_REVIEW_V1.md": {
       "sha256": "8cd83bb9bda5e6093efe2a7e67884224336a4445dcb4a8298d3a207ef9becaf8",
@@ -207,6 +207,10 @@
     "docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md": {
       "sha256": "b9cd624b42a61ebe9f52ee3532013294bc3f8432a895d6469f2e7d4a05e1efb5",
       "size_bytes": 1990
+    },
+    "docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md": {
+      "sha256": "486b2d4a2ca1c41aa241e8d9049fe7599009b8e369f0e6f45c4f757326b90e69",
+      "size_bytes": 3629
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md": {
       "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",
@@ -285,8 +289,8 @@
       "size_bytes": 10693
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
-      "sha256": "b353b754f1ec5dbe059a7eb59ec632df807449bd00934a002b9f1827da73e7b5",
-      "size_bytes": 5428
+      "sha256": "981063faa36f74eea75fe82d14b13c31db0cb91e75969ea9ab69880d8fb8a744",
+      "size_bytes": 5650
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
       "sha256": "8f67c3ef327feb2caa76511dd21de77b583baf841d0d31895689ab81bab9c73d",
@@ -865,8 +869,8 @@
       "size_bytes": 46211
     },
     "scripts/package_submission.py": {
-      "sha256": "16ef6855e688bf71471c567bb66b8a2682a66f8c42b5ea583fce20e9702d1a60",
-      "size_bytes": 16278
+      "sha256": "524d1d76b0e8c669a3109408a5425f879ecf3da7310a5d805dc29ecb4f705f25",
+      "size_bytes": 16342
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -1237,8 +1241,8 @@
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "e7dee5018528c54fc7a1365f397d8a5aec5525bc6164c8463c1bde3dcf613b5c",
-      "size_bytes": 29577
+      "sha256": "bc69c03aef8fcb76a0dbecfcbccf574ead65afec51eb3067325deeb6436f54bc",
+      "size_bytes": 29645
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

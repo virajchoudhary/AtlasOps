@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 from types import ModuleType
 from pathlib import Path
 
@@ -851,6 +852,18 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
 
     assert summary["evaluation_mode"] == "empirical"
     assert summary["empirical_inference_executed"] is True
+    assert summary["scheduled_inference_count"] == len(VAL_SPLIT)
+    assert summary["inference_response_received_count"] == len(VAL_SPLIT)
+    assert summary["inference_execution_confirmed_count"] == len(VAL_SPLIT)
+    assert summary["inference_execution_unknown_count"] == 0
+    assert summary["empirical_inference_executed_basis"] == (
+        "any scheduled empirical inference callback returned a response"
+    )
+    assert summary["inference_execution_counts_basis"] == (
+        "Counts use all scheduled empirical scenarios; confirmed means a response "
+        "returned, unknown means no response returned and is not proof of "
+        "non-execution"
+    )
     assert summary["empirical_claim_allowed"] is False
     assert summary["non_empirical"] is True
     assert summary["environment_resolution_evaluated"] is False
@@ -868,6 +881,14 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
         "resolution_rate" not in tier_metrics
         for tier_metrics in summary["per_tier"].values()
     )
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "output" / "sft_val_episodes.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["response_received"] is True for row in rows)
+    assert all(row["inference_execution_certainty"] == "confirmed" for row in rows)
 
 
 def test_empirical_output_rejects_existing_summary_before_inference(tmp_path):
@@ -972,6 +993,19 @@ def test_mock_output_remains_compatible_with_existing_directory(tmp_path):
     assert unrelated_file.read_text(encoding="utf-8") == "unrelated mock output"
     assert (output_dir / "sft_val_episodes.jsonl").is_file()
     assert (output_dir / "sft_val_summary.json").is_file()
+    assert summary["empirical_inference_executed"] is False
+    assert summary["scheduled_inference_count"] == 0
+    mock_rows = [
+        json.loads(line)
+        for line in (output_dir / "sft_val_episodes.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["response_received"] is False for row in mock_rows)
+    assert all(
+        row["inference_execution_certainty"] == "not_executed"
+        for row in mock_rows
+    )
 
 
 def test_empirical_schema_conformance_counts_all_scheduled_outputs(
@@ -1023,6 +1057,13 @@ def test_empirical_schema_conformance_counts_all_scheduled_outputs(
     assert rows[1]["raw_model_response"] == invalid_schema
     assert rows[2]["raw_model_response"] == malformed_json
     assert rows[3]["raw_model_response"] == ""
+    assert [row["response_received"] for row in rows] == [True, True, True, False]
+    assert [row["inference_execution_certainty"] for row in rows] == [
+        "confirmed",
+        "confirmed",
+        "confirmed",
+        "unknown",
+    ]
     assert all(row["status"] == "error" for row in rows[1:])
     assert [row["error_category"] for row in rows[1:]] == [
         "invalid_value",
@@ -1031,7 +1072,11 @@ def test_empirical_schema_conformance_counts_all_scheduled_outputs(
     ]
     assert rows[3]["error"] == "runtime_error: inference failed"
     assert summary["failed_scenarios"] == 3
-    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_inference_executed"] is True
+    assert summary["scheduled_inference_count"] == 4
+    assert summary["inference_response_received_count"] == 3
+    assert summary["inference_execution_confirmed_count"] == 3
+    assert summary["inference_execution_unknown_count"] == 1
     assert summary["empirical_claim_allowed"] is False
     assert summary["format_compliance_rate"] == 0.25
     assert summary["diagnostic_schema_conformance_rate"] == 0.25
@@ -1167,7 +1212,7 @@ def test_lazy_sft_load_rejects_checkpoint_tampered_after_outer_preflight(
     assert validation_calls == 1 + len(VAL_SPLIT)
     assert loader_calls == []
     assert summary["failed_scenarios"] == len(VAL_SPLIT)
-    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_inference_executed"] is None
     assert summary["empirical_claim_allowed"] is False
     rows = [
         json.loads(line)
@@ -1421,11 +1466,99 @@ def test_empirical_failure_never_falls_back_to_mock_or_persists_exception_text(t
         .splitlines()
     ]
     assert summary["failed_scenarios"] == len(VAL_SPLIT)
-    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_inference_executed"] is None
+    assert summary["scheduled_inference_count"] == len(VAL_SPLIT)
+    assert summary["inference_response_received_count"] == 0
+    assert summary["inference_execution_confirmed_count"] == 0
+    assert summary["inference_execution_unknown_count"] == len(VAL_SPLIT)
     assert all(row["evaluation_mode"] == "empirical" for row in rows)
     assert all(row["error_category"] == "runtime_error" for row in rows)
     assert all(row["error"] == "runtime_error: inference failed" for row in rows)
+    assert all(row["response_received"] is False for row in rows)
+    assert all(row["inference_execution_certainty"] == "unknown" for row in rows)
     serialized = (tmp_path / "output" / "sft_val_episodes.jsonl").read_text(
         encoding="utf-8"
     )
     assert secret_marker not in serialized
+
+
+@pytest.mark.asyncio
+async def test_cancellation_persists_interrupted_row_without_advancing_or_claiming(
+    tmp_path,
+    monkeypatch,
+):
+    checkpoint = _checkpoint(tmp_path)
+    scenario_ids = list(VAL_SPLIT[:3])
+    monkeypatch.setattr(sft_eval, "get_split", lambda _: scenario_ids)
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+    calls = 0
+
+    def synthetic_generate(messages, checkpoint_path, generation_config):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _prediction()
+        if calls == 2:
+            worker_started.set()
+            release_worker.wait()
+            worker_finished.set()
+            return _prediction()
+        raise AssertionError("cancelled evaluation advanced to another scenario")
+
+    monkeypatch.setattr(
+        sft_eval.LocalSFTInference,
+        "_generate",
+        staticmethod(synthetic_generate),
+    )
+    output_dir = tmp_path / "cancelled-output"
+    task = asyncio.create_task(
+        evaluate_sft_split(
+            "val",
+            mode="empirical",
+            checkpoint=checkpoint,
+            output_dir=output_dir,
+        )
+    )
+    try:
+        deadline = asyncio.get_running_loop().time() + 5
+        while not worker_started.is_set() and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.01)
+        assert worker_started.is_set()
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        rows = [
+            json.loads(line)
+            for line in (output_dir / "sft_val_episodes.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        assert len(rows) == 2
+        assert rows[0]["status"] == "ok"
+        assert rows[0]["response_received"] is True
+        assert rows[0]["inference_execution_certainty"] == "confirmed"
+        interrupted = rows[1]
+        assert interrupted["scenario_id"] == scenario_ids[1]
+        assert interrupted["status"] == "interrupted"
+        assert interrupted["response_received"] is False
+        assert interrupted["inference_execution_certainty"] == "unknown"
+        assert interrupted["raw_model_response"] == ""
+        assert interrupted["prediction"] is None
+        assert interrupted["diagnostic_f1"] is None
+        assert interrupted["diagnostic_precision"] is None
+        assert interrupted["diagnostic_recall"] is None
+        assert interrupted["format_compliant"] is False
+        assert interrupted["empirical_claim_allowed"] is False
+        assert calls == 2
+        assert not (output_dir / "sft_val_summary.json").exists()
+        assert worker_finished.is_set() is False
+    finally:
+        release_worker.set()
+        deadline = asyncio.get_running_loop().time() + 5
+        while not worker_finished.is_set() and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.01)
+        assert worker_finished.is_set()

@@ -78,6 +78,15 @@ unapproved and does not change this evaluator or the gate status.
 - Raw requests, responses, parse failures, checkpoint identity, evaluator source,
   generation settings, split seed, and the SHA-256 digest of the exact ordered frozen
   split are persisted.
+  Response receipt and inference-execution certainty are recorded separately
+  from diagnostic/schema validity. A returned malformed response is evidence
+  of a response, not a successful diagnosis. An exception without completion
+  evidence remains execution-unknown, not proof that no generation ran.
+  Cooperative cancellation retains an interrupted, nonclaimable active row
+  and propagates without starting another scenario or writing a completed
+  summary. The local loader uses `asyncio.to_thread`: cancellation of the
+  waiter does not establish that the background worker stopped. Hard process
+  termination cannot guarantee a cooperative-cancellation row.
 - The separate G13 candidate adapter rechecks the native diagnostic response
   schema and equality of raw and parsed successful output. Current G8 episode
   rows do not bind both run and requested model identity; the adapter reports

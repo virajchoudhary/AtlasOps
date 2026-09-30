@@ -82,6 +82,7 @@ IMPLEMENTATION_PATHS = (
     "agents/tool_policy.py",
     "requirements/train-constraints.txt",
     "training/sft_candidate.py",
+    "training/sft_candidate_compatibility.py",
     "training/sft_provenance.py",
     "training/sft_rendering.py",
     "training/sft_tokenizer_preflight.py",
@@ -998,7 +999,9 @@ def run_preflight(
     if manifest_raw is None:
         raise ValueError(f"SFT candidate manifest is unavailable ({status})")
     manifest = _json_object(manifest_raw, "SFT candidate manifest")
-    candidate = validate_candidate_snapshot(snapshot, manifest)
+    from training.sft_candidate_compatibility import validate_pilot_candidate
+
+    candidate = validate_pilot_candidate(snapshot, manifest)
     if (
         candidate["corpus_version"] != CORPUS_VERSION
         or candidate["schema_version"] != SCHEMA_VERSION

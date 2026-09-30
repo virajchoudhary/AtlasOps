@@ -12,7 +12,7 @@ FILES = (
     "requirements/sft-pilot-linux-py312.lock",
     "infra/training/sft-pilot/Dockerfile",
     "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json",
-    "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json",
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json",
     "training/templates/qwen2_5_tool_sft.jinja",
 )
 
@@ -26,7 +26,7 @@ def freeze(path: Path) -> dict:
     if len(packages) != 72:
         raise ValueError("Expected complete reviewed 72-package environment")
     report = json.loads(
-        (REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json").read_text()
+        (REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json").read_text()
     )
     if report["status"] != "PASS" or report["summary"]["checked_rows"] != 68:
         raise ValueError("Cannot freeze a failing or incomplete tokenizer preflight")
@@ -71,6 +71,6 @@ def freeze(path: Path) -> dict:
 
 
 if __name__ == "__main__":
-    destination = REPO_ROOT / "config/sft_pilot_v2.json"
+    destination = REPO_ROOT / "config/sft_pilot_v3.json"
     freeze(destination)
     print(canonical_bytes_sha256(destination.read_bytes()))

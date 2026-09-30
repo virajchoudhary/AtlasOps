@@ -435,6 +435,7 @@ def _valid_incident() -> dict:
         "timeout_seconds": 30,
         "poll_interval_seconds": 2,
         "settled": True,
+        "timed_out": False,
         "observations": [
             {
                 "timestamp": "2026-09-24T00:00:01+00:00",
@@ -630,6 +631,113 @@ def test_settling_requires_persisted_bounded_observations():
     )
     assert result["settling_satisfied"] is False
     assert result["criteria"]["13_objective_env_resolved"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("duration_seconds", 30.0004),
+        ("elapsed_seconds", 30.0004),
+    ],
+)
+def test_causal_predicate_rejects_over_budget_settling_evidence(field, value):
+    incident = _valid_incident()
+    if field == "elapsed_seconds":
+        incident["settling"]["observations"][-1][field] = value
+    else:
+        incident["settling"][field] = value
+
+    result = evaluate_causal_g4_predicate(
+        True,
+        True,
+        True,
+        incident,
+        False,
+        settling_completed=True,
+        primary_evidence_persisted=True,
+    )
+
+    assert result["settling_satisfied"] is False
+    assert result["criteria"]["13_objective_env_resolved"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("timeout_seconds", True),
+        ("poll_interval_seconds", True),
+        ("duration_seconds", True),
+        ("duration_seconds", False),
+        ("duration_seconds", -0.001),
+        ("duration_seconds", float("nan")),
+        ("duration_seconds", float("inf")),
+        ("elapsed_seconds", True),
+        ("elapsed_seconds", False),
+        ("elapsed_seconds", -0.001),
+        ("elapsed_seconds", float("nan")),
+        ("elapsed_seconds", float("inf")),
+    ],
+)
+def test_settling_report_rejects_invalid_timing_values(field, value):
+    incident = _valid_incident()
+    if field == "elapsed_seconds":
+        incident["settling"]["observations"][-1][field] = value
+    else:
+        incident["settling"][field] = value
+
+    assert runner._settling_report_satisfied(incident) is False
+
+
+def test_settling_report_accepts_observation_and_duration_at_deadline():
+    incident = _valid_incident()
+    incident["settling"]["duration_seconds"] = 30.0
+    incident["settling"]["observations"][-1]["elapsed_seconds"] = 30.0
+
+    assert runner._settling_report_satisfied(incident) is True
+
+
+def test_current_settling_report_requires_elapsed_for_each_observation():
+    incident = _valid_incident()
+    del incident["settling"]["observations"][-1]["elapsed_seconds"]
+
+    assert runner._settling_report_satisfied(incident) is False
+
+
+def test_settling_report_requires_explicit_not_timed_out():
+    incident = _valid_incident()
+    del incident["settling"]["timed_out"]
+
+    assert runner._settling_report_satisfied(incident) is False
+
+
+def test_settling_report_rejects_elapsed_after_declared_duration():
+    incident = _valid_incident()
+    incident["settling"]["observations"][-1]["elapsed_seconds"] = 1.001
+
+    assert runner._settling_report_satisfied(incident) is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("timeout_seconds", 31), ("poll_interval_seconds", 999)],
+)
+def test_settling_report_cannot_redeclare_profile_budget(field, value):
+    incident = _valid_incident()
+    incident["settling"][field] = value
+
+    assert runner._settling_report_satisfied(incident) is False
+
+
+def test_settling_report_cannot_use_extended_budget_for_late_success():
+    incident = _valid_incident()
+    incident["settling"].update(
+        timeout_seconds=31,
+        poll_interval_seconds=999,
+        duration_seconds=30.5,
+    )
+    incident["settling"]["observations"][-1]["elapsed_seconds"] = 30.5
+
+    assert runner._settling_report_satisfied(incident) is False
 
 
 def test_comms_requires_real_postmortem_tool_result_and_verified_status():
@@ -1199,28 +1307,133 @@ def test_max_turn_forced_conclusion_has_no_attributed_execution():
     )
 
 
-def test_settling_is_bounded_and_preserves_verifier_call_contract():
-    responses = [
-        SimpleNamespace(env_resolved=False, verification_status="failed", failed_checks=["chaos_mesh_cleared"]),
-        SimpleNamespace(env_resolved=True, verification_status="passed", failed_checks=[]),
-    ]
+class _FakeMonotonicClock:
+    def __init__(self, start: float = 100.0):
+        self.current = start
 
-    def verify(**kwargs):
-        assert kwargs["scenario_id"] == "single_fault/sf-002"
-        assert kwargs["agent_claimed_resolved"] is True
-        return responses.pop(0)
+    def monotonic(self) -> float:
+        return self.current
 
-    with patch("agents.verifier.verify_environment", side_effect=verify):  # noqa: SIM117
-        with patch("asyncio.sleep", new_callable=AsyncMock) as sleep:
-            from agents.coordinator import settle_environment
+    def advance(self, seconds: float) -> None:
+        self.current += seconds
 
-            report = asyncio.run(settle_environment(
+
+def _run_settle_environment_with_clock(
+    monkeypatch,
+    clock: _FakeMonotonicClock,
+    verify,
+    *,
+    timeout_seconds: float = 30,
+    poll_interval_seconds: float = 2,
+):
+    import agents.coordinator as coordinator
+
+    sleep_calls = []
+
+    async def sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        clock.advance(seconds)
+
+    monkeypatch.setattr(coordinator, "time", SimpleNamespace(monotonic=clock.monotonic))
+    monkeypatch.setattr(coordinator, "asyncio", SimpleNamespace(sleep=sleep))
+    monkeypatch.setattr(
+        coordinator,
+        "datetime_now_utc",
+        lambda: "2026-09-30T00:00:00+00:00",
+    )
+    monkeypatch.setattr(coordinator, "SETTLE_TIMEOUT_SECONDS", timeout_seconds)
+    monkeypatch.setattr(coordinator, "SETTLE_POLL_INTERVAL_SECONDS", poll_interval_seconds)
+    with patch("agents.verifier.verify_environment", side_effect=verify):
+        report = asyncio.run(
+            coordinator.settle_environment(
                 scenario_id="single_fault/sf-002",
                 agent_claimed_resolved=True,
                 alert={"commonLabels": {}},
                 incident_context={},
-            ))
+            )
+        )
+    return report, sleep_calls
+
+
+def test_settling_accepts_authoritative_success_before_deadline(monkeypatch):
+    clock = _FakeMonotonicClock()
+
+    def verify(**kwargs):
+        assert kwargs["scenario_id"] == "single_fault/sf-002"
+        assert kwargs["agent_claimed_resolved"] is True
+        clock.advance(29.9996)
+        return SimpleNamespace(
+            env_resolved=True,
+            verification_status="passed",
+            failed_checks=[],
+        )
+
+    report, sleep_calls = _run_settle_environment_with_clock(monkeypatch, clock, verify)
+
     assert report["settled"] is True
-    assert len(report["observations"]) == 2
+    assert report["timed_out"] is False
+    assert report["duration_seconds"] == pytest.approx(29.9996)
+    assert report["observations"][0]["elapsed_seconds"] == pytest.approx(29.9996)
     assert report["timeout_seconds"] == 30
-    sleep.assert_called_once_with(2)
+    assert sleep_calls == []
+
+
+def test_settling_does_not_accept_success_returned_after_deadline(monkeypatch):
+    clock = _FakeMonotonicClock()
+
+    def verify(**_kwargs):
+        clock.advance(30.0004)
+        return SimpleNamespace(
+            env_resolved=True,
+            verification_status="passed",
+            failed_checks=[],
+        )
+
+    report, sleep_calls = _run_settle_environment_with_clock(monkeypatch, clock, verify)
+
+    assert report["settled"] is False
+    assert report["timed_out"] is True
+    assert report["duration_seconds"] == pytest.approx(30.0004)
+    assert report["observations"] == [
+        {
+            "timestamp": "2026-09-30T00:00:00+00:00",
+            "elapsed_seconds": pytest.approx(30.0004),
+            "env_resolved": True,
+            "verification_status": "passed",
+            "failed_checks": [],
+        }
+    ]
+    assert report["timeout_seconds"] == 30
+    assert sleep_calls == []
+    assert runner._settling_report_satisfied({"settling": report}) is False
+
+
+def test_settling_failed_observations_poll_only_until_deadline(monkeypatch):
+    clock = _FakeMonotonicClock()
+    verify_calls = []
+
+    def verify(**_kwargs):
+        verify_calls.append(clock.current)
+        clock.advance(0.125)
+        return SimpleNamespace(
+            env_resolved=False,
+            verification_status="failed",
+            failed_checks=["chaos_mesh_cleared"],
+        )
+
+    report, sleep_calls = _run_settle_environment_with_clock(
+        monkeypatch,
+        clock,
+        verify,
+        timeout_seconds=5,
+        poll_interval_seconds=2,
+    )
+
+    assert len(verify_calls) == 3
+    assert sleep_calls == [2, 2, 0.625]
+    assert report["settled"] is False
+    assert report["timed_out"] is True
+    assert report["duration_seconds"] == 5
+    assert report["timeout_seconds"] == 5
+    assert report["observations"][-1]["elapsed_seconds"] == 4.375
+    assert report["observations"][-1]["failed_checks"] == ["chaos_mesh_cleared"]

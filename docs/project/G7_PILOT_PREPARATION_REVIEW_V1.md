@@ -29,6 +29,16 @@ The final plan is `config/sft_pilot_v2.json`, SHA-256
 Earlier plan/report hashes below are preserved historical review snapshots,
 not current gate inputs. No evidence file was overwritten for reconciliation.
 
+The subsequent main #128 settling-deadline change is covered by the exact
+[pilot compatibility proof](G7_SETTLING_SOURCE_COMPATIBILITY_V1.md), not a
+rehash of the corpus or weakening of the original validator. The final real
+offline run passes with report v4 SHA-256
+`64bd54a2f0e15ad9bf2b70f1c9a66147d02bc478cc566e1c39889ae8586ea4be`;
+the current plan v3 SHA-256 is
+`a227ea6e45c0299ed5675785853a3b7de6087d8f4862397d8f410371304c7362`.
+The v1 validator remains unchanged and rejects source drift. Only the
+preparation-approved pilot extension uses the pinned compatibility pair.
+
 ## Spec
 
 The verifier independently checked the current files and confirmed:

@@ -5,7 +5,7 @@ The subsequent [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md)
 records limited authority, not execution. The exact pin is resolved in
 [D2 metadata](G7_D2_PINNED_MODEL_V1.md), the 72-package hash-locked candidate in
 [the environment record](G7_PILOT_ENVIRONMENT_V1.md), and the final all-row
-offline preflight in `artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json`.
+offline preflight in `artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json`.
 It passes at 8192 tokens; 54 rows exceed 2048, so the declared pilot plan uses
 8192 and preserves the negative checks. The runner now implements
 `--preflight-only` and a hash-bound execution-record schema; no execution digest
@@ -14,7 +14,8 @@ planning statements superseded by those prepared artifacts.
 The final preflight reuses the merged PR #126 mask/offset core with strict
 local tokenizer-file inventory and the pilot report adapter. Earlier reports
 and `config/sft_pilot_v1.json` remain preserved; the current launch plan is
-`config/sft_pilot_v2.json`.
+`config/sft_pilot_v3.json`, including the exact
+[settling-only compatibility review](G7_SETTLING_SOURCE_COMPATIBILITY_V1.md).
 Qwen2.5-7B-Instruct QLoRA remains the planned baseline. This checklist
 defines evidence for one bounded pilot; it does not authorize remote compute,
 spending, model-weight access or download, training, evaluation, or final-Test

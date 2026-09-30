@@ -504,10 +504,10 @@ def _verify_recorded_corpus_manifest(
         return False, "origin_mismatch"
     if source_manifest.get("data_origin") == REVIEW_CANDIDATE_ORIGIN:
         try:
-            from training.sft_candidate import validate_candidate_snapshot
+            from training.sft_candidate_compatibility import validate_pilot_candidate
 
             rows, inventory = _parse_training_corpus_bytes(corpus_bytes)
-            validate_candidate_snapshot(
+            validate_pilot_candidate(
                 TrainingCorpusSnapshot(corpus_path, corpus_bytes, rows, inventory),
                 source_manifest,
             )
@@ -694,11 +694,11 @@ def _corpus_manifest_provenance(
         and data_origin == REVIEW_CANDIDATE_ORIGIN
         and synthetic is True
     ):
-        from training.sft_candidate import validate_candidate_snapshot
+        from training.sft_candidate_compatibility import validate_pilot_candidate
 
         if corpus_snapshot is None:
             raise ValueError("Review candidate provenance requires the consumed corpus snapshot")
-        validate_candidate_snapshot(corpus_snapshot, source_manifest)
+        validate_pilot_candidate(corpus_snapshot, source_manifest)
         is_known_synthetic_corpus = True
     if is_known_synthetic_corpus:
         origin_source = "adjacent_corpus_manifest"

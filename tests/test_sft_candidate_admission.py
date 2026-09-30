@@ -155,15 +155,43 @@ def test_source_revision_must_contain_generator_and_exact_hashes(monkeypatch):
         sft_candidate.validate_source_revision({"source_git_sha": "a" * 40})
 
 
-def test_stored_candidate_is_reproducible_and_review_only():
+def test_stored_candidate_preserves_frozen_provenance_but_current_drift_blocks_admission():
     from training.sft_provenance import REPO_ROOT
+    from training.build_sft_candidate import build_candidate_rows
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
     assert corpus.is_file(), "required versioned review corpus is missing"
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
-    report = sft_candidate.validate_candidate_snapshot(snapshot, manifest)
-    assert report["d3_approval"] == "PENDING"
-    assert report["technical_admissibility"] == "PASS"
-    with pytest.raises(ValueError, match="D3 approval PENDING"):
+    sft_candidate.validate_source_revision(manifest)
+    assert sft_candidate.canonical_bytes_sha256(snapshot.raw_bytes) == manifest["corpus_sha256_canonical_lf"]
+    assert sft_candidate.canonical_json_sha256(build_candidate_rows()) == manifest["rows_semantic_sha256"]
+    assert manifest["d3_approval"] == "PENDING"
+    assert manifest["technical_admissibility"] == "PASS"
+    assert (
+        sft_candidate.canonical_bytes_sha256((REPO_ROOT / "agents/coordinator.py").read_bytes())
+        != manifest["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
+    )
+    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+        sft_candidate.validate_candidate_snapshot(snapshot, manifest)
+    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
         sft_candidate.refuse_unapproved_candidate(snapshot)
+
+
+def test_settling_compatibility_does_not_admit_other_source_hashes(monkeypatch):
+    from training import sft_candidate_compatibility as compatibility
+    from training.sft_provenance import REPO_ROOT
+
+    corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
+    snapshot = snapshot_training_corpus(corpus)
+    manifest = sft_candidate.read_candidate_manifest(corpus)
+    original = compatibility.candidate_manifest
+
+    def changed(*args):
+        result = original(*args)
+        result["source_file_sha256_canonical_lf"]["agents/coordinator.py"] = "f" * 64
+        return result
+
+    monkeypatch.setattr(compatibility, "candidate_manifest", changed)
+    with pytest.raises(ValueError, match="manifest/provenance"):
+        compatibility.validate_pilot_candidate(snapshot, manifest)

@@ -154,15 +154,17 @@ A run cannot be marked completed without checkpoint files. A bounded launch in t
 environment stopped at missing optional ML dependencies before model loading and persisted
 that failure honestly.
 
-Once an approved BF16-capable runtime, exact model/tokenizer revisions, and a
-clean source checkout are available, the declared training command is:
+Once the separate host, weight-transfer, and named-run approvals are recorded
+against an approved BF16-capable runtime, exact model/tokenizer revisions, and
+a clean source checkout, the current v4 pilot command shape is:
 
 ```text
-python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-commit> --tokenizer-revision <approved-commit> --data <verified-external-corpus> --output <new-external-checkpoint-dir> --epochs 3 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 2048 --seed 2026
+python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-commit> --tokenizer-revision <approved-commit> --data <verified-external-corpus> --output <new-external-checkpoint-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026
 ```
 
-Placeholders must be resolved from the actual approved environment. This is a
-launch template, not authorization to train or evidence of a checkpoint.
+The v4 preparation plan still has `execution_allowed=false`. Placeholders
+must be resolved from the actual approved environment; this is not
+authorization to train or evidence of a checkpoint.
 
 ## Current Verification
 

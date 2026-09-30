@@ -15,6 +15,10 @@ the earlier description of technical admission alone is not a launch path.
 The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS from
 the required comparison. The source SHA above is the original software-audit
 snapshot, not a freeze of the earlier five-arm proposal.
+The 2048-token, three-epoch figures below describe that earlier proposal.
+The later `config/sft_pilot_v4.json` preparation plan instead pins 8192 tokens
+and one epoch; the 2048-token all-row preflight is preserved as a negative
+result, not a current pilot launch setting.
 
 The separate 29 September 2026 read-only hardware feasibility discussion
 recommended seeking a university BF16-capable allocation first, with
@@ -83,12 +87,11 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   validates the SFT parent, so training-time origin alone is not inherited
   as currently verified source provenance.
 
-- A non-live tokenizer-only preflight can inspect every frozen
-  `train-candidate-v1` row for assistant-mask attribution and length against
-  the proposed 2048-token ceiling using an already-local revision-pinned
-  tokenizer. No real pinned-tokenizer run or file inventory is recorded here.
-  Fake-tokenizer tests establish only validator control flow; they do not
-  approve D2/D3, weight transfer, or a training launch.
+- At this snapshot, a non-live tokenizer-only preflight was proposed for
+  every frozen `train-candidate-v1` row against a 2048-token ceiling; no real
+  pinned-tokenizer run or file inventory was then recorded. The later v4
+  preparation includes a pinned all-row 8192-token report and tokenizer-file
+  inventory. Neither report authorizes weight transfer or a training launch.
 - Prospective G4 v3.6 changes `agents/coordinator.py`, one of the frozen
   `train-candidate-v1` source files. The v1 corpus and manifest retain their
   original hashes and historical technical review, but current-source
@@ -101,7 +104,7 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
 | Item | Current contract | Remote-readiness gap |
 |---|---|---|
 | Model/tokenizer | Planned `Qwen/Qwen2.5-7B-Instruct`; SFT and G9 require full 40-character commit pins. G9 matches the completed SFT parent, requires the model loader's exposed commit to match, and records a tokenizer loader match or the explicit pin-enforced/not-independently-returned basis. Neither path attests serving identity. | No project-lead-approved model/tokenizer commits, actual weight identity, or serving attestation. Resolve and approve exact commits before a future authorized load, which may download uncached weights. A smaller/different model changes the comparison and needs a versioned decision. |
-| QLoRA | SFT uses 4-bit NF4, double quantization, BF16 compute, rank 16/alpha 32/dropout 0.05, seven projection/MLP modules, paged 8-bit AdamW, assistant-only loss, 2048-token maximum. Tracked config proposes three epochs, batch 2, accumulation 4 and seed 2026. | Verify GPU BF16, bitsandbytes/PEFT/TRL compatibility, peak memory, storage and actual effective configuration on the approved host before weight transfer. Code refuses an installed TRL lacking `assistant_only_loss`. |
+| QLoRA | SFT uses 4-bit NF4, double quantization, BF16 compute, rank 16/alpha 32/dropout 0.05, seven projection/MLP modules, paged 8-bit AdamW and assistant-only loss. The earlier proposal used 2048 tokens and three epochs; v4 preparation pins 8192 tokens, one epoch, batch 2, accumulation 4 and seed 2026. | Verify GPU BF16, bitsandbytes/PEFT/TRL compatibility, peak memory, storage and actual effective configuration on the approved host before weight transfer. Code refuses an installed TRL lacking `assistant_only_loss`. |
 | Dependencies | `pyproject.toml` has lower bounds for Torch, Transformers, TRL, PEFT, Datasets, Accelerate, vLLM and bitsandbytes. `requirements/train-constraints.txt` pins a set validated for SFT contract tests on Windows, not a completed GPU run; the dev lock excludes training. G7, G8 and G9 loaders set `trust_remote_code=False`. | Freeze an approved Linux/container environment and exact package/driver/CUDA or ROCm versions and hashes. Do not assume the Windows dev lock or Apple Silicon is a drop-in BF16/4-bit/vLLM training environment. A model requiring custom Hub Python needs a separately reviewed protocol; these loaders do not authorize it. |
 | Checkpoint | SFT writes planned/running/completed/failed/interrupted manifest states and hashes its saved adapter inventory. G8/G9 reject incomplete, dirty-source or tampered completed parents for empirical use. | No completed usable adapter or independent reload result is preserved. Keep adapter, tokenizer, trainer state, full manifest, logs and source/corpus provenance together; verify hashes after transfer. |
 | SFT to G9 | G9 requires `--sft-checkpoint`, matching base/tokenizer revisions and a completed parent inventory; its manifest binds parent hashes and rechecks them immediately before PEFT adapter loading. | Do not substitute a base-model alias or mock adapter. Path-based PEFT reads still leave a post-check replacement window; approve stable storage and a controlled live environment before G9 training. |

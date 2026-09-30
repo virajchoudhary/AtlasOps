@@ -809,9 +809,10 @@ def test_sft_role_filter_admits_only_selected_acl_rows_before_model_import(
 ):
     from agents.tool_policy import ROLE_ALLOWED_TOOLS
     from training import sft
-    from training import sft_candidate
+    from training import sft_pilot_gate
 
-    monkeypatch.setattr(sft_candidate, "refuse_unapproved_candidate", lambda _snapshot: None)
+    monkeypatch.setattr(sft_pilot_gate, "validate_preparation", lambda *_a, **_k: {})
+    monkeypatch.setattr(sft_pilot_gate, "require_execution_authority", lambda *_a, **_k: None)
 
     corpus, _ = _write_role_tool_training_corpus(tmp_path / "acl-valid.jsonl")
     assert (
@@ -899,10 +900,11 @@ def _install_fake_sft_dependencies(
     resolved_model_revision,
     resolved_tokenizer_revision,
 ):
-    from training import sft_candidate
+    from training import sft_pilot_gate
 
-    # These loader/lifecycle tests do not authorize a real corpus or D3 run.
-    monkeypatch.setattr(sft_candidate, "refuse_unapproved_candidate", lambda _snapshot: None)
+    # These loader/lifecycle tests do not authorize a real corpus or run.
+    monkeypatch.setattr(sft_pilot_gate, "validate_preparation", lambda *_a, **_k: {})
+    monkeypatch.setattr(sft_pilot_gate, "require_execution_authority", lambda *_a, **_k: None)
     calls = {
         "tokenizer": [],
         "tokenizer_kwargs": [],
@@ -1276,9 +1278,10 @@ def test_sft_uses_manifested_corpus_snapshot_if_source_changes_before_load(
     tmp_path,
 ):
     from training import sft
-    from training import sft_candidate
+    from training import sft_pilot_gate
 
-    monkeypatch.setattr(sft_candidate, "refuse_unapproved_candidate", lambda _snapshot: None)
+    monkeypatch.setattr(sft_pilot_gate, "validate_preparation", lambda *_a, **_k: {})
+    monkeypatch.setattr(sft_pilot_gate, "require_execution_authority", lambda *_a, **_k: None)
 
     corpus, corpus_manifest_path = _write_role_tool_training_corpus(
         tmp_path / "snapshot-race.jsonl"

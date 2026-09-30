@@ -127,6 +127,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--max-seq-len", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=TRAIN_SEED)
+    parser.add_argument(
+        "--preflight-only", action="store_true",
+        help="Verify the pinned pilot plan without creating output or importing model loaders",
+    )
+    parser.add_argument(
+        "--execution-approval",
+        help="Future independently reviewed hash-pinned execution record; preparation has none",
+    )
     return parser.parse_args()
 
 
@@ -232,9 +240,26 @@ def main() -> None:
         )
     validate_tool_call_role_acl(training_source_rows)
 
-    from training.sft_candidate import refuse_unapproved_candidate
+    from training.sft_pilot_gate import require_execution_authority, validate_preparation
 
-    refuse_unapproved_candidate(corpus_snapshot)
+    admission = validate_preparation(
+        corpus_snapshot,
+        model=args.model,
+        model_revision=args.model_revision,
+        tokenizer=tokenizer_id,
+        tokenizer_revision=tokenizer_revision,
+        role=args.role,
+        hyperparameters=_hyperparameters(args),
+    )
+    if args.preflight_only:
+        import json
+
+        print(json.dumps(admission, sort_keys=True))
+        return
+    execution = require_execution_authority(
+        admission, Path(args.execution_approval) if args.execution_approval else None,
+        output_dir=output_dir,
+    )
 
     manifest = create_run_manifest(
         corpus_path=corpus_path,
@@ -248,6 +273,13 @@ def main() -> None:
         hyperparameters=_hyperparameters(args),
         seed=args.seed,
     )
+    manifest["pilot_admission"] = admission
+    manifest["execution_approval"] = execution
+    if execution:
+        manifest["run_id"] = execution["run_id"]
+    loader_cache_options = {}
+    if execution:
+        loader_cache_options["cache_dir"] = execution["model_cache_dir"]
     output_dir.mkdir(parents=True, exist_ok=False)
     write_manifest_atomic(manifest_path, manifest)
 
@@ -280,6 +312,8 @@ def main() -> None:
             tokenizer_id,
             revision=tokenizer_revision,
             trust_remote_code=False,
+            local_files_only=True,
+            **loader_cache_options,
         )
         tokenizer_init_kwargs = getattr(tokenizer, "init_kwargs", None)
         resolved_tokenizer_revision, resolved_tokenizer_revision_basis = (
@@ -311,6 +345,8 @@ def main() -> None:
             quantization_config=quantization,
             device_map="auto",
             trust_remote_code=False,
+            local_files_only=True,
+            **loader_cache_options,
         )
         resolved_model_revision = validate_resolved_hf_commit(
             args.model_revision,

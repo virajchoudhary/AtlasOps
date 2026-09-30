@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T12:06:48.422949+00:00",
+  "generated_at": "2026-09-30T12:56:04.287891+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,15 +34,15 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 284,
+  "asset_count": 311,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
       "size_bytes": 6416
     },
     ".gitattributes": {
-      "sha256": "ba69af30d3dc71d1595da23314acc982f80d89d4e4c2f1b87235f7d139dc7fa3",
-      "size_bytes": 1208
+      "sha256": "5f8a4da2e98859d9f860a1dd75c9fb0e4419b023be079c06db58dec3fed0cb28",
+      "size_bytes": 1467
     },
     ".github/workflows/ci.yml": {
       "sha256": "2e76e97d41e87a5e296052e3cdad2feef079fe61226a53f854aeb17acaea01f1",
@@ -157,8 +157,8 @@
       "size_bytes": 14289
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
-      "sha256": "bc637714d21af2f9518ab0b0adb30b61bae8b4d1c2db5198745bdd455b9690c9",
-      "size_bytes": 7391
+      "sha256": "83e18d9ea4391f34e01014b8d780d604aac5104b82554fceec29ead03b1a8549",
+      "size_bytes": 7851
     },
     "docs/project/G7_D3_CANDIDATE_REVIEW_V1.md": {
       "sha256": "8cd83bb9bda5e6093efe2a7e67884224336a4445dcb4a8298d3a207ef9becaf8",
@@ -173,8 +173,32 @@
       "size_bytes": 6768
     },
     "docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md": {
-      "sha256": "b7684c563f05f1fc9d39d065c6f5a55f38895b1b902d0a1a31ab7982b9479cf1",
-      "size_bytes": 11877
+      "sha256": "f93472da9a78ab36b9160bb1d501a2da404d823768387aaaab07db7a7e28ba93",
+      "size_bytes": 12883
+    },
+    "docs/project/G7_D3_PREPARATION_APPROVAL_V1.md": {
+      "sha256": "22be898fc999b9356f8b9d0429140625060ac4fa84717dd5eaaf0bde37336741",
+      "size_bytes": 2881
+    },
+    "docs/project/G7_D2_PINNED_MODEL_V1.md": {
+      "sha256": "0f3657378add0b7931ea31e52a5fbf6f69cb9419be2ea5c3ba0b27232e3dafed",
+      "size_bytes": 2632
+    },
+    "docs/project/G7_PILOT_ENVIRONMENT_V1.md": {
+      "sha256": "2ad27e228665096a1618da4ae260edb426ed26b105202b5dba419d6de6fa87ef",
+      "size_bytes": 8961
+    },
+    "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md": {
+      "sha256": "ab30cbfbf7199615f30986d9fec4675d0247289a318b7b628f9492e4d9820ccc",
+      "size_bytes": 4355
+    },
+    "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md": {
+      "sha256": "bf83f86ca141ce8b1169b0f0ca1964a12ed52e81a4edf05ac63f7e1b0201ccea",
+      "size_bytes": 5680
+    },
+    "docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md": {
+      "sha256": "b9cd624b42a61ebe9f52ee3532013294bc3f8432a895d6469f2e7d4a05e1efb5",
+      "size_bytes": 1990
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md": {
       "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",
@@ -197,8 +221,8 @@
       "size_bytes": 4993
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "1169bda8da80a511b3f851db613b74f9b24e6fb7a08545624b36aafe36ab072f",
-      "size_bytes": 27699
+      "sha256": "3f777425b261c8d178835e5213794ebd80d03b84b83dbc3f227241b7acbc723f",
+      "size_bytes": 27712
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "f62340b22b77dbbeb25484a568e9acb6c40b3fd05f865aaa47dd006891c97f71",
@@ -245,12 +269,12 @@
       "size_bytes": 6376
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "f65f5f074a340297553db6ab707b9942ea229b9dc38864912e5eec0f750a39b1",
-      "size_bytes": 9760
+      "sha256": "9476f30a1c983a2f0106c99d158018f3932cd2199e97be9ffb1fd62a0a2728fb",
+      "size_bytes": 10579
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
-      "sha256": "7ef1cc02c7f262317a80189b13b60eb23980201bf362073052bb43bb7216bf74",
-      "size_bytes": 5264
+      "sha256": "b353b754f1ec5dbe059a7eb59ec632df807449bd00934a002b9f1827da73e7b5",
+      "size_bytes": 5428
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
       "sha256": "c8d39e91e43fee699ea8568c87ea04827db9bbf5ffa148aee4da085ebd7ca165",
@@ -427,6 +451,38 @@
     "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl": {
       "sha256": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
       "size_bytes": 655065
+    },
+    "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json": {
+      "sha256": "297724616fe6bdd1f5ba2a8d53842dcbd3a46c79f9a1daa4ea19334ad6271b7c",
+      "size_bytes": 1358
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_2048_negative_v1.json": {
+      "sha256": "a3ef2e188a7656877704b9e9a41b76fa4e9cc34df6d8b354b942719a0b0baaab",
+      "size_bytes": 99134
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_2048_negative_v2.json": {
+      "sha256": "e5c06fdc122ec783c75053d8a9027b616d1e67b5bd251c62633e11aa82d90547",
+      "size_bytes": 81930
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v1.json": {
+      "sha256": "bd55ec4d962e82ca064a45b9856da6f3ae516f9c14311469a104d617c2309cf8",
+      "size_bytes": 81243
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json": {
+      "sha256": "d0283fd2404540cf790c6f5f6ade26ad351d4fbc2a1e3d501c39a29c1b0f0c0d",
+      "size_bytes": 81243
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json": {
+      "sha256": "4833517a7e0f9b78615c76af9aafca8f7127f83696cea2befd43b0ca1e42eda7",
+      "size_bytes": 81243
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v4.json": {
+      "sha256": "64bd54a2f0e15ad9bf2b70f1c9a66147d02bc478cc566e1c39889ae8586ea4be",
+      "size_bytes": 81360
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v5.json": {
+      "sha256": "9eccf0353af2e60515b011b2b13d856dc2e68a51e76a5c4e09d53d5d0383b685",
+      "size_bytes": 82799
     },
     "artifacts/evidence/stage10/rs_baseline_eval.json": {
       "sha256": "821c76fc6958593bc870084a08cfaba8d67d6dfec1d570f792cd38b8cf8da487",
@@ -661,8 +717,8 @@
       "size_bytes": 388
     },
     "bench/sft_eval.py": {
-      "sha256": "c9600fd3b716190eb20a58dcc0ed7c44775e5170857540578950a5d6df8e26fa",
-      "size_bytes": 29113
+      "sha256": "6d32ebe048410fc4392855ab9b83e0264d8d7bdc7385baec26aa36c814b35e1a",
+      "size_bytes": 29132
     },
     "bench/grpo_eval.py": {
       "sha256": "960fcfec00bbf3bcdb8142efabd22a596031e73bdac5f4dcc29e50c983d702ae",
@@ -728,6 +784,34 @@
       "sha256": "31c270e9596f9c3526c98639e6b4f2bf1da9cbff28f122990c7ab2f84add6ad7",
       "size_bytes": 1421
     },
+    "config/sft_pilot_v1.json": {
+      "sha256": "3e768a5c8eaa1e773395df10c3a7a2ebf366574a71590a7216880e4421f8f916",
+      "size_bytes": 4341
+    },
+    "config/sft_pilot_v2.json": {
+      "sha256": "77f58492b4d892abc71d59d3b2eff936ccd911603522c517349957bf8b9200c9",
+      "size_bytes": 4341
+    },
+    "config/sft_pilot_v3.json": {
+      "sha256": "a227ea6e45c0299ed5675785853a3b7de6087d8f4862397d8f410371304c7362",
+      "size_bytes": 4341
+    },
+    "config/sft_pilot_v4.json": {
+      "sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
+      "size_bytes": 4341
+    },
+    "requirements/sft-pilot-v1.in": {
+      "sha256": "605781e837ab301ab265d3eea810db42d61b342c27a2b0e3a78f772efe120c59",
+      "size_bytes": 717
+    },
+    "requirements/sft-pilot-linux-py312.lock": {
+      "sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+      "size_bytes": 167639
+    },
+    "infra/training/sft-pilot/Dockerfile": {
+      "sha256": "96cfc6591dddfd22fb82a32fc8fd907e5026337faa73067cd705bedf58912385",
+      "size_bytes": 611
+    },
     "recommender/baselines.py": {
       "sha256": "06e8e8e62a82695c70b150e9fe1f97aaec5fb4eb062e35f94fbe18c4d24feaf6",
       "size_bytes": 7352
@@ -753,16 +837,24 @@
       "size_bytes": 45643
     },
     "scripts/package_submission.py": {
-      "sha256": "daf19b00d1a1a49d16064df595b5b83f0291ba84a3061966e705a86e239843df",
-      "size_bytes": 14890
+      "sha256": "fd3096805ff1c99e4b03a7ae22efacfdb57522dc4a22c0c1209b7d904698cfdb",
+      "size_bytes": 15817
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
       "size_bytes": 18205
     },
+    "scripts/stage_sft_tokenizer.py": {
+      "sha256": "e9f70172eee6db96357bd602e468aa2eeabb72903de9463bd6401187d8f85ace",
+      "size_bytes": 2883
+    },
+    "scripts/freeze_sft_pilot_plan.py": {
+      "sha256": "9239463af35384a458477ef557f20112422588d3538998f0017411be1b573b57",
+      "size_bytes": 3076
+    },
     "training/sft.py": {
-      "sha256": "6a0d5c3d59d6695b72af11a2765e4157b6baf2559d1208f25f4083db52731802",
-      "size_bytes": 14029
+      "sha256": "48596108d1ed99030fc411cb459b13717b0e4f211b3c16e4fb11468ae45ee7e8",
+      "size_bytes": 15336
     },
     "training/build_sft_dataset.py": {
       "sha256": "237323d639d21a7b07d2e7cf0fbd2a51f3b2bb44b9da513a13e8c0d0801cb2eb",
@@ -776,9 +868,17 @@
       "sha256": "9dbc4e7e4fbe1f8d7588310bd1bffc680e53bf4a9fd40dec21fef62eca6a0b5b",
       "size_bytes": 27332
     },
+    "training/sft_candidate_compatibility.py": {
+      "sha256": "86762ad56c82f6eb5de1dad230679fc2b4d27f28602fe9b21c9619650b0d0054",
+      "size_bytes": 2171
+    },
+    "training/sft_pilot_gate.py": {
+      "sha256": "6571196ae7d6604a493b920e79ffa488b415e58c1a1bc1fa4e44e2a408094998",
+      "size_bytes": 16990
+    },
     "training/sft_tokenizer_preflight.py": {
-      "sha256": "efb53e58d2260a32dc6f81b6898be0f1bc71f77faa71ba82763d478702b682eb",
-      "size_bytes": 24372
+      "sha256": "e0027cc2c0c6ff139478d0a22e934eeb0d0998a8decd9f78c8856df8287fd3b1",
+      "size_bytes": 44949
     },
     "training/generate_trajectories.py": {
       "sha256": "490b20a96c1501a82893e78b5ab67c80278287c0cfe712043e0cca5e9cd6cdf1",
@@ -797,8 +897,8 @@
       "size_bytes": 3346
     },
     "training/sft_provenance.py": {
-      "sha256": "3b8c62edbfe8d97ab5281f422610fe21836ded206cd8a8ab5960abe6b8648d49",
-      "size_bytes": 32055
+      "sha256": "512a9a738607a69168eb542397b5f71d748b8550b8c9a49230a844cb8de3f888",
+      "size_bytes": 33709
     },
     "training/grpo.py": {
       "sha256": "0c5870003196312b5c200d72748853d2892646d993050ae0a7a9d8657de6dcc6",
@@ -949,8 +1049,8 @@
       "size_bytes": 55062
     },
     "tests/test_g8_empirical_contract.py": {
-      "sha256": "14306e2523d75954546593b1017fae0d5ec91462ba863c58f1ba76aa19111f31",
-      "size_bytes": 35035
+      "sha256": "4c6285268819c0230ed8383f7ea3730111b0d03eef396cfe4e55171c540b62a9",
+      "size_bytes": 38235
     },
     "tests/test_g9_approval_channel.py": {
       "sha256": "39471f4e566ce28cfc6c6120087f20d6afbb880b98f5157abe2697311259d5d3",
@@ -1033,8 +1133,8 @@
       "size_bytes": 13616
     },
     "tests/test_sft_candidate_admission.py": {
-      "sha256": "53e9073af2296bddeb0affa0cd33c5acbe9d4a1daeb6d7a3445cdb44de300d4a",
-      "size_bytes": 8230
+      "sha256": "8f4c9887caa53eea76d99f12da4d482f672320c1a80a03e2159510a29500228f",
+      "size_bytes": 8815
     },
     "tests/test_sft_candidate_builder.py": {
       "sha256": "7dc8edf653103fbff297931a28aefc9b599e16ee6965420842ccc1ed33d92063",
@@ -1048,6 +1148,10 @@
       "sha256": "4103befd97c834c92a6322ed308b5c04e1650519f35111c60276b214fb1007f6",
       "size_bytes": 8419
     },
+    "tests/test_sft_pilot_gate.py": {
+      "sha256": "f7b9e29813ac1debe7d061e52d65b6db14376b8759b8e6c136152e360eb1b681",
+      "size_bytes": 13002
+    },
     "tests/test_sft_qwen_template_render.py": {
       "sha256": "9a0129cf11a9cb9e7ee1e1f88ab401998a68d5abc877954d5dc9dfe1e7f38bf7",
       "size_bytes": 6443
@@ -1056,17 +1160,21 @@
       "sha256": "a0e173cfd46960b92c4eee2758b89fa28db4f42bf73a0f4229b95126f2ef03f5",
       "size_bytes": 10667
     },
+    "tests/test_sft_tokenizer_pilot_extension.py": {
+      "sha256": "4b27b7a3fde1b81917b1009fb98a55bd1128023f5f7577fc027bc3b1fc77ffb3",
+      "size_bytes": 12571
+    },
     "tests/test_sft_tokenizer_preflight.py": {
       "sha256": "e7b4132444b006bb357516dd9072482a269c8b3f610d1608801fca337f641a9b",
       "size_bytes": 13778
     },
     "tests/test_sft_trainer_handoff.py": {
-      "sha256": "feb4c0437e45ac4f0a1ae91598670c8cd2bd581587c00774d91673759581bf5c",
-      "size_bytes": 12841
+      "sha256": "be8afb602233c26e928829bd16a616c55e8c7aec8e7576242e5c208ed33e7111",
+      "size_bytes": 12934
     },
     "tests/test_sft_training_provenance.py": {
-      "sha256": "2f420bddfd2af4db83f87bddf6f7012d09ca33a3f36a7d4c4e59d2176b49ca77",
-      "size_bytes": 50882
+      "sha256": "897e4b0d1004aa6048c9473fa345f265a5d4b1c9c7090a38a295ca5b8ff04ffc",
+      "size_bytes": 51143
     },
     "tests/test_stage10_rs_data_and_baselines.py": {
       "sha256": "a9c08a6fc88350c9e5b04c5ae701a70438757ee0d940f49e987ecc521f9884df",
@@ -1089,8 +1197,8 @@
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "b1a363708fd0682a3a755298ae480d9332fdbfb825dcfd7372b29748ede9b7fc",
-      "size_bytes": 29430
+      "sha256": "35b655245f2e162d8117c4ec9af735a4d561e22f490b8d7f79a6f2ad2ecfd378",
+      "size_bytes": 29506
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

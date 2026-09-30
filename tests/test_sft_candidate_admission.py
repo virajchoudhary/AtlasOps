@@ -2,7 +2,6 @@
 
 import copy
 import json
-import sys
 
 import pytest
 
@@ -115,8 +114,7 @@ def test_nontrain_catalog_is_never_indexed(monkeypatch):
     assert {r["scenario_id"] for r in rows} == set(TRAIN_SPLIT)
 
 
-def test_manifest_tamper_and_pending_d3_refused_before_output(rows, tmp_path, monkeypatch):
-    from training import sft
+def test_manifest_tamper_and_frozen_pending_record_remain_rejected(rows, tmp_path, monkeypatch):
     from training.build_sft_candidate import serialize_candidate_rows
 
     monkeypatch.setattr(sft_candidate, "validate_source_revision", lambda _manifest: None)
@@ -132,14 +130,8 @@ def test_manifest_tamper_and_pending_d3_refused_before_output(rows, tmp_path, mo
     changed["d3_approval"] = "APPROVED"
     with pytest.raises(ValueError, match="manifest"):
         sft_candidate.validate_candidate_snapshot(snapshot, changed)
-    output = tmp_path / "checkpoint"
-    monkeypatch.setattr(sys, "argv", [
-        "sft.py", "--model", "Qwen/Qwen2.5-7B-Instruct",
-        "--model-revision", "a" * 40, "--data", str(corpus), "--output", str(output),
-    ])
     with pytest.raises(ValueError, match="D3 approval PENDING"):
-        sft.main()
-    assert not output.exists()
+        sft_candidate.refuse_unapproved_candidate(snapshot)
 
 
 def test_unversioned_rows_are_not_a_training_bypass(tmp_path):

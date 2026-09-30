@@ -1,6 +1,16 @@
 # G7 SFT Pilot Acceptance v1
 
 **Status: future acceptance contract; not an approval or launch instruction.**
+The subsequent [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md)
+records limited authority, not execution. The exact pin is resolved in
+[D2 metadata](G7_D2_PINNED_MODEL_V1.md), the 72-package hash-locked candidate in
+[the environment record](G7_PILOT_ENVIRONMENT_V1.md), and the final all-row
+offline preflight in `artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json`.
+It passes at 8192 tokens; 54 rows exceed 2048, so the declared pilot plan uses
+8192 and preserves the negative checks. The runner now implements
+`--preflight-only` and a hash-bound execution-record schema; no execution digest
+is pinned. Earlier pending/implementation-gap descriptions below are historical
+planning statements superseded by those prepared artifacts.
 Qwen2.5-7B-Instruct QLoRA remains the planned baseline. This checklist
 defines evidence for one bounded pilot; it does not authorize remote compute,
 spending, model-weight access or download, training, evaluation, or final-Test
@@ -56,14 +66,12 @@ named-run launch authorizations are recorded. G4 remains `NOT_PASSED` and G6
 empirical evidence remains missing; assess their prerequisites separately for
 downstream evaluation and comparison.
 
-**Current runner prerequisite:** at the code state inspected for this
-checklist, [`refuse_unapproved_candidate`](../../training/sft_candidate.py)
-validates the review candidate and then always refuses it as D3-pending; the
-runner has no path to consume an approved D3 record. Before training can be
-eligible, a separately reviewed implementation must verify approval bound to
-the exact candidate version, corpus, manifest and template hashes, and fail
-closed on missing, stale or mismatched approval. Do not add a general bypass.
-Recheck this contract at launch; this document does not enable training.
+**Current runner prerequisite:** [`sft_pilot_gate`](../../training/sft_pilot_gate.py)
+validates the exact preparation plan/corpus/manifest/tokenizer/lock/template
+hashes and every preflight row. Preparation passes, but execution refuses while
+`EXECUTION_APPROVAL_SHA256` is unset. A future independently reviewed record
+must bind the exact run/source/output, complete runtime/host/model inventory,
+and approved budget. Recheck this contract at launch; no general bypass exists.
 
 ## Pre-Run Acceptance
 
@@ -114,7 +122,7 @@ Freeze the **effective** settings in the D3 record and run manifest before
 loading base weights. The implementation proposal is the current
 [`training.sft`](../../training/sft.py) default: one epoch, learning rate
 `2e-4`, batch size `2`, gradient accumulation `4`, maximum sequence length
-`2048`, and the recorded training seed; QLoRA uses 4-bit NF4 with double
+`8192` as bound by the all-row preparation plan, and seed `2026`; QLoRA uses 4-bit NF4 with double
 quantization and BF16 compute, LoRA rank `16` / alpha `32` / dropout `0.05`,
 the current seven projection/MLP target modules, paged 8-bit AdamW and
 assistant-only loss. These are proposed values, not approved parameters. The

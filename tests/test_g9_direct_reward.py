@@ -301,7 +301,17 @@ async def test_training_batch_persists_direct_action_evidence(
     monkeypatch.setattr(
         runner,
         "wait_for_alert",
-        lambda: {"commonLabels": {"severity": "warning"}, "alerts": []},
+        lambda: {
+            "commonLabels": {
+                "alertname": "HighCpuUsage",
+            },
+            "alerts": [{
+                "alertname": "HighCpuUsage",
+                "severity": "warning",
+                "namespace": "default",
+                "status": "active",
+            }],
+        },
     )
 
     ledger = tmp_path / "rollouts.jsonl"

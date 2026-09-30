@@ -683,15 +683,20 @@ class OnlineRewardFunction:
                         call_status="returned",
                         host_observed_at_utc=datetime.now(UTC).isoformat(),
                     )
-                    if alert is None:
-                        alert_observation["result"] = "none"
-                    elif alert.get("synthetic") is True:
-                        alert_observation["result"] = "synthetic"
-                    else:
-                        alert_observation["result"] = "non_synthetic"
-                    if alert_observation["result"] in {"none", "synthetic"}:
-                        log.warning("No real alert observed for %s", scenario_id)
-                        failure_reason = "real_alert_not_observed"
+                    alert_binding_result = _g9_alert_binding_result(
+                        alert,
+                        SCENARIO_CATALOG[scenario_id].expected_alert,
+                    )
+                    alert_observation["result"] = alert_binding_result
+                    if alert_binding_result != "scenario_matched":
+                        log.warning(
+                            "Alert observation did not bind to %s (%s)",
+                            scenario_id,
+                            alert_binding_result,
+                        )
+                        failure_reason = (
+                            f"g9_alert_binding_failed:{alert_binding_result}"
+                        )
                     else:
                         if approval_gate is None:
                             result = await self._run_one_rollout(
@@ -742,7 +747,9 @@ class OnlineRewardFunction:
                     }
                     if result is not None:
                         cleanup_failure["rollout_result"] = result
-                    else:
+                    elif not (failure_reason or "").startswith(
+                        "g9_alert_binding_failed:"
+                    ):
                         cleanup_failure["policy_completion"] = completion
                     self._persist_rollout(cleanup_failure)
                     raise RuntimeError(
@@ -751,15 +758,19 @@ class OnlineRewardFunction:
             await asyncio.sleep(10)   # let the cluster fully stabilise
 
             if result is None:
-                self._persist_rollout({
+                failure_record = {
                     "scenario_id": scenario_id,
                     "tier": tier,
                     "status": "failed",
                     "failure": failure_reason or "rollout_failed",
-                    "policy_completion": completion,
                     "reward": None,
                     "lifecycle_observations": lifecycle_observations,
-                })
+                }
+                if not (failure_reason or "").startswith(
+                    "g9_alert_binding_failed:"
+                ):
+                    failure_record["policy_completion"] = completion
+                self._persist_rollout(failure_record)
                 raise RuntimeError("GRPO rollout is unscorable without policy/verifier evidence")
             else:
                 try:
@@ -828,11 +839,19 @@ class OnlineRewardFunction:
     ) -> dict:
         """Execute the policy completion itself as one atomic environment action."""
         t0 = time.time()
-        labels = {
-            **(alert.get("commonLabels") or {}),
-            **((alert.get("alerts") or [{}])[0].get("labels") or {}),
+        common_labels = alert.get("commonLabels") or {}
+        alert_record = (alert.get("alerts") or [{}])[0]
+        nested_labels = alert_record.get("labels") or {}
+        severities = {
+            str(value).lower()
+            for value in (
+                common_labels.get("severity"),
+                alert_record.get("severity"),
+                nested_labels.get("severity"),
+            )
+            if value
         }
-        alert_severity = str(labels.get("severity", "")).lower()
+        alert_severity = next(iter(severities)) if len(severities) == 1 else ""
         triage_severity = {
             "critical": "P1",
             "warning": "P2",
@@ -1017,6 +1036,56 @@ def _flash_attn_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def _g9_alert_binding_result(alert: Any, expected_alert: str) -> str:
+    """Return a sanitized status for the live alert-to-Train-scenario binding."""
+    if alert is None:
+        return "none"
+    if not isinstance(alert, dict):
+        return "malformed"
+    synthetic = alert.get("synthetic")
+    if synthetic is True:
+        return "synthetic"
+    if synthetic is not None and synthetic is not False:
+        return "malformed"
+
+    common_labels = alert.get("commonLabels")
+    alerts = alert.get("alerts")
+    if not isinstance(common_labels, dict) or not isinstance(alerts, list):
+        return "malformed"
+    if not alerts:
+        return "none"
+    if len(alerts) != 1:
+        return "ambiguous"
+    alert_record = alerts[0]
+    if not isinstance(alert_record, dict):
+        return "malformed"
+
+    envelope_alertname = common_labels.get("alertname")
+    observed_alertname = alert_record.get("alertname")
+    if (
+        not isinstance(envelope_alertname, str)
+        or not envelope_alertname.strip()
+        or not isinstance(observed_alertname, str)
+        or not observed_alertname.strip()
+    ):
+        return "identity_missing"
+    if envelope_alertname != observed_alertname:
+        return "envelope_mismatch"
+    if (
+        not isinstance(expected_alert, str)
+        or not expected_alert.strip()
+        or observed_alertname != expected_alert
+    ):
+        return "scenario_mismatch"
+
+    status = alert_record.get("status")
+    if not isinstance(status, str) or not status:
+        return "malformed"
+    if status != "active":
+        return "not_active"
+    return "scenario_matched"
 
 
 def _direct_action_prompt(scenario_id: str) -> str:

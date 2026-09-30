@@ -112,6 +112,7 @@ async def run_policy_remediation(
                 "completed_at": datetime.now(UTC).isoformat(),
                 "state": current_state,
                 "environment_status": environment_status,
+                "pre_action_observation": result.get("pre_action_observation"),
                 "raw_policy_output": raw_completion,
                 "parsed_action": result.get("policy_action"),
                 "executed_actions": executed,

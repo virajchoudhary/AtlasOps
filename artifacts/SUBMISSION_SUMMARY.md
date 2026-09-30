@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T01:12:53.903812+00:00`
+- **Generated**: `2026-09-30T05:26:59.254369+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -51,7 +51,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `agents/coordinator.py` | `84832e3549b71870...` | 117674 |
 | `agents/grounding.py` | `c228e7a4bce97f74...` | 11780 |
 | `agents/judge.py` | `b817d1433d43e70a...` | 7853 |
-| `agents/policy_remediation.py` | `22cc5faba3346fe9...` | 5897 |
+| `agents/policy_remediation.py` | `d139b005221f27df...` | 5977 |
 | `agents/prompts/comms.md` | `be58db4dcef9b422...` | 2662 |
 | `agents/prompts/diagnosis.md` | `26265a2007477eed...` | 2902 |
 | `agents/prompts/remediation.md` | `00d0d3b24ba00007...` | 4768 |
@@ -178,7 +178,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `d0d6699a5ed9df1c...` | 27252 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `d0989c81494b0b1a...` | 2043 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `be17afca2427c7e1...` | 2043 |
-| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `6a6a8e3e83c2f210...` | 6589 |
+| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `e620cdbdaa872b72...` | 8056 |
 | `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `df5e72d0c88bfe13...` | 10891 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
@@ -200,7 +200,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
 | `scripts/package_submission.py` | `2e41df6e434f8a7e...` | 14307 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
-| `scripts/run_g12_integrated_episode.py` | `d76a71740c94de9e...` | 41003 |
+| `scripts/run_g12_integrated_episode.py` | `911f7b18e66e4eca...` | 45643 |
 | `scripts/run_stage4_golden_incident.py` | `9eb3cb163a790562...` | 100400 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
 | `static/console.js` | `27f4c68073251679...` | 62151 |
@@ -235,8 +235,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |
 | `tests/test_frontend_ui.py` | `65ccf5bf652001cd...` | 6058 |
-| `tests/test_g12_policy_integration_contract.py` | `2b87c511518ac8b2...` | 13650 |
-| `tests/test_g12_real_capture.py` | `8a22d62857f1e87e...` | 46234 |
+| `tests/test_g12_policy_integration_contract.py` | `0a1861426113d85a...` | 19328 |
+| `tests/test_g12_real_capture.py` | `090f844a21491806...` | 55968 |
 | `tests/test_g13_lossless_g9_observations.py` | `e33a2fedbd3dd484...` | 12140 |
 | `tests/test_g4_protocol_profile.py` | `3cb1ed2ec22157bc...` | 21508 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `3e23f0441e3645d1...` | 22261 |
@@ -244,7 +244,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g6_empirical_contract.py` | `499a598f08a0d392...` | 50544 |
 | `tests/test_g8_empirical_contract.py` | `14306e2523d75954...` | 35035 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
-| `tests/test_g9_direct_policy_environment.py` | `3c9ee44a08f30710...` | 72695 |
+| `tests/test_g9_direct_policy_environment.py` | `3856dbcebcf42c0e...` | 74100 |
 | `tests/test_g9_direct_reward.py` | `ffd2dec95752c473...` | 11614 |
 | `tests/test_g9_empirical_contract.py` | `b9170b40462cc82e...` | 37749 |
 | `tests/test_g9_training_preflight.py` | `1d896462ef3801ce...` | 22169 |
@@ -297,7 +297,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/generate_trajectories.py` | `490b20a96c1501a8...` | 5498 |
 | `training/generate_trajectories_fast.py` | `773885747caed336...` | 411 |
 | `training/grpo.py` | `0c5870003196312b...` | 57365 |
-| `training/grpo_environment.py` | `8b9916d31829a9fe...` | 29947 |
+| `training/grpo_environment.py` | `87d8ff9ab205f24b...` | 30469 |
 | `training/grpo_provenance.py` | `8903bf0e576a9585...` | 50476 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
 | `training/sft.py` | `b627afaa5b8cc1d5...` | 13911 |

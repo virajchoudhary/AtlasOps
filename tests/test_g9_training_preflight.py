@@ -30,6 +30,14 @@ MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 TOKENIZER_ID = "test-org/tokenizer"
 
 
+@pytest.fixture
+def allow_legacy_body_for_unit_test(monkeypatch):
+    """Test-only opt-in for inspecting downstream preflight and lifecycle behavior."""
+    from training import grpo
+
+    monkeypatch.setattr(grpo, "_require_g9_observation_order_protocol", lambda: None)
+
+
 def _cli_argv(
     output_dir,
     sft_checkpoint,
@@ -158,7 +166,7 @@ def test_importing_grpo_does_not_load_optional_training_libraries(monkeypatch):
 
 
 def test_cli_rejects_mutable_revision_before_parent_output_or_training(
-    monkeypatch, tmp_path, capsys
+    monkeypatch, tmp_path, capsys, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -214,8 +222,50 @@ def test_cli_rejects_mutable_revision_before_parent_output_or_training(
     assert attempted_imports == []
 
 
-def test_cli_rejects_local_tokenizer_path_before_optional_training_imports(
+def test_cli_blocks_unreviewed_observation_order_before_admission_or_output(
     monkeypatch, tmp_path, capsys
+):
+    from training import grpo
+
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    manifest_path = output_dir / grpo.MANIFEST_NAME
+    existing_manifest = b'{"status":"running","training":{"sentinel":"preserve"}}\n'
+    manifest_path.write_bytes(existing_manifest)
+    monkeypatch.setattr(sys, "argv", _cli_argv(output_dir, tmp_path / "sft"))
+
+    def unexpected_work(*_args, **_kwargs):
+        pytest.fail("G9 admission or run state was touched before observation-order refusal")
+
+    for name in (
+        "_require_single_writer",
+        "validate_grpo_batch_configuration",
+        "validate_grpo_model_references",
+        "_require_live_execution",
+        "require_stable_failure_persistence",
+        "validate_new_output_directory",
+        "validate_sft_parent",
+        "build_direct_action_prompts",
+        "create_run_manifest",
+        "claim_new_output_directory",
+        "run_training",
+    ):
+        monkeypatch.setattr(grpo, name, unexpected_work)
+
+    with pytest.raises(SystemExit) as exc:
+        grpo.main()
+
+    error = capsys.readouterr().err
+    assert exc.value.code == 2
+    assert "static scenario-catalog data" in error
+    assert "before the fault and actual alert are observed" in error
+    assert "prospective observation-first protocol revision" in error
+    assert manifest_path.read_bytes() == existing_manifest
+    assert list(output_dir.iterdir()) == [manifest_path]
+
+
+def test_cli_rejects_local_tokenizer_path_before_optional_training_imports(
+    monkeypatch, tmp_path, capsys, allow_legacy_body_for_unit_test
 ):
     from training import grpo
 
@@ -242,7 +292,9 @@ def test_cli_rejects_local_tokenizer_path_before_optional_training_imports(
     assert not output_dir.exists()
 
 
-def test_cli_rejects_sft_parent_mismatch_before_output_or_model_loading(monkeypatch, tmp_path):
+def test_cli_rejects_sft_parent_mismatch_before_output_or_model_loading(
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
+):
     from training import grpo
 
     monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
@@ -270,7 +322,9 @@ def test_cli_rejects_sft_parent_mismatch_before_output_or_model_loading(monkeypa
     assert not output_dir.exists()
 
 
-def test_cli_rejects_existing_output_before_reading_sft_parent(monkeypatch, tmp_path):
+def test_cli_rejects_existing_output_before_reading_sft_parent(
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
+):
     from training import grpo
 
     monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
@@ -289,7 +343,9 @@ def test_cli_rejects_existing_output_before_reading_sft_parent(monkeypatch, tmp_
     assert list(output_dir.iterdir()) == []
 
 
-def test_cli_rejects_redirected_output_before_reading_sft_parent(monkeypatch, tmp_path):
+def test_cli_rejects_redirected_output_before_reading_sft_parent(
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
+):
     from training import grpo
 
     monkeypatch.setattr(grpo, "require_stable_failure_persistence", lambda: None)
@@ -645,7 +701,9 @@ def test_model_loader_rechecks_persisted_sft_parent_plan_before_peft(
     assert calls == ["tokenizer", "model"]
 
 
-def test_interrupted_cli_output_is_preserved_and_cannot_be_retried(monkeypatch, tmp_path):
+def test_interrupted_cli_output_is_preserved_and_cannot_be_retried(
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
+):
     from training import grpo
     from training.grpo_provenance import MANIFEST_NAME
 
@@ -687,7 +745,9 @@ def test_interrupted_cli_output_is_preserved_and_cannot_be_retried(monkeypatch, 
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "interrupted"
 
 
-def test_cli_retains_outer_failure_status_write_after_direct_training_write(monkeypatch, tmp_path):
+def test_cli_retains_outer_failure_status_write_after_direct_training_write(
+    monkeypatch, tmp_path, allow_legacy_body_for_unit_test
+):
     from training import grpo
     from training.grpo_provenance import MANIFEST_NAME
 

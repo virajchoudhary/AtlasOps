@@ -6,6 +6,15 @@ The policy, environment, reward, provenance, and evaluator software contracts ar
 implemented. No real GRPO training run, completed adapter, or empirical evaluation is
 currently preserved.
 
+**Training admission is blocked for a confirmed observation-order defect.**
+The preserved trainer generates completions from static catalogue alerts
+before its reward callback applies the fault and captures the real alert.
+Those completions are not conditioned on the observation used for execution.
+The [observation-first repair proposal](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
+is prospective and unapproved. The CLI and direct training entrypoint refuse
+work before model/checkpoint/output/cluster access; unit tests of the legacy
+body are software evidence only, not an executable training path.
+
 SFT-parent admission verifies both the checkpoint byte inventory and the
 consumed adapter configuration against recorded LoRA/base-model settings.
 Hash-matching but semantically inconsistent configs fail before any model

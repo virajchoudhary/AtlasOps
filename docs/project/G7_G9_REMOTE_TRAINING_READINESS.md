@@ -176,6 +176,14 @@ completed episode count or resource availability.
 
 ## Current Gate Boundaries
 
+**Later G9 ordering audit:** the existing trainer conditions completions on
+static catalogue input, then obtains the actual incident alert inside reward
+evaluation. The training entrypoints are blocked for this confirmed mismatch.
+See the [prospective observation-first repair](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md).
+Hardware, compatible batches and operator approval would not by themselves
+repair that ordering. No current live-observation-conditioned GRPO readiness
+is established; the earlier software inventory remains a historical snapshot.
+
 1. **Software-preflight candidate:** clean source, hash checks for the exact
    D3-approved candidate and manifest, local contract tests, the v4
    preparation plan, and a dry inspection of CLI/configuration. The legacy

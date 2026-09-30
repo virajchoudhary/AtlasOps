@@ -157,6 +157,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/IMPLEMENTATION_STATUS.md",
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
         "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
+        "docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md",
         "docs/project/FINAL_PIPELINE_V22_STATUS.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md",
         "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",

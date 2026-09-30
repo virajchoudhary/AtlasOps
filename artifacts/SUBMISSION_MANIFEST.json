@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T11:13:48.973937+00:00",
+  "generated_at": "2026-09-30T11:39:28.050580+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,14 +34,14 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 301,
+  "asset_count": 304,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
       "size_bytes": 6416
     },
     ".gitattributes": {
-      "sha256": "5f7a0a16087d6fee5b0032a4b70bb02c63af9b3751ee8626f58387219bc1b442",
+      "sha256": "5f8a4da2e98859d9f860a1dd75c9fb0e4419b023be079c06db58dec3fed0cb28",
       "size_bytes": 1467
     },
     ".github/workflows/ci.yml": {
@@ -145,8 +145,8 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "2a0298ff2404988f20586a81add55f043d71699beaa01877b50ee9531fc607e5",
-      "size_bytes": 12831
+      "sha256": "733eb00ee309e26f9861a7330a2b99c7419c19d9ac63b81bcb7ac827a2c62e5b",
+      "size_bytes": 13253
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
       "sha256": "9af400e4b638e73f90a6e1c15172d2ac31fc01927a28b8a6d6de632daa01617d",
@@ -169,8 +169,8 @@
       "size_bytes": 6768
     },
     "docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md": {
-      "sha256": "0276db88782b717103a2ae873fc3b0e490a1808f46aaeeebb146105dc9be07d0",
-      "size_bytes": 11538
+      "sha256": "9dba70ae04625c2e1572ba6008c36114095ba9f152b20ef6e9d7b3954977c923",
+      "size_bytes": 12785
     },
     "docs/project/G7_D3_PREPARATION_APPROVAL_V1.md": {
       "sha256": "22be898fc999b9356f8b9d0429140625060ac4fa84717dd5eaaf0bde37336741",
@@ -181,7 +181,7 @@
       "size_bytes": 2632
     },
     "docs/project/G7_PILOT_ENVIRONMENT_V1.md": {
-      "sha256": "0a53c42b23eb429a49c145b24e4cc95d9ccf0546228fc90f6b7d81d189c7fd36",
+      "sha256": "d6d9ddebe54644a0a9bf1ed8d6eb357b61e588491632f0456c13dbe37beef5e5",
       "size_bytes": 8965
     },
     "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md": {
@@ -189,8 +189,8 @@
       "size_bytes": 4355
     },
     "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md": {
-      "sha256": "ca26cd7ca69ef8653b7c8a6753460c46139bb71700b27e890e63ad485dd4f50e",
-      "size_bytes": 3537
+      "sha256": "082868991ea39d53dd97b324a50c1e1845516ebc5f8c07cf7d5a98d9b36cab2b",
+      "size_bytes": 4462
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md": {
       "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",
@@ -261,7 +261,7 @@
       "size_bytes": 6216
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "cb31aee05f6a14841828b08768fae58102a7802d549a656b91ae018266c5c94c",
+      "sha256": "041a634df1d4cb81698be222f5968e8d0d1027b53f8a6c1c9c203e6ab2bb2692",
       "size_bytes": 10579
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
@@ -462,6 +462,10 @@
     },
     "artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json": {
       "sha256": "d0283fd2404540cf790c6f5f6ade26ad351d4fbc2a1e3d501c39a29c1b0f0c0d",
+      "size_bytes": 81243
+    },
+    "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json": {
+      "sha256": "4833517a7e0f9b78615c76af9aafca8f7127f83696cea2befd43b0ca1e42eda7",
       "size_bytes": 81243
     },
     "artifacts/evidence/stage10/rs_baseline_eval.json": {
@@ -768,6 +772,10 @@
       "sha256": "3e768a5c8eaa1e773395df10c3a7a2ebf366574a71590a7216880e4421f8f916",
       "size_bytes": 4341
     },
+    "config/sft_pilot_v2.json": {
+      "sha256": "77f58492b4d892abc71d59d3b2eff936ccd911603522c517349957bf8b9200c9",
+      "size_bytes": 4341
+    },
     "requirements/sft-pilot-v1.in": {
       "sha256": "605781e837ab301ab265d3eea810db42d61b342c27a2b0e3a78f772efe120c59",
       "size_bytes": 717
@@ -805,8 +813,8 @@
       "size_bytes": 45643
     },
     "scripts/package_submission.py": {
-      "sha256": "2d6f54a403ca0b7a7617eb06abe872ee5893b6b426b4f95f5353fac7e675baab",
-      "size_bytes": 15534
+      "sha256": "54c4010f0c74bc0baac862e4c8107f0103348d3c4b5debb9c1a850f7a476625f",
+      "size_bytes": 15570
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -817,7 +825,7 @@
       "size_bytes": 2883
     },
     "scripts/freeze_sft_pilot_plan.py": {
-      "sha256": "886257c7cfae951acafdb0f8731d8f5f01672a3ecdac446f9aa70ede42a02bae",
+      "sha256": "27a2a4dadf09860b9407600e4ca4e3772d0f72753042ef6b54c77c600f879a89",
       "size_bytes": 3076
     },
     "training/sft.py": {
@@ -837,12 +845,12 @@
       "size_bytes": 27332
     },
     "training/sft_pilot_gate.py": {
-      "sha256": "e60a27d9497600a87847d24bd83fbc17a58caed44a243ea5652a165d7a1c467c",
+      "sha256": "7181587282407ac1f715b818951d57b425262ea9b994e67cc9bd00eb8322ff3d",
       "size_bytes": 16691
     },
     "training/sft_tokenizer_preflight.py": {
-      "sha256": "e90a9e437aff3cc8524efd2a9cd911a96710ec621e1121bd567c7bc709e14ff3",
-      "size_bytes": 26153
+      "sha256": "471efd5a2c91764a1cb2311576e8aee3a01929ea25c047f9fd5547f29fb9880a",
+      "size_bytes": 44615
     },
     "training/generate_trajectories.py": {
       "sha256": "490b20a96c1501a82893e78b5ab67c80278287c0cfe712043e0cca5e9cd6cdf1",
@@ -1124,9 +1132,13 @@
       "sha256": "a0e173cfd46960b92c4eee2758b89fa28db4f42bf73a0f4229b95126f2ef03f5",
       "size_bytes": 10667
     },
+    "tests/test_sft_tokenizer_pilot_extension.py": {
+      "sha256": "4b27b7a3fde1b81917b1009fb98a55bd1128023f5f7577fc027bc3b1fc77ffb3",
+      "size_bytes": 12571
+    },
     "tests/test_sft_tokenizer_preflight.py": {
-      "sha256": "596b91b4cbe4c4c1ec043d1555307d24b554af3c71c0dadd18b22417414a98bd",
-      "size_bytes": 10300
+      "sha256": "7afcffd4e1f523b1c541db3adf97232d00537bb07748904052bc1fa2bdd4d59d",
+      "size_bytes": 13956
     },
     "tests/test_sft_trainer_handoff.py": {
       "sha256": "be8afb602233c26e928829bd16a616c55e8c7aec8e7576242e5c208ed33e7111",

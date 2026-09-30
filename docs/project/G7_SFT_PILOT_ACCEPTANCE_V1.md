@@ -5,12 +5,16 @@ The subsequent [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md)
 records limited authority, not execution. The exact pin is resolved in
 [D2 metadata](G7_D2_PINNED_MODEL_V1.md), the 72-package hash-locked candidate in
 [the environment record](G7_PILOT_ENVIRONMENT_V1.md), and the final all-row
-offline preflight in `artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json`.
+offline preflight in `artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json`.
 It passes at 8192 tokens; 54 rows exceed 2048, so the declared pilot plan uses
 8192 and preserves the negative checks. The runner now implements
 `--preflight-only` and a hash-bound execution-record schema; no execution digest
 is pinned. Earlier pending/implementation-gap descriptions below are historical
 planning statements superseded by those prepared artifacts.
+The final preflight reuses the merged PR #126 mask/offset core with strict
+local tokenizer-file inventory and the pilot report adapter. Earlier reports
+and `config/sft_pilot_v1.json` remain preserved; the current launch plan is
+`config/sft_pilot_v2.json`.
 Qwen2.5-7B-Instruct QLoRA remains the planned baseline. This checklist
 defines evidence for one bounded pilot; it does not authorize remote compute,
 spending, model-weight access or download, training, evaluation, or final-Test
@@ -99,6 +103,23 @@ and approved budget. Recheck this contract at launch; no general bypass exists.
    review. The existing [`test_sft_mask_proof.py`](../../tests/test_sft_mask_proof.py)
    covers a synthetic example; it does not prove all approved rows or
    truncation behavior.
+   The non-live `training.sft_tokenizer_preflight` command checks the frozen
+   review candidate row by row with an already-cached tokenizer and a full
+   requested commit revision. For example, after separate tokenizer-file
+   staging authorization:
+
+   ```text
+   python -m training.sft_tokenizer_preflight --tokenizer Qwen/Qwen2.5-7B-Instruct --tokenizer-revision <full-40-character-commit> --max-seq-len 2048
+   ```
+
+   It requests local files only and emits a bounded technical report to
+   stdout without writing evidence or loading model weights. Its unit tests
+   use a deterministic fake tokenizer; they do not establish a real
+   pinned-tokenizer result. A requested commit and local-cache loader basis
+   are not an independent inventory of tokenizer bytes or D2 approval.
+   Preserve the actual output and separately hash the authorized local
+   tokenizer files in the later run record. An unavailable tokenizer or any
+   `UNVERIFIED`/refused row leaves this prerequisite unmet.
 3. **Remote runtime freeze.** On the approved NVIDIA host, record GPU model and
    memory, driver, CUDA runtime and PyTorch CUDA build, Python/OS, BF16
    capability, and the tested `bitsandbytes` version and 4-bit compatibility.

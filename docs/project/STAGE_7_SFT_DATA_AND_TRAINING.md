@@ -4,7 +4,7 @@
 
 The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) accepts
 the frozen candidate's documented limitations for preparation only.
-`config/sft_pilot_v1.json` binds the exact model/tokenizer revision, complete
+`config/sft_pilot_v2.json` binds the exact model/tokenizer revision, complete
 dependency lock and final offline tokenizer report. All 68 rows pass masks at
 8192 tokens; 2048 requires truncating 54 rows and remains preserved as a negative
 preflight. `training.sft --preflight-only` verifies this plan without models,

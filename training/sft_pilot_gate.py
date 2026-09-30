@@ -22,12 +22,12 @@ from training.sft_provenance import (
     canonical_bytes_sha256,
 )
 
-PLAN_PATH = REPO_ROOT / "config" / "sft_pilot_v1.json"
+PLAN_PATH = REPO_ROOT / "config" / "sft_pilot_v2.json"
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 REVISION = "a09a35458c702b33eeacc393d103063234e8bc28"
 CORPUS_HASH = "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd"
 MANIFEST_HASH = "35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c"
-PLAN_SHA256 = "3e768a5c8eaa1e773395df10c3a7a2ebf366574a71590a7216880e4421f8f916"
+PLAN_SHA256 = "77f58492b4d892abc71d59d3b2eff936ccd911603522c517349957bf8b9200c9"
 EXECUTION_APPROVAL_SHA256: str | None = None
 
 
@@ -90,7 +90,7 @@ def validate_preparation(
         "requirements/sft-pilot-linux-py312.lock",
         "infra/training/sft-pilot/Dockerfile",
         "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json",
-        "artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json",
+        "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json",
         "training/templates/qwen2_5_tool_sft.jinja",
     }:
         raise ValueError("SFT pilot plan lacks required provenance artifacts")
@@ -121,7 +121,7 @@ def validate_preparation(
     for key, value in expected_fixed.items():
         if hyperparameters.get(key) != value:
             raise ValueError(f"SFT pilot fixed QLoRA setting differs: {key}")
-    report, _ = _read(REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v2.json")
+    report, _ = _read(REPO_ROOT / "artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json")
     if (
         report.get("schema_version") != "atlasops-sft-tokenizer-preflight-v1"
         or report.get("status") != "PASS"

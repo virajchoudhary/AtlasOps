@@ -13,6 +13,22 @@ PASS with no final actionable findings. AST parsing and scoped Ruff/diff
 checks passed. Earlier future-authority findings were fixed rather than
 treated as successful reviews.
 
+## Reconciliation Addendum
+
+Main PR #126 merged a tokenizer-mask/length core while this preparation was
+in progress. The final implementation preserves its APIs, mask/offset logic
+and exact test file; the pilot adapter delegates to that one core and adds
+strict local tokenizer-file inventory and a report for the launch gate.
+Retained core plus extension tests passed 23/23 in Python 3.12.
+The real offline all-row run passed again: 68 rows, maximum 5738 tokens,
+no truncation at 8192. The final report is
+`artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json`, raw SHA-256
+`4833517a7e0f9b78615c76af9aafca8f7127f83696cea2befd43b0ca1e42eda7`.
+The final plan is `config/sft_pilot_v2.json`, SHA-256
+`77f58492b4d892abc71d59d3b2eff936ccd911603522c517349957bf8b9200c9`.
+Earlier plan/report hashes below are preserved historical review snapshots,
+not current gate inputs. No evidence file was overwritten for reconciliation.
+
 ## Spec
 
 The verifier independently checked the current files and confirmed:

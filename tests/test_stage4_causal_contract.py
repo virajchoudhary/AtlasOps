@@ -187,10 +187,12 @@ class TestStage4CausalPredicate:
                 "completed_at": "2026-09-24T00:00:01+00:00",
                 "duration_seconds": 1.0,
                 "timeout_seconds": 30,
-                "poll_interval_seconds": 1,
+                "poll_interval_seconds": 2,
                 "settled": True,
+                "timed_out": False,
                 "observations": [
                     {
+                        "elapsed_seconds": 1.0,
                         "env_resolved": True,
                         "verification_status": "passed",
                         "failed_checks": [],

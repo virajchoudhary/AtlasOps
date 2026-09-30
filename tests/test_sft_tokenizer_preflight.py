@@ -12,7 +12,7 @@ import pytest
 from training import sft_tokenizer_preflight as preflight_module
 from training.build_sft_candidate import build_candidate_rows
 from training.sft_candidate import SOURCE_FILES
-from training.sft_provenance import REPO_ROOT
+from training.sft_provenance import REPO_ROOT, snapshot_training_corpus
 from training.sft_rendering import TEMPLATE_PATH
 from training.sft_tokenizer_preflight import (
     _UnverifiedEncoding,
@@ -201,33 +201,26 @@ def test_frozen_candidate_traverses_all_rows_without_mutating_candidate_or_sourc
     source_paths = [REPO_ROOT / relative_path for relative_path in SOURCE_FILES]
     before = {path: path.read_bytes() for path in [corpus_path, manifest_path, *source_paths]}
 
-    report = preflight_candidate(
-        CharacterTokenizer(),
+    tokenizer = CharacterTokenizer()
+    row_report = preflight_rows(
+        list(snapshot_training_corpus(corpus_path).rows),
+        tokenizer,
         max_seq_length=1_000_000,
     )
+    report = preflight_candidate(tokenizer, max_seq_length=1_000_000)
 
     after = {path: path.read_bytes() for path in before}
     assert after == before
-    assert report["status"] == "PASS"
-    assert report["candidate_version"] == "train-candidate-v1"
-    assert report["candidate"] == {
-        "version": "train-candidate-v1",
-        "examples": 68,
-        "scenarios": 16,
-        "corpus_sha256": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
-        "data_origin": "scenario_derived_synthetic_review_candidate",
-        "synthetic": True,
-        "split": "train",
-        "held_out_outcomes_accessed": False,
-        "technical_admissibility": "PASS",
-        "d3_approval": "PENDING",
-    }
-    assert report["summary"] == {
+    assert row_report["status"] == "PASS"
+    assert row_report["summary"] == {
         "rows": 68,
         "fits": 68,
         "refused": 0,
         "unverified": 0,
     }
+    assert report["status"] == "UNVERIFIED"
+    assert report["reason_code"] == "CANDIDATE_ADMISSION_FAILED"
+    assert report["candidate"]["d3_approval"] == "PENDING"
 
 
 def test_tokenizer_loader_is_pinned_local_only_lazy_and_never_loads_weights(monkeypatch):

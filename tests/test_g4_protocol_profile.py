@@ -38,6 +38,10 @@ from config.g4_protocol import (
     APPROVED_G4_V34_PROTOCOL_PROFILE,
     APPROVED_G4_V35_AGENT_PROMPT_SHA256,
     APPROVED_G4_V35_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V35_PROTOCOL_PROFILE,
+    APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V36_PROTOCOL_PROFILE,
+    APPROVED_G4_V36_SETTLING_DEADLINE,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
@@ -45,6 +49,7 @@ from config.g4_protocol import (
     G4_V33_PROTOCOL_MARKER,
     G4_V34_PROTOCOL_MARKER,
     G4_V35_PROTOCOL_MARKER,
+    G4_V36_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -54,13 +59,13 @@ from config.g4_protocol import (
 )
 
 
-def test_active_v35_profile_pins_model_approval_and_causal_contract():
+def test_active_v36_profile_pins_model_approval_causal_and_settling_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
         "name": APPROVED_G4_V33_MODEL,
         "digest": APPROVED_G4_V33_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V35_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V36_PROTOCOL_MARKER
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
@@ -77,7 +82,24 @@ def test_active_v35_profile_pins_model_approval_and_causal_contract():
         APPROVED_G4_V35_AGENT_PROMPT_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
+        APPROVED_G4_V36_CAUSAL_SOURCE_SHA256
+    )
+    assert APPROVED_G4_PROTOCOL_PROFILE["settling_deadline_policy"] == (
+        APPROVED_G4_V36_SETTLING_DEADLINE
+    )
+    assert protocol_fingerprint(APPROVED_G4_V36_PROTOCOL_PROFILE) == (
+        "eedcc9e09d30700c7d53d206398bf32ff8d7dee10ce4c90a96d6c60686a9b97a"
+    )
+
+
+def test_historical_v35_profile_remains_exact_and_immutable():
+    assert APPROVED_G4_V35_PROTOCOL_PROFILE["protocol_marker"] == G4_V35_PROTOCOL_MARKER
+    assert APPROVED_G4_V35_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
         APPROVED_G4_V35_CAUSAL_SOURCE_SHA256
+    )
+    assert "settling_deadline_policy" not in APPROVED_G4_V35_PROTOCOL_PROFILE
+    assert protocol_fingerprint(APPROVED_G4_V35_PROTOCOL_PROFILE) == (
+        "01467df37336b2cd3fb9c93148c782a1539c358f09d6f7e68c29ab7ca6fe7cd9"
     )
 
 

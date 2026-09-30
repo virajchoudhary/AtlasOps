@@ -89,6 +89,12 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   tokenizer. No real pinned-tokenizer run or file inventory is recorded here.
   Fake-tokenizer tests establish only validator control flow; they do not
   approve D2/D3, weight transfer, or a training launch.
+- Prospective G4 v3.6 changes `agents/coordinator.py`, one of the frozen
+  `train-candidate-v1` source files. The v1 corpus and manifest retain their
+  original hashes and historical technical review, but current-source
+  admission and the candidate tokenizer CLI now fail closed. A separately
+  versioned corpus with fresh source/quality review is needed before D3 or
+  a real tokenizer preflight on the new source. Do not rehash v1 in place.
 
 ## Model, Training Stack and Reproducibility
 

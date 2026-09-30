@@ -17,8 +17,14 @@ corpus-preparation snapshot; the frozen corpus/audit itself is not rewritten.
 The new [D3 review candidate](G7_D3_CANDIDATE_REVIEW_V1.md) is separate from
 the historical fixture below. Its versioned corpus, provenance and independent
 quality review are review inputs, not scientific approval or a completed adapter.
-`training.sft` now refuses both unversioned data and the pending candidate before
-ML imports/output creation. Existing downstream trainer tests use explicit
+Strict candidate admission rejects source drift. The pilot path accepts only
+the reviewed settling-only coordinator hash pair and verifies unchanged
+non-settling AST, corpus bytes, source inventory and row replay. It does not
+rewrite the frozen candidate or replace its approved digests; hashes are
+recomputed for verification. It does not accept arbitrary source changes.
+`training.sft` refuses execution for both unversioned data and the preparation-approved
+candidate before ML imports/output creation; only `--preflight-only` returns
+preparation admission. Existing downstream trainer tests use explicit
 test-only stubs to isolate their handoff/lifecycle contracts; production has no
 D3 bypass. See the [future acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md).
 

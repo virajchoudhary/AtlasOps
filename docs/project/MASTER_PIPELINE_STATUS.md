@@ -126,7 +126,9 @@ scientifically complete.
   repairs the host-process P1 callback and fail-closed external secret loading
   in code. The later [v3.5 causal-evidence candidate](G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md)
   distinguishes active Chaos states and positive metric samples in local
-  contracts without changing frozen v3.3 or historical records. Synthetic
+  contracts. The [v3.6 settling-deadline candidate](G4_PROTOCOL_V36_SETTLING_DEADLINE.md)
+  rejects late verifier success and over-budget reports without changing
+  frozen v3.3-v3.5 or historical records. Synthetic
   tests establish neither a real operator decision nor resolved environment,
   cleanup, or G4 PASS. A future attempt 015 requires a fresh ignored-ledger
   and poison-latch check before any reservation.

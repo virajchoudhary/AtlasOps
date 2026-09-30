@@ -320,8 +320,11 @@ class TestCoordinatorExecutionAndVerificationTruth:
         assert comms_input["verification"]["verification_status"] == "authoritative-final"
         assert comms_input["verification"]["env_resolved"] is True
         assert comms_input["verification"]["evidence"] == ["authoritative_final"]
+        settling_observation = comms_input["settling"]["observations"][0]
+        assert len(comms_input["settling"]["observations"]) == 1
+        assert 0 <= settling_observation["elapsed_seconds"] <= comms_input["settling"]["duration_seconds"]
         assert comms_input["settling"]["observations"] == [{
-            "elapsed_seconds": 0.0,
+            "elapsed_seconds": settling_observation["elapsed_seconds"],
             "env_resolved": True,
             "failed_checks": [],
             "timestamp": comms_input["settling"]["observations"][0]["timestamp"],

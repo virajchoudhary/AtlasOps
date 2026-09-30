@@ -109,9 +109,24 @@ APPROVED_G4_V35_CAUSAL_POLICY = {
     "diagnosis_metric_citation": "exact-query-successful-nonempty-finite-schema-valid-sample",
 }
 
-# Active prospective v3.5 declaration; v3.4 and frozen v3.3 stay separate.
-G4_PROTOCOL_MARKER = G4_V35_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V35_PROTOCOL_PROFILE_VERSION
+G4_V36_PROTOCOL_MARKER = "G4-RECOVERY-V3.6-2026-09-30"
+G4_V36_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.6"
+APPROVED_G4_V36_CAUSAL_SOURCE_SHA256 = {
+    **APPROVED_G4_V35_CAUSAL_SOURCE_SHA256,
+    "agents/coordinator.py": "5d7be471592526fbf519fba571c2a1d2ccfd1d976f027736d00f2b3b39aadd0c",
+    "scripts/run_stage4_golden_incident.py": "24b4e51c0173fbe0c85c58f871a56f0c1ff52dde8ea3b1e85809ef6f4a226f09",
+}
+APPROVED_G4_V36_SETTLING_DEADLINE = {
+    "timeout_seconds": 30,
+    "poll_interval_seconds": 2,
+    "success": "verifier-return-at-or-before-monotonic-deadline",
+    "overrun": "fail-closed-with-actual-elapsed-time",
+    "evidence": "explicit-not-timed-out-and-monotonic-observations",
+}
+
+# Active prospective v3.6 declaration; prior profiles and evidence stay separate.
+G4_PROTOCOL_MARKER = G4_V36_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V36_PROTOCOL_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V33_MODEL
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256
@@ -204,8 +219,18 @@ def causal_evidence_policy_profile() -> dict[str, Any]:
         **APPROVED_G4_V35_CAUSAL_POLICY,
         "source_sha256": {
             path: file_sha256(REPO_ROOT / path)
-            for path in APPROVED_G4_V35_CAUSAL_SOURCE_SHA256
+            for path in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256
         },
+    }
+
+
+def settling_deadline_profile() -> dict[str, Any]:
+    from agents.coordinator import SETTLE_POLL_INTERVAL_SECONDS, SETTLE_TIMEOUT_SECONDS
+
+    return {
+        **APPROVED_G4_V36_SETTLING_DEADLINE,
+        "timeout_seconds": SETTLE_TIMEOUT_SECONDS,
+        "poll_interval_seconds": SETTLE_POLL_INTERVAL_SECONDS,
     }
 
 
@@ -323,6 +348,7 @@ def build_runtime_protocol_profile(
         "pre_t0_safety": dict(APPROVED_G4_V34_PRE_T0_SAFETY),
         "agent_prompt_sha256": agent_prompt_hashes(),
         "causal_evidence_policy": causal_evidence_policy_profile(),
+        "settling_deadline_policy": settling_deadline_profile(),
         "f1_contract": _f1_contract(),
         "scenario_fault_contract": _scenario_fault_contract(),
         "metrics_api": metrics_observation,
@@ -492,7 +518,22 @@ APPROVED_G4_V35_PROTOCOL_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V35_PROTOCOL_PROFILE
+APPROVED_G4_V36_PROTOCOL_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V35_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V36_PROTOCOL_MARKER,
+    "profile_version": G4_V36_PROTOCOL_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V35_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V36_PROTOCOL_PROFILE_VERSION,
+    },
+    "causal_evidence_policy": {
+        **APPROVED_G4_V35_CAUSAL_POLICY,
+        "source_sha256": APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
+    },
+    "settling_deadline_policy": APPROVED_G4_V36_SETTLING_DEADLINE,
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V36_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

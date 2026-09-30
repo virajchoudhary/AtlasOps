@@ -153,6 +153,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/media/*.png",
         "docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md",
         "docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md",
+        "docs/project/G4_PROTOCOL_V36_SETTLING_DEADLINE.md",
         "docs/project/IMPLEMENTATION_STATUS.md",
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
         "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",

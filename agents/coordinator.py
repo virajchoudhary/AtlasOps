@@ -753,37 +753,47 @@ async def settle_environment(
 
     started_at_wall = datetime_now_utc()
     started_monotonic = time.monotonic()
+    timeout_seconds = SETTLE_TIMEOUT_SECONDS
+    deadline = started_monotonic + timeout_seconds
     observations = []
     settled = False
-    while True:
+    while time.monotonic() < deadline:
         result = verify_environment(
             scenario_id=scenario_id,
             agent_claimed_resolved=agent_claimed_resolved,
             alert=alert,
             incident_context=incident_context,
         )
+        observed_monotonic = time.monotonic()
+        elapsed_seconds = observed_monotonic - started_monotonic
         observation = {
             "timestamp": datetime_now_utc(),
-            "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+            "elapsed_seconds": elapsed_seconds,
             "env_resolved": bool(result.env_resolved),
             "verification_status": result.verification_status,
             "failed_checks": list(result.failed_checks),
         }
         observations.append(observation)
-        if result.env_resolved:
+        if result.env_resolved and observed_monotonic <= deadline:
             settled = True
             break
-        elapsed = time.monotonic() - started_monotonic
-        if elapsed >= SETTLE_TIMEOUT_SECONDS:
+        if observed_monotonic >= deadline:
             break
-        await asyncio.sleep(min(SETTLE_POLL_INTERVAL_SECONDS, SETTLE_TIMEOUT_SECONDS - elapsed))
+        await asyncio.sleep(
+            min(SETTLE_POLL_INTERVAL_SECONDS, deadline - observed_monotonic)
+        )
+    completed_at = datetime_now_utc()
+    duration_seconds = time.monotonic() - started_monotonic
+    if duration_seconds > timeout_seconds:
+        settled = False
     return {
         "started_at": started_at_wall,
-        "completed_at": datetime_now_utc(),
-        "duration_seconds": round(time.monotonic() - started_monotonic, 3),
-        "timeout_seconds": SETTLE_TIMEOUT_SECONDS,
+        "completed_at": completed_at,
+        "duration_seconds": duration_seconds,
+        "timeout_seconds": timeout_seconds,
         "poll_interval_seconds": SETTLE_POLL_INTERVAL_SECONDS,
         "settled": settled,
+        "timed_out": not settled and duration_seconds >= timeout_seconds,
         "observations": observations,
     }
 

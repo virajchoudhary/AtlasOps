@@ -47,6 +47,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from config.g4_protocol import (
+    APPROVED_G4_PROTOCOL_PROFILE,
     G4_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     file_sha256,
@@ -1094,24 +1095,57 @@ def _settling_report_satisfied(incident_result: dict[str, Any]) -> bool:
     report = incident_result.get("settling")
     if not isinstance(report, dict) or report.get("settled") is not True:
         return False
+    if report.get("timed_out") is not False:
+        return False
     if not all(
         isinstance(report.get(field), str) and report[field].strip()
         for field in ("started_at", "completed_at")
     ):
         return False
+
+    def finite_number(value: Any) -> bool:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        try:
+            return math.isfinite(value)
+        except OverflowError:
+            return False
+
     timeout = report.get("timeout_seconds")
     poll_interval = report.get("poll_interval_seconds")
     duration = report.get("duration_seconds")
-    if not all(
-        isinstance(value, (int, float)) and math.isfinite(value) and value > 0
-        for value in (timeout, poll_interval)
+    if not finite_number(timeout) or timeout <= 0:
+        return False
+    if not finite_number(poll_interval) or poll_interval <= 0:
+        return False
+    deadline_policy = APPROVED_G4_PROTOCOL_PROFILE.get("settling_deadline_policy")
+    if not isinstance(deadline_policy, dict):
+        return False
+    if (
+        timeout != deadline_policy.get("timeout_seconds")
+        or poll_interval != deadline_policy.get("poll_interval_seconds")
     ):
         return False
-    if not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration < 0:
+    if not finite_number(duration) or duration < 0 or duration > timeout:
         return False
     observations = report.get("observations")
     if not isinstance(observations, list) or not observations:
         return False
+    if not all(isinstance(observation, dict) for observation in observations):
+        return False
+    if any("elapsed_seconds" not in observation for observation in observations):
+        return False
+    previous_elapsed = 0.0
+    for observation in observations:
+        elapsed = observation["elapsed_seconds"]
+        if (
+            not finite_number(elapsed)
+            or elapsed < previous_elapsed
+            or elapsed > duration
+            or elapsed > timeout
+        ):
+            return False
+        previous_elapsed = elapsed
     last = observations[-1]
     return (
         isinstance(last, dict)

@@ -110,14 +110,18 @@ and approved budget. Recheck this contract at launch; no general bypass exists.
    staging authorization:
 
    ```text
-   python -m training.sft_tokenizer_preflight --tokenizer Qwen/Qwen2.5-7B-Instruct --tokenizer-revision <full-40-character-commit> --max-seq-len 2048
+   python -m training.sft_tokenizer_preflight --tokenizer Qwen/Qwen2.5-7B-Instruct --tokenizer-revision <full-40-character-commit> --max-seq-len 8192
    ```
 
+   The earlier 2048-token result remains a preserved negative preflight:
+   54 rows exceeded that limit. It is not a launch setting for the v4 pilot.
    It requests local files only and emits a bounded technical report to
    stdout without writing evidence or loading model weights. Its unit tests
-   use a deterministic fake tokenizer; they do not establish a real
-   pinned-tokenizer result. A requested commit and local-cache loader basis
-   are not an independent inventory of tokenizer bytes or D2 approval.
+   use a deterministic fake tokenizer; the separately recorded v5 all-row
+   report and tokenizer-file inventory establish the non-live preparation,
+   not these unit tests or the example command. A requested commit and
+   local-cache loader basis alone are not an independent inventory of
+   tokenizer bytes or authorization to transfer model weights.
    Preserve the actual output and separately hash the authorized local
    tokenizer files in the later run record. An unavailable tokenizer or any
    `UNVERIFIED`/refused row leaves this prerequisite unmet.

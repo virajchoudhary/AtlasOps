@@ -89,6 +89,31 @@ def _state(*, approval=None):
     }
 
 
+def _active_alert_record(alertname="HighCpuUsage", *, status="active"):
+    return {
+        "alertname": alertname,
+        "severity": "warning",
+        "namespace": "default",
+        "status": status,
+        "starts_at": "2026-09-30T00:00:00Z",
+    }
+
+
+def _alert_observation(*, common_labels=None, alerts=None, synthetic=None):
+    observation = {
+        "commonLabels": (
+            {"alertname": "HighCpuUsage"}
+            if common_labels is None
+            else common_labels
+        ),
+        "alerts": [_active_alert_record()] if alerts is None else alerts,
+        "payload": "sensitive-alert-payload-marker",
+    }
+    if synthetic is not None:
+        observation["synthetic"] = synthetic
+    return observation
+
+
 class _FakeSettleClock:
     def __init__(self):
         self.now = 0.0
@@ -1565,11 +1590,8 @@ async def test_grpo_success_persists_redacted_host_observation_trail(
     scenario_id = "single_fault/sf-002"
     completion = _completion(agent_claimed_resolved=False)
     alert_payload_marker = "synthetic-alert-payload-marker"
-    alert = {
-        "commonLabels": {"alertname": "HighCpuUsage"},
-        "synthetic": False,
-        "payload": alert_payload_marker,
-    }
+    alert = _alert_observation()
+    alert["payload"] = alert_payload_marker
     received_alerts = []
 
     async def no_sleep(_seconds):
@@ -1606,9 +1628,170 @@ async def test_grpo_success_persists_redacted_host_observation_trail(
     _assert_g9_observation_timestamps(observations)
     assert observations["zero_chaos_preflight"]["return_value"] is True
     assert observations["apply_chaos"]["return_value"] is True
-    assert observations["wait_for_alert"]["result"] == "non_synthetic"
+    assert observations["wait_for_alert"]["result"] == "scenario_matched"
     assert observations["reset_chaos"]["return_value"] is True
     assert alert_payload_marker not in json.dumps(record)
+
+
+@pytest.mark.parametrize(
+    ("alert", "expected_result"),
+    [
+        pytest.param(
+            _alert_observation(
+                common_labels={"alertname": "HighMemoryUsage"},
+                alerts=[_active_alert_record("HighMemoryUsage")],
+            ),
+            "scenario_mismatch",
+            id="wrong-scenario",
+        ),
+        pytest.param(
+            _alert_observation(
+                alerts=[
+                    _active_alert_record(),
+                    _active_alert_record("HighMemoryUsage"),
+                ],
+            ),
+            "ambiguous",
+            id="multiple-alerts",
+        ),
+        pytest.param(
+            _alert_observation(
+                common_labels={"alertname": "HighMemoryUsage"},
+                alerts=[_active_alert_record()],
+            ),
+            "envelope_mismatch",
+            id="envelope-disagreement",
+        ),
+        pytest.param(
+            _alert_observation(common_labels={}),
+            "identity_missing",
+            id="missing-envelope-identity",
+        ),
+        pytest.param(
+            _alert_observation(alerts=[_active_alert_record(None)]),
+            "identity_missing",
+            id="missing-alert-identity",
+        ),
+        pytest.param(
+            _alert_observation(alerts=["not-an-alert"]),
+            "malformed",
+            id="malformed-alert-entry",
+        ),
+        pytest.param(
+            _alert_observation(synthetic=True),
+            "synthetic",
+            id="synthetic-fallback",
+        ),
+        pytest.param(
+            _alert_observation(alerts=[_active_alert_record(status="resolved")]),
+            "not_active",
+            id="inactive-alert",
+        ),
+        pytest.param(
+            _alert_observation(alerts=[]),
+            "none",
+            id="empty-alert-list",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "cleanup_verified",
+    [True, False],
+    ids=["cleanup-verified", "cleanup-unverified"],
+)
+def test_grpo_rejects_alerts_not_bound_to_selected_train_scenario(
+    monkeypatch, tmp_path, alert, expected_result, cleanup_verified
+):
+    from bench import runner
+
+    scenario_id = "single_fault/sf-002"
+    completion = "sensitive-policy-completion-marker"
+    cleanup_calls = []
+    environment_calls = []
+    reward_calls = []
+    curriculum_calls = []
+
+    class FakeEnvironment:
+        def __init__(self, **_kwargs):
+            environment_calls.append("constructed")
+
+        async def step(self, *_args, **_kwargs):
+            environment_calls.append("step")
+            return {}
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(grpo, "DirectPolicyEnvironment", FakeEnvironment)
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
+    monkeypatch.setattr(grpo, "apply_chaos", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        grpo,
+        "reset_chaos",
+        lambda selected, **_kwargs: (
+            cleanup_calls.append(selected) or cleanup_verified
+        ),
+    )
+    monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(runner, "wait_for_alert", lambda: alert)
+    monkeypatch.setattr(
+        grpo,
+        "compute_direct_action_reward",
+        lambda result: reward_calls.append(result) or 1.0,
+    )
+    monkeypatch.setattr(
+        grpo._curriculum,
+        "record",
+        lambda **kwargs: curriculum_calls.append(kwargs),
+    )
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    rollout_calls = []
+    original_rollout = reward_function._run_one_rollout
+
+    async def record_rollout_call(*args, **kwargs):
+        rollout_calls.append((args, kwargs))
+        return await original_rollout(*args, **kwargs)
+
+    monkeypatch.setattr(reward_function, "_run_one_rollout", record_rollout_call)
+    try:
+        expected_error = (
+            "unscorable" if cleanup_verified else "cleanup was not verified"
+        )
+        with pytest.raises(RuntimeError, match=expected_error):
+            asyncio.run(
+                reward_function._score_batch(
+                    [completion],
+                    [grpo._direct_action_prompt(scenario_id)],
+                    [scenario_id],
+                )
+            )
+    finally:
+        reward_function._loop.close()
+
+    assert cleanup_calls == [scenario_id]
+    assert rollout_calls == []
+    assert environment_calls == []
+    assert reward_calls == []
+    assert curriculum_calls == []
+    record = json.loads(ledger.read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    if cleanup_verified:
+        assert record["failure"] == f"g9_alert_binding_failed:{expected_result}"
+    else:
+        assert record["failure"] == "scenario_cleanup_unverified"
+        assert record["prior_failure"] == (
+            f"g9_alert_binding_failed:{expected_result}"
+        )
+    assert record["reward"] is None
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["wait_for_alert"]["result"] == expected_result
+    assert observations["reset_chaos"]["return_value"] is cleanup_verified
+    assert "sensitive-alert-payload-marker" not in json.dumps(record)
+    assert "sensitive-policy-completion-marker" not in json.dumps(record)
 
 
 @pytest.mark.asyncio
@@ -1719,7 +1902,7 @@ def test_grpo_cleanup_failure_preserves_rollout_evidence_and_stops_batch(
     monkeypatch.setattr(
         runner,
         "wait_for_alert",
-        lambda: {"commonLabels": {"alertname": "HighCpuUsage"}, "synthetic": False},
+        _alert_observation,
     )
     ledger = tmp_path / "rollouts.jsonl"
     hyperparameters = {"learning_rate": 1e-6, "beta": 0.01, "num_generations": 4}
@@ -1769,7 +1952,7 @@ def test_grpo_cleanup_failure_preserves_rollout_evidence_and_stops_batch(
     _assert_g9_observation_timestamps(observations)
     assert observations["zero_chaos_preflight"]["return_value"] is True
     assert observations["apply_chaos"]["return_value"] is True
-    assert observations["wait_for_alert"]["result"] == "non_synthetic"
+    assert observations["wait_for_alert"]["result"] == "scenario_matched"
     assert observations["reset_chaos"]["call_status"] == (
         "raised" if cleanup_raises else "returned"
     )
@@ -1838,7 +2021,7 @@ async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
 
     record = json.loads((tmp_path / "rollouts.jsonl").read_text(encoding="utf-8"))
     assert record["status"] == "failed"
-    assert record["failure"] == "real_alert_not_observed"
+    assert record["failure"] == f"g9_alert_binding_failed:{expected_alert_result}"
     assert record["reward"] is None
     observations = record["lifecycle_observations"]
     _assert_g9_observation_timestamps(observations)
@@ -1901,11 +2084,19 @@ def test_completed_grpo_requires_at_least_one_verified_rollout(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("alert_severity", "triage_severity"),
-    [("warning", "P2"), ("critical", "P1"), ("unknown", "P0"), ("", "P0")],
+    ("alert_severity", "triage_severity", "shape"),
+    [
+        ("warning", "P2", "common"),
+        ("critical", "P1", "common"),
+        ("unknown", "P0", "common"),
+        ("", "P0", "common"),
+        ("critical", "P1", "flat"),
+        ("warning", "P2", "flat"),
+        ("critical", "P0", "conflict"),
+    ],
 )
 async def test_rollout_executes_completion_directly(
-    monkeypatch, alert_severity, triage_severity
+    monkeypatch, alert_severity, triage_severity, shape
 ):
     observed = {}
 
@@ -1940,8 +2131,15 @@ async def test_rollout_executes_completion_directly(
             "single_fault/sf-002",
             "single_fault",
             {
-                "commonLabels": {"alertname": "HighCpuUsage", "severity": alert_severity},
-                "alerts": [],
+                "commonLabels": {
+                    "alertname": "HighCpuUsage",
+                    **({"severity": alert_severity} if shape != "flat" else {}),
+                },
+                "alerts": (
+                    [{"severity": "warning" if shape == "conflict" else alert_severity}]
+                    if shape != "common"
+                    else []
+                ),
                 "approval": {
                     "status": "approved",
                     "incident_id": "inc-forged-p1",

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -118,6 +119,7 @@ def test_bounded_post_stops_reading_after_limit():
 
     limit = 1024
     stream = CountingStream(b"x" * 1_000_000)
+    attempts = []
 
     async def mock_handler(request):
         return httpx.Response(
@@ -138,6 +140,7 @@ def test_bounded_post_stops_reading_after_limit():
                     {},
                     context="bounded",
                     max_response_bytes=limit,
+                    attempt_observer=attempts.append,
                 )
         return exc_info.value
 
@@ -149,6 +152,238 @@ def test_bounded_post_stops_reading_after_limit():
     assert error.body_bytes_read == limit
     assert error.limit_bytes == limit
     assert error.body_prefix_sha256 == hashlib.sha256(stream.body[:limit]).hexdigest()
+    assert attempts == [
+        {
+            "attempt_index": 1,
+            "response_status": 200,
+            "transport_category": "response_body_too_large",
+            "response_received": True,
+            "retry_disposition": "raise",
+        }
+    ]
+    assert set(attempts[0]) == {
+        "attempt_index",
+        "response_status",
+        "transport_category",
+        "response_received",
+        "retry_disposition",
+    }
+
+
+def test_attempt_observer_preserves_accepted_read_timeout_before_retry():
+    from agents._http_retry import post_with_retry
+
+    attempts = []
+    calls = 0
+    accepted_requests = []
+
+    async def mock_handler(request):
+        nonlocal calls
+        calls += 1
+        accepted_requests.append(request.method)
+        if calls == 1:
+            raise httpx.ReadTimeout("private response detail", request=request)
+        return httpx.Response(200, json={"ok": True})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler),
+            trust_env=False,
+        ) as client:
+            return await post_with_retry(
+                client,
+                "http://test/v1",
+                {},
+                base_backoff=0,
+                max_attempts=2,
+                attempt_observer=attempts.append,
+            )
+
+    response = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert accepted_requests == ["POST", "POST"]
+    assert attempts == [
+        {
+            "attempt_index": 1,
+            "response_status": None,
+            "transport_category": "read_timeout",
+            "response_received": False,
+            "retry_disposition": "retry",
+        },
+        {
+            "attempt_index": 2,
+            "response_status": 200,
+            "transport_category": None,
+            "response_received": True,
+            "retry_disposition": "return",
+        },
+    ]
+    assert "private response detail" not in json.dumps(attempts)
+
+
+def test_attempt_observer_records_every_exhausted_read_timeout():
+    from agents._http_retry import post_with_retry
+
+    attempts = []
+    calls = 0
+
+    async def mock_handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("private response detail", request=request)
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler),
+            trust_env=False,
+        ) as client:
+            with pytest.raises(httpx.ReadTimeout):
+                await post_with_retry(
+                    client,
+                    "http://test/v1",
+                    {},
+                    base_backoff=0,
+                    max_attempts=2,
+                    attempt_observer=attempts.append,
+                )
+
+    asyncio.run(run())
+
+    assert calls == 2
+    assert attempts == [
+        {
+            "attempt_index": 1,
+            "response_status": None,
+            "transport_category": "read_timeout",
+            "response_received": False,
+            "retry_disposition": "retry",
+        },
+        {
+            "attempt_index": 2,
+            "response_status": None,
+            "transport_category": "read_timeout",
+            "response_received": False,
+            "retry_disposition": "raise",
+        },
+    ]
+
+
+def test_attempt_observer_marks_stream_read_timeout_after_response_headers():
+    from agents._http_retry import post_with_retry
+
+    attempts = []
+    streams = []
+    calls = 0
+
+    class ReadTimeoutStream(httpx.AsyncByteStream):
+        def __init__(self, request):
+            self.request = request
+            self.closed = False
+
+        async def __aiter__(self):
+            raise httpx.ReadTimeout("private body detail", request=self.request)
+            yield b""
+
+        async def aclose(self):
+            self.closed = True
+
+    async def mock_handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            stream = ReadTimeoutStream(request)
+            streams.append(stream)
+            return httpx.Response(200, stream=stream, request=request)
+        return httpx.Response(
+            200,
+            stream=CountingStream(b'{"ok":true}'),
+            request=request,
+        )
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler),
+            trust_env=False,
+        ) as client:
+            return await post_with_retry(
+                client,
+                "http://test/v1",
+                {},
+                base_backoff=0,
+                max_attempts=2,
+                max_response_bytes=1024,
+                attempt_observer=attempts.append,
+            )
+
+    response = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert calls == 2
+    assert streams[0].closed is True
+    assert attempts == [
+        {
+            "attempt_index": 1,
+            "response_status": 200,
+            "transport_category": "read_timeout",
+            "response_received": True,
+            "retry_disposition": "retry",
+        },
+        {
+            "attempt_index": 2,
+            "response_status": 200,
+            "transport_category": None,
+            "response_received": True,
+            "retry_disposition": "return",
+        },
+    ]
+
+
+def test_attempt_observer_records_http_error_responses_without_retry_drift():
+    from agents._http_retry import post_with_retry
+
+    attempts = []
+    calls = 0
+
+    async def mock_handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503 if calls == 1 else 500, request=request)
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(mock_handler),
+            trust_env=False,
+        ) as client:
+            return await post_with_retry(
+                client,
+                "http://test/v1",
+                {},
+                base_backoff=0,
+                max_attempts=2,
+                attempt_observer=attempts.append,
+            )
+
+    response = asyncio.run(run())
+
+    assert calls == 2
+    assert response.status_code == 500
+    assert attempts == [
+        {
+            "attempt_index": 1,
+            "response_status": 503,
+            "transport_category": None,
+            "response_received": True,
+            "retry_disposition": "retry",
+        },
+        {
+            "attempt_index": 2,
+            "response_status": 500,
+            "transport_category": None,
+            "response_received": True,
+            "retry_disposition": "return",
+        },
+    ]
 
 
 @pytest.mark.parametrize("retry_status", [429, 503])

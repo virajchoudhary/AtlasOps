@@ -59,6 +59,19 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   A failed call with no returned response remains distinct from a parse failure.
 - Completion responses are streamed with a 4 MiB raw-byte cap. Oversized responses stop
   at the limit and retain only a prefix hash, observed byte count, and truncation flag.
+- Completion POSTs retain bounded metadata for every observed retry attempt:
+  index, response status, transport category, response receipt and retry
+  disposition. These records contain no endpoint, headers, bodies or raw
+  exception text. Retry budgets and backoff behavior are unchanged.
+  `response_received` is separate from `inference_execution_certainty`:
+  a returned completion confirms at least one inference response, not that
+  every retried request had a known execution outcome. Read timeouts and
+  unobserved callback failures remain `unknown`, with
+  `empirical_inference_executed=null`, rather than claiming no inference ran.
+  Positive evidence of no dispatch remains `not_executed`; mock mode is not
+  dispatched. `total_turns` counts confirmed completion turns only, not POST
+  attempts. HTTP error or oversized-body receipt does not establish a valid
+  model completion or exact-model attestation.
 - Finalized episode rows replace the initial JSONL atomically. If finalization fails,
   the initial rows remain intact and nonclaimable.
 - Diagnosis-only evaluation leaves environment resolution, reward, and time to resolve

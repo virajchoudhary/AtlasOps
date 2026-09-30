@@ -776,7 +776,15 @@ def _mock_completion_endpoint(
         async def __aexit__(self, *_args):
             return None
 
-    async def fake_post(_client, url, json, *, context, max_response_bytes=None):
+    async def fake_post(
+        _client,
+        url,
+        json,
+        *,
+        context,
+        max_response_bytes=None,
+        attempt_observer=None,
+    ):
         calls.append(
             {
                 "url": url,
@@ -794,6 +802,179 @@ def _mock_completion_endpoint(
     monkeypatch.setattr(zero_shot.httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(zero_shot, "post_with_retry", fake_post)
     return response, calls
+
+
+def _patch_in_process_inference_transport(monkeypatch, handler):
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+    original_post_with_retry = zero_shot.post_with_retry
+
+    def client_factory(*args, **kwargs):
+        return real_async_client(*args, transport=transport, **kwargs)
+
+    async def post_without_backoff(*args, **kwargs):
+        kwargs["base_backoff"] = 0
+        return await original_post_with_retry(*args, **kwargs)
+
+    monkeypatch.setattr(zero_shot.httpx, "AsyncClient", client_factory)
+    monkeypatch.setattr(zero_shot, "post_with_retry", post_without_backoff)
+
+
+def _run_mocked_inference_evaluation(output_dir):
+    async def inference(messages, model_name, generation_config):
+        return await zero_shot.openai_compatible_inference(
+            messages,
+            model_name,
+            generation_config,
+        )
+
+    return asyncio.run(
+        zero_shot.evaluate_zero_shot_split(
+            "val",
+            mode="empirical",
+            model_revision="synthetic-test-revision",
+            output_dir=output_dir,
+            inference_fn=inference,
+            inference_backend="openai-compatible",
+        )
+    )
+
+
+def test_g6_persists_accepted_read_timeout_attempt_before_retry_success(
+    tmp_path,
+    monkeypatch,
+):
+    model_name = "qwen2.5:7b-instruct"
+    secret_marker = "test-api-key-must-not-be-persisted"
+    requests = []
+
+    class CompletionStream(httpx.AsyncByteStream):
+        def __init__(self, body):
+            self.body = body
+
+        async def __aiter__(self):
+            yield self.body
+
+        async def aclose(self):
+            return None
+
+    async def handler(request):
+        requests.append(request)
+        if len(requests) % 2 == 1:
+            raise httpx.ReadTimeout("private transport detail", request=request)
+        body = json.dumps(
+            {
+                "model": model_name,
+                "choices": [{"message": {"content": _prediction()}}],
+            }
+        ).encode("utf-8")
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/json"},
+            stream=CompletionStream(body),
+            request=request,
+        )
+
+    _patch_in_process_inference_transport(monkeypatch, handler)
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("LLM_API_KEY", secret_marker)
+
+    output_dir = tmp_path / "retry-success"
+    summary = _run_mocked_inference_evaluation(output_dir)
+    rows = [
+        json.loads(line)
+        for line in (output_dir / "results_per_episode.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    serialized = json.dumps(rows, sort_keys=True)
+
+    assert len(requests) == 2 * len(VAL_SPLIT)
+    assert all(request.method == "POST" for request in requests)
+    assert summary["empirical_inference_executed"] is True, rows[0]["error"]
+    assert summary["inference_execution_certainty"] == "confirmed"
+    assert summary["response_received"] is True
+    assert summary["empirical_claim_allowed"] is False
+    assert all(row["empirical_inference_executed"] is True for row in rows)
+    assert all(row["response_received"] is True for row in rows)
+    assert all(row["inference_execution_certainty"] == "confirmed" for row in rows)
+    assert all(row["attempt_evidence_status"] == "observed" for row in rows)
+    assert all(
+        row["inference_attempts"]
+        == [
+            {
+                "attempt_index": 1,
+                "response_status": None,
+                "transport_category": "read_timeout",
+                "response_received": False,
+                "retry_disposition": "retry",
+            },
+            {
+                "attempt_index": 2,
+                "response_status": 200,
+                "transport_category": None,
+                "response_received": True,
+                "retry_disposition": "return",
+            },
+        ]
+        for row in rows
+    )
+    assert secret_marker not in serialized
+    assert "private transport detail" not in serialized
+
+
+@pytest.mark.parametrize("failure", ["timeout", "http-error", "oversized"])
+def test_g6_error_rows_retain_attempts_without_asserting_execution_absent(
+    tmp_path, monkeypatch, failure,
+):
+    class BodyStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"x" * 128
+
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private transport detail", request=request)
+        return httpx.Response(
+            400 if failure == "http-error" else 200,
+            stream=BodyStream(),
+            request=request,
+        )
+
+    _patch_in_process_inference_transport(monkeypatch, handler)
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    if failure == "oversized":
+        monkeypatch.setattr(zero_shot, "MAX_G6_INFERENCE_RESPONSE_BYTES", 16)
+    output_dir = tmp_path / failure
+    summary = _run_mocked_inference_evaluation(output_dir)
+    rows = [
+        json.loads(line) for line in
+        (output_dir / "results_per_episode.jsonl").read_text().splitlines()
+    ]
+    attempts_per_row = 5 if failure == "timeout" else 1
+    assert len(requests) == attempts_per_row * len(VAL_SPLIT)
+    assert summary["empirical_inference_executed"] is None
+    assert summary["inference_execution_certainty"] == "unknown"
+    for row in rows:
+        assert row["status"] == "error"
+        assert row["attempt_evidence_status"] == "observed"
+        assert row["empirical_inference_executed"] is None
+        assert row["inference_execution_certainty"] == "unknown"
+        assert row["response_received"] is (failure != "timeout")
+        assert len(row["inference_attempts"]) == attempts_per_row
+        assert [a["attempt_index"] for a in row["inference_attempts"]] == list(
+            range(1, attempts_per_row + 1)
+        )
+        assert row["inference_attempts"][-1]["retry_disposition"] == (
+            "return" if failure == "http-error" else "raise"
+        )
+        assert row["prediction"] is None
+        assert row["diagnostic_metrics"] is None
+        assert row["empirical_claim_allowed"] is False
+        assert row["env_resolved"] is None
+    assert "private transport detail" not in json.dumps(rows)
 
 
 @pytest.mark.asyncio
@@ -1539,8 +1720,7 @@ async def test_empirical_mode_never_exposes_expected_root_cause(tmp_path):
     assert summary["raw_predictions_sha256"]
 
 
-@pytest.mark.asyncio
-async def test_empirical_failure_is_preserved_without_mock_fallback(
+def test_empirical_failure_is_preserved_without_mock_fallback(
     tmp_path,
     monkeypatch,
 ):
@@ -1553,18 +1733,21 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
         calls += 1
         raise RuntimeError(secret_marker)
 
-    summary = await zero_shot.evaluate_zero_shot_split(
-        "val",
-        model_revision="revision-1",
-        mode="empirical",
-        output_dir=tmp_path,
-        inference_fn=failing_inference,
-        inference_backend="injected-test-double",
+    summary = asyncio.run(
+        zero_shot.evaluate_zero_shot_split(
+            "val",
+            model_revision="revision-1",
+            mode="empirical",
+            output_dir=tmp_path,
+            inference_fn=failing_inference,
+            inference_backend="injected-test-double",
+        )
     )
 
     assert calls == len(VAL_SPLIT)
     assert summary["failed_scenarios"] == len(VAL_SPLIT)
-    assert summary["empirical_inference_executed"] is False
+    assert summary["empirical_inference_executed"] is None
+    assert summary["inference_execution_certainty"] == "unknown"
     assert summary["diagnostic_scored_count"] == 0
     assert summary["avg_diagnostic_f1"] is None
     rows = [
@@ -1574,7 +1757,11 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
         .splitlines()
     ]
     assert all(row["status"] == "error" for row in rows)
-    assert all(row["empirical_inference_executed"] is False for row in rows)
+    assert all(row["empirical_inference_executed"] is None for row in rows)
+    assert all(row["inference_execution_certainty"] == "unknown" for row in rows)
+    assert all(row["response_received"] is None for row in rows)
+    assert all(row["inference_attempts"] == [] for row in rows)
+    assert all(row["attempt_evidence_status"] == "unavailable" for row in rows)
     assert all(row["diagnostic_metrics"] is None for row in rows)
     assert all(row["evaluation_mode"] == "empirical" for row in rows)
     assert all("mock" not in row for row in rows)

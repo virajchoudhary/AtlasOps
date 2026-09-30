@@ -5,11 +5,23 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Literal, TypedDict
 
 import httpx
 
 log = logging.getLogger("atlasops.http_retry")
+
+
+class AttemptMetadata(TypedDict):
+    attempt_index: int
+    response_status: int | None
+    transport_category: str | None
+    response_received: bool
+    retry_disposition: Literal["retry", "return", "raise"]
+
+
+AttemptObserver = Callable[[AttemptMetadata], None]
 
 
 class ResponseBodyTooLargeError(httpx.HTTPError):
@@ -99,6 +111,48 @@ def _retry_delay(
     return None
 
 
+def _transport_category(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, ResponseBodyTooLargeError):
+        return "response_body_too_large"
+    if isinstance(exc, httpx.ConnectError):
+        return "connect_error"
+    if isinstance(exc, httpx.ConnectTimeout):
+        return "connect_timeout"
+    if isinstance(exc, httpx.ReadTimeout):
+        return "read_timeout"
+    if isinstance(exc, httpx.WriteTimeout):
+        return "write_timeout"
+    if isinstance(exc, httpx.PoolTimeout):
+        return "pool_timeout"
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.TransportError):
+        return "transport_error"
+    return "http_error"
+
+
+def _observe_attempt(
+    observer: AttemptObserver | None,
+    *,
+    attempt: int,
+    response_status: int | None,
+    transport_category: str | None,
+    response_received: bool,
+    retry_disposition: Literal["retry", "return", "raise"],
+) -> None:
+    if observer is None:
+        return
+    observer(
+        {
+            "attempt_index": attempt + 1,
+            "response_status": response_status,
+            "transport_category": transport_category,
+            "response_received": response_received,
+            "retry_disposition": retry_disposition,
+        }
+    )
+
+
 async def post_with_retry(
     client: httpx.AsyncClient,
     url: str,
@@ -108,6 +162,7 @@ async def post_with_retry(
     max_attempts: int = 5,
     base_backoff: float = 1.5,
     max_response_bytes: int | None = None,
+    attempt_observer: AttemptObserver | None = None,
 ) -> httpx.Response:
     """POST with retry on 429, 5xx, and transient connection errors.
 
@@ -120,6 +175,10 @@ async def post_with_retry(
 
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
+        response_status: int | None = None
+        response_received = False
+        response: httpx.Response | None = None
+        retry_delay: float | None = None
         try:
             if max_response_bytes is None:
                 r = await client.post(url, json=json)
@@ -130,12 +189,11 @@ async def post_with_retry(
                     base_backoff=base_backoff,
                     context=context,
                 )
-                if retry_delay is not None:
-                    await asyncio.sleep(retry_delay)
-                    continue
+                response = r
             else:
-                retry_delay = None
                 async with client.stream("POST", url, json=json) as streamed_response:
+                    response_status = streamed_response.status_code
+                    response_received = True
                     retry_delay = _retry_delay(
                         streamed_response,
                         attempt=attempt,
@@ -144,16 +202,23 @@ async def post_with_retry(
                         context=context,
                     )
                     if retry_delay is None:
-                        return await _read_limited_response(
+                        response = await _read_limited_response(
                             streamed_response,
                             max_response_bytes,
                         )
-                if retry_delay is not None:
-                    await asyncio.sleep(retry_delay)
-                    continue
-            return r
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
             last_exc = e
+            disposition: Literal["retry", "raise"] = (
+                "retry" if attempt < max_attempts - 1 else "raise"
+            )
+            _observe_attempt(
+                attempt_observer,
+                attempt=attempt,
+                response_status=response_status,
+                transport_category=_transport_category(e),
+                response_received=response_received,
+                retry_disposition=disposition,
+            )
             if attempt < max_attempts - 1:
                 wait = base_backoff * (attempt + 1)
                 log.warning(
@@ -163,6 +228,45 @@ async def post_with_retry(
                 await asyncio.sleep(wait)
                 continue
             raise
+        except httpx.HTTPError as e:
+            _observe_attempt(
+                attempt_observer,
+                attempt=attempt,
+                response_status=response_status,
+                transport_category=_transport_category(e),
+                response_received=response_received,
+                retry_disposition="raise",
+            )
+            raise
+
+        if max_response_bytes is None and response is not None:
+            response_status = response.status_code
+            response_received = True
+
+        if retry_delay is not None:
+            disposition = "retry" if attempt < max_attempts - 1 else "raise"
+            _observe_attempt(
+                attempt_observer,
+                attempt=attempt,
+                response_status=response_status,
+                transport_category=None,
+                response_received=response_received,
+                retry_disposition=disposition,
+            )
+            await asyncio.sleep(retry_delay)
+            continue
+
+        _observe_attempt(
+            attempt_observer,
+            attempt=attempt,
+            response_status=response_status,
+            transport_category=None,
+            response_received=response_received,
+            retry_disposition="return",
+        )
+        if response is None:
+            raise httpx.HTTPError("HTTP response was not available after request")
+        return response
     if last_exc:
         raise last_exc
     raise httpx.HTTPError(f"post_with_retry exhausted {max_attempts} attempts ({context})")

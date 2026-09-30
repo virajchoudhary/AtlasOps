@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -31,7 +31,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from agents._http_retry import ResponseBodyTooLargeError, post_with_retry
+from agents._http_retry import AttemptMetadata, ResponseBodyTooLargeError, post_with_retry
 from bench.runner import compute_summary, run_scenario
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
 from config.splits import (
@@ -201,6 +201,8 @@ def _preflight_output_paths(
 class InferenceResult:
     content: str
     model_name: str
+    inference_attempts: list[AttemptMetadata] = field(default_factory=list)
+    attempt_evidence_status: Literal["observed", "not_attempted", "unavailable"] = "unavailable"
 
 
 InferenceCallable = Callable[
@@ -464,8 +466,14 @@ class InferenceResponseError(RuntimeError):
         response: httpx.Response | None = None,
         response_body_too_large: ResponseBodyTooLargeError | None = None,
         response_model_name_verified: bool | None = None,
+        inference_attempts: list[AttemptMetadata] | None = None,
+        attempt_evidence_status: Literal[
+            "observed", "not_attempted", "unavailable"
+        ] = "unavailable",
     ) -> None:
         super().__init__(message)
+        self.inference_attempts = list(inference_attempts or [])
+        self.attempt_evidence_status = attempt_evidence_status
         if response is not None:
             response_fingerprint = _response_error_fingerprint(response)
         elif response_body_too_large is not None:
@@ -486,6 +494,24 @@ class InferenceResponseError(RuntimeError):
         self.response_model_name_verified = response_model_name_verified
 
 
+class InferenceRequestError(RuntimeError):
+    """Sanitized request failure with bounded per-attempt metadata."""
+
+    def __init__(
+        self,
+        *,
+        failure_category: str,
+        inference_attempts: list[AttemptMetadata],
+        attempt_evidence_status: Literal[
+            "observed", "not_attempted", "unavailable"
+        ],
+    ) -> None:
+        super().__init__("OpenAI-compatible inference request failed")
+        self.failure_category = failure_category
+        self.inference_attempts = list(inference_attempts)
+        self.attempt_evidence_status = attempt_evidence_status
+
+
 def _sanitized_inference_error(exc: Exception) -> str:
     if isinstance(exc, InferenceResponseError):
         kind = exc.response_error.get("kind")
@@ -501,6 +527,14 @@ def _sanitized_inference_error(exc: Exception) -> str:
         }:
             kind = "response_error"
         return f"InferenceResponseError: {kind}"
+    if isinstance(exc, InferenceRequestError):
+        if exc.failure_category == "transport_timeout":
+            return "TimeoutError: transport_timeout; details redacted"
+        if exc.failure_category == "transport_connection_failure":
+            return "ConnectError: transport_connection_failure; details redacted"
+        if exc.failure_category == "transport_failure":
+            return "HTTPError: transport_failure; details redacted"
+        return "Exception: inference_failure; details redacted"
     if isinstance(exc, httpx.TimeoutException):
         return "TimeoutError: transport_timeout; details redacted"
     if isinstance(exc, httpx.ConnectError):
@@ -516,6 +550,16 @@ def _sanitized_inference_error(exc: Exception) -> str:
     if isinstance(exc, RuntimeError):
         return "RuntimeError: inference_failure; details redacted"
     return "Exception: inference_failure; details redacted"
+
+
+def _inference_request_failure_category(exc: Exception) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        return "transport_connection_failure"
+    if isinstance(exc, httpx.TimeoutException):
+        return "transport_timeout"
+    if isinstance(exc, httpx.HTTPError):
+        return "transport_failure"
+    return "request_failure"
 
 
 def _unique_prediction_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -597,30 +641,45 @@ async def openai_compatible_inference(
         "max_tokens": generation_config["max_tokens"],
         "seed": generation_config["seed"],
     }
-    async with httpx.AsyncClient(
-        headers=headers,
-        timeout=generation_config["timeout_seconds"],
-        trust_env=False,
-    ) as client:
-        try:
+    inference_attempts: list[AttemptMetadata] = []
+    try:
+        async with httpx.AsyncClient(
+            headers=headers,
+            timeout=generation_config["timeout_seconds"],
+            trust_env=False,
+        ) as client:
             response = await post_with_retry(
                 client,
                 f"{base_url}/chat/completions",
                 payload,
                 context="g6-zero-shot",
                 max_response_bytes=MAX_G6_INFERENCE_RESPONSE_BYTES,
+                attempt_observer=inference_attempts.append,
             )
-        except ResponseBodyTooLargeError as exc:
-            raise InferenceResponseError(
-                "OpenAI-compatible inference response exceeded configured size limit",
-                kind="response_body_too_large",
-                response_body_too_large=exc,
-            ) from None
+    except ResponseBodyTooLargeError as exc:
+        raise InferenceResponseError(
+            "OpenAI-compatible inference response exceeded configured size limit",
+            kind="response_body_too_large",
+            response_body_too_large=exc,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status="observed" if inference_attempts else "unavailable",
+        ) from None
+    except httpx.HTTPError as exc:
+        raise InferenceRequestError(
+            failure_category=_inference_request_failure_category(exc),
+            inference_attempts=inference_attempts,
+            attempt_evidence_status="observed" if inference_attempts else "unavailable",
+        ) from None
+    attempt_evidence_status: Literal[
+        "observed", "not_attempted", "unavailable"
+    ] = "observed" if inference_attempts else "unavailable"
     if not response.is_success:
         raise InferenceResponseError(
             f"OpenAI-compatible inference returned HTTP {response.status_code}",
             kind="http_status_error",
             response=response,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         )
     try:
         body = response.json()
@@ -629,6 +688,8 @@ async def openai_compatible_inference(
             "OpenAI-compatible inference response is not valid JSON",
             kind="invalid_json",
             response=response,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         ) from exc
 
     if not isinstance(body, dict):
@@ -636,6 +697,8 @@ async def openai_compatible_inference(
             "OpenAI-compatible inference response is not a JSON object",
             kind="invalid_response_shape",
             response=response,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         )
     served_model = body.get("model")
     if not isinstance(served_model, str) or not served_model.strip():
@@ -644,6 +707,8 @@ async def openai_compatible_inference(
             kind="missing_model_name",
             response=response,
             response_model_name_verified=False,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         )
     if served_model != model_name:
         raise InferenceResponseError(
@@ -651,6 +716,8 @@ async def openai_compatible_inference(
             kind="response_model_name_mismatch",
             response=response,
             response_model_name_verified=False,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         )
 
     try:
@@ -660,14 +727,23 @@ async def openai_compatible_inference(
             "OpenAI-compatible inference response lacks choices[0].message.content",
             kind="missing_completion_content",
             response=response,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         ) from exc
     if not isinstance(content, str) or not content.strip():
         raise InferenceResponseError(
             "OpenAI-compatible inference response content is empty",
             kind="empty_completion_content",
             response=response,
+            inference_attempts=inference_attempts,
+            attempt_evidence_status=attempt_evidence_status,
         )
-    return InferenceResult(content=content, model_name=served_model)
+    return InferenceResult(
+        content=content,
+        model_name=served_model,
+        inference_attempts=inference_attempts,
+        attempt_evidence_status=attempt_evidence_status,
+    )
 
 
 def _resolve_mode(mode: str | None, mock: bool | None) -> Literal["mock", "empirical"]:
@@ -679,6 +755,34 @@ def _resolve_mode(mode: str | None, mock: bool | None) -> Literal["mock", "empir
     if mode is not None and compatibility_mode is not None and mode != compatibility_mode:
         raise ValueError("Conflicting mode and mock arguments")
     return (mode or compatibility_mode)  # type: ignore[return-value]
+
+
+def _failed_request_execution_certainty(
+    error: InferenceRequestError,
+) -> Literal["not_executed", "unknown"]:
+    if error.attempt_evidence_status == "not_attempted":
+        return "not_executed"
+    if error.inference_attempts and all(
+        attempt["response_received"] is False
+        and attempt["transport_category"] in {"connect_error", "connect_timeout"}
+        for attempt in error.inference_attempts
+    ):
+        return "not_executed"
+    return "unknown"
+
+
+def _response_received_after_failure(
+    error: Exception,
+    attempts: list[AttemptMetadata],
+    attempt_evidence_status: str,
+) -> bool | None:
+    if attempts:
+        return any(attempt["response_received"] for attempt in attempts)
+    if isinstance(error, InferenceResponseError):
+        return True
+    if isinstance(error, InferenceRequestError) and attempt_evidence_status == "not_attempted":
+        return False
+    return None
 
 
 async def _evaluate_empirical_episode(
@@ -695,7 +799,12 @@ async def _evaluate_empirical_episode(
     started_at = datetime.now(UTC).isoformat()
 
     raw_text = ""
-    response_received = False
+    response_received: bool | None = None
+    inference_execution_certainty: Literal["confirmed", "not_executed", "unknown"] = "unknown"
+    inference_attempts: list[AttemptMetadata] = []
+    attempt_evidence_status: Literal[
+        "observed", "not_attempted", "unavailable"
+    ] = "unavailable"
     parse_attempted = False
     response_model_name: str | None = None
     response_model_name_verified: bool | None = None
@@ -703,7 +812,10 @@ async def _evaluate_empirical_episode(
     try:
         inference_result = await inference_fn(messages, model_name, generation_config)
         response_received = True
+        inference_execution_certainty = "confirmed"
         if isinstance(inference_result, InferenceResult):
+            inference_attempts = list(inference_result.inference_attempts)
+            attempt_evidence_status = inference_result.attempt_evidence_status
             if inference_result.model_name != model_name:
                 response_model_name_verified = False
                 raise RuntimeError("Inference response model name does not match requested model")
@@ -728,14 +840,39 @@ async def _evaluate_empirical_episode(
         if isinstance(exc, InferenceResponseError):
             response_error = exc.response_error
             response_model_name_verified = exc.response_model_name_verified
+        if isinstance(exc, (InferenceResponseError, InferenceRequestError)):
+            inference_attempts = list(exc.inference_attempts)
+            attempt_evidence_status = exc.attempt_evidence_status
+            response_received = _response_received_after_failure(
+                exc,
+                inference_attempts,
+                attempt_evidence_status,
+            )
+            inference_execution_certainty = (
+                _failed_request_execution_certainty(exc)
+                if isinstance(exc, InferenceRequestError)
+                else "unknown"
+            )
+        elif response_received is not True:
+            response_received = None
+            inference_execution_certainty = "unknown"
         error = _sanitized_inference_error(exc)
 
+    empirical_inference_executed: bool | None = {
+        "confirmed": True,
+        "not_executed": False,
+        "unknown": None,
+    }[inference_execution_certainty]
     episode = {
         "scenario_id": scenario_id,
         "tier": meta.tier,
         "status": status,
         "evaluation_mode": "empirical",
-        "empirical_inference_executed": response_received,
+        "response_received": response_received,
+        "empirical_inference_executed": empirical_inference_executed,
+        "inference_execution_certainty": inference_execution_certainty,
+        "inference_attempts": inference_attempts,
+        "attempt_evidence_status": attempt_evidence_status,
         "empirical_claim_allowed": False,
         "inference_backend": inference_backend,
         "observed_model_identity": observed_model_identity,
@@ -759,7 +896,7 @@ async def _evaluate_empirical_episode(
             else "invalid_prediction" if parse_attempted
             else "inference_error"
         ),
-        "total_turns": 1 if response_received else 0,
+        "total_turns": 1 if inference_execution_certainty == "confirmed" else 0,
         "time_to_resolve_s": None,
         "started_at": started_at,
         "completed_at": datetime.now(UTC).isoformat(),
@@ -918,7 +1055,11 @@ async def evaluate_zero_shot_split(
                     {
                         "evaluation_mode": "mock",
                         "non_empirical": True,
+                        "response_received": False,
                         "empirical_inference_executed": False,
+                        "inference_execution_certainty": "not_executed",
+                        "inference_attempts": [],
+                        "attempt_evidence_status": "not_attempted",
                         "empirical_claim_allowed": False,
                         "ground_truth_root_cause": meta.expected_root_cause,
                         "predicted_root_cause": predicted,
@@ -1019,6 +1160,31 @@ async def evaluate_zero_shot_split(
 
     summary = compute_summary(episodes, tag=tag, model=model_name)
     valid = [episode for episode in episodes if episode.get("status") == "ok"]
+    if selected_mode == "empirical":
+        if episodes and all(
+            episode["inference_execution_certainty"] == "confirmed"
+            for episode in episodes
+        ):
+            run_execution_certainty: Literal[
+                "confirmed", "not_executed", "unknown"
+            ] = "confirmed"
+        elif episodes and all(
+            episode["inference_execution_certainty"] == "not_executed"
+            for episode in episodes
+        ):
+            run_execution_certainty = "not_executed"
+        else:
+            run_execution_certainty = "unknown"
+        run_response_received: bool | None = (
+            True
+            if episodes and all(episode["response_received"] is True for episode in episodes)
+            else False
+            if episodes and all(episode["response_received"] is False for episode in episodes)
+            else None
+        )
+    else:
+        run_execution_certainty = "not_executed"
+        run_response_received = False
     summary_updates = {
         "run_id": run_id,
         "variant": "Zero-Shot Baseline",
@@ -1026,11 +1192,13 @@ async def evaluate_zero_shot_split(
         "evaluation_mode": selected_mode,
         "mock_eval": selected_mode == "mock",
         "non_empirical": selected_mode == "mock" or not configured_backend,
-        "empirical_inference_executed": (
-            selected_mode == "empirical"
-            and bool(episodes)
-            and all(episode["empirical_inference_executed"] is True for episode in episodes)
-        ),
+        "response_received": run_response_received,
+        "empirical_inference_executed": {
+            "confirmed": True,
+            "not_executed": False,
+            "unknown": None,
+        }[run_execution_certainty],
+        "inference_execution_certainty": run_execution_certainty,
         "empirical_claim_allowed": False,
         "model_identity_attestation": model_identity_attestation,
         "environment_resolution_evaluated": False,

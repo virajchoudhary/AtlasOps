@@ -26,6 +26,7 @@ _ARM_ORDER = (
     "SFT Model",
     "SFT + GRPO",
 )
+_GIT_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$", re.IGNORECASE)
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _POPULATION_METRICS = (
     "reward_mean",
@@ -65,7 +66,9 @@ def replay_candidate_comparison(
     * ``native_sources`` maps each ordered arm to its source JSONL bytes.
       The G6/G8/G9 adapter verifies each byte stream against its pinned digest.
       G6/G8 run/model labels remain caller-declared; only a completed G9 run
-      can raw-bind identity through its matching terminal summary.
+      can raw-bind run/model identity through its matching terminal summary.
+      G9 raw evaluator commit/clean-state fields are checked against the
+      validated run descriptor; its tree hash remains descriptor-only.
     * ``common_episode_rows`` contains strict JSONL objects of the form
       ``{"arm": <arm label>, "episode": <full raw episode>}``. Its complete
       byte stream requires the separate ``expected_common_episode_rows_sha256``
@@ -157,6 +160,7 @@ def replay_candidate_comparison(
         episodes_by_arm, missing_by_arm, source_info_by_arm = _adapt_native_sources(
             native_sources,
             normalized_pins,
+            lineage["evaluator_provenance_by_arm"],
             arms,
             scenario_ids,
             partition,
@@ -438,6 +442,7 @@ def _validate_source_identity(
 def _adapt_native_sources(
     native_sources: Mapping[str, bytes],
     source_pins: Mapping[str, Mapping[str, Any]],
+    evaluator_provenance_by_arm: Mapping[str, Mapping[str, Any]],
     arms: list[str],
     scenario_ids: list[str],
     partition: str,
@@ -476,6 +481,15 @@ def _adapt_native_sources(
             declaration,
             f"{arm} native source",
         )
+        evaluator_identity_binding = None
+        if arm == _ARM_ORDER[2]:
+            evaluator_descriptor = evaluator_provenance_by_arm.get(arm)
+            if not isinstance(evaluator_descriptor, Mapping):
+                raise ValueError("G9 validated evaluator provenance is missing")
+            evaluator_identity_binding = _validate_g9_evaluator_identity_binding(
+                adapted["raw_records"],
+                evaluator_descriptor,
+            )
         terminal_record_ref = None
         if arm == _ARM_ORDER[2]:
             terminal_record = adapted["raw_records"][-1]
@@ -508,8 +522,131 @@ def _adapt_native_sources(
             "run_outcome": adapted["run_outcome"],
         }
         if arm == _ARM_ORDER[2]:
+            source_info_by_arm[arm]["evaluator_identity_binding"] = (
+                evaluator_identity_binding
+            )
             source_info_by_arm[arm]["terminal_record_ref"] = terminal_record_ref
     return episodes_by_arm, missing_by_arm, source_info_by_arm
+
+
+def _validate_g9_evaluator_identity_binding(
+    raw_records: Sequence[Mapping[str, Any]],
+    evaluator_descriptor: Mapping[str, Any],
+) -> dict[str, Any]:
+    descriptor_commit_sha = evaluator_descriptor.get("commit_sha")
+    if (
+        not isinstance(descriptor_commit_sha, str)
+        or _GIT_SHA_RE.fullmatch(descriptor_commit_sha) is None
+    ):
+        raise ValueError("G9 validated evaluator commit_sha is malformed")
+    descriptor_commit_sha = descriptor_commit_sha.casefold()
+
+    descriptor_tree_sha256 = _require_sha256(
+        evaluator_descriptor.get("tree_sha256"),
+        "G9 validated evaluator tree_sha256",
+    )
+    if evaluator_descriptor.get("dirty") is not False:
+        raise ValueError("G9 validated evaluator descriptor must be explicitly clean")
+
+    raw_commit_shas: list[str] = []
+    raw_dirty_flags: list[bool] = []
+    raw_tree_sha256s: list[str] = []
+
+    def inspect_source(location: str, value: Any) -> bool:
+        if value is None:
+            return False
+        if not isinstance(value, Mapping):
+            raise ValueError(f"G9 raw evaluator provenance at {location} must be an object")
+
+        for key in ("code_sha", "git_sha"):
+            if key not in value:
+                continue
+            raw_sha = value[key]
+            if not isinstance(raw_sha, str) or _GIT_SHA_RE.fullmatch(raw_sha) is None:
+                raise ValueError(f"G9 raw evaluator {key} is malformed at {location}")
+            raw_commit_shas.append(raw_sha.casefold())
+        if "source_state" in value:
+            state = value["source_state"]
+            if not isinstance(state, str) or state not in {"clean", "dirty"}:
+                raise ValueError(f"G9 raw evaluator source_state is malformed at {location}")
+            raw_dirty_flags.append(state == "dirty")
+        if "git_dirty" in value:
+            raw_dirty = value["git_dirty"]
+            if type(raw_dirty) is not bool:
+                raise ValueError(f"G9 raw evaluator git_dirty is malformed at {location}")
+            raw_dirty_flags.append(raw_dirty)
+        if "tree_sha256" in value:
+            raw_tree_sha256s.append(
+                _require_sha256(
+                    value["tree_sha256"],
+                    f"G9 raw evaluator tree_sha256 at {location}",
+                )
+            )
+        return (
+            "code_sha" in value and "source_state" in value
+        ) or (
+            "git_sha" in value and "git_dirty" in value
+        )
+
+    start_complete = False
+    terminal_complete = False
+    has_completed_terminal = False
+    for record in raw_records:
+        event = record.get("event")
+        if event == "run_started":
+            start_complete = inspect_source(
+                "run_started.evaluator_source",
+                record.get("evaluator_source"),
+            )
+        elif "evaluator_source" in record:
+            inspect_source(f"{event}.evaluator_source", record["evaluator_source"])
+        if event == "run_completed":
+            has_completed_terminal = True
+            summary = record.get("summary")
+            summary_source = (
+                summary.get("evaluator_source")
+                if isinstance(summary, Mapping)
+                else None
+            )
+            terminal_complete = inspect_source(
+                "run_completed.summary.evaluator_source",
+                summary_source,
+            )
+
+    for field, values in (
+        ("git_sha", raw_commit_shas),
+        ("git_dirty", raw_dirty_flags),
+        ("tree_sha256", raw_tree_sha256s),
+    ):
+        if len(set(values)) > 1:
+            raise ValueError(f"G9 raw evaluator provenance is internally inconsistent: {field}")
+
+    raw_commit_sha = raw_commit_shas[0] if raw_commit_shas else None
+    raw_dirty_flag = raw_dirty_flags[0] if raw_dirty_flags else None
+    raw_tree_sha256 = raw_tree_sha256s[0] if raw_tree_sha256s else None
+    if raw_commit_sha is not None and raw_commit_sha != descriptor_commit_sha:
+        raise ValueError("G9 raw evaluator git_sha differs from validated run descriptor")
+    if raw_dirty_flag is not None and raw_dirty_flag is not False:
+        raise ValueError("G9 raw evaluator git_dirty differs from validated clean descriptor")
+    if raw_tree_sha256 is not None and raw_tree_sha256 != descriptor_tree_sha256:
+        raise ValueError("G9 raw evaluator tree_sha256 differs from validated run descriptor")
+
+    complete_raw_identity = start_complete and (
+        not has_completed_terminal or terminal_complete
+    )
+    return {
+        "status": (
+            "RAW_COMMIT_AND_DIRTY_MATCHED"
+            if complete_raw_identity
+            else "UNBOUND"
+        ),
+        "raw_reported": {
+            "git_sha": raw_commit_sha,
+            "git_dirty": raw_dirty_flag,
+        },
+        "validated_descriptor": deepcopy(dict(evaluator_descriptor)),
+        "tree_sha256_status": "DESCRIPTOR_ONLY_NOT_RAW_BOUND",
+    }
 
 
 def _validate_reported_identity(

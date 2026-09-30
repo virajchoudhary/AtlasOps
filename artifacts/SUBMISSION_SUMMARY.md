@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T17:37:07.387384+00:00`
+- **Generated**: `2026-09-30T18:06:07.824900+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -126,7 +126,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/candidate_adapters.py` | `b2f00f99ba0c5524...` | 31103 |
 | `bench/candidate_lineage.py` | `396ff6d389f2b836...` | 28333 |
 | `bench/candidate_measurement.py` | `920e73560ddd162a...` | 38684 |
-| `bench/candidate_replay.py` | `57e823e0ffd9cf00...` | 45074 |
+| `bench/candidate_replay.py` | `7c418ff0ee34663f...` | 50927 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -187,7 +187,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_1.md` | `c94fb7146a9f89a9...` | 5918 |
 | `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_2.md` | `f649ce38db3345ca...` | 3117 |
 | `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_3.md` | `4f1d6a6e44356e21...` | 3343 |
-| `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_4.md` | `e256c9d9f9a1ccd8...` | 2519 |
+| `docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_4.md` | `c0e480eb5f7dfff5...` | 3592 |
 | `docs/project/G4_PROTOCOL_V34_APPROVAL_CHANNEL.md` | `70c0bb07709924fc...` | 9031 |
 | `docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md` | `feeb5552c0d125f0...` | 3748 |
 | `docs/project/G4_PROTOCOL_V36_SETTLING_DEADLINE.md` | `09e4096571736737...` | 3220 |
@@ -267,7 +267,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_candidate_adapters.py` | `fd2773fe820516e9...` | 32497 |
 | `tests/test_candidate_lineage.py` | `c9082ca28b7ae2a3...` | 16072 |
 | `tests/test_candidate_measurement.py` | `f0549c53b5359791...` | 34087 |
-| `tests/test_candidate_replay.py` | `7e3620695f8441b0...` | 42646 |
+| `tests/test_candidate_replay.py` | `03fa6cc230bba4f9...` | 48700 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_chaos_tools.py` | `5224b2bdc06bb15f...` | 9033 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |

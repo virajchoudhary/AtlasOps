@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T18:06:07.824900+00:00",
+  "generated_at": "2026-09-30T18:37:59.567669+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -257,8 +257,8 @@
       "size_bytes": 2043
     },
     "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
-      "sha256": "a2dd61522a347dbf05a76729d7f099f1e5c8bd9a279db8e1691c4112c4058d52",
-      "size_bytes": 8436
+      "sha256": "629524d0644cfc50f863b1efeff4508c7eb55daa9adfe2f051032c4847fe7d7e",
+      "size_bytes": 8740
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
       "sha256": "676e015866eca023ef14e1d9f9e2b6919a322f416e418ef8ba7d24dbe8a26eb9",
@@ -293,8 +293,8 @@
       "size_bytes": 5650
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "8f67c3ef327feb2caa76511dd21de77b583baf841d0d31895689ab81bab9c73d",
-      "size_bytes": 10563
+      "sha256": "4a9dade897390d26426ab3f23de09b350e28f7850016fa12cbcfeab26f273061",
+      "size_bytes": 10798
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -865,8 +865,8 @@
       "size_bytes": 101586
     },
     "scripts/run_g12_integrated_episode.py": {
-      "sha256": "845c5a6f634ae036a85854d8bfbd3846f508e8fe5091e4c7031affe33225155c",
-      "size_bytes": 46211
+      "sha256": "eef1341de22994e2c08af15c628760c006d45eff1466ff4eec980b1b93908284",
+      "size_bytes": 45882
     },
     "scripts/package_submission.py": {
       "sha256": "524d1d76b0e8c669a3109408a5425f879ecf3da7310a5d805dc29ecb4f705f25",
@@ -941,8 +941,8 @@
       "size_bytes": 59752
     },
     "training/grpo_environment.py": {
-      "sha256": "6fd0c8a204f8b1d650dd9f99c8f7d003fa42b865f29881998888ac9f10c7b478",
-      "size_bytes": 30767
+      "sha256": "8826379511dacda3af33178a5f0152ea6efc7b19eb4332e6a0265e4d92721c2d",
+      "size_bytes": 31919
     },
     "training/grpo_provenance.py": {
       "sha256": "8903bf0e576a958543b26e006a234690943ce16fe90292b481d1d9ea0fd9f969",
@@ -1061,8 +1061,8 @@
       "size_bytes": 19328
     },
     "tests/test_g12_real_capture.py": {
-      "sha256": "9003680063486c79cb9aaa8053edda8287af209217a2b111a1e7d1bce6079564",
-      "size_bytes": 59185
+      "sha256": "101a9b761be01df27542810ddea9e2d72853a73618cb994d3e62dcc58c68707a",
+      "size_bytes": 61638
     },
     "tests/test_g13_lossless_g9_observations.py": {
       "sha256": "e33a2fedbd3dd4846359fbe4138f02a11f283543ab9183b54835c2fc5eb0f835",
@@ -1093,8 +1093,8 @@
       "size_bytes": 22302
     },
     "tests/test_g9_direct_policy_environment.py": {
-      "sha256": "8da2faed257d38978512d5b54f4e0b48e0aea052ee2754593ff3088155b9d61c",
-      "size_bytes": 83255
+      "sha256": "46452232a0190875d01bb78040002ae621a7cfce3a1c762777b2b755512e8681",
+      "size_bytes": 87207
     },
     "tests/test_g9_direct_reward.py": {
       "sha256": "1e2c5562f6b12aa9ef153e7f39519d80c85728e02bf11afc18d720a24b136c42",

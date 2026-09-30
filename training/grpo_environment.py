@@ -110,12 +110,44 @@ def _call_with_kube_context(
     return result
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, child in pairs:
+        if key in value:
+            raise ValueError(f"Policy completion contains duplicate object key: {key}")
+        value[key] = child
+    return value
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"Policy completion numbers must be finite: {value}")
+
+
+def _validate_finite_json_numbers(value: Any) -> None:
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Policy completion numbers must be finite")
+    elif isinstance(value, dict):
+        for child in value.values():
+            _validate_finite_json_numbers(child)
+    elif isinstance(value, list):
+        for child in value:
+            _validate_finite_json_numbers(child)
+
+
 def parse_policy_action(completion_text: str) -> dict[str, Any]:
     """Parse exactly one structured policy action from a completion."""
     try:
-        payload = json.loads(completion_text)
+        payload = json.loads(
+            completion_text,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_nonfinite_json_constant,
+        )
+        _validate_finite_json_numbers(payload)
     except json.JSONDecodeError as exc:
         raise ValueError("Policy completion must be one JSON object") from exc
+    except RecursionError as exc:
+        raise ValueError("Policy completion JSON nesting is too deep") from exc
     if not isinstance(payload, dict):
         raise TypeError("Policy completion must be a JSON object")
     if "actions" in payload:

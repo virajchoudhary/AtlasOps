@@ -1019,6 +1019,58 @@ def test_invalid_action_block_is_captured_without_execution(tmp_path):
     assert manifest["status"] == "CAPTURED_FOR_REVIEW"
 
 
+@pytest.mark.parametrize("claim", [None, "false", 0])
+def test_invalid_resolution_claim_block_is_preserved_by_capture(tmp_path, claim):
+    step = _complete_blocked_step()
+    payload = json.loads(step["raw_policy_output"])
+    payload["agent_claimed_resolved"] = claim
+    step["raw_policy_output"] = json.dumps(payload)
+    step["parsed_action"] = None
+    step["terminal_block"]["category"] = "invalid_action"
+    step["terminal_block"]["reason"] = "Policy action agent_claimed_resolved must be a JSON boolean"
+    step["next_state"]["previous_policy_action"] = None
+    manifest, _bundle = _collect_fixture(tmp_path, _complete_remediation([step]))
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["empirical_claim_allowed"] is False
+
+
+def test_duplicate_policy_key_cannot_be_accepted_as_executed_capture(tmp_path):
+    step = _complete_executed_negative_step()
+    step["raw_policy_output"] = step["raw_policy_output"].replace(
+        '"tool":', '"tool": "other_action", "tool":', 1,
+    )
+    manifest, _bundle = _collect_fixture(tmp_path, _complete_remediation([step]))
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_raw_parsed_action_mismatch" in manifest["problems"]
+
+
+@pytest.mark.parametrize("invalid_json", ["duplicate", "nonfinite", "deep"])
+def test_strict_json_invalid_action_block_retains_raw_capture(tmp_path, invalid_json):
+    step = _complete_blocked_step()
+    if invalid_json == "duplicate":
+        raw = step["raw_policy_output"].replace('"tool":', '"tool": "other", "tool":', 1)
+    elif invalid_json == "nonfinite":
+        raw = step["raw_policy_output"][:-1] + ', "metadata": NaN}'
+    else:
+        raw = (
+            step["raw_policy_output"][:-1] + ', "metadata": '
+            + "[" * 1100 + "null" + "]" * 1100 + "}"
+        )
+    step["raw_policy_output"] = raw
+    step["parsed_action"] = None
+    step["terminal_block"]["category"] = "invalid_action"
+    step["terminal_block"]["reason"] = "Policy completion is not valid finite unambiguous JSON"
+    step["next_state"]["previous_policy_action"] = None
+    manifest, bundle = _collect_fixture(tmp_path, _complete_remediation([step]))
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["empirical_claim_allowed"] is False
+    archived = json.loads((bundle / f"trajectory-{INCIDENT_ID}.json").read_text())
+    assert archived["remediation"]["policy_steps"][0]["raw_policy_output"] == raw
+
+
 def test_tool_unavailable_block_can_retain_parseable_raw_action_without_parsed_action(
     tmp_path,
 ):

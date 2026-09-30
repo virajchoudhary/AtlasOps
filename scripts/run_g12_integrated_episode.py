@@ -101,21 +101,12 @@ def _parse_policy_timestamp(value: Any) -> datetime | None:
 def _parse_raw_policy_action(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, str) or not value:
         return None
+    from training.grpo_environment import parse_policy_action
+
     try:
-        payload = json.loads(value)
-    except (ValueError, RecursionError):
+        return parse_policy_action(value)
+    except (TypeError, ValueError, RecursionError):
         return None
-    if not isinstance(payload, dict) or "actions" in payload:
-        return None
-    tool = payload.get("tool")
-    arguments = payload.get("arguments")
-    if not isinstance(tool, str) or not tool or not isinstance(arguments, dict):
-        return None
-    return {
-        "tool": tool,
-        "arguments": arguments,
-        "agent_claimed_resolved": payload.get("agent_claimed_resolved") is True,
-    }
 
 
 def _valid_parsed_policy_action(value: Any) -> bool:

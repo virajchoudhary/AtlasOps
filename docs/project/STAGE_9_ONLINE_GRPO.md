@@ -15,6 +15,9 @@ The required relationship is:
 - Train-only prompts carry their exact frozen `scenario_id` into the reward callback.
 - The generated completion is parsed as exactly one action. The same tool and arguments
   are policy checked and executed; no second operational model is invoked.
+  Duplicate object keys at any depth, non-finite JSON numbers and excessive
+  nesting are rejected before policy, tool or verifier callbacks. Valid nested
+  JSON values remain supported; these checks do not grant action authorization.
 - `agent_claimed_resolved` is a required JSON Boolean in that completion.
   Missing or malformed claims block the action before dispatch or reward;
   they are not silently interpreted as `false`.

@@ -343,6 +343,84 @@ def test_g9_adapter_keeps_action_and_verifier_but_never_invents_alert_clock():
     )
 
 
+def test_g9_event_timestamps_remain_source_metadata_without_admission_events():
+    events = _g9_events()
+    pre_action = next(event for event in events if event["event"] == "pre_action_verification")
+    step_result = next(event for event in events if event["event"] == "step_result")
+    pre_action["recorded_at"] = "2026-09-29T12:00:01Z"
+    step_result["recorded_at"] = "2026-09-29T12:00:02Z"
+    events[1]["state"] = {"alert": {"severity": "P1"}}
+    events[1]["live"] = True
+    step_result["remediation_approval"] = {"approved": True}
+    pre_action_line = events.index(pre_action) + 1
+    step_result_line = events.index(step_result) + 1
+
+    adapted = _adapt(events, "SFT + GRPO")
+
+    episode = adapted["episodes"][0]
+    pre_action_event = next(
+        event for event in episode["events"] if event["event"] == "pre_action_verification"
+    )
+    action_result = next(event for event in episode["events"] if event["event"] == "action_result")
+    post_action = next(
+        event for event in episode["events"] if event["event"] == "post_action_verification"
+    )
+    assert pre_action_event["source_event_recorded_at"] == "2026-09-29T12:00:01Z"
+    assert pre_action_event["raw_ref"] == {
+        "source_sha256": adapted["source_sha256"],
+        "line": pre_action_line,
+    }
+    for mapped_event in (action_result, post_action):
+        assert mapped_event["source_event_recorded_at"] == "2026-09-29T12:00:02Z"
+        assert mapped_event["raw_ref"] == {
+            "source_sha256": adapted["source_sha256"],
+            "line": step_result_line,
+        }
+    assert all(
+        "recorded_at" not in event and "clock_source" not in event
+        for event in episode["events"]
+    )
+    assert not any(
+        event["event"]
+        in {
+            "fault_authorization",
+            "fault_observation",
+            "alert_delivery",
+            "cleanup_started",
+            "cleanup_completed",
+        }
+        for event in episode["events"]
+    )
+    assert adapted["evaluation_mode"] == "NON_EMPIRICAL_OBSERVATION"
+    assert adapted["non_empirical"] is True
+    assert adapted["empirical_claim_allowed"] is False
+    assert adapted["certification_status"] == "NOT_CERTIFIED"
+
+
+def test_g9_missing_source_event_timestamps_stay_absent():
+    adapted = _adapt(_g9_events(), "SFT + GRPO")
+
+    assert all(
+        "source_event_recorded_at" not in event
+        and "recorded_at" not in event
+        and "clock_source" not in event
+        for event in adapted["episodes"][0]["events"]
+    )
+
+
+@pytest.mark.parametrize(
+    "recorded_at",
+    [None, 17, "", "not-a-timestamp", "2026-09-29T12:00:02"],
+)
+@pytest.mark.parametrize("event_name", ["pre_action_verification", "step_result"])
+def test_g9_malformed_source_event_timestamp_fails_closed(recorded_at, event_name):
+    events = _g9_events()
+    next(event for event in events if event["event"] == event_name)["recorded_at"] = recorded_at
+
+    with pytest.raises(ValueError, match="recorded_at"):
+        _adapt(events, "SFT + GRPO")
+
+
 def test_g9_missing_executed_action_stays_unknown_and_retains_its_raw_reference():
     events = _g9_events()
     step_event = next(event for event in events if event["event"] == "step_result")

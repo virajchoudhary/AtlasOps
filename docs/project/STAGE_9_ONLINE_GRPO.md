@@ -35,6 +35,15 @@ The required relationship is:
   retains that result and its action/settling evidence while marking the
   attempt unscorable with null reward. The batch aborts; retained evidence
   cannot be scored as a resolved episode or retroactively prove cleanup.
+- Persisted training rollout rows retain `lifecycle_observations` for the
+  zero-Chaos preflight, Chaos apply return, alert query, and scenario cleanup
+  return or exception. Each called stage has a separate UTC host-observed
+  timestamp; uncalled stages remain explicit. A false or raised preflight
+  records a null-reward failure without persisting the unused policy completion
+  or exception message. These
+  API/query outcomes are not independent fault authorization, observed fault,
+  delivered alert time, or objective recovery. No raw alert payload is added
+  to this trail, and the ledger still requires an explicit rollout log path.
 - Verifier `env_resolved` controls resolution, reward, and curriculum state. A policy
   self-claim cannot establish success.
 - A missing real alert or failed fault application yields an unscorable failed

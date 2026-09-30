@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -29,6 +30,54 @@ def _completion(**overrides):
     }
     action.update(overrides)
     return json.dumps(action)
+
+
+def _scorable_rollout_result(scenario_id, completion):
+    return {
+        "incident_id": "synthetic-incident",
+        "scenario_id": scenario_id,
+        "tier": "single_fault",
+        "status": "ok",
+        "scorable": True,
+        "policy_completion": completion,
+        "agent_claimed_resolved": False,
+        "settling": {
+            "status": "settled",
+            "stable": True,
+            "stable_observations": 2,
+            "observations": [
+                {"verification_status": "failed", "env_resolved": False},
+                {"verification_status": "failed", "env_resolved": False},
+            ],
+        },
+        "verification": {
+            "verification_status": "failed",
+            "env_resolved": False,
+            "checks": [
+                {"name": "workload_ready", "required": True, "passed": False}
+            ],
+        },
+    }
+
+
+def _assert_g9_observation_timestamps(lifecycle_observations):
+    assert lifecycle_observations["interpretation"] == (
+        "Host-observed API/query outcomes only; not independent fault authorization, "
+        "observed fault, delivered alert time, or objective recovery."
+    )
+    for stage in (
+        "zero_chaos_preflight",
+        "apply_chaos",
+        "wait_for_alert",
+        "reset_chaos",
+    ):
+        observation = lifecycle_observations[stage]
+        observed_at = observation["host_observed_at_utc"]
+        if observation["call_status"] == "not_called":
+            assert observed_at is None
+        else:
+            assert observed_at is not None
+            assert datetime.fromisoformat(observed_at).tzinfo == UTC
 
 
 def _state(*, approval=None):
@@ -1267,6 +1316,261 @@ def test_g9_cluster_commands_pin_get_apply_delete_and_cleanup_context(
 
 
 @pytest.mark.asyncio
+async def test_grpo_preflight_failure_persists_only_the_observed_preflight(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: False)
+    monkeypatch.setattr(
+        grpo, "apply_chaos", lambda *_args, **_kwargs: pytest.fail("apply must not run")
+    )
+    monkeypatch.setattr(
+        grpo, "reset_chaos", lambda *_args, **_kwargs: pytest.fail("cleanup was not called")
+    )
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    try:
+        with pytest.raises(RuntimeError, match="verified zero-Chaos preflight"):
+            await reward_function._score_batch(
+                [_completion()],
+                [grpo._direct_action_prompt("single_fault/sf-002")],
+                ["single_fault/sf-002"],
+            )
+    finally:
+        reward_function._loop.close()
+
+    record = json.loads(ledger.read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert record["failure"] == "zero_chaos_preflight_unverified"
+    assert record["reward"] is None
+    assert "policy_completion" not in record
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["call_status"] == "returned"
+    assert observations["zero_chaos_preflight"]["return_value"] is False
+    assert observations["zero_chaos_preflight"]["host_observed_at_utc"]
+    for stage in ("apply_chaos", "wait_for_alert", "reset_chaos"):
+        assert observations[stage]["call_status"] == "not_called"
+        assert observations[stage]["host_observed_at_utc"] is None
+
+
+@pytest.mark.asyncio
+async def test_grpo_raised_preflight_persists_exception_without_any_later_calls(
+    monkeypatch, tmp_path
+):
+    from bench import runner
+
+    def raised_preflight(**_kwargs):
+        raise OSError("sensitive synthetic preflight detail")
+
+    monkeypatch.setattr(grpo, "zero_chaos_verified", raised_preflight)
+    monkeypatch.setattr(
+        grpo, "apply_chaos", lambda *_args, **_kwargs: pytest.fail("apply must not run")
+    )
+    monkeypatch.setattr(
+        runner, "wait_for_alert", lambda: pytest.fail("alert query must not run")
+    )
+    monkeypatch.setattr(
+        grpo, "reset_chaos", lambda *_args, **_kwargs: pytest.fail("cleanup must not run")
+    )
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    try:
+        with pytest.raises(OSError, match="sensitive synthetic preflight detail"):
+            await reward_function._score_batch(
+                [_completion()],
+                [grpo._direct_action_prompt("single_fault/sf-002")],
+                ["single_fault/sf-002"],
+            )
+    finally:
+        reward_function._loop.close()
+
+    raw = ledger.read_text(encoding="utf-8")
+    record = json.loads(raw)
+    assert record["status"] == "failed"
+    assert record["failure"] == "zero_chaos_preflight_exception:OSError"
+    assert record["reward"] is None
+    assert "policy_completion" not in record
+    assert "sensitive synthetic preflight detail" not in raw
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["call_status"] == "raised"
+    assert observations["zero_chaos_preflight"]["exception_type"] == "OSError"
+    assert observations["zero_chaos_preflight"]["return_value"] is None
+    for stage in ("apply_chaos", "wait_for_alert", "reset_chaos"):
+        assert observations[stage]["call_status"] == "not_called"
+        assert observations[stage]["host_observed_at_utc"] is None
+
+
+@pytest.mark.asyncio
+async def test_grpo_apply_failure_persists_the_distinct_api_outcomes(
+    monkeypatch, tmp_path
+):
+    from bench import runner
+
+    scenario_id = "single_fault/sf-002"
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
+    monkeypatch.setattr(grpo, "apply_chaos", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(grpo, "reset_chaos", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(
+        runner, "wait_for_alert", lambda: pytest.fail("alert query must not run")
+    )
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    try:
+        with pytest.raises(RuntimeError, match="unscorable"):
+            await reward_function._score_batch(
+                [_completion()],
+                [grpo._direct_action_prompt(scenario_id)],
+                [scenario_id],
+            )
+    finally:
+        reward_function._loop.close()
+
+    record = json.loads(ledger.read_text(encoding="utf-8"))
+    assert record["failure"] == "chaos_apply_failed"
+    assert record["reward"] is None
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["return_value"] is True
+    assert observations["apply_chaos"]["call_status"] == "returned"
+    assert observations["apply_chaos"]["return_value"] is False
+    assert observations["apply_chaos"]["host_observed_at_utc"]
+    assert observations["wait_for_alert"]["call_status"] == "not_called"
+    assert observations["wait_for_alert"]["result"] is None
+    assert observations["reset_chaos"]["call_status"] == "returned"
+    assert observations["reset_chaos"]["return_value"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failing_stage", ["apply_chaos", "wait_for_alert"])
+async def test_grpo_api_exception_preserves_phase_and_cleanup_observations(
+    monkeypatch, tmp_path, failing_stage
+):
+    from bench import runner
+
+    scenario_id = "single_fault/sf-002"
+    cleanup_calls = []
+
+    async def no_sleep(_seconds):
+        return None
+
+    def fail():
+        raise RuntimeError("sensitive synthetic exception detail")
+
+    def reset(*_args, **_kwargs):
+        cleanup_calls.append(scenario_id)
+        return True
+
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        grpo, "apply_chaos",
+        (lambda *_args, **_kwargs: fail())
+        if failing_stage == "apply_chaos"
+        else (lambda *_args, **_kwargs: True),
+    )
+    monkeypatch.setattr(
+        runner, "wait_for_alert",
+        fail if failing_stage == "wait_for_alert" else lambda: pytest.fail("alert query must not run"),
+    )
+    monkeypatch.setattr(grpo, "reset_chaos", reset)
+    monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    try:
+        with pytest.raises(RuntimeError, match="unscorable"):
+            await reward_function._score_batch(
+                [_completion()],
+                [grpo._direct_action_prompt(scenario_id)],
+                [scenario_id],
+            )
+    finally:
+        reward_function._loop.close()
+
+    record = json.loads(ledger.read_text(encoding="utf-8"))
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert record["failure"] == "rollout_exception:RuntimeError"
+    assert record["reward"] is None
+    assert observations[failing_stage]["call_status"] == "raised"
+    assert observations[failing_stage]["exception_type"] == "RuntimeError"
+    assert observations[failing_stage]["host_observed_at_utc"]
+    assert observations["wait_for_alert"]["call_status"] == (
+        "not_called" if failing_stage == "apply_chaos" else "raised"
+    )
+    assert observations["reset_chaos"]["return_value"] is True
+    assert cleanup_calls == [scenario_id]
+    assert "sensitive synthetic exception detail" not in ledger.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_grpo_success_persists_redacted_host_observation_trail(
+    monkeypatch, tmp_path
+):
+    from bench import runner
+
+    scenario_id = "single_fault/sf-002"
+    completion = _completion(agent_claimed_resolved=False)
+    alert_payload_marker = "synthetic-alert-payload-marker"
+    alert = {
+        "commonLabels": {"alertname": "HighCpuUsage"},
+        "synthetic": False,
+        "payload": alert_payload_marker,
+    }
+    received_alerts = []
+
+    async def no_sleep(_seconds):
+        return None
+
+    async def return_result(_completion, selected_scenario, _tier, selected_alert):
+        received_alerts.append(selected_alert)
+        return _scorable_rollout_result(selected_scenario, completion)
+
+    monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
+    monkeypatch.setattr(grpo, "apply_chaos", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(grpo, "reset_chaos", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(grpo._curriculum, "record", lambda **_kwargs: None)
+    monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(runner, "wait_for_alert", lambda: alert)
+    ledger = tmp_path / "rollouts.jsonl"
+    reward_function = grpo.OnlineRewardFunction(
+        ["single_fault"], rollout_log_path=ledger, **LIVE_EXECUTION
+    )
+    monkeypatch.setattr(reward_function, "_run_one_rollout", return_result)
+    try:
+        rewards = await reward_function._score_batch(
+            [completion],
+            [grpo._direct_action_prompt(scenario_id)],
+            [scenario_id],
+        )
+    finally:
+        reward_function._loop.close()
+
+    assert rewards == [0.0]
+    assert received_alerts == [alert]
+    record = json.loads(ledger.read_text(encoding="utf-8"))
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["return_value"] is True
+    assert observations["apply_chaos"]["return_value"] is True
+    assert observations["wait_for_alert"]["result"] == "non_synthetic"
+    assert observations["reset_chaos"]["return_value"] is True
+    assert alert_payload_marker not in json.dumps(record)
+
+
+@pytest.mark.asyncio
 async def test_grpo_cleanup_failure_aborts_before_next_rollout(monkeypatch, tmp_path):
     applied = []
     monkeypatch.setattr(grpo, "zero_chaos_verified", lambda **_kwargs: True)
@@ -1420,6 +1724,21 @@ def test_grpo_cleanup_failure_preserves_rollout_evidence_and_stops_batch(
     assert record["failure"] == "scenario_cleanup_unverified"
     assert record["cleanup_exception_type"] == expected_cleanup_exception_type
     assert record["reward"] is None
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["return_value"] is True
+    assert observations["apply_chaos"]["return_value"] is True
+    assert observations["wait_for_alert"]["result"] == "non_synthetic"
+    assert observations["reset_chaos"]["call_status"] == (
+        "raised" if cleanup_raises else "returned"
+    )
+    assert observations["reset_chaos"]["return_value"] is (
+        None if cleanup_raises else False
+    )
+    assert observations["reset_chaos"]["exception_type"] == (
+        expected_cleanup_exception_type
+    )
+    assert observations["reset_chaos"]["host_observed_at_utc"]
     assert record["rollout_phase"] == "final_training"
     assert record["trial_number"] is None
     assert record["effective_hyperparameters"] == hyperparameters
@@ -1429,8 +1748,13 @@ def test_grpo_cleanup_failure_preserves_rollout_evidence_and_stops_batch(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("alert", "expected_alert_result"),
+    [(None, "none"), ({"synthetic": True}, "synthetic")],
+    ids=["alert-absent", "alert-synthetic"],
+)
 async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
-    monkeypatch, tmp_path,
+    monkeypatch, tmp_path, alert, expected_alert_result
 ):
     from bench import runner
 
@@ -1455,7 +1779,7 @@ async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
     monkeypatch.setattr(grpo, "apply_chaos", apply)
     monkeypatch.setattr(grpo, "reset_chaos", reset)
     monkeypatch.setattr(grpo.asyncio, "sleep", no_sleep)
-    monkeypatch.setattr(runner, "wait_for_alert", lambda: None)
+    monkeypatch.setattr(runner, "wait_for_alert", lambda: alert)
     reward_function = grpo.OnlineRewardFunction(
         ["single_fault"],
         rollout_log_path=tmp_path / "rollouts.jsonl",
@@ -1475,6 +1799,12 @@ async def test_online_batch_passes_live_context_to_preflight_apply_and_cleanup(
     assert record["status"] == "failed"
     assert record["failure"] == "real_alert_not_observed"
     assert record["reward"] is None
+    observations = record["lifecycle_observations"]
+    _assert_g9_observation_timestamps(observations)
+    assert observations["zero_chaos_preflight"]["return_value"] is True
+    assert observations["apply_chaos"]["return_value"] is True
+    assert observations["wait_for_alert"]["result"] == expected_alert_result
+    assert observations["reset_chaos"]["return_value"] is True
     assert observed["zero"] == LIVE_EXECUTION
     assert observed["apply"] == ("single_fault/sf-002", LIVE_EXECUTION)
     assert observed["reset"] == ("single_fault/sf-002", LIVE_EXECUTION)

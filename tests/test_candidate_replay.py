@@ -1016,7 +1016,10 @@ def test_native_diagnosis_only_rows_remain_null_and_identity_is_not_promoted():
             ]
         ),
     }
-    sources[ARM_ORDER[2]] = _jsonl(_g9_native_events(declared[ARM_ORDER[2]]))
+    g9_events = _g9_native_events(declared[ARM_ORDER[2]])
+    g9_events[2]["recorded_at"] = "2026-09-29T12:00:01Z"
+    g9_events[3]["recorded_at"] = "2026-09-29T12:00:02Z"
+    sources[ARM_ORDER[2]] = _jsonl(g9_events)
     pins = {
         arm: {
             "source_identity": declared[arm],
@@ -1045,6 +1048,35 @@ def test_native_diagnosis_only_rows_remain_null_and_identity_is_not_promoted():
     assert (
         result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]["raw_bound_source_identity"]
         == declared[ARM_ORDER[2]]
+    )
+    g9_episode = result["arms"][ARM_ORDER[2]]["episodes"][0]
+    assert result["evaluation_mode"] == "NON_EMPIRICAL"
+    assert result["empirical_claim_allowed"] is False
+    assert g9_episode["eligibility"]["status"] == "undetermined"
+    assert g9_episode["objective_score"]["value"] is None
+    assert g9_episode["time_to_recovery"]["seconds"] is None
+    mapped_events = {
+        event["event"]: event for event in g9_episode["raw_episode"]["events"]
+    }
+    assert mapped_events["pre_action_verification"]["source_event_recorded_at"] == (
+        "2026-09-29T12:00:01Z"
+    )
+    for event_name in ("action_result", "post_action_verification"):
+        assert mapped_events[event_name]["source_event_recorded_at"] == "2026-09-29T12:00:02Z"
+    assert all(
+        "recorded_at" not in event and "clock_source" not in event
+        for event in g9_episode["raw_episode"]["events"]
+    )
+    assert not any(
+        event["event"]
+        in {
+            "fault_authorization",
+            "fault_observation",
+            "alert_delivery",
+            "cleanup_started",
+            "cleanup_completed",
+        }
+        for event in g9_episode["raw_episode"]["events"]
     )
 
 

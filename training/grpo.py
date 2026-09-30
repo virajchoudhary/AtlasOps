@@ -575,27 +575,121 @@ class OnlineRewardFunction:
             tier = SCENARIO_CATALOG[scenario_id].tier
             log.info("Rollout %d/%d — scenario %s", i + 1, len(completions), scenario_id)
 
-            if not zero_chaos_verified(
-                execute_live_chaos=self.execute_live_chaos,
-                kube_context=kube_context,
-            ):
+            lifecycle_observations = {
+                "interpretation": (
+                    "Host-observed API/query outcomes only; not independent fault "
+                    "authorization, observed fault, delivered alert time, or objective recovery."
+                ),
+                "zero_chaos_preflight": {
+                    "call_status": "not_called",
+                    "return_value": None,
+                    "exception_type": None,
+                    "host_observed_at_utc": None,
+                },
+                "apply_chaos": {
+                    "call_status": "not_called",
+                    "return_value": None,
+                    "exception_type": None,
+                    "host_observed_at_utc": None,
+                },
+                "wait_for_alert": {
+                    "call_status": "not_called",
+                    "result": None,
+                    "exception_type": None,
+                    "host_observed_at_utc": None,
+                },
+                "reset_chaos": {
+                    "call_status": "not_called",
+                    "return_value": None,
+                    "exception_type": None,
+                    "host_observed_at_utc": None,
+                },
+            }
+            try:
+                preflight_verified = zero_chaos_verified(
+                    execute_live_chaos=self.execute_live_chaos,
+                    kube_context=kube_context,
+                )
+            except Exception as exc:
+                lifecycle_observations["zero_chaos_preflight"].update(
+                    call_status="raised",
+                    exception_type=type(exc).__name__,
+                    host_observed_at_utc=datetime.now(UTC).isoformat(),
+                )
+                self._persist_rollout({
+                    "scenario_id": scenario_id,
+                    "tier": tier,
+                    "status": "failed",
+                    "failure": f"zero_chaos_preflight_exception:{type(exc).__name__}",
+                    "reward": None,
+                    "lifecycle_observations": lifecycle_observations,
+                })
+                raise
+            lifecycle_observations["zero_chaos_preflight"].update(
+                call_status="returned",
+                return_value=preflight_verified,
+                host_observed_at_utc=datetime.now(UTC).isoformat(),
+            )
+            if not preflight_verified:
+                self._persist_rollout({
+                    "scenario_id": scenario_id,
+                    "tier": tier,
+                    "status": "failed",
+                    "failure": "zero_chaos_preflight_unverified",
+                    "reward": None,
+                    "lifecycle_observations": lifecycle_observations,
+                })
                 raise RuntimeError("GRPO rollout requires verified zero-Chaos preflight")
             result = None
             failure_reason = None
             try:
-                if not apply_chaos(
-                    scenario_id,
-                    execute_live_chaos=self.execute_live_chaos,
-                    kube_context=kube_context,
-                ):
+                apply_observation = lifecycle_observations["apply_chaos"]
+                try:
+                    apply_verified = apply_chaos(
+                        scenario_id,
+                        execute_live_chaos=self.execute_live_chaos,
+                        kube_context=kube_context,
+                    )
+                except Exception as exc:
+                    apply_observation.update(
+                        call_status="raised",
+                        exception_type=type(exc).__name__,
+                        host_observed_at_utc=datetime.now(UTC).isoformat(),
+                    )
+                    raise
+                apply_observation.update(
+                    call_status="returned",
+                    return_value=apply_verified,
+                    host_observed_at_utc=datetime.now(UTC).isoformat(),
+                )
+                if not apply_verified:
                     log.warning("Chaos apply failed for %s; rollout is unscorable", scenario_id)
                     failure_reason = "chaos_apply_failed"
                 else:
                     await asyncio.sleep(15)
                     from bench.runner import wait_for_alert
 
-                    alert = wait_for_alert()
-                    if alert is None or alert.get("synthetic") is True:
+                    alert_observation = lifecycle_observations["wait_for_alert"]
+                    try:
+                        alert = wait_for_alert()
+                    except Exception as exc:
+                        alert_observation.update(
+                            call_status="raised",
+                            exception_type=type(exc).__name__,
+                            host_observed_at_utc=datetime.now(UTC).isoformat(),
+                        )
+                        raise
+                    alert_observation.update(
+                        call_status="returned",
+                        host_observed_at_utc=datetime.now(UTC).isoformat(),
+                    )
+                    if alert is None:
+                        alert_observation["result"] = "none"
+                    elif alert.get("synthetic") is True:
+                        alert_observation["result"] = "synthetic"
+                    else:
+                        alert_observation["result"] = "non_synthetic"
+                    if alert_observation["result"] in {"none", "synthetic"}:
                         log.warning("No real alert observed for %s", scenario_id)
                         failure_reason = "real_alert_not_observed"
                     else:
@@ -613,6 +707,7 @@ class OnlineRewardFunction:
                 failure_reason = f"rollout_exception:{type(exc).__name__}"
             finally:
                 cleanup_exception_type = None
+                cleanup_observation = lifecycle_observations["reset_chaos"]
                 try:
                     cleanup_verified = reset_chaos(
                         scenario_id,
@@ -622,6 +717,17 @@ class OnlineRewardFunction:
                 except Exception as exc:
                     cleanup_verified = False
                     cleanup_exception_type = type(exc).__name__
+                    cleanup_observation.update(
+                        call_status="raised",
+                        exception_type=cleanup_exception_type,
+                        host_observed_at_utc=datetime.now(UTC).isoformat(),
+                    )
+                else:
+                    cleanup_observation.update(
+                        call_status="returned",
+                        return_value=cleanup_verified,
+                        host_observed_at_utc=datetime.now(UTC).isoformat(),
+                    )
                 if not cleanup_verified:
                     cleanup_failure = {
                         "scenario_id": scenario_id,
@@ -632,6 +738,7 @@ class OnlineRewardFunction:
                         "scorable": False,
                         "reward": None,
                         "cleanup_exception_type": cleanup_exception_type,
+                        "lifecycle_observations": lifecycle_observations,
                     }
                     if result is not None:
                         cleanup_failure["rollout_result"] = result
@@ -651,6 +758,7 @@ class OnlineRewardFunction:
                     "failure": failure_reason or "rollout_failed",
                     "policy_completion": completion,
                     "reward": None,
+                    "lifecycle_observations": lifecycle_observations,
                 })
                 raise RuntimeError("GRPO rollout is unscorable without policy/verifier evidence")
             else:
@@ -659,6 +767,7 @@ class OnlineRewardFunction:
                 except ValueError as exc:
                     result["reward"] = None
                     result["failure"] = f"direct_action_reward_unscorable:{type(exc).__name__}"
+                    result["lifecycle_observations"] = lifecycle_observations
                     self._persist_rollout(result)
                     raise RuntimeError(
                         "GRPO direct-action rollout cannot be scored"
@@ -666,6 +775,7 @@ class OnlineRewardFunction:
                 rewards.append(r)
                 result["reward"] = r
                 result["reward_profile"] = "direct_action_objective_v1"
+                result["lifecycle_observations"] = lifecycle_observations
                 self._persist_rollout(result)
                 _curriculum.record(
                     scenario_id=scenario_id,

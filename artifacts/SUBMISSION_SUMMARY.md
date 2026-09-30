@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T13:36:49.495789+00:00`
+- **Generated**: `2026-09-30T14:05:42.431872+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -207,7 +207,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `3f777425b261c8d1...` | 27712 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `d0989c81494b0b1a...` | 2043 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `be17afca2427c7e1...` | 2043 |
-| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `e620cdbdaa872b72...` | 8056 |
+| `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `a2dd61522a347dbf...` | 8436 |
 | `docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md` | `f44e4438404c1e32...` | 10891 |
 | `docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md` | `5eb9a8df01f8ca6f...` | 3057 |
 | `docs/project/STAGE_15_FINAL_SUBMISSION.md` | `b1bf24f7d88a636f...` | 3118 |
@@ -233,7 +233,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `scripts/freeze_sft_pilot_plan.py` | `9239463af35384a4...` | 3076 |
 | `scripts/package_submission.py` | `fd3096805ff1c99e...` | 15817 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
-| `scripts/run_g12_integrated_episode.py` | `911f7b18e66e4eca...` | 45643 |
+| `scripts/run_g12_integrated_episode.py` | `845c5a6f634ae036...` | 46211 |
 | `scripts/run_stage4_golden_incident.py` | `24b4e51c0173fbe0...` | 101586 |
 | `scripts/stage_sft_tokenizer.py` | `e9f70172eee6db96...` | 2883 |
 | `static/console.css` | `46419d9f06618388...` | 23843 |
@@ -270,7 +270,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |
 | `tests/test_frontend_ui.py` | `65ccf5bf652001cd...` | 6058 |
 | `tests/test_g12_policy_integration_contract.py` | `0a1861426113d85a...` | 19328 |
-| `tests/test_g12_real_capture.py` | `090f844a21491806...` | 55968 |
+| `tests/test_g12_real_capture.py` | `9003680063486c79...` | 59185 |
 | `tests/test_g13_lossless_g9_observations.py` | `e33a2fedbd3dd484...` | 12140 |
 | `tests/test_g4_protocol_profile.py` | `164527c1cd603118...` | 22502 |
 | `tests/test_g4_runtime_context_remediation_loop.py` | `3e23f0441e3645d1...` | 22261 |

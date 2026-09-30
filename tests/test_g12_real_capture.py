@@ -290,6 +290,7 @@ def _complete_remediation(policy_steps):
             "env_resolved": last["env_resolved"],
             "terminal_block": last["terminal_block"],
             "policy_backend": "checkpoint",
+            "generation_seed": 17,
         },
     }
 
@@ -303,6 +304,7 @@ def _collect_fixture(
     tmp_path,
     remediation,
     *,
+    seed: int = 17,
     include_recommender: bool = True,
     cleanup_sidecar=_NO_CLEANUP_SIDECAR,
     prefault_sidecar: bytes | None = None,
@@ -374,7 +376,7 @@ def _collect_fixture(
         experiment_id=EXPERIMENT_ID,
         source_sha=SOURCE_SHA,
         checkpoint={"checkpoint_sha256": "b" * 64},
-        seed=17,
+        seed=seed,
         process_exit_code=1,
         checkpoint_postflight_verified=True,
     )
@@ -487,6 +489,89 @@ def test_negative_integrated_attempt_is_archived_without_a_gate_claim(tmp_path):
     for asset in manifest["assets"].values():
         assert asset["sha256"] == hashlib.sha256((bundle / asset["path"]).read_bytes()).hexdigest()
     assert json.loads((bundle / "g12_capture_manifest.json").read_text()) == manifest
+
+
+@pytest.mark.parametrize(
+    ("mutation", "observed_seed", "problem"),
+    [
+        ("mismatch", 18, "policy_generation_seed_mismatch"),
+        ("missing", None, "policy_generation_seed_missing"),
+        ("boolean", True, "policy_generation_seed_malformed"),
+        ("string", "17", "policy_generation_seed_malformed"),
+        ("float", 17.0, "policy_generation_seed_malformed"),
+        ("negative", -1, "policy_generation_seed_malformed"),
+    ],
+)
+def test_untrusted_generation_seed_makes_capture_incomplete_without_rewriting_evidence(
+    tmp_path, mutation, observed_seed, problem
+):
+    remediation = _complete_remediation([_complete_executed_negative_step()])
+    final = remediation["final"]
+    if mutation == "missing":
+        final.pop("generation_seed")
+    else:
+        final["generation_seed"] = observed_seed
+
+    manifest, bundle = _collect_fixture(tmp_path, remediation)
+
+    trajectory_name = f"trajectory-{INCIDENT_ID}.json"
+    trajectory_asset = manifest["assets"][trajectory_name]
+    source = (
+        tmp_path
+        / "repo"
+        / "artifacts"
+        / "trajectories"
+        / f"{INCIDENT_ID}.json"
+    )
+    copied = bundle / trajectory_asset["path"]
+    raw = copied.read_bytes()
+    assert raw == source.read_bytes()
+    assert trajectory_asset["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert trajectory_asset["size_bytes"] == len(raw)
+    assert manifest["status"] == "INCOMPLETE"
+    assert problem in manifest["problems"]
+    assert manifest["policy_seed"] == 17
+    assert manifest["recorded_g4_verdict"] is False
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+    assert manifest["reward"] is None
+    assert manifest["time_to_resolve_s"] is None
+
+
+def test_matching_generation_seed_remains_reviewable_without_a_gate_claim(tmp_path):
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+    )
+
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["policy_seed"] == 17
+    assert manifest["recorded_g4_verdict"] is False
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+    assert manifest["reward"] is None
+    assert manifest["time_to_resolve_s"] is None
+
+
+@pytest.mark.parametrize(
+    "requested_seed", [True, "17", 17.0, -1, float("nan"), float("inf")]
+)
+def test_malformed_requested_seed_cannot_make_capture_reviewable(
+    tmp_path, requested_seed
+):
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([_complete_executed_negative_step()]),
+        seed=requested_seed,
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_seed_request_malformed" in manifest["problems"]
+    assert manifest["policy_seed"] is None
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["reward"] is None
+    assert "NaN" not in (bundle / "g12_capture_manifest.json").read_text(encoding="utf-8")
+    assert "Infinity" not in (bundle / "g12_capture_manifest.json").read_text(encoding="utf-8")
 
 
 def test_guarded_pre_action_observation_survives_capture_without_gate_claim(tmp_path):
@@ -654,7 +739,7 @@ def test_failed_runtime_support_read_is_preserved_but_capture_is_incomplete(tmp_
     step = remediation["policy_steps"][0]
     assert step["terminal_block"]["category"] == "missing_evidence"
     assert step["pre_action_observation"]["observation_status"] == "unavailable"
-    manifest, bundle = _collect_fixture(tmp_path, remediation)
+    manifest, bundle = _collect_fixture(tmp_path, remediation, seed=7)
     copied = json.loads(
         (bundle / f"trajectory-{INCIDENT_ID}.json").read_text(encoding="utf-8")
     )

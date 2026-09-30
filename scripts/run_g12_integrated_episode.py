@@ -957,6 +957,17 @@ def collect_bundle(
         )
     )
     policy = _object(remediation.get("final"))
+    requested_seed_valid = type(seed) is int and seed >= 0
+    if not requested_seed_valid:
+        problems.append("policy_seed_request_malformed")
+    if "generation_seed" not in policy:
+        problems.append("policy_generation_seed_missing")
+    else:
+        observed_seed = policy["generation_seed"]
+        if type(observed_seed) is not int or observed_seed < 0:
+            problems.append("policy_generation_seed_malformed")
+        elif observed_seed != seed:
+            problems.append("policy_generation_seed_mismatch")
     if policy.get("policy_backend") != "checkpoint":
         problems.append("checkpoint_policy_execution_unverified")
     recommender = (incident or {}).get("recommender")
@@ -1002,7 +1013,7 @@ def collect_bundle(
         "source_sha": source_sha,
         "checkpoint": checkpoint,
         "checkpoint_postflight_verified": checkpoint_postflight_verified,
-        "policy_seed": seed,
+        "policy_seed": seed if requested_seed_valid else None,
         "incident_id": incident_id,
         "model_identity": _object((primary or {}).get("protocol_profile")).get("model"),
         "recorded_g4_verdict": (primary or {}).get("gate_g4_pass"),

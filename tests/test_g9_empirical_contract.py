@@ -101,7 +101,7 @@ def _checkpoint_with_manifest(root: Path) -> Path:
     checkpoint = root / "checkpoint"
     checkpoint.mkdir()
     adapter_config = checkpoint / "adapter_config.json"
-    adapter_config.write_text('{"peft_type":"LORA"}', encoding="utf-8")
+    adapter_config.write_bytes((sft_checkpoint / "adapter_config.json").read_bytes())
     adapter_weights = checkpoint / "adapter_model.safetensors"
     adapter_weights.write_bytes(b"test-adapter-weights")
     requested_hyperparameters = {
@@ -461,6 +461,81 @@ async def test_non_empirical_episode_rejects_wrapped_direct_policy_environment(m
     assert calls == []
     assert policy.seen_states == []
     assert events == []
+
+
+@pytest.mark.parametrize("change", ["empty", "rank", "alpha", "dropout", "targets", "base", "tokens", "malformed"])
+def test_grpo_checkpoint_rejects_hash_valid_adapter_lineage_mismatch(tmp_path, change):
+    checkpoint = _checkpoint_with_manifest(tmp_path)
+    path = checkpoint / "adapter_config.json"
+    config = json.loads(path.read_text())
+    if change == "empty":
+        config = {}
+    elif change != "malformed":
+        field, value = {
+            "rank": ("r", 8),
+            "alpha": ("lora_alpha", 16),
+            "dropout": ("lora_dropout", 0.2),
+            "targets": ("target_modules", ["q_proj"]),
+            "base": ("base_model_name_or_path", "other/base"),
+            "tokens": ("trainable_token_indices", [1]),
+        }[change]
+        config[field] = value
+    path.write_text("{not-json" if change == "malformed" else json.dumps(config), encoding="utf-8")
+    _refresh_checkpoint_inventory(checkpoint)
+
+    with pytest.raises(ValueError, match="adapter"):
+        validate_grpo_checkpoint(checkpoint)
+
+
+def test_grpo_adapter_allows_reordered_targets_and_pinned_revision(tmp_path):
+    checkpoint = _checkpoint_with_manifest(tmp_path)
+    config_path = checkpoint / "adapter_config.json"
+    config = json.loads(config_path.read_text())
+    config["target_modules"].reverse()
+    config["revision"] = MODEL_COMMIT
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _refresh_checkpoint_inventory(checkpoint)
+    assert validate_grpo_checkpoint(checkpoint).base_model["resolved_revision"] == MODEL_COMMIT
+
+
+def test_grpo_policy_factory_rejects_inconsistent_config_before_ml_imports(tmp_path, monkeypatch):
+    import builtins
+
+    checkpoint = _checkpoint_with_manifest(tmp_path)
+    config_path = checkpoint / "adapter_config.json"
+    config = json.loads(config_path.read_text())
+    config["r"] = 8
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _refresh_checkpoint_inventory(checkpoint)
+    original_import = builtins.__import__
+
+    def no_model_import(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"torch", "peft", "transformers"}:
+            pytest.fail("invalid checkpoint reached a model dependency")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_model_import)
+    with pytest.raises(ValueError, match="adapter"):
+        grpo_eval_module.LocalGRPOPolicy.from_checkpoint(
+            checkpoint, execute_actions=True, kube_context="kind-atlasops-test",
+        )
+
+
+def test_grpo_parent_config_contract_cannot_change_after_validation(tmp_path, monkeypatch):
+    checkpoint = _checkpoint_with_manifest(tmp_path)
+    original_validate = grpo_eval_module.validate_sft_parent
+
+    def validate_then_replace_contract(*args, **kwargs):
+        record = original_validate(*args, **kwargs)
+        manifest_path = Path(record["checkpoint_path"]) / "sft_run_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["hyperparameters"]["lora"]["r"] = 8
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return record
+
+    monkeypatch.setattr(grpo_eval_module, "validate_sft_parent", validate_then_replace_contract)
+    with pytest.raises(ValueError, match="parent manifest changed"):
+        validate_grpo_checkpoint(checkpoint)
 
 
 def test_checkpoint_provenance_rejects_tampered_files(tmp_path):

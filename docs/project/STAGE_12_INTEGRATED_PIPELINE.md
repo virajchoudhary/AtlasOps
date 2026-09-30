@@ -26,6 +26,10 @@ The required path follows the later
   evidence even when its controlled environment action was explicitly authorized.
 - Each policy completion becomes the exact action sent through ACL, evidence preconditions,
   approval, one tool execution, settling, and objective verification.
+  Capture reuses that runtime parser: malformed claims, duplicate keys,
+  non-finite numbers and excessive nesting remain invalid actions. Correctly
+  blocked negative records preserve raw text for review; an allegedly executed
+  action with invalid raw JSON makes the capture incomplete, not certified.
 - Policy steps retain the environment's projected `pre_action_observation` for
   guarded rollback or Chaos-stop support reads, including the reader name,
   success and observed-status fields, and target history or active resources.

@@ -177,6 +177,129 @@ def test_parser_rejects_multi_action_or_malformed_completion():
 
 
 @pytest.mark.parametrize(
+    "completion",
+    [
+        (
+            '{"tool":"kubectl_get","tool":"kubectl_scale","arguments":{},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{"options":{"limit":1,"limit":2}},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{},'
+            '"metadata":[{"source":"model","source":"operator"}],'
+            '"agent_claimed_resolved":false}'
+        ),
+    ],
+    ids=["top-level", "nested-arguments", "unused-metadata"],
+)
+def test_parser_rejects_duplicate_object_keys_at_any_depth(completion):
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_policy_action(completion)
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        (
+            '{"tool":"kubectl_get","arguments":{"value":NaN},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{"value":Infinity},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{"value":-Infinity},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{},'
+            '"unused":{"values":[1e999]},'
+            '"agent_claimed_resolved":false}'
+        ),
+    ],
+    ids=["nan", "positive-infinity", "negative-infinity", "exponent-overflow"],
+)
+def test_parser_rejects_non_finite_json_numbers_anywhere(completion):
+    with pytest.raises(ValueError, match="finite"):
+        parse_policy_action(completion)
+
+
+def test_parser_preserves_valid_nested_json_values():
+    completion = (
+        '{"tool":"kubectl_get","arguments":{"values":[0,-1,1.25,1e2,true,false,null,'
+        '{"nested":[null,true,2]}]},"agent_claimed_resolved":false,'
+        '"metadata":{"enabled":true,"empty":null}}'
+    )
+
+    assert parse_policy_action(completion) == {
+        "tool": "kubectl_get",
+        "arguments": {
+            "values": [0, -1, 1.25, 100.0, True, False, None, {"nested": [None, True, 2]}]
+        },
+        "agent_claimed_resolved": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        (
+            '{"tool":"kubectl_get","tool":"kubectl_scale","arguments":{},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{"value":NaN},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{},'
+            '"unused":{"values":[1e999]},'
+            '"agent_claimed_resolved":false}'
+        ),
+        (
+            '{"tool":"kubectl_get","arguments":{},'
+            '"unused":' + ("[" * 1100) + "null" + ("]" * 1100) + ","
+            '"agent_claimed_resolved":false}'
+        ),
+    ],
+    ids=["duplicate-key", "nan", "exponent-overflow", "excessive-nesting"],
+)
+def test_step_rejects_strict_json_failures_before_callbacks(completion):
+    callbacks = []
+    environment = DirectPolicyEnvironment(
+        tool_registry={
+            "kubectl_get": lambda **kwargs: callbacks.append(("tool", kwargs))
+            or {"success": True}
+        },
+        policy_check=lambda *args: callbacks.append(("policy", args)),
+        verifier=lambda **kwargs: callbacks.append(("verifier", kwargs))
+        or {
+            "verification_status": "failed",
+            "env_resolved": False,
+            "checks": [{"name": "workload_ready", "required": True, "passed": False}],
+        },
+        settle=lambda: {"status": "settled", "stable": True},
+        **LIVE_EXECUTION,
+    )
+
+    result = asyncio.run(
+        environment.step(
+            completion,
+            scenario_id="single_fault/sf-002",
+            state=_state(),
+        )
+    )
+
+    assert result["terminal_block"]["category"] == "invalid_action"
+    assert result["executed_actions"] == []
+    assert callbacks == []
+
+
+@pytest.mark.parametrize(
     ("claim_present", "claim_value"),
     [
         (False, None),

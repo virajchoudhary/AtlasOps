@@ -1,0 +1,271 @@
+{
+  "approval_distribution": {
+    "P0:manual": 4,
+    "P1:approved": 12,
+    "P1:malformed": 4,
+    "P1:missing": 4,
+    "P1:rejected": 4,
+    "P1:timeout": 4,
+    "P2:auto": 36
+  },
+  "assistant_only_loss": true,
+  "canonical_hash_method": "sha256_utf8_crlf_to_lf",
+  "construction_config": {
+    "case_groups": 17,
+    "corpus_version": "train-candidate-v1",
+    "model_loading": false,
+    "outcome_semantics": "current_role_stage_disposition",
+    "recipe_indices_address_train_split_only": true,
+    "roles_per_case": [
+      "triage",
+      "diagnosis",
+      "remediation",
+      "comms"
+    ],
+    "scenario_metadata_fields_excluded": [
+      "expected_alert",
+      "expected_root_cause",
+      "verification_workloads",
+      "manifest_sha256"
+    ],
+    "scenario_metadata_fields_used": [
+      "tier",
+      "target_services",
+      "chaos_kinds"
+    ],
+    "schema_version": "atlasops-sft-candidate-v1",
+    "tool_execution": false,
+    "tool_observations_are_simulated": true,
+    "train_only": true,
+    "training": false,
+    "triage_tool_plans": {
+      "0": [
+        "kubectl_get",
+        "alertmanager_list_alerts"
+      ],
+      "1": [
+        "kubectl_top_pods",
+        "promql_query"
+      ],
+      "10": [
+        "alertmanager_list_alerts",
+        "promql_query",
+        "kubectl_get"
+      ],
+      "11": [
+        "alertmanager_list_alerts",
+        "kubectl_top_pods",
+        "promql_query"
+      ],
+      "12": [
+        "kubectl_get",
+        "alertmanager_list_alerts",
+        "promql_query"
+      ],
+      "13": [
+        "kubectl_get",
+        "kubectl_top_pods",
+        "alertmanager_list_alerts"
+      ],
+      "14": [
+        "alertmanager_list_alerts",
+        "promql_query",
+        "kubectl_get"
+      ],
+      "15": [
+        "alertmanager_list_alerts",
+        "kubectl_top_pods",
+        "kubectl_get",
+        "promql_query"
+      ],
+      "2": [
+        "promql_query",
+        "kubectl_top_pods",
+        "alertmanager_list_alerts"
+      ],
+      "3": [
+        "promql_query",
+        "alertmanager_list_alerts"
+      ],
+      "4": [
+        "alertmanager_list_alerts",
+        "kubectl_get",
+        "promql_query"
+      ],
+      "5": [
+        "promql_query",
+        "kubectl_get",
+        "alertmanager_list_alerts"
+      ],
+      "6": [
+        "alertmanager_list_alerts",
+        "promql_query",
+        "kubectl_get"
+      ],
+      "7": [
+        "kubectl_top_pods",
+        "alertmanager_list_alerts",
+        "promql_query"
+      ],
+      "8": [
+        "alertmanager_list_alerts",
+        "kubectl_top_pods",
+        "promql_query",
+        "kubectl_get"
+      ],
+      "9": [
+        "alertmanager_list_alerts"
+      ]
+    }
+  },
+  "construction_config_sha256": "aa6422723bec7c85b5e0423e942fce046b1cc3c67f50532a73819ab712caff93",
+  "construction_method": "deterministic_hand_authored_train_contrastive_recipes",
+  "corpus_sha256_canonical_lf": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+  "corpus_sha256_raw": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+  "corpus_version": "train-candidate-v1",
+  "d3_approval": "PENDING",
+  "data_origin": "scenario_derived_synthetic_review_candidate",
+  "exact_duplicate_assistant_targets": 0,
+  "format": "openai-tool-messages-v1",
+  "held_out_outcomes_accessed": false,
+  "outcome_distribution": {
+    "blocked": 10,
+    "failed": 2,
+    "inconclusive": 19,
+    "malformed": 4,
+    "successful": 16,
+    "unresolved": 17
+  },
+  "quarantined_populations": [
+    "Validation",
+    "adversarial",
+    "leaderboard",
+    "final-Test"
+  ],
+  "role_distribution": {
+    "comms": 17,
+    "diagnosis": 17,
+    "remediation": 17,
+    "triage": 17
+  },
+  "role_outcome_distribution": {
+    "comms": {
+      "blocked": 5,
+      "failed": 1,
+      "inconclusive": 1,
+      "malformed": 1,
+      "successful": 8,
+      "unresolved": 1
+    },
+    "diagnosis": {
+      "inconclusive": 1,
+      "malformed": 1,
+      "unresolved": 15
+    },
+    "remediation": {
+      "blocked": 5,
+      "failed": 1,
+      "inconclusive": 1,
+      "malformed": 1,
+      "successful": 8,
+      "unresolved": 1
+    },
+    "triage": {
+      "inconclusive": 16,
+      "malformed": 1
+    }
+  },
+  "role_tool_distribution": {
+    "comms": {
+      "postmortem_draft": 13,
+      "slack_post_update": 13
+    },
+    "diagnosis": {
+      "argocd_app_history": 1,
+      "chaos_list_experiments": 17,
+      "jaeger_search": 6,
+      "kubectl_get": 17,
+      "kubectl_logs": 2,
+      "promql_query": 17
+    },
+    "remediation": {
+      "argocd_rollback": 1,
+      "chaos_stop_experiment": 9,
+      "promql_query": 4
+    },
+    "triage": {
+      "alertmanager_list_alerts": 15,
+      "kubectl_get": 10,
+      "kubectl_top_pods": 8,
+      "promql_query": 14
+    }
+  },
+  "rows_semantic_sha256": "ee64d1a103bdb818c37f5c0cf8616005544ce95748a3e3d9bbf63a88fa021c70",
+  "scenario_ids": [
+    "single_fault/sf-001",
+    "single_fault/sf-002",
+    "single_fault/sf-003",
+    "single_fault/sf-004",
+    "single_fault/sf-005",
+    "cascade/cs-001",
+    "cascade/cs-002",
+    "cascade/cs-003",
+    "multi_fault/mf-001",
+    "multi_fault/mf-002",
+    "multi_fault/mf-003",
+    "named_replays/hist-cloudflare-2019",
+    "named_replays/hist-aws-s3-2017",
+    "named_replays/hist-github-2018",
+    "named_replays/hist-datadog-2023",
+    "named_replays/hist-discord-2022"
+  ],
+  "schema_version": "atlasops-sft-candidate-v1",
+  "severity_distribution": {
+    "P0": 4,
+    "P1": 28,
+    "P2": 36
+  },
+  "source_file_sha256_canonical_lf": {
+    "agents/approval.py": "f8fd1975c2648f20c3c5e1fe113feb8737c9dc16276764900349bd517059902b",
+    "agents/coordinator.py": "84832e3549b718705f4491ce6f10a9b0ee4eaf44f5600d722ddf854f8cb6fc28",
+    "agents/prompts/comms.md": "be58db4dcef9b42296ef81217a22ec44842d608b25bc4ee6d29e39b0216f461c",
+    "agents/prompts/diagnosis.md": "26265a2007477eed58a69b80c0a1faf74a00cfc257374590dd6b96a6b7b9b7b6",
+    "agents/prompts/remediation.md": "00d0d3b24ba00007fd2e00d9c99f6c4ae9782cc6b42c495720648ec6c49bf344",
+    "agents/prompts/triage.md": "956a1489758cb0fe9d7567728b6180e357825a2534c219ebb961fc9c51029f1d",
+    "agents/tool_policy.py": "c7c755b1fa33c9b77cc474d92706915d1c6dbf8efa7932ebbd24fcf9c3ff494b",
+    "config/scenario_catalog.py": "6d94db05f8d2e95622eb02a4363e9321e9fb75de78f91a51c2d8c04d956fefd4",
+    "requirements/train-constraints.txt": "f8a260c1dbd89691fe62e0fa2c3ea614c1e94bff170d2f74cd889041b2deef0c",
+    "training/build_sft_candidate.py": "c0dd9af9e94468d243223d6aa9dcb7e9429074082ab476758c229dd8bd605ae7",
+    "training/sft_candidate.py": "9dbc4e7e4fbe1f8d7588310bd1bffc680e53bf4a9fd40dec21fef62eca6a0b5b",
+    "training/sft_rendering.py": "ed4e9a4c06e9602976295a39767f782fddab057ba32ca3d44472033e6219d179",
+    "training/templates/qwen2_5_tool_sft.jinja": "de846d935d6e1aa0fb6b0aa61ccec98762da82a0d0eb989436edc3da448bfbbf"
+  },
+  "source_git_sha": "e802dd3a5522c30d3919952954e86827fa96caa1",
+  "split": "train",
+  "split_membership_sha256": "b7d2220a659a1120f93adb443b301f3302156efd8ff64028214d283ca009b894",
+  "synthetic": true,
+  "technical_admissibility": "PASS",
+  "tier_distribution": {
+    "cascade": 12,
+    "multi_fault": 12,
+    "named_replays": 20,
+    "single_fault": 24
+  },
+  "tool_distribution": {
+    "alertmanager_list_alerts": 15,
+    "argocd_app_history": 1,
+    "argocd_rollback": 1,
+    "chaos_list_experiments": 17,
+    "chaos_stop_experiment": 9,
+    "jaeger_search": 6,
+    "kubectl_get": 27,
+    "kubectl_logs": 2,
+    "kubectl_top_pods": 8,
+    "postmortem_draft": 13,
+    "promql_query": 35,
+    "slack_post_update": 13
+  },
+  "total_examples": 68,
+  "total_scenarios": 16,
+  "total_tool_calls": 147
+}

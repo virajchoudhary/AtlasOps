@@ -2,6 +2,14 @@
 
 **Status: PARTIAL**
 
+The new [D3 review candidate](G7_D3_CANDIDATE_REVIEW_V1.md) is separate from
+the historical fixture below. Its versioned corpus, provenance and independent
+quality review are review inputs, not scientific approval or a completed adapter.
+`training.sft` now refuses both unversioned data and the pending candidate before
+ML imports/output creation. Existing downstream trainer tests use explicit
+test-only stubs to isolate their handoff/lifecycle contracts; production has no
+D3 bypass. See the [future acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md).
+
 The training corpus and SFT software contract are implemented. No completed
 Qwen2.5-7B-Instruct training run or usable adapter is currently preserved.
 

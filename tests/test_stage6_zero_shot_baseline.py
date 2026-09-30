@@ -80,6 +80,11 @@ class TestStage6ZeroShotBaseline:
             assert ep["scenario_id"] in VAL_SPLIT
             assert "diagnostic_metrics" in ep
             assert "ground_truth_root_cause" in ep
+            assert ep["run_id"] == summary["run_id"]
+            assert ep["model"] == summary["model"] == "qwen2.5:7b-instruct"
+            assert ep["evaluation_mode"] == "mock"
+            assert ep["non_empirical"] is True
+            assert ep["empirical_claim_allowed"] is False
 
     @pytest.mark.asyncio
     async def test_evaluate_zero_shot_test_split(self, tmp_path):

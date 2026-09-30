@@ -19,6 +19,13 @@ from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import VAL_SPLIT
 
 
+def _assert_raw_run_identity(summary, rows, model_name):
+    assert summary["model"] == model_name
+    assert summary["run_id"]
+    assert all(row["run_id"] == summary["run_id"] for row in rows)
+    assert all(row["model"] == model_name for row in rows)
+
+
 @pytest.mark.parametrize(
     "confidence", [True, False, math.nan, math.inf, -math.inf, -0.1, 1.1, 10**500]
 )
@@ -45,6 +52,7 @@ def test_invalid_confidence_is_not_scored_as_numeric_inference(tmp_path, confide
             encoding="utf-8"
         ).splitlines()
     ]
+    _assert_raw_run_identity(summary, rows, "qwen2.5:7b-instruct")
     assert summary["failed_scenarios"] == len(VAL_SPLIT)
     assert all(row["status"] == "error" and row["prediction"] is None for row in rows)
     assert all(row["error"].startswith("ValueError: invalid_response") for row in rows)
@@ -1417,6 +1425,21 @@ async def test_empirical_mode_never_exposes_expected_root_cause(tmp_path):
         assert "chaos_kinds" not in serialized
         assert "manifest_relpath" not in serialized
 
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "results_per_episode.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    _assert_raw_run_identity(summary, rows, "example/base-model")
+    for scenario_id, row in zip(VAL_SPLIT, rows, strict=True):
+        serialized = json.dumps(row["request_messages"])
+        assert SCENARIO_CATALOG[scenario_id].expected_root_cause not in serialized
+        assert "expected_root_cause" not in serialized
+        assert row["scoring_reference"]["expected_root_cause"] == (
+            SCENARIO_CATALOG[scenario_id].expected_root_cause
+        )
+
     assert summary["evaluation_mode"] == "empirical"
     assert summary["empirical_inference_executed"] is True
     assert summary["empirical_claim_allowed"] is False
@@ -1472,6 +1495,7 @@ async def test_empirical_failure_is_preserved_without_mock_fallback(
     assert all("mock" not in row for row in rows)
     assert all(row["error"] == "RuntimeError: inference_failure; details redacted" for row in rows)
     assert secret_marker not in json.dumps(rows)
+    _assert_raw_run_identity(summary, rows, "qwen2.5:7b-instruct")
 
 
 @pytest.mark.asyncio

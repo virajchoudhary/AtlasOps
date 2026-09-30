@@ -297,6 +297,30 @@ def _jsonl(records: list[dict]) -> bytes:
     ).encode("utf-8")
 
 
+def _native_diagnosis_row(source_identity: dict | None = None) -> dict:
+    prediction = {
+        "severity": "P1",
+        "root_cause": "packet loss",
+        "affected_services": ["checkout"],
+        "confidence": 0.5,
+    }
+    row = {
+        "scenario_id": SCENARIO_ID,
+        "evaluation_mode": "empirical",
+        "status": "ok",
+        "prediction": prediction,
+        "raw_model_response": json.dumps(
+            prediction,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ),
+    }
+    if source_identity is not None:
+        row.update(source_identity)
+    return row
+
+
 def _g9_native_events(source_identity: dict) -> list[dict]:
     checks = [
         {"name": REQUIRED_CHECK_IDS[0], "passed": False, "required": True},
@@ -986,7 +1010,7 @@ def test_declared_discrepancies_are_reported_without_replacing_recomputation():
     assert result["arms"][ARM_ORDER[0]]["summary"]["reward_mean"]["value"] == -0.125
 
 
-def test_native_diagnosis_only_rows_remain_null_and_identity_is_not_promoted():
+def test_native_diagnosis_only_rows_remain_non_empirical_and_g8_identity_stays_unbound():
     declared = {
         arm: {
             "run_id": f"declared-run-{index}",
@@ -995,26 +1019,8 @@ def test_native_diagnosis_only_rows_remain_null_and_identity_is_not_promoted():
         for index, arm in enumerate(ARM_ORDER)
     }
     sources = {
-        ARM_ORDER[0]: _jsonl(
-            [
-                {
-                    "scenario_id": SCENARIO_ID,
-                    "evaluation_mode": "empirical",
-                    "status": "ok",
-                    "prediction": {"root_cause": "packet loss"},
-                }
-            ]
-        ),
-        ARM_ORDER[1]: _jsonl(
-            [
-                {
-                    "scenario_id": SCENARIO_ID,
-                    "evaluation_mode": "empirical",
-                    "status": "ok",
-                    "prediction": {"root_cause": "packet loss"},
-                }
-            ]
-        ),
+        ARM_ORDER[0]: _jsonl([_native_diagnosis_row(declared[ARM_ORDER[0]])]),
+        ARM_ORDER[1]: _jsonl([_native_diagnosis_row()]),
     }
     g9_events = _g9_native_events(declared[ARM_ORDER[2]])
     g9_events[2]["recorded_at"] = "2026-09-29T12:00:01Z"
@@ -1030,20 +1036,28 @@ def test_native_diagnosis_only_rows_remain_null_and_identity_is_not_promoted():
 
     result = _replay_native(sources, pins)
 
+    g6_source = result["arms"][ARM_ORDER[0]]["source"]["identity_binding"]
+    assert g6_source["status"] == "RAW_BOUND"
+    assert g6_source["raw_bound_source_identity"] == declared[ARM_ORDER[0]]
+    g6_episode = result["arms"][ARM_ORDER[0]]["episodes"][0]
+    assert g6_episode["raw_episode"]["source_identity_model_basis"] == (
+        "requested_model_name_only"
+    )
+    g8_source = result["arms"][ARM_ORDER[1]]["source"]["identity_binding"]
+    assert g8_source["status"] == "UNBOUND"
+    assert g8_source["raw_bound_source_identity"] == {"run_id": None, "model": None}
     for arm in ARM_ORDER[:2]:
         episode = result["arms"][arm]["episodes"][0]
         assert episode["eligibility"]["status"] == "undetermined"
         assert episode["diagnosis"]["score"] is None
         assert result["arms"][arm]["summary"]["diagnosis_accuracy"]["value"] is None
-        assert result["arms"][arm]["source"]["identity_binding"]["status"] == "UNBOUND"
-        assert result["arms"][arm]["source"]["identity_binding"]["raw_bound_source_identity"] == {
-            "run_id": None,
-            "model": None,
-        }
         assert not any(
             event["event"] in {"fault_authorization", "fault_observation", "alert_delivery"}
             for event in episode["raw_episode"]["events"]
         )
+    assert result["arms"][ARM_ORDER[1]]["episodes"][0]["raw_episode"][
+        "source_identity_limitation"
+    ] == "raw rows lack run_id, model; identity remains UNBOUND"
     assert result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]["status"] == "RAW_BOUND"
     assert (
         result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]["raw_bound_source_identity"]
@@ -1089,17 +1103,8 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound():
         for index, arm in enumerate(ARM_ORDER[:2])
     }
     sources = {
-        arm: _jsonl(
-            [
-                {
-                    "scenario_id": SCENARIO_ID,
-                    "evaluation_mode": "empirical",
-                    "status": "ok",
-                    "prediction": {"root_cause": "packet loss"},
-                }
-            ]
-        )
-        for arm in ARM_ORDER[:2]
+        ARM_ORDER[0]: _jsonl([_native_diagnosis_row(declared_rows[ARM_ORDER[0]])]),
+        ARM_ORDER[1]: _jsonl([_native_diagnosis_row()]),
     }
     raw_g9_identity = {"run_id": "raw-run-not-terminal", "model": "raw-model"}
     interrupted_events = _g9_native_events(raw_g9_identity)[:-2]

@@ -156,6 +156,7 @@ class TestStage15SubmissionPackage:
             "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md",
             "docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md",
             "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_2.md",
+            "docs/project/G13_THREE_ARM_RAW_REPLAY_CANDIDATE_V0_3.md",
             "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md",
             "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md",
             "docs/project/G7_G13_DECISION_REGISTER.md",

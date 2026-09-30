@@ -912,6 +912,7 @@ async def evaluate_zero_shot_split(
                     selected_backend,
                     observed_model_identity,
                 )
+            episode.update({"run_id": run_id, "model": model_name})
             episodes.append(episode)
             stream.write(json.dumps(episode, sort_keys=True) + "\n")
             stream.flush()

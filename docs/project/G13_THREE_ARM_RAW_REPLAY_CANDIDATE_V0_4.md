@@ -40,3 +40,19 @@ compact separators, and UTF-8 for `comparison_scorer_sha256`:
 The v0.3 hashes remain a historical source snapshot, not current runtime
 anchors. D4-D9 decisions, compatible controlled episodes for all three arms,
 independent source/model attestation, and a frozen protocol remain required.
+
+## Later evaluator-identity consistency repair
+
+The native G9 replay now compares reported `evaluator_source.git_sha` and
+`git_dirty` with the independently validated run descriptor's evaluator
+commit and clean-state declaration. Contradictory or malformed fields are
+rejected, including conflicting start and terminal metadata. Missing fields
+remain `UNBOUND`; they are not filled from the descriptor. The source summary
+reports `evaluator_identity_binding` separately from run/model identity.
+Its evaluator tree digest remains `DESCRIPTOR_ONLY_NOT_RAW_BOUND`, not an
+authenticated raw-source attestation.
+
+The source hashes above remain the historical v0.4 snapshot, not hashes of
+this later implementation. This repair changes metadata consistency only,
+not the measurement formulas, eligibility, pending decisions, or protocol
+freeze. Synthetic regression results do not close G13 or certify an episode.

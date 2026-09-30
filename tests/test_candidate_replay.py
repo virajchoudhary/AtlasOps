@@ -18,6 +18,8 @@ ARM_ORDER = [
 ]
 SCENARIO_ID = "synthetic/replay-001"
 REQUIRED_CHECK_IDS = ["deployment_ready", "latency_below_threshold"]
+_DEFAULT_G9_EVALUATOR_SOURCE = object()
+_OMIT_G9_EVALUATOR_SOURCE = object()
 
 
 def _sha256(data: bytes) -> str:
@@ -321,11 +323,30 @@ def _native_diagnosis_row(source_identity: dict | None = None) -> dict:
     return row
 
 
-def _g9_native_events(source_identity: dict) -> list[dict]:
+def _g9_native_events(
+    source_identity: dict,
+    *,
+    evaluator_source: object = _DEFAULT_G9_EVALUATOR_SOURCE,
+) -> list[dict]:
     checks = [
         {"name": REQUIRED_CHECK_IDS[0], "passed": False, "required": True},
         {"name": REQUIRED_CHECK_IDS[1], "passed": False, "required": True},
     ]
+    raw_evaluator_source = (
+        {"git_sha": "3" * 40, "git_dirty": False}
+        if evaluator_source is _DEFAULT_G9_EVALUATOR_SOURCE
+        else deepcopy(evaluator_source)
+    )
+    provenance = {"base_model": {"id": source_identity["model"]}}
+    run_started = {
+        "event": "run_started",
+        "evaluation_mode": "EMPIRICAL",
+        "split": "validation",
+        "split_sha256": ordered_scenario_ids_sha256([SCENARIO_ID]),
+        "provenance": deepcopy(provenance),
+    }
+    if evaluator_source is not _OMIT_G9_EVALUATOR_SOURCE:
+        run_started["evaluator_source"] = deepcopy(raw_evaluator_source)
     verification = {
         "scenario_id": SCENARIO_ID,
         "verification_status": "failed",
@@ -333,15 +354,8 @@ def _g9_native_events(source_identity: dict) -> list[dict]:
         "checks": checks,
     }
     split_sha256 = ordered_scenario_ids_sha256([SCENARIO_ID])
-    return [
-        {
-            "event": "run_started",
-            "evaluation_mode": "EMPIRICAL",
-            "split": "validation",
-            "split_sha256": split_sha256,
-            "provenance": {"base_model": {"id": source_identity["model"]}},
-            "evaluator_source": {"git_sha": "b" * 40, "git_dirty": False},
-        },
+    records = [
+        run_started,
         {
             "event": "episode_started",
             "evaluation_mode": "EMPIRICAL",
@@ -384,6 +398,7 @@ def _g9_native_events(source_identity: dict) -> list[dict]:
                 "model": source_identity["model"],
                 "split": "validation",
                 "split_sha256": split_sha256,
+                "provenance": deepcopy(provenance),
                 "scenario_count": 1,
                 "completed_episodes": 1,
                 "scorable_episodes": 0,
@@ -393,6 +408,9 @@ def _g9_native_events(source_identity: dict) -> list[dict]:
             },
         },
     ]
+    if evaluator_source is not _OMIT_G9_EVALUATOR_SOURCE:
+        records[-1]["summary"]["evaluator_source"] = deepcopy(raw_evaluator_source)
+    return records
 
 
 def _replay_native(sources: dict[str, bytes], pins: dict[str, dict]) -> dict:
@@ -407,6 +425,35 @@ def _replay_native(sources: dict[str, bytes], pins: dict[str, dict]) -> dict:
         native_sources=sources,
         partition="validation",
     )
+
+
+def _native_g9_replay_inputs(
+    evaluator_source: object = _DEFAULT_G9_EVALUATOR_SOURCE,
+) -> tuple[dict[str, bytes], dict[str, dict], list[dict]]:
+    declared = {
+        arm: {
+            "run_id": f"declared-run-{index}",
+            "model": f"declared-model-{index}",
+        }
+        for index, arm in enumerate(ARM_ORDER)
+    }
+    g9_events = _g9_native_events(
+        declared[ARM_ORDER[2]],
+        evaluator_source=evaluator_source,
+    )
+    sources = {
+        ARM_ORDER[0]: _jsonl([_native_diagnosis_row(declared[ARM_ORDER[0]])]),
+        ARM_ORDER[1]: _jsonl([_native_diagnosis_row()]),
+        ARM_ORDER[2]: _jsonl(g9_events),
+    }
+    pins = {
+        arm: {
+            "source_identity": declared[arm],
+            "source_sha256": _sha256(sources[arm]),
+        }
+        for arm in ARM_ORDER
+    }
+    return sources, pins, g9_events
 
 
 def test_replays_all_three_arms_and_reports_supported_minus_0125_decomposition():
@@ -1063,6 +1110,16 @@ def test_native_diagnosis_only_rows_remain_non_empirical_and_g8_identity_stays_u
         result["arms"][ARM_ORDER[2]]["source"]["identity_binding"]["raw_bound_source_identity"]
         == declared[ARM_ORDER[2]]
     )
+    assert result["arms"][ARM_ORDER[2]]["source"]["evaluator_identity_binding"] == {
+        "status": "RAW_COMMIT_AND_DIRTY_MATCHED",
+        "raw_reported": {"git_sha": "3" * 40, "git_dirty": False},
+        "validated_descriptor": {
+            "commit_sha": "3" * 40,
+            "tree_sha256": "5" * 64,
+            "dirty": False,
+        },
+        "tree_sha256_status": "DESCRIPTOR_ONLY_NOT_RAW_BOUND",
+    }
     assert result["arms"][ARM_ORDER[2]]["source"]["terminal_record_ref"] == {
         "event": "run_completed",
         "source_sha256": _sha256(sources[ARM_ORDER[2]]),
@@ -1097,6 +1154,63 @@ def test_native_diagnosis_only_rows_remain_non_empirical_and_g8_identity_stays_u
         }
         for event in g9_episode["raw_episode"]["events"]
     )
+
+
+def test_native_g9_raw_evaluator_commit_must_match_validated_run_descriptor():
+    sources, pins, _ = _native_g9_replay_inputs(
+        {"git_sha": "4" * 40, "git_dirty": False}
+    )
+
+    with pytest.raises(ValueError, match="G9 raw evaluator git_sha"):
+        _replay_native(sources, pins)
+
+
+@pytest.mark.parametrize(
+    "evaluator_source",
+    [
+        {"git_sha": "3" * 40, "git_dirty": True},
+        {"git_sha": "3" * 40, "git_dirty": "false"},
+        {"git_sha": "not-a-git-sha", "git_dirty": False},
+        {"git_sha": "3" * 40, "git_dirty": False, "tree_sha256": "4" * 64},
+    ],
+    ids=["dirty", "malformed-dirty", "malformed-commit", "mismatched-tree"],
+)
+def test_native_g9_raw_evaluator_dirty_or_malformed_metadata_is_rejected(evaluator_source):
+    sources, pins, _ = _native_g9_replay_inputs(evaluator_source)
+
+    with pytest.raises(ValueError, match="G9 raw evaluator"):
+        _replay_native(sources, pins)
+
+
+def test_native_g9_start_and_terminal_evaluator_metadata_must_agree():
+    sources, pins, g9_events = _native_g9_replay_inputs()
+    g9_events[-1]["summary"]["evaluator_source"]["git_sha"] = "4" * 40
+    sources[ARM_ORDER[2]] = _jsonl(g9_events)
+    pins[ARM_ORDER[2]]["source_sha256"] = _sha256(sources[ARM_ORDER[2]])
+
+    with pytest.raises(ValueError, match="G9 raw evaluator provenance is internally inconsistent"):
+        _replay_native(sources, pins)
+
+
+@pytest.mark.parametrize(
+    "evaluator_source",
+    [
+        {},
+        {"git_dirty": False},
+        None,
+        _OMIT_G9_EVALUATOR_SOURCE,
+    ],
+    ids=["missing-fields", "missing-commit", "null-source", "absent-source"],
+)
+def test_native_g9_missing_evaluator_fields_remain_unbound(evaluator_source):
+    sources, pins, _ = _native_g9_replay_inputs(evaluator_source)
+
+    result = _replay_native(sources, pins)
+    binding = result["arms"][ARM_ORDER[2]]["source"]["evaluator_identity_binding"]
+
+    assert binding["status"] == "UNBOUND"
+    assert binding["raw_reported"]["git_sha"] is None
+    assert binding["tree_sha256_status"] == "DESCRIPTOR_ONLY_NOT_RAW_BOUND"
 
 
 @pytest.mark.parametrize("unscoped", [False, True], ids=["scoped", "unscoped"])
@@ -1143,6 +1257,10 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound(unscoped):
     g9_source = g9_arm["source"]
     identity_binding = g9_source["identity_binding"]
 
+    assert (
+        g9_source["evaluator_identity_binding"]["status"]
+        == "RAW_COMMIT_AND_DIRTY_MATCHED"
+    )
     assert identity_binding["status"] == "UNBOUND"
     assert identity_binding["caller_declared_source_identity"] == {
         "run_id": None,
@@ -1179,4 +1297,8 @@ def test_incomplete_g9_keeps_run_and_model_identity_unbound(unscoped):
     no_terminal_arm = no_terminal_result["arms"][ARM_ORDER[2]]
     assert no_terminal_arm["source"]["run_outcome"] == "partial"
     assert no_terminal_arm["source"]["terminal_record_ref"] is None
+    assert (
+        no_terminal_arm["source"]["evaluator_identity_binding"]["status"]
+        == "RAW_COMMIT_AND_DIRTY_MATCHED"
+    )
     assert no_terminal_arm["episodes"] == []

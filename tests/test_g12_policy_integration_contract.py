@@ -47,6 +47,7 @@ async def test_policy_receives_verifier_state_without_benchmark_truth() -> None:
         return {
             "success": True,
             "observation_status": "observed",
+            "access_token": "reader-secret-must-not-be-persisted",
             "active_experiments": [{
                 "kind": "StressChaos",
                 "name": name,
@@ -102,6 +103,31 @@ async def test_policy_receives_verifier_state_without_benchmark_truth() -> None:
     ]
     assert result["policy_steps"][0]["parsed_action"]["arguments"]["name"] == "observed-1"
     assert result["policy_steps"][1]["next_state"]["env_resolved"] is True
+    assert result["policy_steps"][0]["pre_action_observation"] == {
+        "tool": "chaos_list_experiments",
+        "success": True,
+        "observation_status": "observed",
+        "history": None,
+        "active_experiments": [{
+            "kind": "StressChaos",
+            "name": "observed-1",
+            "namespace": "chaos-mesh",
+        }],
+    }
+    assert result["policy_steps"][1]["pre_action_observation"] == {
+        "tool": "chaos_list_experiments",
+        "success": True,
+        "observation_status": "observed",
+        "history": None,
+        "active_experiments": [{
+            "kind": "StressChaos",
+            "name": "observed-2",
+            "namespace": "chaos-mesh",
+        }],
+    }
+    assert "reader-secret-must-not-be-persisted" not in json.dumps(
+        result["policy_steps"]
+    )
 
 
 @pytest.mark.asyncio
@@ -126,6 +152,62 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
     assert result["final"]["terminal_block"]["category"] == "approval_required"
     assert len(result["policy_steps"]) == 1
     assert result["policy_steps"][0]["environment_status"] == "blocked"
+    assert result["policy_steps"][0]["pre_action_observation"] is None
+
+
+@pytest.mark.asyncio
+async def test_failed_guarded_read_survives_blocked_policy_step() -> None:
+    executed = []
+    environment = DirectPolicyEnvironment(
+        tool_registry={
+            "chaos_stop_experiment": lambda **kwargs: executed.append(kwargs),
+            "chaos_list_experiments": lambda: {
+                "success": True,
+                "observation_status": "unavailable",
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "observed-1",
+                    "namespace": "chaos-mesh",
+                }],
+                "access_token": "reader-secret-must-not-be-persisted",
+            },
+        },
+        policy_check=lambda role, tool, arguments, state: None,
+        execute_live_chaos=True,
+        kube_context="kind-atlasops-synthetic",
+    )
+
+    result = await run_policy_remediation(
+        policy=ScriptedPolicy(),
+        state={
+            "incident_id": "inc-blocked-read",
+            "alert": {"commonLabels": {"alertname": "HighCPUUsage"}},
+            "triage": {"severity": "P2"},
+        },
+        scenario_id="single_fault/sf-002",
+        environment=environment,
+        seed=7,
+        generation_config={"do_sample": False},
+    )
+
+    assert executed == []
+    assert result["final"]["status"] == "blocked"
+    step = result["policy_steps"][0]
+    assert step["terminal_block"]["category"] == "missing_evidence"
+    assert step["executed_actions"] == []
+    assert step["verification"] is None
+    assert step["pre_action_observation"] == {
+        "tool": "chaos_list_experiments",
+        "success": True,
+        "observation_status": "unavailable",
+        "history": None,
+        "active_experiments": [{
+            "kind": "StressChaos",
+            "name": "observed-1",
+            "namespace": "chaos-mesh",
+        }],
+    }
+    assert "reader-secret-must-not-be-persisted" not in json.dumps(result)
 
 
 @pytest.mark.asyncio
@@ -141,6 +223,9 @@ async def test_blocked_policy_action_stops_without_mutation() -> None:
         ("executed", "executed"),
     ],
 )
+@pytest.mark.parametrize(
+    "guarded_action", [False, True], ids=["scale", "guarded-chaos-stop"]
+)
 async def test_full_incident_path_uses_policy_action_and_verified_comms(
     monkeypatch,
     tmp_path,
@@ -148,6 +233,7 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
     alert_severity,
     recommender_mode,
     expected_recommender_status,
+    guarded_action,
 ) -> None:
     import asyncio
 
@@ -179,17 +265,39 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
     class Policy:
         def generate(self, state, *, seed, generation_config):
             policy_states.append(state)
+            if guarded_action:
+                tool = "chaos_stop_experiment"
+                arguments = {
+                    "kind": "StressChaos",
+                    "name": f"observed-{len(policy_states)}",
+                    "namespace": "chaos-mesh",
+                }
+            else:
+                tool = "kubectl_scale"
+                arguments = {
+                    "deployment": "paymentservice",
+                    "replicas": 2,
+                    "namespace": "default",
+                }
             return json.dumps(
                 {
-                    "tool": "kubectl_scale",
-                    "arguments": {
-                        "deployment": "paymentservice",
-                        "replicas": 2,
-                        "namespace": "default",
-                    },
+                    "tool": tool,
+                    "arguments": arguments,
                     "agent_claimed_resolved": True,
                 }
             )
+
+    def observe():
+        return {
+            "success": True,
+            "observation_status": "observed",
+            "access_token": "reader-secret-must-not-be-persisted",
+            "active_experiments": [{
+                "kind": "StressChaos",
+                "name": f"observed-{len(executed) + 1}",
+                "namespace": "chaos-mesh",
+            }],
+        }
 
     def execute(**arguments):
         assert os.environ["KUBECONFIG_CONTEXT"] == METRICS_SERVER_CONTEXT
@@ -214,7 +322,26 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
         if role == "triage":
             return {
                 "role": role,
-                "trajectory": [],
+                "trajectory": [{
+                    "tool": "chaos_list_experiments",
+                    "args": {},
+                    "output": {
+                        "success": True,
+                        "observation_status": "observed",
+                        "active_experiments": [
+                            {
+                                "kind": "StressChaos",
+                                "name": "observed-1",
+                                "namespace": "chaos-mesh",
+                            },
+                            {
+                                "kind": "StressChaos",
+                                "name": "observed-2",
+                                "namespace": "chaos-mesh",
+                            },
+                        ],
+                    },
+                }] if guarded_action else [],
                 "final": {
                     "severity": triage_severity,
                     "affected_services": ["paymentservice"],
@@ -262,7 +389,15 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
         "slack_post_update",
         lambda **_kwargs: {"success": True},
     )
-    monkeypatch.setattr(environment_module, "TOOL_REGISTRY", {"kubectl_scale": execute})
+    monkeypatch.setattr(
+        environment_module,
+        "TOOL_REGISTRY",
+        {
+            "kubectl_scale": execute,
+            "chaos_stop_experiment": execute,
+            "chaos_list_experiments": observe,
+        },
+    )
     monkeypatch.setattr(environment_module, "verify_environment", verify)
     monkeypatch.setattr(verifier_module, "verify_environment", verify)
 
@@ -290,6 +425,24 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
         (tmp_path / "trajectories" / "inc-original.json").read_text(encoding="utf-8")
     )
     assert persisted["recommender"]["status"] == expected_recommender_status
+    support_read = persisted["remediation"]["policy_steps"][0][
+        "pre_action_observation"
+    ]
+    if guarded_action:
+        assert support_read == {
+            "tool": "chaos_list_experiments",
+            "success": True,
+            "observation_status": "observed",
+            "history": None,
+            "active_experiments": [{
+                "kind": "StressChaos",
+                "name": "observed-1",
+                "namespace": "chaos-mesh",
+            }],
+        }
+    else:
+        assert support_read is None
+    assert "reader-secret-must-not-be-persisted" not in json.dumps(persisted)
     assert len(executed) == 2
     assert len(policy_states) == 2
     assert bool(policy_states[0]["recommended_runbooks"]) is (
@@ -306,15 +459,21 @@ async def test_full_incident_path_uses_policy_action_and_verified_comms(
         assert result["approval"]["decision"] == "approved"
         assert result["approval"]["approved_by"] == "test-operator"
         assert len(approved_actions) == 2
-        assert all(
-            action.action["tool"] == "kubectl_scale"
-            and action.action["arguments"] == {
-                "deployment": "paymentservice",
-                "namespace": "default",
-                "replicas": 2,
-            }
-            for action in approved_actions
-        )
+        for index, action in enumerate(approved_actions):
+            if guarded_action:
+                assert action.action["tool"] == "chaos_stop_experiment"
+                assert action.action["arguments"] == {
+                    "kind": "StressChaos",
+                    "name": f"observed-{index + 1}",
+                    "namespace": "chaos-mesh",
+                }
+            else:
+                assert action.action["tool"] == "kubectl_scale"
+                assert action.action["arguments"] == {
+                    "deployment": "paymentservice",
+                    "namespace": "default",
+                    "replicas": 2,
+                }
         assert result["approval"]["action_digest"] == approved_actions[-1].action_digest
 
 

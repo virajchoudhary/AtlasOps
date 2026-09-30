@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sys
@@ -9,7 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from agents.policy_remediation import run_policy_remediation
 from scripts import run_g12_integrated_episode as capture
+from training.grpo_environment import DirectPolicyEnvironment
 
 LIVE_EXECUTION = {
     "execute_live_chaos": True,
@@ -100,6 +103,17 @@ def _complete_executed_negative_step():
         "completed_at": "2026-09-28T12:00:01+00:00",
         "state": state,
         "environment_status": "ok",
+        "pre_action_observation": {
+            "tool": "chaos_list_experiments",
+            "success": True,
+            "observation_status": "observed",
+            "history": None,
+            "active_experiments": [{
+                "kind": "StressChaos",
+                "name": "fixture-experiment",
+                "namespace": "chaos-mesh",
+            }],
+        },
         "raw_policy_output": raw_policy_output,
         "parsed_action": action,
         "executed_actions": [{
@@ -132,6 +146,7 @@ def _complete_executed_negative_step():
 def _complete_blocked_step():
     step = _complete_executed_negative_step()
     step["environment_status"] = "blocked"
+    step["pre_action_observation"] = None
     step["executed_actions"] = []
     step["verification"] = None
     step["settling"] = None
@@ -218,6 +233,9 @@ def _complete_followup_step(first, *, blocked=False):
     if second["executed_actions"]:
         second["executed_actions"][0]["arguments"] = json.loads(
             json.dumps(second["parsed_action"]["arguments"])
+        )
+        second["pre_action_observation"]["active_experiments"][0]["name"] = (
+            "fixture-experiment-second"
         )
     second["state"] = json.loads(json.dumps(first["next_state"]))
     second["next_state"] = {
@@ -471,6 +489,28 @@ def test_negative_integrated_attempt_is_archived_without_a_gate_claim(tmp_path):
     assert json.loads((bundle / "g12_capture_manifest.json").read_text()) == manifest
 
 
+def test_guarded_pre_action_observation_survives_capture_without_gate_claim(tmp_path):
+    step = _complete_executed_negative_step()
+    expected_observation = json.loads(json.dumps(step["pre_action_observation"]))
+    manifest, bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+    trajectory = json.loads(
+        (bundle / f"trajectory-{INCIDENT_ID}.json").read_text(encoding="utf-8")
+    )
+    persisted_step = trajectory["remediation"]["policy_steps"][0]
+
+    assert persisted_step["pre_action_observation"] == expected_observation
+    assert persisted_step["verification"]["verification_status"] == "failed"
+    assert manifest["status"] == "CAPTURED_FOR_REVIEW"
+    assert manifest["recorded_env_resolved"] is False
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+    assert manifest["time_to_resolve_s"] is None
+    assert manifest["reward"] is None
+
+
 def test_parsed_action_only_policy_step_is_incomplete(tmp_path):
     manifest, _bundle = _collect_fixture(
         tmp_path,
@@ -534,6 +574,7 @@ def test_missing_or_malformed_policy_steps_are_incomplete(
         "started_at",
         "completed_at",
         "environment_status",
+        "pre_action_observation",
         "raw_policy_output",
         "parsed_action",
         "executed_actions",
@@ -556,6 +597,7 @@ def test_executed_policy_step_requires_complete_capture_fields(tmp_path, field):
 
 def test_complete_blocked_policy_step_is_captured_for_review(tmp_path):
     step = _complete_blocked_step()
+    assert step["pre_action_observation"] is None
     manifest, _bundle = _collect_fixture(
         tmp_path,
         _complete_remediation([step]),
@@ -567,6 +609,70 @@ def test_complete_blocked_policy_step_is_captured_for_review(tmp_path):
     assert manifest["gate_certification"] == "NOT_CERTIFIED"
 
 
+def test_failed_runtime_support_read_is_preserved_but_capture_is_incomplete(tmp_path):
+    executed = []
+
+    class Policy:
+        def generate(self, state, *, seed, generation_config):
+            return _complete_executed_negative_step()["raw_policy_output"]
+
+    environment = DirectPolicyEnvironment(
+        tool_registry={
+            "chaos_stop_experiment": lambda **kwargs: executed.append(kwargs),
+            "chaos_list_experiments": lambda: {
+                "success": True,
+                "observation_status": "unavailable",
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "fixture-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+                "access_token": "reader-secret-must-not-be-persisted",
+            },
+        },
+        policy_check=lambda role, tool, arguments, state: None,
+        execute_live_chaos=True,
+        kube_context=LIVE_EXECUTION["kube_context"],
+    )
+    remediation = asyncio.run(
+        run_policy_remediation(
+            policy=Policy(),
+            state={
+                "incident_id": INCIDENT_ID,
+                "alert": INCIDENT_ALERT,
+                "incident_anchors": INCIDENT_ANCHORS,
+                "triage": {"severity": "P2"},
+            },
+            scenario_id="single_fault/sf-002",
+            environment=environment,
+            seed=7,
+            generation_config={"do_sample": False},
+        )
+    )
+
+    assert executed == []
+    step = remediation["policy_steps"][0]
+    assert step["terminal_block"]["category"] == "missing_evidence"
+    assert step["pre_action_observation"]["observation_status"] == "unavailable"
+    manifest, bundle = _collect_fixture(tmp_path, remediation)
+    copied = json.loads(
+        (bundle / f"trajectory-{INCIDENT_ID}.json").read_text(encoding="utf-8")
+    )
+    assert copied["remediation"]["policy_steps"][0]["pre_action_observation"] == (
+        step["pre_action_observation"]
+    )
+    assert "reader-secret-must-not-be-persisted" not in json.dumps(copied)
+    assert manifest["status"] == "INCOMPLETE"
+    assert set(manifest["problems"]) == {
+        "policy_step_0_pre_action_observation_unverified",
+        "checkpoint_policy_execution_unverified",
+    }
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+    assert manifest["time_to_resolve_s"] is None
+    assert manifest["reward"] is None
+
+
 def test_complete_unscorable_policy_step_is_captured_for_review(tmp_path):
     step = _complete_unscorable_step()
     manifest, _bundle = _collect_fixture(
@@ -576,6 +682,164 @@ def test_complete_unscorable_policy_step_is_captured_for_review(tmp_path):
 
     assert manifest["status"] == "CAPTURED_FOR_REVIEW"
     assert manifest["policy_step_count"] == 1
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+@pytest.mark.parametrize(
+    ("observation", "problem"),
+    [
+        (None, "policy_step_0_pre_action_observation_missing"),
+        ("not-an-object", "policy_step_0_pre_action_observation_malformed"),
+        (
+            {
+                "tool": "argocd_app_history",
+                "success": True,
+                "observation_status": "observed",
+                "history": None,
+                "active_experiments": None,
+            },
+            "policy_step_0_pre_action_observation_mismatch",
+        ),
+        (
+            {
+                "tool": "chaos_list_experiments",
+                "success": False,
+                "observation_status": "observed",
+                "history": None,
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "fixture-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+            },
+            "policy_step_0_pre_action_observation_mismatch",
+        ),
+        (
+            {
+                "tool": "chaos_list_experiments",
+                "success": True,
+                "observation_status": "unavailable",
+                "history": None,
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "fixture-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+            },
+            "policy_step_0_pre_action_observation_mismatch",
+        ),
+        (
+            {
+                "tool": "chaos_list_experiments",
+                "success": True,
+                "observation_status": "observed",
+                "history": None,
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "different-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+            },
+            "policy_step_0_pre_action_observation_mismatch",
+        ),
+        (
+            {
+                "tool": "chaos_list_experiments",
+                "success": True,
+                "observation_status": "observed",
+                "history": None,
+                "active_experiments": [{
+                    "kind": "StressChaos",
+                    "name": "fixture-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+                "access_token": "must-not-be-captured",
+            },
+            "policy_step_0_pre_action_observation_malformed",
+        ),
+    ],
+)
+def test_guarded_pre_action_observation_tampering_is_incomplete(
+    tmp_path, observation, problem
+):
+    step = _complete_executed_negative_step()
+    step["pre_action_observation"] = observation
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert problem in manifest["problems"]
+    assert manifest["empirical_claim_allowed"] is False
+    assert manifest["gate_certification"] == "NOT_CERTIFIED"
+
+
+def test_unguarded_action_cannot_claim_pre_action_observation(tmp_path):
+    step = _complete_executed_negative_step()
+    action = {
+        "tool": "kubectl_scale",
+        "arguments": {
+            "deployment": "paymentservice",
+            "replicas": 2,
+            "namespace": "default",
+        },
+        "agent_claimed_resolved": True,
+    }
+    step["parsed_action"] = action
+    step["raw_policy_output"] = json.dumps(action)
+    step["executed_actions"][0]["tool"] = action["tool"]
+    step["executed_actions"][0]["arguments"] = action["arguments"]
+    step["next_state"]["previous_policy_action"] = action
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == "INCOMPLETE"
+    assert "policy_step_0_pre_action_observation_unexpected" in manifest["problems"]
+
+
+@pytest.mark.parametrize(
+    ("observed_status", "expected_status", "expected_problem"),
+    [
+        (None, "CAPTURED_FOR_REVIEW", None),
+        ("observed", "CAPTURED_FOR_REVIEW", None),
+        ("unavailable", "INCOMPLETE", "policy_step_0_pre_action_observation_mismatch"),
+        ([], "INCOMPLETE", "policy_step_0_pre_action_observation_malformed"),
+        ({}, "INCOMPLETE", "policy_step_0_pre_action_observation_malformed"),
+    ],
+)
+def test_rollback_history_observation_matches_guarded_action(
+    tmp_path, observed_status, expected_status, expected_problem
+):
+    step = _complete_executed_negative_step()
+    action = {
+        "tool": "argocd_rollback",
+        "arguments": {"app": "paymentservice", "revision": "42"},
+        "agent_claimed_resolved": False,
+    }
+    step["parsed_action"] = action
+    step["raw_policy_output"] = json.dumps(action)
+    step["executed_actions"][0]["tool"] = action["tool"]
+    step["executed_actions"][0]["arguments"] = action["arguments"]
+    step["next_state"]["previous_policy_action"] = action
+    step["pre_action_observation"] = {
+        "tool": "argocd_app_history",
+        "success": True,
+        "observation_status": observed_status,
+        "history": [{"id": 42}],
+        "active_experiments": None,
+    }
+    manifest, _bundle = _collect_fixture(
+        tmp_path,
+        _complete_remediation([step]),
+    )
+
+    assert manifest["status"] == expected_status
+    if expected_problem:
+        assert expected_problem in manifest["problems"]
     assert manifest["empirical_claim_allowed"] is False
     assert manifest["gate_certification"] == "NOT_CERTIFIED"
 

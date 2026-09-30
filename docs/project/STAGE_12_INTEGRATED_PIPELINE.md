@@ -26,6 +26,14 @@ The required path follows the later
   evidence even when its controlled environment action was explicitly authorized.
 - Each policy completion becomes the exact action sent through ACL, evidence preconditions,
   approval, one tool execution, settling, and objective verification.
+- Policy steps retain the environment's projected `pre_action_observation` for
+  guarded rollback or Chaos-stop support reads, including the reader name,
+  success and observed-status fields, and target history or active resources.
+  Unguarded steps and blocks before a support read record null. A guarded
+  reader that returns an object but fails its target or status precondition
+  remains blocked, retains the projected negative read, and makes G12 capture
+  `INCOMPLETE` for independent review. This is not the failed objective
+  pre-action verifier needed for G13 episode admission.
 - An unresolved verifier result is included in the next policy state.
 - A resolved verifier result terminates further mutations.
 - Comms receives the verified resolution state.
@@ -72,8 +80,18 @@ becoming a mock success.
 
 `CAPTURED_FOR_REVIEW` requires every policy step to contain its ordered index,
 direct environment status (`ok`, `blocked`, or `unscorable`), timezone-aware
-start and completion timestamps, pre-action and next state
+start and completion timestamps, the separate nullable support-read
+`pre_action_observation`, and pre-action and next state
 objects with matching action, tool-result, verifier and resolution feedback.
+For an executed guarded rollback or Chaos-stop action, capture checks the
+projected reader, successful return, and matching target; Chaos-stop also
+requires the observed-status value returned by its precondition read.
+Rollback's current history reader may omit that status, but an explicit
+non-observed value blocks the runtime action and invalidates capture.
+This structural check does not independently authenticate that tool response
+or turn it into fault authorization, alert delivery, or an objective
+pre-action failed verifier. The external raw bundle must be access-controlled;
+projected nested history/resource entries are retained for review.
 Both states retain the incident ID, alert, and incident anchors, and their alert
 and anchors must match the source incident. The final executed-action list must
 match the ordered policy-step actions and results. A deadline
@@ -91,7 +109,9 @@ nested in settlement is checked against the step verifier. Executed steps retain
 exactly one tool action with its result and structured settlement observations
 or an explicit timeout/error/unscorable record. A blocked step requires a recognized
 terminal-block category and reason, no executed action, and null verification
-and settlement. Failed or unresolved results do not prevent capture.
+and settlement. A blocked step that retains an incompatible guarded support
+read remains visible in the raw bundle but is not `CAPTURED_FOR_REVIEW`.
+Failed or unresolved results without such a contradiction do not prevent capture.
 
 The Stage 4 cleanup sidecar is required and checked for schema, experiment
 identity, and consistency of the raw postflight Chaos item count with the

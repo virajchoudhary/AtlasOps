@@ -128,6 +128,118 @@ def _valid_parsed_policy_action(value: Any) -> bool:
     )
 
 
+def _pre_action_observation_problems(
+    step: dict[str, Any],
+    prefix: str,
+) -> list[str]:
+    if "pre_action_observation" not in step:
+        return []
+
+    observation = step.get("pre_action_observation")
+    action = step.get("parsed_action")
+    action_tool = action.get("tool") if isinstance(action, dict) else None
+    readers = {
+        "argocd_rollback": "argocd_app_history",
+        "chaos_stop_experiment": "chaos_list_experiments",
+    }
+    expected_reader = readers.get(action_tool) if isinstance(action_tool, str) else None
+    if expected_reader is None:
+        return (
+            []
+            if observation is None
+            else [f"{prefix}_pre_action_observation_unexpected"]
+        )
+    if step.get("environment_status") == "blocked":
+        if observation is None:
+            return []
+        terminal_block = step.get("terminal_block")
+        if (
+            not isinstance(terminal_block, dict)
+            or terminal_block.get("category") != "missing_evidence"
+        ):
+            return [f"{prefix}_pre_action_observation_unexpected"]
+        if not isinstance(observation, dict) or set(observation) != {
+            "tool",
+            "success",
+            "observation_status",
+            "history",
+            "active_experiments",
+        } or observation.get("tool") != expected_reader:
+            return [f"{prefix}_pre_action_observation_malformed"]
+        return [f"{prefix}_pre_action_observation_unverified"]
+    if observation is None:
+        return [f"{prefix}_pre_action_observation_missing"]
+    if not isinstance(observation, dict) or set(observation) != {
+        "tool",
+        "success",
+        "observation_status",
+        "history",
+        "active_experiments",
+    }:
+        return [f"{prefix}_pre_action_observation_malformed"]
+
+    problems: list[str] = []
+    if observation.get("tool") != expected_reader:
+        problems.append(f"{prefix}_pre_action_observation_mismatch")
+    if type(observation.get("success")) is not bool:
+        problems.append(f"{prefix}_pre_action_observation_malformed")
+    elif observation["success"] is not True:
+        problems.append(f"{prefix}_pre_action_observation_mismatch")
+    observed_status = observation.get("observation_status")
+    if observed_status is not None and not isinstance(observed_status, str):
+        problems.append(f"{prefix}_pre_action_observation_malformed")
+    if action_tool == "chaos_stop_experiment" and observed_status != "observed":
+        problems.append(f"{prefix}_pre_action_observation_mismatch")
+    if (
+        action_tool == "argocd_rollback"
+        and isinstance(observed_status, str)
+        and observed_status != "observed"
+    ):
+        problems.append(f"{prefix}_pre_action_observation_mismatch")
+
+    arguments = action.get("arguments") if isinstance(action, dict) else None
+    if not isinstance(arguments, dict):
+        return problems + [f"{prefix}_pre_action_observation_malformed"]
+    if action_tool == "chaos_stop_experiment":
+        active = observation.get("active_experiments")
+        if observation.get("history") is not None or not isinstance(active, list):
+            return problems + [f"{prefix}_pre_action_observation_malformed"]
+        expected = (
+            str(arguments.get("kind") or "").casefold(),
+            str(arguments.get("name") or ""),
+            str(arguments.get("namespace") or "chaos-mesh").casefold(),
+        )
+        if not any(
+            isinstance(item, dict)
+            and (
+                str(item.get("kind") or "").casefold(),
+                str(item.get("name") or ""),
+                str(item.get("namespace") or "").casefold(),
+            )
+            == expected
+            for item in active
+        ):
+            problems.append(f"{prefix}_pre_action_observation_mismatch")
+    else:
+        history = observation.get("history")
+        if observation.get("active_experiments") is not None or not isinstance(
+            history, list
+        ):
+            return problems + [f"{prefix}_pre_action_observation_malformed"]
+        revision = arguments.get("revision")
+        if not arguments.get("app") or not revision or not any(
+            isinstance(item, dict)
+            and any(
+                str(value) == str(revision)
+                for value in (item.get("id"), item.get("revision"))
+                if value is not None
+            )
+            for item in history
+        ):
+            problems.append(f"{prefix}_pre_action_observation_mismatch")
+    return problems
+
+
 def _verification_record_problems(value: Any, prefix: str) -> list[str]:
     if not isinstance(value, dict):
         return [f"{prefix}_malformed"]
@@ -441,6 +553,7 @@ def _policy_steps_problems(
         "completed_at",
         "state",
         "environment_status",
+        "pre_action_observation",
         "raw_policy_output",
         "parsed_action",
         "executed_actions",
@@ -545,6 +658,7 @@ def _policy_steps_problems(
                 problems.append(f"{prefix}_parsed_action_malformed")
         elif raw_action != parsed_action:
             problems.append(f"{prefix}_raw_parsed_action_mismatch")
+        problems.extend(_pre_action_observation_problems(step, prefix))
 
         executed_actions = step.get("executed_actions")
         if not isinstance(executed_actions, list):

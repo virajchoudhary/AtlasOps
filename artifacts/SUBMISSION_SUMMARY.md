@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T20:43:34.561182+00:00`
+- **Generated**: `2026-09-30T21:07:07.911494+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -156,7 +156,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/chaos_manifests/single_fault/sf-007.yaml` | `3e15a122b34aed52...` | 440 |
 | `bench/chaos_manifests/single_fault/sf-008.yaml` | `41d3f6d2ed0278bb...` | 388 |
 | `bench/episode_membership.py` | `c598ab421638db9c...` | 26114 |
-| `bench/grpo_eval.py` | `960fcfec00bbf3bc...` | 67057 |
+| `bench/grpo_eval.py` | `b819d0608071b617...` | 67772 |
 | `bench/runner.py` | `6e75db82c21d1ad5...` | 15551 |
 | `bench/sft_eval.py` | `fd03e4e0165d1440...` | 41343 |
 | `bench/zero_shot_baseline.py` | `0b068d0287307c3b...` | 53565 |
@@ -222,7 +222,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `54f4a4f52d171ce8...` | 7572 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6c23ac98f75b7ea6...` | 11144 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `1acbf183e2ed000c...` | 7653 |
-| `docs/project/STAGE_9_ONLINE_GRPO.md` | `c1afa60eb68ff68f...` | 11162 |
+| `docs/project/STAGE_9_ONLINE_GRPO.md` | `9eb3ecf24a1d91ac...` | 11514 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
 | `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `14b0ae256c863123...` | 20215 |
 | `docs/slides.md` | `c5bf2053fd4867ff...` | 5995 |
@@ -289,7 +289,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
 | `tests/test_g9_direct_policy_environment.py` | `46452232a0190875...` | 87207 |
 | `tests/test_g9_direct_reward.py` | `1e2c5562f6b12aa9...` | 11861 |
-| `tests/test_g9_empirical_contract.py` | `908eb84b5f386432...` | 38277 |
+| `tests/test_g9_empirical_contract.py` | `4036f8c5f83992aa...` | 41626 |
 | `tests/test_g9_training_preflight.py` | `a4ad6d01f81435ca...` | 24115 |
 | `tests/test_grpo_training_provenance.py` | `ca5632d07986fda7...` | 76870 |
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |

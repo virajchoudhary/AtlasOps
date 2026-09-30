@@ -254,6 +254,16 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
     )
     if dict(parent) != validated_parent:
         raise ValueError("GRPO checkpoint SFT parent provenance changed")
+    from bench.sft_eval import MAX_SFT_RUN_MANIFEST_BYTES, _load_adapter_config
+
+    with (Path(parent_path) / "sft_run_manifest.json").open("rb") as stream:
+        parent_manifest_bytes = stream.read(MAX_SFT_RUN_MANIFEST_BYTES + 1)
+    if (
+        len(parent_manifest_bytes) > MAX_SFT_RUN_MANIFEST_BYTES
+        or hashlib.sha256(parent_manifest_bytes).hexdigest() != parent["manifest_sha256"]
+    ):
+        raise ValueError("GRPO checkpoint SFT parent manifest changed after validation")
+    parent_manifest = json.loads(parent_manifest_bytes)
 
     checkpoint_record = _required_mapping(manifest.get("checkpoint"), "checkpoint")
     declared_files = checkpoint_record.get("files")
@@ -314,6 +324,11 @@ def validate_grpo_checkpoint(checkpoint: str | Path) -> CheckpointProvenance:
         raise ValueError("GRPO checkpoint is missing adapter_config.json")
     if not any((checkpoint_path / name).is_file() for name in ADAPTER_WEIGHT_NAMES):
         raise ValueError("GRPO checkpoint is missing adapter model weights")
+    _load_adapter_config(
+        checkpoint_path,
+        expected_sha256=expected_by_path["adapter_config.json"]["sha256"],
+        manifest=parent_manifest,
+    )
     if not has_verified_final_rollout(
         checkpoint_path / "rollout_trajectories.jsonl",
         live_execution=live_execution,

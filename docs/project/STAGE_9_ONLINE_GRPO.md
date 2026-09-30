@@ -11,6 +11,11 @@ consumed adapter configuration against recorded LoRA/base-model settings.
 Hash-matching but semantically inconsistent configs fail before any model
 loader; missing settings are not inferred. This is software admission, not
 evidence that an adapter has been independently loaded or trained.
+The saved GRPO adapter is checked against that same parent LoRA contract
+before evaluation loads it. The parent manifest snapshot must still match
+its validated digest; a hash-matching but inconsistent GRPO config remains
+rejected. These checks do not prove tensor compatibility or eliminate a
+replacement window after the final path-based validation.
 
 ## Policy-Environment-Reward Contract
 

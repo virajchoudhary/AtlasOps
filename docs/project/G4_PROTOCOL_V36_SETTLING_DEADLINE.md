@@ -52,3 +52,9 @@ cannot close the prior G4 negative and interrupted outcomes. A future live
 attempt still requires a separately approved protocol and execution
 decision, fresh pre-T0 capacity/model/operator and zero-Chaos checks,
 an unused attempt ledger, and independent evidence review.
+
+The separate G7 `train-candidate-v1` manifest pins the pre-v3.6 coordinator
+source. Its frozen bytes and historical quality audit are preserved, but
+current-source admission now rejects it. A new versioned candidate and
+independent D3 review are required before any future training; the v1
+manifest must not be silently rehashed.

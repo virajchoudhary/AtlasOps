@@ -144,6 +144,7 @@ scientifically complete.
 ### Gate G7: Generate SFT Data and Train — [PARTIAL]
 - `training/build_sft_dataset.py` synthesizes training-scenario examples; rendering/masking and training code exist in `training/sft_rendering.py`, `training/templates/qwen2_5_tool_sft.jinja`, and `training/sft.py`.
 - `artifacts/evidence/stage7/sft_corpus_manifest.json` records 64 examples / 16 training scenarios and corpus hash; `sft_training_config.json` records QLoRA settings. These are corpus/configuration evidence, not a completed training run or proof of successful live expert trajectories.
+- The separate frozen 68-row `train-candidate-v1` review bundle remains synthetic and D3-pending. Its pinned coordinator source predates prospective G4 v3.6; current-source admission now fails closed. Preserve v1 unchanged and review a new candidate version before training.
 - `training/sft.py` now persists planned/running/completed-or-failed run provenance and checkpoint inventory when a real run is available. No successful SFT training record tied to a usable checkpoint was verified in the inspected repository/evidence and local checkpoint inventory. Training completion and usability remain unestablished.
 
 ### Gate G8: Evaluate SFT Before RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]

@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import threading
+from contextlib import nullcontext
 from types import ModuleType
 from pathlib import Path
 
@@ -157,6 +158,58 @@ def test_valid_generation_parameters_are_passed_to_inference_unchanged(
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("temperature", [0, 0.25])
+def test_builtin_generation_preserves_valid_temperature_without_clamping(
+    monkeypatch, temperature,
+):
+    calls = []
+    torch = ModuleType("torch")
+    torch.manual_seed = lambda _: None
+    torch.no_grad = nullcontext
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+    class InputIds:
+        shape = (1, 2)
+
+    class Inputs(dict):
+        def to(self, _device):
+            return self
+
+    class Output:
+        def __getitem__(self, _slice):
+            return [42]
+
+    class Tokenizer:
+        def apply_chat_template(self, *_args, **_kwargs):
+            return "synthetic prompt"
+
+        def __call__(self, *_args, **_kwargs):
+            return Inputs(input_ids=InputIds())
+
+        def decode(self, *_args, **_kwargs):
+            return "synthetic completion"
+
+    class Model:
+        device = "cpu"
+
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            return [Output()]
+
+    inference = sft_eval.LocalSFTInference({}, "unused")
+    inference._model = Model()
+    inference._tokenizer = Tokenizer()
+    result = inference._generate([], Path("unused-checkpoint"), {
+        "seed": 2026, "temperature": temperature,
+        "top_p": 0.75, "max_new_tokens": 7,
+    })
+    assert result == "synthetic completion"
+    assert calls[0]["temperature"] == temperature
+    assert calls[0]["do_sample"] is (temperature > 0)
+    assert calls[0]["top_p"] == 0.75
+    assert calls[0]["max_new_tokens"] == 7
 
 
 def _adapter_config() -> dict:

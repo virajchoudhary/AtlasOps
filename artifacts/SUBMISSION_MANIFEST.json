@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T21:39:39.632188+00:00",
+  "generated_at": "2026-09-30T21:52:39.385345+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -737,8 +737,8 @@
       "size_bytes": 388
     },
     "bench/sft_eval.py": {
-      "sha256": "80d83f7d9f2fb8b15bc7e42131dfc82b7923807f992a351b0f972d9fe8c4ca7d",
-      "size_bytes": 41854
+      "sha256": "9815fce6a8d24506c6e0f021a76b11749a38c656d1681f7ef461fc5af435e4e0",
+      "size_bytes": 41843
     },
     "bench/grpo_eval.py": {
       "sha256": "b819d0608071b6179beedaba6fb67a49bc3b1dcd356fab80c3624bd5a02db299",
@@ -1085,8 +1085,8 @@
       "size_bytes": 67630
     },
     "tests/test_g8_empirical_contract.py": {
-      "sha256": "8a32e051fe7aa1d14e590e25c45ec50a120d548099194dd504fd7680dd98dcdd",
-      "size_bytes": 58755
+      "sha256": "eeee7e5a78aefdbcc33e90f0b8093549f113711bb8f5e91c08818577ec032305",
+      "size_bytes": 60295
     },
     "tests/test_g9_approval_channel.py": {
       "sha256": "39471f4e566ce28cfc6c6120087f20d6afbb880b98f5157abe2697311259d5d3",

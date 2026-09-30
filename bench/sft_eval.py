@@ -643,7 +643,7 @@ class LocalSFTInference:
                 **inputs,
                 max_new_tokens=generation_config["max_new_tokens"],
                 do_sample=generation_config["temperature"] > 0,
-                temperature=max(generation_config["temperature"], 1e-6),
+                temperature=generation_config["temperature"],
                 top_p=generation_config["top_p"],
             )
         generated = output[0][inputs["input_ids"].shape[1] :]

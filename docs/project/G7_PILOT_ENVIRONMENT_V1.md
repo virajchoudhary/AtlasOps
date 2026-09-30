@@ -80,7 +80,7 @@ and obtain a new explicit storage decision; do not silently raise the cap.
 This is a planning limit, not a claim that a particular host has that space.
 
 The [source-bound tokenizer preflight v3 report](../../artifacts/evidence/stage7/sft_tokenizer_preflight_v3.json)
-(`sha256:D0283FD2404540CF790C6F5F6ADE26AD351D4FBC2A1E3D501C39A29C1B0F0C0D`)
+(`sha256:4833517a7e0f9b78615c76af9aafca8f7127f83696cea2befd43b0ca1e42eda7`)
 reports `PASS` for 68 rows, maximum input length 5,738 tokens, zero
 truncation, and a passing assistant-mask contract at `max_seq_length=8192`.
 It also records that held-out outcomes were not accessed and that no weights,

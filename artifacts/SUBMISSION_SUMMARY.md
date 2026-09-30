@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T11:39:28.050580+00:00`
+- **Generated**: `2026-09-30T11:50:08.926122+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -191,7 +191,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `83e18d9ea4391f34...` | 7851 |
 | `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `9af400e4b638e73f...` | 14289 |
 | `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `733eb00ee309e26f...` | 13253 |
-| `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `d6d9ddebe54644a0...` | 8965 |
+| `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `b3f4fd0069796702...` | 8965 |
 | `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `ab30cbfbf7199615...` | 4355 |
 | `docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md` | `082868991ea39d53...` | 4462 |
 | `docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md` | `9dba70ae04625c2e...` | 12785 |

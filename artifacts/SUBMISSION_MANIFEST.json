@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T11:39:28.050580+00:00",
+  "generated_at": "2026-09-30T11:50:08.926122+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -181,7 +181,7 @@
       "size_bytes": 2632
     },
     "docs/project/G7_PILOT_ENVIRONMENT_V1.md": {
-      "sha256": "d6d9ddebe54644a0a9bf1ed8d6eb357b61e588491632f0456c13dbe37beef5e5",
+      "sha256": "b3f4fd00697967022d7ddf4217cc27706c1fa2b61486dc401ad0e4adb15c0a94",
       "size_bytes": 8965
     },
     "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md": {

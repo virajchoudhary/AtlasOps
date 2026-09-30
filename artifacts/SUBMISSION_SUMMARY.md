@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T14:05:42.431872+00:00`
+- **Generated**: `2026-09-30T14:31:23.348667+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -194,13 +194,13 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_D3_PREFREEZE_CHECKPOINT.md` | `6f5bd7fb051db624...` | 6768 |
 | `docs/project/G7_D3_PREPARATION_APPROVAL_V1.md` | `22be898fc999b935...` | 2881 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `83e18d9ea4391f34...` | 7851 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `9af400e4b638e73f...` | 14289 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `23690c55772842a7...` | 13697 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `301566e697b1bd49...` | 14328 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `16e2595d2be19cb8...` | 13971 |
 | `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `2ad27e228665096a...` | 8961 |
 | `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `ab30cbfbf7199615...` | 4355 |
 | `docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md` | `bf83f86ca141ce8b...` | 5680 |
 | `docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md` | `b9cd624b42a61ebe...` | 1990 |
-| `docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md` | `f93472da9a78ab36...` | 12883 |
+| `docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md` | `ad80ca7f9d313bf0...` | 13171 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
@@ -214,7 +214,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `18809bbff7794dee...` | 6376 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `9476f30a1c983a2f...` | 10579 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `577c7c2c76fbca64...` | 10693 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `b353b754f1ec5dbe...` | 5428 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `7cb0525e9ffe58e4...` | 10367 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |

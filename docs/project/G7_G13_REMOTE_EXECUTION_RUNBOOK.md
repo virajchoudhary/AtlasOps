@@ -83,11 +83,12 @@ approved remote runtime; exact dependency image frozen; output directory
 new and empty. A future command shape supported by `training.sft` is:
 
 ```text
-python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-immutable-commit> --tokenizer-revision <approved-immutable-commit> --data <verified-external-corpus> --output <new-external-sft-run-dir> --epochs 3 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 2048 --seed 2026
+python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-immutable-commit> --tokenizer-revision <approved-immutable-commit> --data <verified-external-corpus> --output <new-external-sft-run-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026
 ```
 
-The values above are the tracked **proposed** configuration, not a
-project-lead selection of model revision, host or budget. Record effective
+The values above match the v4 **preparation** plan, not D2 model-weight
+transfer approval, a project-lead selection of host or budget, or a named
+execution permit. Record effective
 settings, package/driver/runtime metadata, GPU memory, source state,
 dataset/template hashes, trainer history, failures and full checkpoint
 inventory. The canonical `sft_run_manifest.json` must remain inside the

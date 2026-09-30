@@ -774,7 +774,7 @@ async def evaluate_sft_split(
                     status = "ok"
                 except Exception as exc:  # noqa: BLE001
                     prediction = None
-                    diagnostic = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+                    diagnostic = {"precision": None, "recall": None, "f1": None}
                     status = "error"
                     error_category = _safe_exception_category(exc)
                 episode = {
@@ -832,10 +832,17 @@ async def evaluate_sft_split(
                 and bool(results)
             ),
             "failed_scenarios": len(results) - len(valid),
-            "avg_diagnostic_f1": round(
-                sum(row.get("diagnostic_f1", 0.0) for row in results)
-                / max(len(results), 1),
-                4,
+            "diagnostic_scored_count": len(valid) if selected_mode == "empirical" else None,
+            "diagnostic_f1_basis": (
+                "valid diagnostic responses only; secondary diagnostic"
+                if selected_mode == "empirical"
+                else "NON_EMPIRICAL deterministic mock fixture"
+            ),
+            "avg_diagnostic_f1": (
+                round(sum(row["diagnostic_f1"] for row in valid) / len(valid), 4)
+                if valid else None
+            ) if selected_mode == "empirical" else round(
+                sum(row.get("diagnostic_f1", 0.0) for row in results) / max(len(results), 1), 4
             ),
             "diagnostic_schema_conformance_rate": (
                 diagnostic_schema_conformance_rate
@@ -889,15 +896,17 @@ async def evaluate_sft_split(
         }
     )
     if selected_mode == "empirical":
-        diagnostic_by_tier: dict[str, dict[str, float | int]] = {}
+        diagnostic_by_tier: dict[str, dict[str, float | int | str | None]] = {}
         for tier in sorted({row["tier"] for row in results}):
             tier_rows = [row for row in results if row["tier"] == tier]
+            tier_scored = [row for row in tier_rows if row["status"] == "ok"]
             diagnostic_by_tier[tier] = {
                 "count": len(tier_rows),
-                "avg_diagnostic_f1": round(
-                    sum(row["diagnostic_f1"] for row in tier_rows)
-                    / max(len(tier_rows), 1),
-                    4,
+                "diagnostic_scored_count": len(tier_scored),
+                "diagnostic_f1_basis": "valid diagnostic responses only; secondary diagnostic",
+                "avg_diagnostic_f1": (
+                    round(sum(row["diagnostic_f1"] for row in tier_scored) / len(tier_scored), 4)
+                    if tier_scored else None
                 ),
             }
         summary.update(

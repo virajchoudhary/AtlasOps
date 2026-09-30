@@ -64,6 +64,10 @@ unapproved and does not change this evaluator or the gate status.
   or diagnostic score; they remain in the all-scheduled format denominator.
   Prediction JSON depth is capped at 64 independently of the process recursion
   limit; this parser limit does not change the scientific scoring formula.
+  Failed-response precision, recall and F1 are null, not invented zero scores.
+  The secondary diagnostic F1 mean reports its valid-response-only basis and
+  scored count; it is null with no valid responses. Format conformance still
+  includes every scheduled output. This is not the pending G13 common metric.
 - `diagnostic_schema_conformance_rate` is the number of complete diagnostic
   responses divided by all scheduled outputs, including malformed responses
   and inference failures. In empirical mode, `format_compliance_rate` remains

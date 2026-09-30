@@ -42,6 +42,17 @@ exists in the current evidence set, so G8 has no empirical model result.
 - Validation truth is withheld until after raw generation and then used only
   for scoring. Mock fixtures for other named splits remain explicitly
   non-empirical and do not establish held-out performance.
+- An empirical diagnostic response is schema-compliant only when it includes
+  severity `P0`-`P3`, a non-empty list of non-empty service names, a non-empty
+  root cause, and finite numeric confidence in `[0, 1]`. Boolean confidence is
+  invalid despite Python's `bool`/`int` relationship.
+- `diagnostic_schema_conformance_rate` is the number of complete diagnostic
+  responses divided by all scheduled outputs, including malformed responses
+  and inference failures. In empirical mode, `format_compliance_rate` remains
+  as a compatibility alias for this G8-only measure; it does not represent
+  G13 common action/Comms-format conformance. Mock mode retains its legacy
+  deterministic `format_compliance_rate`, but diagnostic schema conformance
+  is null because those fixtures contain no model JSON response.
 - Raw requests, responses, parse failures, checkpoint identity, evaluator source,
   generation settings, split seed, and the SHA-256 digest of the exact ordered frozen
   split are persisted.

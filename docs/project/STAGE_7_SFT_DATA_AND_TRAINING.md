@@ -20,7 +20,8 @@ quality review are review inputs, not scientific approval or a completed adapter
 Strict candidate admission rejects source drift. The pilot path accepts only
 the reviewed settling-only coordinator hash pair and verifies unchanged
 non-settling AST, corpus bytes, source inventory and row replay. It does not
-rehash the frozen candidate or accept arbitrary source changes.
+rewrite the frozen candidate or replace its approved digests; hashes are
+recomputed for verification. It does not accept arbitrary source changes.
 `training.sft` refuses execution for both unversioned data and the preparation-approved
 candidate before ML imports/output creation; only `--preflight-only` returns
 preparation admission. Existing downstream trainer tests use explicit

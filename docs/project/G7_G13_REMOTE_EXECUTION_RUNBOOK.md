@@ -99,7 +99,7 @@ Require `preparation_admissible: true` and `execution_allowed: false`.
 This is non-live preparation evidence, not permission to proceed to phase 2.
 The exact settling-only compatibility for the coordinator source is described
 in [the compatibility review](G7_SETTLING_SOURCE_COMPATIBILITY_V1.md); do not
-re-hash the corpus to current source.
+rewrite the corpus or replace its approved source digests.
 
 **Historical schema/rendering fixture only; never use it as SFT input:**
 

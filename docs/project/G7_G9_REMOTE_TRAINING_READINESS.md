@@ -46,7 +46,8 @@ The pilot-specific `training.sft_candidate_compatibility.validate_pilot_candidat
 admits only the reviewed old/new coordinator hash pair and confirms AST
 identity outside `settle_environment`. The general
 `validate_candidate_snapshot` remains unchanged and rejects source drift.
-This narrow compatibility does not rehash the frozen corpus or authorize other
+This narrow compatibility recomputes hashes for verification without rewriting
+the frozen corpus or replacing its approved digests, and authorizes no other
 source changes. The recorded v5 tokenizer/mask preflight is a prior non-live
 result for all 68 rows at 8192 tokens with no truncation; it does not establish
 hardware fit. Separately, a fresh `training.sft --preflight-only` admission
@@ -147,8 +148,8 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   pilot-specific validator admits only the exact reviewed old/new hash pair
   when the AST is unchanged outside `settle_environment`, so the already
   approved v1 may be used for its bounded preparation preflight without
-  rehashing it or creating a new version. Any other source or corpus change
-  still requires separate review; do not rehash v1 in place.
+  rewriting it or replacing its approved digests. Any other source or corpus
+  change still requires separate review; do not rewrite v1 in place.
 
 ## Model, Training Stack and Reproducibility
 

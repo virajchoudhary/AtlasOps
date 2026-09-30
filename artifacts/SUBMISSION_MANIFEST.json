@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T17:26:40.771943+00:00",
+  "generated_at": "2026-09-30T17:37:07.387384+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -149,12 +149,12 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "e97f6d135524c55080038584123540349b6610bbac239a8fa5a0a4ffe352ff3c",
-      "size_bytes": 18074
+      "sha256": "04ed7c2eb241e7b52a75e54d431a2b27dbd949d7ec759817bfe4b64c7f1097c3",
+      "size_bytes": 18160
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
-      "sha256": "5584dc6d0f9e64270067e9a0b98a87d457b532e869cbaf67cd8337debc10c2b4",
-      "size_bytes": 18660
+      "sha256": "b6688a2b04b9a822baebd9a5eb1ae1817d942fd7fc64faa2c392ce7af81317ef",
+      "size_bytes": 18681
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
       "sha256": "bef94fe30306bf51ffc3c2865e18a515f582c69d1668cd0f316b7e421930b1c0",
@@ -285,8 +285,8 @@
       "size_bytes": 6376
     },
     "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md": {
-      "sha256": "2869064725962d5469f41733e3aafdaaef1d56b7d22ca5ac2e6ab4511a7929ab",
-      "size_bytes": 11061
+      "sha256": "6c23ac98f75b7ea6820352bf73c69048ca8643cd686b88b26bcc62e617543934",
+      "size_bytes": 11144
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
       "sha256": "981063faa36f74eea75fe82d14b13c31db0cb91e75969ea9ab69880d8fb8a744",

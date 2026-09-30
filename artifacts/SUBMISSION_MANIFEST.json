@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T14:31:23.348667+00:00",
+  "generated_at": "2026-09-30T15:15:30.798668+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,15 +34,15 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 311,
+  "asset_count": 320,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
       "size_bytes": 6416
     },
     ".gitattributes": {
-      "sha256": "5f8a4da2e98859d9f860a1dd75c9fb0e4419b023be079c06db58dec3fed0cb28",
-      "size_bytes": 1467
+      "sha256": "baff78b6342789d8d987052a1fe850a637e445010dd2930f49515b6314879957",
+      "size_bytes": 1650
     },
     ".github/workflows/ci.yml": {
       "sha256": "2e76e97d41e87a5e296052e3cdad2feef079fe61226a53f854aeb17acaea01f1",
@@ -157,8 +157,8 @@
       "size_bytes": 14328
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
-      "sha256": "83e18d9ea4391f34e01014b8d780d604aac5104b82554fceec29ead03b1a8549",
-      "size_bytes": 7851
+      "sha256": "f603c2b2d205bf9ebeb9989dfc7eca6896bd62324e7d4c90a2e13ebd11484437",
+      "size_bytes": 8026
     },
     "docs/project/G7_D3_CANDIDATE_REVIEW_V1.md": {
       "sha256": "8cd83bb9bda5e6093efe2a7e67884224336a4445dcb4a8298d3a207ef9becaf8",
@@ -189,12 +189,20 @@
       "size_bytes": 8961
     },
     "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md": {
-      "sha256": "ab30cbfbf7199615f30986d9fec4675d0247289a318b7b628f9492e4d9820ccc",
-      "size_bytes": 4355
+      "sha256": "a6350f5c7925e917e4cdef2781a8e0dea90d350d9f7a49376c6b9ec2a3c04e52",
+      "size_bytes": 4918
     },
     "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md": {
       "sha256": "bf83f86ca141ce8b1169b0f0ca1964a12ed52e81a4edf05ac63f7e1b0201ccea",
       "size_bytes": 5680
+    },
+    "docs/project/G7_REMOTE_HOST_OPTIONS_V1.md": {
+      "sha256": "7fd02277957640a0d601b23a37c2e067e8f5669611918eb5f9374174ce2e33d1",
+      "size_bytes": 15892
+    },
+    "docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md": {
+      "sha256": "622799d84481a28d97c3bfcf478d2ab690133516e41a9320252f362c5aa8ad5f",
+      "size_bytes": 10442
     },
     "docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md": {
       "sha256": "b9cd624b42a61ebe9f52ee3532013294bc3f8432a895d6469f2e7d4a05e1efb5",
@@ -455,6 +463,10 @@
     "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json": {
       "sha256": "297724616fe6bdd1f5ba2a8d53842dcbd3a46c79f9a1daa4ea19334ad6271b7c",
       "size_bytes": 1358
+    },
+    "artifacts/evidence/stage7/qwen_a09a354_weight_metadata_v1.json": {
+      "sha256": "32159b8e77f3ad62cdc4b7d70cba9f4582582ab88d259cbf4c94799b3178f4d2",
+      "size_bytes": 1073
     },
     "artifacts/evidence/stage7/sft_tokenizer_preflight_2048_negative_v1.json": {
       "sha256": "a3ef2e188a7656877704b9e9a41b76fa4e9cc34df6d8b354b942719a0b0baaab",
@@ -800,6 +812,10 @@
       "sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
       "size_bytes": 4341
     },
+    "config/sft_remote_host_proposal_v1.json": {
+      "sha256": "07c476d9d378836ef01fb69ac2eea62f60994ac9addcd9ab13c745f6a9df6eb0",
+      "size_bytes": 2203
+    },
     "requirements/sft-pilot-v1.in": {
       "sha256": "605781e837ab301ab265d3eea810db42d61b342c27a2b0e3a78f772efe120c59",
       "size_bytes": 717
@@ -811,6 +827,14 @@
     "infra/training/sft-pilot/Dockerfile": {
       "sha256": "96cfc6591dddfd22fb82a32fc8fd907e5026337faa73067cd705bedf58912385",
       "size_bytes": 611
+    },
+    "infra/training/sft-pilot/Dockerfile.host-v1": {
+      "sha256": "d6782a753908a3b0ddee7a00f235addf192954a3f0d8ce3437f2e5d4445cbf32",
+      "size_bytes": 1456
+    },
+    "infra/training/sft-pilot/start-host.sh": {
+      "sha256": "461620370d8b46104bd5729cf5c1b78fec1194d5fdd34e9b5e8d84c145c053c2",
+      "size_bytes": 600
     },
     "recommender/baselines.py": {
       "sha256": "06e8e8e62a82695c70b150e9fe1f97aaec5fb4eb062e35f94fbe18c4d24feaf6",
@@ -837,8 +861,8 @@
       "size_bytes": 46211
     },
     "scripts/package_submission.py": {
-      "sha256": "fd3096805ff1c99e4b03a7ae22efacfdb57522dc4a22c0c1209b7d904698cfdb",
-      "size_bytes": 15817
+      "sha256": "b80dfdb0418da5ed75aa814957ebaea38103598f54458f89a0229429eeab9496",
+      "size_bytes": 16211
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -851,6 +875,10 @@
     "scripts/freeze_sft_pilot_plan.py": {
       "sha256": "9239463af35384a458477ef557f20112422588d3538998f0017411be1b573b57",
       "size_bytes": 3076
+    },
+    "scripts/collect_sft_remote_provenance.py": {
+      "sha256": "cb2c1d042a3103285448c930834c9148bdeeb046f63e7dd914d39206e24b27b3",
+      "size_bytes": 30612
     },
     "training/sft.py": {
       "sha256": "48596108d1ed99030fc411cb459b13717b0e4f211b3c16e4fb11468ae45ee7e8",
@@ -873,8 +901,8 @@
       "size_bytes": 2171
     },
     "training/sft_pilot_gate.py": {
-      "sha256": "6571196ae7d6604a493b920e79ffa488b415e58c1a1bc1fa4e44e2a408094998",
-      "size_bytes": 16990
+      "sha256": "7d7a5ffa0e33fe407deeb4a82b54c1ce31267cd9930aca639c6550c98a49f665",
+      "size_bytes": 18469
     },
     "training/sft_tokenizer_preflight.py": {
       "sha256": "e0027cc2c0c6ff139478d0a22e934eeb0d0998a8decd9f78c8856df8287fd3b1",
@@ -1144,17 +1172,25 @@
       "sha256": "682ba063b4822bb8ab65386462d3fc86e5d0ea0c3ce9250a36c620081ed7af46",
       "size_bytes": 8638
     },
+    "tests/test_sft_host_plan.py": {
+      "sha256": "6fbf7ecf4f96815e6e7f1315983178d50a0edafb5ff96e472a485cca50e577cb",
+      "size_bytes": 3782
+    },
     "tests/test_sft_mask_proof.py": {
       "sha256": "4103befd97c834c92a6322ed308b5c04e1650519f35111c60276b214fb1007f6",
       "size_bytes": 8419
     },
     "tests/test_sft_pilot_gate.py": {
-      "sha256": "f7b9e29813ac1debe7d061e52d65b6db14376b8759b8e6c136152e360eb1b681",
-      "size_bytes": 13002
+      "sha256": "88235a0d6138b98bbc7b1062b7ca7470b7cd9a1d0645ab174cb2a691bf57d03d",
+      "size_bytes": 14553
     },
     "tests/test_sft_qwen_template_render.py": {
       "sha256": "9a0129cf11a9cb9e7ee1e1f88ab401998a68d5abc877954d5dc9dfe1e7f38bf7",
       "size_bytes": 6443
+    },
+    "tests/test_sft_remote_provenance.py": {
+      "sha256": "c84e76087e6fc17e961d2660a88e5f8557645a0b11a2fc163a8d56b436716e9a",
+      "size_bytes": 12781
     },
     "tests/test_sft_template_wiring.py": {
       "sha256": "a0e173cfd46960b92c4eee2758b89fa28db4f42bf73a0f4229b95126f2ef03f5",

@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T14:31:23.348667+00:00`
+- **Generated**: `2026-09-30T15:15:30.798668+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -38,7 +38,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 
 | Asset Path | SHA-256 Digest | Size (Bytes) |
 | :--- | :--- | :---: |
-| `.gitattributes` | `5f8a4da2e98859d9...` | 1467 |
+| `.gitattributes` | `baff78b6342789d8...` | 1650 |
 | `.github/workflows/ci.yml` | `2e76e97d41e87a5e...` | 2083 |
 | `AGENTS.md` | `fec2b380e8dc8d27...` | 6416 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
@@ -107,6 +107,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/evidence/stage7/candidates/train-candidate-v1/quality_audit.md` | `94bc9d662cd443f5...` | 7194 |
 | `artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_manifest.json` | `35c9fd63328ef131...` | 7667 |
 | `artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl` | `19606e4fec300f64...` | 655065 |
+| `artifacts/evidence/stage7/qwen_a09a354_weight_metadata_v1.json` | `32159b8e77f3ad62...` | 1073 |
 | `artifacts/evidence/stage7/sft_corpus_manifest.json` | `c3527d6e25069a21...` | 704 |
 | `artifacts/evidence/stage7/sft_tokenizer_preflight_2048_negative_v1.json` | `a3ef2e188a765687...` | 99134 |
 | `artifacts/evidence/stage7/sft_tokenizer_preflight_2048_negative_v2.json` | `e5c06fdc122ec783...` | 81930 |
@@ -166,6 +167,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `config/sft_pilot_v2.json` | `77f58492b4d892ab...` | 4341 |
 | `config/sft_pilot_v3.json` | `a227ea6e45c0299e...` | 4341 |
 | `config/sft_pilot_v4.json` | `914f7a5af5c22a35...` | 4341 |
+| `config/sft_remote_host_proposal_v1.json` | `07c476d9d378836e...` | 2203 |
 | `config/splits.py` | `31c270e9596f9c35...` | 1421 |
 | `dashboard.py` | `7e4afc02551bf4d6...` | 23653 |
 | `demo/launcher.py` | `a9d51bc21b7e45dc...` | 1744 |
@@ -193,12 +195,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_D3_INDEPENDENT_PREFREEZE_REVIEW.md` | `1ef5eca3ae5203a4...` | 3576 |
 | `docs/project/G7_D3_PREFREEZE_CHECKPOINT.md` | `6f5bd7fb051db624...` | 6768 |
 | `docs/project/G7_D3_PREPARATION_APPROVAL_V1.md` | `22be898fc999b935...` | 2881 |
-| `docs/project/G7_G13_DECISION_REGISTER.md` | `83e18d9ea4391f34...` | 7851 |
+| `docs/project/G7_G13_DECISION_REGISTER.md` | `f603c2b2d205bf9e...` | 8026 |
 | `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `301566e697b1bd49...` | 14328 |
 | `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `16e2595d2be19cb8...` | 13971 |
+| `docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md` | `622799d84481a28d...` | 10442 |
 | `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `2ad27e228665096a...` | 8961 |
-| `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `ab30cbfbf7199615...` | 4355 |
+| `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `a6350f5c7925e917...` | 4918 |
 | `docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md` | `bf83f86ca141ce8b...` | 5680 |
+| `docs/project/G7_REMOTE_HOST_OPTIONS_V1.md` | `7fd02277957640a0...` | 15892 |
 | `docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md` | `b9cd624b42a61ebe...` | 1990 |
 | `docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md` | `ad80ca7f9d313bf0...` | 13171 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
@@ -222,6 +226,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/slides.md` | `c5bf2053fd4867ff...` | 5995 |
 | `eval.py` | `49d8b006daf1939b...` | 8692 |
 | `infra/training/sft-pilot/Dockerfile` | `96cfc6591dddfd22...` | 611 |
+| `infra/training/sft-pilot/Dockerfile.host-v1` | `d6782a753908a3b0...` | 1456 |
+| `infra/training/sft-pilot/start-host.sh` | `461620370d8b4610...` | 600 |
 | `leaderboard.py` | `110b1dd3bffe80f1...` | 15804 |
 | `pyproject.toml` | `97d22256c6f75f8b...` | 1383 |
 | `recommender/baselines.py` | `06e8e8e62a82695c...` | 7352 |
@@ -230,8 +236,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
 | `requirements/sft-pilot-linux-py312.lock` | `b649bfa91f1232b9...` | 167639 |
 | `requirements/sft-pilot-v1.in` | `605781e837ab301a...` | 717 |
+| `scripts/collect_sft_remote_provenance.py` | `cb2c1d042a310328...` | 30612 |
 | `scripts/freeze_sft_pilot_plan.py` | `9239463af35384a4...` | 3076 |
-| `scripts/package_submission.py` | `fd3096805ff1c99e...` | 15817 |
+| `scripts/package_submission.py` | `b80dfdb0418da5ed...` | 16211 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
 | `scripts/run_g12_integrated_episode.py` | `845c5a6f634ae036...` | 46211 |
 | `scripts/run_stage4_golden_incident.py` | `24b4e51c0173fbe0...` | 101586 |
@@ -300,9 +307,11 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_candidate_admission.py` | `8f4c9887caa53eea...` | 8815 |
 | `tests/test_sft_candidate_builder.py` | `7dc8edf653103fbf...` | 15391 |
 | `tests/test_sft_data_contract.py` | `682ba063b4822bb8...` | 8638 |
+| `tests/test_sft_host_plan.py` | `6fbf7ecf4f96815e...` | 3782 |
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
-| `tests/test_sft_pilot_gate.py` | `f7b9e29813ac1deb...` | 13002 |
+| `tests/test_sft_pilot_gate.py` | `88235a0d6138b98b...` | 14553 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
+| `tests/test_sft_remote_provenance.py` | `c84e76087e6fc17e...` | 12781 |
 | `tests/test_sft_template_wiring.py` | `a0e173cfd46960b9...` | 10667 |
 | `tests/test_sft_tokenizer_pilot_extension.py` | `4b27b7a3fde1b819...` | 12571 |
 | `tests/test_sft_tokenizer_preflight.py` | `e7b4132444b006bb...` | 13778 |
@@ -343,7 +352,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/sft.py` | `48596108d1ed9903...` | 15336 |
 | `training/sft_candidate.py` | `9dbc4e7e4fbe1f8d...` | 27332 |
 | `training/sft_candidate_compatibility.py` | `86762ad56c82f6eb...` | 2171 |
-| `training/sft_pilot_gate.py` | `6571196ae7d6604a...` | 16990 |
+| `training/sft_pilot_gate.py` | `7d7a5ffa0e33fe40...` | 18469 |
 | `training/sft_provenance.py` | `512a9a738607a691...` | 33709 |
 | `training/sft_rendering.py` | `ed4e9a4c06e96029...` | 12524 |
 | `training/sft_tokenizer_preflight.py` | `e0027cc2c0c6ff13...` | 44949 |

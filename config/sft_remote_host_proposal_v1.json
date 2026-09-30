@@ -1,0 +1,61 @@
+{
+  "schema_version": "atlasops-sft-remote-host-proposal-v1",
+  "approval_status": "PROPOSED_NOT_APPROVED",
+  "execution_allowed": false,
+  "weights_transfer_allowed": false,
+  "university_host": {
+    "preferred_gpu": "NVIDIA A100 80 GB",
+    "hostname": null,
+    "allocation_verified": false
+  },
+  "fallback": {
+    "provider": "RunPod",
+    "product": "Secure Cloud on-demand Pod",
+    "logical_name": "atlasops-g7-sft-pilot",
+    "data_center": "US-KS-2",
+    "data_center_basis": "public documentation example, not live availability",
+    "gpu_id": "NVIDIA A100-SXM4-80GB",
+    "gpu_count": 1,
+    "minimum_vcpus": 8,
+    "minimum_host_ram_gib": 32,
+    "volume_disk_gb": 54,
+    "volume_encryption_required": true,
+    "container_disk_gb": 20,
+    "gpu_rate_usd_hour": 1.59,
+    "running_storage_rate_usd_gb_month": 0.1,
+    "stopped_volume_rate_usd_gb_month": 0.2,
+    "initial_setup_hours_max": 1,
+    "stopped_retention_hours_max": 168,
+    "normalized_month_hours": 720,
+    "initial_listed_estimate_usd_before_tax": 4.120277777777778,
+    "initial_all_in_cap_usd_proposed": 5,
+    "later_total_gpu_hours_max_proposed": 4,
+    "later_stopped_retention_hours_max_proposed": 720,
+    "later_listed_estimate_usd_before_tax": 17.201111111111114,
+    "later_all_in_cap_usd_proposed": 25,
+    "pricing_verified_date": "2026-09-30",
+    "account_quote_verified": false,
+    "availability_verified": false,
+    "tax_and_funding_minimum_verified": false,
+    "automatic_substitution_allowed": false
+  },
+  "access": {
+    "mode": "key-only full SSH with SCP/SFTP",
+    "public_ip_requested_only_after_approval": true,
+    "mapped_tcp_ports": [22],
+    "http_ports": [],
+    "source_ip_restriction_required_where_supported": true,
+    "password_authentication": false,
+    "port_forwarding": false,
+    "startup_command": "/usr/local/bin/start-sft-host"
+  },
+  "pilot_plan_sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
+  "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "scope": {
+    "resource_creation_allowed": false,
+    "spend_allowed": false,
+    "image_build_allowed": false,
+    "model_loading_allowed": false,
+    "training_allowed": false
+  }
+}

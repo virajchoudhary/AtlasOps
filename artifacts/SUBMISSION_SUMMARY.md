@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T16:45:36.722300+00:00`
+- **Generated**: `2026-09-30T17:26:40.771943+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -179,7 +179,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
-| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `6473c0df068cd4f4...` | 8545 |
+| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `b94ffd4cf482dc6b...` | 9462 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
@@ -197,8 +197,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_D3_PREFREEZE_CHECKPOINT.md` | `6f5bd7fb051db624...` | 6768 |
 | `docs/project/G7_D3_PREPARATION_APPROVAL_V1.md` | `22be898fc999b935...` | 2881 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `bef94fe30306bf51...` | 8112 |
-| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `301566e697b1bd49...` | 14328 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `16e2595d2be19cb8...` | 13971 |
+| `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `5584dc6d0f9e6427...` | 18660 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `e97f6d135524c550...` | 18074 |
 | `docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md` | `622799d84481a28d...` | 10442 |
 | `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `2ad27e228665096a...` | 8961 |
 | `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `a6350f5c7925e917...` | 4918 |
@@ -210,7 +210,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
-| `docs/project/MASTER_PIPELINE_STATUS.md` | `3f777425b261c8d1...` | 27712 |
+| `docs/project/MASTER_PIPELINE_STATUS.md` | `0edacdd9194c3d6a...` | 28114 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `d0989c81494b0b1a...` | 2043 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `be17afca2427c7e1...` | 2043 |
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `a2dd61522a347dbf...` | 8436 |
@@ -220,7 +220,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `18809bbff7794dee...` | 6376 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `577c7c2c76fbca64...` | 10693 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `2869064725962d54...` | 11061 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `981063faa36f74ee...` | 5650 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `8f67c3ef327feb2c...` | 10563 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
@@ -311,7 +311,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_data_contract.py` | `682ba063b4822bb8...` | 8638 |
 | `tests/test_sft_host_plan.py` | `6fbf7ecf4f96815e...` | 3782 |
 | `tests/test_sft_mask_proof.py` | `4103befd97c834c9...` | 8419 |
-| `tests/test_sft_pilot_gate.py` | `88235a0d6138b98b...` | 14553 |
+| `tests/test_sft_pilot_gate.py` | `fe824986e30af452...` | 15596 |
 | `tests/test_sft_qwen_template_render.py` | `9a0129cf11a9cb9e...` | 6443 |
 | `tests/test_sft_remote_provenance.py` | `c84e76087e6fc17e...` | 12781 |
 | `tests/test_sft_template_wiring.py` | `a0e173cfd46960b9...` | 10667 |

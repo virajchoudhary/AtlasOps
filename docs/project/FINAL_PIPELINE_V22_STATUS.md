@@ -39,9 +39,13 @@ upstream README and v1.0/v1.1 documents remain dated references.
 
 ## Current status and gaps
 
-The status column is the declared gate inventory at the reviewed source SHA.
-The cited paths are review leads, not substitutes for independent acceptance
-evidence. A historical PASS is scoped to its recorded conditions.
+Except for the G7 and G8 rows, the status column remains the declared gate
+inventory at the historical reviewed source SHA above. These two rows are
+reconciled to the current reviewed-source basis
+`1b13695f0e405883d7d66da20fe52d23435d8a7d`; the cited paths remain review
+leads, not substitutes for independent acceptance evidence. A historical PASS
+is scoped to its recorded conditions. The G7 D3 preparation decision is
+separate from the G13 measurement D3 below.
 
 | Gate | Status | Source/evidence boundary and next unmet work |
 |---|---|---|
@@ -52,8 +56,8 @@ evidence. A historical PASS is scoped to its recorded conditions.
 | G4 | NOT_PASSED | `artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md` and `EXP-STAGE4-SF002-010.json`: 010 is a completed negative outcome; 009/011-014 are interrupted/inconclusive. Prospective [v3.4](G4_PROTOCOL_V34_APPROVAL_CHANNEL.md), [v3.5](G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md), and [v3.6](G4_PROTOCOL_V36_SETTLING_DEADLINE.md) are software/protocol candidates, not a successful live incident. Attempt 015 remains unreserved. |
 | G5 | PASS (governance) | `config/splits.py`, `config/scenario_catalog.py`, `tests/test_stage5_scenario_splits_and_truth.py`; Train 16 / Val 6 / Test 6 are frozen. Audit every downstream consumer; Leaderboard overlaps Train/Val. |
 | G6 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `bench/zero_shot_baseline.py`, `tests/test_stage6_zero_shot_baseline.py`; archived Stage 6 metrics are mock. Real base inference needs immutable serving identity and raw frozen-split episodes. |
-| G7 | PARTIAL | The historical 64-row fixture is not training data. Frozen `train-candidate-v1` has 68 synthetic Train rows but pins the pre-v3.6 coordinator; current-source admission rejects it pending a separately reviewed new version and D3 decision. No completed, independently loadable adapter or training record exists. |
-| G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `bench/sft_eval.py`, `tests/test_stage8_sft_eval.py`; ordered split digest is recorded, but there is no verified G7 checkpoint result. Historical Stage 8 outputs are mock. |
+| G7 | PARTIAL | The historical 64-row builder fixture is for schema/rendering checks only. G7 D3 is `APPROVED_FOR_PREPARATION` for the exact 68-row `train-candidate-v1` corpus/manifest; the immutable Qwen pin and `config/sft_pilot_v4.json` are resolved for preparation. The recorded v5 all-row tokenizer preflight and a fresh no-model v4 admission check pass. Pilot-specific compatibility allows only the reviewed coordinator hash pair; the general snapshot validator remains strict. No named execution approval, verified remote host/runtime/GPU capacity, transferred local model-weight inventory, adapter, training record or independent reload exists. Model-resident peak memory is unmeasured and belongs to any separately authorized load/run. |
+| G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `bench/sft_eval.py`, `tests/test_stage8_sft_eval.py`; ordered split digest is recorded, but there is no verified G7 checkpoint result. D12 remains `PENDING / NOT APPROVED`; the current diagnosis-only evaluator leaves resolution null, and no integrated evaluator is claimed. Historical Stage 8 outputs are mock. |
 | G9 | REOPENED | `training/grpo.py`, `training/grpo_environment.py`, `bench/grpo_eval.py`, `tests/test_stage9_grpo_pipeline.py`; direct-action software exists, not a completed trained adapter or held-out real evaluation. |
 | G10 | OUT_OF_SCOPE | Historical `artifacts/evidence/stage10/rs_dataset_manifest.json` and `recommender/dataset.py`; former PARTIAL, with no historical operator feedback. Retain both 28-row and corrected 21-row synthetic cohorts. |
 | G11 | OUT_OF_SCOPE | Historical bounded-offline PASS in `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`; four synthetic Test rows support small-data ranking only, not incident resolution improvement. |
@@ -79,6 +83,8 @@ is inferred from this matrix.
    [v0.2 partial decision record](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md)
    preserves the choices and remaining fields. Adversarial source, actual
    membership and seed, Test access and live execution remain unapproved.
+   This G13 measurement D3 is distinct from the G7 D3 preparation approval;
+   neither changes the other's scope.
 3. **Safe software lane:** reconcile the GAI + RL runtime, README, package
    and gate labels; design common raw episode normalizers and fail-closed
    validators for base, SFT and SFT+GRPO. Preserve mock/source labels and

@@ -100,6 +100,31 @@ def test_frozen_plan_and_preflight_integrity():
     assert result["execution_allowed"] is False
 
 
+def test_exact_preparation_cli_cannot_authorize_training(monkeypatch, tmp_path, capsys):
+    """Use real admission at the CLI boundary, not a substituted gate result."""
+    original = builtins.__import__
+
+    def guard(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"datasets", "transformers", "torch", "trl", "peft"}:
+            raise AssertionError("preparation or refused execution attempted an ML import")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guard)
+    output = tmp_path / "never-created"
+    _args(monkeypatch, output, extra=("--preflight-only",))
+    sft.main()
+    admission = json.loads(capsys.readouterr().out)
+    assert admission["d3_status"] == "APPROVED_FOR_PREPARATION"
+    assert admission["preparation_admissible"] is True
+    assert admission["execution_allowed"] is False
+    assert not output.exists()
+
+    _args(monkeypatch, output)
+    with pytest.raises(ValueError, match="Training refused"):
+        sft.main()
+    assert not output.exists()
+
+
 def test_preflight_source_hashes_accept_linux_lf_checkout(monkeypatch):
     original = sft_pilot_gate._read_bounded_snapshot
 

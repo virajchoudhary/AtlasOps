@@ -11,6 +11,41 @@ The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) supersedes
 the earlier RS-inclusive arm count; the source SHA above identifies the
 original software review, not an approved five-arm campaign.
 
+## Current Preparation Addendum (30 September 2026)
+
+This non-live update clarifies the current G7 preparation path against reviewed
+source `1b13695f0e405883d7d66da20fe52d23435d8a7d`; it does not replace the
+original source snapshot or authorize execution. G7 D3 now approves
+preparation of the exact `train-candidate-v1` corpus and manifest only:
+68 synthetic Train rows, corpus SHA-256
+`19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd`, manifest
+SHA-256 `35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c`.
+The immutable model/tokenizer preparation identity and `config/sft_pilot_v4.json`
+are also resolved. Neither D3 nor the plan authorizes weight transfer, model
+loading, training, spending, or live work.
+
+For this one corpus, the pilot-specific source compatibility accepts only the
+reviewed coordinator hash pair and requires AST identity outside
+`settle_environment`; `validate_candidate_snapshot` remains strict. No new
+candidate version or G7 D3 decision is required for the exact approved
+preparation pair. Any other source or data change still requires separate
+review. The v5 tokenizer/mask report is the prior non-live all-row result at
+8192 tokens with no truncation. A fresh `training.sft --preflight-only` check
+for the exact v4 inputs passed with `preparation_admissible: true` and
+`execution_allowed: false`, without output creation or ML-loader import. That
+CLI check validates the prepared artifacts; it does not rerun tokenization or
+test a GPU.
+
+No approved remote runtime or actual host-level GPU/BF16/4-bit compatibility
+is established. Model-resident peak memory has not been observed because
+weight transfer and loading remain unauthorized; record it only during any
+separately authorized load/run under a predeclared stop limit. No model weights
+have been transferred or inventoried, and no adapter, training record, or
+independent reload exists. Public model metadata and the staged tokenizer-file
+inventory are not a transferred local model-weight inventory. Training still
+requires a named, hash-bound execution approval after host/entitlement, budget,
+runtime, weight transfer and inventory are verified. G7 remains `PARTIAL`.
+
 Each phase has an entry gate and an exit artifact. A failed gate stops the
 sequence. Keep the original attempt, logs, checkpoints and raw outputs
 immutable; start a distinct attempt only under the approved recovery rule.
@@ -40,50 +75,81 @@ base. This phase authorizes nothing by itself.
 
 ## 1. Reconstruct and verify the G7 Train corpus
 
-**Entry:** approved isolated destination and clean source checkout. The
-command is a **future template**, not a request to execute it in this task:
+**Current preparation input:** use only the exact D3-approved v1 corpus and
+its adjacent manifest. Check the raw/canonical-LF corpus hash
+`19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd` and
+manifest hash `35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c`;
+require 68 rows, 16 frozen Train scenarios, 17 case groups and four roles.
+Preserve any tracked review originals and hashes unchanged. Any preparation
+or later runtime copy belongs in the approved external evidence store with
+the reviewed sidecars and access controls. If either exact file is unavailable
+or mismatched, stop; do not substitute or silently regenerate a different
+manifest.
+
+For a fresh software admission check, preserve the exact v4 settings and
+include `--preflight-only`; the future output path must be unused. This mode
+validates the hash-bound plan and recorded all-row 8192-token preflight
+without creating output or importing/loading model code:
 
 ```text
-python -m training.build_sft_dataset --output <approved-external-root>/g7-prep/sft_corpus_train.jsonl
+python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision a09a35458c702b33eeacc393d103063234e8bc28 --tokenizer-revision a09a35458c702b33eeacc393d103063234e8bc28 --data <approved-external-root>/g7-prep/sft_corpus_train.jsonl --output <unused-external-run-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026 --preflight-only
 ```
 
-**Checks:** hash the generated canonical-LF bytes and require
+Require `preparation_admissible: true` and `execution_allowed: false`.
+This is non-live preparation evidence, not permission to proceed to phase 2.
+The exact settling-only compatibility for the coordinator source is described
+in [the compatibility review](G7_SETTLING_SOURCE_COMPATIBILITY_V1.md); do not
+re-hash the corpus to current source.
+
+**Historical schema/rendering fixture only; never use it as SFT input:**
+
+```text
+python -m training.build_sft_dataset --output <isolated-schema-check-dir>/sft_corpus_train.jsonl
+```
+
+These checks apply only to the legacy 64-row fixture: hash its generated
+canonical-LF bytes and require
 `523cad3478e2018ebb830bab973bc02811045c6131dd0bf8f59328d756287e81`;
 inspect the adjacent manifest/config, 64 rows, 16 frozen Train scenarios,
 four roles, schema and tool/observation pairing. Quarantine Validation and
 Test. Do not copy the ignored generated corpus into ordinary Git or infer
 real incident success from these synthetic demonstrations.
-The ignored local `data/sft_corpus_train.jsonl` has matching bytes but no
-adjacent provenance sidecars; do not substitute it for this complete
-external-output preparation.
-The current 64-row synthetic corpus passes those integrity checks but
-is not eligible for SFT training in any role. The current code rejects its
-exact bytes and tested representation-only variants of its assistant
-targets, including selected-role matches when another role changes. A
-different, reviewed context with the same teacher targets can be conservatively
-rejected too; resolve that through a separate D3 admission decision, not by
-disabling the guard. This does not authenticate D3 approval for other data.
+The ignored local `data/sft_corpus_train.jsonl` observed in the historical
+snapshot has matching bytes but no adjacent provenance sidecars; do not
+substitute it for the approved v1 pair. This historical 64-row synthetic
+fixture remains ineligible for SFT training in every role. The current code
+rejects its exact bytes and tested representation-only variants of its
+assistant targets, including selected-role matches when another role changes.
+A different, reviewed context with the same teacher targets can be
+conservatively rejected too; resolve that through a separate review, not by
+disabling the guard. This does not authenticate approval for other data.
 Its 16 P1 remediation rows have no approval context and contain 32 calls
 to tools absent from the remediation role's runtime allowlist. Use it only
 for non-model schema/rendering checks. Preserve its
 bytes and tracked evidence; even triage-only ACL validity does not permit
-training on the known fixture. Obtain a new versioned, independently
-reviewed Train-only corpus with role-allowed tools and
-approval/negative-outcome labels before moving to phase 2.
+training on the known fixture. This does not block the separate v1 preparation
+approval above; no new corpus version or G7 D3 decision is required for that
+exact preparation input.
 
-**Exit:** byte-preserved corpus, manifest, config, hash and independent
-Train-only check in an approved evidence store. Hash and split agreement
-do not satisfy the training-quality gate for the current corpus. On mismatch,
-stop and preserve the failed generation record; do not train.
+**Exit:** exact byte-preserved v1 corpus and manifest, v4 plan, all-row
+preflight, hash checks and Train-only/role-tool validation in the approved
+evidence store. On mismatch, stop and preserve the failed preparation record;
+do not create a substitute candidate. Hash and split agreement do not satisfy
+the training-quality gate or authorize a run.
 
 ## 2. Train G7 SFT, then prove adapter recovery
 
-**Entry:** phases 0-1 passed; BF16/QLoRA compatibility measured on the
-approved remote runtime; exact dependency image frozen; output directory
-new and empty. A future command shape supported by `training.sft` is:
+**Entry:** phases 0-1 passed; a separate named, hash-bound execution approval
+exists for the exact source, corpus, model-file inventory, host/runtime,
+budget, run ID and output path; the approved host's GPU capacity, storage and
+BF16/QLoRA software compatibility are verified; the exact dependency image is
+frozen; output directory is new and empty. Actual model-resident peak memory
+can only be observed after a separately authorized weight load. Capture it
+during the bounded run against predeclared stop limits; do not describe it as
+a pre-run measurement. A future command shape supported by `training.sft` is:
 
 ```text
-python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-immutable-commit> --tokenizer-revision <approved-immutable-commit> --data <verified-external-corpus> --output <new-external-sft-run-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026
+python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-immutable-commit> --tokenizer-revision <approved-immutable-commit> --data <verified-external-corpus> --output <new-external-sft-run-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026 --execution-approval <approved-execution-record>
 ```
 
 The values above match the v4 **preparation** plan, not D2 model-weight

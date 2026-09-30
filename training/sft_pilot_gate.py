@@ -274,6 +274,12 @@ def require_execution_authority(
         or attestation.get("persistent_storage_verified") is not True
         or attestation.get("storage_quota_verified") is not True
         or runtime.get("os_package_inventory", {}).get("status") != "RECORDED"
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            runtime.get("os_package_inventory", {}).get("sha256", ""),
+        ) is None
+        or attestation.get("os_package_inventory_sha256")
+        != runtime.get("os_package_inventory", {}).get("sha256")
     ):
         raise ValueError("SFT execution requires verified disk/quota and OS package provenance")
     existing_parent = output_dir.absolute().parent

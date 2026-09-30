@@ -34,7 +34,8 @@ and `host.image_attestation_sha256`: a separate reviewed record with exact
 image digest/hostname, `verified: true`, named `verified_by`,
 `persistent_storage_verified: true`, and `storage_quota_verified: true`.
 The runtime record must include measured storage free/total/used bytes and
-the recorded `/opt/sft-os-packages.txt` hash. Operator-supplied image strings
+the recorded `/opt/sft-os-packages.txt` hash, corroborated by
+`os_package_inventory_sha256` in the independent attestation. Operator-supplied image strings
 alone cannot satisfy these additional checks.
 
 `model_files_manifest` must be an absolute local path with its raw hash in

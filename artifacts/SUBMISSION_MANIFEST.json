@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T15:02:51.704002+00:00",
+  "generated_at": "2026-09-30T15:15:30.798668+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -189,8 +189,8 @@
       "size_bytes": 8961
     },
     "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md": {
-      "sha256": "a894b4f910ffd6bf5d7bf0165cbef0f610f60176270abdf7a93018ef58aebee1",
-      "size_bytes": 4840
+      "sha256": "a6350f5c7925e917e4cdef2781a8e0dea90d350d9f7a49376c6b9ec2a3c04e52",
+      "size_bytes": 4918
     },
     "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md": {
       "sha256": "bf83f86ca141ce8b1169b0f0ca1964a12ed52e81a4edf05ac63f7e1b0201ccea",
@@ -901,8 +901,8 @@
       "size_bytes": 2171
     },
     "training/sft_pilot_gate.py": {
-      "sha256": "09413a1b2039a8c0922a769ed6c90f332e59f0f542f0307699e4feca223e6a37",
-      "size_bytes": 18203
+      "sha256": "7d7a5ffa0e33fe407deeb4a82b54c1ce31267cd9930aca639c6550c98a49f665",
+      "size_bytes": 18469
     },
     "training/sft_tokenizer_preflight.py": {
       "sha256": "e0027cc2c0c6ff139478d0a22e934eeb0d0998a8decd9f78c8856df8287fd3b1",
@@ -1181,8 +1181,8 @@
       "size_bytes": 8419
     },
     "tests/test_sft_pilot_gate.py": {
-      "sha256": "b2bed64b2a85475c008c71391fa4e37c6ee6471c332d7ca060ca0152f7d792ed",
-      "size_bytes": 13560
+      "sha256": "88235a0d6138b98bbc7b1062b7ca7470b7cd9a1d0645ab174cb2a691bf57d03d",
+      "size_bytes": 14553
     },
     "tests/test_sft_qwen_template_render.py": {
       "sha256": "9a0129cf11a9cb9e7ee1e1f88ab401998a68d5abc877954d5dc9dfe1e7f38bf7",

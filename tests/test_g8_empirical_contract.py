@@ -598,6 +598,110 @@ async def test_empirical_path_uses_checkpoint_and_withholds_truth(tmp_path):
     )
 
 
+def test_empirical_output_rejects_existing_summary_before_inference(tmp_path):
+    checkpoint = _checkpoint(tmp_path)
+    output_dir = tmp_path / "occupied-output"
+    output_dir.mkdir()
+    summary_file = output_dir / "sft_val_summary.json"
+    sentinel = b"preserve existing empirical evidence\n"
+    summary_file.write_bytes(sentinel)
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    with pytest.raises(FileExistsError):
+        asyncio.run(
+            evaluate_sft_split(
+                "val",
+                mode="empirical",
+                checkpoint=checkpoint,
+                output_dir=output_dir,
+                inference_fn=inference,
+            )
+        )
+
+    assert inference_calls == []
+    assert summary_file.read_bytes() == sentinel
+    assert not (output_dir / "sft_val_episodes.jsonl").exists()
+
+
+def test_empirical_output_rejects_existing_empty_directory_before_inference(
+    tmp_path,
+):
+    checkpoint = _checkpoint(tmp_path)
+    output_dir = tmp_path / "empty-output"
+    output_dir.mkdir()
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    with pytest.raises(FileExistsError):
+        asyncio.run(
+            evaluate_sft_split(
+                "val",
+                mode="empirical",
+                checkpoint=checkpoint,
+                output_dir=output_dir,
+                inference_fn=inference,
+            )
+        )
+
+    assert inference_calls == []
+    assert list(output_dir.iterdir()) == []
+
+
+@pytest.mark.parametrize("split_name", ["test", "leaderboard"])
+def test_empirical_final_splits_remain_blocked_before_output_creation(
+    tmp_path,
+    split_name,
+):
+    checkpoint = _checkpoint(tmp_path)
+    output_dir = tmp_path / "blocked-output"
+    inference_calls = []
+
+    async def inference(messages, model_name, checkpoint_path, generation_config):
+        inference_calls.append(messages)
+        return _prediction()
+
+    with pytest.raises(ValueError, match="Validation-only"):
+        asyncio.run(
+            evaluate_sft_split(
+                split_name,
+                mode="empirical",
+                checkpoint=checkpoint,
+                output_dir=output_dir,
+                inference_fn=inference,
+            )
+        )
+
+    assert inference_calls == []
+    assert not output_dir.exists()
+
+
+def test_mock_output_remains_compatible_with_existing_directory(tmp_path):
+    output_dir = tmp_path / "existing-mock-output"
+    output_dir.mkdir()
+    unrelated_file = output_dir / "preserved.txt"
+    unrelated_file.write_text("unrelated mock output", encoding="utf-8")
+
+    summary = asyncio.run(
+        evaluate_sft_split(
+            "val",
+            mode="mock",
+            output_dir=output_dir,
+        )
+    )
+
+    assert summary["mock_eval"] is True
+    assert unrelated_file.read_text(encoding="utf-8") == "unrelated mock output"
+    assert (output_dir / "sft_val_episodes.jsonl").is_file()
+    assert (output_dir / "sft_val_summary.json").is_file()
+
+
 def test_empirical_schema_conformance_counts_all_scheduled_outputs(
     tmp_path,
     monkeypatch,

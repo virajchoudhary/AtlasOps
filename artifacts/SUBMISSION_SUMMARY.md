@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-09-30T14:31:23.348667+00:00`
+- **Generated**: `2026-09-30T15:19:04.273693+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -216,7 +216,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `18809bbff7794dee...` | 6376 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `577c7c2c76fbca64...` | 10693 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `b353b754f1ec5dbe...` | 5428 |
-| `docs/project/STAGE_9_ONLINE_GRPO.md` | `7cb0525e9ffe58e4...` | 10367 |
+| `docs/project/STAGE_9_ONLINE_GRPO.md` | `8f67c3ef327feb2c...` | 10563 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
 | `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `14b0ae256c863123...` | 20215 |
 | `docs/slides.md` | `c5bf2053fd4867ff...` | 5995 |
@@ -278,7 +278,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_g6_empirical_contract.py` | `98dd82de3cdda64d...` | 55062 |
 | `tests/test_g8_empirical_contract.py` | `4c6285268819c023...` | 38235 |
 | `tests/test_g9_approval_channel.py` | `39471f4e566ce28c...` | 22302 |
-| `tests/test_g9_direct_policy_environment.py` | `2cd4d7e74c920d2a...` | 80589 |
+| `tests/test_g9_direct_policy_environment.py` | `8da2faed257d3897...` | 83255 |
 | `tests/test_g9_direct_reward.py` | `1e2c5562f6b12aa9...` | 11861 |
 | `tests/test_g9_empirical_contract.py` | `b9170b40462cc82e...` | 37749 |
 | `tests/test_g9_training_preflight.py` | `1d896462ef3801ce...` | 22169 |
@@ -337,7 +337,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/generate_trajectories.py` | `490b20a96c1501a8...` | 5498 |
 | `training/generate_trajectories_fast.py` | `773885747caed336...` | 411 |
 | `training/grpo.py` | `211ab7c8297978d0...` | 59752 |
-| `training/grpo_environment.py` | `87d8ff9ab205f24b...` | 30469 |
+| `training/grpo_environment.py` | `6fd0c8a204f8b1d6...` | 30767 |
 | `training/grpo_provenance.py` | `8903bf0e576a9585...` | 50476 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
 | `training/sft.py` | `48596108d1ed9903...` | 15336 |

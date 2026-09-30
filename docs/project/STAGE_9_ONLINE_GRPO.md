@@ -15,6 +15,9 @@ The required relationship is:
 - Train-only prompts carry their exact frozen `scenario_id` into the reward callback.
 - The generated completion is parsed as exactly one action. The same tool and arguments
   are policy checked and executed; no second operational model is invoked.
+- `agent_claimed_resolved` is a required JSON Boolean in that completion.
+  Missing or malformed claims block the action before dispatch or reward;
+  they are not silently interpreted as `false`.
 - P1 requires explicit approval. The coordinator-backed `rl_policy` path requests
   approval for the exact parsed tool and arguments, then consumes a one-use
   incident/action-bound permit. Standalone training and evaluation now have a

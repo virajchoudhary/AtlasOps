@@ -176,6 +176,96 @@ def test_parser_rejects_multi_action_or_malformed_completion():
         parse_policy_action('{"actions": [{"tool": "kubectl_scale"}]}')
 
 
+@pytest.mark.parametrize(
+    ("claim_present", "claim_value"),
+    [
+        (False, None),
+        (True, None),
+        (True, "false"),
+        (True, 0),
+        (True, 1),
+        (True, 0.0),
+        (True, 1.0),
+    ],
+    ids=[
+        "missing",
+        "null",
+        "string",
+        "integer-zero",
+        "integer-one",
+        "float-zero",
+        "float-one",
+    ],
+)
+def test_parser_rejects_missing_or_non_boolean_resolution_claim(
+    claim_present, claim_value
+):
+    payload = json.loads(_completion())
+    if claim_present:
+        payload["agent_claimed_resolved"] = claim_value
+    else:
+        del payload["agent_claimed_resolved"]
+
+    with pytest.raises((TypeError, ValueError), match="agent_claimed_resolved"):
+        parse_policy_action(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    ("claim_present", "claim_value"),
+    [
+        (False, None),
+        (True, None),
+        (True, "false"),
+        (True, 0),
+        (True, 1),
+    ],
+    ids=["missing", "null", "string", "integer-zero", "integer-one"],
+)
+@pytest.mark.asyncio
+async def test_step_rejects_malformed_resolution_claim_before_dispatch(
+    claim_present, claim_value
+):
+    dispatched = []
+    policy_checks = []
+    verifier_calls = []
+    environment = DirectPolicyEnvironment(
+        tool_registry={
+            "kubectl_get": lambda **kwargs: dispatched.append(kwargs)
+            or {"success": True}
+        },
+        policy_check=lambda *args: policy_checks.append(args),
+        verifier=lambda **kwargs: verifier_calls.append(kwargs)
+        or {
+            "verification_status": "failed",
+            "env_resolved": False,
+            "checks": [{"name": "workload_ready", "required": True, "passed": False}],
+        },
+        settle=lambda: {
+            "status": "settled",
+            "stable": True,
+            "stable_observations": 2,
+        },
+        **LIVE_EXECUTION,
+    )
+    payload = json.loads(_completion(tool="kubectl_get", arguments={}))
+    if claim_present:
+        payload["agent_claimed_resolved"] = claim_value
+    else:
+        del payload["agent_claimed_resolved"]
+
+    result = await environment.step(
+        json.dumps(payload),
+        scenario_id="single_fault/sf-002",
+        state=_state(),
+    )
+
+    assert result["terminal_block"]["category"] == "invalid_action"
+    assert result["executed_actions"] == []
+    assert dispatched == []
+    assert policy_checks == []
+    assert verifier_calls == []
+
+
 @pytest.mark.asyncio
 async def test_builtin_settle_accepts_stable_conclusive_failed_observation(monkeypatch):
     clock = _FakeSettleClock()
@@ -1025,8 +1115,9 @@ async def test_verified_resolution_blocks_additional_policy_mutation():
     assert result["terminal_block"]["category"] == "already_resolved"
 
 
+@pytest.mark.parametrize("claim", [True, False], ids=["true-claim", "false-claim"])
 @pytest.mark.asyncio
-async def test_agent_resolution_claim_cannot_override_verifier():
+async def test_agent_resolution_claim_cannot_override_verifier(claim):
     environment = DirectPolicyEnvironment(
         tool_registry={
             "chaos_stop_experiment": lambda **kwargs: {"success": True},
@@ -1049,11 +1140,12 @@ async def test_agent_resolution_claim_cannot_override_verifier():
     state = _state()
     state["triage"]["severity"] = "P2"
     result = await environment.step(
-        _completion(agent_claimed_resolved=True),
+        _completion(agent_claimed_resolved=claim),
         scenario_id="single_fault/sf-002",
         state=state,
     )
-    assert result["agent_claimed_resolved"] is True
+    assert result["policy_action"]["agent_claimed_resolved"] is claim
+    assert result["agent_claimed_resolved"] is claim
     assert result["env_resolved"] is False
     assert result["resolved"] is False
 
@@ -2237,6 +2329,7 @@ def test_standalone_training_approval_is_bound_to_generated_action(monkeypatch):
     completion = json.dumps({
         "tool": "kubectl_scale",
         "arguments": {"deployment": "paymentservice", "replicas": 2, "namespace": "default"},
+        "agent_claimed_resolved": False,
     })
     async def exercise():
         task = asyncio.create_task(reward_function._run_one_rollout(

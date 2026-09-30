@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-09-30T14:31:23.348667+00:00",
+  "generated_at": "2026-09-30T15:19:04.273693+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -277,8 +277,8 @@
       "size_bytes": 5428
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
-      "sha256": "7cb0525e9ffe58e413f0426d814ad9706190b8aa3514289849b87ebeab7132c0",
-      "size_bytes": 10367
+      "sha256": "8f67c3ef327feb2caa76511dd21de77b583baf841d0d31895689ab81bab9c73d",
+      "size_bytes": 10563
     },
     "artifacts/models/hybrid_recommender.json": {
       "sha256": "53d0a4fb640b46911d1d2735aae20d4223305b0ea697dae2737209fde7748017",
@@ -905,8 +905,8 @@
       "size_bytes": 59752
     },
     "training/grpo_environment.py": {
-      "sha256": "87d8ff9ab205f24bfdd15ef4759926e7b8747d7f05936d7b479f853c8535fa37",
-      "size_bytes": 30469
+      "sha256": "6fd0c8a204f8b1d650dd9f99c8f7d003fa42b865f29881998888ac9f10c7b478",
+      "size_bytes": 30767
     },
     "training/grpo_provenance.py": {
       "sha256": "8903bf0e576a958543b26e006a234690943ce16fe90292b481d1d9ea0fd9f969",
@@ -1057,8 +1057,8 @@
       "size_bytes": 22302
     },
     "tests/test_g9_direct_policy_environment.py": {
-      "sha256": "2cd4d7e74c920d2ac4413eb87a9259e69c929dca35c026d95152f832f880d9cb",
-      "size_bytes": 80589
+      "sha256": "8da2faed257d38978512d5b54f4e0b48e0aea052ee2754593ff3088155b9d61c",
+      "size_bytes": 83255
     },
     "tests/test_g9_direct_reward.py": {
       "sha256": "1e2c5562f6b12aa9ef153e7f39519d80c85728e02bf11afc18d720a24b136c42",

@@ -282,8 +282,8 @@ def test_attempt_observer_marks_stream_read_timeout_after_response_headers():
             self.closed = False
 
         async def __aiter__(self):
+            yield b"partial"
             raise httpx.ReadTimeout("private body detail", request=self.request)
-            yield b""
 
         async def aclose(self):
             self.closed = True

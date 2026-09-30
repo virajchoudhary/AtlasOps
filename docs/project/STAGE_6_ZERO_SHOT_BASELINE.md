@@ -72,6 +72,10 @@ non-empirical run directory. Use `bench.zero_shot_baseline` for real G6 inferenc
   dispatched. `total_turns` counts confirmed completion turns only, not POST
   attempts. HTTP error or oversized-body receipt does not establish a valid
   model completion or exact-model attestation.
+  Cancellation during a POST records an interrupted, nonclaimable active row,
+  propagates cancellation and stops the campaign without starting another
+  scenario or writing a completed summary. Hard process termination cannot
+  guarantee this cooperative-cancellation record.
 - Finalized episode rows replace the initial JSONL atomically. If finalization fails,
   the initial rows remain intact and nonclaimable.
 - Diagnosis-only evaluation leaves environment resolution, reward, and time to resolve

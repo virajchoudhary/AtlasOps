@@ -512,6 +512,15 @@ class InferenceRequestError(RuntimeError):
         self.attempt_evidence_status = attempt_evidence_status
 
 
+class InferenceCancelledError(asyncio.CancelledError):
+    """Propagate cancellation while carrying bounded evidence to the row writer."""
+
+    def __init__(self, attempts: list[AttemptMetadata]) -> None:
+        super().__init__("Inference cancelled")
+        self.inference_attempts = list(attempts)
+        self.episode: dict[str, Any] | None = None
+
+
 def _sanitized_inference_error(exc: Exception) -> str:
     if isinstance(exc, InferenceResponseError):
         kind = exc.response_error.get("kind")
@@ -656,6 +665,8 @@ async def openai_compatible_inference(
                 max_response_bytes=MAX_G6_INFERENCE_RESPONSE_BYTES,
                 attempt_observer=inference_attempts.append,
             )
+    except asyncio.CancelledError:
+        raise InferenceCancelledError(inference_attempts) from None
     except ResponseBodyTooLargeError as exc:
         raise InferenceResponseError(
             "OpenAI-compatible inference response exceeded configured size limit",
@@ -809,6 +820,7 @@ async def _evaluate_empirical_episode(
     response_model_name: str | None = None
     response_model_name_verified: bool | None = None
     response_error: dict[str, Any] | None = None
+    cancellation: InferenceCancelledError | None = None
     try:
         inference_result = await inference_fn(messages, model_name, generation_config)
         response_received = True
@@ -832,6 +844,22 @@ async def _evaluate_empirical_episode(
         )
         status = "ok"
         error = None
+    except asyncio.CancelledError as exc:
+        cancellation = (
+            exc if isinstance(exc, InferenceCancelledError)
+            else InferenceCancelledError([])
+        )
+        inference_attempts = list(cancellation.inference_attempts)
+        attempt_evidence_status = "observed" if inference_attempts else "unavailable"
+        response_received = (
+            any(attempt["response_received"] for attempt in inference_attempts)
+            if inference_attempts else None
+        )
+        inference_execution_certainty = "unknown"
+        prediction = None
+        diagnostic_metrics = None
+        status = "interrupted"
+        error = "CancelledError: inference_cancelled; details redacted"
     except Exception as exc:  # noqa: BLE001
         # Preserve every inference or parsing failure; never fall back to mock output.
         prediction = None
@@ -903,6 +931,9 @@ async def _evaluate_empirical_episode(
     }
     if error is not None:
         episode["error"] = error
+    if cancellation is not None:
+        cancellation.episode = episode
+        raise cancellation from None
     return episode
 
 
@@ -1070,14 +1101,21 @@ async def evaluate_zero_shot_split(
                     }
                 )
             else:
-                episode = await _evaluate_empirical_episode(
-                    scenario_id,
-                    model_name,
-                    generation_config,
-                    inference_fn,
-                    selected_backend,
-                    observed_model_identity,
-                )
+                try:
+                    episode = await _evaluate_empirical_episode(
+                        scenario_id,
+                        model_name,
+                        generation_config,
+                        inference_fn,
+                        selected_backend,
+                        observed_model_identity,
+                    )
+                except InferenceCancelledError as exc:
+                    if exc.episode is not None:
+                        exc.episode.update({"run_id": run_id, "model": model_name})
+                        stream.write(json.dumps(exc.episode, sort_keys=True) + "\n")
+                        stream.flush()
+                    raise
             episode.update({"run_id": run_id, "model": model_name})
             episodes.append(episode)
             stream.write(json.dumps(episode, sort_keys=True) + "\n")

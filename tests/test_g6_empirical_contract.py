@@ -977,6 +977,50 @@ def test_g6_error_rows_retain_attempts_without_asserting_execution_absent(
     assert "private transport detail" not in json.dumps(rows)
 
 
+@pytest.mark.parametrize("after_headers", [False, True])
+def test_g6_cancelled_post_persists_active_row_and_stops_campaign(
+    tmp_path, monkeypatch, after_headers,
+):
+    requests = []
+
+    class CancelledStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"partial"
+            raise asyncio.CancelledError("private cancellation detail")
+
+    async def handler(request):
+        requests.append(request)
+        if after_headers:
+            return httpx.Response(200, stream=CancelledStream(), request=request)
+        raise asyncio.CancelledError("private cancellation detail")
+
+    _patch_in_process_inference_transport(monkeypatch, handler)
+    monkeypatch.setenv("VLLM_BASE", "http://127.0.0.1:11434/v1")
+    output = tmp_path / "cancelled"
+    with pytest.raises(asyncio.CancelledError):
+        _run_mocked_inference_evaluation(output)
+    rows = [
+        json.loads(line) for line in
+        (output / "results_per_episode.jsonl").read_text().splitlines()
+    ]
+    assert len(requests) == len(rows) == 1
+    row = rows[0]
+    assert row["status"] == "interrupted"
+    assert row["empirical_inference_executed"] is None
+    assert row["inference_execution_certainty"] == "unknown"
+    assert row["empirical_claim_allowed"] is False
+    assert row["inference_attempts"] == [{
+        "attempt_index": 1,
+        "response_status": 200 if after_headers else None,
+        "transport_category": "cancelled",
+        "response_received": after_headers,
+        "retry_disposition": "raise",
+    }]
+    assert row["run_id"] and row["model"]
+    assert not (output / "results_summary.json").exists()
+    assert "private cancellation detail" not in json.dumps(rows)
+
+
 @pytest.mark.asyncio
 async def test_evaluation_mode_must_be_explicit(tmp_path):
     with pytest.raises(ValueError, match="Evaluation mode is required"):

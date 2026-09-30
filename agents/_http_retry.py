@@ -206,6 +206,16 @@ async def post_with_retry(
                             streamed_response,
                             max_response_bytes,
                         )
+        except asyncio.CancelledError:
+            _observe_attempt(
+                attempt_observer,
+                attempt=attempt,
+                response_status=response_status,
+                transport_category="cancelled",
+                response_received=response_received,
+                retry_disposition="raise",
+            )
+            raise
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
             last_exc = e
             disposition: Literal["retry", "raise"] = (

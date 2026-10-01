@@ -185,7 +185,7 @@ def run_acceptance() -> dict[str, Any]:
             p.wait()
 
     report["stages"]["tool_wrappers"] = tool_results
-    print(f"  Agent tool wrappers execution completed.")
+    print("  Agent tool wrappers execution completed.")
 
     # 7. Summary Verdict
     print("\n[7/7] Computing Acceptance Verdict...")
@@ -198,9 +198,9 @@ def run_acceptance() -> dict[str, Any]:
         and report["stages"].get("argocd_api", {}).get("success") is True
     )
     report["verdict"] = "PASS" if g3_passed else "FAIL"
-    print(f"\n========================================================")
+    print("\n========================================================")
     print(f"  STAGE 3 ACCEPTANCE VERDICT: {report['verdict']}")
-    print(f"========================================================")
+    print("========================================================")
 
     return report
 

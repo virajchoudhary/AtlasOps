@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T15:03:29.275948+00:00`
+- **Generated**: `2026-10-01T17:33:06.598701+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -244,9 +244,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `infra/training/sft-pilot/start-host.sh` | `461620370d8b4610...` | 600 |
 | `leaderboard.py` | `631579d29203ce87...` | 400 |
 | `pyproject.toml` | `ae7e3a0dce013125...` | 1274 |
-| `recommender/baselines.py` | `fa606a7e5249493a...` | 7324 |
+| `recommender/baselines.py` | `db549fdb200c90cd...` | 7284 |
 | `recommender/dataset.py` | `aa1a6c72e0d911fa...` | 13236 |
-| `recommender/hybrid.py` | `1c77efd238a700ed...` | 9126 |
+| `recommender/hybrid.py` | `c0561a8dc1ca3664...` | 9105 |
 | `recommender/train_hybrid.py` | `337f19161334ed57...` | 6053 |
 | `requirements/README.md` | `4df6c95b34a7bc57...` | 4114 |
 | `requirements/dev-win-py312.lock` | `f270de48224cb4c4...` | 6851 |
@@ -325,7 +325,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
 | `tests/test_release_gate.py` | `911bb0b14d07deec...` | 13992 |
-| `tests/test_repository_hygiene.py` | `63bc18cbca62df82...` | 6021 |
+| `tests/test_repository_hygiene.py` | `2093d925176f61a1...` | 6043 |
 | `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |
 | `tests/test_rs_runtime_query_isolation.py` | `6697c24640643f9e...` | 1945 |

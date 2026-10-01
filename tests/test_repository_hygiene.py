@@ -19,6 +19,7 @@ def test_retired_live_cli_fails_before_writing_or_dispatching(script, tmp_path):
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
     assert result.returncode != 0
     assert "disabled" in result.stderr
@@ -135,6 +136,7 @@ def test_dev_lock_drops_orphans_but_retains_transitive_demo_dependencies():
 
 def test_approval_test_handoff_is_invisible_until_json_is_complete(tmp_path, monkeypatch):
     import json
+
     from tests import stage4_approval_process as helper
 
     target = tmp_path / "result.json"

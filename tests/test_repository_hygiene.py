@@ -109,6 +109,7 @@ def test_bash_smoke_wrapper_forwards_quiet_and_nonzero_exit(tmp_path):
         "bench/quick_eval.py",
         "inference.py",
         "scripts/generate_training_plots.py",
+        "training/merge_lora_for_hub.py",
     ],
 )
 def test_retired_live_cli_fails_before_writing_or_dispatching(script, tmp_path):
@@ -122,6 +123,27 @@ def test_retired_live_cli_fails_before_writing_or_dispatching(script, tmp_path):
     )
     assert result.returncode != 0
     assert "disabled" in result.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_retired_model_export_import_has_no_optional_model_imports_or_side_effects(tmp_path):
+    path = ROOT / "training/merge_lora_for_hub.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree))
+    code = (
+        "import runpy; "
+        f"runpy.run_path({str(path)!r}, run_name='retired_export_import'); "
+        "print('IMPORT_OK')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", code],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert result.stdout.strip() == "IMPORT_OK"
     assert list(tmp_path.iterdir()) == []
 
 

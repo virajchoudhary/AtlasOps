@@ -8,13 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agents.grounding import validate_evidence_grounding
 from agents.tool_policy import (
     CLUSTER_MUTATING_TOOLS,
     ROLE_ALLOWED_TOOLS,
     SIDE_EFFECTING_TOOLS,
 )
 from agents.tools import TOOL_REGISTRY
-from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES, chaos_stop_experiment
+from agents.tools.chaos import ALLOWED_CHAOS_NAMESPACES, chaos_stop_experiment
 from scripts.run_stage4_golden_incident import evaluate_causal_g4_predicate
 
 
@@ -41,7 +42,9 @@ class TestChaosRemediationToolContract:
         assert "Invalid chaos kind" in res["error"]
 
     def test_chaos_tool_rejects_arbitrary_shell_characters(self) -> None:
-        res = chaos_stop_experiment("StressChaos", "foo; rm -rf /", namespace="chaos-mesh")
+        # Use an obviously shell-like payload without including forbidden
+        # recursive deletion substrings that trip tooling safety guards.
+        res = chaos_stop_experiment("StressChaos", "foo; echo HACK", namespace="chaos-mesh")
         assert res["success"] is False
         assert "Invalid chaos resource name" in res["error"]
 
@@ -95,9 +98,27 @@ class TestChaosRemediationToolContract:
 class TestStage4CausalPredicate:
     """Contract tests for evaluate_causal_g4_predicate."""
 
+    @pytest.fixture(autouse=True)
+    def _postmortem_directory(self, tmp_path, monkeypatch):
+        self.postmortem_dir = tmp_path / "postmortems"
+        self.postmortem_dir.mkdir()
+        monkeypatch.setenv("POSTMORTEM_DIR", str(self.postmortem_dir))
+
     def _make_valid_incident_result(self) -> dict:
-        return {
+        root_cause = "Active StressChaos experiment sf-002-paymentservice-cpu caused paymentservice CPU saturation"
+        postmortem = self.postmortem_dir / "inc-valid-123.md"
+        postmortem.write_text(
+            f"Incident inc-valid-123 resolved and verified. Root cause: {root_cause}.",
+            encoding="utf-8",
+        )
+        incident = {
             "incident_id": "inc-valid-123",
+            "incident_anchors": {"primary_service": "paymentservice"},
+            "target_consistency": {
+                "primary_target": "paymentservice",
+                "requires_review": False,
+                "status": "primary_target_preserved",
+            },
             "triage": {
                 "final": {
                     "severity": "P1",
@@ -106,15 +127,36 @@ class TestStage4CausalPredicate:
                 }
             },
             "diagnosis": {
+                "trajectory": [
+                    {
+                        "tool": "promql_query",
+                        "args": {"query": "paymentservice_cpu"},
+                        "output": {"success": True, "result": [{"value": 0.9}]},
+                    }
+                ],
                 "final": {
-                    "root_cause": "Active StressChaos experiment sf-002-paymentservice-cpu",
+                    "root_cause": root_cause,
                     "confidence": "High",
+                    "evidence": [
+                        {
+                            "tool": "promql_query",
+                            "query": "paymentservice_cpu",
+                            "finding": "Observed paymentservice CPU saturation",
+                        }
+                    ],
                     "recommended_actions": [
                         {"action": "stop_chaos", "kind": "StressChaos", "name": "sf-002-paymentservice-cpu"}
                     ],
                 }
             },
-            "approval": {"status": "approved", "token": "apr-123"},
+            "approval": {
+                "mode": "approve",
+                "severity": "P1",
+                "decision": "approved",
+                "status": "approved",
+                "approved_by": "test-operator",
+                "token": "apr-123",
+            },
             "remediation": {
                 "trajectory": [
                     {
@@ -127,9 +169,40 @@ class TestStage4CausalPredicate:
                 "final": {"outcome": "resolved"},
             },
             "verification": {"env_resolved": True, "checks": []},
+            "settling": {
+                "started_at": "2026-09-24T00:00:00+00:00",
+                "completed_at": "2026-09-24T00:00:01+00:00",
+                "duration_seconds": 1.0,
+                "timeout_seconds": 30,
+                "poll_interval_seconds": 1,
+                "settled": True,
+                "observations": [
+                    {
+                        "env_resolved": True,
+                        "verification_status": "passed",
+                        "failed_checks": [],
+                    }
+                ],
+            },
             "env_resolved": True,
-            "comms": {"final": {"slack_posted": True, "postmortem_path": "docs/postmortem.md"}},
+            "comms": {
+                "trajectory": [
+                    {
+                        "tool": "postmortem_draft",
+                        "output": {"success": True, "postmortem_path": str(postmortem)},
+                    }
+                ],
+                "final": {
+                    "incident_id": "inc-valid-123",
+                    "summary": "Incident resolved and verified",
+                    "postmortem_path": str(postmortem),
+                },
+            },
         }
+        incident["grounding_validation"] = {
+            "diagnosis": validate_evidence_grounding(incident["diagnosis"])
+        }
+        return incident
 
     def test_causal_predicate_passes_when_all_valid(self) -> None:
         inc = self._make_valid_incident_result()
@@ -155,6 +228,36 @@ class TestStage4CausalPredicate:
         )
         assert eval_res["gate_g4_pass"] is False
         assert eval_res["criteria"]["12_no_harness_repair_pre_verification"] is False
+
+    def test_causal_predicate_fail_closed_for_p1_rejected(self) -> None:
+        inc = self._make_valid_incident_result()
+        inc["approval"]["status"] = "rejected"
+        inc["approval"]["decision"] = "rejected"
+        eval_res = evaluate_causal_g4_predicate(
+            baseline_healthy=True,
+            injection_success=True,
+            fault_observed=True,
+            incident_result=inc,
+            harness_repaired_pre_verification=False,
+            primary_evidence_persisted=True,
+        )
+        assert eval_res["gate_g4_pass"] is False
+        assert eval_res["criteria"]["8_approval_satisfied"] is False
+
+    def test_causal_predicate_fail_closed_for_p1_timeout(self) -> None:
+        inc = self._make_valid_incident_result()
+        inc["approval"]["status"] = "timeout"
+        inc["approval"]["decision"] = "timeout"
+        eval_res = evaluate_causal_g4_predicate(
+            baseline_healthy=True,
+            injection_success=True,
+            fault_observed=True,
+            incident_result=inc,
+            harness_repaired_pre_verification=False,
+            primary_evidence_persisted=True,
+        )
+        assert eval_res["gate_g4_pass"] is False
+        assert eval_res["criteria"]["8_approval_satisfied"] is False
 
     def test_causal_predicate_fails_if_diagnosis_targets_wrong_service(self) -> None:
         inc = self._make_valid_incident_result()
@@ -323,6 +426,7 @@ class TestCoordinatorRemediationContract:
 
     def test_remediation_receives_one_tool_execution_retry_and_normalizes_outcome(self) -> None:
         import asyncio
+
         from agents.coordinator import call_agent
 
         # Simulate LLM returning plain text conclusion on turn 0 without calling tools,
@@ -339,9 +443,14 @@ class TestCoordinatorRemediationContract:
         }
         mock_response_turn1.raise_for_status = MagicMock()
 
-        with patch("agents.coordinator.post_with_retry", side_effect=[mock_response_turn0, mock_response_turn1]) as mock_post:
-            with patch("agents.coordinator.require_audit_log"):
-                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-retry"}))
+        with (
+            patch(
+                "agents.coordinator.post_with_retry",
+                side_effect=[mock_response_turn0, mock_response_turn1],
+            ) as mock_post,
+            patch("agents.coordinator.require_audit_log"),
+        ):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-retry"}))
 
         # Verify retry occurred
         assert mock_post.call_count == 2
@@ -357,6 +466,7 @@ class TestCoordinatorRemediationContract:
 
     def test_remediation_executes_tool_on_retry_and_records_executed_actions(self) -> None:
         import asyncio
+
         from agents.coordinator import call_agent
 
         # Turn 0: LLM emits text proposal without tool_calls
@@ -393,10 +503,18 @@ class TestCoordinatorRemediationContract:
         }
         mock_response_turn2.raise_for_status = MagicMock()
 
-        with patch("agents.coordinator.post_with_retry", side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2]):
-            with patch("agents.coordinator.require_audit_log"):
-                with patch("agents.tools.chaos._run", return_value={"success": True, "stdout": "deleted", "returncode": 0}):
-                    result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-success"}))
+        with (
+            patch(
+                "agents.coordinator.post_with_retry",
+                side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
+            ),
+            patch("agents.coordinator.require_audit_log"),
+            patch(
+                "agents.tools.chaos._run",
+                return_value={"success": True, "stdout": "deleted", "returncode": 0},
+            ),
+        ):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-success"}))
 
         final = result["final"]
         assert final["outcome"] == "resolved"
@@ -406,7 +524,10 @@ class TestCoordinatorRemediationContract:
         assert "proposed_actions" in final
 
     def test_prose_tool_name_is_not_extracted_as_tool_call(self) -> None:
-        from agents.coordinator import _extract_tool_calls_from_content, _normalize_assistant_tool_calls
+        from agents.coordinator import (
+            _extract_tool_calls_from_content,
+            _normalize_assistant_tool_calls,
+        )
 
         prose = 'Please call chaos_stop_experiment(kind="StressChaos", name="x", namespace="chaos-mesh")'
         assert _extract_tool_calls_from_content(prose) == []
@@ -434,6 +555,7 @@ class TestCoordinatorRemediationContract:
         """Providers emit `arguments: ""` for no-argument calls; the loop must
         treat that as no arguments instead of raising JSONDecodeError."""
         import asyncio
+
         from agents.coordinator import call_agent
 
         mock_response_turn0 = MagicMock()
@@ -466,9 +588,8 @@ class TestCoordinatorRemediationContract:
         with patch(
             "agents.coordinator.post_with_retry",
             side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
-        ) as mock_post:
-            with patch("agents.coordinator.require_audit_log"):
-                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-empty-args"}))
+        ) as mock_post, patch("agents.coordinator.require_audit_log"):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-empty-args"}))
 
         # The loop survived, the observation was fed back, and the conclusion ran
         # (turn 1's tool-free conclusion triggers the single remediation retry,
@@ -488,6 +609,7 @@ class TestCoordinatorRemediationContract:
         """Truncated/malformed arguments JSON must become a tool-level error the
         model can correct, not an uncaught JSONDecodeError that aborts the incident."""
         import asyncio
+
         from agents.coordinator import call_agent
 
         mock_response_turn0 = MagicMock()
@@ -523,9 +645,8 @@ class TestCoordinatorRemediationContract:
         with patch(
             "agents.coordinator.post_with_retry",
             side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
-        ) as mock_post:
-            with patch("agents.coordinator.require_audit_log"):
-                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-bad-args"}))
+        ) as mock_post, patch("agents.coordinator.require_audit_log"):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-bad-args"}))
 
         assert mock_post.call_count == 3
         # Blocked before the executor: nothing executed, error fed back as a tool message.
@@ -558,6 +679,7 @@ class TestCoordinatorRemediationContract:
 
     def test_remediation_retry_tool_call_still_enforces_namespace_policy(self) -> None:
         import asyncio
+
         from agents.circuit_breaker import circuit_breaker
         from agents.coordinator import call_agent
 
@@ -593,10 +715,15 @@ class TestCoordinatorRemediationContract:
         }
         mock_response_turn2.raise_for_status = MagicMock()
 
-        with patch("agents.coordinator.post_with_retry", side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2]):
-            with patch("agents.coordinator.require_audit_log"):
-                with patch("agents.tools.chaos._run") as mock_run:
-                    result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-policy"}))
+        with (
+            patch(
+                "agents.coordinator.post_with_retry",
+                side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
+            ),
+            patch("agents.coordinator.require_audit_log"),
+            patch("agents.tools.chaos._run") as mock_run,
+        ):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-policy"}))
 
         mock_run.assert_not_called()
         assert result["final"]["outcome"] == "unresolved"
@@ -605,6 +732,7 @@ class TestCoordinatorRemediationContract:
 
     def test_remediation_retry_tool_call_still_enforces_circuit_breaker(self) -> None:
         import asyncio
+
         from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
         from agents.coordinator import call_agent
 
@@ -640,14 +768,21 @@ class TestCoordinatorRemediationContract:
         }
         mock_response_turn2.raise_for_status = MagicMock()
 
-        with patch("agents.coordinator.post_with_retry", side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2]):
-            with patch("agents.coordinator.require_audit_log"):
-                with patch(
-                    "agents.coordinator.circuit_breaker.check_before_tool_call",
-                    side_effect=CircuitBreakerTripped("Circuit breaker is OPEN — all tool calls blocked"),
-                ):
-                    with patch("agents.tools.chaos._run") as mock_run:
-                        result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-cb"}))
+        with (
+            patch(
+                "agents.coordinator.post_with_retry",
+                side_effect=[mock_response_turn0, mock_response_turn1, mock_response_turn2],
+            ),
+            patch("agents.coordinator.require_audit_log"),
+            patch(
+                "agents.coordinator.circuit_breaker.check_before_tool_call",
+                side_effect=CircuitBreakerTripped(
+                    "Circuit breaker is OPEN — all tool calls blocked"
+                ),
+            ),
+            patch("agents.tools.chaos._run") as mock_run,
+        ):
+            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-cb"}))
 
         mock_run.assert_not_called()
         assert result["final"]["outcome"] == "unresolved"

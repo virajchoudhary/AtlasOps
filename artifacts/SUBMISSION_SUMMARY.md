@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T00:53:36.378754+00:00`
+- **Generated**: `2026-10-01T01:32:16.812691+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -39,7 +39,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | Asset Path | SHA-256 Digest | Size (Bytes) |
 | :--- | :--- | :---: |
 | `.gitattributes` | `d2be61018599d3dd...` | 1753 |
-| `.github/workflows/ci.yml` | `2e76e97d41e87a5e...` | 2083 |
+| `.github/workflows/ci.yml` | `1937c6c4d1b56061...` | 3093 |
 | `AGENTS.md` | `fec2b380e8dc8d27...` | 6416 |
 | `BENCHMARKS.md` | `469f977169a3cd56...` | 4549 |
 | `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
@@ -209,7 +209,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md` | `486b2d4a2ca1c41a...` | 3629 |
 | `docs/project/G9_ASYNC_OBSERVATION_BRIDGE_V1.md` | `c1c3b38420bf98c3...` | 4572 |
 | `docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md` | `daf95dfa2d90f24b...` | 4705 |
-| `docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md` | `a3bcac3edbbdb3ec...` | 5491 |
+| `docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md` | `0b573bdd5cc2eafa...` | 7014 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
@@ -299,6 +299,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_grpo_async_approval_integration.py` | `5bd1e3077958e54d...` | 11586 |
 | `tests/test_grpo_async_lifecycle.py` | `4d79cbfc5440faa5...` | 13125 |
 | `tests/test_grpo_observation_first.py` | `ba2c347691f19001...` | 30541 |
+| `tests/test_grpo_observation_installed_trl.py` | `72347e329bcbfa79...` | 9684 |
 | `tests/test_grpo_observation_trl_routing.py` | `3b066dbfc38a87ce...` | 6153 |
 | `tests/test_grpo_training_provenance.py` | `f6b35b6ef47822e8...` | 78952 |
 | `tests/test_hf_space_env.py` | `74a310256bb35820...` | 3293 |

@@ -2,7 +2,9 @@
 
 import ast
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -12,6 +14,91 @@ import pytest
 from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+@pytest.mark.parametrize("returncode", [0, 1, 5])
+def test_shared_smoke_runner_preserves_selection_interpreter_and_failure(
+    monkeypatch, quiet, returncode
+):
+    from types import SimpleNamespace
+
+    from scripts import smoke_e2e_local
+
+    observed = []
+
+    def run(command, **kwargs):
+        observed.append((command, kwargs))
+        return SimpleNamespace(returncode=returncode)
+
+    monkeypatch.setattr(smoke_e2e_local.subprocess, "run", run)
+    assert smoke_e2e_local.main(["--quiet"] if quiet else []) == returncode
+    assert observed == [(
+        [
+            sys.executable, "-m", "pytest",
+            "tests/test_app_endpoints.py", "tests/test_coordinator.py",
+            "tests/test_tools.py", "tests/test_bench_runner.py",
+            "-q" if quiet else "-v",
+        ],
+        {"cwd": ROOT, "check": False},
+    )]
+
+
+def test_smoke_wrappers_delegate_without_duplicate_test_lists():
+    shell = (ROOT / "scripts/smoke-e2e-local.sh").read_text(encoding="utf-8")
+    powershell = (ROOT / "scripts/smoke-e2e-local.ps1").read_text(encoding="utf-8")
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert 'exec python "${SCRIPT_DIR}/smoke_e2e_local.py" --quiet' in shell
+    assert 'Join-Path $PSScriptRoot "smoke_e2e_local.py"' in powershell
+    assert "exit $LASTEXITCODE" in powershell
+    assert "\tpython scripts/smoke_e2e_local.py --quiet" in makefile
+    assert "tests/test_" not in shell and "tests/test_" not in powershell
+
+
+def test_powershell_smoke_wrapper_forwards_quiet_and_nonzero_exit(tmp_path):
+    shell = shutil.which("pwsh")
+    if not shell:
+        pytest.skip("PowerShell is unavailable")
+    if os.name == "nt":
+        python = tmp_path / "python.cmd"
+        python.write_text("@echo off\necho %*\nexit /b 5\n", encoding="utf-8")
+    else:
+        python = tmp_path / "python"
+        python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nexit 5\n', encoding="utf-8")
+        python.chmod(0o755)
+    result = subprocess.run(
+        [shell, "-NoProfile", "-File", str(ROOT / "scripts/smoke-e2e-local.ps1"), "-Quiet"],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert result.returncode == 5
+    assert "smoke_e2e_local.py" in result.stdout
+    assert "--quiet" in result.stdout
+
+
+def test_bash_smoke_wrapper_forwards_quiet_and_nonzero_exit(tmp_path):
+    shell = shutil.which("bash")
+    if os.name == "nt" or not shell:
+        pytest.skip("POSIX Bash wrapper test")
+    python = tmp_path / "python"
+    python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nexit 5\n', encoding="utf-8")
+    python.chmod(0o755)
+    result = subprocess.run(
+        [shell, str(ROOT / "scripts/smoke-e2e-local.sh"), "quiet"],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 5
+    assert "smoke_e2e_local.py" in result.stdout
+    assert "--quiet" in result.stdout
 
 
 @pytest.mark.parametrize(

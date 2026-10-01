@@ -1,4 +1,5 @@
 *.sh text eol=lf
+scripts/smoke-e2e-local.ps1 text eol=lf
 .dockerignore text eol=lf
 .gitignore text eol=lf
 Dockerfile text eol=lf

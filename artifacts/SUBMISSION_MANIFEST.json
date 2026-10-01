@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T21:41:27.390806+00:00",
+  "generated_at": "2026-10-01T22:06:24.718822+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 362,
+  "asset_count": 365,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
@@ -49,8 +49,8 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "7989248d6e218dcb0254c6e2af1b9c9c2815dc875eeb51fc4fbd6407d4bc00cf",
-      "size_bytes": 1966
+      "sha256": "ff4617fae9cd91a80a8fe4be86ce00ccd40cdf2e82bace4d90a19a5de2d2ba58",
+      "size_bytes": 2006
     },
     ".github/workflows/ci.yml": {
       "sha256": "49a841f444f5411ffa1e267ea08f8bf25f9cd7b31b09da1fdb99b9085c341e22",
@@ -65,8 +65,8 @@
       "size_bytes": 13153
     },
     "Makefile": {
-      "sha256": "80ae83772c47ddca2edb448f1347481de549599b102ba369442cace3530a8542",
-      "size_bytes": 4079
+      "sha256": "7c85e68ef83aa3f94fb16dd8f724a549a128be431ac97a716c6d35c0758c0935",
+      "size_bytes": 4010
     },
     "pyproject.toml": {
       "sha256": "ebc2117fc8b73cb0e92b6b0aeccb020166b871430e132d7dc2fa0084bb9ef9d3",
@@ -197,8 +197,8 @@
       "size_bytes": 4149
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
-      "sha256": "f98ccf3925b8936251066d9a2a6907f40f3181dbe8f3bb70baac15dfa4f83895",
-      "size_bytes": 18685
+      "sha256": "78a494c04f5a4b4fc4af1494702a6ec42881d0ac34df4e152cfe42a472e63098",
+      "size_bytes": 19856
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -972,13 +972,25 @@
       "sha256": "e57dd68b474629eb7363ed1ed12be64ffadcfc069a2444c2970d27b0a0f97b72",
       "size_bytes": 8987
     },
+    "scripts/smoke_e2e_local.py": {
+      "sha256": "f442795def2d627db09183238a42284e9665208e04ed5035fe5ea2eea46aae99",
+      "size_bytes": 805
+    },
+    "scripts/smoke-e2e-local.sh": {
+      "sha256": "9546d59b3782de79bb66fde67f10d475bd8011eadb97cef48068220fa2570c74",
+      "size_bytes": 268
+    },
+    "scripts/smoke-e2e-local.ps1": {
+      "sha256": "00e5fb5cb3c97fa0548c67711564b0c1997cead673b8a39e3fba46a6c142828d",
+      "size_bytes": 208
+    },
     "scripts/generate_training_plots.py": {
       "sha256": "92e7cf64619d4f3b4c10fb1ea6278e1af7e30fc78bd2349af69625dd0df89887",
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "f67e2006f1cdb99b4cf31156277d5adcecde4d602c7459b4539138ed4306e8da",
-      "size_bytes": 17498
+      "sha256": "3a3ae30607d805ecc5a410af5a450c3e0e3d531977c3076654cfa16fb039e279",
+      "size_bytes": 17613
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -1297,8 +1309,8 @@
       "size_bytes": 13992
     },
     "tests/test_repository_hygiene.py": {
-      "sha256": "145ab9cd2fc9126ae4cff025caa1d917c438f0b9501ab47fc616c0b337f553c7",
-      "size_bytes": 11369
+      "sha256": "cd45f0c55bea587c9c826f90bbd8f044647ceddb83ed555636ad17e4a4a3ceea",
+      "size_bytes": 14598
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",
@@ -1393,8 +1405,8 @@
       "size_bytes": 4345
     },
     "tests/test_stage15_submission_package.py": {
-      "sha256": "29a83009ce84e4b06550aba0b47d957be32f650083ebfc9a992f7a6bc752b934",
-      "size_bytes": 29873
+      "sha256": "fb3cdeb95b648b089e8cd0d76882603299faeb0627d01d092989f3f880377fac",
+      "size_bytes": 30000
     },
     "tests/test_stage4_approval_channel.py": {
       "sha256": "ec937815223eaf84d1a26459a6af3dd1f131a4f5261b390c033126e45645c5f9",

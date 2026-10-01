@@ -274,3 +274,22 @@ network-isolated container; its result must be observed before an image claim.
 Final affected API/HF/runtime/container/inventory selection: 84 passed.
 Default changed-file Ruff and whitespace checks passed. The source-only probe
 does not substitute for the pending actual image build/startup CI result.
+
+## Shared Smoke-Test Entrypoint
+
+Base: PR 163 merge `cdf2f004c0f2cb8afb1b48b2a9cb6d153318adfe`.
+The same four-file smoke selection was duplicated in Bash, PowerShell, and
+Make. It now lives in `scripts/smoke_e2e_local.py`. Existing shell commands
+delegate to it and retain quiet/verbose behavior; the PowerShell wrapper now
+explicitly propagates the test exit code. The runner uses its current Python
+interpreter and resolves repository paths independently of the caller's working
+directory. This is software smoke coverage, not a live incident claim.
+
+Verification: the shared real smoke run passed 96 tests. Wrapper/inventory
+selection passed 52 tests with one POSIX-only Bash test skipped on Windows;
+Linux CI supplies that boundary. The initial PowerShell mock used `-Command`,
+which mapped the nested nonzero result to 1; the corrected test invokes the
+wrapper with `-File` and a fake native Python command and verifies exit 5.
+The failed harness report remains preserved. No runtime or dependency contract
+changed. Broader source audits identify the legacy LoRA exporter as a separate
+candidate; no model export or historical reward-helper deletion was performed.

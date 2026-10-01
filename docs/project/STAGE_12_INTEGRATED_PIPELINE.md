@@ -11,6 +11,12 @@ The required path follows the later
 
 - Original incident identity and alert anchors remain present throughout the flow.
 - Benchmark truth is stripped from model and policy input.
+- Policy generation and the approval provider receive independent copies of
+  the sanitized state. Generation settings are also copied per call. Mutating
+  a callback input cannot downgrade the authoritative severity, replace the
+  incident identity, alter later generation settings or rewrite captured
+  pre-action state. This protects the object boundary; it does not authenticate
+  an injected callback or establish live P1 approval.
 - The historical recommender is an explicit optional advisory path, not a
   prerequisite. Disabled or missing recommendations do not become remediation
   truth, an approval decision, or an invalid GAI + RL capture.

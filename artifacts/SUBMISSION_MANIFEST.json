@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T02:14:46.371180+00:00",
+  "generated_at": "2026-10-01T02:35:47.554121+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -273,8 +273,8 @@
       "size_bytes": 2043
     },
     "docs/project/STAGE_12_INTEGRATED_PIPELINE.md": {
-      "sha256": "629524d0644cfc50f863b1efeff4508c7eb55daa9adfe2f051032c4847fe7d7e",
-      "size_bytes": 8740
+      "sha256": "0cfc9fb4b54cf18b4be4d071aec1de991eb49b74571a634b9507fd0fd2bdde2b",
+      "size_bytes": 9177
     },
     "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md": {
       "sha256": "676e015866eca023ef14e1d9f9e2b6919a322f416e418ef8ba7d24dbe8a26eb9",
@@ -577,8 +577,8 @@
       "size_bytes": 7853
     },
     "agents/policy_remediation.py": {
-      "sha256": "d139b005221f27df11ed7cbe74bdb05576d33d9b74010bed7af11d1daaf8c4eb",
-      "size_bytes": 5977
+      "sha256": "9810651956c24067bd99a16e1487c0157fdb78b35e0e92732e11729f7d4fbc39",
+      "size_bytes": 6091
     },
     "agents/verifier.py": {
       "sha256": "850dc5f2f197887ef81fda1190cbf576f03e79033a1dbe395359ee1bcb4610df",
@@ -1085,8 +1085,8 @@
       "size_bytes": 6058
     },
     "tests/test_g12_policy_integration_contract.py": {
-      "sha256": "0a1861426113d85a3a7ef2978bafb284be47c87fc4bd5f36c23f06e73a7ea4bc",
-      "size_bytes": 19328
+      "sha256": "07da4051c8f018732377c9758e2cf4431ec2ee25b6c2348a161a73abc7b7adf4",
+      "size_bytes": 21727
     },
     "tests/test_g12_real_capture.py": {
       "sha256": "101a9b761be01df27542810ddea9e2d72853a73618cb994d3e62dcc58c68707a",

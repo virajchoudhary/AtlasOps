@@ -33,6 +33,71 @@ class ScriptedPolicy:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("callback", ["policy", "approval"])
+@pytest.mark.parametrize("async_policy", [False, True])
+async def test_callback_mutation_cannot_downgrade_p1_or_replace_captured_state(
+    callback, async_policy
+):
+    executed = []
+    approval_severities = []
+    state = {"incident_id": "original", "triage": {"severity": "P1"}}
+    config = {"temperature": 0.0}
+    completion = json.dumps({
+        "tool": "kubectl_scale",
+        "arguments": {"deployment": "paymentservice", "namespace": "default", "replicas": 2},
+        "agent_claimed_resolved": False,
+    })
+
+    class Policy:
+        def generate(self, received, *, seed, generation_config):
+            if callback == "policy":
+                received["triage"]["severity"] = "P2"
+                received["incident_id"] = "forged"
+                generation_config["temperature"] = 9.0
+            return completion
+
+    policy = Policy()
+    if async_policy:
+        generate = policy.generate
+
+        async def generate_async(*args, **kwargs):
+            import asyncio
+
+            await asyncio.sleep(0)
+            return generate(*args, **kwargs)
+
+        policy.generate = generate_async
+
+    async def approval(action, received):
+        approval_severities.append(received["triage"]["severity"])
+        if callback == "approval":
+            received["triage"]["severity"] = "P2"
+            received["incident_id"] = "forged"
+        return None
+
+    environment = DirectPolicyEnvironment(
+        tool_registry={"kubectl_scale": lambda **args: executed.append(args)},
+        policy_check=lambda *_: None,
+        verifier=lambda **_: {"env_resolved": False},
+        execute_live_chaos=True, kube_context="kind-atlasops-synthetic",
+    )
+    result = await run_policy_remediation(
+        policy=policy, state=state, scenario_id="single_fault/sf-002",
+        environment=environment, seed=7, generation_config=config,
+        approval_provider=approval,
+    )
+
+    assert executed == []
+    assert approval_severities == ["P1"]
+    assert result["final"]["status"] == "blocked"
+    assert result["policy_steps"][0]["state"] == state
+    assert result["final"]["incident_id"] == "original"
+    assert result["final"]["generation_config"] == {"temperature": 0.0}
+    assert state == {"incident_id": "original", "triage": {"severity": "P1"}}
+    assert config == {"temperature": 0.0}
+
+
+@pytest.mark.asyncio
 async def test_policy_receives_verifier_state_without_benchmark_truth() -> None:
     calls = []
     policy = ScriptedPolicy()

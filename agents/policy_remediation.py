@@ -6,6 +6,7 @@ validates one action and observes the verifier before another decision.
 
 from __future__ import annotations
 
+import copy
 import inspect
 import json
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ async def run_policy_remediation(
         raise ValueError("max_actions must be positive")
 
     current_state = _strip_model_forbidden_context(state)
+    generation_config = copy.deepcopy(generation_config)
     steps: list[dict[str, Any]] = []
     tool_trajectory: list[dict[str, Any]] = []
     all_executed: list[dict[str, Any]] = []
@@ -46,9 +48,9 @@ async def run_policy_remediation(
             break
         started_at = datetime.now(UTC).isoformat()
         generated = policy.generate(
-            current_state,
+            copy.deepcopy(current_state),
             seed=seed + index,
-            generation_config=generation_config,
+            generation_config=copy.deepcopy(generation_config),
         )
         raw_completion = await generated if inspect.isawaitable(generated) else generated
         if not isinstance(raw_completion, str):
@@ -67,7 +69,7 @@ async def run_policy_remediation(
             action_for_approval = json.loads(
                 json.dumps(parsed_action, ensure_ascii=False, allow_nan=False)
             )
-            approved = approval_provider(action_for_approval, current_state)
+            approved = approval_provider(action_for_approval, copy.deepcopy(current_state))
             approval_permit = (
                 await approved if inspect.isawaitable(approved) else approved
             )

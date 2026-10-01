@@ -45,3 +45,20 @@ artifacts/evidence/stage4/.attempts/
 # SETUP-03: retain unapproved local uv resolution; canonical Windows dev lock is
 # requirements/dev-win-py312.lock. This does not adopt uv or discard its local copy.
 /uv.lock
+
+# Local checkouts and generated test output; never evidence or source inputs.
+/.codex-worktrees/
+/.codex-tmp/
+/.pytest-tmp*/
+/.pytest-g*-guard-*/
+/.tmp-pytest*/
+/.tmp-g[0-9]*/
+/.tmp-pr[0-9]*/
+/.tmp-sft-output-*/
+/.tmp-gairl-*/
+/.tmp-uaw-e2e/
+/.g12_capture_integrity*/
+/.g12_verifier*/
+/.ruff-cache*/
+/artifacts/overnight_test_outputs/
+/docs/RELEASE_READINESS.md

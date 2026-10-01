@@ -1,4 +1,8 @@
 *.sh text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+Dockerfile text eol=lf
+Dockerfile.coordinator text eol=lf
 *.py text eol=lf
 tests/fixtures/trl_0191_observation_routing.txt text eol=lf
 tests/fixtures/TRL_LICENSE.txt text eol=lf
@@ -10,6 +14,8 @@ pyproject.toml text eol=crlf
 config/sft_pilot_v*.json text eol=lf
 config/sft_remote_host_proposal_v1.json text eol=lf
 requirements/sft-pilot* text eol=lf
+requirements/dev-win-py312.lock text eol=lf
+requirements/dev.in text eol=lf
 infra/training/sft-pilot/Dockerfile text eol=lf
 infra/training/sft-pilot/Dockerfile.host-v1 text eol=lf
 artifacts/evidence/stage7/sft_tokenizer_preflight*.json text eol=lf

@@ -13,6 +13,14 @@ from agents.circuit_breaker import CircuitBreaker
 from scripts.run_stage4_golden_incident import stage4_approval_server
 
 
+def publish_json(path: Path, payload: dict) -> None:
+    """Expose complete subprocess handoff records, never a partial JSON write."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    os.replace(temporary, path)
+
+
 async def main(output_dir: Path) -> None:
     import agents.coordinator as coordinator
     import agents.verifier as verifier
@@ -46,14 +54,14 @@ async def main(output_dir: Path) -> None:
     coordinator.call_agent = agent
     coordinator.approval_gate.timeout_seconds = float(os.environ["TEST_APPROVAL_TIMEOUT"])
     async with stage4_approval_server(os.environ["ATLASOPS_API_KEY"]) as base_url:
-        (output_dir / "ready.json").write_text(json.dumps({"base_url": base_url}), encoding="utf-8")
+        publish_json(output_dir / "ready.json", {"base_url": base_url})
         incident = await coordinator.handle_incident(
             {"commonLabels": {"alertname": "SyntheticApproval", "severity": "critical"}},
             incident_id="inc-stage4-process-test",
         )
-        (output_dir / "result.json").write_text(
-            json.dumps({"approval": incident["approval"], "remediation": incident["remediation"]["final"], "roles": roles}),
-            encoding="utf-8",
+        publish_json(
+            output_dir / "result.json",
+            {"approval": incident["approval"], "remediation": incident["remediation"]["final"], "roles": roles},
         )
 
 

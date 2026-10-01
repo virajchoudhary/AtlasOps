@@ -19,7 +19,7 @@ from typing import Any
 
 from recommender.baselines import BaseRecommender, BM25ContentRecommender
 from recommender.dataset import IncidentInteraction
-from recommender.runbook_catalog import RUNBOOK_CATALOG, Runbook, get_runbook
+from recommender.runbook_catalog import RUNBOOK_CATALOG, get_runbook
 
 log = logging.getLogger("hybrid_recommender")
 

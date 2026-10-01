@@ -124,7 +124,12 @@ model/tool execution, and recovery behavior.
 
 ### Using Your Fine-Tuned Checkpoints
 
-Once you've run `make sft` and `make grpo`, point the coordinator at your checkpoints:
+The old `make sft` and `make grpo` shortcuts are disabled. Use the governed
+[Stage 7 preparation](docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md) and
+[Stage 9 readiness](docs/project/G7_G9_REMOTE_TRAINING_READINESS.md) contracts.
+Only a completed, provenance-verified checkpoint from separately authorized
+training can support a trained-model deployment claim. The serving example below
+is historical, not a verified checkpoint or deployment.
 
 ```bash
 # Self-hosted on MI300X with fine-tuned adapters

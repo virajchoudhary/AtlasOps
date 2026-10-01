@@ -12,10 +12,10 @@ import math
 import random
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Sequence
+from typing import Any
 
 from recommender.dataset import IncidentInteraction
-from recommender.runbook_catalog import RUNBOOK_CATALOG, Runbook, get_all_runbooks
+from recommender.runbook_catalog import RUNBOOK_CATALOG, Runbook
 
 
 def _tokenize(text: str) -> list[str]:

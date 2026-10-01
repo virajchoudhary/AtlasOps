@@ -115,6 +115,7 @@ class _AsyncIncident:
 
 class _GenerationBoundary:
     def __init__(self, *, reward_funcs, args, generated, release):
+        self.model = SimpleNamespace(training=True)
         self.reward_funcs = reward_funcs
         self.num_generations = args.num_generations
         self.max_prompt_length = args.max_prompt_length

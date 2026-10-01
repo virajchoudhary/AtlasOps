@@ -16,8 +16,8 @@ from config.hf_space_env import apply_hf_space_inference_defaults
 apply_hf_space_inference_defaults()
 
 from fastapi import FastAPI, HTTPException, Request, Security
-from fastapi.security import APIKeyHeader
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -59,13 +59,13 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
 # Import coordinator internals
-from agents.coordinator import app as coordinator_app
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
+from agents.coordinator import app as coordinator_app
 from agents.correlator import correlator
 from agents.prometheus_metrics import build_dashboard_metrics_payload
-from agents.stream import subscribe, get_history
+from agents.stream import get_history, subscribe
 from ui_read_model import attempt_detail, catalog
 
 app = FastAPI(title="AtlasOps", docs_url="/api/docs")
@@ -416,7 +416,7 @@ def cluster_health():
 
         total_healthy = sum(1 for s in services.values() if s["status"] == "healthy")
         return JSONResponse({"ok": True, "services": services, "healthy": total_healthy, "total": len(_TOPOLOGY_SERVICES)})
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - malformed pod observations remain unavailable, never healthy
         return JSONResponse({"ok": False, "error": str(e), "services": {}})
 
 

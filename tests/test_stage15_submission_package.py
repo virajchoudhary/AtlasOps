@@ -138,6 +138,7 @@ class TestStage15SubmissionPackage:
             "agents/_http_retry.py",
             "agents/adversarial_designer.py",
             "pyproject.toml",
+            "scripts/acceptance_stage3_local.py",
             "agents/approval_http.py",
             "agents/judge.py",
             "agents/approval.py",
@@ -400,8 +401,7 @@ class TestStage15SubmissionPackage:
             ["git", "init", "--quiet"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         tests_dir = repo_root / "tests"
         tests_dir.mkdir()
@@ -413,8 +413,7 @@ class TestStage15SubmissionPackage:
             ["git", "add", "--", "tests/test_tracked_asset.py"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         selected = _matching_tracked_files(repo_root, ["tests/test_*.py"])
@@ -427,8 +426,7 @@ class TestStage15SubmissionPackage:
             ["git", "init", "--quiet"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         tests_dir = repo_root / "tests"
         tests_dir.mkdir()
@@ -445,8 +443,7 @@ class TestStage15SubmissionPackage:
             ["git", "add", "--", "tests/test_escape.py"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         with pytest.raises(ValueError, match="symbolic link"):
@@ -459,8 +456,7 @@ class TestStage15SubmissionPackage:
             ["git", "init", "--quiet"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         tests_dir = repo_root / "tests"
         tests_dir.mkdir()
@@ -470,8 +466,7 @@ class TestStage15SubmissionPackage:
             ["git", "add", "--", "tests/test_tracked_asset.py"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         untracked_payload = repo_root / "payload"
@@ -498,8 +493,7 @@ class TestStage15SubmissionPackage:
             ["git", "init", "--quiet"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         tests_dir = repo_root / "tests"
         tests_dir.mkdir()
@@ -509,8 +503,7 @@ class TestStage15SubmissionPackage:
             ["git", "add", "--", "tests/test_tracked_asset.py"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         original_lstat = Path.lstat
@@ -538,8 +531,7 @@ class TestStage15SubmissionPackage:
             ["git", "init", "--quiet"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         tests_dir = repo_root / "tests"
         tests_dir.mkdir()
@@ -549,8 +541,7 @@ class TestStage15SubmissionPackage:
             ["git", "add", "--", "tests/test_tracked_asset.py"],
             cwd=repo_root,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
 
         original_lstat = Path.lstat

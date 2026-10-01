@@ -94,8 +94,7 @@ def _matching_tracked_files(repo_root: Path, patterns: list[str]) -> dict[str, P
         ["git", "ls-files", "-z"],
         cwd=repo_root,
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     ).stdout
     tracked_paths = {
         os.fsdecode(path) for path in listing.split(b"\0") if path
@@ -282,6 +281,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "recommender/train_hybrid.py",
         "scripts/run_stage4_golden_incident.py",
         "scripts/run_g12_integrated_episode.py",
+        "scripts/acceptance_stage3_local.py",
         "scripts/package_submission.py",
         "scripts/release_gate.py",
         "scripts/stage_sft_tokenizer.py",

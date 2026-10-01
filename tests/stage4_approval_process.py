@@ -22,8 +22,7 @@ def publish_json(path: Path, payload: dict) -> None:
 
 
 async def main(output_dir: Path) -> None:
-    import agents.coordinator as coordinator
-    import agents.verifier as verifier
+    from agents import coordinator, verifier
 
     coordinator.TRAJECTORIES_DIR = output_dir / "trajectories"
     coordinator.require_audit_log = MagicMock()

@@ -151,6 +151,11 @@ planned, running, completed, failed, or interrupted state atomically and records
 - source SHA and dirty flag; G8/G9 reject dirty SFT source for empirical use
   because a dirty checkout is not reproducible from its HEAD SHA alone;
 - runtime, package, and hardware metadata;
+- after execution admission, TRL's required `assistant_only_loss` configuration
+  capability is checked before seed setup, tokenizer/model loading or adapter
+  preparation. An unsupported runtime retains failed-run provenance with no
+  loader identity or completed checkpoint claim. This is a software capability
+  check, not GPU compatibility or a training result;
 - trainer state and loss history;
 - a hashed inventory of every completed adapter/checkpoint file.
 - the canonical `sft_run_manifest.json` inside the checkpoint directory so G8 and

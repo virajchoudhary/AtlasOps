@@ -307,6 +307,15 @@ def main() -> None:
         )
         from trl import SFTConfig, SFTTrainer
 
+        sft_parameters = inspect.signature(SFTConfig).parameters
+        if "assistant_only_loss" not in sft_parameters:
+            raise RuntimeError(
+                "Installed TRL does not support assistant_only_loss; refusing unsafe training"
+            )
+        length_parameter = (
+            "max_length" if "max_length" in sft_parameters else "max_seq_length"
+        )
+
         set_seed(args.seed)
         tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_id,
@@ -379,14 +388,6 @@ def main() -> None:
         )
         write_manifest_atomic(manifest_path, manifest)
 
-        sft_parameters = inspect.signature(SFTConfig).parameters
-        if "assistant_only_loss" not in sft_parameters:
-            raise RuntimeError(
-                "Installed TRL does not support assistant_only_loss; refusing unsafe training"
-            )
-        length_parameter = (
-            "max_length" if "max_length" in sft_parameters else "max_seq_length"
-        )
         train_config_values = {
             "output_dir": str(output_dir),
             "num_train_epochs": args.epochs,

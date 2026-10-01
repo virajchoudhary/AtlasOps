@@ -1000,6 +1000,46 @@ def _install_fake_sft_dependencies(
     return calls
 
 
+def test_sft_rejects_unsupported_trainer_before_tokenizer_or_model_loading(
+    monkeypatch, tmp_path
+):
+    from training import sft
+
+    corpus = _write_training_corpus(tmp_path / "train.jsonl")
+    output = tmp_path / "checkpoint"
+    calls = _install_fake_sft_dependencies(
+        monkeypatch,
+        resolved_model_revision=MODEL_COMMIT,
+        resolved_tokenizer_revision=MODEL_COMMIT,
+    )
+
+    class UnsupportedSFTConfig:
+        def __init__(self, **kwargs):
+            raise AssertionError("Unsupported trainer configuration must not be constructed")
+
+    monkeypatch.setattr(sys.modules["trl"], "SFTConfig", UnsupportedSFTConfig)
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "sft.py", "--model", "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision", MODEL_COMMIT, "--data", str(corpus),
+            "--output", str(output),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="does not support assistant_only_loss"):
+        sft.main()
+
+    assert calls["tokenizer"] == []
+    assert calls["model"] == []
+    assert calls["trainer"] == 0
+    persisted = json.loads((output / "sft_run_manifest.json").read_text(encoding="utf-8"))
+    assert persisted["status"] == "failed"
+    assert persisted["base_model"]["resolved_revision"] is None
+    assert persisted["tokenizer"]["resolved_revision"] is None
+    assert "model_loaded_at" not in persisted
+
+
 @pytest.mark.parametrize(
     ("resolved_model_revision", "resolved_tokenizer_revision", "message"),
     [

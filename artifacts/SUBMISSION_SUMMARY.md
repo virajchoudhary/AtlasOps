@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T00:18:00.818088+00:00`
+- **Generated**: `2026-10-01T00:42:24.033125+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -223,7 +223,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_3_OPERATOR_GUIDE.md` | `4903f3daff5982f4...` | 11698 |
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `5ccb24f4ad94c9e0...` | 7872 |
-| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `6c23ac98f75b7ea6...` | 11144 |
+| `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `2615f36040563f6d...` | 11510 |
 | `docs/project/STAGE_8_SFT_EVALUATION.md` | `677c001e637757d8...` | 7954 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `846b7ebcbc3b4762...` | 12667 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `f62340b22b77dbbe...` | 10277 |
@@ -327,7 +327,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_sft_tokenizer_pilot_extension.py` | `4b27b7a3fde1b819...` | 12571 |
 | `tests/test_sft_tokenizer_preflight.py` | `e7b4132444b006bb...` | 13778 |
 | `tests/test_sft_trainer_handoff.py` | `be8afb602233c26e...` | 12934 |
-| `tests/test_sft_training_provenance.py` | `897e4b0d1004aa60...` | 51143 |
+| `tests/test_sft_training_provenance.py` | `99cd84de98e6a8f5...` | 52544 |
 | `tests/test_stage10_rs_data_and_baselines.py` | `a9c08a6fc88350c9...` | 6356 |
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `16ae8b1f12602c66...` | 6706 |
@@ -362,7 +362,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_observation_first.py` | `77ed408e325f8162...` | 25618 |
 | `training/grpo_provenance.py` | `8903bf0e576a9585...` | 50476 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
-| `training/sft.py` | `48596108d1ed9903...` | 15336 |
+| `training/sft.py` | `50d49509fd2fd364...` | 15337 |
 | `training/sft_candidate.py` | `9dbc4e7e4fbe1f8d...` | 27332 |
 | `training/sft_candidate_compatibility.py` | `86762ad56c82f6eb...` | 2171 |
 | `training/sft_pilot_gate.py` | `7d7a5ffa0e33fe40...` | 18469 |

@@ -56,6 +56,11 @@ failure/interruption and callback return/error states. A callback returning
 does not prove cleanup or zero Chaos. Cleanup failure cannot leave a completed
 group record. These in-memory records are not crash-durable recovery evidence.
 
+The optional [local observation journal](G9_OBSERVATION_JOURNAL_V1.md)
+persists bounded markers before setup and execution, and final records after
+finish handling. Incomplete or invalid journals never grant resume authority;
+durable local markers are not verified external action or cleanup evidence.
+
 ## Verification scope
 
 `tests/test_grpo_observation_first.py` exercises the injected boundary,

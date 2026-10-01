@@ -1,5 +1,10 @@
 # AtlasOps — AMD MI300X Evidence
 
+> **Historical upstream narrative, not verified continuation evidence.**
+> The hardware, training logs, and results below are retained claims. They do
+> not establish current model provenance, training completion, or empirical
+> gate closure. See [current project status](project/MASTER_PIPELINE_STATUS.md).
+
 > Hardware evidence for AMD Developer Hackathon Track 2 (Fine-Tuning on AMD GPUs).
 
 ---

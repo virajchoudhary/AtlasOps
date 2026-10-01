@@ -171,7 +171,7 @@ checkpoints; see the current gate inventory before citing results.
 
 ![Benchmark Per Tier](assets/training/benchmark_per_tier.png)
 
-Full training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Raw MI300X evidence: [`docs/MI300X_EVIDENCE.md`](docs/MI300X_EVIDENCE.md) | Benchmark tables: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)
+Historical training narrative: [`docs/TRAINING_STORY.md`](docs/TRAINING_STORY.md) | Historical MI300X narrative: [`docs/MI300X_EVIDENCE.md`](docs/MI300X_EVIDENCE.md) | Historical benchmark tables: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)
 
 ---
 
@@ -386,11 +386,14 @@ appears only under Evaluations, and runbook ranking remains advisory. The
 standalone Gradio console is a read-only repository-evidence companion, not a
 second operational control surface.
 
-### Hugging Face Space (prospective, after training and approval)
+### Hugging Face Space (historical reference, deployment unverified)
 
-Set Space secrets: **`HF_TOKEN`**, **`ATLASOPS_USE_HF_INFERENCE=1`**, **`AGENT_MODEL`**, **`JUDGE_MODEL`**.  
-Paste your merged GRPO Hub id as `AGENT_MODEL` (merge locally with `training/merge_lora_for_hub.py` under `.[train]`).  
-Full checklist: [docs/HF_SPACE_SETUP.md](docs/HF_SPACE_SETUP.md).
+No current safe Space deployment procedure is established. Training completion,
+operator approval, or setting inference variables alone does not establish G14
+readiness. The [historical setup notes](docs/HF_SPACE_SETUP.md) preserve the
+hackathon configuration; use the
+[current demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md) for its
+remaining acceptance requirements.
 
 ### 3. Inspect a scenario
 

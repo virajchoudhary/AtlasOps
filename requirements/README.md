@@ -19,6 +19,10 @@ compatibility testing remains separate from this Windows local-development lock.
 `.[dev]` includes the read-only Gradio demo. A headless runtime install uses
 the base project requirements without Gradio; `.[demo]` adds it explicitly.
 
+The hardcoded historical-chart generator is retired. Matplotlib and its orphaned
+plotting dependencies are no longer included in `dev`; existing chart files
+remain preserved as historical claim illustrations, not new experiment evidence.
+
 ## Install
 
 From the repository root in PowerShell:

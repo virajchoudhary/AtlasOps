@@ -1,5 +1,11 @@
 # AtlasOps — Training Story
 
+> **Historical upstream narrative, not verified continuation evidence.**
+> The training and incident scores below are preserved claims, not reproduced
+> results of this continuation. Checked-in charts illustrate those claims;
+> their hardcoded generator is retired. See
+> [current project status](project/MASTER_PIPELINE_STATUS.md).
+
 > How we took Qwen2.5-7B from zero SRE knowledge to resolving real production incidents
 > on a real GKE cluster, trained end-to-end on AMD MI300X.
 

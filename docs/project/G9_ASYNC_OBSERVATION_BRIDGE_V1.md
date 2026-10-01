@@ -60,6 +60,12 @@ stubs. It verifies listener responsiveness during held synchronous
 generation, authenticated actual decision delivery, approval permit
 consumption, rejection/timeout refusal and listener shutdown.
 
+The observation candidate's negative-evidence follow-up retains rejected and
+timed-out decisions as separate allowlisted outcomes, without a reward or
+action-lineage mismatch for a correctly bound no-action block. Pre-action
+failures retain the attempted sample; raw operator identity/token/reason
+values are not exported into its local evidence.
+
 The test's Kubernetes context string and execution flag exercise the
 environment admission interface only: every tool and verifier is injected;
 no real cluster is contacted. Synthetic timeout values and test decisions

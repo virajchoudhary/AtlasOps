@@ -36,6 +36,17 @@ observation. The callback result must identify the exact completion, parsed
 action, scenario and one executed action. The existing objective reward
 function supplies numeric reward only for a scorable result.
 
+The negative-evidence follow-up preserves a sample attempt before pre-action
+admission. Exceptions, malformed state/timestamps and snapshot drift retain
+the sample and failure phase without claiming execution. A correctly bound
+environment block with no executed actions is distinct from an action-lineage
+mismatch: it retains its bounded terminal category and, where supplied, the
+allowlisted approval decision. Rejected and timed-out approvals do not become
+the same cause. Operator identity, token, free-text reasons and arbitrary
+result payloads are not exported. Blocked or invalid samples abort the group
+with no numeric reward; earlier sample records remain visible, but a partial
+group is not accepted as completed training evidence.
+
 The `finish` callback runs after attempted setup, including setup failures,
 generation failures and cancellation. Local defensive-copy records retain
 failure/interruption and callback return/error states. A callback returning

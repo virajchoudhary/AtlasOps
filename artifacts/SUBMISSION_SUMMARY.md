@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T21:16:13.232452+00:00`
+- **Generated**: `2026-10-01T21:41:27.390806+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -40,13 +40,13 @@ Asset hashes establish file integrity, not scientific gate closure.
 | :--- | :--- | :---: |
 | `.dockerignore` | `d644c02067441408...` | 773 |
 | `.gitattributes` | `7989248d6e218dcb...` | 1966 |
-| `.github/workflows/ci.yml` | `1937c6c4d1b56061...` | 3093 |
+| `.github/workflows/ci.yml` | `49a841f444f5411f...` | 5266 |
 | `.gitignore` | `845c7801d352bee0...` | 1121 |
 | `AGENTS.md` | `fec2b380e8dc8d27...` | 6416 |
 | `BENCHMARKS.md` | `3191bc522a52706b...` | 4663 |
 | `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
 | `DEPLOYMENT.md` | `297a882f897c7f0b...` | 9334 |
-| `Dockerfile` | `7a14da42e89a3f82...` | 1689 |
+| `Dockerfile` | `24941a66858da7ba...` | 1638 |
 | `Dockerfile.coordinator` | `2b1734f68c079e56...` | 1235 |
 | `JUDGES_START_HERE.md` | `1fcee2e7ef49f52b...` | 1824 |
 | `Makefile` | `80ae83772c47ddca...` | 4079 |
@@ -191,7 +191,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/TRAINING_STORY.md` | `f1fdaefd3c26075e...` | 11384 |
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
-| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `db74834efc40d7ff...` | 17064 |
+| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `f98ccf3925b89362...` | 18685 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `b94ffd4cf482dc6b...` | 9462 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
@@ -337,7 +337,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_local_infra_contract.py` | `c24eee168a5d1c1a...` | 11604 |
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
 | `tests/test_release_gate.py` | `911bb0b14d07deec...` | 13992 |
-| `tests/test_repository_hygiene.py` | `52e3ec3f9a91c0b0...` | 9619 |
+| `tests/test_repository_hygiene.py` | `145ab9cd2fc9126a...` | 11369 |
 | `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |
 | `tests/test_rs_runtime_query_isolation.py` | `6697c24640643f9e...` | 1945 |

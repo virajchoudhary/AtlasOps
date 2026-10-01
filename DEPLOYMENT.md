@@ -4,20 +4,23 @@
 > architecture; it is not a reproduced production procedure. Stage 1D-B adds a
 > statically validated coordinator and minimum observability contract, but real
 > GKE provisioning, alert delivery, model/tool execution, and tracing remain
-> unverified. Review the unmerged Stage 1D-B change before any live apply.
+> unverified. The canonical continuation environment is local Kind; GKE remains
+> optional portability work. Review current acceptance and authorization
+> requirements before any live apply.
 > See [`docs/project/INFRASTRUCTURE_CONTRACT.md`](docs/project/INFRASTRUCTURE_CONTRACT.md).
 
-> This is not a demo toy. This is how you put AtlasOps on-call for a real production cluster.
+> The use case and timings below preserve the historical upstream proposal.
+> They are not measured continuation outcomes or a production-readiness claim.
 
 ---
 
-## The Real-World Use Case
+## Historical Proposed Use Case
 
 **Problem:** Your on-call engineer gets paged at 3am. Average MTTR for complex incidents is 60–90 minutes. At $500/hr fully-loaded SRE cost, that's $500–$750 per incident. You have 10 incidents/month. That's $60–90K/year in on-call cost, before counting burnout and turnover.
 
-**AtlasOps solves:** The P2/P3 incidents that don't need a human — CPU spikes, OOM kills, bad deploys, network partitions. These are 80% of all pages. AtlasOps resolves them in under 5 minutes, generates the postmortem, and only wakes a human for the truly novel P0s.
+**Historical target, not a verified result:** The P2/P3 incidents that don't need a human — CPU spikes, OOM kills, bad deploys, network partitions. The upstream proposal assumed these were 80% of all pages and targeted resolution in under 5 minutes, postmortem generation, and escalation for novel P0s.
 
-**What it actually does:**
+**Proposed sequence and timing, not measured acceptance:**
 1. Alertmanager fires a webhook to `coordinator:9099/webhook`
 2. Triage agent classifies severity and blast radius (< 1 min)
 3. Diagnosis agent traces root cause via Prometheus + Jaeger + kubectl logs (< 2 min)

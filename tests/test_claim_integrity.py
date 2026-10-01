@@ -128,3 +128,22 @@ def test_inherited_blog_is_explicitly_historical():
     assert "Historical upstream narrative" in blog
     assert "not reproduced results of this continuation" in blog
     assert "UPSTREAM_README_CURRENT_GAP_MATRIX.md" in blog
+
+
+def test_training_narratives_identify_preserved_claims_without_current_certification():
+    for path in ("docs/MI300X_EVIDENCE.md", "docs/TRAINING_STORY.md"):
+        content = Path(path).read_text(encoding="utf-8")
+        assert "Historical upstream narrative, not verified continuation evidence" in content
+        assert "project/MASTER_PIPELINE_STATUS.md" in content
+
+
+def test_active_guides_do_not_promote_historical_deployment_or_results():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    deployment = Path("DEPLOYMENT.md").read_text(encoding="utf-8")
+    assert "Raw MI300X evidence:" not in readme
+    assert "No current safe Space deployment procedure is established" in readme
+    assert "Full checklist: [docs/HF_SPACE_SETUP.md]" not in readme
+    assert "Set Space secrets:" not in readme
+    assert "Historical target, not a verified result:" in deployment
+    assert "What it actually does:" not in deployment
+    assert "unmerged Stage 1D-B" not in deployment

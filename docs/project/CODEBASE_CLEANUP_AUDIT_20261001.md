@@ -197,3 +197,32 @@ Their roles and provenance differ despite equal bytes.
 - Read-only release checks pass artifact validation. Scientific readiness still
   fails for the open empirical gates, and the inventory remains `NOT_CERTIFIED`.
   No generic cleanup approval authorizes training, Chaos, or empirical closure.
+
+## Historical Plotting Retirement
+
+Follow-up base: PR 160 merge `1498b072fa517f1cf8bfabdd3afb74fe0179e4ab`.
+The source audit found an unused generator with hardcoded SFT, GRPO, and incident
+scores, import-time filesystem writes, and overwrite targets in tracked assets.
+It is replaced with the same disabled-compatibility pattern as retired incident
+runners. The original implementation remains in Git history; all four existing
+chart PNGs are preserved without regeneration.
+
+The standalone training and MI300X narratives now label their historical claims
+directly. Current README and deployment wording no longer recommends historical
+Space setup as a complete current procedure or presents target incident timings
+as measured continuation outcomes. Historical numbers and procedures remain.
+The generator, narratives, deployment guide, and charts are included in the
+curated integrity inventory without promoting them into empirical evidence.
+
+Matplotlib has no remaining tracked source/notebook import after retirement.
+The development lock is regenerated to remove only the unused plotting stack;
+training locks and canonical runtime behavior are outside this change.
+
+Verification: 54 retirement/claim/inventory/demo tests passed after the final
+changes. The task environment matches all 97 pins and passes `pip check`; the
+lock removes six plotting packages from 103 without additions or retained-pin
+changes. Source and wheel builds passed. Chart files and frozen evidence have
+no diff. The wider runtime audit established no high-confidence unused internal
+function in its scope; an apparent duplicated reward-history scan was retained
+because the before/after append slices differ and consolidation would change
+the reward contract.

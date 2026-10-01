@@ -11,7 +11,16 @@ from packaging.requirements import Requirement
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("script", ["eval.py", "leaderboard.py", "bench/quick_eval.py", "inference.py"])
+@pytest.mark.parametrize(
+    "script",
+    [
+        "eval.py",
+        "leaderboard.py",
+        "bench/quick_eval.py",
+        "inference.py",
+        "scripts/generate_training_plots.py",
+    ],
+)
 def test_retired_live_cli_fails_before_writing_or_dispatching(script, tmp_path):
     result = subprocess.run(
         [sys.executable, "-B", str(ROOT / script), "--quick"],
@@ -162,6 +171,7 @@ def test_runtime_dependency_declarations_have_no_retired_clients():
     extras = project["optional-dependencies"]
     assert "gradio" in {Requirement(value).name for value in extras["demo"]}
     assert "gradio" in {Requirement(value).name for value in extras["dev"]}
+    assert "matplotlib" not in {Requirement(value).name for value in extras["dev"]}
 
 
 def test_dev_lock_drops_orphans_but_retains_transitive_demo_dependencies():
@@ -175,6 +185,7 @@ def test_dev_lock_drops_orphans_but_retains_transitive_demo_dependencies():
         "openai", "anthropic", "docstring-parser", "google-cloud-pubsub",
         "opentelemetry-sdk", "opentelemetry-semantic-conventions",
         "torch", "transformers", "trl", "peft", "bitsandbytes", "vllm",
+        "matplotlib", "contourpy", "cycler", "fonttools", "kiwisolver", "pyparsing",
     } & packages
     assert {"rich", "typer", "gradio", "opentelemetry-api"} <= packages
 

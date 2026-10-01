@@ -28,6 +28,22 @@ features contain alert name, affected services, and observed symptom text. Custo
 paths write their manifest beside the requested dataset and do not mutate canonical Stage 10
 evidence.
 
+## Optional Local Commands
+
+CLI runs require a new output directory; existing directories are rejected.
+Baseline evaluation requires an explicit existing corpus and never creates a
+default dataset. For separately authorized synthetic research, the maintained
+commands are:
+
+```bash
+python -m recommender.dataset --output-dir /scratch/rs-dataset-new
+python -m recommender.evaluate --input /scratch/rs-dataset-new/interactions.jsonl --output-dir /scratch/rs-baselines-new
+```
+
+These outputs are optional research records, not historical user feedback or
+empirical incident gains. Callable research APIs retain their explicit-output
+compatibility; the CLI no longer defaults to preserved Stage 10 artifacts.
+
 ## Baseline Evaluation
 
 The historical Stage 10 metrics in `artifacts/evidence/stage10/rs_baseline_eval.json` were

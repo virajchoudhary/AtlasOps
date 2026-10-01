@@ -17,6 +17,7 @@ from typing import Any
 
 from config.scenario_catalog import SCENARIO_CATALOG, ScenarioMetadata
 from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT
+from recommender._cli import fresh_output_directory
 from recommender.runbook_catalog import RUNBOOK_CATALOG
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -304,10 +305,14 @@ def build_incident_interactions(
     return out_file, manifest
 
 
-def load_interactions(path: Path | None = None) -> list[IncidentInteraction]:
+def load_interactions(
+    path: Path | None = None, *, generate_if_missing: bool = True
+) -> list[IncidentInteraction]:
     """Load interaction records from disk, generating if missing."""
     p = path or (DATA_DIR / "rs_incident_interactions.jsonl")
     if not p.exists():
+        if not generate_if_missing:
+            raise FileNotFoundError(f"Interaction input does not exist: {p}")
         build_incident_interactions(output_path=p)
     
     records = []
@@ -319,9 +324,10 @@ def load_interactions(path: Path | None = None) -> list[IncidentInteraction]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Incident-Runbook Dataset Builder")
-    parser.add_argument("--output", default="data/rs_incident_interactions.jsonl", help="Output path")
+    parser.add_argument("--output-dir", required=True, type=Path, help="New research output directory")
     args = parser.parse_args()
-    build_incident_interactions(output_path=Path(args.output))
+    output = fresh_output_directory(parser, args.output_dir)
+    build_incident_interactions(output_path=output / "interactions.jsonl")
 
 
 if __name__ == "__main__":

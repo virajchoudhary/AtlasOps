@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from config.splits import get_split
+from recommender._cli import fresh_output_directory
 from recommender.baselines import (
     BM25ContentRecommender,
     PopularityRecommender,
@@ -135,16 +136,21 @@ def train_and_evaluate_hybrid(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Hybrid Recommender Trainer")
-    parser.add_argument("--model-out", default="artifacts/models/hybrid_recommender.json", help="Model checkpoint path")
-    parser.add_argument("--evidence-out", default="artifacts/evidence/stage11/rs_hybrid_eval.json", help="Evidence output path")
+    parser.add_argument("--input", required=True, type=Path, help="Existing interaction JSONL")
+    parser.add_argument("--output-dir", required=True, type=Path, help="New research output directory")
     parser.add_argument("--alpha", type=float, default=0.50, help="Content weight")
     parser.add_argument("--beta", type=float, default=0.35, help="Collab weight")
     parser.add_argument("--gamma", type=float, default=0.15, help="Prior weight")
     args = parser.parse_args()
+    if not args.input.is_file():
+        parser.error("Interaction input must be an existing file")
+    corpus = load_interactions(path=args.input, generate_if_missing=False)
+    output = fresh_output_directory(parser, args.output_dir)
 
     train_and_evaluate_hybrid(
-        output_model_path=Path(args.model_out),
-        output_evidence_path=Path(args.evidence_out),
+        interactions=corpus,
+        output_model_path=output / "hybrid_recommender.json",
+        output_evidence_path=output / "hybrid_eval.json",
         alpha=args.alpha,
         beta=args.beta,
         gamma=args.gamma,

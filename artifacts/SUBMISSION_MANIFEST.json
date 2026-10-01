@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T00:42:24.033125+00:00",
+  "generated_at": "2026-10-01T00:53:36.378754+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -137,8 +137,8 @@
       "size_bytes": 4705
     },
     "docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md": {
-      "sha256": "28822e2de8746beafbb735a99e5e307ce6aecd6a2b54a136fc28a104ff4e76b6",
-      "size_bytes": 5236
+      "sha256": "a3bcac3edbbdb3ecf9490abb8b30e5993ca98846466431d467aadb0e4d0b2df7",
+      "size_bytes": 5491
     },
     "docs/project/G9_ASYNC_OBSERVATION_BRIDGE_V1.md": {
       "sha256": "c1c3b38420bf98c3e24ac2dbfae11e30946aed9bc72f42c1820e9ab0fc453905",
@@ -953,8 +953,8 @@
       "size_bytes": 60300
     },
     "training/grpo_observation_first.py": {
-      "sha256": "77ed408e325f8162f8bb4aaa2126c77a960493a12bfe33108599bbb52554b7d6",
-      "size_bytes": 25618
+      "sha256": "ead97cc459b09df42d40d8243c5981a1a77ccf89623ac897b0681bcf60b0e8cd",
+      "size_bytes": 25838
     },
     "training/grpo_async_lifecycle.py": {
       "sha256": "4534ea10f44333d713cf732ecf29775a87691f046bcc4721e734d85e413e49c9",
@@ -1129,20 +1129,20 @@
       "size_bytes": 26182
     },
     "tests/test_grpo_async_approval_integration.py": {
-      "sha256": "18224eaba5b5c8d1b52b9b4e892cb098616df56bde8961c75d916fa62725181c",
-      "size_bytes": 11534
+      "sha256": "5bd1e3077958e54d716ea25b6305cdf91ec44549053bdb0c91252b0a2dbc6755",
+      "size_bytes": 11586
     },
     "tests/test_grpo_async_lifecycle.py": {
-      "sha256": "eaf969e9a791954fa363ef19e507ec3b82231ef7430b384bf598ac02025efc2b",
-      "size_bytes": 13073
+      "sha256": "4d79cbfc5440faa502053314dcf29f80f6b1c7c6e02211f8c59da247c96ed76c",
+      "size_bytes": 13125
     },
     "tests/test_grpo_observation_first.py": {
-      "sha256": "4b1e6a78c8baf8af37924efc5578e641f46ad60a352fa3507c6c4d0a15cb0665",
-      "size_bytes": 30519
+      "sha256": "ba2c347691f1900158b80ec7d8f05c193df083fa62ac2249e301d2e94bb703cc",
+      "size_bytes": 30541
     },
     "tests/test_grpo_observation_trl_routing.py": {
-      "sha256": "2e55a142969a089d8a6feef0dfc3b9d39eb43cec471db257c3d39f075785221a",
-      "size_bytes": 5588
+      "sha256": "3b066dbfc38a87ceea08c6ea3bb96c6501e360be543ff197a3442ad13608dfb1",
+      "size_bytes": 6153
     },
     "tests/test_grpo_training_provenance.py": {
       "sha256": "f6b35b6ef47822e836728cdcb409a6f4da8794c1d6c3c88ed8f5830ceaf857d5",

@@ -142,15 +142,30 @@ def test_pinned_empty_buffer_reacquires_observation_instead_of_reusing_group():
     )
 
 
-def test_pinned_eval_routing_uses_a_new_observed_group_each_call():
-    trainer, _ = _trainer()
+def test_pinned_eval_routing_refuses_training_lifecycle_before_observation():
+    trainer, lifecycle = _trainer()
     trainer.model.training = False
 
-    trainer._prepare_inputs(_inputs())
-    trainer._prepare_inputs(_inputs())
+    with pytest.raises(RuntimeError, match="training mode"):
+        trainer._prepare_inputs(_inputs())
 
-    assert len(trainer.observation_evidence) == 2
+    assert lifecycle.events == []
+    assert trainer.observation_evidence == ()
+    assert trainer.generation_inputs == []
     assert trainer._step == 0
+
+
+@pytest.mark.parametrize("mode", [None, 0, 1, "true"])
+def test_unknown_or_non_boolean_training_mode_cannot_start_lifecycle(mode):
+    trainer, lifecycle = _trainer()
+    trainer.model.training = mode
+
+    with pytest.raises(RuntimeError, match="training mode"):
+        trainer._generate_and_score_completions(_inputs())
+
+    assert lifecycle.events == []
+    assert trainer.observation_evidence == ()
+    assert trainer.generation_inputs == []
 
 
 def test_pinned_reward_column_routing_detects_reordered_binding_before_action():

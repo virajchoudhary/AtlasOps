@@ -210,7 +210,7 @@ def _inputs(scenario_ids=None):
 def _new_trainer(lifecycle=None, *, max_prompt_length=None):
     lifecycle = lifecycle or _Lifecycle()
     trainer = _Trainer(
-        model=object(),
+        model=SimpleNamespace(training=True),
         args=SimpleNamespace(
             max_prompt_length=max_prompt_length,
             num_generations=2,

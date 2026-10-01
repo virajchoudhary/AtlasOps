@@ -18,7 +18,10 @@ synchronous `begin`, `before_action`, `execute` and `finish` callbacks.
 There are no default environment callbacks or connections to the production
 `OnlineRewardFunction` or `run_training`.
 
-Before generation, the hook verifies frozen Train membership and requires
+Before generation, the hook requires the model's explicit boolean training
+mode. Evaluation mode, missing mode and non-boolean mode values fail before
+any lifecycle callback or evidence creation; evaluation must not accidentally
+reuse the Train lifecycle. The hook verifies frozen Train membership and requires
 exactly one complete repeated-sample group in the call. Multiple groups and
 mixed scenarios are refused by this candidate. This is an implementation
 limitation, not a newly approved project generation budget or repetition rule.
@@ -61,8 +64,9 @@ observation/action binding, state restrictions, failure and cleanup behavior.
 `_prepare_inputs` and `_calculate_rewards` methods with generation, tensors
 and environment boundaries stubbed. It checks pre-generation observation,
 reward-column order, buffered reuse without repeated environment execution,
-fresh generation after an empty buffer and the evaluation routing branch.
-The latter branch remains Train-only; it is not Validation or Test evaluation.
+fresh generation after an empty buffer and refusal of the evaluation routing
+branch before observation. No Validation or Test evaluation is implemented
+by this candidate.
 
 The fixture cites upstream Git blob
 `bc04493af12dc7b07bc5a9741fd34ba004922326` and retains TRL's Apache-2.0

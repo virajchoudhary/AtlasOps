@@ -293,6 +293,10 @@ class ObservationFirstGRPOMixin:
         return scenario_id, count
 
     def _generate_and_score_completions(self, inputs: Any) -> Any:
+        if getattr(getattr(self, "model", None), "training", None) is not True:
+            raise RuntimeError(
+                "Observation-first candidate lifecycle requires explicit model training mode"
+            )
         if self._active_group is not None:
             raise RuntimeError("Observation-first GRPO group is already active")
         scenario_id, group_size = self._validate_generation_batch(inputs)

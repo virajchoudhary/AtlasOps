@@ -283,6 +283,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "infra/training/sft-pilot/Dockerfile.host-v1",
         "infra/training/sft-pilot/start-host.sh",
         "recommender/baselines.py",
+        "recommender/_cli.py",
+        "recommender/evaluate.py",
         "recommender/hybrid.py",
         "recommender/dataset.py",
         "recommender/train_hybrid.py",

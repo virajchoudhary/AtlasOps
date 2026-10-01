@@ -144,6 +144,8 @@ class TestStage15SubmissionPackage:
             "scripts/smoke-e2e-local.ps1",
             "scripts/generate_training_plots.py",
             "training/merge_lora_for_hub.py",
+            "recommender/_cli.py",
+            "recommender/evaluate.py",
             "notebooks/README.md",
             "notebooks/kaggle_sft_training.ipynb",
             "notebooks/kaggle_grpo_training.ipynb",

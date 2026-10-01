@@ -336,3 +336,24 @@ tests passed. Replay's runtime scorer manifest already includes the owning
 lineage and membership modules; their source hashes remain part of provenance.
 Correctness/unused-import lint and whitespace checks passed. No empirical
 episode, model operation, scenario membership or metric definition was changed.
+
+## Optional RS CLI Output Isolation
+
+Base: PR 166 merge `99ed800ddb43eb337ac85fa7793628a086d8f6b5`.
+The optional dataset/baseline/hybrid commands defaulted to historical artifact
+paths. They now require explicit fresh output directories. Evaluation and
+hybrid training require an existing input file and cannot auto-generate a
+default corpus; explicit empty baseline inputs no longer trigger a truthiness
+fallback. Callable research APIs retain their existing compatibility behavior.
+The CLI-only directory admission is shared rather than copied across commands.
+
+Tests use synthetic scratch records to check missing arguments/input, preserved
+existing directories, no implicit generation, and exact fresh output files.
+Historical RS artifacts, ranking formulas, splits and the required GAI + RL
+pipeline remain unchanged. This is output hygiene, not new incident evidence.
+
+Verification: 59 CLI, dataset, baseline, hybrid-provenance and inventory tests
+passed. Existing directories, files and symlink destinations are refused;
+missing inputs are not created and no output directory is created for them.
+Fresh-directory synthetic subprocess runs create only their declared output
+files. Historical artifacts and protected training/runtime paths have no diff.

@@ -1,6 +1,6 @@
 """AtlasOps Recommender Benchmark Evaluation Harness (Gate G10).
 
-Evaluates baseline runbook recommenders on historical interaction splits,
+Evaluates baseline runbook recommenders on supplied interaction splits,
 computing Hit@K, MRR@K, NDCG@K, Precision@K, and Recall@K, and persisting benchmark evidence.
 """
 
@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from recommender._cli import fresh_output_directory
 from recommender.baselines import (
     BaseRecommender,
     BM25ContentRecommender,
@@ -55,7 +56,7 @@ def run_full_baseline_benchmark(
     output_path: Path | None = None,
 ) -> dict[str, Any]:
     """Execute complete benchmarking across Random, Popularity, and BM25 recommenders."""
-    corpus = interactions or load_interactions()
+    corpus = interactions if interactions is not None else load_interactions()
     train_data = [i for i in corpus if i.split == "train"]
     val_data = [i for i in corpus if i.split == "val"]
     test_data = [i for i in corpus if i.split == "test"]
@@ -107,9 +108,14 @@ def run_full_baseline_benchmark(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps RS Baseline Benchmark")
-    parser.add_argument("--output", default="artifacts/evidence/stage10/rs_baseline_eval.json", help="Output path")
+    parser.add_argument("--input", required=True, type=Path, help="Existing interaction JSONL")
+    parser.add_argument("--output-dir", required=True, type=Path, help="New research output directory")
     args = parser.parse_args()
-    run_full_baseline_benchmark(output_path=Path(args.output))
+    if not args.input.is_file():
+        parser.error("Interaction input must be an existing file")
+    corpus = load_interactions(path=args.input, generate_if_missing=False)
+    output = fresh_output_directory(parser, args.output_dir)
+    run_full_baseline_benchmark(interactions=corpus, output_path=output / "baseline_eval.json")
 
 
 if __name__ == "__main__":

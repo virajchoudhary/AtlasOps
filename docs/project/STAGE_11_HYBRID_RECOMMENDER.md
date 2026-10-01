@@ -46,4 +46,17 @@ isolation, split enforcement, and evidence binding.
 The original `hybrid_recommender.json` and `rs_hybrid_eval.json` remain as historical
 scenario-derived artifacts.
 
+## Optional Local Command
+
+The CLI requires an explicit existing corpus and a new output directory.
+It cannot implicitly generate inputs or overwrite an existing directory:
+
+```bash
+python -m recommender.train_hybrid --input /scratch/rs-dataset-new/interactions.jsonl --output-dir /scratch/rs-hybrid-new
+```
+
+The new directory receives `hybrid_recommender.json` and `hybrid_eval.json`.
+This is optional synthetic ranking research, not a required GAI + RL step,
+live remediation authorization, or an empirical gate result.
+
 **Gate G11 Status: PASS within the recorded offline synthetic scope**

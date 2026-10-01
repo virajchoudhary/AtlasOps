@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T00:53:36.378754+00:00",
+  "generated_at": "2026-10-01T01:24:14.688930+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 333,
+  "asset_count": 334,
   "assets": {
     "AGENTS.md": {
       "sha256": "fec2b380e8dc8d277c27a67412edf0ce85a33966f74df6b0721f0e4949ddc510",
@@ -45,8 +45,8 @@
       "size_bytes": 1753
     },
     ".github/workflows/ci.yml": {
-      "sha256": "2e76e97d41e87a5e296052e3cdad2feef079fe61226a53f854aeb17acaea01f1",
-      "size_bytes": 2083
+      "sha256": "8290c0f2d8155d0e59db06964a031f84b0a2bdcf9989373358e2bd8274d04a5c",
+      "size_bytes": 3048
     },
     "BENCHMARKS.md": {
       "sha256": "469f977169a3cd564d82005beaae44fca26d12cb1b2695146b386fa8a921382c",
@@ -137,8 +137,8 @@
       "size_bytes": 4705
     },
     "docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md": {
-      "sha256": "a3bcac3edbbdb3ecf9490abb8b30e5993ca98846466431d467aadb0e4d0b2df7",
-      "size_bytes": 5491
+      "sha256": "65773fb93e064d2315758a948a8e4a1867fcbf46a9e81be7e9be6c7de7cb3dda",
+      "size_bytes": 6841
     },
     "docs/project/G9_ASYNC_OBSERVATION_BRIDGE_V1.md": {
       "sha256": "c1c3b38420bf98c3e24ac2dbfae11e30946aed9bc72f42c1820e9ab0fc453905",
@@ -1139,6 +1139,10 @@
     "tests/test_grpo_observation_first.py": {
       "sha256": "ba2c347691f1900158b80ec7d8f05c193df083fa62ac2249e301d2e94bb703cc",
       "size_bytes": 30541
+    },
+    "tests/test_grpo_observation_installed_trl.py": {
+      "sha256": "6faf273dbe1cce2d26d4f7ff7fcbc39c5eccebcfba4c00331eacc7331a1e28dd",
+      "size_bytes": 9108
     },
     "tests/test_grpo_observation_trl_routing.py": {
       "sha256": "3b066dbfc38a87ceea08c6ea3bb96c6501e360be543ff197a3442ad13608dfb1",

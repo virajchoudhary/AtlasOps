@@ -74,6 +74,29 @@ license. These are source-routing and synthetic software checks, not a
 real TRL model/optimizer/tokenizer run, verified gradient update, real
 checkpoint, environmental recovery or empirical G9 PASS.
 
+### Installed TRL contract
+
+The separate `tests/test_grpo_observation_installed_trl.py` exercises the
+actual installed TRL 0.19.1 trainer and factory with a tiny randomly
+initialized CPU model and a locally constructed synthetic tokenizer.
+Only the model-generation boundary supplies predetermined action tokens;
+the parent TRL generation hook is not replaced with the source excerpt.
+The test can verify construction, observation tokenization, reward-column
+binding and lifecycle handling without a pretrained model or live incident.
+
+The `Pinned TRL CPU contract` CI job installs the pinned trainer stack with
+CPU Torch 2.7.1 and requires this test module to run; missing/incompatible
+dependencies cannot become a successful skip there. The ordinary unit jobs
+may skip the optional installed-stack module. Hugging Face model/dataset
+networking is disabled. The test never invokes `train()`, `backward()`, an
+optimizer step or checkpoint saving. Local runs with another Torch version
+are supplementary and do not attest the pinned CPU or NVIDIA runtime.
+
+This is an installed-library integration check, not Qwen tokenizer/model
+compatibility, trained-policy learning, full GRPO optimizer correctness,
+GPU/BF16/4-bit feasibility or approval of live reset/repetition semantics.
+No synthetic action/reward is promoted to an empirical training record.
+
 ## Remaining work before production integration
 
 - Review and approve the prospective observation-first protocol, including

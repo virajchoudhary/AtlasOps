@@ -4,6 +4,7 @@
 Dockerfile text eol=lf
 Dockerfile.coordinator text eol=lf
 *.py text eol=lf
+notebooks/*.ipynb text eol=lf
 tests/fixtures/trl_0191_observation_routing.txt text eol=lf
 tests/fixtures/TRL_LICENSE.txt text eol=lf
 *.md text eol=lf

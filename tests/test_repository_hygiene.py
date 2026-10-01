@@ -1,5 +1,8 @@
 """Local cleanup contracts; no models, infrastructure, or external services."""
 
+import ast
+import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -33,6 +36,47 @@ def test_retired_live_cli_fails_before_writing_or_dispatching(script, tmp_path):
     assert result.returncode != 0
     assert "disabled" in result.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "notebook", ["kaggle_sft_training.ipynb", "kaggle_grpo_training.ipynb"]
+)
+def test_retired_notebook_fails_without_imports_shell_commands_or_writes(notebook, tmp_path):
+    path = ROOT / "notebooks" / notebook
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert document["nbformat"] == 4
+    assert "accelerator" not in document["metadata"]
+    code_cells = [cell for cell in document["cells"] if cell["cell_type"] == "code"]
+    assert len(code_cells) == 1
+    cell = code_cells[0]
+    assert cell["execution_count"] is None
+    assert cell["outputs"] == []
+    source = "".join(cell["source"])
+    tree = ast.parse(source)
+    assert len(tree.body) == 1
+    statement = tree.body[0]
+    assert isinstance(statement, ast.Raise)
+    assert isinstance(statement.exc, ast.Call)
+    assert isinstance(statement.exc.func, ast.Name)
+    assert statement.exc.func.id == "SystemExit"
+    assert len(statement.exc.args) == 1 and not statement.exc.keywords
+    assert isinstance(statement.exc.args[0], ast.Constant)
+    assert isinstance(statement.exc.args[0].value, str)
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", source],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert "disabled" in result.stderr
+    assert list(tmp_path.iterdir()) == []
+    for cell in document["cells"]:
+        if cell["cell_type"] == "markdown":
+            for target in re.findall(r"\]\(([^)]+)\)", "".join(cell["source"])):
+                assert (path.parent / target).is_file()
 
 
 def test_container_build_context_excludes_local_secrets_and_worktrees():

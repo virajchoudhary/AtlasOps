@@ -226,3 +226,23 @@ no diff. The wider runtime audit established no high-confidence unused internal
 function in its scope; an apparent duplicated reward-history scan was retained
 because the before/after append slices differ and consolidation would change
 the reward contract.
+
+## Notebook Shortcut Retirement
+
+Base: PR 161 merge `01af01993a1b02554e8a1628b1721edb7891ab18`.
+The two cloud notebooks were historical, unexecuted shortcuts with no saved
+outputs. SFT omitted required revision/admission inputs; the GRPO notebook ran
+mock evaluators rather than training. Their duplicate unpinned installation,
+clone, benchmark, and checkpoint-listing cells are removed. Each notebook now
+has one immediate disabled guard and links to maintained Stage 7/9 contracts.
+The old cells remain in Git history. No model, training, or empirical artifact
+is deleted or regenerated. Notebook JSON is included in the integrity inventory
+with explicit LF checkout handling; local contract tests execute only the
+AST-validated disabled guard in an isolated temporary working directory.
+
+Verification: the first 77-case selection had 76 passes and one Linux-checkout
+hash failure for CRLF notebook text. Normalized only the three edited notebook
+files to their declared LF form and regenerated the manifest; the rerun passed
+77/77. Both reports are preserved outside the checkout. Ruff, whitespace,
+source/wheel builds, and all 362 inventory hashes/sizes passed. No training or
+model download was performed.

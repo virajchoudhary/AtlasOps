@@ -12,6 +12,12 @@ The [disconnected software candidate](G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1
 tests the observation-before-generation hook with injected model-free
 boundaries. It is not wired into production training and does not remove
 this admission block or approve the prospective protocol.
+
+The [managed async bridge](G9_ASYNC_OBSERVATION_BRIDGE_V1.md) supplies an
+injected event-loop boundary for that candidate. Localhost synthetic checks
+do not connect production callbacks, approve a reset/repetition rule or
+establish live training readiness.
+
 The preserved trainer generates completions from static catalogue alerts
 before its reward callback applies the fault and captures the real alert.
 Those completions are not conditioned on the observation used for execution.

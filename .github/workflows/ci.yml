@@ -23,6 +23,7 @@ jobs:
       HF_DATASETS_OFFLINE: "1"
       CUDA_VISIBLE_DEVICES: ""
       ATLASOPS_REQUIRE_TRL_INTEGRATION: "1"
+      ATLASOPS_REQUIRE_PINNED_CPU_STACK: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7

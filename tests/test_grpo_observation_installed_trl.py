@@ -58,6 +58,16 @@ def _runtime():
                 actual = None
             if actual != expected:
                 mismatches.append(f"{distribution}={actual or 'missing'} (need {expected})")
+        if os.environ.get("ATLASOPS_REQUIRE_PINNED_CPU_STACK") == "1":
+            for distribution, expected in {
+                "torch": "2.7.1", "datasets": "4.8.5", "tokenizers": "0.22.2"
+            }.items():
+                try:
+                    actual = importlib.metadata.version(distribution)
+                except importlib.metadata.PackageNotFoundError:
+                    actual = None
+                if actual is None or actual.split("+", 1)[0] != expected:
+                    mismatches.append(f"{distribution}={actual or 'missing'} (need {expected})")
         if mismatches:
             _missing_optional_stack(
                 "Pinned TRL integration dependencies are unavailable: "

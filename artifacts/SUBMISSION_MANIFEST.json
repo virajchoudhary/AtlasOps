@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T01:24:14.688930+00:00",
+  "generated_at": "2026-10-01T01:32:16.812691+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -45,8 +45,8 @@
       "size_bytes": 1753
     },
     ".github/workflows/ci.yml": {
-      "sha256": "8290c0f2d8155d0e59db06964a031f84b0a2bdcf9989373358e2bd8274d04a5c",
-      "size_bytes": 3048
+      "sha256": "1937c6c4d1b5606126a86cadd1993b3c089816ee530ca47093ec399aa82da2a3",
+      "size_bytes": 3093
     },
     "BENCHMARKS.md": {
       "sha256": "469f977169a3cd564d82005beaae44fca26d12cb1b2695146b386fa8a921382c",
@@ -137,8 +137,8 @@
       "size_bytes": 4705
     },
     "docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md": {
-      "sha256": "65773fb93e064d2315758a948a8e4a1867fcbf46a9e81be7e9be6c7de7cb3dda",
-      "size_bytes": 6841
+      "sha256": "0b573bdd5cc2eafa7567fb1f8cc27399daf7388babfc87aef37bb8fafb15b6d9",
+      "size_bytes": 7014
     },
     "docs/project/G9_ASYNC_OBSERVATION_BRIDGE_V1.md": {
       "sha256": "c1c3b38420bf98c3e24ac2dbfae11e30946aed9bc72f42c1820e9ab0fc453905",
@@ -1141,8 +1141,8 @@
       "size_bytes": 30541
     },
     "tests/test_grpo_observation_installed_trl.py": {
-      "sha256": "6faf273dbe1cce2d26d4f7ff7fcbc39c5eccebcfba4c00331eacc7331a1e28dd",
-      "size_bytes": 9108
+      "sha256": "72347e329bcbfa79f524d6818434f9306fbf9dcdb6013a33116338def3b95937",
+      "size_bytes": 9684
     },
     "tests/test_grpo_observation_trl_routing.py": {
       "sha256": "3b066dbfc38a87ceea08c6ea3bb96c6501e360be543ff197a3442ad13608dfb1",

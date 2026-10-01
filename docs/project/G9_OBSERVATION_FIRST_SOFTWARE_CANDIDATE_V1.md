@@ -86,9 +86,12 @@ binding and lifecycle handling without a pretrained model or live incident.
 
 The `Pinned TRL CPU contract` CI job installs the pinned trainer stack with
 CPU Torch 2.7.1 and requires this test module to run; missing/incompatible
-dependencies cannot become a successful skip there. The ordinary unit jobs
+dependencies cannot become a successful skip there. The CI-specific
+`ATLASOPS_REQUIRE_PINNED_CPU_STACK` check also verifies Torch, Datasets and
+Tokenizers versions at runtime. The ordinary unit jobs
 may skip the optional installed-stack module. Hugging Face model/dataset
-networking is disabled. The test never invokes `train()`, `backward()`, an
+networking is disabled. The test sets `model.train()` mode but never invokes
+the trainer's `train()` loop, `backward()`, an
 optimizer step or checkpoint saving. Local runs with another Torch version
 are supplementary and do not attest the pinned CPU or NVIDIA runtime.
 

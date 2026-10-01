@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T17:33:06.598701+00:00`
+- **Generated**: `2026-10-01T18:24:51.020577+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -67,7 +67,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `agents/tools/chaos.py` | `089c5dec071ecac7...` | 12540 |
 | `agents/tools/prometheus.py` | `dc8d87332f66dae8...` | 3586 |
 | `agents/verifier.py` | `850dc5f2f197887e...` | 37725 |
-| `app.py` | `190b2b1f5084a9ca...` | 17272 |
+| `app.py` | `99c0cfd3ab16f778...` | 17302 |
 | `artifacts/evidence/.gitattributes` | `a5c3211d796d1d08...` | 880 |
 | `artifacts/evidence/recovery/2026-09-05-workspace-recovery.json` | `710fddcaeb2ea6c8...` | 22788 |
 | `artifacts/evidence/recovery/SETUP-03_COMMANDS.md` | `0819c3ffe5e9cfe6...` | 15741 |
@@ -273,7 +273,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/stage4_approval_process.py` | `49caab40de3e6450...` | 2675 |
 | `tests/test_adversarial_designer.py` | `79f017da4584c382...` | 18677 |
 | `tests/test_agents_grounding.py` | `95f1ecee76c33d6f...` | 17184 |
-| `tests/test_app_endpoints.py` | `03cfab59acae6057...` | 6964 |
+| `tests/test_app_endpoints.py` | `9ee8c6c81451dff7...` | 9319 |
 | `tests/test_approval.py` | `920d02620bbd67a2...` | 8347 |
 | `tests/test_approval_fail_closed.py` | `7c8a92f09acce480...` | 8456 |
 | `tests/test_argocd.py` | `87874c569f40a989...` | 11814 |

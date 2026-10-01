@@ -14,6 +14,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ui-container:
+    name: UI container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build source UI image
+        run: docker build --tag atlasops-ui-ci .
+
+      - name: Check network-isolated UI startup
+        run: |
+          docker run --detach --network none --name atlasops-ui-ci \
+            --env ATLASOPS_AUTO_HF_INFERENCE=0 atlasops-ui-ci
+          docker exec --interactive atlasops-ui-ci python - <<'PY'
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:7860"
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=1) as response:
+                      assert response.status == 200
+                  break
+              except urllib.error.URLError:
+                  time.sleep(0.2)
+          else:
+              raise RuntimeError("UI container readiness timed out")
+
+          for route in (
+              "/", "/static/console.js", "/static/console.css",
+              "/static/vendor/lucide.min.js", "/ui/catalog", "/config",
+          ):
+              with urllib.request.urlopen(base + route, timeout=3) as response:
+                  assert response.status == 200 and response.read(), route
+
+          request = urllib.request.Request(
+              base + "/webhook", data=b"{}",
+              headers={"Content-Type": "application/json"},
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as exc:
+              assert exc.code == 503, exc.code
+          else:
+              raise AssertionError("unconfigured webhook failed open")
+          print("UI container startup and fail-closed webhook checks passed")
+          PY
+
+      - name: Remove test container
+        if: always()
+        run: |
+          if docker container inspect atlasops-ui-ci > /dev/null 2>&1
+          then
+            docker stop atlasops-ui-ci
+            docker container rm atlasops-ui-ci
+          fi
+
   trainer-contract:
     name: Pinned TRL CPU contract
     runs-on: ubuntu-latest

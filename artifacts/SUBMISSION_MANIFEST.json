@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T21:16:13.232452+00:00",
+  "generated_at": "2026-10-01T21:41:27.390806+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -53,8 +53,8 @@
       "size_bytes": 1966
     },
     ".github/workflows/ci.yml": {
-      "sha256": "1937c6c4d1b5606126a86cadd1993b3c089816ee530ca47093ec399aa82da2a3",
-      "size_bytes": 3093
+      "sha256": "49a841f444f5411ffa1e267ea08f8bf25f9cd7b31b09da1fdb99b9085c341e22",
+      "size_bytes": 5266
     },
     "BENCHMARKS.md": {
       "sha256": "3191bc522a52706baf3624b1c59ff71436c58aaf4482b0b1ce1af2d2251a9688",
@@ -101,8 +101,8 @@
       "size_bytes": 17381
     },
     "Dockerfile": {
-      "sha256": "7a14da42e89a3f82f086b38d2a8d51ddd9e82117a5e71a8ff1ec30d6a33e09f3",
-      "size_bytes": 1689
+      "sha256": "24941a66858da7ba8a7e0bad1013002f97001d49f034d51a9f5fbb7899c531a9",
+      "size_bytes": 1638
     },
     "Dockerfile.coordinator": {
       "sha256": "2b1734f68c079e56d78c55db44de61f702d4fa7c27dd6b9d96cccd01012ae416",
@@ -197,8 +197,8 @@
       "size_bytes": 4149
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
-      "sha256": "db74834efc40d7ffd507af32317f6e3e17742a85251edb7c1a8363e754cfa39f",
-      "size_bytes": 17064
+      "sha256": "f98ccf3925b8936251066d9a2a6907f40f3181dbe8f3bb70baac15dfa4f83895",
+      "size_bytes": 18685
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -1297,8 +1297,8 @@
       "size_bytes": 13992
     },
     "tests/test_repository_hygiene.py": {
-      "sha256": "52e3ec3f9a91c0b0c9b950f3596900a8f4c76441c5ec980eb96fedfd200135e5",
-      "size_bytes": 9619
+      "sha256": "145ab9cd2fc9126ae4cff025caa1d917c438f0b9501ab47fc616c0b337f553c7",
+      "size_bytes": 11369
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",

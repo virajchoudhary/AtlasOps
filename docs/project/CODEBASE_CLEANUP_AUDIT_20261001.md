@@ -246,3 +246,31 @@ files to their declared LF form and regenerated the manifest; the rerun passed
 77/77. Both reports are preserved outside the checkout. Ruff, whitespace,
 source/wheel builds, and all 362 inventory hashes/sizes passed. No training or
 model download was performed.
+
+## UI Container Dependency Consolidation
+
+Base: PR 162 merge `8cb716aead1aaa71026abcf60993774437c3d7ab`.
+The source UI Dockerfile maintained a second Python requirement list, including
+unused aiofiles. It now installs the base project
+from `pyproject.toml`, preserving the source UI entrypoint on port 7860 and
+excluding demo/training extras. Uvicorn's standard extras are explicitly retained
+for HTTP acceleration; functional probes do not establish equivalent throughput.
+Removed unused GnuPG and Git from the UI image; the launched source UI does not
+use Git, and its build context has no repository metadata.
+Kubectl now shares the coordinator image's reviewed
+version/checksum rather than resolving mutable `stable.txt`.
+
+The Docker daemon is unreachable at its Windows named pipe. No image build,
+daemon startup, container execution, provisioning or deployment is claimed.
+Source contract checks and a base-dependency UI runtime probe are separate
+software evidence, not proof of a built/deployed image.
+
+The base-only task environment, without Gradio, aiofiles or Uvicorn optional
+extras, served HTML/static assets/configuration/catalog over loopback and refused
+the unconfigured webhook with HTTP 503. The probe process was terminated.
+CI now builds the actual UI image and runs the same startup checks in a
+network-isolated container; its result must be observed before an image claim.
+
+Final affected API/HF/runtime/container/inventory selection: 84 passed.
+Default changed-file Ruff and whitespace checks passed. The source-only probe
+does not substitute for the pending actual image build/startup CI result.

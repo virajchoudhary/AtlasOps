@@ -95,6 +95,42 @@ def test_container_build_context_excludes_local_secrets_and_worktrees():
     } & patterns
 
 
+def test_ui_container_uses_project_runtime_dependencies_and_pinned_kubectl():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    coordinator = (ROOT / "Dockerfile.coordinator").read_text(encoding="utf-8")
+    assert 'COPY . .\nRUN pip install --no-cache-dir . "uvicorn[standard]"' in dockerfile
+    assert "aiofiles" not in dockerfile
+    assert "gnupg" not in dockerfile
+    assert "curl git" not in dockerfile
+    assert ".[dev]" not in dockerfile and ".[train]" not in dockerfile
+    assert "stable.txt" not in dockerfile
+    for argument in ("KUBECTL_VERSION", "KUBECTL_SHA256"):
+        value = re.search(rf"^ARG {argument}=(.+)$", coordinator, re.MULTILINE)
+        assert value is not None
+        assert f"ARG {argument}={value.group(1)}" in dockerfile
+    assert "sha256sum -c -" in dockerfile
+    assert 'CMD ["python", "app.py"]' in dockerfile
+    assert "EXPOSE 7860" in dockerfile
+
+
+def test_ci_builds_ui_image_and_checks_it_without_external_network():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    job = workflow["jobs"]["ui-container"]
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "docker build --tag atlasops-ui-ci ." in commands
+    assert "--network none --name atlasops-ui-ci" in commands
+    assert "--env ATLASOPS_AUTO_HF_INFERENCE=0" in commands
+    assert 'base = "http://127.0.0.1:7860"' in commands
+    assert 'base + "/webhook", data=b"{}"' in commands
+    assert "assert exc.code == 503" in commands
+    cleanup = job["steps"][-1]
+    assert cleanup["if"] == "always()"
+    assert "docker stop atlasops-ui-ci" in cleanup["run"]
+    assert "docker container rm atlasops-ui-ci" in cleanup["run"]
+
+
 @pytest.mark.parametrize(
     "filename",
     [

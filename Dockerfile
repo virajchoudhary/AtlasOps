@@ -1,24 +1,21 @@
 FROM python:3.11-slim
-# cache-bust: 2026-05-10
+
+ARG KUBECTL_VERSION=v1.31.10
+ARG KUBECTL_SHA256=f7e806b676bea3b4995e9c236445a5f24ae61ed3d5245c39d7b816d209b06a78
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git ca-certificates gnupg && \
+    curl ca-certificates && \
     # Install kubectl
-    curl -fsSL "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
         -o /usr/local/bin/kubectl && \
+    echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - && \
     chmod +x /usr/local/bin/kubectl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir \
-    httpx requests jinja2 \
-    google-cloud-monitoring google-cloud-logging \
-    google-auth kubernetes python-dotenv \
-    fastapi uvicorn[standard] aiofiles pydantic
-
 COPY . .
+RUN pip install --no-cache-dir . "uvicorn[standard]"
 
 # HF Spaces runs as user 1000 — ensure data dirs are writable
 RUN mkdir -p data docs/postmortems && chmod -R 777 data docs

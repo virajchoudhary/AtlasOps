@@ -17,7 +17,7 @@ apply_hf_space_inference_defaults()
 
 from fastapi import FastAPI, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -59,7 +59,7 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
 # Import coordinator internals
-from agents.coordinator import handle_incident, app as coordinator_app
+from agents.coordinator import app as coordinator_app
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
@@ -155,7 +155,7 @@ async def comparison_table_markdown():
     if not p.is_file():
         return PlainTextResponse(
             "| Scenario | Outcome | Notes |\n|---|---|---|\n"
-            "| *pending* | — | Run `python bench/runner.py` or `python -m bench.quick_eval` locally, then commit `bench/results/comparison_table.md`. |\n",
+            "| *unavailable* | — | No reviewed comparison artifact is available. Local fixture metrics are NON_EMPIRICAL. |\n",
             media_type="text/markdown; charset=utf-8",
         )
     return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
@@ -436,14 +436,9 @@ async def webhook_proxy(request: Request):
     """
     body = await request.body()
     _verify_webhook_signature(body, request.headers.get("Authorization"))
-    import json as _json
-    from agents.coordinator import app as _coord
-    # Re-dispatch through coordinator's webhook handler directly
-    from agents.coordinator import handle_incident
-    from agents.correlator import correlator
     try:
-        payload = _json.loads(body)
-    except _json.JSONDecodeError:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
     incident_id, _is_new, should_dispatch = correlator.ingest(payload)
     if not should_dispatch:

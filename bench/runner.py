@@ -26,7 +26,7 @@ from agents.judge import judge_trajectory
 from config.runtime import (
     FROZEN_SCENARIOS,
     evaluate_reward_contract,
-    bounded_speed_score as _bounded_speed_score,
+    bounded_speed_score as _bounded_speed_score,  # noqa: F401 - legacy public test API
 )
 from config.scenario_catalog import SCENARIO_CATALOG
 from config.splits import get_split

@@ -6,12 +6,9 @@ the frozen benchmark partitions defined in config.scenario_catalog.
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence
-
 from config.scenario_catalog import (
     LEADERBOARD_SEED,
     LEADERBOARD_SPLIT,
-    SCENARIO_CATALOG,
     SPLIT_PARTITIONS,
     TEST_SEED,
     TEST_SPLIT,

@@ -67,16 +67,12 @@ trajectories:
 	@exit 2
 
 sft:
-	python training/sft.py \
-	  --model Qwen/Qwen2.5-7B-Instruct \
-	  --data data/sft_corpus.jsonl \
-	  --output checkpoints/sft_v3
+	@echo "Retired: use the hash-bound Stage 7 preparation and explicitly authorized execution plan."
+	@exit 2
 
 grpo:
-	python training/grpo.py \
-	  --model checkpoints/sft_v3 \
-	  --output checkpoints/grpo_v3 \
-	  --tiers cascade,multi_fault,named_replays
+	@echo "Retired: use the Stage 9 readiness contract; observation-first training is not authorized."
+	@exit 2
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 .PHONY: dashboard

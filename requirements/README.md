@@ -28,35 +28,49 @@ python -m pip --isolated install --index-url https://pypi.org/simple -r requirem
 python -m pip check
 ```
 
-`--isolated` prevents user and machine pip configuration from adding hidden indexes or
-other resolver behavior. The lock itself deliberately contains no index URL, trusted
-host, absolute repository path, or user-home path.
+`--isolated` ignores user configuration, but does not disable machine configuration.
+On Windows, set `PIP_CONFIG_FILE` to the exact lowercase value `nul` for the install
+process when machine configuration adds an extra index. For example:
+
+```powershell
+python -c "import os; os.environ['PIP_CONFIG_FILE']=os.devnull; from pip._internal.cli.main import main; raise SystemExit(main(['--isolated', 'install', '--index-url', 'https://pypi.org/simple', '-r', 'requirements/dev-win-py312.lock']))"
+```
+
+This changes only the child process, not any persistent pip configuration. The lock
+contains no index URL, trusted host, absolute repository path, or user-home path.
 
 ## Regenerate
 
-The committed lock was generated with CPython 3.12.5 and `pip-tools==7.6.0`. From the
+The committed lock was generated with CPython 3.12.5, `pip-tools==7.6.0`, and
+`pip==25.3`. The latter is a lock-tool pin, not a project runtime dependency:
+pip-tools 7.6.0 is incompatible with the newer installed pip API. From the
 repository root in PowerShell:
 
 ```powershell
 $lockEnv = Join-Path $env:TEMP ("atlasops-lockgen-" + (Get-Date -Format "yyyyMMddHHmmss"))
 py -3.12 -m venv $lockEnv
-& "$lockEnv\Scripts\python.exe" -m pip --isolated install --index-url https://pypi.org/simple "pip-tools==7.6.0"
 $previousPipConfigFile = $env:PIP_CONFIG_FILE
 $previousPipIndexUrl = $env:PIP_INDEX_URL
 $previousPipExtraIndexUrl = $env:PIP_EXTRA_INDEX_URL
 $previousPipTrustedHost = $env:PIP_TRUSTED_HOST
 try {
-    $env:PIP_CONFIG_FILE = "NUL"
+    $env:PIP_CONFIG_FILE = "nul"
     $env:PIP_INDEX_URL = $null
     $env:PIP_EXTRA_INDEX_URL = $null
     $env:PIP_TRUSTED_HOST = $null
-    & "$lockEnv\Scripts\pip-compile.exe" --resolver=backtracking --index-url=https://pypi.org/simple --no-emit-index-url --no-emit-trusted-host --no-strip-extras --output-file=requirements/dev-win-py312.lock requirements/dev.in
+    & "$lockEnv\Scripts\python.exe" -m pip --isolated install --index-url https://pypi.org/simple "pip==25.3" "pip-tools==7.6.0" "hatchling==1.32.0"
+    & "$lockEnv\Scripts\pip-compile.exe" --resolver=backtracking --newline=lf --no-build-isolation --index-url=https://pypi.org/simple --no-emit-index-url --no-emit-trusted-host --no-strip-extras --pip-args="--retries 0 --timeout 20" --output-file=requirements/dev-win-py312.lock requirements/dev.in
 } finally {
     $env:PIP_CONFIG_FILE = $previousPipConfigFile
     $env:PIP_INDEX_URL = $previousPipIndexUrl
     $env:PIP_EXTRA_INDEX_URL = $previousPipExtraIndexUrl
     $env:PIP_TRUSTED_HOST = $previousPipTrustedHost
-    Remove-Item -LiteralPath $lockEnv -Recurse
+    $resolved = [System.IO.Path]::GetFullPath($lockEnv)
+    $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if (-not $resolved.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Lock environment is outside the temporary directory."
+    }
+    Remove-Item -LiteralPath $resolved -Recurse
 }
 ```
 

@@ -156,39 +156,17 @@ def test_ungraded_benchmark_has_no_judge_mean(tmp_path):
     assert "| n/a |" in (tmp_path / "comparison_table.md").read_text(encoding="utf-8")
 
 
-def test_ungraded_legacy_evaluation_has_no_judge_mean():
-    import eval as legacy_eval
-
-    summary = legacy_eval.compute_stats(
-        [{"scenario_id": "s1", "status": "error", "error": "judge_http_503"}],
-        "ungraded",
-    )
-    assert summary["avg_judge_score"] is None
-
-
-def test_ungraded_leaderboard_has_no_judge_mean(monkeypatch, capsys, tmp_path):
-    import leaderboard
+@pytest.mark.parametrize("module_name", ["eval", "leaderboard", "bench.quick_eval", "inference"])
+def test_legacy_live_evaluators_are_retired(module_name, monkeypatch):
+    import importlib
+    import subprocess
 
     monkeypatch.setattr(
-        leaderboard,
-        "run_episode",
-        AsyncMock(return_value={"status": "error", "error": "judge_http_503"}),
+        subprocess, "run", lambda *args, **kwargs: pytest.fail("infrastructure contacted")
     )
-    monkeypatch.setattr(leaderboard, "RESULTS_DIR", tmp_path)
-    summary = asyncio.run(
-        leaderboard.eval_model(
-            "fixture",
-            {"display": "Fixture", "provider": "local", "type": "zero_shot"},
-            [("single_fault/sf-001", "single_fault")],
-        )
-    )
-    assert summary["avg_judge_score"] is None
-    leaderboard.print_leaderboard([summary])
-    output = capsys.readouterr().out
-    assert "n/a" in output
-    assert "Real GKE" not in output
-    leaderboard.save_results([summary])
-    table = (tmp_path / "leaderboard_table.md").read_text(encoding="utf-8")
-    assert "| n/a |" in table
-    assert "real GKE cluster" not in table
-    assert "provenance must be verified separately" in table
+    module = importlib.import_module(module_name)
+    with pytest.raises(SystemExit, match="disabled"):
+        module.main()
+    assert not hasattr(module, "apply_chaos")
+    assert not hasattr(module, "reset_chaos")
+    assert not hasattr(module, "run_episode")

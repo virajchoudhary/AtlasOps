@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml .
 RUN pip install --no-cache-dir \
     httpx requests jinja2 \
-    google-cloud-monitoring google-cloud-logging google-cloud-pubsub \
-    google-auth kubernetes rich python-dotenv \
+    google-cloud-monitoring google-cloud-logging \
+    google-auth kubernetes python-dotenv \
     fastapi uvicorn[standard] aiofiles pydantic
 
 COPY . .
@@ -40,7 +40,6 @@ EXPOSE 7860
 # Existing cluster / Grafana wiring:
 #   PROMETHEUS_URL, ALERTMANAGER_URL, JAEGER_URL, GRAFANA_URL, ARGOCD_URL, BOUTIQUE_URL
 #   ATLASOPS_API_KEY, ALERTMANAGER_WEBHOOK_SECRET
-# If kubectl cannot reach GKE from this container (typical HF Space):
-#   ATLASOPS_SKIP_KUBECTL_INJECT=1
+# Web fault injection/reset are retired; flags cannot enable them.
 
 CMD ["python", "app.py"]

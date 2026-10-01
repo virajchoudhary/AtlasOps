@@ -11,7 +11,7 @@ Evaluation date: 2026-05-09. Model: `Qwen/Qwen2.5-7B-Instruct` via HF Inference 
 
 ## Quick Eval Results (3 Demo Scenarios)
 
-Run: `python -m bench.quick_eval`
+Historical command: `python -m bench.quick_eval` (now disabled).
 
 | Scenario | Outcome | Time (s) | Turns | Score |
 |---|---|---|---|---|
@@ -98,23 +98,16 @@ Based on: DAPO paper (2025), kube-sre-gym results, and online GRPO gains in tool
 
 ---
 
-## How to Reproduce
+## Current Local Software Check
 
 ```bash
-# 1. Clone and set env
-git clone https://github.com/Harikishanth/AtlasOps.git
-cd AtlasOps
-cp .env.example .env  # Add your HF token and GKE IPs
-
-# 2. Run quick eval (no chaos needed)
-python -m bench.quick_eval
-
-# 3. Generate isolated NON_EMPIRICAL compatibility fixtures
+# Generate isolated NON_EMPIRICAL compatibility fixtures only.
 python -m bench.runner --model fixture --mock --adversarial 0
-
-# 4. SFT training (AMD MI300X)
-python training/sft.py --model Qwen/Qwen2.5-7B-Instruct --rocm
-
-# 5. GRPO training (AMD MI300X)
-python training/grpo.py --model checkpoints/sft_v3 --rocm
 ```
+
+The legacy `bench.quick_eval`, `eval.py`, and `leaderboard.py` runners are
+disabled. They used synthetic alerts or ungoverned fault injection and
+model-claimed outcomes; they cannot reproduce empirical incident resolution.
+Use the [Master Pipeline](docs/project/MASTER_PIPELINE_STATUS.md) and stage
+contracts for separately authorized evaluation or training. The numerical tables
+above remain the historical upstream narrative, not validated continuation results.

@@ -1,144 +1,42 @@
-# Judges: Start Here — AtlasOps
+# AtlasOps Review Entry Point
 
-> 60-second proof it's real. Everything below hits a live GKE cluster.
+The university continuation of Harikishanth/AtlasOps is **NOT_CERTIFIED**.
+The inherited live-GKE judge instructions were superseded: they bypassed the
+current incident preflight and implied training and deployment results that this
+continuation has not established. Their original wording remains in Git history.
+The MIT license and upstream attribution are unchanged.
 
----
+## Review Current Evidence
 
-## Live console (Hugging Face Space)
+- Start with [README.md](README.md) for current scope and supported commands.
+- Read the [Master Pipeline status](docs/project/MASTER_PIPELINE_STATUS.md)
+  and [current gap matrix](docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md).
+- Inspect the [technical report](docs/AtlasOps_Technical_Report.md) and
+  [submission inventory](artifacts/SUBMISSION_SUMMARY.md).
+- Keep historical, mock, and prospective evidence separate from empirical proof.
+  G4 is `NOT_PASSED`; G9 and G13 are `REOPENED`.
 
-Hackathon deployment (correct slug uses a hyphen: **`atlas-ops`**):
+## Local Read-Only Demo
 
-- **Space:** [lablab-ai-amd-developer-hackathon / atlas-ops](https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/atlas-ops)
-- **App URL:** `https://lablab-ai-amd-developer-hackathon-atlas-ops.hf.space` — open that in the browser, then **`/health`** on the same host for a JSON readiness check.
-
-If you see **404** on `…/spaces/…/atlasops` (no hyphen), use **`atlas-ops`** instead or the URL your team submitted after duplicating the Space.
-
----
-
-## 1. Confirm the cluster is real
-
-```bash
-gcloud container clusters get-credentials atlasops \
-  --region=us-central1 --project=cloudsre-v3-amd
-
-kubectl get nodes                          # 3× e2-standard-4 in us-central1
-kubectl get pods -A | grep -c Running      # should be 40+
-kubectl get crds | grep chaos-mesh         # Chaos Mesh CRDs installed
-kubectl get applications -n argocd         # ArgoCD managing Online Boutique
-```
-
----
-
-## 2. Fire a real chaos scenario + watch agents respond
+From a source checkout with the documented development dependencies installed:
 
 ```bash
-# Apply a real Chaos Mesh fault
-kubectl apply -f bench/chaos_manifests/named_replays/hist-cloudflare-2019.yaml
-
-# Watch Alertmanager fire within ~60s
-curl http://<ALERTMANAGER_IP>/api/v2/alerts | python -m json.tool
-
-# Watch agents work in real time (SSE stream)
-curl http://localhost:7860/stream
-
-# Reset
-kubectl delete stresschaos --all -n chaos-mesh
+python dashboard.py
 ```
 
-Or just click **Cloudflare 2019** in the ops console — it does all of the above.
+The Gradio demo browses preserved evidence. Selecting a scenario injects no fault
+and proves no incident resolution. This does not certify the separate coordinator
+or FastAPI deployment.
 
----
-
-## 3. Start the ops console
+## Local Software Checks
 
 ```bash
-pip install -e ".[dev]"
-python app.py          # http://localhost:7860
+python -m pytest tests/test_app_endpoints.py tests/test_approval_fail_closed.py \
+  tests/test_stage14_demo_safety.py tests/test_stage15_submission_package.py -q
 ```
 
-**What judges should see:**
-1. Service topology grid (11 boxes) — boxes turn red as chaos fires
-2. Grafana iframe shows real cluster metrics spiking
-3. Agent Chain panel fills with live thoughts (Triage → Diagnosis → Remediation → Comms)
-4. `# incident-response` Slack feed shows the comms agent's update
-5. MTTR counter turns green on resolution
-6. Postmortem saved to `docs/postmortems/`
-
----
-
-## 4. Run all tests
-
-```bash
-# Tools + coordinator + bench reward contract
-python -m pytest tests/test_tools.py tests/test_coordinator.py \
-                 tests/test_bench_runner.py tests/test_chaos_manifests.py -q
-
-# Safety guardrails (approval gate, circuit breaker, correlator, audit)
-python -m pytest tests/test_approval.py tests/test_circuit_breaker.py \
-                 tests/test_correlator.py tests/test_audit.py -q
-
-# App endpoint smoke tests (no cluster needed)
-python -m pytest tests/test_app_endpoints.py -q
-```
-
----
-
-## 5. Verify every production safety endpoint
-
-```bash
-# Human approval gate — shows pending P1 approvals
-curl http://localhost:7860/approval/pending
-
-# Circuit breaker — shows tool-call counts, cluster-mutation rate, tripped state
-curl http://localhost:7860/circuit-breaker/status
-
-# Correlated incidents — deduped active incident list
-curl http://localhost:7860/incidents/active
-
-# Live cluster service health — 11 Online Boutique services
-curl http://localhost:7860/cluster/health
-
-# Comms feed — last 30 Slack posts from agents
-curl http://localhost:7860/slack/feed
-
-# Runtime config — Grafana/ArgoCD URLs loaded dynamically
-curl http://localhost:7860/config
-```
-
----
-
-## 6. Training evidence
-
-```bash
-# Release readiness gate — generates docs/RELEASE_READINESS.md
-python scripts/release_gate.py --strict
-
-# Compare model performance (run after training)
-python leaderboard.py
-
-# Benchmark table (auto-updates on each run)
-cat bench/results/comparison_table.md
-```
-
-Full MI300X evidence (rocm-smi, memory breakdown, vLLM co-hosting logs):
-→ `docs/MI300X_EVIDENCE.md`
-
-Full delivery scorecard:
-→ `docs/AMD_FINAL_DELIVERY_SCORECARD_AND_REWARD_SPEC.md`
-
----
-
-## 7. Why AtlasOps over every other SRE submission
-
-| Dimension | Typical competitor | AtlasOps |
-|---|---|---|
-| Infrastructure | Docker Compose / MiniStack simulator | **Real GKE cluster on GCP** |
-| Fault injection | Scripted mock | **Chaos Mesh CRDs — 6 fault types** |
-| Observability | None / stubbed | **Prometheus + Grafana + Jaeger + OTel** |
-| Agents | 1 generic agent | **4 specialized + coordinator** |
-| Tools | `kubectl` only (7 cmds) | **22 registered wrappers; 19 agent-exposed** |
-| Scenarios | Static list | **28 frozen + up to 10 generated in a default benchmark run** |
-| Training RL | Offline / pre-collected | **Online GRPO — live GKE rollouts** |
-| Reward | Simple success/fail | **Anti-gaming contract: 5 components, 5 penalties, tier-weighted** |
-| Safety | None | **Approval gate + circuit breaker + audit log** |
-| GPU | NVIDIA (A10/H100) | **AMD MI300X 192GB — 5 models co-hosted** |
+These are local software checks, not a live infrastructure or training experiment.
+Use the documented Stage 4/6/7/8/9/13 contracts for separately authorized work.
+The old `eval.py`, `leaderboard.py`, and `make sft` / `make grpo` live shortcuts
+are disabled. No review instruction authorizes provisioning, fault injection,
+model downloads, training, or final-Test access.

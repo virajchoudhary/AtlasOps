@@ -147,7 +147,7 @@ training environment or a hardware requirement for the read-only local demo.
 | Quantisation | **BitsAndBytes-ROCm** (4-bit NF4 QLoRA, LoRA r=16) + **AWQ** (72B judge) |
 | Fine-tuning | **TRL** SFTTrainer + GRPOTrainer (DAPO loss) |
 | PEFT | **LoRA** r=16, α=32, target: q/k/v/o/gate/up/down proj |
-| AMD kernel optimisation | **Hugging Face Optimum-AMD** — BetterTransformer applied to local inference path (`inference.py`) |
+| AMD kernel optimisation | Historical upstream Optimum-AMD proposal; no active local optimisation path or verified hardware result is claimed |
 | Serving | **vLLM 0.17.1** (ROCm build — PagedAttention, flash attention for MI300X) |
 | Domain | **SRE Operations** — incident triage, root-cause diagnosis, remediation, postmortem authoring |
 
@@ -447,6 +447,11 @@ python scripts/release_gate.py --strict
 
 ## Project Structure
 
+This is a navigational summary. The wheel contains the core `agents`, `bench`,
+`config`, and `training` packages, including prompts/templates/manifests.
+Run the UI, demo, submission tools, and optional recommender from a source
+checkout; a successful wheel build is not a standalone UI deployment.
+
 ```
 atlasops/
 ├── agents/
@@ -462,6 +467,9 @@ atlasops/
 │   └── tools/                  # 24 registered wrappers; 19 agent-exposed
 ├── bench/
 │   ├── runner.py               # Mock-only benchmark of the 28 frozen scenarios
+│   ├── zero_shot_baseline.py   # Governed Stage 6 evaluation
+│   ├── sft_eval.py             # Governed Stage 8 checkpoint evaluation
+│   ├── grpo_eval.py            # Governed Stage 9 checkpoint evaluation
 │   └── chaos_manifests/        # sf-001..008 · cs-001..005 · mf-001..005 · named_replays/
 ├── config/
 │   └── runtime.py              # Frozen scenarios · reward contract · CurriculumManager · StepRewardTracker
@@ -470,7 +478,8 @@ atlasops/
 │   ├── grpo.py                 # Prospective direct-action GRPO with objective reward
 │   └── generate_trajectories.py
 ├── scripts/
-│   └── release_gate.py         # Pre-submission readiness checker
+│   ├── release_gate.py         # Pre-submission readiness checker
+│   └── package_submission.py   # Integrity inventory, not certification
 ├── static/
 │   └── index.html              # Read-only operator console
 ├── tests/                      # 100+ tests across tools, coordinator, bench, safety

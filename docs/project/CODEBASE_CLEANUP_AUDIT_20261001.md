@@ -293,3 +293,26 @@ wrapper with `-File` and a fake native Python command and verifies exit 5.
 The failed harness report remains preserved. No runtime or dependency contract
 changed. Broader source audits identify the legacy LoRA exporter as a separate
 candidate; no model export or historical reward-helper deletion was performed.
+
+## Legacy Model Export Retirement
+
+Base: PR 164 merge `73348f3fd4b58d9c9573a07be3dd9a109e705a9e`.
+The legacy LoRA exporter had no current code caller or required Stage 7/9 plan.
+It imported the model stack eagerly, loaded mutable model/tokenizer identifiers
+with remote code trusted, wrote an existing output directory, and could publish
+to a Hub repository with public visibility by default. That incomplete parallel
+workflow is replaced with a disabled compatibility entrypoint; the original
+remains in Git history. The historical Space guide no longer recommends its
+invocation. Future export is not implemented by this cleanup and requires its
+own checkpoint-provenance and publication contract.
+
+Tests verify import needs no ML package and writes nothing, and the legacy CLI
+fails before any work. Active trainers, serving adapters, candidate checkpoints,
+protocols and model artifacts are preserved. No model was loaded or exported,
+and no Hub publication was attempted. The retired source is hash-inventoried.
+
+Verification: the first selection had 72 passes, one POSIX-only skip, and one
+Linux-checkout hash failure for retained CRLF in the edited exporter. Normalized
+that file to its existing LF attribute and regenerated the manifest; the rerun
+passed 73 tests with one POSIX-only skip. Both reports remain preserved.
+Ruff and whitespace passed; protected training/runtime/evidence paths have no diff.

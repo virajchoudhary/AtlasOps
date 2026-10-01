@@ -299,6 +299,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "scripts/freeze_sft_pilot_plan.py",
         "scripts/collect_sft_remote_provenance.py",
         "training/sft.py",
+        "training/merge_lora_for_hub.py",
         "training/build_sft_dataset.py",
         "training/build_sft_candidate.py",
         "training/sft_candidate.py",

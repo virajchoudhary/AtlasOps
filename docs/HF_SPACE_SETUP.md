@@ -66,12 +66,19 @@ If Router returns 429/403 on 72B, set for example **`JUDGE_MODEL=Qwen/Qwen2.5-32
 
 ## Putting your GRPO weights on Hugging Face (7B)
 
+**Retired export shortcut:** `training/merge_lora_for_hub.py` is disabled.
+Its old mutable-model, remote-code and publication path did not establish
+checkpoint provenance or approved export. The serving options below are
+historical architecture notes, not instructions to merge, upload or deploy.
+A future export requires a reviewed immutable checkpoint/serving identity and
+separate authorization; this cleanup does not implement or authorize one.
+
 The coordinator sends **only** a `model` string (no silent LoRA layer). Serving options:
 
-1. **Merge LoRA locally** into the base checkpoint, upload the merged weights to `your-org/atlasops-7b-grpo`, set `AGENT_MODEL` to that repo (see `training/merge_lora_for_hub.py` after `pip install -e ".[train]"`).
+1. **Historical merged-weight serving proposal:** a provenance-verified merged checkpoint could be served under a reviewed Hub model identity. No current export procedure is supplied here.
 2. **Self-hosted vLLM + `--enable-lora`** on AMD hardware (not HF Space CPU) — would require coordinator changes to attach LoRA per request unless you bake merged weights yourself.
 
-For most hackathon demos **merged Hub model + Router** is the least painful.
+The historical hackathon proposal favored a merged Hub model plus Router.
 
 ## Live judge inside the Ops UI
 

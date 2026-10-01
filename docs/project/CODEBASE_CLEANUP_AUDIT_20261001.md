@@ -316,3 +316,23 @@ Linux-checkout hash failure for retained CRLF in the edited exporter. Normalized
 that file to its existing LF attribute and regenerated the manifest; the rerun
 passed 73 tests with one POSIX-only skip. Both reports remain preserved.
 Ruff and whitespace passed; protected training/runtime/evidence paths have no diff.
+
+## Shared G13 JSON Validation Helpers
+
+Base: PR 165 merge `7ae2e3b3225bfb836e2f82b4420f3f9987f95cc7`.
+AST comparison established exact duplicate bodies for replay's type-strict JSON
+equality and duplicate-field hook. Replay already imports the lineage and
+membership modules that own those implementations. The replay-local helper names
+now alias those implementations, removing redundant bodies without new imports,
+modules, metric formulas, membership rules or validation semantics.
+Regression cases cover strict Boolean/integer/float distinctions, nested values,
+length/key differences, helper identity and duplicate-field refusal. Existing
+replay/lineage/lossless-observation tests remain the primary behavior checks.
+Frozen measurement proposals, evidence, source hashes in historical records,
+training and runtime reward code are unchanged.
+
+Verification: 285 replay, lineage, lossless-observation, Stage 13 and inventory
+tests passed. Replay's runtime scorer manifest already includes the owning
+lineage and membership modules; their source hashes remain part of provenance.
+Correctness/unused-import lint and whitespace checks passed. No empirical
+episode, model operation, scenario membership or metric definition was changed.

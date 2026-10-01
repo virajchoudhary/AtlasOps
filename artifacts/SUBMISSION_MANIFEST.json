@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T22:28:42.157803+00:00",
+  "generated_at": "2026-10-01T22:50:49.959145+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -197,8 +197,8 @@
       "size_bytes": 4149
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
-      "sha256": "943dac37ed3345e16a11bb7437fce226dd2d87a9b59ed0c66e7b539d81a84e80",
-      "size_bytes": 21270
+      "sha256": "ae556a56d5beb99eba181ef66cb9728273b80e4910e3887a05dc698df9b4677e",
+      "size_bytes": 22507
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -709,8 +709,8 @@
       "size_bytes": 38684
     },
     "bench/candidate_replay.py": {
-      "sha256": "7c418ff0ee34663f06a616db87014db2114e1c4e1e765a1992f746079987b8d2",
-      "size_bytes": 50927
+      "sha256": "04f91106f921627098ed5504b92580a0de435ffb4f73c46018e26e9ef08ed3db",
+      "size_bytes": 50349
     },
     "bench/runner.py": {
       "sha256": "784845b280b5094573f882d736ce752efb0a5d84be71d9fcb967eb5230cb1969",
@@ -1149,8 +1149,8 @@
       "size_bytes": 34087
     },
     "tests/test_candidate_replay.py": {
-      "sha256": "03fa6cc230bba4f9383924edf0e2d1fd4c3b54712823dcbd3243168e6f1a487c",
-      "size_bytes": 48700
+      "sha256": "83c409cc59d63df928ddec90e6891cc0a0debb166cb56d77b0db7736a68f4353",
+      "size_bytes": 49736
     },
     "tests/test_chaos_manifests.py": {
       "sha256": "28f20b4ad5be7030b93074360b84dc96ac4d37749cda9a416fd2bc85ef411799",

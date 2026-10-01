@@ -22,6 +22,33 @@ _DEFAULT_G9_EVALUATOR_SOURCE = object()
 _OMIT_G9_EVALUATOR_SOURCE = object()
 
 
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ({"a": [1, True, None]}, {"a": [1, True, None]}, True),
+        ({"a": [1, True]}, {"a": [True, 1]}, False),
+        ({"a": 1}, {"a": 1.0}, False),
+        ({"a": False}, {"a": 0}, False),
+        ({"a": []}, {"b": []}, False),
+        ([1, 2], [1], False),
+    ],
+)
+def test_replay_shares_lineage_strict_json_equality(left, right, expected):
+    from bench import candidate_replay
+
+    assert candidate_replay._same_json_value is candidate_lineage._same_json_value
+    assert candidate_replay._same_json_value(left, right) is expected
+
+
+def test_replay_shares_membership_duplicate_field_guard():
+    from bench import candidate_replay
+
+    assert candidate_replay._unique_json_object is episode_membership._unique_raw_json_object
+    assert candidate_replay._unique_json_object([("a", 1), ("b", None)]) == {"a": 1, "b": None}
+    with pytest.raises(ValueError, match="duplicate field 'a'"):
+        candidate_replay._unique_json_object([("a", 1), ("a", 2)])
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 

@@ -1207,28 +1207,9 @@ def _module_source_sha256(module: Any, label: str) -> str:
     return hashlib.sha256(Path(source_path).read_bytes()).hexdigest()
 
 
-def _same_json_value(left: Any, right: Any) -> bool:
-    if type(left) is not type(right):
-        return False
-    if isinstance(left, Mapping):
-        return left.keys() == right.keys() and all(
-            _same_json_value(left[key], right[key]) for key in left
-        )
-    if isinstance(left, list):
-        return len(left) == len(right) and all(
-            _same_json_value(left_item, right_item)
-            for left_item, right_item in zip(left, right, strict=True)
-        )
-    return left == right
-
-
-def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    record: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in record:
-            raise ValueError(f"duplicate field {key!r}")
-        record[key] = value
-    return record
+# Preserve replay-local compatibility names while sharing the strict validators.
+_same_json_value = candidate_lineage._same_json_value
+_unique_json_object = episode_membership._unique_raw_json_object
 
 
 def _unique_in_order(values: Sequence[str]) -> list[str]:

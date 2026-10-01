@@ -75,6 +75,13 @@ The current registry specifies **24 registered tool wrappers** with **19 agent-e
 ---
 
 ### 2.4 ML Training Pipelines (`training/` & `notebooks/`)
+
+**Maintenance correction (2026-10-02):** the Kaggle notebook shortcuts are now
+retired. Their unpinned setup and incomplete SFT/mock-GRPO cells were not current
+training procedures. The historical implementation description below remains
+for provenance; use the Stage 7/9 contracts and reviewed host plans, not these
+notebooks, for prospective preparation.
+
 1. **Supervised Fine-Tuning (SFT)** (`training/sft.py`, `notebooks/kaggle_sft_training.ipynb`):
    - 4-bit NF4 QLoRA on `Qwen/Qwen2.5-7B-Instruct` with LoRA $r=16, \\alpha=32$.
    - 64 multi-agent demonstrations generated strictly from $T_{\\text{train}}$ with Qwen2.5 template loss-masking.

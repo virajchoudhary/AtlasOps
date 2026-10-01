@@ -1,33 +1,28 @@
-# AtlasOps — Cloud GPU Training Notebooks (Kaggle & Colab)
+# AtlasOps - Retired Cloud Training Shortcuts
 
-This directory contains standalone Jupyter notebooks preconfigured for running heavy GPU model training and RL optimization on free cloud accelerators (**Kaggle 2x T4 GPUs / 30 hours per week** or **Google Colab Free T4**).
+The two historical notebooks are disabled compatibility artifacts. They are not
+current Kaggle or Colab training procedures, evidence of GPU availability, or
+authorization to download weights, train, or read final-Test results. Their
+original cells remain in Git history; neither notebook stored training outputs.
 
----
+## Retired Paths
 
-## Available Notebooks
+| Notebook | Reason |
+| :--- | :--- |
+| [kaggle_sft_training.ipynb](kaggle_sft_training.ipynb) | Unpinned dependencies and an incomplete SFT invocation without required revision, admitted corpus, and host-plan provenance. |
+| [kaggle_grpo_training.ipynb](kaggle_grpo_training.ipynb) | Mock evaluators labeled as online GRPO; no actual training/checkpoint execution or held-out admission. |
 
-| Notebook | Purpose | Recommended Hardware | Description |
-| :--- | :--- | :--- | :--- |
-| [`kaggle_sft_training.ipynb`](kaggle_sft_training.ipynb) | **Supervised Fine-Tuning (Stage 7 & 8)** | Kaggle GPU T4 x2 or P100 | Runs 4-bit NF4 QLoRA on `Qwen/Qwen2.5-7B-Instruct` across the 64 multi-agent trajectory examples with Qwen template loss masking. |
-| [`kaggle_grpo_training.ipynb`](kaggle_grpo_training.ipynb) | **Online GRPO RL (Stage 9)** | Kaggle GPU T4 x2 or P100 | Executes Group Relative Policy Optimization with group advantage normalization ($A_i = \frac{r_i - \mu}{\sigma + \epsilon}$) and objective contract evaluation. |
+Both code cells fail immediately without imports, shell commands, installation,
+filesystem writes, or accelerator requests.
 
----
+## Current References
 
-## How to Run on Kaggle (Step-by-Step)
+- [Stage 7 data and training contract](../docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md)
+- [SFT pilot acceptance](../docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md)
+- [Named-host execution plan](../docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md)
+- [Stage 9 online GRPO contract](../docs/project/STAGE_9_ONLINE_GRPO.md)
+- [Observation-first software candidate](../docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md)
+- [Remote training readiness](../docs/project/G7_G9_REMOTE_TRAINING_READINESS.md)
 
-1. Go to [kaggle.com](https://www.kaggle.com/) and click **"+ Create"** $\rightarrow$ **"New Notebook"**.
-2. In the top-right notebook menu, click **"File"** $\rightarrow$ **"Import Notebook"** and upload either `kaggle_sft_training.ipynb` or `kaggle_grpo_training.ipynb`.
-3. In the right-hand panel (**Notebook Settings**):
-   - Set **Accelerator** to **GPU T4 x2** (or **GPU P100**).
-   - Set **Internet** to **On** (required to clone GitHub and download Hugging Face model weights).
-4. Click **"Run All"** (or run cells sequentially).
-5. Output adapter weights are saved to `/kaggle/working/` and can be downloaded or pushed to Hugging Face Hub directly.
-
----
-
-## How to Run on Google Colab
-
-1. Go to [colab.research.google.com](https://colab.research.google.com/).
-2. Click **"File"** $\rightarrow$ **"Upload notebook"** and upload the notebook.
-3. In the top menu, select **Runtime** $\rightarrow$ **Change runtime type** $\rightarrow$ **T4 GPU**.
-4. Run all cells.
+The project remains `NOT_CERTIFIED`. Preparation and software tests are distinct
+from approved model transfer, successful training, and empirical evaluation.

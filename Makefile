@@ -93,4 +93,4 @@ release-gate:
 	python scripts/release_gate.py --strict --output docs/RELEASE_READINESS.md
 
 smoke-e2e-local:
-	pytest tests/test_app_endpoints.py tests/test_coordinator.py tests/test_tools.py tests/test_bench_runner.py -q
+	python scripts/smoke_e2e_local.py --quiet

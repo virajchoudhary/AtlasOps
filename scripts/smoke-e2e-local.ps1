@@ -4,15 +4,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$args = @(
-    "tests/test_app_endpoints.py",
-    "tests/test_coordinator.py",
-    "tests/test_tools.py",
-    "tests/test_bench_runner.py"
-)
+$runner = Join-Path $PSScriptRoot "smoke_e2e_local.py"
 
 if ($Quiet) {
-    python -m pytest @args -q
+    python $runner --quiet
 } else {
-    python -m pytest @args -v
+    python $runner
 }
+exit $LASTEXITCODE

@@ -358,14 +358,14 @@ _TOPOLOGY_SERVICES = [
 
 
 @app.get("/cluster/health")
-async def cluster_health():
-    """Per-service health from kubectl get pods -n default."""
+def cluster_health():
+    """Query pods in FastAPI's worker pool so kubectl cannot block the event loop."""
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
     try:
         r = subprocess.run(
             ["kubectl", "get", "pods", "-n", "default", "-o", "json"],
-            capture_output=True, text=True, env=env, timeout=8,
+            capture_output=True, text=True, env=env, timeout=8, check=False,
         )
         if r.returncode != 0:
             return JSONResponse({"ok": False, "services": {}})

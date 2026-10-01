@@ -140,6 +140,73 @@ def test_cluster_health_handles_kubectl_failure(mock_run):
     assert isinstance(body["services"], dict)
 
 
+def test_cluster_health_does_not_run_blocking_io_on_event_loop(monkeypatch):
+    import asyncio
+
+    import app as app_module
+
+    def mocked_kubectl(*_args, **_kwargs):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            pytest.fail("kubectl subprocess ran on the request event loop")
+        return MagicMock(returncode=0, stdout='{"items": []}')
+
+    monkeypatch.setattr(app_module.subprocess, "run", mocked_kubectl)
+    response = _client().get("/cluster/health")
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+
+def test_slow_cluster_health_does_not_block_other_requests(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    import app as app_module
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_kubectl(*_args, **_kwargs):
+        started.set()
+        assert release.wait(timeout=10), "test did not release mocked kubectl"
+        return MagicMock(returncode=0, stdout='{"items": []}')
+
+    monkeypatch.setattr(app_module.subprocess, "run", slow_kubectl)
+    with _client() as client, ThreadPoolExecutor(max_workers=2) as pool:
+        cluster_request = pool.submit(client.get, "/cluster/health")
+        try:
+            assert started.wait(timeout=5)
+            health_request = pool.submit(client.get, "/health")
+            response = health_request.result(timeout=2)
+            assert response.status_code == 200
+            assert response.json()["status"] == "ok"
+            assert not cluster_request.done()
+        finally:
+            release.set()
+        assert cluster_request.result(timeout=5).json()["ok"] is True
+
+
+@pytest.mark.parametrize("failure", ["timeout", "invalid_json"])
+def test_cluster_health_query_errors_remain_unavailable(monkeypatch, failure):
+    import subprocess
+
+    import app as app_module
+
+    def failed_query(*_args, **_kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("kubectl", 8)
+        return MagicMock(returncode=0, stdout="invalid json")
+
+    monkeypatch.setattr(app_module.subprocess, "run", failed_query)
+    response = _client().get("/cluster/health")
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["services"] == {}
+
+
 def test_approval_callback_and_pending_flow():
     from agents.approval import approval_gate
 

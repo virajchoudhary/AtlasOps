@@ -165,3 +165,35 @@ Their roles and provenance differ despite equal bytes.
   requirements were rejected by pip. The successful probe used a temporary
   name/version-only constraints projection; the tracked development lock was
   not rewritten or weakened.
+
+## Runtime and Packaging Follow-Up: 2026-10-02
+
+- PRs 156-159 are merged through `231a74585369c138c78393f9a984daadd24a9871`.
+  The current follow-up remains local on `chore/runtime-cleanup-polish-20261002`.
+- Removed remaining equivalent import, UTC, and subprocess syntax diagnostics
+  while retaining deferred imports, compatibility exports, failure reporting,
+  and fail-closed approval. An independent Luna Max read-only review accepted
+  both standards and scope for the six-file runtime-polish batch.
+- Runtime-polish recovery: 93 affected tests passed. The earlier fixture-location
+  failure and missing-scratch-parent errors remain preserved as separate XML
+  reports under `C:\AtlasOps-backups`; neither was converted into a passing run.
+- Stable-tree local suite: 2524 passed, 13 skipped, one deselected, zero failures
+  in 406.13 seconds. The accidentally deselected read-only infrastructure-values
+  test separately passed. The intended legacy Helm test did run; Helm repository
+  configuration modification time remained unchanged. No live acceptance script
+  or real infrastructure operation was executed.
+- Source and wheel builds succeeded. Archive inspection then found preserved
+  untracked preflight logs, overnight patches, coordination notes, and a backup
+  in the source distribution. Added source-distribution-only exclusions for
+  these records and known credential filename patterns, leaving files and Git
+  visibility unchanged. The full-suite result above predates this packaging fix.
+- Added the maintained Stage 3 acceptance script to the curated submission
+  inventory. This hashes its source; it does not claim current cluster health.
+  Historical evidence, frozen configuration, upstream ancestry, and license
+  remain unchanged. The packaging, inventory, demo, and runtime-contract selection
+  passed 61 tests. The rebuilt source archive excluded all 65 local-only entries
+  identified above while retaining the negative incident evidence and SFT template.
+  The final inventory contains 351 selected assets.
+- Read-only release checks pass artifact validation. Scientific readiness still
+  fails for the open empirical gates, and the inventory remains `NOT_CERTIFIED`.
+  No generic cleanup approval authorizes training, Chaos, or empirical closure.

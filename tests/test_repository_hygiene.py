@@ -89,6 +89,51 @@ def test_git_ignores_generated_clutter_but_not_research_evidence():
     assert {path.decode() for path in result.stdout.split(b"\0") if path} == set(generated)
 
 
+def test_source_distribution_excludes_local_records_and_credential_filenames():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = set(project["tool"]["hatch"]["build"]["targets"]["sdist"]["exclude"])
+    assert {
+        "/OVERNIGHT_STATE.md",
+        "/artifacts/local-preflight",
+        "/artifacts/overnight_diffs",
+    } <= patterns
+    local_filenames = [
+        "scripts/run_stage4_golden_incident.py.bak-0918",
+        ".env.local",
+        "config/.env.production",
+        "credentials.json",
+        "config/application_default_credentials.json",
+        "config/gcp-service-account.json",
+        "config/service_account_key.json",
+        "config/gcp-credentials-dev.json",
+        "config/gcloud-credentials.json",
+        "config/operator.secret",
+        "config/operator.secrets",
+        "config/operator.key",
+        "config/operator.token",
+        "config/operator.pem",
+        "config/operator.kubeconfig",
+        "config/kubeconfig",
+    ]
+    preserved_source = [
+        "agents/coordinator.py",
+        "training/templates/qwen2_5_tool_sft.jinja",
+        "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json",
+        "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl",
+        "docs/project/MASTER_PIPELINE_STATUS.md",
+        "LICENSE",
+    ]
+    assert all(
+        any(PurePosixPath("/" + path).match(pattern) for pattern in patterns)
+        for path in local_filenames
+    )
+    assert not any(
+        PurePosixPath("/" + path).match(pattern)
+        for path in preserved_source
+        for pattern in patterns
+    )
+
+
 def test_old_training_shortcuts_do_not_launch_python():
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     for target in ("sft", "grpo"):

@@ -37,14 +37,14 @@ KIND_CONTEXT = "kind-atlasops-local"
 def run_kubectl(args: list[str], timeout: int = 20) -> dict[str, Any]:
     cmd = ["kubectl", "--context", KIND_CONTEXT] + args
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         return {
             "success": res.returncode == 0,
             "stdout": res.stdout.strip(),
             "stderr": res.stderr.strip(),
             "returncode": res.returncode,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - record a failed probe rather than abandon the acceptance report
         return {"success": False, "error": str(exc), "returncode": -1}
 
 
@@ -59,7 +59,7 @@ def test_http_endpoint(url: str, timeout: int = 6) -> dict[str, Any]:
                 "bytes_read": len(data),
                 "preview": data.decode("utf-8", errors="replace")[:200],
             }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - retain transport and decoding failures as negative probe evidence
         return {"success": False, "error": str(exc)}
 
 
@@ -150,11 +150,11 @@ def run_acceptance() -> dict[str, Any]:
     time.sleep(3)
 
     try:
-        from agents.tools.kubectl import kubectl_get, kubectl_describe, kubectl_logs
-        from agents.tools.prometheus import promql_query
         from agents.tools.alertmanager import alertmanager_list_alerts
-        from agents.tools.jaeger import jaeger_search
         from agents.tools.argocd import argocd_list_apps
+        from agents.tools.jaeger import jaeger_search
+        from agents.tools.kubectl import kubectl_describe, kubectl_get, kubectl_logs
+        from agents.tools.prometheus import promql_query
 
         k_pods = kubectl_get("pods", namespace="default")
         tool_results["kubectl_get"] = {"success": k_pods.get("success"), "count": len(k_pods.get("parsed", {}).get("items", []))}
@@ -177,7 +177,7 @@ def run_acceptance() -> dict[str, Any]:
         argo_a = argocd_list_apps()
         tool_results["argocd_list_apps"] = {"success": argo_a.get("success"), "apps": len(argo_a.get("apps", []))}
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - preserve wrapper failure details and still close port forwards
         tool_results["error"] = str(exc)
     finally:
         for p in pf_procs:

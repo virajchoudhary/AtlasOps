@@ -54,6 +54,28 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["agents", "bench", "config", "training"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/OVERNIGHT_STATE.md",
+    "/artifacts/local-preflight",
+    "/artifacts/overnight_diffs",
+    "**/*.bak*",
+    "**/.env*",
+    "**/credentials.json",
+    "**/application_default_credentials.json",
+    "**/*service-account*.json",
+    "**/*service_account*.json",
+    "**/gcp-credentials*.json",
+    "**/gcloud-credentials*.json",
+    "**/*.secret",
+    "**/*.secrets",
+    "**/*.key",
+    "**/*.token",
+    "**/*.pem",
+    "**/*.kubeconfig",
+    "**/kubeconfig",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

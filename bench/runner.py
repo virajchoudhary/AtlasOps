@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agents.coordinator import handle_incident
@@ -26,6 +26,8 @@ from agents.judge import judge_trajectory
 from config.runtime import (
     FROZEN_SCENARIOS,
     evaluate_reward_contract,
+)
+from config.runtime import (
     bounded_speed_score as _bounded_speed_score,  # noqa: F401 - legacy public test API
 )
 from config.scenario_catalog import SCENARIO_CATALOG
@@ -149,7 +151,7 @@ async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
         incident = await handle_incident(alert)
         judge_score = await judge_trajectory(incident, tier=tier)
     except Exception as e:
-        log.exception("scenario %s failed: %s", scenario_id, e)
+        log.exception("scenario %s failed", scenario_id)
         reset_cluster()
         return {"scenario_id": scenario_id, "status": "error", "error": str(e)}
 
@@ -234,7 +236,7 @@ def compute_summary(results: list[dict], tag: str, model: str) -> dict:
     return {
         "tag": tag,
         "model": model,
-        "run_date": datetime.now(timezone.utc).isoformat(),
+        "run_date": datetime.now(UTC).isoformat(),
         "total_scenarios": len(results),
         "resolution_rate": round(len(resolved) / max(len(valid), 1), 3),
         "avg_reward": round(sum(judge_scores) / len(judge_scores), 3) if judge_scores else None,
@@ -327,7 +329,7 @@ async def main() -> None:
     os.environ["AGENT_MODEL"] = args.model
 
     tag = args.tag or f"run-{int(time.time())}"
-    run_id = f"{tag}-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    run_id = f"{tag}-{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
     out_dir = Path(args.output) if args.output else (RESULTS_DIR / run_id)
     out_dir.mkdir(parents=True, exist_ok=False)
 

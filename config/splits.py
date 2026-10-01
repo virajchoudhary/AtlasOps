@@ -22,15 +22,15 @@ from config.scenario_catalog import (
 )
 
 __all__ = [
-    "TRAIN_SEED",
-    "VAL_SEED",
-    "TEST_SEED",
     "LEADERBOARD_SEED",
-    "TRAIN_SPLIT",
-    "VAL_SPLIT",
-    "TEST_SPLIT",
     "LEADERBOARD_SPLIT",
     "SPLIT_PARTITIONS",
+    "TEST_SEED",
+    "TEST_SPLIT",
+    "TRAIN_SEED",
+    "TRAIN_SPLIT",
+    "VAL_SEED",
+    "VAL_SPLIT",
     "get_split",
     "get_split_scenarios",
     "verify_split_disjointness",

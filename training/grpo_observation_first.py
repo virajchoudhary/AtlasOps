@@ -187,10 +187,18 @@ class ObservationFirstGRPOMixin:
         self,
         *args: Any,
         observation_lifecycle: ObservationLifecycle,
+        observation_journal: Any = None,
         **kwargs: Any,
     ) -> None:
         self._observation_lifecycle = self._validate_lifecycle(observation_lifecycle)
+        self._observation_journal = observation_journal
+        if observation_journal is not None:
+            from training.grpo_observation_journal import ObservationJournal
+
+            if not isinstance(observation_journal, ObservationJournal):
+                raise TypeError("Observation journal must be an opened ObservationJournal")
         self._active_group: _GenerationGroup | None = None
+        self._journal_group_id: str | None = None
         self._active_records: list[dict[str, Any]] = []
         self._reward_invoked = False
         self._observation_evidence: list[dict[str, Any]] = []
@@ -301,6 +309,7 @@ class ObservationFirstGRPOMixin:
             raise RuntimeError("Observation-first GRPO group is already active")
         scenario_id, group_size = self._validate_generation_batch(inputs)
         token = secrets.token_hex(16)
+        journal_group_id = secrets.token_hex(16)
         begin_attempted = False
         group: _GenerationGroup | None = None
         status = "failed"
@@ -308,6 +317,8 @@ class ObservationFirstGRPOMixin:
         active_error: BaseException | None = None
 
         try:
+            self._journal_group_id = journal_group_id
+            self._journal_event("group_started", {"scenario_id": scenario_id})
             begin_attempted = True
             observed = _require_sync(
                 self._observation_lifecycle.begin(scenario_id), "begin"
@@ -335,6 +346,15 @@ class ObservationFirstGRPOMixin:
             self._active_group = group
             self._active_records = []
             self._reward_invoked = False
+            self._journal_event(
+                "group_observed",
+                {
+                    "scenario_id": scenario_id,
+                    "observation_digest": digest,
+                    "state_prompt_sha256": prompt_sha256,
+                    "observed_at": observed_at,
+                },
+            )
 
             generation_inputs = []
             for sample_index in range(group_size):
@@ -391,8 +411,8 @@ class ObservationFirstGRPOMixin:
                     summary["finish_error_type"] = type(finish_error).__name__
                     if error_type is None:
                         summary["error_type"] = type(finish_error).__name__
-                    self._observation_evidence.append(copy.deepcopy(summary))
                     if active_error is None:
+                        active_error = finish_error
                         raise
                     active_error.add_note(
                         "Observation lifecycle finish also failed: "
@@ -400,11 +420,51 @@ class ObservationFirstGRPOMixin:
                     )
                 else:
                     summary["finish_callback_status"] = "returned"
-                    self._observation_evidence.append(copy.deepcopy(summary))
                 finally:
-                    self._active_group = None
-                    self._active_records = []
-                    self._reward_invoked = False
+                    try:
+                        self._journal_event("group_finished", summary)
+                    except BaseException as journal_error:
+                        summary["status"] = "failed"
+                        summary["journal_error_type"] = type(journal_error).__name__
+                        if active_error is None:
+                            raise
+                        active_error.add_note(
+                            "Observation journal finalization also failed: "
+                            f"{type(journal_error).__name__}"
+                        )
+                    finally:
+                        self._observation_evidence.append(copy.deepcopy(summary))
+                        self._active_group = None
+                        self._active_records = []
+                        self._reward_invoked = False
+                        self._journal_group_id = None
+            else:
+                self._journal_group_id = None
+
+    def _journal_event(self, event: str, data: Mapping[str, Any]) -> None:
+        if self._observation_journal is not None:
+            if event == "group_finished":
+                data = {
+                    key: data.get(key)
+                    for key in (
+                        "scenario_id", "status", "error_type",
+                        "finish_callback_status", "finish_error_type",
+                    )
+                } | {
+                    "records": [
+                        {
+                            key: record[key]
+                            for key in (
+                                "sample_index", "result_status", "verifier_status",
+                                "failure", "reward", "scorable", "approval_decision",
+                                "terminal_block",
+                            )
+                            if key in record
+                        }
+                        for record in self._active_records
+                    ]
+                }
+            self._observation_journal.append(event, self._journal_group_id, data)
 
     def _group_summary(
         self,
@@ -504,6 +564,14 @@ class ObservationFirstGRPOMixin:
                 "certification_status": "NOT_CERTIFIED",
             }
             self._active_records.append(record)
+            self._journal_event(
+                "sample_started",
+                {
+                    "scenario_id": group.scenario_id,
+                    "sample_index": index,
+                    "completion_sha256": record["completion_sha256"],
+                },
+            )
             try:
                 admitted = _require_sync(
                     self._observation_lifecycle.before_action(
@@ -545,6 +613,14 @@ class ObservationFirstGRPOMixin:
                 record["failure"] = "before_action_timestamp_invalid"
                 raise ValueError("Fresh pre-action observation predates the generation snapshot")
             record["before_action_observed_at"] = before_action_at
+            self._journal_event(
+                "sample_execute_started",
+                {
+                    "scenario_id": group.scenario_id,
+                    "sample_index": index,
+                    "completion_sha256": record["completion_sha256"],
+                },
+            )
             try:
                 result = _require_sync(
                     self._observation_lifecycle.execute(

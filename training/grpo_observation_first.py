@@ -28,6 +28,9 @@ _BINDING_FIELDS = (
     "g9_prompt_sha256",
     "g9_sample_index",
 )
+_APPROVAL_DECISIONS = frozenset(
+    {"approved", "rejected", "timeout", "missing", "identity_missing"}
+)
 
 
 class ObservationLifecycle(Protocol):
@@ -151,6 +154,8 @@ def _action_lineage_matches(
     if result.get("agent_claimed_resolved") is not action["agent_claimed_resolved"]:
         return False
     executed = result.get("executed_actions")
+    if result.get("status") == "blocked":
+        return isinstance(executed, list) and not executed
     if not isinstance(executed, list) or len(executed) != 1:
         return False
     action_result = executed[0]
@@ -159,6 +164,15 @@ def _action_lineage_matches(
         and action_result.get("tool") == action["tool"]
         and action_result.get("arguments") == action["arguments"]
     )
+
+
+def _approval_decision(approval: Any) -> str:
+    if not isinstance(approval, Mapping) or "decision" not in approval:
+        return "unavailable"
+    decision = approval.get("decision")
+    if isinstance(decision, str) and decision in _APPROVAL_DECISIONS:
+        return decision
+    return "invalid"
 
 
 class ObservationFirstGRPOMixin:
@@ -465,50 +479,68 @@ class ObservationFirstGRPOMixin:
         for index, (completion, action) in enumerate(
             zip(completion_values, actions, strict=True)
         ):
-            admitted = _require_sync(
-                self._observation_lifecycle.before_action(
-                    _fresh_state(group.snapshot_bytes), index
-                ),
-                "before_action",
-            )
-            if not isinstance(admitted, Mapping) or set(admitted) != {
-                "state",
-                "observed_at",
-            }:
-                raise ValueError(
-                    "Observation lifecycle before_action must return state and observed_at"
-                )
-            admitted_bytes, admitted_digest = _public_snapshot(admitted["state"])
-            if admitted_digest != group.digest or admitted_bytes != group.snapshot_bytes:
-                raise ValueError(
-                    "Fresh pre-action state drifted from the generation snapshot"
-                )
-            before_action_at = _utc_timestamp(
-                admitted["observed_at"], "before_action observed_at"
-            )
-            if datetime.fromisoformat(
-                before_action_at.replace("Z", "+00:00")
-            ) < datetime.fromisoformat(group.observed_at.replace("Z", "+00:00")):
-                raise ValueError("Fresh pre-action observation predates the generation snapshot")
             record: dict[str, Any] = {
                 "scenario_id": group.scenario_id,
                 "sample_index": index,
                 "observation_digest": group.digest,
                 "state_prompt_sha256": group.prompt_sha256,
                 "observed_at": group.observed_at,
-                "before_action_observed_at": before_action_at,
+                "before_action_observed_at": None,
                 "completion_sha256": hashlib.sha256(
                     completion.encode("utf-8")
                 ).hexdigest(),
                 "action": copy.deepcopy(action),
                 "result_status": None,
                 "verifier_status": None,
+                "terminal_block": None,
+                "approval_decision": None,
                 "reward": None,
                 "scorable": False,
                 "result_classification": "NON_EMPIRICAL",
                 "certification_status": "NOT_CERTIFIED",
             }
             self._active_records.append(record)
+            try:
+                admitted = _require_sync(
+                    self._observation_lifecycle.before_action(
+                        _fresh_state(group.snapshot_bytes), index
+                    ),
+                    "before_action",
+                )
+            except BaseException as exc:
+                record["failure"] = f"before_action_exception:{type(exc).__name__}"
+                raise
+            if not isinstance(admitted, Mapping) or set(admitted) != {
+                "state",
+                "observed_at",
+            }:
+                record["failure"] = "invalid_before_action_observation"
+                raise ValueError(
+                    "Observation lifecycle before_action must return state and observed_at"
+                )
+            try:
+                admitted_bytes, admitted_digest = _public_snapshot(admitted["state"])
+            except (TypeError, ValueError) as exc:
+                record["failure"] = f"before_action_state_invalid:{type(exc).__name__}"
+                raise
+            if admitted_digest != group.digest or admitted_bytes != group.snapshot_bytes:
+                record["failure"] = "before_action_state_drift"
+                raise ValueError(
+                    "Fresh pre-action state drifted from the generation snapshot"
+                )
+            try:
+                before_action_at = _utc_timestamp(
+                    admitted["observed_at"], "before_action observed_at"
+                )
+            except (TypeError, ValueError):
+                record["failure"] = "before_action_timestamp_invalid"
+                raise
+            if datetime.fromisoformat(
+                before_action_at.replace("Z", "+00:00")
+            ) < datetime.fromisoformat(group.observed_at.replace("Z", "+00:00")):
+                record["failure"] = "before_action_timestamp_invalid"
+                raise ValueError("Fresh pre-action observation predates the generation snapshot")
+            record["before_action_observed_at"] = before_action_at
             try:
                 result = _require_sync(
                     self._observation_lifecycle.execute(
@@ -543,6 +575,27 @@ class ObservationFirstGRPOMixin:
                 raise ValueError(
                     "Environment result does not match the exact policy completion/action"
                 )
+            if result.get("status") == "blocked":
+                from training.grpo_environment import TERMINAL_BLOCK_CATEGORIES
+
+                terminal_block = result.get("terminal_block")
+                category = (
+                    terminal_block.get("category")
+                    if isinstance(terminal_block, Mapping)
+                    else None
+                )
+                if not isinstance(category, str) or category not in TERMINAL_BLOCK_CATEGORIES:
+                    record["failure"] = "invalid_blocked_result"
+                    raise ValueError(
+                        "Environment blocked result has an invalid terminal category"
+                    )
+                record["terminal_block"] = {"category": category}
+                if category == "approval_required":
+                    record["approval_decision"] = _approval_decision(
+                        result.get("approval")
+                    )
+                record["failure"] = f"environment_blocked:{category}"
+                raise ValueError(f"Environment blocked policy action: {category}")
             try:
                 from training.grpo import compute_direct_action_reward
 

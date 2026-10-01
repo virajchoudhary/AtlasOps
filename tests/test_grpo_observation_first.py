@@ -45,12 +45,42 @@ def _result(completion: str) -> dict:
     }
 
 
+def _blocked_result(
+    completion: str, category: str, approval_decision: str | None = None
+) -> dict:
+    action = parse_policy_action(completion)
+    result = {
+        "scenario_id": SCENARIO_ID,
+        "status": "blocked",
+        "scorable": True,
+        "policy_completion": completion,
+        "policy_action": action,
+        "executed_actions": [],
+        "verification": None,
+        "agent_claimed_resolved": action["agent_claimed_resolved"],
+        "terminal_block": {
+            "category": category,
+            "reason": "private environment detail",
+        },
+    }
+    if approval_decision is not None:
+        result["approval"] = {
+            "decision": approval_decision,
+            "approved_by": "private operator identity",
+            "reason": "private approval detail",
+            "token": "private approval token",
+        }
+    return result
+
+
 class _Lifecycle:
     def __init__(self):
         self.events = []
         self.finished = []
         self.before_snapshots = []
         self.begin_error = None
+        self.before_error = None
+        self.before_error_index = None
         self.before_state = None
         self.before_observed_at = None
         self.mutate_before_snapshot = False
@@ -73,6 +103,10 @@ class _Lifecycle:
     def before_action(self, snapshot, index):
         self.events.append(("before_action", index))
         self.before_snapshots.append(snapshot)
+        if self.before_error is not None and (
+            self.before_error_index is None or self.before_error_index == index
+        ):
+            raise self.before_error
         if self.mutate_before_snapshot:
             snapshot["alert"]["labels"]["alertname"] = "MutatedCallbackCopy"
         state = self.before_state if self.before_state is not None else snapshot
@@ -363,7 +397,11 @@ def test_pre_action_state_drift_blocks_execution():
         "before_action",
         "finish",
     ]
-    assert trainer.observation_evidence[0]["records"] == []
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["failure"] == "before_action_state_drift"
+    assert record["before_action_observed_at"] is None
+    assert record["reward"] is None
+    assert record["scorable"] is False
 
 
 def test_pre_action_timestamp_cannot_predate_generation_snapshot():
@@ -375,6 +413,42 @@ def test_pre_action_timestamp_cannot_predate_generation_snapshot():
 
     assert not any(event[0] == "execute" for event in lifecycle.events)
     assert lifecycle.finished[0][1] == "failed"
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["failure"] == "before_action_timestamp_invalid"
+    assert record["before_action_observed_at"] is None
+    assert record["reward"] is None
+
+
+def test_pre_action_callback_exception_retains_bounded_negative_evidence():
+    trainer, lifecycle = _new_trainer()
+    lifecycle.before_error = RuntimeError("private callback error")
+
+    with pytest.raises(RuntimeError, match="private callback error"):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["failure"] == "before_action_exception:RuntimeError"
+    assert record["completion_sha256"]
+    assert record["action"]["tool"] == "kubectl_get"
+    assert record["before_action_observed_at"] is None
+    assert record["reward"] is None
+    assert record["scorable"] is False
+    evidence = json.dumps(trainer.observation_evidence[0])
+    assert "private callback error" not in evidence
+
+
+def test_malformed_pre_action_timestamp_retains_negative_evidence():
+    trainer, lifecycle = _new_trainer()
+    lifecycle.before_observed_at = "not-a-timestamp"
+
+    with pytest.raises(ValueError, match="RFC 3339"):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["failure"] == "before_action_timestamp_invalid"
+    assert record["before_action_observed_at"] is None
+    assert record["reward"] is None
+    assert record["scorable"] is False
 
 
 def test_completion_strings_are_all_admitted_before_any_execution():
@@ -466,6 +540,160 @@ def test_unscorable_environment_result_is_retained_without_invented_reward():
     assert record["reward"] is None
     assert record["scorable"] is False
     assert record["failure"] == "ValueError"
+
+
+@pytest.mark.parametrize(
+    "decision", ["approved", "rejected", "timeout", "missing", "identity_missing"]
+)
+def test_approval_block_preserves_bounded_decision_without_numeric_reward(decision):
+    trainer, lifecycle = _new_trainer()
+    lifecycle.result_mutator = lambda result: _blocked_result(
+        result["policy_completion"], "approval_required", decision
+    )
+
+    with pytest.raises(ValueError, match="approval_required"):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["result_status"] == "blocked"
+    assert record["terminal_block"] == {"category": "approval_required"}
+    assert record["approval_decision"] == decision
+    assert record["failure"] == "environment_blocked:approval_required"
+    assert record["reward"] is None
+    assert record["scorable"] is False
+    assert record["result_classification"] == "NON_EMPIRICAL"
+    assert lifecycle.finished[0][1] == "failed"
+    evidence = json.dumps(trainer.observation_evidence[0])
+    for private_value in (
+        "private environment detail",
+        "private operator identity",
+        "private approval detail",
+        "private approval token",
+    ):
+        assert private_value not in evidence
+
+
+def test_policy_block_is_retained_without_numeric_reward():
+    trainer, lifecycle = _new_trainer()
+    lifecycle.result_mutator = lambda result: _blocked_result(
+        result["policy_completion"], "policy_block"
+    )
+
+    with pytest.raises(ValueError, match="policy_block"):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["result_status"] == "blocked"
+    assert record["terminal_block"] == {"category": "policy_block"}
+    assert record["failure"] == "environment_blocked:policy_block"
+    assert record["reward"] is None
+    assert record["scorable"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unexpected_execution",
+        "completion",
+        "policy_action",
+        "scenario",
+        "terminal_block",
+    ],
+)
+def test_malformed_blocked_result_is_not_recorded_as_a_valid_environment_block(
+    mutation,
+):
+    trainer, lifecycle = _new_trainer()
+
+    def tamper(_result):
+        result = _blocked_result(
+            COMPLETION, "approval_required", "rejected"
+        )
+        if mutation == "unexpected_execution":
+            action = parse_policy_action(COMPLETION)
+            result["executed_actions"] = [
+                {"tool": action["tool"], "arguments": action["arguments"]}
+            ]
+        elif mutation == "completion":
+            result["policy_completion"] = (
+                '{"tool":"kubectl_delete","arguments":{},'
+                '"agent_claimed_resolved":false}'
+            )
+        elif mutation == "policy_action":
+            result["policy_action"] = {
+                "tool": "kubectl_delete",
+                "arguments": {},
+                "agent_claimed_resolved": False,
+            }
+        elif mutation == "scenario":
+            result["scenario_id"] = "different-scenario"
+        else:
+            result["terminal_block"] = {"category": "unknown"}
+        return result
+
+    lifecycle.result_mutator = tamper
+    with pytest.raises(ValueError):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["failure"] in {
+        "action_lineage_mismatch",
+        "invalid_blocked_result",
+    }
+    assert record["failure"] != "environment_blocked:approval_required"
+    assert record["terminal_block"] is None
+    assert record.get("approval_decision") is None
+    assert record["reward"] is None
+    assert record["scorable"] is False
+
+
+@pytest.mark.parametrize(
+    ("approval", "expected"),
+    [
+        (None, "unavailable"),
+        ({"decision": "untrusted decision", "token": "private token"}, "invalid"),
+        ({"decision": None, "approved_by": "private identity"}, "invalid"),
+    ],
+)
+def test_approval_block_does_not_copy_unknown_or_missing_decision_fields(
+    approval, expected
+):
+    trainer, lifecycle = _new_trainer()
+
+    def blocked_with_approval(result):
+        blocked = _blocked_result(result["policy_completion"], "approval_required")
+        blocked["approval"] = approval
+        return blocked
+
+    lifecycle.result_mutator = blocked_with_approval
+    with pytest.raises(ValueError, match="approval_required"):
+        trainer._generate_and_score_completions(_inputs())
+
+    record = trainer.observation_evidence[0]["records"][0]
+    assert record["approval_decision"] == expected
+    evidence = json.dumps(trainer.observation_evidence[0])
+    assert "untrusted decision" not in evidence
+    assert "private token" not in evidence
+    assert "private identity" not in evidence
+
+
+def test_later_pre_action_failure_preserves_prior_scorable_and_negative_attempts():
+    trainer, lifecycle = _new_trainer()
+    lifecycle.before_error = RuntimeError("private callback error")
+    lifecycle.before_error_index = 1
+
+    with pytest.raises(RuntimeError, match="private callback error"):
+        trainer._generate_and_score_completions(_inputs())
+
+    records = trainer.observation_evidence[0]["records"]
+    assert len(records) == 2
+    assert records[0]["scorable"] is True
+    assert records[0]["reward"] == 0.125
+    assert records[1]["failure"] == "before_action_exception:RuntimeError"
+    assert records[1]["scorable"] is False
+    assert records[1]["reward"] is None
+    assert sum(event[0] == "execute" for event in lifecycle.events) == 1
+    assert lifecycle.finished[0][1] == "failed"
 
 
 def test_mutating_pre_action_callback_receives_fresh_copy_each_time():

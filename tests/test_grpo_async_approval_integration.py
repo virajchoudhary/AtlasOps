@@ -97,6 +97,7 @@ class _AsyncIncident:
             _action_approval_permit=permit,
         )
         result["scenario_id"] = SCENARIO
+        result["approval"] = {"decision": decision["status"]}
         self.results.append(result)
         if permit is not None:
             assert not self.gate.consume_action_permit(
@@ -191,13 +192,17 @@ def test_real_loopback_decision_survives_sync_generation_and_gates_exact_action(
                 assert all(result["policy_completion"] == COMPLETION for result in incident.results)
                 assert incident.finished == ["completed"]
             else:
-                with pytest.raises(ValueError, match="exact policy completion/action"):
+                with pytest.raises(ValueError, match="(?i)environment.*blocked"):
                     trainer._generate_and_score_completions(inputs)
                 assert incident.decisions == [decision]
                 assert incident.executions == []
                 assert incident.results[0]["status"] == "blocked"
                 assert incident.results[0]["terminal_block"]["category"] == "approval_required"
                 assert incident.finished == ["failed"]
+                record = trainer.observation_evidence[0]["records"][0]
+                assert record["failure"] == "environment_blocked:approval_required"
+                assert record["approval_decision"] == decision
+                assert record["reward"] is None and record["scorable"] is False
             assert len(set(incident.thread_ids)) == 1
             assert incident.thread_ids[0] != threading.get_ident()
             assert trainer.observation_evidence[0]["result_classification"] == "NON_EMPIRICAL"

@@ -144,3 +144,24 @@ Their roles and provenance differ despite equal bytes.
   worktrees need owner decisions, and clean/merged status alone does not establish
   inactivity or permission to remove an existing task checkout. GitHub commit,
   push, PR, CI, and merge remain pending explicit publication authorization.
+
+## Headless Dependency Extension
+
+- Follow-up base: merged cleanup `700584216d4df6b6986056950e761d8748f83463`.
+  Local branch: `chore/lean-coordinator-dependencies-20261001`.
+- Gradio has no coordinator, tool, or benchmark runtime imports. Move it from
+  base dependencies to `demo`, retaining it in `dev` so the documented
+  development setup and unit suite remain complete.
+- Regenerated canonical Windows development lock is byte-identical; no
+  dependency versions changed. Demo/container/hygiene selection: 42 passed.
+  Source/wheel build and correctness lint passed.
+- A fresh base-wheel-only environment has 60 installed distributions, no
+  Gradio or training stack, and passes `pip check`. From an empty temporary
+  working directory, the installed wheel's coordinator served loopback
+  `/healthz` with HTTP 200 and `{"status":"ok"}`. The test process was stopped.
+- This runtime probe used no credentials, incident dispatch, models, or cluster.
+  It proves headless package startup only, not incident resolution or deployment.
+- Initial constraints attempts using the editable dev lock and extra-bearing
+  requirements were rejected by pip. The successful probe used a temporary
+  name/version-only constraints projection; the tracked development lock was
+  not rewritten or weakened.

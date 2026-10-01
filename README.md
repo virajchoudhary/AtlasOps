@@ -451,6 +451,9 @@ This is a navigational summary. The wheel contains the core `agents`, `bench`,
 `config`, and `training` packages, including prompts/templates/manifests.
 Run the UI, demo, submission tools, and optional recommender from a source
 checkout; a successful wheel build is not a standalone UI deployment.
+The base install is headless. Install `.[demo]` for the read-only Gradio demo,
+or use the documented `.[dev]` development setup, which includes it. The
+coordinator does not require Gradio or its browser/media dependencies.
 
 ```
 atlasops/

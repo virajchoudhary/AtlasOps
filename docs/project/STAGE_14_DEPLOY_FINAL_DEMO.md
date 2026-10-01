@@ -2,6 +2,10 @@
 
 **G14 is PARTIAL.** The local Gradio console is a demonstration and evidence browser. It does not establish live service health, deployment safety, or an empirical gate pass.
 
+The canonical development lock includes Gradio. For a source checkout without
+development dependencies, install `.[demo]` before launching this console.
+The headless coordinator's base install intentionally excludes Gradio.
+
 ## Start
 
 From the repository root on Windows:

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T12:24:26.195031+00:00",
+  "generated_at": "2026-10-01T15:03:29.275948+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -69,12 +69,12 @@
       "size_bytes": 4079
     },
     "pyproject.toml": {
-      "sha256": "db9f58427bb9c56d6b4be280c4ab9c559788398cf945902ad2b30aa49b81b748",
-      "size_bytes": 1255
+      "sha256": "ae7e3a0dce0131256d142fc953b567cd98fac1885e9acff6888d54c06a26495f",
+      "size_bytes": 1274
     },
     "requirements/README.md": {
-      "sha256": "96cdcb8db6fc4ed75be1f410d858634f30347314618696f42342fe715604af48",
-      "size_bytes": 3961
+      "sha256": "4df6c95b34a7bc572d84d564eb5c61ba7e294444b6e0d3340d8b6deda418682d",
+      "size_bytes": 4114
     },
     "requirements/dev.in": {
       "sha256": "d33e385453f82e49bca7298a8c78ca4cad8c6b876281b6d3ab1d508b283d8cc2",
@@ -85,8 +85,8 @@
       "size_bytes": 6851
     },
     "README.md": {
-      "sha256": "a9487029af73f2d43434e1854533b8ab7b5148452a521b8ec8e532e168b532de",
-      "size_bytes": 26129
+      "sha256": "3d520a1347078d9da3de2bb9b571a12d0db37f5d0b4e8642429cf88559bf6045",
+      "size_bytes": 26352
     },
     "JUDGES_START_HERE.md": {
       "sha256": "1fcee2e7ef49f52bb50fda2c9eab50e3ca54fde5af248390a6c589f5c93826b0",
@@ -157,8 +157,8 @@
       "size_bytes": 4149
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
-      "sha256": "f0d00b38fd8e2a3290a8f028ba45b7af1442fb5ae213af658bb8fc0f2a9cb661",
-      "size_bytes": 10529
+      "sha256": "9f64768f125efbefa11c3d40fd524876621f84d2ea4433d18703e1e0d4b98f2a",
+      "size_bytes": 11824
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -317,8 +317,8 @@
       "size_bytes": 10960
     },
     "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md": {
-      "sha256": "5eb9a8df01f8ca6f038833a610fce2eaa93433b4db5b5c36920b3c4df3317811",
-      "size_bytes": 3057
+      "sha256": "0d426f2fbfb0701af39b8cf5bfada67c40b12ff3551e86876d81683057524864",
+      "size_bytes": 3282
     },
     "docs/project/STAGE_15_FINAL_SUBMISSION.md": {
       "sha256": "b1bf24f7d88a636fffee31be3dca1b9506baaca6be755e864b0fa7d74507f52e",
@@ -1249,8 +1249,8 @@
       "size_bytes": 13992
     },
     "tests/test_repository_hygiene.py": {
-      "sha256": "25bbe00e49fab0056e2f1f97265936dd4e7f10215e0bbac76195bcf40b01f019",
-      "size_bytes": 5792
+      "sha256": "63bc18cbca62df82fb15af653f241eb7f577a66844244d5dc0cb8c993739b746",
+      "size_bytes": 6021
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",

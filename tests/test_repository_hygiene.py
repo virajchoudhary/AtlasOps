@@ -111,7 +111,11 @@ def test_runtime_dependency_declarations_have_no_retired_clients():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     dependencies = {Requirement(value).name for value in project["dependencies"]}
     assert not {"openai", "anthropic", "google-cloud-pubsub", "rich", "typer"} & dependencies
-    assert {"httpx", "gradio", "kubernetes", "google-cloud-logging"} <= dependencies
+    assert {"httpx", "kubernetes", "google-cloud-logging"} <= dependencies
+    assert "gradio" not in dependencies
+    extras = project["optional-dependencies"]
+    assert "gradio" in {Requirement(value).name for value in extras["demo"]}
+    assert "gradio" in {Requirement(value).name for value in extras["dev"]}
 
 
 def test_dev_lock_drops_orphans_but_retains_transitive_demo_dependencies():

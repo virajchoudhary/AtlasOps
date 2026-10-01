@@ -22,8 +22,6 @@ dependencies = [
     # Observability clients
     "requests>=2.32.0",
     "urllib3",
-    # Dashboard
-    "gradio>=4.36.0",
     # Utils
     "python-dotenv>=1.0.0",
     "jinja2>=3.1.4",
@@ -31,6 +29,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+demo = [
+    "gradio>=4.36.0",
+]
 train = [
     "torch>=2.3.0",
     "transformers>=4.41.0",
@@ -42,6 +43,7 @@ train = [
     "bitsandbytes>=0.43.0",
 ]
 dev = [
+    "gradio>=4.36.0",
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",

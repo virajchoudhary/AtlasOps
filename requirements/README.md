@@ -16,6 +16,8 @@ The development lock intentionally excludes `.[train]`, PyTorch, Transformers, T
 PEFT, model runtimes, model downloads, and GPU-specific packages. It is not a universal
 Linux, ROCm, CUDA, GPU-training, or production-deployment lock. Python 3.11 and 3.12 CI
 compatibility testing remains separate from this Windows local-development lock.
+`.[dev]` includes the read-only Gradio demo. A headless runtime install uses
+the base project requirements without Gradio; `.[demo]` adds it explicitly.
 
 ## Install
 

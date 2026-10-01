@@ -107,7 +107,7 @@ class CollaborativeGraphRecommender(BaseRecommender):
             services = svcs if isinstance(svcs, list) else [str(svcs)]
 
         scored = []
-        for rb_id in RUNBOOK_CATALOG.keys():
+        for rb_id in RUNBOOK_CATALOG:
             s = self.score_item(alert, services, rb_id)
             scored.append((rb_id, round(s, 4)))
 
@@ -139,7 +139,7 @@ class HybridRecommender(BaseRecommender):
         self.collab.fit(interactions)
 
         # Compute prior distribution
-        counts = {rb_id: 0 for rb_id in RUNBOOK_CATALOG.keys()}
+        counts = {rb_id: 0 for rb_id in RUNBOOK_CATALOG}
         for item in interactions:
             counts[item.relevant_runbook_id] = counts.get(item.relevant_runbook_id, 0) + 1
         total = sum(counts.values()) or 1
@@ -166,7 +166,7 @@ class HybridRecommender(BaseRecommender):
 
         # 3. Hybrid fusion
         final_scores: list[tuple[str, float]] = []
-        for rb_id in RUNBOOK_CATALOG.keys():
+        for rb_id in RUNBOOK_CATALOG:
             s_content = (bm25_recs.get(rb_id, 0.0) / max_bm25) if max_bm25 > 0 else 0.0
             s_collab = collab_recs.get(rb_id, 0.0)
             s_prior = self.priors.get(rb_id, 0.0)

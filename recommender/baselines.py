@@ -36,7 +36,6 @@ class BaseRecommender(ABC):
     @abstractmethod
     def fit(self, interactions: list[IncidentInteraction]) -> BaseRecommender:
         """Fit recommender parameters on training interaction history."""
-        pass
 
     @abstractmethod
     def recommend(
@@ -45,7 +44,6 @@ class BaseRecommender(ABC):
         k: int = 3,
     ) -> list[tuple[str, float]]:
         """Return top-K recommendations as a list of (runbook_id, score) tuples."""
-        pass
 
 
 class RandomRecommender(BaseRecommender):
@@ -78,7 +76,7 @@ class PopularityRecommender(BaseRecommender):
         self.runbook_scores: list[tuple[str, float]] = []
 
     def fit(self, interactions: list[IncidentInteraction]) -> PopularityRecommender:
-        counts: dict[str, int] = {rb_id: 0 for rb_id in RUNBOOK_CATALOG.keys()}
+        counts: dict[str, int] = {rb_id: 0 for rb_id in RUNBOOK_CATALOG}
         for item in interactions:
             rb_id = item.relevant_runbook_id
             counts[rb_id] = counts.get(rb_id, 0) + 1
@@ -200,7 +198,7 @@ class BM25ContentRecommender(BaseRecommender):
         q_tokens = _tokenize(query_text)
 
         scored: list[tuple[str, float]] = []
-        for rb_id in RUNBOOK_CATALOG.keys():
+        for rb_id in RUNBOOK_CATALOG:
             s = self.score_runbook(q_tokens, rb_id)
             scored.append((rb_id, round(s, 4)))
 

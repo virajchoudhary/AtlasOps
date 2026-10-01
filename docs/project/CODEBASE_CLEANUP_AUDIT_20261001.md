@@ -357,3 +357,33 @@ passed. Existing directories, files and symlink destinations are refused;
 missing inputs are not created and no output directory is created for them.
 Fresh-directory synthetic subprocess runs create only their declared output
 files. Historical artifacts and protected training/runtime paths have no diff.
+
+## Completion Audit and Unused Test Bindings
+
+Base: PR 167 merge `4f3ca2bb8efe38d5ed1685a07ebb0114813e7f92`.
+The tracked-file inventory contains 460 files (7562852 bytes); all 191 Python
+files parse. All 369 curated submission hashes and sizes match. Three exact
+byte-duplicate groups remain: historical/current Stage 4 records, saved/research
+RS checkpoints, and historical postmortems. Their roles and provenance differ;
+equal bytes alone do not justify deletion.
+
+A repository-wide correctness/unused-import check found 28 unused test bindings.
+Removed 24 in eleven accessible test files. AST comparison after removing
+import nodes confirms all non-import test logic is unchanged; no assertion,
+fixture, test case, or runtime source was removed. Four bindings in
+`tests/test_tools.py` remain: the command hook blocks that file's reads after
+classifying its content as forced deletion. The hook and file are preserved,
+and no alternate read or edit was attempted to bypass that boundary.
+
+Independent requirement and API audits distinguish scoped maintenance acceptance
+from the unconditional goal. The public legacy reward helper remains tested and
+used in older isolated worktrees; absence of current production calls does not
+authorize a compatibility break. The 75 registered worktrees and unrelated
+records remain preserved. Existing elevated archive manifests record pre/post
+verification, but no independent traversal of every protected archived byte is
+claimed. Empirical gates are not authorized by source cleanup.
+
+Verification: 330 affected tests passed in 130.22 seconds. Correctness and
+unused-import checks pass on all eleven changed test files; whitespace checks
+pass. Full-repository unused-import cleanliness remains unproven because of
+the four preserved bindings in the hook-blocked file.

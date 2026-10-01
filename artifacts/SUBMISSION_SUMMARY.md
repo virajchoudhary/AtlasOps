@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T22:28:42.157803+00:00`
+- **Generated**: `2026-10-01T22:50:49.959145+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -136,7 +136,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `bench/candidate_adapters.py` | `b2f00f99ba0c5524...` | 31103 |
 | `bench/candidate_lineage.py` | `396ff6d389f2b836...` | 28333 |
 | `bench/candidate_measurement.py` | `920e73560ddd162a...` | 38684 |
-| `bench/candidate_replay.py` | `7c418ff0ee34663f...` | 50927 |
+| `bench/candidate_replay.py` | `04f91106f9216270...` | 50349 |
 | `bench/chaos_manifests/cascade/cs-001.yaml` | `6b777ce506cde061...` | 566 |
 | `bench/chaos_manifests/cascade/cs-002.yaml` | `05e36fdd8c48e0d8...` | 491 |
 | `bench/chaos_manifests/cascade/cs-003.yaml` | `7301692096c22191...` | 452 |
@@ -191,7 +191,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/TRAINING_STORY.md` | `f1fdaefd3c26075e...` | 11384 |
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
-| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `943dac37ed3345e1...` | 21270 |
+| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `ae556a56d5beb99e...` | 22507 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `b94ffd4cf482dc6b...` | 9462 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
@@ -299,7 +299,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_candidate_adapters.py` | `fd2773fe820516e9...` | 32497 |
 | `tests/test_candidate_lineage.py` | `c9082ca28b7ae2a3...` | 16072 |
 | `tests/test_candidate_measurement.py` | `f0549c53b5359791...` | 34087 |
-| `tests/test_candidate_replay.py` | `03fa6cc230bba4f9...` | 48700 |
+| `tests/test_candidate_replay.py` | `83c409cc59d63df9...` | 49736 |
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_chaos_tools.py` | `5224b2bdc06bb15f...` | 9033 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |

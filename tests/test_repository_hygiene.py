@@ -16,6 +16,19 @@ from packaging.requirements import Requirement
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_pinned_trainer_ci_does_not_install_the_demo_development_stack():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    trainer = workflow.split("  trainer-contract:", 1)[1].split("  frontend:", 1)[0]
+    assert 'python -m pip install -e . pytest \\' in trainer
+    assert '.[dev]' not in trainer
+    assert 'trl==0.19.1 transformers==4.57.6 peft==0.17.1' in trainer
+    assert 'ATLASOPS_REQUIRE_PINNED_CPU_STACK: "1"' in trainer
+    assert 'ATLASOPS_REQUIRE_TRL_INTEGRATION: "1"' in trainer
+    assert 'python -m pytest tests/test_grpo_observation_installed_trl.py -q' in trainer
+    quality = workflow.split("  quality:", 1)[1]
+    assert 'python -m pip install -e ".[dev]" build' in quality
+
+
 @pytest.mark.parametrize("quiet", [False, True])
 @pytest.mark.parametrize("returncode", [0, 1, 5])
 def test_shared_smoke_runner_preserves_selection_interpreter_and_failure(

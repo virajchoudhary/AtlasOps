@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import subprocess
+from collections import deque
 from pathlib import Path
 
 from config.hf_space_env import apply_hf_space_inference_defaults
@@ -103,7 +104,7 @@ class ApprovalCallbackRequest(BaseModel):
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
+def root():
     index = static_dir / "index.html"
     if index.exists():
         return HTMLResponse(index.read_text(encoding="utf-8"))
@@ -149,7 +150,7 @@ async def proxy_metrics():
 
 
 @app.get("/bench/results/comparison_table.md")
-async def comparison_table_markdown():
+def comparison_table_markdown():
     """UI fetches this path; serve repo file or a tiny placeholder."""
     p = Path(__file__).resolve().parent / "bench" / "results" / "comparison_table.md"
     if not p.is_file():
@@ -187,7 +188,7 @@ class RecommenderQueryRequest(BaseModel):
 
 @coordinator_app.post("/recommender/recommend")
 @app.post("/api/recommender/recommend")
-async def query_recommender_endpoint(body: RecommenderQueryRequest):
+def query_recommender_endpoint(body: RecommenderQueryRequest):
     from recommender.dataset import load_interactions
     from recommender.hybrid import HybridRecommender
     ckpt_path = Path("artifacts/models/hybrid_recommender.json")
@@ -222,7 +223,7 @@ async def query_recommender_endpoint(body: RecommenderQueryRequest):
 
 @coordinator_app.get("/ablation-matrix")
 @app.get("/api/ablation-matrix")
-async def get_ablation_matrix_endpoint():
+def get_ablation_matrix_endpoint():
     p = Path("artifacts/evidence/stage13/ablation_benchmark_results.json")
     if p.exists():
         payload = json.loads(p.read_text(encoding="utf-8"))
@@ -257,7 +258,7 @@ async def health():
 
 
 @app.get("/ui/catalog")
-async def ui_catalog():
+def ui_catalog():
     """Checked-in governance and historical evidence, never inferred live state."""
     try:
         return JSONResponse(catalog())
@@ -267,7 +268,7 @@ async def ui_catalog():
 
 
 @app.get("/ui/attempts/{name}")
-async def ui_attempt(name: str):
+def ui_attempt(name: str):
     """Allowlisted, bounded projection of one preserved attempt."""
     try:
         return JSONResponse(attempt_detail(name))
@@ -339,14 +340,14 @@ async def incidents_active():
 
 
 @app.get("/audit/log")
-async def audit_log_entries(limit: int = 100, offset: int = 0):
+def audit_log_entries(limit: int = 100, offset: int = 0):
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
     return JSONResponse({"entries": audit_log.tail(limit=limit, offset=offset)})
 
 
 @app.get("/audit/verify")
-async def audit_verify():
+def audit_verify():
     return JSONResponse(audit_log.verify_integrity())
 
 
@@ -459,18 +460,19 @@ async def _dispatch_incident(payload: dict, incident_id: str) -> None:
 
 
 @app.get("/slack/feed")
-async def slack_feed():
+def slack_feed():
     """Return last 30 comms posts from the local log (powers the UI feed)."""
     log_path = Path("data/slack_posts.jsonl")
     if not log_path.exists():
         return JSONResponse({"posts": []})
-    posts = []
-    for line in log_path.read_text(encoding="utf-8").strip().splitlines():
-        try:
-            posts.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
-    return JSONResponse({"posts": posts[-30:]})
+    posts = deque(maxlen=30)
+    with log_path.open(encoding="utf-8") as file:
+        for line in file:
+            try:
+                posts.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return JSONResponse({"posts": list(posts)})
 
 
 if __name__ == "__main__":

@@ -62,6 +62,18 @@ def test_g7_prefreeze_review_documents_are_selected_when_tracked(monkeypatch):
         }
 
 
+def test_audit_implementation_is_selected_when_tracked(monkeypatch):
+    path = "agents/audit.py"
+    monkeypatch.setattr(
+        "scripts.package_submission.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=(path + "\0").encode()),
+    )
+    raw = Path(path).read_bytes()
+    assert collect_submission_assets() == {
+        path: {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
+    }
+
+
 class TestStage15SubmissionPackage:
     def test_submission_package_generator_creates_manifest_and_summary(self, tmp_path):
         manifest = build_submission_package(output_dir=tmp_path)

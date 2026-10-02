@@ -420,3 +420,93 @@ boundaries, historical evidence and compatibility APIs remain unchanged.
 Existing worktrees and archived records are retained; this continuation does
 not claim independent traversal of every archived byte. No infrastructure,
 Chaos, model, training, deployment or historical-evidence regeneration ran.
+
+## Workspace and Runtime Efficiency Follow-Up: 2026-10-02
+
+Base: `55f3626dde53da96770f17d463a81abc5c05ca95` (PR 169 merge).
+The user authorized a further local-housekeeping and GitHub optimization pass.
+Native curated Luna Max audits covered local clutter, runtime and Git/CI hygiene;
+root verified their actual rollout model/effort and owns integration.
+
+Nine read-only console handlers now use FastAPI's existing synchronous worker
+pool, so file reads, optional ranker construction and full audit verification
+do not run directly on the event loop. The audit log's lazy initializer and
+same-instance appends are synchronized. Readers take a locked file snapshot;
+parsing and full-chain HMAC verification run after releasing the lock. Public
+formats, secret checks, tail slicing and integrity predicates are retained.
+This is single-process, same-instance consistency, not a multi-process writer
+contract. Pool saturation and filesystem contention remain possible.
+
+The communications feed streams the JSONL file and retains only its last 30
+valid records. It still scans the file and skips malformed JSON as before;
+it does not truncate history, cache stale evidence or modify communications.
+Regression tests reproduced blocked health requests and full-file feed retention
+before the fix, then passed with the new handlers. Independent review caught
+the initial audit initialization/append race; that failure and the regression
+results remain preserved, not relabeled as passes.
+
+Matched synthetic local measurement, three timing samples per variant:
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Feed request median, 100000 valid records / 15.1 MB fixture | 325.594 ms | 236.442 ms |
+| Feed peak Python-traced allocation | 67520045 bytes | 100341 bytes |
+| Health response during a deliberately blocked 250 ms catalog read | 264.864 ms | 4.801 ms |
+
+Feed outputs were identical. These are software-only local measurements, not
+incident-resolution timings, production throughput or empirical gate closure.
+Loopback startup/read-route probes passed and temporary servers stopped.
+Corrected actual-server working-set measurements were about 78 MB before and
+after; no meaningful idle-memory or startup improvement is claimed. The earlier
+Windows launcher-PID memory observation is retained as a diagnostic, not used
+as server-memory evidence.
+
+The pinned-TRL CI lane now installs the base project and pytest rather than the
+whole demo/development extra. Required pinned CPU/trainer packages and fail-hard
+integration flags remain unchanged; the full-suite quality lane still installs
+the complete development extra. Local static contract checks cannot establish
+the new CI lane's success or timing; observe that job separately.
+
+Eight reviewed obsolete environment/cache/build directories were deleted from
+`.codex-tmp`: 9714 files, 202199683 bytes. Exact no-link workspace guards,
+tracked-file checks, process metadata, protected-file hashes and worktree
+identities were checked. All 86 recorded protected files and all 75 registered
+worktree identities were independently verified unchanged. Historical XML/JSON
+failures, archive receipts, local notes/patches, main `.venv`, model artifacts,
+scratch and all existing worktrees remain. The reduced test environment is
+retained until final validation; its eventual retirement is recorded separately.
+No generic deletion of ignored directories or Git history is authorized.
+
+Detailed local receipts, regression XML and performance JSON are preserved in
+`.codex-tmp`, outside ordinary Git and build context. New validations use unique
+external temporary fixture directories with pytest cache disabled. Rebuildable
+environments and package outputs should be retired after their owning task
+finishes; compact evidence is retained separately. An inactive or merged
+worktree is not automatically disposable when its ownership or dirty state
+is unresolved.
+
+Thirteen unused merged cleanup branch heads (PRs 157-169) were retired both
+locally and on origin after verifying merged ancestry, exact remote head SHAs,
+no open PR references and no registered worktree use. Remote deletion was
+atomic and expected-SHA guarded; local deletion used Git's merged-branch check.
+PR 156's checked-out worktree branch and all other worktrees/branches remain.
+No commit history was rewritten. Git connectivity verification passed.
+Three old Git temporary object files remain excluded from deletion because
+their open-handle/recovery role was not established; no aggressive GC or
+immediate prune was run.
+
+Integrated console, audit, coordinator safety and hygiene verification:
+120 passed, one POSIX-only skip. The earlier concurrency failures remain
+separate negative regression records. Broader package and CI results must be
+observed after the final manifest refresh.
+
+The broader local run completed with 2580 passes, 13 skips, one deselected
+Helm-mutating test and one Stage 15 checksum failure. The failure read the old
+manifest while `scripts/package_submission.py` was being extended to include
+the newly synchronized audit implementation. This full-run failure is preserved;
+it is not reported as a clean full-suite PASS. After the final 371-asset refresh,
+the complete Stage 15, console and hygiene selection passed 66 tests with one
+POSIX-only skip, and direct verification found zero asset hash/size mismatches.
+Source distribution and wheel builds passed; inspection found required audit
+source and new tests, with no known local-clutter entries. CI must independently
+validate the final committed tree and reduced pinned-trainer installation.

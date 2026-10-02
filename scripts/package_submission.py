@@ -234,6 +234,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "agents/_http_retry.py",
         "agents/approval_http.py",
         "agents/approval.py",
+        "agents/audit.py",
         "agents/grounding.py",
         "agents/judge.py",
         "agents/policy_remediation.py",

@@ -95,7 +95,7 @@ jobs:
       - name: Install CPU test dependencies
         run: |
           python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -e ".[dev]" \
+          python -m pip install -e . pytest \
             trl==0.19.1 transformers==4.57.6 peft==0.17.1 \
             accelerate==1.14.0 datasets==4.8.5 \
             tokenizers==0.22.2 huggingface-hub==0.36.2

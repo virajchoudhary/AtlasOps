@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-01T23:49:18.588577+00:00`
+- **Generated**: `2026-10-02T05:54:12.543494+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -191,7 +191,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/TRAINING_STORY.md` | `f1fdaefd3c26075e...` | 11384 |
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
-| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `417e38f2322cc6dd...` | 25578 |
+| `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `509707819af3102d...` | 27639 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `b94ffd4cf482dc6b...` | 9462 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
@@ -383,7 +383,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_stage8_sft_eval.py` | `e52c0051d088d45f...` | 6671 |
 | `tests/test_stage9_grpo_pipeline.py` | `de3dce53390d9339...` | 14180 |
 | `tests/test_tool_policy_contract.py` | `15f377b269d769da...` | 5022 |
-| `tests/test_tools.py` | `ae53aff75ba44b80...` | 15558 |
+| `tests/test_tools.py` | `5903c89442e71c2a...` | 15473 |
 | `tests/test_ui_read_model.py` | `1942099a2975dd69...` | 3093 |
 | `tests/test_verifier.py` | `b76b4563adbe04e2...` | 27637 |
 | `training/build_sft_candidate.py` | `c0dd9af9e94468d2...` | 81824 |

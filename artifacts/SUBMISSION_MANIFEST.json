@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-01T23:49:18.588577+00:00",
+  "generated_at": "2026-10-02T05:54:12.543494+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -197,8 +197,8 @@
       "size_bytes": 4149
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
-      "sha256": "417e38f2322cc6ddb2b32af2ad4a64a8f17e01b206506ca79e6f1119d32f9a01",
-      "size_bytes": 25578
+      "sha256": "509707819af3102d334e3b95382a99ab6cd166e1d0231812355527192cd19480",
+      "size_bytes": 27639
     },
     "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md": {
       "sha256": "60653270d21b9971dbb9f228740c1c780dabe974af402f259c70a5814219f693",
@@ -1485,8 +1485,8 @@
       "size_bytes": 5022
     },
     "tests/test_tools.py": {
-      "sha256": "ae53aff75ba44b80bbe949c28c5edb38880110162ba4dea3d4251913f5bbb450",
-      "size_bytes": 15558
+      "sha256": "5903c89442e71c2a0ee738c58cd1f2e846ecb30edc8565761ad6b205795d8c55",
+      "size_bytes": 15473
     },
     "tests/test_ui_read_model.py": {
       "sha256": "1942099a2975dd69809a1e9dbe4f8522d7e32b4bfc9dbb3a82a443a43656fb03",

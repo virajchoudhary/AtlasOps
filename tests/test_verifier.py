@@ -19,11 +19,7 @@ from agents.verifier import (
     EnvironmentVerificationResult,
     EnvironmentVerifier,
     MetricPredicate,
-    ScenarioVerificationSpec,
-    WorkloadPredicate,
     SCENARIO_VERIFICATION_SPECS,
-    FROZEN_TIER_PREFIXES,
-    verify_environment,
 )
 from config.runtime import FROZEN_SCENARIOS
 

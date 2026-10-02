@@ -14,11 +14,8 @@ Pipeline v1.1 Free-First — validates that the local deployment path:
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INFRA_LOCAL = REPO_ROOT / "infra" / "local"

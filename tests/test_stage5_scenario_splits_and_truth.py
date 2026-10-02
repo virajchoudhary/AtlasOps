@@ -11,7 +11,6 @@ Validates:
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 import pytest
 
@@ -21,7 +20,6 @@ from config.scenario_catalog import (
     LEADERBOARD_SEED,
     LEADERBOARD_SPLIT,
     SCENARIO_CATALOG,
-    SPLIT_PARTITIONS,
     TEST_SEED,
     TEST_SPLIT,
     TRAIN_SEED,

@@ -12,13 +12,11 @@ Validates:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import pytest
 
 from bench.runner import compute_summary, run_scenario
 from bench.zero_shot_baseline import compute_diagnostic_f1, evaluate_zero_shot_split, tokenize_text
-from config.scenario_catalog import SCENARIO_CATALOG
-from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT, get_split
+from config.splits import TEST_SPLIT, TRAIN_SPLIT, VAL_SPLIT
 
 
 class TestStage6ZeroShotBaseline:

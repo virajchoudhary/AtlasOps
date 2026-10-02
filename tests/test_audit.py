@@ -1,7 +1,6 @@
 """Tests for audit log append and verification."""
 
 import importlib
-from pathlib import Path
 
 import pytest
 

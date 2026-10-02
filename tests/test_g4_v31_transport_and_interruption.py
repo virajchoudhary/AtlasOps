@@ -18,14 +18,9 @@ import config.g4_protocol as protocol
 from config.g4_protocol import (
     APPROVED_G4_PROTOCOL_PROFILE,
     APPROVED_G4_V31_MODEL,
-    APPROVED_G4_V31_MODEL_DIGEST,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
-    APPROVED_G4_V31_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V32_MODEL,
-    APPROVED_G4_V32_MODEL_DIGEST,
     APPROVED_G4_V32_PROTOCOL_PROFILE,
     APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V3_PROTOCOL_PROFILE,
     protocol_fingerprint,
 )
 import scripts.run_stage4_golden_incident as runner

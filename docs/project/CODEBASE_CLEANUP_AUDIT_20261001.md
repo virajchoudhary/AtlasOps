@@ -387,3 +387,36 @@ Verification: 330 affected tests passed in 130.22 seconds. Correctness and
 unused-import checks pass on all eleven changed test files; whitespace checks
 pass. Full-repository unused-import cleanliness remains unproven because of
 the four preserved bindings in the hook-blocked file.
+
+## Hook-Unblocked Import Completion: 2026-10-02
+
+Resume base: PR 168 merge `979888ffc2a7b5a493cd6c6ecca45b630068748b`,
+verified against the current GitHub main revision. There were no pending tracked
+edits; unrelated overnight records, preflight logs, diffs and the script backup
+remain preserved. The repaired hook permits the actual tool-test source read.
+
+Removed the final four unused bindings from `tests/test_tools.py`: `json`,
+`pytest`, `importlib` and `pathlib.Path`. AST comparison with the resume base
+confirms that these are the only removed import nodes and every non-import node
+is identical. All 31 test cases and their adversarial command strings remain.
+No runtime source, assertion, fixture, dependency or safety rule changed.
+
+Current verification: the 31-case tool baseline passed before editing. After the
+patch, 164 tool, approval, policy, repository-hygiene and release-contract tests
+passed; one POSIX-only Bash wrapper test skipped on Windows. All 191 tracked
+Python files parse and pass repository-wide correctness/unused-import checks
+(`E9,F63,F7,F821,F401`). The 460-file tracked inventory and upstream baseline
+ancestry are unchanged. The derived submission inventory is refreshed after
+this record; its 369 asset keys and all gate declarations are retained.
+
+The final Stage 15 selection passed 18/18. Direct hash/size verification matches
+369/369 assets, and whitespace checks pass. The read-only strict release check
+passes artifact validation and returns its expected failure for open empirical
+gates and `NOT_CERTIFIED`. No new full-suite or built-image result is claimed.
+
+This closes the identified import-cleanup discrepancy, not the empirical
+project gates. `NOT_CERTIFIED`, `G4 NOT_PASSED`, prospective training approval
+boundaries, historical evidence and compatibility APIs remain unchanged.
+Existing worktrees and archived records are retained; this continuation does
+not claim independent traversal of every archived byte. No infrastructure,
+Chaos, model, training, deployment or historical-evidence regeneration ran.

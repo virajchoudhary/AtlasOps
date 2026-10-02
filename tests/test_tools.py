@@ -1,9 +1,6 @@
 """Unit tests for AtlasOps tool wrappers."""
 
-import json
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 # ── kubectl tools ──────────────────────────────────────────────────────────────
@@ -223,7 +220,6 @@ class TestSlackPost:
         import agents.tools.comms as comms_mod
         monkeypatch.setattr(comms_mod, "SLACK_WEBHOOK", "")
         from agents.tools.comms import slack_post_update
-        import importlib
         result = slack_post_update(
             channel="#incidents", severity="P1",
             title="Test incident", summary="Something broke"
@@ -234,7 +230,6 @@ class TestSlackPost:
     def test_postmortem_draft_creates_file(self, tmp_path, monkeypatch):
         monkeypatch.setenv("POSTMORTEM_DIR", str(tmp_path))
         import agents.tools.comms as comms_mod
-        from pathlib import Path
         monkeypatch.setattr(comms_mod, "POSTMORTEM_DIR", tmp_path)
         from agents.tools.comms import postmortem_draft
         incident = {

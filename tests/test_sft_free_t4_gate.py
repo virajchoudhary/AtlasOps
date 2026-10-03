@@ -6,20 +6,24 @@ import builtins
 import copy
 import hashlib
 import json
+import subprocess
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from training import sft, sft_pilot_gate
+from training import sft, sft_candidate, sft_pilot_gate
 from training import sft_free_t4_gate as gate
+from training import sft_candidate_compatibility as candidate_compatibility
 from training.sft_provenance import REPO_ROOT, snapshot_training_corpus
 
 CORPUS = (
     REPO_ROOT
     / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
 )
+FROZEN_COORDINATOR_COMMIT = "4280a586fef7b860a069f60ef9af171aaa9d75a4"
 
 
 def _free_hyperparameters() -> dict:
@@ -81,8 +85,39 @@ def _admission() -> dict:
     }
 
 
+@pytest.fixture
+def frozen_historical_coordinator_source(monkeypatch):
+    coordinator_path = REPO_ROOT / "agents" / "coordinator.py"
+    frozen_source = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert sft_candidate.canonical_bytes_sha256(frozen_source) == (
+        candidate_compatibility.NEW_COORDINATOR
+    )
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes(path):
+        if path.resolve() == coordinator_path.resolve():
+            return frozen_source
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    original_bounded_snapshot = sft_pilot_gate._read_bounded_snapshot
+
+    def read_bounded_snapshot(path, bound):
+        if Path(path).resolve() == coordinator_path.resolve():
+            return frozen_source, "fixture"
+        return original_bounded_snapshot(path, bound)
+
+    monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", read_bounded_snapshot)
+
+
 def test_free_t4_preparation_delegates_to_original_gate_without_model_import(
     monkeypatch,
+    frozen_historical_coordinator_source,
 ):
     original = builtins.__import__
     blocked = {"datasets", "transformers", "torch", "trl", "peft"}

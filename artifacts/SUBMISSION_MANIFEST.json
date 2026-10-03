@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T13:30:51.474371+00:00",
+  "generated_at": "2026-10-03T22:08:58.745211+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 417,
+  "asset_count": 422,
   "assets": {
     "AGENTS.md": {
       "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
@@ -741,8 +741,8 @@
       "size_bytes": 7156
     },
     "agents/coordinator.py": {
-      "sha256": "5d7be471592526fbf519fba571c2a1d2ccfd1d976f027736d00f2b3b39aadd0c",
-      "size_bytes": 118065
+      "sha256": "e9b638cbb72c763a87501196335bec792bd5a881ac6ab9ace588f53a394f9383",
+      "size_bytes": 131707
     },
     "agents/adversarial_designer.py": {
       "sha256": "f6bc96059e6ca56ac502514db4d5d111d258e0acc6e1b41e8c5292c64bb1a130",
@@ -1373,16 +1373,16 @@
       "size_bytes": 12140
     },
     "tests/test_g4_protocol_profile.py": {
-      "sha256": "164527c1cd60311826ea803e6c47bf0b936c227731b7741491a581933b7155ee",
-      "size_bytes": 22502
+      "sha256": "a483ac1812a92178b88140d2dece7ad5d4ccce3bf40a1c5cffeccd2460fcf384",
+      "size_bytes": 24095
     },
     "tests/test_g4_runtime_context_remediation_loop.py": {
       "sha256": "3e23f0441e3645d1342c55c8cc0eede62a14d05976afb1f56676cc17ec7c90d3",
       "size_bytes": 22261
     },
     "tests/test_g4_v31_transport_and_interruption.py": {
-      "sha256": "55318d3a2380a02994633af24ab6fe088d89856b0991c14d0cc91abe96ba4a1c",
-      "size_bytes": 34649
+      "sha256": "edd1f276258cbfd7200c169955d2c358c19138c02763f1d122dbdb24d18062ce",
+      "size_bytes": 35313
     },
     "tests/test_g6_empirical_contract.py": {
       "sha256": "f0ebefb5c0b67de9a095049a3e69d78808900169d32ad6a235cdc0477f543d63",
@@ -1456,6 +1456,26 @@
       "sha256": "acf912e9f656d248833b1ea4be654e6ed542372d00083bd2e3c772008fd23d8f",
       "size_bytes": 14569
     },
+    "tests/test_integrated_completion_provider.py": {
+      "sha256": "d0414ec991251ff947ed2f7f44c22dbeb8db88bd770de7b25714cbd9caafdd41",
+      "size_bytes": 21132
+    },
+    "tests/test_integrated_inference.py": {
+      "sha256": "a3eb2d8d04d2a1df6bdad3bb291b3d55162171fc3486ff6f4cdddeab708e9df6",
+      "size_bytes": 13681
+    },
+    "tests/test_integrated_inference_process.py": {
+      "sha256": "362dc0835561a7137e90b86e949244de1c724200c7f20b728aabbc28b96f1aad",
+      "size_bytes": 23089
+    },
+    "tests/test_integrated_provider_bridge.py": {
+      "sha256": "6a3a163128ae7b7aa2797b83a76dde1bdb25a13f4ab6ea0c1ba035b1159fd605",
+      "size_bytes": 2266
+    },
+    "tests/test_integrated_validation_episode.py": {
+      "sha256": "5e603f787dd04d7a81cf2803560f4869f9d4d657370a256a62070f17a2018625",
+      "size_bytes": 7932
+    },
     "tests/test_judge_outage_provenance.py": {
       "sha256": "e4d66c35a1638e43096b0188fce32ccecdf607a40849cd9d5d772ad83e36f282",
       "size_bytes": 5749
@@ -1525,8 +1545,8 @@
       "size_bytes": 8638
     },
     "tests/test_sft_free_t4_gate.py": {
-      "sha256": "34c7852ef804c4c1e39e32c8e66102b5cdf38a7bf587c038129837e3a97d7782",
-      "size_bytes": 17543
+      "sha256": "773dfc6e7e23835a96ad399cf1d48cf4c6e34dd4bcdc4a14c6060a5aa208fd13",
+      "size_bytes": 18871
     },
     "tests/test_sft_free_t4_wiring.py": {
       "sha256": "cfd9c702cb71bbbc13b00ccce050b6ab3e6d50e677f0c440290f51efd264dd28",
@@ -1541,8 +1561,8 @@
       "size_bytes": 8419
     },
     "tests/test_sft_pilot_gate.py": {
-      "sha256": "fe824986e30af45278cb8be0b532cccd78acf121cb78e700c0850e8da03f8d92",
-      "size_bytes": 15596
+      "sha256": "654bcc76859e2df1d573d46e2e78f499a7597f706bf35f18c1ac54ac87918c9a",
+      "size_bytes": 18244
     },
     "tests/test_sft_qwen_template_render.py": {
       "sha256": "9a0129cf11a9cb9e7ee1e1f88ab401998a68d5abc877954d5dc9dfe1e7f38bf7",
@@ -1565,8 +1585,8 @@
       "size_bytes": 10667
     },
     "tests/test_sft_tokenizer_pilot_extension.py": {
-      "sha256": "4b27b7a3fde1b81917b1009fb98a55bd1128023f5f7577fc027bc3b1fc77ffb3",
-      "size_bytes": 12571
+      "sha256": "5cd5091ee2e7d8422852a9d7eba7a0ec7b1b0dfb801bd08f36a0677015aa7f45",
+      "size_bytes": 13552
     },
     "tests/test_sft_tokenizer_preflight.py": {
       "sha256": "e7b4132444b006bb357516dd9072482a269c8b3f610d1608801fca337f641a9b",
@@ -1621,8 +1641,8 @@
       "size_bytes": 40407
     },
     "tests/test_stage4_evidence_hardening.py": {
-      "sha256": "a27e6acb69b8f9bcae5538a90d1d298c832df2231b68d54f400ae90972d1ca8f",
-      "size_bytes": 53137
+      "sha256": "914289f220f9db34b66292375f7c82e0bdb2e3c474c2a6ef68979a3c583bc495",
+      "size_bytes": 53854
     },
     "tests/test_stage4_f1_envelope_contract.py": {
       "sha256": "b1b199f4e043bc5ab9929a082387dae0d2ebde8b115d7a35be71566ebf4edba5",

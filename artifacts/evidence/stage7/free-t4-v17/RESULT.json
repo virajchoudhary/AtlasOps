@@ -1,0 +1,104 @@
+{
+  "schema_version": "atlasops-sft-pilot-completion-v1",
+  "status": "REAL_SFT_ADAPTER_PRESERVED_AND_INDEPENDENT_RELOAD_VERIFIED",
+  "run_id": "sft-pilot-free-t4-20261003-v17",
+  "goal_complete": true,
+  "source_git_sha": "af629ada4629e76c194e66a357935981f42e2c90",
+  "training_source_git_dirty": false,
+  "profile": "free-t4-v1",
+  "plan_sha256": "29a217a46e2d7cdcc1b85938b1a2aecac1043462980ca0b05f4fa0681adddc82",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "corpus": {
+    "version": "train-candidate-v1",
+    "sha256": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+    "manifest_sha256": "35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c",
+    "rows": 68,
+    "split": "train",
+    "synthetic": true
+  },
+  "environment": {
+    "provider": "Google Colab",
+    "approved_resource": "One free Tesla T4",
+    "python": "3.12.11",
+    "cuda_runtime": "12.6",
+    "package_versions_verified": 72,
+    "lock_sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+    "base_inventory_files": 12,
+    "base_inventory_sha256": "61e9526d3ba1a754820d8e6a2a783e1f5867c5222e1d038700160fcf9a94c1c2",
+    "base_weights_in_adapter_bundle": false
+  },
+  "execution_approval": {
+    "sha256": "0dd6b14184146f3a9eb93f165dc077df6aa4eefcdbdb7006c4baa781721669e5",
+    "approved_at_utc": "2026-10-03T08:43:09.185625+00:00",
+    "approved_by": "Viraj Choudhary",
+    "predates_training": true,
+    "spend_usd_max": 0
+  },
+  "training": {
+    "exit_code": 0,
+    "epochs": 1.0,
+    "global_steps": 9,
+    "runtime_seconds": 745.8576,
+    "train_loss": 0.7569131321377225,
+    "metrics_scope": "Synthetic Train-only diagnostics; not evidence of incident improvement",
+    "completed_at_utc": "2026-10-03T08:59:12.870226+00:00"
+  },
+  "adapter": {
+    "local_checkpoint": "C:/AtlasOps/artifacts/local-preflight/sft-v17-preserved-20261003/bundle/runs/sft-pilot-free-t4-20261003-v17",
+    "weight_bytes": 161533192,
+    "weight_sha256": "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff",
+    "tensor_count": 392,
+    "parameter_count": 40370176,
+    "checkpoint_files_verified": 27,
+    "run_manifest_sha256": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440"
+  },
+  "independent_reload": {
+    "status": "PASS",
+    "completed_at_utc": "2026-10-03T09:04:23.006558+00:00",
+    "command_prefix": "unshare --net",
+    "fresh_process": true,
+    "model_class": "PeftModelForCausalLM",
+    "finite_lora_tensors_checked": 392,
+    "base_inventory_rehashed_before_and_after": true,
+    "checkpoint_manifest_unchanged": true,
+    "inference_performed": false,
+    "reexecuted_locally": false,
+    "evidence": "bundle/reload-v17.json and bundle/reload-v17.log",
+    "limitation": "Reload JSON does not echo the input inventory hash; the preserved command supplied the pinned hash and the frozen reload implementation verifies it twice."
+  },
+  "preservation": {
+    "archive": "atlasops-sft-v17-artifact.zip",
+    "archive_bytes": 377494628,
+    "archive_sha256": "59fea5f55ff5ecb4ca86d679bd5f8eaa856f1881b514020d92af9014cfb7c418",
+    "drive_url": "https://drive.google.com/file/d/1ttmtcN2x0RuCGrk98fXiorMvv3xjdBqW/view?usp=drivesdk",
+    "drive_private": true,
+    "drive_checksum_matches": true,
+    "local_archive_and_extraction_verified": true,
+    "files_verified": 100,
+    "local_inventory": "local-verification.json",
+    "prior_negative_archive_sha256": "4a9f8db5eef03fec1c932ca458c5490ca67a6ab3c7058a817c2c387dd1393151",
+    "prior_negative_archive_unchanged": true,
+    "earlier_records_overwritten": false,
+    "archive_code_or_pickles_executed": false
+  },
+  "independent_artifact_review": {
+    "status": "PASS",
+    "agent": "/root/sft_bundle_final_verifier",
+    "runtime_identity_source": "nodeRepl.requestMeta x-codex-turn-metadata",
+    "model": "azure-kmamc/gpt-6-luna",
+    "reasoning_effort": "max",
+    "read_only_behavior": true,
+    "files_independently_hashed": 100
+  },
+  "local_verification_failures_preserved": [
+    "Wrong .NET extraction overload failed before extraction; corrected to ZipFileExtensions.",
+    "PowerShell package-property count expression failed; direct count was 72; corrected and verified existing extraction without overwriting.",
+    "Optional additional Node full-tensor finite scan timed out and kernel reset; no result claimed. Required finite-tensor evidence remains the successful fresh-process model reload."
+  ],
+  "grpo_started": false,
+  "final_test_accessed": false,
+  "empirical_gate_promoted": false,
+  "additional_training_performed_during_transfer": false,
+  "paid_resources_created": false
+}

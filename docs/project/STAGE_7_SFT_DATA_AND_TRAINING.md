@@ -8,7 +8,9 @@ the frozen candidate's documented limitations for preparation only.
 dependency lock and final offline tokenizer report. All 68 rows pass masks at
 8192 tokens; 2048 requires truncating 54 rows and remains preserved as a negative
 preflight. `training.sft --preflight-only` verifies this plan without models,
-output creation or training. No execution permit is pinned.
+output creation or training. The frozen v4 plan still has no execution permit;
+the later v17 run used a separate free-T4 profile and per-run approval recorded
+in the [v17 result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 See [model identity](G7_D2_PINNED_MODEL_V1.md), [environment](G7_PILOT_ENVIRONMENT_V1.md)
 and [future run record](G7_PILOT_EXECUTION_RECORD_V1.md).
 Descriptions below about D3 being wholly pending describe the earlier
@@ -16,20 +18,27 @@ corpus-preparation snapshot; the frozen corpus/audit itself is not rewritten.
 
 The new [D3 review candidate](G7_D3_CANDIDATE_REVIEW_V1.md) is separate from
 the historical fixture below. Its versioned corpus, provenance and independent
-quality review are review inputs, not scientific approval or a completed adapter.
+quality review are review inputs; they do not themselves constitute run approval
+or adapter evidence.
 Strict candidate admission rejects source drift. The pilot path accepts only
 the reviewed settling-only coordinator hash pair and verifies unchanged
 non-settling AST, corpus bytes, source inventory and row replay. It does not
 rewrite the frozen candidate or replace its approved digests; hashes are
 recomputed for verification. It does not accept arbitrary source changes.
-`training.sft` refuses execution for both unversioned data and the preparation-approved
-candidate before ML imports/output creation; only `--preflight-only` returns
-preparation admission. Existing downstream trainer tests use explicit
+The default frozen-v4 path refuses execution for both unversioned data and the
+preparation-approved candidate before ML imports/output creation;
+`--preflight-only` returns preparation admission. The free-T4 path requires its
+separate hash-pinned per-run approval and verified runtime/model inventory.
+Existing downstream trainer tests use explicit
 test-only stubs to isolate their handoff/lifecycle contracts; production has no
 D3 bypass. See the [future acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md).
+The separate completed v17 run is recorded below.
 
-The training corpus and SFT software contract are implemented. No completed
-Qwen2.5-7B-Instruct training run or usable adapter is currently preserved.
+The training corpus and SFT software contract are implemented. The bounded v17
+Qwen2.5-7B-Instruct run and preserved, independently reloaded adapter are
+recorded in the [canonical result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+Because its examples are synthetic, this artifact does not establish incident
+improvement; G7 remains PARTIAL and G8 evaluation remains outstanding.
 
 ## Frozen Data
 
@@ -161,13 +170,13 @@ planned, running, completed, failed, or interrupted state atomically and records
 - the canonical `sft_run_manifest.json` inside the checkpoint directory so G8 and
   G9 can validate it; an external-only manifest path is rejected.
 
-A run cannot be marked completed without checkpoint files. A bounded launch in the current
-environment stopped at missing optional ML dependencies before model loading and persisted
-that failure honestly.
+A run cannot be marked completed without checkpoint files. An earlier bounded
+launch in the local environment stopped at missing optional ML dependencies
+before model loading and persisted that failure honestly. This historical
+negative is retained alongside the later successful v17 record.
 
-Once the separate host, weight-transfer, and named-run approvals are recorded
-against an approved BF16-capable runtime, exact model/tokenizer revisions, and
-a clean source checkout, the current v4 pilot command shape is:
+The original v4 preparation record retains this BF16 command shape; it was not
+used for the separate free-T4 v17 run:
 
 ```text
 python -m training.sft --model Qwen/Qwen2.5-7B-Instruct --model-revision <approved-commit> --tokenizer-revision <approved-commit> --data <verified-external-corpus> --output <new-external-checkpoint-dir> --epochs 1 --lr 0.0002 --batch-size 2 --grad-accum 4 --max-seq-len 8192 --seed 2026
@@ -183,6 +192,9 @@ Local tests validate corpus integrity, split isolation, schema and tool-call pai
 template rendering, assistant-only masking, the exact stubbed trainer dataset
 handoff, immutable revision preflight and fake-loader pin/basis checks,
 lifecycle persistence, and checkpoint hashing.
-Real SFT training remains unexecuted.
+The v17 record documents the completed one-epoch synthetic pilot and the
+independent offline reload of its preserved adapter. These establish a
+loadable artifact, not incident performance. G7 remains PARTIAL and G8
+evaluation has not been run; see the [canonical result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 
 **Gate G7 Status: PARTIAL**

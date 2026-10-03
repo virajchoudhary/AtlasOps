@@ -30,6 +30,30 @@ The independent reload command must run in a separate network-isolated
 process and revalidate model and adapter inventories without evaluating or
 generating predictions. GRPO, P1 remediation, and final-Test are excluded.
 
-Measured T4 compatibility does not prove model memory fit or successful
-training. A completed adapter and successful reload establish only the
-bounded synthetic SFT artifact, not empirical incident improvements.
+At planning time, T4 compatibility alone did not prove memory fit or a
+successful run. The v17 record below establishes both for that bounded run;
+adapter reload establishes only the synthetic SFT artifact, not empirical
+incident improvements.
+
+## Recorded v17 outcome
+
+The separate `free-t4-v1` profile completed as
+`sft-pilot-free-t4-20261003-v17` on clean source
+`af629ada4629e76c194e66a357935981f42e2c90`, using the pinned Qwen2.5-7B-Instruct
+revision and the 68-row synthetic `train-candidate-v1` corpus. Its one-epoch
+run completed 9 optimizer steps; the separate named execution approval capped
+spend at $0. The complete provenance and raw evidence are in the canonical
+[v17 result record](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+
+The preserved adapter weight inventory is SHA-256
+`f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff`, with run
+manifest SHA-256 `7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440`.
+A fresh `unshare --net` process independently reloaded it and checked 392
+finite LoRA tensors without inference. The 377,494,628-byte evidence bundle
+was verified locally and in private Drive at SHA-256
+`59fea5f55ff5ecb4ca86d679bd5f8eaa856f1881b514020d92af9014cfb7c418`.
+
+This closes only the bounded synthetic artifact/reload milestone. G7 remains
+PARTIAL; no incident improvement is claimed, and G8 evaluation, GRPO, and
+final-Test work were not run. The original v4 preparation plan and its
+`execution_allowed=false` refusal remain unchanged.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -9,10 +10,13 @@ from pathlib import Path
 import pytest
 
 from training import sft_tokenizer_preflight as preflight
+from training import sft_candidate_compatibility as candidate_compatibility
+from training.sft_candidate import canonical_bytes_sha256
 from training.sft_provenance import snapshot_training_corpus
 from training.sft_rendering import TEMPLATE_PATH
 
 REVISION = preflight.PINNED_TOKENIZER_REVISION
+FROZEN_COORDINATOR_COMMIT = "4280a586fef7b860a069f60ef9af171aaa9d75a4"
 CORPUS = (
     Path(__file__).resolve().parents[1]
     / "artifacts"
@@ -29,6 +33,26 @@ _MARKER_IDS = {
     "<tool_call>": 151657,
     "</tool_call>": 151658,
 }
+
+
+@pytest.fixture
+def frozen_historical_coordinator_source(monkeypatch):
+    coordinator_path = preflight.REPO_ROOT / "agents" / "coordinator.py"
+    frozen_source = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
+        cwd=preflight.REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert canonical_bytes_sha256(frozen_source) == candidate_compatibility.NEW_COORDINATOR
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes(path):
+        if path.resolve() == coordinator_path.resolve():
+            return frozen_source
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
 
 
 def _local_bundle(directory: Path, *, revision: str = REVISION) -> Path:
@@ -177,7 +201,11 @@ def _patch_runtime(monkeypatch, tokenizer: FakeTokenizer) -> None:
     )
 
 
-def test_full_candidate_uses_core_offsets_and_reports_minimum_length(tmp_path, monkeypatch):
+def test_full_candidate_uses_core_offsets_and_reports_minimum_length(
+    tmp_path,
+    monkeypatch,
+    frozen_historical_coordinator_source,
+):
     tokenizer_dir = _local_bundle(tmp_path / "tokenizer")
     _patch_runtime(monkeypatch, FakeTokenizer())
 

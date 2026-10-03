@@ -13,10 +13,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import config.g4_protocol as protocol
 import scripts.run_stage4_golden_incident as runner
 from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
+    APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
     REQUIRED_METRICS_SERVER_ARGS,
     protocol_fingerprint,
 )
@@ -82,6 +84,19 @@ def isolated_protocol_runtime(monkeypatch, tmp_path):
     postmortem_dir = tmp_path / "postmortems"
     postmortem_dir.mkdir()
     monkeypatch.setenv("POSTMORTEM_DIR", str(postmortem_dir))
+    original_file_sha256 = protocol.file_sha256
+
+    def file_sha256_with_frozen_sources(path):
+        try:
+            relative_path = pathlib.Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
+        except ValueError:
+            return original_file_sha256(path)
+        if relative_path in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V36_CAUSAL_SOURCE_SHA256[relative_path]
+        return original_file_sha256(path)
+
+    # These lifecycle tests model approved v3.6 identity; source drift is tested separately.
+    monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,
         "_query_ollama_model_identity",

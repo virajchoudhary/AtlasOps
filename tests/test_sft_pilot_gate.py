@@ -5,15 +5,48 @@ import copy
 import hashlib
 import json
 import sys
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from training import sft, sft_pilot_gate
+from training import sft, sft_candidate, sft_pilot_gate
+from training import sft_candidate_compatibility as candidate_compatibility
 from training.sft_provenance import REPO_ROOT, snapshot_training_corpus
 
 CORPUS = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
+FROZEN_COORDINATOR_COMMIT = "4280a586fef7b860a069f60ef9af171aaa9d75a4"
+
+
+@pytest.fixture
+def frozen_historical_coordinator_source(monkeypatch):
+    coordinator_path = REPO_ROOT / "agents" / "coordinator.py"
+    frozen_source = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert sft_candidate.canonical_bytes_sha256(frozen_source) == (
+        candidate_compatibility.NEW_COORDINATOR
+    )
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes(path):
+        if path.resolve() == coordinator_path.resolve():
+            return frozen_source
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    original_bounded_snapshot = sft_pilot_gate._read_bounded_snapshot
+
+    def read_bounded_snapshot(path, bound):
+        if Path(path).resolve() == coordinator_path.resolve():
+            return frozen_source, "fixture"
+        return original_bounded_snapshot(path, bound)
+
+    monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", read_bounded_snapshot)
 
 
 def _args(monkeypatch, output, *, extra=()):
@@ -79,7 +112,7 @@ def test_exact_candidate_requires_exact_model_and_role():
             sft_pilot_gate.validate_preparation(snapshot, **altered)
 
 
-def test_frozen_plan_and_preflight_integrity():
+def test_frozen_plan_and_preflight_integrity(frozen_historical_coordinator_source):
     assert sft_pilot_gate.PLAN_PATH.is_file()
     plan = json.loads(sft_pilot_gate.PLAN_PATH.read_text())
     from types import SimpleNamespace
@@ -100,7 +133,12 @@ def test_frozen_plan_and_preflight_integrity():
     assert result["execution_allowed"] is False
 
 
-def test_exact_preparation_cli_cannot_authorize_training(monkeypatch, tmp_path, capsys):
+def test_exact_preparation_cli_cannot_authorize_training(
+    monkeypatch,
+    tmp_path,
+    capsys,
+    frozen_historical_coordinator_source,
+):
     """Use real admission at the CLI boundary, not a substituted gate result."""
     original = builtins.__import__
 
@@ -125,7 +163,10 @@ def test_exact_preparation_cli_cannot_authorize_training(monkeypatch, tmp_path, 
     assert not output.exists()
 
 
-def test_preflight_source_hashes_accept_linux_lf_checkout(monkeypatch):
+def test_preflight_source_hashes_accept_linux_lf_checkout(
+    monkeypatch,
+    frozen_historical_coordinator_source,
+):
     original = sft_pilot_gate._read_bounded_snapshot
 
     def linux_read(path, bound):
@@ -151,7 +192,11 @@ def test_preflight_source_hashes_accept_linux_lf_checkout(monkeypatch):
     assert result["execution_allowed"] is False
 
 
-def test_plan_cannot_approve_execution_or_change_setting(monkeypatch, tmp_path):
+def test_plan_cannot_approve_execution_or_change_setting(
+    monkeypatch,
+    tmp_path,
+    frozen_historical_coordinator_source,
+):
     assert sft_pilot_gate.PLAN_PATH.is_file()
     original = json.loads(sft_pilot_gate.PLAN_PATH.read_text())
     common = dict(
@@ -172,7 +217,37 @@ def test_plan_cannot_approve_execution_or_change_setting(monkeypatch, tmp_path):
         sft_pilot_gate.validate_preparation(snapshot_training_corpus(CORPUS), **common)
 
 
-def test_prep_manifest_preserves_exact_review_candidate_origin(monkeypatch, tmp_path):
+def test_current_coordinator_source_drift_refuses_preparation():
+    snapshot = snapshot_training_corpus(CORPUS)
+    manifest = sft_candidate.read_candidate_manifest(CORPUS)
+    current = sft_candidate.candidate_manifest(
+        list(snapshot.rows),
+        snapshot.raw_bytes,
+        manifest["source_git_sha"],
+    )
+    current_coordinator = current["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
+    frozen_coordinator = manifest["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
+    assert frozen_coordinator == candidate_compatibility.OLD_COORDINATOR
+    assert current_coordinator != candidate_compatibility.NEW_COORDINATOR
+    assert current_coordinator != frozen_coordinator
+
+    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+        sft_pilot_gate.validate_preparation(
+            snapshot,
+            model=sft_pilot_gate.BASE_MODEL,
+            model_revision=sft_pilot_gate.REVISION,
+            tokenizer=sft_pilot_gate.BASE_MODEL,
+            tokenizer_revision=sft_pilot_gate.REVISION,
+            role="all",
+            hyperparameters={},
+        )
+
+
+def test_prep_manifest_preserves_exact_review_candidate_origin(
+    monkeypatch,
+    tmp_path,
+    frozen_historical_coordinator_source,
+):
     from training import sft_provenance
 
     monkeypatch.setattr(sft_provenance, "runtime_environment", lambda: {"packages": {}})

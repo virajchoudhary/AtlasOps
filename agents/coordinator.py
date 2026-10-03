@@ -13,6 +13,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -263,10 +264,32 @@ _TERMINAL_ERROR_CLASSES = frozenset({
 _MUTATING_ACTION_TOOLS = frozenset(CLUSTER_MUTATING_TOOLS)
 
 MutationObserver = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+CompletionProvider = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 _ACTIVE_MUTATION_OBSERVER: ContextVar[MutationObserver | None] = ContextVar(
     "atlasops_active_mutation_observer",
     default=None,
 )
+
+
+class CompletionProviderError(RuntimeError):
+    """Safe provider failure that does not retain exception text."""
+
+    def __init__(
+        self,
+        category: str,
+        role: str,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        self.category = category
+        self.failure_category = category
+        self.role = role
+        self.trajectory = trajectory
+        super().__init__(f"explicit_completion_provider_failure:{category}")
+
+
+def _safe_failure_category(error: BaseException) -> str:
+    category = getattr(error, "failure_category", None)
+    return category if isinstance(category, str) and category.isidentifier() else type(error).__name__
 
 
 def _is_mutating_action(tool: str, args: dict[str, Any] | None = None) -> bool:
@@ -679,6 +702,117 @@ def _model_turn_record(
     }
 
 
+async def _request_explicit_completion(
+    role: str,
+    request_payload: dict[str, Any],
+    completion_provider: CompletionProvider,
+    *,
+    incident_id: str,
+    turn: int,
+    trajectory: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Call an explicitly injected provider and retain its unmodified exchange."""
+    exchange = {
+        "role": role,
+        "turn": turn,
+        "kind": "inference_exchange",
+        "request": deepcopy(request_payload),
+        "response": None,
+        "status": "pending",
+        "result_classification": "NON_EMPIRICAL",
+        "certification_status": "NOT_CERTIFIED",
+    }
+    trajectory.append(exchange)
+
+    try:
+        response = await completion_provider(role, deepcopy(exchange["request"]))
+        response_snapshot = deepcopy(response)
+    except asyncio.CancelledError as exc:
+        category = _safe_failure_category(exc)
+        exchange.update(status="cancelled", error_category=category)
+        _journal_explicit_provider_failure(incident_id, role, category)
+        exc.completion_provider_role = role
+        exc.completion_provider_trajectory = trajectory
+        raise
+    except Exception as exc:  # noqa: BLE001 - preserve category but not provider text
+        category = _safe_failure_category(exc)
+        exchange.update(status="failed", error_category=category)
+        _journal_explicit_provider_failure(incident_id, role, category)
+        raise CompletionProviderError(category, role, trajectory) from None
+
+    exchange["response"] = response_snapshot
+    if not _explicit_completion_response_is_valid(response_snapshot):
+        category = "malformed_response"
+        exchange.update(status="malformed", error_category=category)
+        _journal_explicit_provider_failure(incident_id, role, category)
+        raise CompletionProviderError(category, role, trajectory) from None
+
+    exchange["status"] = "completed"
+    return deepcopy(response_snapshot)
+
+
+def _explicit_completion_response_is_valid(response: Any) -> bool:
+    if not isinstance(response, dict):
+        return False
+    try:
+        json.dumps(response, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return False
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return False
+    message = choices[0].get("message")
+    if not isinstance(message, dict) or message.get("content") is not None and not isinstance(
+        message.get("content"), str
+    ):
+        return False
+    tool_calls = message.get("tool_calls")
+    if tool_calls is not None:
+        if not isinstance(tool_calls, list):
+            return False
+        for tool_call in tool_calls:
+            function = tool_call.get("function") if isinstance(tool_call, dict) else None
+            arguments = function.get("arguments") if isinstance(function, dict) else None
+            if (
+                not isinstance(tool_call, dict)
+                or not isinstance(tool_call.get("id"), str)
+                or not isinstance(function, dict)
+                or not isinstance(function.get("name"), str)
+                or not function["name"]
+                or arguments is not None and not isinstance(arguments, (str, dict))
+            ):
+                return False
+    function_call = message.get("function_call")
+    if function_call is not None and (
+        not isinstance(function_call, dict)
+        or not isinstance(function_call.get("name"), str)
+        or not function_call["name"]
+        or (
+            function_call.get("arguments") is not None
+            and not isinstance(function_call.get("arguments"), (str, dict))
+        )
+    ):
+        return False
+    return True
+
+
+def _journal_explicit_provider_failure(
+    incident_id: str,
+    role: str,
+    category: str,
+) -> None:
+    try:
+        audit_log.record(
+            incident_id=incident_id,
+            agent_role=role,
+            action_type="inference_provider_failure",
+            result_summary=f"explicit_completion_provider_failure:{category}",
+            policy_check="provider_error",
+        )
+    except Exception as exc:  # noqa: BLE001 - journal failure must not leak provider text
+        log.warning("completion provider failure journal failed (%s)", type(exc).__name__)
+
+
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis":   "Based on the tool results above, output ONLY a JSON object with keys: root_cause, confidence, evidence, recommended_fix. No prose.",
@@ -698,6 +832,10 @@ async def _force_json_conclusion(
     client: httpx.AsyncClient,
     *,
     telemetry: dict[str, Any] | None = None,
+    completion_provider: CompletionProvider | None = None,
+    incident_id: str = "unknown",
+    turn: int = 0,
+    trajectory: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """One extra turn with tools disabled, forcing a clean JSON conclusion.
 
@@ -711,25 +849,43 @@ async def _force_json_conclusion(
     forced_msgs = system_msgs + recent + [{"role": "user", "content": prompt}]
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     timeout_cfg = httpx.Timeout(timeout=LLM_REQUEST_TIMEOUT_SECONDS, connect=10.0)
+    request_payload = {
+        "model": MODEL_NAME,
+        "messages": forced_msgs,
+        "temperature": 0.0,
+    }
     try:
-        async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as c:
-            r = await post_with_retry(
-                c,
-                f"{VLLM_BASE}/chat/completions",
-                {"model": MODEL_NAME, "messages": forced_msgs, "temperature": 0.0},
-                context=f"forced_conclusion/{role}",
-                max_attempts=LLM_MAX_ATTEMPTS,
-                base_backoff=LLM_BASE_BACKOFF_SECONDS,
+        if completion_provider is not None:
+            response_payload = await _request_explicit_completion(
+                role,
+                request_payload,
+                completion_provider,
+                incident_id=incident_id,
+                turn=turn,
+                trajectory=trajectory if trajectory is not None else [],
             )
-            r.raise_for_status()
-            choice = r.json()["choices"][0]
-            message = choice.get("message") or {}
-            if telemetry is not None:
-                telemetry.clear()
-                telemetry.update({"choice": choice, "message": message})
-            content = message.get("content", "")
-            parsed = _try_parse_json(content)
-            return parsed if "raw" not in parsed else {"summary": content[:300]}
+        else:
+            async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as c:
+                r = await post_with_retry(
+                    c,
+                    f"{VLLM_BASE}/chat/completions",
+                    request_payload,
+                    context=f"forced_conclusion/{role}",
+                    max_attempts=LLM_MAX_ATTEMPTS,
+                    base_backoff=LLM_BASE_BACKOFF_SECONDS,
+                )
+                r.raise_for_status()
+                response_payload = r.json()
+        choice = response_payload["choices"][0]
+        message = choice.get("message") or {}
+        if telemetry is not None:
+            telemetry.clear()
+            telemetry.update({"choice": choice, "message": message})
+        content = message.get("content", "")
+        parsed = _try_parse_json(content)
+        return parsed if "raw" not in parsed else {"summary": content[:300]}
+    except CompletionProviderError:
+        raise
     except Exception as e:
         if telemetry is not None:
             telemetry.clear()
@@ -804,7 +960,13 @@ def datetime_now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10) -> dict[str, Any]:
+async def call_agent(
+    role: str,
+    user_input: dict[str, Any],
+    max_turns: int = 10,
+    *,
+    completion_provider: CompletionProvider | None = None,
+) -> dict[str, Any]:
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
     require_audit_log()
     system_prompt = load_prompt(role)
@@ -905,22 +1067,34 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                 if (role == "remediation" and _remediation_retry_given and not _mutating_tool_executed)
                 else "auto"
             )
-            r = await post_with_retry(
-                client,
-                f"{VLLM_BASE}/chat/completions",
-                {
-                    "model": MODEL_NAME,
-                    "messages": messages,
-                    "temperature": 0.2,
-                    "tools": _tool_schemas_for_role(role),
-                    "tool_choice": tool_choice,
-                },
-                context=f"{role}/turn-{turn}",
-                max_attempts=LLM_MAX_ATTEMPTS,
-                base_backoff=LLM_BASE_BACKOFF_SECONDS,
-            )
-            r.raise_for_status()
-            choice = r.json()["choices"][0]
+            request_payload = {
+                "model": MODEL_NAME,
+                "messages": messages,
+                "temperature": 0.2,
+                "tools": _tool_schemas_for_role(role),
+                "tool_choice": tool_choice,
+            }
+            if completion_provider is None:
+                r = await post_with_retry(
+                    client,
+                    f"{VLLM_BASE}/chat/completions",
+                    request_payload,
+                    context=f"{role}/turn-{turn}",
+                    max_attempts=LLM_MAX_ATTEMPTS,
+                    base_backoff=LLM_BASE_BACKOFF_SECONDS,
+                )
+                r.raise_for_status()
+                response_payload = r.json()
+            else:
+                response_payload = await _request_explicit_completion(
+                    role,
+                    request_payload,
+                    completion_provider,
+                    incident_id=incident_id,
+                    turn=turn,
+                    trajectory=trajectory,
+                )
+            choice = response_payload["choices"][0]
             msg = choice["message"]
             # Snapshot the RAW provider payload before adapter normalization so
             # the forensic record preserves exactly what the model returned.
@@ -1004,6 +1178,10 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
                         messages,
                         client,
                         telemetry=forced_telemetry,
+                        completion_provider=completion_provider,
+                        incident_id=incident_id,
+                        turn=turn,
+                        trajectory=trajectory,
                     )
                     if role == "remediation":
                         trajectory.append(_model_turn_record(
@@ -1451,7 +1629,16 @@ async def call_agent(role: str, user_input: dict[str, Any], max_turns: int = 10)
         ))
     # Ask the model to summarise whatever it found rather than returning an error
     forced_telemetry: dict[str, Any] = {}
-    forced = await _force_json_conclusion(role, messages, client, telemetry=forced_telemetry)
+    forced = await _force_json_conclusion(
+        role,
+        messages,
+        client,
+        telemetry=forced_telemetry,
+        completion_provider=completion_provider,
+        incident_id=incident_id,
+        turn=max_turns,
+        trajectory=trajectory,
+    )
     if role == "remediation":
         trajectory.append(_model_turn_record(
             role,
@@ -1872,12 +2059,31 @@ async def handle_incident(
     incident_id: str | None = None,
     scenario_id: str | None = None,
     remediation_policy: Any | None = None,
+    *,
+    completion_provider: CompletionProvider | None = None,
+    policy_seed: int | None = None,
+    policy_generation_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the full agent chain for one incident.
 
     ``scenario_id`` is an evaluation-only channel: it selects the frozen
     verifier spec without ever being placed inside the model-visible alert.
     """
+    if remediation_policy is None and (
+        policy_seed is not None or policy_generation_config is not None
+    ):
+        raise ValueError("policy generation overrides require an injected remediation_policy")
+    if policy_seed is not None and (
+        isinstance(policy_seed, bool) or not isinstance(policy_seed, int) or policy_seed < 0
+    ):
+        raise ValueError("policy_seed must be a nonnegative integer")
+    if policy_generation_config is not None and not isinstance(policy_generation_config, dict):
+        raise ValueError("policy_generation_config must be a dictionary")
+    policy_generation_config_snapshot = (
+        deepcopy(policy_generation_config)
+        if policy_generation_config is not None
+        else None
+    )
     remediation_backend = (
         "rl_policy"
         if remediation_policy is not None
@@ -1891,6 +2097,10 @@ async def handle_incident(
         else None
     )
     incident_id = incident_id or f"inc-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    if completion_provider is not None and (
+        TRAJECTORIES_DIR / f"{incident_id}.json"
+    ).exists():
+        raise FileExistsError(f"trajectory already exists for incident {incident_id}")
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
         incident_id=incident_id,
@@ -1922,8 +2132,96 @@ async def handle_incident(
         "active_experiments": [],
         "count": 0,
     }
+    triage: dict[str, Any] | None = None
+    diagnosis: dict[str, Any] | None = None
+    remediation: dict[str, Any] | None = None
+    comms: dict[str, Any] | None = None
+    settling_report: dict[str, Any] | None = None
+    verification_dict: dict[str, Any] | None = None
+    agent_claimed_resolved: bool | None = None
+    env_resolved: bool | None = None
+    current_phase: str | None = None
+
+    async def _call_role_agent(
+        role: str,
+        user_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        if completion_provider is None:
+            return await call_agent(role, user_input)
+        return await call_agent(
+            role,
+            user_input,
+            completion_provider=completion_provider,
+        )
+
+    def _capture_partial_provider_episode(error: BaseException, category: str) -> None:
+        failed_role = (
+            getattr(error, "role", None)
+            or getattr(error, "completion_provider_role", None)
+            or current_phase
+        )
+        failed_trajectory = deepcopy(
+            getattr(error, "trajectory", None)
+            or getattr(error, "completion_provider_trajectory", None)
+            or []
+        )
+        for entry in failed_trajectory:
+            if not isinstance(entry, dict) or entry.get("kind") != "inference_exchange":
+                continue
+            try:
+                json.dumps(entry.get("response"), ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                entry["response"] = None
+                entry["response_omitted_unencodable"] = True
+        role_results = {
+            "triage": triage,
+            "diagnosis": diagnosis,
+            "remediation": remediation,
+            "comms": comms,
+        }
+        partial = {
+            "incident_id": incident_id,
+            "alert": alert,
+            "scenario_id": scenario_id if scenario_id is not None else alert.get("scenario_id"),
+            "triage": triage,
+            "diagnosis": diagnosis,
+            "remediation": remediation,
+            "comms": comms,
+            "approval": approval_record,
+            "settling": settling_report,
+            "verification": verification_dict,
+            "agent_claimed_resolved": agent_claimed_resolved,
+            "env_resolved": env_resolved,
+            "resolved": False,
+            "completed_roles": [name for name, value in role_results.items() if value is not None],
+            "failure": {
+                "phase": failed_role,
+                "exception_type": type(error).__name__,
+                "category": category,
+            },
+            "episode_status": "failed",
+            "execution_mode": "NON_EMPIRICAL",
+            "evidence_class": "NON_EMPIRICAL",
+            "certification_status": "NOT_CERTIFIED",
+            "provider_injected": True,
+        }
+        if failed_role:
+            partial["failed_role_trajectory"] = failed_trajectory
+        try:
+            TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
+            path = TRAJECTORIES_DIR / f"{incident_id}.partial-{uuid.uuid4().hex}.json"
+            with path.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(partial, indent=2))
+        except Exception as exc:  # noqa: BLE001 - preserve provider failure if capture fails
+            log.warning(
+                "[%s] partial provider episode write failed (%s)",
+                incident_id,
+                type(exc).__name__,
+            )
+
     try:
-        triage = await call_agent(
+        current_phase = "triage"
+        triage = await _call_role_agent(
             "triage",
             {
                 "incident_id": incident_id,
@@ -1939,7 +2237,8 @@ async def handle_incident(
             triage_observations,
         )
         environment_observation = _chaos_observation_from_observations(triage_observations)
-        diagnosis = await call_agent(
+        current_phase = "diagnosis"
+        diagnosis = await _call_role_agent(
             "diagnosis",
             {
                 "incident_id": incident_id,
@@ -2081,7 +2380,16 @@ async def handle_incident(
                     state: dict[str, Any],
                 ) -> str | None:
                     return _check_tool_policy(role, tool, arguments, state) or (
-                        _check_remediation_action_preconditions(tool, arguments, state)
+                        _check_remediation_action_preconditions(
+                            tool,
+                            arguments,
+                            {
+                                **state,
+                                _REMEDIATION_CONTROL_KEY: remediation_input[
+                                    _REMEDIATION_CONTROL_KEY
+                                ],
+                            },
+                        )
                     )
 
                 async def _settle_policy_step() -> dict[str, Any]:
@@ -2107,23 +2415,37 @@ async def handle_incident(
                         approval_gate if action_approval_provider is not None else None
                     ),
                 )
-                return await run_policy_remediation(
-                    policy=policy,
-                    state=remediation_input,
-                    scenario_id=str(scenario_id or alert.get("scenario_id") or ""),
-                    environment=environment,
-                    seed=int(os.getenv("ATLASOPS_POLICY_SEED", "42")),
-                    generation_config={
+                generation_config = (
+                    deepcopy(policy_generation_config_snapshot)
+                    if policy_generation_config_snapshot is not None
+                    else {
                         "max_new_tokens": 256,
                         "temperature": 0.0,
                         "top_p": 1.0,
-                    },
+                    }
+                )
+                policy_state = {
+                    key: value
+                    for key, value in remediation_input.items()
+                    if key != _REMEDIATION_CONTROL_KEY
+                }
+                return await run_policy_remediation(
+                    policy=policy,
+                    state=policy_state,
+                    scenario_id=str(scenario_id or alert.get("scenario_id") or ""),
+                    environment=environment,
+                    seed=(
+                        policy_seed
+                        if policy_seed is not None
+                        else int(os.getenv("ATLASOPS_POLICY_SEED", "42"))
+                    ),
+                    generation_config=generation_config,
                     policy_origin=policy_origin,
                     approval_provider=action_approval_provider,
                 )
             observer_token = _ACTIVE_MUTATION_OBSERVER.set(_observe_after_mutation)
             try:
-                return await call_agent("remediation", remediation_input)
+                return await _call_role_agent("remediation", remediation_input)
             finally:
                 _ACTIVE_MUTATION_OBSERVER.reset(observer_token)
 
@@ -2218,6 +2540,7 @@ async def handle_incident(
                 return None
             return permit
 
+        current_phase = "remediation"
         if target_consistency.get("requires_review"):
             remediation_blocked = True
             remediation = _target_mismatch_remediation_record(
@@ -2374,7 +2697,11 @@ async def handle_incident(
             # Do not let generated Comms text claim execution or publish resolution
             # for a plan that was never authorized. Preserve verifier truth separately.
             if approval_blocked:
-                blocked_status = remediation_final["status"]
+                if remediation_backend == "rl_policy":
+                    status = str((approval_record or {}).get("decision") or "missing")
+                    blocked_status = f"approval_{status}"
+                else:
+                    blocked_status = remediation_final["status"]
                 blocked_summary = (
                     "Remediation blocked / not executed — approval outcome: "
                     f"{status}. Human review required."
@@ -2394,7 +2721,8 @@ async def handle_incident(
                 },
             }
         else:
-            comms = await call_agent("comms", {
+            current_phase = "comms"
+            comms = await _call_role_agent("comms", {
                 "incident_id": incident_id,
                 "triage": triage.get("final", {}),
                 "diagnosis": diagnosis.get("final", {}),
@@ -2469,10 +2797,20 @@ async def handle_incident(
             "comms": comms,
             "grounding_validation": grounding_reports,
         }
+        if completion_provider is not None:
+            full_record.update(
+                execution_mode="NON_EMPIRICAL",
+                evidence_class="NON_EMPIRICAL",
+                certification_status="NOT_CERTIFIED",
+                provider_injected=True,
+            )
         TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-        (TRAJECTORIES_DIR / f"{incident_id}.json").write_text(
-            json.dumps(full_record, indent=2), encoding="utf-8",
-        )
+        trajectory_path = TRAJECTORIES_DIR / f"{incident_id}.json"
+        if completion_provider is not None:
+            with trajectory_path.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(full_record, indent=2))
+        else:
+            trajectory_path.write_text(json.dumps(full_record, indent=2), encoding="utf-8")
         if _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory
 
@@ -2525,8 +2863,18 @@ async def handle_incident(
             result_summary="resolved" if resolved else "not_resolved",
         )
         return full_record
+    except asyncio.CancelledError as e:
+        if completion_provider is not None:
+            run_error = type(e).__name__
+            _capture_partial_provider_episode(e, run_error)
+        raise
     except Exception as e:
-        run_error = str(e)
+        if completion_provider is not None:
+            failure_category = _safe_failure_category(e)
+            run_error = failure_category
+            _capture_partial_provider_episode(e, failure_category)
+        else:
+            run_error = str(e)
         finish_reason = "system_error"
         raise
     finally:

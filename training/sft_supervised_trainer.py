@@ -11,6 +11,10 @@ from trl import SFTTrainer
 class SupervisedLogitsSFTTrainer(SFTTrainer):
     """Use the base Trainer loss path and align metrics with selected logits."""
 
+    def training_step(self, *args, **kwargs):
+        with torch.autograd.graph.save_on_cpu(pin_memory=True):
+            return super().training_step(*args, **kwargs)
+
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         mode = "train" if model.training else "eval"
         loss, outputs = Trainer.compute_loss(

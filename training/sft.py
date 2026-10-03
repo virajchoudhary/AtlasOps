@@ -413,6 +413,10 @@ def main() -> None:
                 bias="none",
             ),
         )
+        if args.pilot_profile == "free-t4-v1":
+            model.get_input_embeddings().to(dtype=torch.float16)
+            model.get_output_embeddings().to(dtype=torch.float16)
+            manifest["frozen_projection_dtype"] = "float16"
         model.print_trainable_parameters()
 
         manifest = mark_running(

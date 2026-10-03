@@ -447,7 +447,7 @@ def main() -> None:
             train_config_values["fp16"] = True
             train_config_values["gradient_checkpointing"] = True
             train_config_values["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
-            manifest["activation_memory_policy"] = "PyTorch saved-tensor CPU offloading; non-reentrant checkpointing"
+            manifest["activation_memory_policy"] = "Non-reentrant checkpointing without host-RAM offloading"
         train_args = SFTConfig(**train_config_values)
         trainer_class = SFTTrainer
         if args.pilot_profile == "free-t4-v1":

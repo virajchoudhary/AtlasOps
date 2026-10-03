@@ -441,6 +441,8 @@ def main() -> None:
         }
         if args.pilot_profile == "free-t4-v1":
             train_config_values["fp16"] = True
+            train_config_values["activation_offloading"] = True
+            manifest["activation_memory_policy"] = "Pinned TRL CPU activation offloading"
         train_args = SFTConfig(**train_config_values)
         trainer_class = SFTTrainer
         if args.pilot_profile == "free-t4-v1":

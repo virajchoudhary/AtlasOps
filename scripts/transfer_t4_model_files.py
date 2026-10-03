@@ -191,14 +191,23 @@ def inventory(snapshot, root, state, deadline):
     return result, index["metadata"]["total_size"]
 
 
-def execute_transfer(root):
+def _transfer_parent(root, host):
     root = Path(root)
-    content = Path("/content")
+    parents = {"colab": Path("/content"), "kaggle": Path("/kaggle/temp")}
+    content = parents.get(host)
     if (
-        os.name != "posix" or content.is_symlink() or content.resolve() != content
+        content is None or os.name != "posix"
+        or any(p.is_symlink() for p in (content, *content.parents))
+        or content.resolve() != content
         or root.parent != content or not re.fullmatch(r"atlasops-t4-model-transfer-[a-zA-Z0-9-]+", root.name)
     ):
-        raise TransferError("Requires a fresh direct /content transfer directory on Linux.")
+        raise TransferError("Requires a fresh direct transfer directory on the selected Linux host.")
+    return content
+
+
+def execute_transfer(root, *, host="colab"):
+    root = Path(root)
+    content = _transfer_parent(root, host)
     if shutil.disk_usage(content).free < START_FREE:
         raise TransferError("Starting free disk is below 40 GiB.")
     if sum(size for size, _ in FILES.values()) > NETWORK_LIMIT:
@@ -207,6 +216,7 @@ def execute_transfer(root):
     deadline = time.monotonic() + SECONDS
     state = {
         "schema_version": "atlasops-t4-pinned-file-transfer-v1", "status": "RUNNING",
+        "host_profile": host,
         "started_at_utc": utc(), "repository": REPOSITORY, "revision": REVISION,
         "snapshot_dir": str(root / f"models--Qwen--Qwen2.5-7B-Instruct/snapshots/{REVISION}"),
         "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -268,7 +278,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", help="Fresh /content/atlasops-t4-model-transfer-<id> path.")
+    parser.add_argument("root", help="Fresh atlasops-t4-model-transfer-<id> under the selected host temp directory.")
+    parser.add_argument("--host", choices=["colab", "kaggle"], default="colab")
     args = parser.parse_args()
-    outcome = execute_transfer(args.root)
+    outcome = execute_transfer(args.root, host=args.host)
     raise SystemExit(0 if outcome["status"] == "COMPLETE" else 1)

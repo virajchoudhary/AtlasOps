@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T11:15:19.799628+00:00",
+  "generated_at": "2026-10-03T12:25:31.495192+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 397,
+  "asset_count": 399,
   "assets": {
     "AGENTS.md": {
       "sha256": "17a9f526917b583f9ac463216d5cf0d0c7af64700d9212ac49e53566ea631a39",
@@ -49,12 +49,12 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "ff4617fae9cd91a80a8fe4be86ce00ccd40cdf2e82bace4d90a19a5de2d2ba58",
-      "size_bytes": 2006
+      "sha256": "5b30e8dd4a9dfb6866df9214fac4287c5b37ed6d18f2f058955e51fb323e4210",
+      "size_bytes": 2045
     },
     ".github/workflows/ci.yml": {
-      "sha256": "a0c4ccf1b1a3bed0760b5e23a951c9e6fd077bfcb3217d5ada41363931a9545f",
-      "size_bytes": 5501
+      "sha256": "657d0611bc0d0830f5e153bdafe0545367eec2ca1479f5d943a6d4918e87540b",
+      "size_bytes": 5719
     },
     "BENCHMARKS.md": {
       "sha256": "3191bc522a52706baf3624b1c59ff71436c58aaf4482b0b1ce1af2d2251a9688",
@@ -1077,8 +1077,8 @@
       "size_bytes": 5305
     },
     "scripts/transfer_t4_model_files.py": {
-      "sha256": "1da31ccbb3888e9ff14e2a57f1007cc07d349e4bab0d0def919a974bd8708845",
-      "size_bytes": 13079
+      "sha256": "e66dd17fca7aff2e186bbb1081ae4917f31efc96533b463fff92468f73490b52",
+      "size_bytes": 13522
     },
     "training/sft.py": {
       "sha256": "7b2ff51eae460a6901f49e56cb0afcc5099b85896f64a3adcb9fa13c24552393",
@@ -1215,6 +1215,10 @@
     "tests/test_audit.py": {
       "sha256": "21b92da15c7e67c863d5b5bf617d2ba8e5c06056481e8deb47b745c5cea54cb1",
       "size_bytes": 10105
+    },
+    "tests/test_base_sft_validation.py": {
+      "sha256": "eb0f9c74192e0739eb093844388272d50fae09f4a48da870d51c9204d779cd30",
+      "size_bytes": 21486
     },
     "tests/test_bench_runner.py": {
       "sha256": "9f926ca6760507a73e5b1c9cc7f9d826f62a33f0fe5a57765a3bd13a8b42932d",
@@ -1597,8 +1601,8 @@
       "size_bytes": 15473
     },
     "tests/test_transfer_t4_model_files.py": {
-      "sha256": "a7cfe8b67a322043728f655d4f68e5e64af8b4ed7802447a504eff8e6ae13f9b",
-      "size_bytes": 5342
+      "sha256": "1169a3589c4f7b6447c92557822a585752be80fcd2517ae1ed182d9fa347424f",
+      "size_bytes": 6724
     },
     "tests/test_ui_read_model.py": {
       "sha256": "1942099a2975dd69809a1e9dbe4f8522d7e32b4bfc9dbb3a82a443a43656fb03",
@@ -1607,6 +1611,10 @@
     "tests/test_verifier.py": {
       "sha256": "b76b4563adbe04e257c48d5845d88ea9eca9fe164c1f78024f2f3ab538f683d3",
       "size_bytes": 27637
+    },
+    "tests/test_verify_base_sft_validation.py": {
+      "sha256": "9e2d40a7982de76dd1f6bcc0779a65211e41bcdc3060b5714402cba4477f31c3",
+      "size_bytes": 5646
     },
     "tests/stage4_approval_process.py": {
       "sha256": "951d6817bbf440964f3f3645353e5ded3c6eda85b4e766e1d660de0e23e53f53",

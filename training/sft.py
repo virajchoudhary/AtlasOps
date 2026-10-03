@@ -388,8 +388,14 @@ def main() -> None:
             **model_precision_options,
         )
         if args.pilot_profile == "free-t4-v1":
+            from training.sft_t4_attention import install_t4_attention
             from training.sft_chunked_loss import install_supervised_logits
 
+            install_t4_attention(model)
+            manifest["attention_implementation"] = {
+                "name": "pinned-SDPA-explicit-GQA-repeat",
+                "sha256": file_sha256(Path(__file__).with_name("sft_t4_attention.py")),
+            }
             install_supervised_logits(model)
             manifest["loss_implementation"] = {
                 "name": "supervised-logits-chunked-cross-entropy",

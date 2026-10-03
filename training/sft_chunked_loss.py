@@ -148,7 +148,10 @@ def install_supervised_logits(model: Any) -> None:
             num_items_in_batch=num_items_in_batch,
             shift_labels=selected_labels,
         )
-        return output
+        return {
+            "loss": output["loss"],
+            "supervised_predictions": output.logits.detach().argmax(dim=-1),
+        }
 
     supervised_forward._atlasops_supervised_logits = True
     model.forward = MethodType(supervised_forward, model)

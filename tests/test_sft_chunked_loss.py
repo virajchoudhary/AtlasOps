@@ -177,22 +177,18 @@ def test_tiny_qwen_selective_logits_preserve_loss_and_every_parameter_gradient()
         labels=labels,
         use_cache=True,
     )
-    assert selective_output.logits.shape == (
-        1,
-        positions.numel(),
-        config.vocab_size,
+    assert "logits" not in selective_output
+    torch.testing.assert_close(
+        selective_output["supervised_predictions"],
+        reference_output.logits.index_select(1, positions).argmax(dim=-1),
     )
     torch.testing.assert_close(
-        selective_output.logits,
-        reference_output.logits.index_select(1, positions),
-    )
-    torch.testing.assert_close(
-        selective_output.loss, reference_output.loss, rtol=2e-5, atol=2e-6
+        selective_output["loss"], reference_output.loss, rtol=2e-5, atol=2e-6
     )
 
     assert "loss" in selective_output
     reference_output.loss.backward()
-    selective_output.loss.backward()
+    selective_output["loss"].backward()
     reference_parameters = dict(reference_model.named_parameters())
     selective_parameters = dict(selective_model.named_parameters())
     assert reference_parameters.keys() == selective_parameters.keys()
@@ -224,7 +220,7 @@ def test_tiny_qwen_selective_logits_preserve_loss_and_every_parameter_gradient()
         use_cache=False,
     )
     torch.testing.assert_close(
-        selective_counted.loss,
+        selective_counted["loss"],
         reference_counted.loss,
         rtol=2e-5,
         atol=2e-6,

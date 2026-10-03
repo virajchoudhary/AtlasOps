@@ -55,7 +55,7 @@ def test_selected_logits_preserve_loss_targets_tokens_and_accuracy(
     logits = torch.full((1, 4, 7), -2.0)
     logits.scatter_(2, predictions.unsqueeze(-1), 2.0)
     loss = torch.tensor(1.75, requires_grad=True)
-    outputs = SimpleNamespace(logits=logits)
+    outputs = {"supervised_predictions": logits.argmax(dim=-1)}
     model = SimpleNamespace(training=True)
     trainer, calls, gathered = _trainer(monkeypatch, model, loss, outputs)
     inputs = {
@@ -93,7 +93,7 @@ def test_empty_supervision_keeps_zero_accuracy_and_eval_token_counter(
 ):
     labels = torch.full((1, 5), -100, dtype=torch.long)
     loss = torch.tensor(0.0)
-    outputs = SimpleNamespace(logits=torch.empty((1, 0, 7)))
+    outputs = {"supervised_predictions": torch.empty((1, 0), dtype=torch.long)}
     model = SimpleNamespace(training=False)
     trainer, _, gathered = _trainer(monkeypatch, model, loss, outputs)
     trainer._total_train_tokens = 23

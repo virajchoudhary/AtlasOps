@@ -40,13 +40,13 @@ class SupervisedLogitsSFTTrainer(SFTTrainer):
         if "labels" in inputs and not self.args.use_liger_kernel:
             shifted_labels = F.pad(inputs["labels"], (0, 1), value=-100)[..., 1:].contiguous()
             valid_mask = shifted_labels != -100
-            selected_labels = shifted_labels[valid_mask].to(outputs.logits.device)
-            predictions = outputs.logits.argmax(dim=-1).reshape(-1)
+            predictions = outputs["supervised_predictions"].reshape(-1)
+            selected_labels = shifted_labels[valid_mask].to(predictions.device)
             if predictions.numel() != selected_labels.numel():
                 raise ValueError("Selected logits do not align with supervised shifted labels.")
 
             correct_tokens = (predictions == selected_labels).sum()
-            total_tokens = valid_mask.sum().to(outputs.logits.device)
+            total_tokens = valid_mask.sum().to(predictions.device)
             correct_tokens = self.accelerator.gather_for_metrics(correct_tokens)
             total_tokens = self.accelerator.gather_for_metrics(total_tokens)
             total_sum = total_tokens.sum()

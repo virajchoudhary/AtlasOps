@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-03T11:00:22.035780+00:00`
+- **Generated**: `2026-10-03T11:15:19.799628+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -224,9 +224,9 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_D3_PREFREEZE_CHECKPOINT.md` | `6f5bd7fb051db624...` | 6768 |
 | `docs/project/G7_D3_PREPARATION_APPROVAL_V1.md` | `22be898fc999b935...` | 2881 |
 | `docs/project/G7_FREE_T4_PILOT_V1.md` | `cf3cf1f5237c5983...` | 3283 |
-| `docs/project/G7_G13_DECISION_REGISTER.md` | `bef94fe30306bf51...` | 8112 |
+| `docs/project/G7_G13_DECISION_REGISTER.md` | `b6af0f48f435ac69...` | 9005 |
 | `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `35b50af21b3ba031...` | 19099 |
-| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `b4b6a7017311087c...` | 18716 |
+| `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `67b4325d8090987e...` | 19663 |
 | `docs/project/G7_NAMED_HOST_EXECUTION_PLAN_V1.md` | `622799d84481a28d...` | 10442 |
 | `docs/project/G7_PILOT_ENVIRONMENT_V1.md` | `2ad27e228665096a...` | 8961 |
 | `docs/project/G7_PILOT_EXECUTION_RECORD_V1.md` | `a6350f5c7925e917...` | 4918 |
@@ -234,14 +234,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G7_REMOTE_HOST_OPTIONS_V1.md` | `7fd02277957640a0...` | 15892 |
 | `docs/project/G7_SETTLING_SOURCE_COMPATIBILITY_V1.md` | `b9cd624b42a61ebe...` | 1990 |
 | `docs/project/G7_SFT_PILOT_ACCEPTANCE_V1.md` | `ad80ca7f9d313bf0...` | 13171 |
-| `docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md` | `486b2d4a2ca1c41a...` | 3629 |
+| `docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md` | `468171583fd94090...` | 3883 |
 | `docs/project/G9_ASYNC_OBSERVATION_BRIDGE_V1.md` | `c1c3b38420bf98c3...` | 4572 |
 | `docs/project/G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md` | `daf95dfa2d90f24b...` | 4705 |
 | `docs/project/G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md` | `7bbecef8f21e4d8d...` | 7317 |
 | `docs/project/G9_OBSERVATION_JOURNAL_V1.md` | `e3140af6f5485421...` | 3409 |
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
-| `docs/project/IMPLEMENTATION_STATUS.md` | `17abdc2b0a036015...` | 4149 |
+| `docs/project/IMPLEMENTATION_STATUS.md` | `810ddad077352656...` | 4298 |
 | `docs/project/MASTER_PIPELINE_STATUS.md` | `314db2c79fe45154...` | 28848 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `bc3869c1d09f0aee...` | 2749 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `dbb132fc4c290fe6...` | 2566 |

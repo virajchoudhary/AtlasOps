@@ -1,6 +1,6 @@
 # G7-G13 remaining decision register
 
-**Status: REVIEW REGISTER; D3 PREPARATION APPROVED, EXECUTION NOT APPROVED.**
+**Historical status: REVIEW REGISTER; D3 PREPARATION APPROVED, EXECUTION NOT APPROVED.**
 The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) records
 the project lead's exact limited decision. Historical source basis:
 `56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`.
@@ -16,7 +16,21 @@ only the old A4 five-arm count and RS requirement. The preserved
 is historical, unapproved planning material; it is not the current
 comparison or an experimental freeze.
 
-| ID | Remaining project-lead decision | Required proposal and independent evidence before approval | Current state / blocked work |
+## v17 Execution Addendum (3 October 2026)
+
+The separate zero-cost free-T4 profile completed its approved one-epoch,
+68-row synthetic `train-candidate-v1` SFT pilot. Pinned weights were transferred
+and inventoried, a named hash-bound execution permit preceded launch, and the
+adapter passed independent offline reload. The complete bundle is preserved
+locally and in private Drive; see the
+[v17 result and raw records](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+This supersedes only the missing-resource/transfer/permit/adapter statements
+for that bounded run in historical D1-D3 below. The A100/RunPod proposal and
+original v4 refusal remain unexecuted; no new run is authorized by this addendum.
+G7 remains PARTIAL. D4-D12, G4 NOT_PASSED, G8 empirical evidence missing,
+G9 REOPENED, and Stage 15 NOT_CERTIFIED remain unchanged.
+
+| ID | Remaining project-lead decision | Required proposal and independent evidence before approval | Historical state / blocked work (D1-D3 superseded for v17 above) |
 |---|---|---|---|
 | D1 | **Compute and cost:** host, entitlement, GPU/BF16/4-bit support, storage, duration/cost ceiling, security and retention | Measured compatibility and capacity on the selected environment; current quote or verified free/university entitlement; secure transfer and recovery design | **NAMED PROPOSAL PREPARED; RESOURCE AUTHORITY PENDING.** University A100 80 GB first. [RunPod Secure Cloud US-KS-2 proposal](G7_NAMED_HOST_EXECUTION_PLAN_V1.md): one A100 SXM 80 GB, 54 GB encrypted volume + 20 GB container, key-only SSH/SFTP, one-hour setup/seven-day retention, proposed $5 all-in cap. Current checkout, availability and funding minimum unverified; no spend/build/access authority. |
 | D2 | **Model/tokenizer:** keep Qwen2.5-7B or approve a changed base, with immutable model and tokenizer revisions | License/remote-code review, exact commit/digests, tokenizer/template compatibility and revised three-arm pairing if model changes | **IDENTITY RESOLVED FOR PREPARATION; WEIGHT TRANSFER PENDING.** Qwen model/tokenizer pin `a09a35458c702b33eeacc393d103063234e8bc28`; [metadata/license/tokenizer evidence](G7_D2_PINNED_MODEL_V1.md). No weights or training authorized. |

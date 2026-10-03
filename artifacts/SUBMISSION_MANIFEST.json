@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T11:00:22.035780+00:00",
+  "generated_at": "2026-10-03T11:15:19.799628+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -193,8 +193,8 @@
       "size_bytes": 3220
     },
     "docs/project/IMPLEMENTATION_STATUS.md": {
-      "sha256": "17abdc2b0a036015ed403e2c99585bfd769f4915efd915b760d6a9650638f282",
-      "size_bytes": 4149
+      "sha256": "810ddad077352656b35cce685dd322e42fdf115f88a79c55d7f1d8ae42d6da5e",
+      "size_bytes": 4298
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
       "sha256": "d314299cbb2574a34c4c62c4093a5a389b860f0d2b9e8acb0ff63af8341b5ae8",
@@ -241,16 +241,16 @@
       "size_bytes": 12133
     },
     "docs/project/G7_G9_REMOTE_TRAINING_READINESS.md": {
-      "sha256": "b4b6a7017311087cdf5801ab44e273a8f7d3a8bb8abd9e0b09cd2720fa853f88",
-      "size_bytes": 18716
+      "sha256": "67b4325d8090987ea7b8f98bd76669570cacc42f0df5d446c28f6186b95660e6",
+      "size_bytes": 19663
     },
     "docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md": {
       "sha256": "35b50af21b3ba031f96632491ed8ea2884edf51cc34e24ebdae5c4fad772c2a2",
       "size_bytes": 19099
     },
     "docs/project/G7_G13_DECISION_REGISTER.md": {
-      "sha256": "bef94fe30306bf51ffc3c2865e18a515f582c69d1668cd0f316b7e421930b1c0",
-      "size_bytes": 8112
+      "sha256": "b6af0f48f435ac6986797ac2d96e6f695f1ea9a6fa5f89ada2c74bd2d20fe99c",
+      "size_bytes": 9005
     },
     "docs/project/G7_D3_CANDIDATE_REVIEW_V1.md": {
       "sha256": "8cd83bb9bda5e6093efe2a7e67884224336a4445dcb4a8298d3a207ef9becaf8",
@@ -305,8 +305,8 @@
       "size_bytes": 3283
     },
     "docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md": {
-      "sha256": "486b2d4a2ca1c41aa241e8d9049fe7599009b8e369f0e6f45c4f757326b90e69",
-      "size_bytes": 3629
+      "sha256": "468171583fd94090a9f29f4d3b1a7c3c13a4cae1c226831010db43c1961d63e3",
+      "size_bytes": 3883
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md": {
       "sha256": "63529cd8a08ca3baec38bbd7c6ec7b4fef11410b2c0a3fdd5e98ffb07e9df3a5",

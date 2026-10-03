@@ -383,6 +383,15 @@ def main() -> None:
             local_files_only=True,
             **loader_cache_options,
         )
+        if args.pilot_profile == "free-t4-v1":
+            from training.sft_chunked_loss import chunked_causal_lm_loss
+
+            model.loss_function = chunked_causal_lm_loss
+            manifest["loss_implementation"] = {
+                "name": "supervised-token-chunked-cross-entropy",
+                "sha256": file_sha256(Path(__file__).with_name("sft_chunked_loss.py")),
+                "purpose": "Bound temporary FP32 loss allocations without changing targets",
+            }
         resolved_model_revision = validate_resolved_hf_commit(
             args.model_revision,
             getattr(

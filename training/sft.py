@@ -384,11 +384,11 @@ def main() -> None:
             **loader_cache_options,
         )
         if args.pilot_profile == "free-t4-v1":
-            from training.sft_chunked_loss import chunked_causal_lm_loss
+            from training.sft_chunked_loss import install_supervised_logits
 
-            model.loss_function = chunked_causal_lm_loss
+            install_supervised_logits(model)
             manifest["loss_implementation"] = {
-                "name": "supervised-token-chunked-cross-entropy",
+                "name": "supervised-logits-chunked-cross-entropy",
                 "sha256": file_sha256(Path(__file__).with_name("sft_chunked_loss.py")),
                 "purpose": "Bound temporary FP32 loss allocations without changing targets",
             }

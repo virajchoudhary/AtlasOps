@@ -1,0 +1,94 @@
+{
+  "schema_version": "atlasops-sft-free-t4-plan-v1",
+  "profile": "free-t4-v1",
+  "parent_plan_sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
+  "corpus_version": "train-candidate-v1",
+  "d3_status": "APPROVED_FOR_PREPARATION",
+  "execution_allowed": false,
+  "corpus_sha256": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+  "corpus_manifest_sha256": "35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c",
+  "row_count": 68,
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "tokenizer": "Qwen/Qwen2.5-7B-Instruct",
+  "tokenizer_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "role": "all",
+  "environment": {
+    "runtime_kind": "colab_isolated_venv",
+    "python_implementation": "CPython",
+    "python_version": "3.12.11",
+    "platform_system": "Linux",
+    "platform_machine": "x86_64",
+    "package_lock_path": "requirements/sft-pilot-linux-py312.lock",
+    "package_lock_sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+    "package_versions_source": "hash-bound-parent-plan-v4",
+    "package_count": 72,
+    "oci_image_digest_required": false
+  },
+  "gpu": {
+    "provider": "Google Colab",
+    "tier": "free",
+    "name": "Tesla T4",
+    "count": 1,
+    "compute_capability": [
+      7,
+      5
+    ],
+    "cuda_runtime": "12.6",
+    "minimum_memory_bytes_inclusive": 15032385536
+  },
+  "resources": {
+    "zero_cost_required": true,
+    "spend_usd_max": 0,
+    "minimum_free_bytes_exclusive": 21474836480,
+    "persistent_runtime_storage": false
+  },
+  "hyperparameters": {
+    "epochs": 1,
+    "learning_rate": 0.0002,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "max_sequence_length": 8192,
+    "seed": 2026,
+    "assistant_only_loss": true,
+    "quantization": {
+      "load_in_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "float16",
+      "bnb_4bit_use_double_quant": true
+    },
+    "lora": {
+      "r": 16,
+      "alpha": 32,
+      "dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "bias": "none"
+    },
+    "optimizer": "paged_adamw_8bit",
+    "bf16": false,
+    "fp16": true
+  },
+  "evidence_retention": {
+    "colab_runtime_storage_persistent": false,
+    "required_methods": [
+      "download_to_local_evidence_store",
+      "mirror_to_local_evidence_store"
+    ],
+    "google_drive_all_files_mount_allowed": false
+  },
+  "scope": {
+    "training_authorized": false,
+    "paid_compute_authorized": false,
+    "p1_remediation_authorized": false,
+    "grpo_authorized": false,
+    "final_test_accessed": false
+  }
+}

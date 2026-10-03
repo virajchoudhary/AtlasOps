@@ -76,6 +76,7 @@ def install_supervised_logits(model: Any) -> None:
     """Bind a per-model Qwen forward wrapper that materializes only loss logits."""
     import torch
     from torch.nn import functional
+    from torch.utils.checkpoint import checkpoint
 
     original_forward = model.forward
     original_function = getattr(original_forward, "__func__", None)
@@ -83,6 +84,12 @@ def install_supervised_logits(model: Any) -> None:
         raise TypeError("Selective supervised loss requires a bound model forward method")
     if getattr(original_function, "_atlasops_supervised_logits", False):
         return
+    if (
+        not isinstance(getattr(model, "model", None), torch.nn.Module)
+        or not isinstance(getattr(model, "lm_head", None), torch.nn.Module)
+        or getattr(getattr(model, "config", None), "model_type", None) != "qwen2"
+    ):
+        raise TypeError("Selective supervised loss requires the pinned Qwen core and LM head")
 
     signature = inspect.signature(original_forward)
     parameters = signature.parameters
@@ -121,12 +128,6 @@ def install_supervised_logits(model: Any) -> None:
         ).flatten()
         selected_labels = flat_shifted_labels.index_select(0, selected_positions)
 
-        input_ids = bound.arguments.get("input_ids")
-        inputs_embeds = bound.arguments.get("inputs_embeds")
-        model_inputs = input_ids if isinstance(input_ids, torch.Tensor) else inputs_embeds
-        index_device = model_inputs.device if isinstance(model_inputs, torch.Tensor) else labels.device
-        logits_to_keep = selected_positions.to(device=index_device)
-
         num_items_in_batch = None
         if "num_items_in_batch" in parameters:
             num_items_in_batch = bound.arguments.pop("num_items_in_batch", None)
@@ -135,22 +136,72 @@ def install_supervised_logits(model: Any) -> None:
             num_items_in_batch = model_kwargs.pop("num_items_in_batch", None)
             bound.arguments[variadic_name] = model_kwargs
 
-        bound.arguments["labels"] = None
-        bound.arguments["logits_to_keep"] = logits_to_keep
         bound.arguments["use_cache"] = False
-        output = original_forward(*bound.args, **bound.kwargs)
-        if not isinstance(getattr(output, "logits", None), torch.Tensor):
-            raise TypeError("Selective supervised loss requires tensor model logits")
-        output["loss"] = chunked_causal_lm_loss(
-            output.logits,
-            labels=None,
-            vocab_size=model.config.vocab_size,
-            num_items_in_batch=num_items_in_batch,
-            shift_labels=selected_labels,
-        )
+        bound.arguments.pop("labels", None)
+        bound.arguments.pop("logits_to_keep", None)
+        core_kwargs = dict(bound.arguments)
+        if variadic_name is not None:
+            extra_kwargs = core_kwargs.pop(variadic_name, {})
+            core_kwargs.update(extra_kwargs)
+        hidden_output = self.model(**core_kwargs)
+        hidden_states = getattr(hidden_output, "last_hidden_state", None)
+        if not isinstance(hidden_states, torch.Tensor):
+            hidden_states = hidden_output[0]
+        if hidden_states.ndim != 3 or hidden_states.shape[:2] != labels.shape:
+            raise ValueError("Qwen core hidden states must retain the full labeled sequence")
+
+        selected_positions = selected_positions.to(device=hidden_states.device)
+        selected_labels = selected_labels.to(device=hidden_states.device)
+        vocab_size = self.config.vocab_size
+
+        def projected_chunk(
+            full_hidden_states: torch.Tensor,
+            positions: torch.Tensor,
+            targets: torch.Tensor,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            selected_hidden = full_hidden_states.index_select(1, positions)
+            projected_logits = self.lm_head(selected_hidden)
+            chunk_loss = functional.cross_entropy(
+                projected_logits.float().view(-1, vocab_size),
+                targets.view(-1),
+                ignore_index=-100,
+                reduction="sum",
+            )
+            chunk_predictions = projected_logits.detach().argmax(dim=-1).reshape(-1)
+            return chunk_loss, chunk_predictions
+
+        chunk_results = [
+            checkpoint(
+                projected_chunk,
+                hidden_states,
+                selected_positions[start : start + _TOKEN_CHUNK_SIZE],
+                selected_labels[start : start + _TOKEN_CHUNK_SIZE],
+                use_reentrant=False,
+            )
+            for start in range(0, selected_positions.numel(), _TOKEN_CHUNK_SIZE)
+        ]
+        if chunk_results:
+            summed_loss = torch.stack([result[0] for result in chunk_results]).sum()
+            supervised_predictions = torch.cat(
+                [result[1] for result in chunk_results]
+            ).unsqueeze(0)
+        else:
+            summed_loss = hidden_states[:, :0, :].float().sum()
+            supervised_predictions = torch.empty(
+                (1, 0), dtype=torch.long, device=hidden_states.device
+            )
+
+        if num_items_in_batch is not None:
+            if isinstance(num_items_in_batch, torch.Tensor):
+                num_items_in_batch = num_items_in_batch.to(device=summed_loss.device)
+            loss = summed_loss / num_items_in_batch
+        elif selected_positions.numel() == 0:
+            loss = summed_loss + summed_loss.new_full((), float("nan"))
+        else:
+            loss = summed_loss / selected_positions.numel()
         return {
-            "loss": output["loss"],
-            "supervised_predictions": output.logits.detach().argmax(dim=-1),
+            "loss": loss,
+            "supervised_predictions": supervised_predictions,
         }
 
     supervised_forward._atlasops_supervised_logits = True

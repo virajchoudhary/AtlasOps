@@ -442,7 +442,16 @@ def main() -> None:
         if args.pilot_profile == "free-t4-v1":
             train_config_values["fp16"] = True
         train_args = SFTConfig(**train_config_values)
-        trainer = SFTTrainer(
+        trainer_class = SFTTrainer
+        if args.pilot_profile == "free-t4-v1":
+            from training.sft_supervised_trainer import SupervisedLogitsSFTTrainer
+
+            trainer_class = SupervisedLogitsSFTTrainer
+            manifest["trainer_implementation"] = {
+                "name": "SFTTrainer-supervised-logit-metrics",
+                "sha256": file_sha256(Path(__file__).with_name("sft_supervised_trainer.py")),
+            }
+        trainer = trainer_class(
             model=model,
             processing_class=tokenizer,
             train_dataset=dataset,

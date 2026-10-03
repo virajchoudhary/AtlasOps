@@ -374,6 +374,9 @@ def main() -> None:
             bnb_4bit_compute_dtype=_hyperparameters(args)["quantization"]["bnb_4bit_compute_dtype"],
             bnb_4bit_use_double_quant=True,
         )
+        model_precision_options = {}
+        if args.pilot_profile == "free-t4-v1":
+            model_precision_options = {"torch_dtype": torch.float16, "attn_implementation": "sdpa"}
         model = AutoModelForCausalLM.from_pretrained(
             args.model,
             revision=args.model_revision,
@@ -382,6 +385,7 @@ def main() -> None:
             trust_remote_code=False,
             local_files_only=True,
             **loader_cache_options,
+            **model_precision_options,
         )
         if args.pilot_profile == "free-t4-v1":
             from training.sft_chunked_loss import install_supervised_logits
@@ -402,6 +406,11 @@ def main() -> None:
             label="base model",
         )
         model = prepare_model_for_kbit_training(model)
+        if args.pilot_profile == "free-t4-v1":
+            for parameter in model.parameters():
+                if not parameter.requires_grad and parameter.dtype == torch.float32:
+                    parameter.data = parameter.data.to(torch.float16)
+            manifest["attention_memory_policy"] = "Explicit FP16 SDPA; frozen nonquantized parameters FP16"
         model = get_peft_model(
             model,
             LoraConfig(

@@ -22,3 +22,4 @@ mock_archive/stage9/* -text
 stage7/free-t4-v17/* -text
 stage7/free-t4-v17/*.log -diff
 stage7/free-t4-v17/local-verification.json whitespace=cr-at-eol
+stage8/base-sft-validation-v1/** -text -whitespace

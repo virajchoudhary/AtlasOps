@@ -74,6 +74,33 @@ def test_non_colab_launch_has_no_side_effects(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.parametrize("host,root", [
+    ("colab", "/content/atlasops-t4-model-transfer-val"),
+    ("kaggle", "/kaggle/temp/atlasops-t4-model-transfer-val"),
+])
+def test_named_host_transfer_root(host, root, monkeypatch):
+    monkeypatch.setattr(transfer.os, "name", "posix")
+    monkeypatch.setattr(transfer, "Path", __import__("pathlib").PurePosixPath)
+    monkeypatch.setattr(transfer.Path, "is_symlink", lambda _: False, raising=False)
+    monkeypatch.setattr(transfer.Path, "resolve", lambda self: self, raising=False)
+    assert str(transfer._transfer_parent(root, host)) == str(transfer.Path(root).parent)
+
+
+@pytest.mark.parametrize("host,root", [
+    ("kaggle", "/kaggle/working/atlasops-t4-model-transfer-val"),
+    ("kaggle", "/content/atlasops-t4-model-transfer-val"),
+    ("colab", "/kaggle/temp/atlasops-t4-model-transfer-val"),
+    ("other", "/content/atlasops-t4-model-transfer-val"),
+])
+def test_transfer_root_does_not_widen_to_other_paths(host, root, monkeypatch):
+    monkeypatch.setattr(transfer.os, "name", "posix")
+    monkeypatch.setattr(transfer, "Path", __import__("pathlib").PurePosixPath)
+    monkeypatch.setattr(transfer.Path, "is_symlink", lambda _: False, raising=False)
+    monkeypatch.setattr(transfer.Path, "resolve", lambda self: self, raising=False)
+    with pytest.raises(transfer.TransferError):
+        transfer._transfer_parent(root, host)
+
+
 class Response:
     status = 200
 

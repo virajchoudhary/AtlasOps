@@ -1,0 +1,58 @@
+{
+  "avg_reward": null,
+  "avg_time_to_resolve_s": null,
+  "claims": {
+    "g6_or_g8_gate_closure": false,
+    "matched_base_vs_sft_diagnostic_comparison": true,
+    "validation_only": true
+  },
+  "environment_resolution_evaluated": false,
+  "fatal_error": null,
+  "format_compliance_denominator": "all scheduled arm rows, including failures",
+  "lifecycle": "completed",
+  "not_executed_arm_row_count": 0,
+  "per_arm": {
+    "base": {
+      "avg_diagnostic_f1": 0.16875,
+      "avg_reward": null,
+      "avg_time_to_resolve_s": null,
+      "diagnostic_scored_count": 6,
+      "format_compliance_denominator": "all scheduled arm rows, including failures",
+      "format_compliance_rate": 1.0,
+      "format_compliant_count": 6,
+      "inference_error_count": 0,
+      "invalid_prediction_count": 0,
+      "not_executed_count": 0,
+      "recorded_count": 6,
+      "resolution_rate": null,
+      "response_received_count": 6,
+      "safety_result": null,
+      "scheduled_count": 6,
+      "valid_prediction_count": 6
+    },
+    "sft": {
+      "avg_diagnostic_f1": 0.15935,
+      "avg_reward": null,
+      "avg_time_to_resolve_s": null,
+      "diagnostic_scored_count": 6,
+      "format_compliance_denominator": "all scheduled arm rows, including failures",
+      "format_compliance_rate": 1.0,
+      "format_compliant_count": 6,
+      "inference_error_count": 0,
+      "invalid_prediction_count": 0,
+      "not_executed_count": 0,
+      "recorded_count": 6,
+      "resolution_rate": null,
+      "response_received_count": 6,
+      "safety_result": null,
+      "scheduled_count": 6,
+      "valid_prediction_count": 6
+    }
+  },
+  "recorded_arm_row_count": 12,
+  "resolution_rate": null,
+  "run_id": "base-sft-validation-20261003-v1",
+  "safety_result": null,
+  "scheduled_arm_row_count": 12,
+  "schema_version": "atlasops-base-sft-validation-summary-v1"
+}

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T11:15:19.799628+00:00",
+  "generated_at": "2026-10-03T13:30:51.474371+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,11 +34,11 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 397,
+  "asset_count": 417,
   "assets": {
     "AGENTS.md": {
-      "sha256": "17a9f526917b583f9ac463216d5cf0d0c7af64700d9212ac49e53566ea631a39",
-      "size_bytes": 6589
+      "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
+      "size_bytes": 6823
     },
     ".dockerignore": {
       "sha256": "d644c020674414089615d4f08cfa03e382a88a41e3625bd2bf2808a8c8ad8d2d",
@@ -49,12 +49,12 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "ff4617fae9cd91a80a8fe4be86ce00ccd40cdf2e82bace4d90a19a5de2d2ba58",
-      "size_bytes": 2006
+      "sha256": "5b30e8dd4a9dfb6866df9214fac4287c5b37ed6d18f2f058955e51fb323e4210",
+      "size_bytes": 2045
     },
     ".github/workflows/ci.yml": {
-      "sha256": "a0c4ccf1b1a3bed0760b5e23a951c9e6fd077bfcb3217d5ada41363931a9545f",
-      "size_bytes": 5501
+      "sha256": "657d0611bc0d0830f5e153bdafe0545367eec2ca1479f5d943a6d4918e87540b",
+      "size_bytes": 5719
     },
     "BENCHMARKS.md": {
       "sha256": "3191bc522a52706baf3624b1c59ff71436c58aaf4482b0b1ce1af2d2251a9688",
@@ -85,8 +85,8 @@
       "size_bytes": 6521
     },
     "README.md": {
-      "sha256": "da5744bbdf83f4f1833fa4759b91515bd19c8e75f15763e841a582e6c12551c3",
-      "size_bytes": 27101
+      "sha256": "9018a0392c7adc587c8e17961b242c66e36af53e6ae8d325525d4f7b9630ed4c",
+      "size_bytes": 27527
     },
     "DEPLOYMENT.md": {
       "sha256": "297a882f897c7f0b3bd2eefd6f47673e9c81f75e661010df9a36feab112d0389",
@@ -225,8 +225,8 @@
       "size_bytes": 3409
     },
     "docs/project/FINAL_PIPELINE_V22_STATUS.md": {
-      "sha256": "37068fee55f65d1b8460ffaef5be41acca9a97768490125c836c69bad782adb8",
-      "size_bytes": 9499
+      "sha256": "62fe337b3c887914983be401485d7d29c98df289797764e06816fe408cc51362",
+      "size_bytes": 9794
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md": {
       "sha256": "613bbdfe304225f0c330a959f2281aad9ecd39721d086a50ff59c2022f765ce0",
@@ -333,8 +333,8 @@
       "size_bytes": 4993
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "314db2c79fe4515430d7ef912e0a7f816f4a34dd86aa029bbbc73394ad3eec66",
-      "size_bytes": 28848
+      "sha256": "606f66057175f4c1a6f3e0bf57fed4022f0074e4c6dddca017e89c4214582df0",
+      "size_bytes": 29585
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "47220a41c883ffd88ec7cba72e2c1a022ccd040ae50928807e20c3e5b6e283a6",
@@ -385,8 +385,8 @@
       "size_bytes": 12389
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
-      "sha256": "677c001e637757d863cfa8fb99368aa89aad14dc09a575a9cb35bc91b189284d",
-      "size_bytes": 7954
+      "sha256": "c6566d258210053da6f3901134276a5a7a08a3a9818396d5983515f0ae9f6fbb",
+      "size_bytes": 8301
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
       "sha256": "846b7ebcbc3b4762cb8449d036fc0f74e574d850cf7edf5f9d400a925e90ee24",
@@ -401,8 +401,8 @@
       "size_bytes": 2192
     },
     "artifacts/evidence/.gitattributes": {
-      "sha256": "f5a13b0ba30c2c486a7413355f0c5a96a482827a1d2fdb658831c4844677a586",
-      "size_bytes": 1084
+      "sha256": "bee3029f88f6899bf24eb3e901ae5fa392343b01adf8955ad4ba4a8453665204",
+      "size_bytes": 1135
     },
     "artifacts/evidence/recovery/2026-09-05-workspace-recovery.json": {
       "sha256": "710fddcaeb2ea6c86272ad71f28a3ba9e02579d51428fa702f7a89b1e65e33bb",
@@ -643,6 +643,74 @@
     "artifacts/evidence/stage7/free-t4-v17/training-v17.log": {
       "sha256": "9fde0e4a5208f5f29d5fcf285ad68ba5e3af0cb0f906d4ea55319d0266e3e177",
       "size_bytes": 3529
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/base-transfer.log": {
+      "sha256": "99707604f740139708f5a28258ec9432232d58848167bbd1aff8db617bc36c4d",
+      "size_bytes": 2025
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-path.txt": {
+      "sha256": "172fcd1550de2bee6f36000fd5d1b63afb7a2447f0691ee3c7ff9786a5cd1dda",
+      "size_bytes": 121
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-verification.json": {
+      "sha256": "2482a54d30604c03ede8840d9f4117e708454ad11765378bb3389e6e6484cecc",
+      "size_bytes": 247
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/execution-approval.json": {
+      "sha256": "7322f86a44b0df25504821cefea207adc697e3a1915f733f59a95c5d25c6cd0a",
+      "size_bytes": 635
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.json": {
+      "sha256": "9a83ab0bafef03c11aa6d85957b9b57269b7a637a499405e41196e925f077a74",
+      "size_bytes": 1214
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.log": {
+      "sha256": "0ee008c7cbadb8c16b168d3c4cbcfbb11bab5ffe75c4bf219dc38550b13b2e41",
+      "size_bytes": 1074
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/install.log": {
+      "sha256": "9fa2bba5b53bdbfdfd7f77727a3cd41457f049277aea20d5d6a3a70f73a1f421",
+      "size_bytes": 1796
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/runtime.json": {
+      "sha256": "6e99604dd3a9c8195300a1bb5d1ff965f25cf65f3c900389df1f2ff4e8d07ff9",
+      "size_bytes": 2321
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/sft-pilot-linux-py312.lock": {
+      "sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+      "size_bytes": 167639
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-report.json": {
+      "sha256": "0693215deceab4293a95f76e1bb79b02af074d4c7f3ad422ba91307c7be3220d",
+      "size_bytes": 20102
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-start.json": {
+      "sha256": "3991a4f1ab50fbef09f337e59c472684092cc54ce8379289356f462b72e08162",
+      "size_bytes": 1386
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-exit-v1.json": {
+      "sha256": "8c7f2587da6388bf50add696e53af92863038460d1234b06884d16ee3f1f1647",
+      "size_bytes": 28
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-run-v1.log": {
+      "sha256": "41f1fdb41a89c24d71a2b8a7d82e64a7fa7a005a70f0e5f8f1d074181ab4a653",
+      "size_bytes": 2285
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/episodes.jsonl": {
+      "sha256": "99a45c1cdb08c8c23f4b6d9c7c51153e00c6528bf976049cae6291bd16ad39c2",
+      "size_bytes": 86961
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/raw_episodes.jsonl": {
+      "sha256": "97887f05dae5dd4fc997185477b6c6b052d1578d8ca06ae2e0fdb58f080decff",
+      "size_bytes": 79638
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/run_manifest.json": {
+      "sha256": "878b01e079d294ad35a6ab73365c01e1a3d7cf138a2afaae72b73ecbb59d49b4",
+      "size_bytes": 25804
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json": {
+      "sha256": "b846b05c9a6bb0d26f414ef7e68ec363cf4f4f12657db1ae10871c08cd23ee11",
+      "size_bytes": 1853
     },
     "artifacts/evidence/stage10/rs_baseline_eval.json": {
       "sha256": "821c76fc6958593bc870084a08cfaba8d67d6dfec1d570f792cd38b8cf8da487",
@@ -1053,8 +1121,8 @@
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "3f720ca888e95afb12cffde682c1e2df42cdc956e913f7a65437f23d573fe206",
-      "size_bytes": 18137
+      "sha256": "459ee2235d7ac65ce50f464c5cb726cba7b6e0340cac31219cd902112b60355f",
+      "size_bytes": 18202
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -1077,8 +1145,8 @@
       "size_bytes": 5305
     },
     "scripts/transfer_t4_model_files.py": {
-      "sha256": "1da31ccbb3888e9ff14e2a57f1007cc07d349e4bab0d0def919a974bd8708845",
-      "size_bytes": 13079
+      "sha256": "e66dd17fca7aff2e186bbb1081ae4917f31efc96533b463fff92468f73490b52",
+      "size_bytes": 13522
     },
     "training/sft.py": {
       "sha256": "7b2ff51eae460a6901f49e56cb0afcc5099b85896f64a3adcb9fa13c24552393",
@@ -1216,6 +1284,14 @@
       "sha256": "21b92da15c7e67c863d5b5bf617d2ba8e5c06056481e8deb47b745c5cea54cb1",
       "size_bytes": 10105
     },
+    "tests/test_base_sft_validation.py": {
+      "sha256": "eb0f9c74192e0739eb093844388272d50fae09f4a48da870d51c9204d779cd30",
+      "size_bytes": 21486
+    },
+    "tests/test_base_sft_validation_evidence.py": {
+      "sha256": "8596a30542fefdd14edf23d210e9211952a77e81c47afa6eeb63c99588aba2a0",
+      "size_bytes": 2185
+    },
     "tests/test_bench_runner.py": {
       "sha256": "9f926ca6760507a73e5b1c9cc7f9d826f62a33f0fe5a57765a3bd13a8b42932d",
       "size_bytes": 19828
@@ -1253,8 +1329,8 @@
       "size_bytes": 4714
     },
     "tests/test_claim_integrity.py": {
-      "sha256": "f872346415142fa419201b77a52e12a0922bed71f4bce94cff12457a02f9755a",
-      "size_bytes": 6824
+      "sha256": "dfbe106bf5ae0b1bfae27031b195eeda5fe86f6019c34da831117d6679ade35a",
+      "size_bytes": 7462
     },
     "tests/test_console_efficiency.py": {
       "sha256": "a0566e68d19630582e50f59133e20bba24563b0e91ed7736916532d0cb58f54e",
@@ -1597,8 +1673,8 @@
       "size_bytes": 15473
     },
     "tests/test_transfer_t4_model_files.py": {
-      "sha256": "a7cfe8b67a322043728f655d4f68e5e64af8b4ed7802447a504eff8e6ae13f9b",
-      "size_bytes": 5342
+      "sha256": "1169a3589c4f7b6447c92557822a585752be80fcd2517ae1ed182d9fa347424f",
+      "size_bytes": 6724
     },
     "tests/test_ui_read_model.py": {
       "sha256": "1942099a2975dd69809a1e9dbe4f8522d7e32b4bfc9dbb3a82a443a43656fb03",
@@ -1607,6 +1683,10 @@
     "tests/test_verifier.py": {
       "sha256": "b76b4563adbe04e257c48d5845d88ea9eca9fe164c1f78024f2f3ab538f683d3",
       "size_bytes": 27637
+    },
+    "tests/test_verify_base_sft_validation.py": {
+      "sha256": "9e2d40a7982de76dd1f6bcc0779a65211e41bcdc3060b5714402cba4477f31c3",
+      "size_bytes": 5646
     },
     "tests/stage4_approval_process.py": {
       "sha256": "951d6817bbf440964f3f3645353e5ded3c6eda85b4e766e1d660de0e23e53f53",

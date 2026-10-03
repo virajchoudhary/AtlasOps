@@ -105,6 +105,10 @@ jobs:
         run: |
           python -m pytest tests/test_sft_chunked_loss.py \
             tests/test_sft_t4_attention.py tests/test_sft_supervised_trainer.py -q
+      - name: Test matched Validation inference contract without pretrained weights
+        run: |
+          python -m pytest tests/test_base_sft_validation.py \
+            tests/test_verify_base_sft_validation.py -q
 
   frontend:
     name: Frontend contracts

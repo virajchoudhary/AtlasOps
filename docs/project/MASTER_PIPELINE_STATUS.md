@@ -61,9 +61,9 @@ scientifically complete.
 | **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** (historical local Kind acceptance; wrapper limitations below) |
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (010 completed negative; 009 and 011-014 interrupted/inconclusive) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (scenario/split governance; not proof of every downstream consumer isolation) |
-| **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (historical outputs are MOCK) |
+| **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic baseline exists; incident-resolution evidence missing; historical outputs are MOCK) |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (bounded synthetic free-T4 v17 pilot completed; preserved adapter passed independent reload; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
-| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (deterministic mock evaluation; no demonstrated SFT improvement) |
+| **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic result: no diagnostic improvement observed; incident-resolution criterion remains unmet) |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (direct-action software contract implemented; real training/checkpoint/evaluation missing) |
 | **Stage 10** | Historical RS data and baselines | **G10** | Retained optional dataset and baseline research; no longer a final prerequisite. | **OUT_OF_SCOPE** (formerly PARTIAL; scenario-derived data do not establish historical feedback) |
 | **Stage 11** | Historical hybrid recommender | **G11** | Retained optional small-data ranking research; no longer a final prerequisite. | **OUT_OF_SCOPE** (former PASS was bounded synthetic offline ranking, not incident resolution) |
@@ -139,7 +139,10 @@ scientifically complete.
 
 ### Gate G6: Reproduce GAI Zero-Shot Baseline — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
 - `bench/zero_shot_baseline.py` now has a fail-closed real-inference path with raw-response and model provenance requirements. Recovered validation/test summaries in `artifacts/evidence/mock_archive/stage6/` explicitly record `mock_eval=true`.
-- Their metrics are historical mock outputs, not an empirical baseline. A genuine evaluated baseline with run/model/environment provenance is still required.
+- Their metrics are historical mock outputs, not an empirical baseline. The separate
+  [matched Base-vs-SFT Validation result](BASE_SFT_VALIDATION_RESULT_V1.md) records
+  genuine pinned-base diagnostic inference; it does not supply incident-resolution
+  evidence or close G6.
 
 ### Gate G7: Generate SFT Data and Train — [PARTIAL]
 - `training/build_sft_dataset.py` synthesizes training-scenario examples; rendering/masking and training code exist in `training/sft_rendering.py`, `training/templates/qwen2_5_tool_sft.jinja`, and `training/sft.py`.
@@ -156,12 +159,18 @@ scientifically complete.
 - `training/sft.py` persists planned/running/completed-or-failed run provenance
   and checkpoint inventory. The v17 record identifies the one-epoch, 9-step
   synthetic run and its independently reloaded adapter. This artifact does not
-  establish incident gains or G8 evaluation. G7 remains PARTIAL; see the
+  establish incident gains. Its later matched Validation evaluation is recorded
+  separately below. G7 remains PARTIAL; see the
   canonical v17 result linked above.
 
 ### Gate G8: Evaluate SFT Before RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
 - `bench/sft_eval.py` now requires a completed, provenance-checked local checkpoint for real inference; mock evaluation remains explicitly non-empirical.
 - Recovered outputs in `artifacts/evidence/mock_archive/stage8/` are deterministic mock evidence. Previously reported SFT gains and format compliance do not establish checkpoint performance or unlock validated RL training.
+- The real six-scenario [Validation comparison](BASE_SFT_VALIDATION_RESULT_V1.md)
+  records Base diagnostic F1 0.16875, SFT 0.15935, paired difference -0.00940
+  and 6/6 diagnostic JSON conformance per arm. **No diagnostic improvement observed.**
+  Raw outputs, hashes and independent recomputation are preserved. Resolution,
+  safety, reward and TTR remain null; the G8 incident-resolution criterion remains unmet.
 
 ### Gate G9: Correct and Train Online GRPO — [REOPENED]
 - Training entrypoints are blocked for a confirmed observation-order defect:

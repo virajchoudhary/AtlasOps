@@ -1,0 +1,33 @@
+{
+  "avg_time_to_resolve_s": null,
+  "metrics": {
+    "base": {
+      "avg_diagnostic_f1": 0.1687,
+      "diagnostic_schema_conformance_rate": 1.0,
+      "diagnostic_scored_count": 6,
+      "failed_scenarios": 0,
+      "scheduled_count": 6
+    },
+    "paired": {
+      "basis": "Descriptive Validation diagnostics only; no inferential superiority claim",
+      "both_scored_count": 6,
+      "mean_sft_minus_base_diagnostic_f1": -0.0094,
+      "sft_minus_base_schema_conformance": 0.0
+    },
+    "sft": {
+      "avg_diagnostic_f1": 0.1593,
+      "diagnostic_schema_conformance_rate": 1.0,
+      "diagnostic_scored_count": 6,
+      "failed_scenarios": 0,
+      "scheduled_count": 6
+    }
+  },
+  "raw_predictions_sha256": "99a45c1cdb08c8c23f4b6d9c7c51153e00c6528bf976049cae6291bd16ad39c2",
+  "resolution_rate": null,
+  "run_id": "base-sft-validation-20261003-v1",
+  "run_manifest_sha256": "878b01e079d294ad35a6ab73365c01e1a3d7cf138a2afaae72b73ecbb59d49b4",
+  "schema_version": "atlasops-base-sft-independent-recompute-v1",
+  "scope": "Raw-response schema and diagnostic verification; not model execution proof",
+  "scoring_implementation": "Independent standard-library parser and token-set F1",
+  "status": "PASS"
+}

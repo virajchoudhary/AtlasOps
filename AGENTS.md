@@ -106,7 +106,10 @@ authorization. Estimate storage before any multi-GB operation.
 - G7 remains PARTIAL: the bounded synthetic free-T4 v17 SFT pilot produced a preserved
   adapter that passed an independent offline reload
   ([evidence](artifacts/evidence/stage7/free-t4-v17/RESULT.json)). This establishes an
-  artifact, not incident improvement or G8 evaluation. Archived Stage 6/8/9 mock outputs
+  artifact, not incident improvement. The real matched Validation comparison records
+  Base diagnostic F1 0.16875, SFT 0.15935, paired difference -0.00940 and 6/6
+  diagnostic JSON conformance per arm: no diagnostic improvement observed.
+  G8 incident-resolution evidence remains missing. Archived Stage 6/8/9 mock outputs
   cannot close empirical gates.
 - Stage 13's current aggregator rejects missing real variant metrics; the saved hardcoded
   profiles remain historical, and actual variant ablation/stress evaluation is missing.

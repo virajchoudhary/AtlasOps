@@ -58,6 +58,21 @@ def test_readme_training_instructions_match_governed_entrypoints():
     assert "Stage 7" in readme and "Stage 9" in readme
 
 
+def test_current_status_preserves_negative_validation_result_without_gate_closure():
+    for path in (
+        "README.md", "AGENTS.md", "docs/project/MASTER_PIPELINE_STATUS.md",
+        "docs/project/FINAL_PIPELINE_V22_STATUS.md",
+    ):
+        content = Path(path).read_text(encoding="utf-8")
+        for value in ("0.16875", "0.15935", "-0.00940", "6/6"):
+            assert value in content, path
+        assert "no diagnostic improvement observed" in content.lower(), path
+    statuses = declared_gate_statuses()
+    assert statuses["G4"] == "NOT_PASSED"
+    assert statuses["G7"] == "PARTIAL"
+    assert statuses["G8"] != "PASS"
+
+
 def test_current_implementation_summary_matches_gate_and_tool_inventory():
     summary = Path("docs/project/IMPLEMENTATION_STATUS.md").read_text(encoding="utf-8")
     statuses = declared_gate_statuses()

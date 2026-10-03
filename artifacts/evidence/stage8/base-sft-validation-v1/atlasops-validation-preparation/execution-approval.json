@@ -1,0 +1,16 @@
+{
+  "approval_text": "yes i approve all",
+  "approved_by": "Viraj Choudhary",
+  "base_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "checkpoint_manifest_sha256": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+  "limits": {
+    "max_new_tokens_per_response": 512,
+    "process_timeout_seconds": 3600,
+    "visible_gpus": 1
+  },
+  "recorded_at_utc": "2026-10-03T12:49:56.865835+00:00",
+  "run_id": "base-sft-validation-20261003-v1",
+  "scope": "Matched Base vs SFT Validation only; no training, GRPO, Test or remediation",
+  "source_sha": "3808849125db0ddfb6bf64fe853dffe3fce608c1",
+  "spend_usd_max": 0
+}

@@ -1,0 +1,466 @@
+{
+  "artifacts": {
+    "episodes": "episodes.jsonl",
+    "episodes_sha256": "99a45c1cdb08c8c23f4b6d9c7c51153e00c6528bf976049cae6291bd16ad39c2",
+    "raw_episodes": "raw_episodes.jsonl",
+    "raw_episodes_sha256": "97887f05dae5dd4fc997185477b6c6b052d1578d8ca06ae2e0fdb58f080decff",
+    "summary": "summary.json",
+    "summary_sha256": "b846b05c9a6bb0d26f414ef7e68ec363cf4f4f12657db1ae10871c08cd23ee11"
+  },
+  "base_snapshot_inventory_after": {
+    "collected_at_utc": "2026-10-03T12:52:47+00:00",
+    "execution_allowed": false,
+    "file_details": [
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+        "size_bytes": 11343
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+        "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+        "size_bytes": 663
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+        "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+        "size_bytes": 243
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+        "size_bytes": 1671839
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors",
+        "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+        "size_bytes": 3945441440
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors",
+        "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+        "size_bytes": 3864726352
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors",
+        "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+        "size_bytes": 3864726424
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors",
+        "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+        "size_bytes": 3556377672
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+        "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+        "size_bytes": 27752
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "size_bytes": 7031645
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+        "size_bytes": 7305
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833
+      }
+    ],
+    "files": {
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/config.json": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "model_weights_loaded": false,
+    "network_accessed": false,
+    "plan_sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
+    "repository": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "schema_version": "atlasops-sft-model-files-inventory-v1",
+    "snapshot_dir": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28",
+    "snapshot_permissions": {
+      "mode_bits_readonly": true,
+      "mount_immutability_verified": false,
+      "owner_acl_verified": false
+    },
+    "tokenizer_manifest_sha256": "297724616fe6bdd1f5ba2a8d53842dcbd3a46c79f9a1daa4ea19334ad6271b7c",
+    "total_bytes": 15242799511,
+    "total_files": 12,
+    "weight_metadata": {
+      "path": "/kaggle/temp/AtlasOps-validation-20261003/artifacts/evidence/stage7/qwen_a09a354_weight_metadata_v1.json",
+      "sha256": "32159b8e77f3ad62cdc4b7d70cba9f4582582ab88d259cbf4c94799b3178f4d2",
+      "source": "pinned_public_revision_metadata"
+    }
+  },
+  "base_snapshot_inventory_before": {
+    "collected_at_utc": "2026-10-03T12:50:42+00:00",
+    "execution_allowed": false,
+    "file_details": [
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+        "size_bytes": 11343
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+        "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+        "size_bytes": 663
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+        "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+        "size_bytes": 243
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+        "size_bytes": 1671839
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors",
+        "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+        "size_bytes": 3945441440
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors",
+        "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+        "size_bytes": 3864726352
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors",
+        "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+        "size_bytes": 3864726424
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors",
+        "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+        "size_bytes": 3556377672
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+        "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+        "size_bytes": 27752
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "size_bytes": 7031645
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+        "size_bytes": 7305
+      },
+      {
+        "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833
+      }
+    ],
+    "files": {
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/config.json": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+      "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "model_weights_loaded": false,
+    "network_accessed": false,
+    "plan_sha256": "914f7a5af5c22a355b235018d997302688598d0bdbdeda8eb8fcba3552f9e83e",
+    "repository": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "schema_version": "atlasops-sft-model-files-inventory-v1",
+    "snapshot_dir": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28",
+    "snapshot_permissions": {
+      "mode_bits_readonly": true,
+      "mount_immutability_verified": false,
+      "owner_acl_verified": false
+    },
+    "tokenizer_manifest_sha256": "297724616fe6bdd1f5ba2a8d53842dcbd3a46c79f9a1daa4ea19334ad6271b7c",
+    "total_bytes": 15242799511,
+    "total_files": 12,
+    "weight_metadata": {
+      "path": "/kaggle/temp/AtlasOps-validation-20261003/artifacts/evidence/stage7/qwen_a09a354_weight_metadata_v1.json",
+      "sha256": "32159b8e77f3ad62cdc4b7d70cba9f4582582ab88d259cbf4c94799b3178f4d2",
+      "source": "pinned_public_revision_metadata"
+    }
+  },
+  "checkpoint_data_provenance_as_recorded": {
+    "fields": {
+      "corpus_manifest": {
+        "path": "/content/AtlasOps-free-t4-v1/artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_manifest.json",
+        "present": true,
+        "sha256": "35c9fd63328ef1319f616f2a23a025be38ad99c594dcd8bb38b733e0ff44c67c"
+      },
+      "corpus_sha256_canonical_lf": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+      "data_origin": "scenario_derived_synthetic_review_candidate",
+      "data_origin_source": "adjacent_corpus_manifest",
+      "split": "train",
+      "split_sha256": "b7d2220a659a1120f93adb443b301f3302156efd8ff64028214d283ca009b894",
+      "synthetic": true,
+      "total_examples": 68,
+      "total_scenarios": 16
+    },
+    "source": "checkpoint_manifest_as_recorded"
+  },
+  "checkpoint_identity": {
+    "files": [
+      {
+        "path": "README.md",
+        "sha256": "940a4138d5e34e2330bed39e489c17375fb57084f78db9bc7e857bc32a80906d",
+        "size_bytes": 1553
+      },
+      {
+        "path": "adapter_config.json",
+        "sha256": "212e32ecfc756530c3b16908d2b65b360fc22695c87c3d9d7d54dee6859327fa",
+        "size_bytes": 936
+      },
+      {
+        "path": "adapter_model.safetensors",
+        "sha256": "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff",
+        "size_bytes": 161533192
+      },
+      {
+        "path": "added_tokens.json",
+        "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b",
+        "size_bytes": 605
+      },
+      {
+        "path": "chat_template.jinja",
+        "sha256": "de846d935d6e1aa0fb6b0aa61ccec98762da82a0d0eb989436edc3da448bfbbf",
+        "size_bytes": 3276
+      },
+      {
+        "path": "checkpoint-9/README.md",
+        "sha256": "b0aa36fc5661230ace5a321ba3ff3734acabdc56b65b0b0d33c351ceb44d5cce",
+        "size_bytes": 5214
+      },
+      {
+        "path": "checkpoint-9/adapter_config.json",
+        "sha256": "212e32ecfc756530c3b16908d2b65b360fc22695c87c3d9d7d54dee6859327fa",
+        "size_bytes": 936
+      },
+      {
+        "path": "checkpoint-9/adapter_model.safetensors",
+        "sha256": "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff",
+        "size_bytes": 161533192
+      },
+      {
+        "path": "checkpoint-9/added_tokens.json",
+        "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b",
+        "size_bytes": 605
+      },
+      {
+        "path": "checkpoint-9/chat_template.jinja",
+        "sha256": "de846d935d6e1aa0fb6b0aa61ccec98762da82a0d0eb989436edc3da448bfbbf",
+        "size_bytes": 3276
+      },
+      {
+        "path": "checkpoint-9/merges.txt",
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "size_bytes": 1671853
+      },
+      {
+        "path": "checkpoint-9/optimizer.pt",
+        "sha256": "4583faa7a92f57b8e77f64b049fce9683d1ceb93f4d0060ed67da6cd787ae4da",
+        "size_bytes": 82465669
+      },
+      {
+        "path": "checkpoint-9/rng_state.pth",
+        "sha256": "f15ac1d4caa492e591c56b9a253c6360f333f7046112a3fb2f3e8ac050d45c89",
+        "size_bytes": 14645
+      },
+      {
+        "path": "checkpoint-9/scaler.pt",
+        "sha256": "5a6d1548413d3be7c245e04056da90324f175c0c0c76c2954c41e3a4a9beb9e0",
+        "size_bytes": 1383
+      },
+      {
+        "path": "checkpoint-9/scheduler.pt",
+        "sha256": "8aa1a3fcbacdcf1e225a91e234a9b795d791aa5fdb1496f0dc7226d833e84459",
+        "size_bytes": 1465
+      },
+      {
+        "path": "checkpoint-9/special_tokens_map.json",
+        "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+        "size_bytes": 613
+      },
+      {
+        "path": "checkpoint-9/tokenizer.json",
+        "sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa",
+        "size_bytes": 11421896
+      },
+      {
+        "path": "checkpoint-9/tokenizer_config.json",
+        "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614",
+        "size_bytes": 4686
+      },
+      {
+        "path": "checkpoint-9/trainer_state.json",
+        "sha256": "0f0c4457356ba9bd06aca2520adad64cd1b49c2cef9109bd52e93f218cc4af92",
+        "size_bytes": 763
+      },
+      {
+        "path": "checkpoint-9/training_args.bin",
+        "sha256": "08ebd94c5b49f1cb720e0c89f5014e8af249a71f875e2c68a11bb415a31ca9f3",
+        "size_bytes": 6289
+      },
+      {
+        "path": "checkpoint-9/vocab.json",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833
+      },
+      {
+        "path": "merges.txt",
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "size_bytes": 1671853
+      },
+      {
+        "path": "special_tokens_map.json",
+        "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+        "size_bytes": 613
+      },
+      {
+        "path": "tokenizer.json",
+        "sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa",
+        "size_bytes": 11421896
+      },
+      {
+        "path": "tokenizer_config.json",
+        "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614",
+        "size_bytes": 4686
+      },
+      {
+        "path": "trainer_state.json",
+        "sha256": "10377355202999cac59e68e41a0bd8505f26fcf1e0a5ef84af69500522c95588",
+        "size_bytes": 1086
+      },
+      {
+        "path": "vocab.json",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833
+      }
+    ],
+    "manifest_sha256": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+    "manifest_sha256_after": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+    "tree_sha256": "b357d97e0c1a22fbb19b2918345795f082e60e20d2272562d8726897e2e2ebcc",
+    "tree_sha256_after": "b357d97e0c1a22fbb19b2918345795f082e60e20d2272562d8726897e2e2ebcc"
+  },
+  "completed_at_utc": "2026-10-03T12:52:48.063963+00:00",
+  "created_at_utc": "2026-10-03T12:49:57.407715+00:00",
+  "evaluation_config": {
+    "attention_implementation": "sdpa",
+    "device": "cuda:0",
+    "do_sample": false,
+    "max_new_tokens": 512,
+    "quantization": {
+      "bnb_4bit_compute_dtype": "float16",
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_use_double_quant": true,
+      "load_in_4bit": true
+    },
+    "seed": 1337,
+    "split": "val",
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "torch_dtype": "float16"
+  },
+  "evaluation_config_sha256": "d748d2c226b025d8c31d8541ee782d898b31756f3d11b88670aa7f9946185511",
+  "evaluation_split": {
+    "arms_per_scenario_ordered": [
+      "base",
+      "sft"
+    ],
+    "name": "val",
+    "ordered_ids_sha256": "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4",
+    "ordered_scenario_ids_sha256": "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4",
+    "scenario_ids": [
+      "single_fault/sf-006",
+      "single_fault/sf-007",
+      "cascade/cs-004",
+      "multi_fault/mf-004",
+      "named_replays/hist-fastly-2021",
+      "named_replays/hist-facebook-bgp-2021"
+    ],
+    "scheduled_arm_row_count": 12,
+    "seed": 1337
+  },
+  "fatal_error": null,
+  "input_identity": {
+    "base_snapshot_path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28",
+    "checkpoint_manifest_sha256_pin": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+    "checkpoint_path": "/kaggle/input/datasets/virajvchoudhary/atlasops-sft-v17-private-validation-checkpoint/runs/sft-pilot-free-t4-20261003-v17"
+  },
+  "lifecycle": "completed",
+  "model_identity": {
+    "id": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "tokenizer_id": "Qwen/Qwen2.5-7B-Instruct",
+    "tokenizer_revision": "a09a35458c702b33eeacc393d103063234e8bc28"
+  },
+  "not_executed_arm_row_count": 0,
+  "raw_predictions_sha256": "99a45c1cdb08c8c23f4b6d9c7c51153e00c6528bf976049cae6291bd16ad39c2",
+  "recorded_arm_row_count": 12,
+  "run_id": "base-sft-validation-20261003-v1",
+  "runtime": {
+    "cuda_available": true,
+    "cuda_current_device": 0,
+    "cuda_device_count": 1,
+    "cuda_device_name": "Tesla T4",
+    "cuda_runtime_version": "12.6",
+    "model_device_map": {
+      "": 0
+    },
+    "package_versions": {
+      "bitsandbytes": "0.46.1",
+      "peft": "0.17.1",
+      "torch": "2.7.1+cu126",
+      "transformers": "4.57.6"
+    },
+    "platform": {
+      "machine": "x86_64",
+      "python_implementation": "CPython",
+      "python_version": "3.12.11",
+      "system": "Linux"
+    }
+  },
+  "scenario_ids": [
+    "single_fault/sf-006",
+    "single_fault/sf-007",
+    "cascade/cs-004",
+    "multi_fault/mf-004",
+    "named_replays/hist-fastly-2021",
+    "named_replays/hist-facebook-bgp-2021"
+  ],
+  "schema_version": "atlasops-base-sft-validation-run-v1",
+  "source": {
+    "git_dirty": false,
+    "git_sha": "3808849125db0ddfb6bf64fe853dffe3fce608c1"
+  },
+  "split": "val",
+  "split_sha256": "9f1bad373e66d7818019092c213f70edcc7e09dfbc538346ff6d0693ea78c6e4",
+  "started_at_utc": "2026-10-03T12:49:57.412286+00:00",
+  "status": "completed"
+}

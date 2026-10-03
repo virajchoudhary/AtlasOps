@@ -2,8 +2,11 @@
 
 **Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**
 
-The SFT evaluator is checkpoint-backed and fail closed. No valid completed SFT checkpoint
-exists in the current evidence set, so G8 has no empirical model result.
+The SFT evaluator is checkpoint-backed and fail closed. The first matched
+[Base vs SFT Validation diagnostic result](BASE_SFT_VALIDATION_RESULT_V1.md)
+now exists: Base F1 0.16875, SFT F1 0.15935, both 6/6 diagnostic JSON conformance.
+The valid v17 checkpoint was evaluated under the same pinned inference conditions.
+This is a real diagnosis-only result, not empirical environment-resolution evidence.
 The master pre-RL resolution criterion is not met by this diagnosis-only path;
 the [D12 decision proposal](G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md) remains
 unapproved and does not change this evaluator or the gate status.
@@ -113,7 +116,9 @@ checkpoint rejection, a changed manifest between preflight and lazy loading,
 cache-only pinned loader arguments, path containment, truth withholding,
 raw-response persistence, failure retention, early non-Validation refusal,
 and artifact isolation. They use fake loaders and do not independently reload
-a real QLoRA adapter. A real Validation evaluation still depends on a legitimate
-completed G7 checkpoint, approved local cache, and independent adapter reload.
+a real QLoRA adapter. The separate matched Validation campaign now has real
+inference, preserved raw outputs, verified v17 provenance and independent
+recomputation; see the result linked above. Those diagnostics do not supply
+the missing incident-resolution evidence.
 
 **Gate G8 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

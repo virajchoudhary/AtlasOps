@@ -23,7 +23,11 @@ tags:
 > **Current continuation status: NOT_CERTIFIED.** Upstream live results, hardware
 > descriptions, and original hackathon commands retained below are historical material.
 > G4 is NOT_PASSED; G7 remains PARTIAL after a bounded synthetic free-T4 SFT pilot;
-> G6/G8/G12 lack empirical evidence; G9/G13 are REOPENED. The G7 artifact and reload
+> G6/G8/G12 lack empirical incident-resolution evidence; G9/G13 are REOPENED. The
+> [real Base-vs-SFT Validation comparison](docs/project/BASE_SFT_VALIDATION_RESULT_V1.md)
+> found Base diagnostic F1 **0.16875**, SFT **0.15935**, paired difference
+> **-0.00940**, with **6/6** diagnostic JSON conformance for each arm.
+> **No diagnostic improvement observed.** The G7 artifact and reload
 > record are in [v17 evidence](artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 > For a safe local presentation, use the read-only
 > [Stage 14 demo](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md) and the
@@ -434,8 +438,9 @@ a reviewed P1 operator channel before any P1 mutation. See the
 [Stage 7 training contract](docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md)
 and [Stage 9 execution contract](docs/project/STAGE_9_ONLINE_GRPO.md).
 The v17 SFT run produced a preserved adapter that passed an independent offline
-reload, but it has not been evaluated under G8 or accepted as a certified
-continuation checkpoint. GRPO remains unrun.
+reload and has now been evaluated in the matched Validation diagnostic comparison.
+No diagnostic improvement was observed; incident resolution remains unevaluated,
+and the checkpoint is not a certified continuation result. GRPO remains unrun.
 
 ### 6. Run tests
 ```bash

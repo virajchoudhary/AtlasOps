@@ -190,6 +190,7 @@ def test_tiny_qwen_selective_logits_preserve_loss_and_every_parameter_gradient()
         selective_output.loss, reference_output.loss, rtol=2e-5, atol=2e-6
     )
 
+    assert "loss" in selective_output
     reference_output.loss.backward()
     selective_output.loss.backward()
     reference_parameters = dict(reference_model.named_parameters())

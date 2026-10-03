@@ -141,7 +141,7 @@ def install_supervised_logits(model: Any) -> None:
         output = original_forward(*bound.args, **bound.kwargs)
         if not isinstance(getattr(output, "logits", None), torch.Tensor):
             raise TypeError("Selective supervised loss requires tensor model logits")
-        output.loss = chunked_causal_lm_loss(
+        output["loss"] = chunked_causal_lm_loss(
             output.logits,
             labels=None,
             vocab_size=model.config.vocab_size,

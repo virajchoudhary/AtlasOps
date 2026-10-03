@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-03T13:03:01.952009+00:00`
+- **Generated**: `2026-10-03T13:30:51.474371+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -42,7 +42,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `.gitattributes` | `5b30e8dd4a9dfb68...` | 2045 |
 | `.github/workflows/ci.yml` | `657d0611bc0d0830...` | 5719 |
 | `.gitignore` | `845c7801d352bee0...` | 1121 |
-| `AGENTS.md` | `17a9f526917b583f...` | 6589 |
+| `AGENTS.md` | `6d1e8d1a1f674867...` | 6823 |
 | `BENCHMARKS.md` | `3191bc522a52706b...` | 4663 |
 | `BLOG.md` | `1c566e34d9a0b605...` | 13153 |
 | `DEPLOYMENT.md` | `297a882f897c7f0b...` | 9334 |
@@ -50,7 +50,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `Dockerfile.coordinator` | `2b1734f68c079e56...` | 1235 |
 | `JUDGES_START_HERE.md` | `1fcee2e7ef49f52b...` | 1824 |
 | `Makefile` | `7c85e68ef83aa3f9...` | 4010 |
-| `README.md` | `da5744bbdf83f4f1...` | 27101 |
+| `README.md` | `9018a0392c7adc58...` | 27527 |
 | `agents/_http_retry.py` | `4af34e93b62324e6...` | 9380 |
 | `agents/adversarial_designer.py` | `f6bc96059e6ca56a...` | 21393 |
 | `agents/approval.py` | `f8fd1975c2648f20...` | 9781 |
@@ -223,7 +223,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `d314299cbb2574a3...` | 33235 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
-| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `37068fee55f65d1b...` | 9499 |
+| `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `62fe337b3c887914...` | 9794 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md` | `613bbdfe304225f0...` | 9884 |
 | `docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md` | `0545315a6d24349a...` | 6939 |
@@ -259,7 +259,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md` | `856315008207a5e4...` | 4483 |
 | `docs/project/GAI_RL_SCOPE_REVISION.md` | `24b83eaf30f831cc...` | 4993 |
 | `docs/project/IMPLEMENTATION_STATUS.md` | `810ddad077352656...` | 4298 |
-| `docs/project/MASTER_PIPELINE_STATUS.md` | `314db2c79fe45154...` | 28848 |
+| `docs/project/MASTER_PIPELINE_STATUS.md` | `606f66057175f4c1...` | 29585 |
 | `docs/project/STAGE_10_RECOMMENDER_DATA_AND_BASELINES.md` | `bc3869c1d09f0aee...` | 2749 |
 | `docs/project/STAGE_11_HYBRID_RECOMMENDER.md` | `dbb132fc4c290fe6...` | 2566 |
 | `docs/project/STAGE_12_INTEGRATED_PIPELINE.md` | `0cfc9fb4b54cf18b...` | 9177 |
@@ -270,7 +270,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `5ccb24f4ad94c9e0...` | 7872 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `e696e25a182e2d42...` | 12389 |
-| `docs/project/STAGE_8_SFT_EVALUATION.md` | `bb8b70af114597bd...` | 8193 |
+| `docs/project/STAGE_8_SFT_EVALUATION.md` | `c6566d258210053d...` | 8301 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `846b7ebcbc3b4762...` | 12667 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `47220a41c883ffd8...` | 10636 |
 | `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `14b0ae256c863123...` | 20215 |
@@ -340,7 +340,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_chaos_manifests.py` | `28f20b4ad5be7030...` | 5832 |
 | `tests/test_chaos_tools.py` | `5224b2bdc06bb15f...` | 9033 |
 | `tests/test_circuit_breaker.py` | `eb4f927ce31ffe65...` | 4714 |
-| `tests/test_claim_integrity.py` | `f872346415142fa4...` | 6824 |
+| `tests/test_claim_integrity.py` | `dfbe106bf5ae0b1b...` | 7462 |
 | `tests/test_console_efficiency.py` | `a0566e68d1963058...` | 3531 |
 | `tests/test_coordinator.py` | `b67e394ce4bf3a8c...` | 18697 |
 | `tests/test_coordinator_import_side_effects.py` | `9b07ef640ae58481...` | 1095 |

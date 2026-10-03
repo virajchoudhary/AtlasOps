@@ -116,7 +116,9 @@ checkpoint rejection, a changed manifest between preflight and lazy loading,
 cache-only pinned loader arguments, path containment, truth withholding,
 raw-response persistence, failure retention, early non-Validation refusal,
 and artifact isolation. They use fake loaders and do not independently reload
-a real QLoRA adapter. A real Validation evaluation still depends on a legitimate
-completed G7 checkpoint, approved local cache, and independent adapter reload.
+a real QLoRA adapter. The separate matched Validation campaign now has real
+inference, preserved raw outputs, verified v17 provenance and independent
+recomputation; see the result linked above. Those diagnostics do not supply
+the missing incident-resolution evidence.
 
 **Gate G8 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

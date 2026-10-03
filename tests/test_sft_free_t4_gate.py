@@ -308,7 +308,7 @@ def _execution_fixture(monkeypatch, tmp_path):
     storage = {
         "free_bytes": 21 * 1024**3,
         "used_bytes": 100 * 1024**3,
-        "total_bytes": 121 * 1024**3,
+        "total_bytes": 122 * 1024**3,
     }
     gpu = {
         "gpu_name": "Tesla T4",

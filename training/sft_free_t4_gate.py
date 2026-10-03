@@ -532,7 +532,8 @@ def _verify_runtime(
         or type(storage.get("total_bytes")) is not int
         or type(storage.get("used_bytes")) is not int
         or storage["free_bytes"] <= MIN_FREE_BYTES_EXCLUSIVE
-        or storage["total_bytes"] != storage["used_bytes"] + storage["free_bytes"]
+        or storage["used_bytes"] < 0
+        or storage["total_bytes"] < storage["used_bytes"] + storage["free_bytes"]
         or not _strict_equal(host.get("storage"), storage)
     ):
         raise ValueError("Free-T4 SFT requires more than 20 GiB of measured runtime storage")

@@ -473,7 +473,15 @@ def main() -> None:
             train_dataset=dataset,
             args=train_args,
         )
-        trainer.train()
+        if args.pilot_profile == "free-t4-v1":
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+
+            manifest["attention_kernel_policy"] = "FLASH_ATTENTION or EFFICIENT_ATTENTION; math fallback disabled"
+            write_manifest_atomic(manifest_path, manifest)
+            with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
+                trainer.train()
+        else:
+            trainer.train()
         if args.pilot_profile == "free-t4-v1":
             manifest["gpu_memory"] = {
                 "peak_allocated_bytes": torch.cuda.max_memory_allocated(),

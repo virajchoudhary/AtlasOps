@@ -70,6 +70,7 @@ PINNED_WEIGHT_SHARDS: dict[str, dict[str, Any]] = {
     },
 }
 PINNED_WEIGHT_TOTAL_BYTES = 15231271888
+PINNED_WEIGHT_TENSOR_BYTES = 15231233024
 
 RUNTIME_SCHEMA = "atlasops-sft-pilot-runtime-provenance-v1"
 MODEL_INVENTORY_SCHEMA = "atlasops-sft-model-files-inventory-v1"
@@ -655,7 +656,7 @@ def collect_model_inventory(
     if (
         not isinstance(index_metadata, dict)
         or type(index_metadata.get("total_size")) is not int
-        or index_metadata["total_size"] != PINNED_WEIGHT_TOTAL_BYTES
+        or index_metadata["total_size"] != PINNED_WEIGHT_TENSOR_BYTES
     ):
         raise ValueError("Safetensors index total size differs from public metadata")
     total_bytes = sum(item["size_bytes"] for item in file_details)

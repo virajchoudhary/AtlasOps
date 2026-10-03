@@ -1,6 +1,6 @@
 # G7-G9 remote-training readiness assessment
 
-**Status: NON-LIVE SOFTWARE REVIEW / TRAINING NOT AUTHORIZED / EMPIRICAL
+**Historical status: NON-LIVE SOFTWARE REVIEW / TRAINING NOT AUTHORIZED / EMPIRICAL
 EVIDENCE MISSING.** Source basis:
 `56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`. This assessment does not
 select a compute provider, allocate a GPU, download weights, train a model,
@@ -11,7 +11,7 @@ The [versioned D3 candidate review](G7_D3_CANDIDATE_REVIEW_V1.md) and
 [future G7 acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) supplement
 this historical readiness snapshot. The new candidate was synthetic and pending
 lead approval at this snapshot. Training now fails closed for pending and
-unversioned input; even the later preparation-approved candidate lacks a
+unversioned input; at the preparation snapshot the candidate lacked a
 separate named execution permit.
 The later [GAI + RL scope revision](GAI_RL_SCOPE_REVISION.md) removes RS from
 the required comparison. The source SHA above is the original software-audit
@@ -21,7 +21,22 @@ The later `config/sft_pilot_v4.json` preparation plan instead pins 8192 tokens
 and one epoch; the 2048-token all-row preflight is preserved as a negative
 result, not a current pilot launch setting.
 
-## Current Preparation Addendum (30 September 2026)
+## v17 Execution Addendum (3 October 2026)
+
+The separately approved `free-t4-v1` profile produced the real adapter
+`sft-pilot-free-t4-20261003-v17`: one epoch / 9 steps on the exact 68-row
+synthetic Train candidate, pinned Qwen revision, and verified free Tesla T4 /
+Python 3.12.11 / 72-package environment. Execution approval, model inventory,
+completed run, independent offline reload PASS, and durable local/private
+Drive preservation are recorded in the
+[v17 result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+This supersedes the missing-host/weights/permit/checkpoint claims below for
+that bounded run only. The original v4 BF16 plan and its refusal are unchanged;
+the historical tables remain dated planning evidence, not current v17 status.
+G7 remains PARTIAL; G8 evaluation, G9 training, incident gains, and certification
+are still unestablished. This addendum authorizes no new execution.
+
+## Historical Preparation Addendum (30 September 2026)
 
 This non-live addendum updates current G7 preparation facts only; its reviewed
 source basis is `1b13695f0e405883d7d66da20fe52d23435d8a7d`. The original source
@@ -76,7 +91,7 @@ notebooks have variable GPUs and transient sessions; they are not an
 approved host for live G9's private cluster/operator channel. Rental is
 a fallback only after current terms, security and budget are approved.
 
-## Readiness Summary
+## Historical Readiness Summary
 
 | Stage | Software preparation present | Acceptance evidence still missing |
 |---|---|---|
@@ -151,7 +166,7 @@ G8 `IMPLEMENTED / EMPIRICAL EVIDENCE MISSING`, and G9 `REOPENED`.
   rewriting it or replacing its approved digests. Any other source or corpus
   change still requires separate review; do not rewrite v1 in place.
 
-## Model, Training Stack and Reproducibility
+## Historical Model, Training Stack and Reproducibility
 
 | Item | Current contract | Remote-readiness gap |
 |---|---|---|

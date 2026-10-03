@@ -18,3 +18,7 @@ stage4/EXP-STAGE4-SF002-014.* -text
 mock_archive/stage6/* -text
 mock_archive/stage8/* -text
 mock_archive/stage9/* -text
+# Preserve copied v17 execution records and logs byte-for-byte on every platform.
+stage7/free-t4-v17/* -text
+stage7/free-t4-v17/*.log -diff
+stage7/free-t4-v17/local-verification.json whitespace=cr-at-eol

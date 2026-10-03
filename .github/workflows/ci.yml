@@ -101,6 +101,10 @@ jobs:
             tokenizers==0.22.2 huggingface-hub==0.36.2
       - name: Test installed trainer without pretrained weights or training
         run: python -m pytest tests/test_grpo_observation_installed_trl.py -q
+      - name: Test free-T4 attention, loss, and metrics on tiny CPU fixtures
+        run: |
+          python -m pytest tests/test_sft_chunked_loss.py \
+            tests/test_sft_t4_attention.py tests/test_sft_supervised_trainer.py -q
 
   frontend:
     name: Frontend contracts

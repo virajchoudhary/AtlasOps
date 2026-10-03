@@ -20,10 +20,12 @@ tags:
 # AtlasOps — Can 4 AI agents replace an on-call SRE team?
 
 > [!IMPORTANT]
-> **Current continuation status: NOT_CERTIFIED.** The live results, hardware descriptions,
-> and original hackathon commands retained below are historical material, not results
-> reproduced by this team. G4 is NOT_PASSED; G6/G8/G12 lack empirical evidence; G9/G13
-> are REOPENED. For a safe local presentation, use the read-only
+> **Current continuation status: NOT_CERTIFIED.** Upstream live results, hardware
+> descriptions, and original hackathon commands retained below are historical material.
+> G4 is NOT_PASSED; G7 remains PARTIAL after a bounded synthetic free-T4 SFT pilot;
+> G6/G8/G12 lack empirical evidence; G9/G13 are REOPENED. The G7 artifact and reload
+> record are in [v17 evidence](artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+> For a safe local presentation, use the read-only
 > [Stage 14 demo](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md) and the
 > [current gate inventory](docs/project/MASTER_PIPELINE_STATUS.md). The
 > [original README comparison](docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md)
@@ -241,17 +243,22 @@ Every tool call, approval decision, and incident boundary is written to an appen
 
 ## Training Pipeline
 
-### SFT → Online GRPO on AMD MI300X
+### SFT → Online GRPO
 
 ```
-Train-only corpus (currently 64 scenario-derived synthetic demonstrations)
+Train-only corpus (68-row synthetic `train-candidate-v1`; a separate legacy 64-row fixture remains)
         ↓
-  QLoRA SFT  (planned; no completed usable adapter)
+  QLoRA SFT  (bounded free-T4 v17 run completed; adapter reload PASS)
         ↓
-  Online GRPO  (planned; no completed usable adapter)
+  Online GRPO  (not run; no completed GRPO adapter)
         ↓
   Benchmark  (28 frozen; measured model comparisons pending)
 ```
+
+The v17 adapter is a preserved artifact from synthetic Train-only diagnostics, not
+evidence of incident improvement. See the
+[canonical run record](artifacts/evidence/stage7/free-t4-v17/RESULT.json) for its
+provenance, exact checkpoint identity, approval, and preservation hashes.
 
 The GRPO code is intended for online RL; a completed training run and usable
 checkpoint have not been verified. A confirmed observation-order defect now
@@ -265,8 +272,9 @@ live authorization, each training step must:
 3. Execute each parsed structured action and score conclusive objective-verifier observations
 4. Compute GRPO advantages and update the policy
 
-The upstream 5k-trajectory target is not the current 64-example synthetic
-corpus. Neither is evidence of successful live training.
+The upstream 5k-trajectory target is not the current 68-row synthetic pilot
+candidate; the older 64-row corpus remains a schema/rendering fixture. Neither
+is evidence of successful live training.
 
 ### What makes our training different from competitors
 
@@ -409,7 +417,7 @@ python -m bench.runner --model fixture --mock --adversarial 0
 # Real G6/G8/G9 evaluation uses the dedicated checkpoint and split evaluators.
 ```
 
-### 5. Prepare for training (not an authorized launch)
+### 5. Inspect governed training entrypoints
 ```bash
 # Inspect the governed entrypoints without loading a model or contacting a cluster.
 python -m training.sft --help
@@ -425,7 +433,9 @@ a completed SFT parent, a named Kubernetes context, explicit live opt-in, and
 a reviewed P1 operator channel before any P1 mutation. See the
 [Stage 7 training contract](docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md)
 and [Stage 9 execution contract](docs/project/STAGE_9_ONLINE_GRPO.md).
-Neither entrypoint has produced a certified continuation checkpoint.
+The v17 SFT run produced a preserved adapter that passed an independent offline
+reload, but it has not been evaluated under G8 or accepted as a certified
+continuation checkpoint. GRPO remains unrun.
 
 ### 6. Run tests
 ```bash

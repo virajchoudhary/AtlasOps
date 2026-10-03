@@ -93,7 +93,7 @@ def _fake_snapshot(
         index_map[f"fixture.tensor_{index}"] = shard_name
     index = {
         "metadata": {
-            "total_size": sum(item["size_bytes"] for item in fake_shards.values())
+            "total_size": sum(item["size_bytes"] for item in fake_shards.values()) - 4
         },
         "weight_map": index_map,
     }
@@ -209,6 +209,7 @@ def test_model_inventory_is_exact_and_does_not_load_fixture_weights(tmp_path, mo
     fake_total = sum(item["size_bytes"] for item in fake_shards.values())
     monkeypatch.setattr(collector, "PINNED_WEIGHT_SHARDS", fake_shards)
     monkeypatch.setattr(collector, "PINNED_WEIGHT_TOTAL_BYTES", fake_total)
+    monkeypatch.setattr(collector, "PINNED_WEIGHT_TENSOR_BYTES", fake_total - 4)
 
     metadata_path = _write_json(
         tmp_path / "public-weight-metadata.json",

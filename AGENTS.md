@@ -103,8 +103,11 @@ authorization. Estimate storage before any multi-GB operation.
 - GRPO now has a locally tested direct-action policy/environment adapter. Real settling,
   explicit live-run authorization and pinned cluster context, P1 integration, and dense
   reward evidence still require verification before a live training claim.
-- SFT corpus/configuration exists, but successful training and usable checkpoint provenance
-  are unverified. Archived Stage 6/8/9 mock outputs cannot close empirical gates.
+- G7 remains PARTIAL: the bounded synthetic free-T4 v17 SFT pilot produced a preserved
+  adapter that passed an independent offline reload
+  ([evidence](artifacts/evidence/stage7/free-t4-v17/RESULT.json)). This establishes an
+  artifact, not incident improvement or G8 evaluation. Archived Stage 6/8/9 mock outputs
+  cannot close empirical gates.
 - Stage 13's current aggregator rejects missing real variant metrics; the saved hardcoded
   profiles remain historical, and actual variant ablation/stress evaluation is missing.
 - Stage 10 custom dataset output now writes its own adjacent evidence manifest.

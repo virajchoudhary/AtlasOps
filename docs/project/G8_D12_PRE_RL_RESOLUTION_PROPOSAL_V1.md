@@ -13,7 +13,10 @@ is checkpoint-backed but diagnosis-only: its empirical Validation summary
 leaves resolution, reward, safety, and time to resolve null. Its
 `format_compliance_rate` is diagnostic JSON schema conformance, not action
 or Comms conformance. Historical mock values cannot fill those fields.
-No completed usable SFT adapter is currently preserved.
+At this proposal's original snapshot, no completed usable SFT adapter was
+preserved. The later free-T4 v17 adapter is now durably preserved and passed
+independent offline reload ([record](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)).
+That artifact does not resolve D12 or authorize G8 evaluation.
 
 ## Proposed Decision
 

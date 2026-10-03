@@ -1,0 +1,26 @@
+{
+  "adapter_tensor_count": 392,
+  "approval_record_sha256": "0dd6b14184146f3a9eb93f165dc077df6aa4eefcdbdb7006c4baa781721669e5",
+  "checkpoint_manifest_sha256_after": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+  "checkpoint_manifest_sha256_before": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+  "completed_at_utc": "2026-10-03T09:04:23.006558+00:00",
+  "corpus_sha256": "19606e4fec300f641c7c8b8a989497367a444a870d3491f225004c01df3ee5fd",
+  "empirical_claim": false,
+  "gpu_name": "Tesla T4",
+  "gpu_peak_allocated_bytes": 7071596544,
+  "held_out_outcomes_accessed": false,
+  "inference_performed": false,
+  "model_class": "PeftModelForCausalLM",
+  "network_policy": "HF loaders offline; caller must additionally isolate process networking",
+  "plan_sha256": "29a217a46e2d7cdcc1b85938b1a2aecac1043462980ca0b05f4fa0681adddc82",
+  "profile": "free-t4-v1",
+  "run_id": "sft-pilot-free-t4-20261003-v17",
+  "schema_version": "atlasops-sft-free-t4-reload-v1",
+  "source": {
+    "git_dirty": false,
+    "git_sha": "af629ada4629e76c194e66a357935981f42e2c90"
+  },
+  "started_at_utc": "2026-10-03T09:01:57.859162+00:00",
+  "status": "PASS",
+  "tokenizer_class": "Qwen2TokenizerFast"
+}

@@ -62,7 +62,7 @@ scientifically complete.
 | **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (010 completed negative; 009 and 011-014 interrupted/inconclusive) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (scenario/split governance; not proof of every downstream consumer isolation) |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (historical outputs are MOCK) |
-| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (D3 preparation approved; pinned pilot/preflight prepared; training authorization and completed checkpoint missing) |
+| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (bounded synthetic free-T4 v17 pilot completed; preserved adapter passed independent reload; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (deterministic mock evaluation; no demonstrated SFT improvement) |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (direct-action software contract implemented; real training/checkpoint/evaluation missing) |
 | **Stage 10** | Historical RS data and baselines | **G10** | Retained optional dataset and baseline research; no longer a final prerequisite. | **OUT_OF_SCOPE** (formerly PARTIAL; scenario-derived data do not establish historical feedback) |
@@ -150,10 +150,14 @@ scientifically complete.
   admission rejects coordinator drift; the pilot path admits only the reviewed
   old/new coordinator hash pair with identical AST outside `settle_environment`.
   The v4 hash-bound preparation CLI passes without model loading or output
-  creation. This is not generic drift tolerance or execution approval:
-  preserve v1 unchanged, and require a separate named execution permit, verified
-  host and weight-transfer authority before training.
-- `training/sft.py` now persists planned/running/completed-or-failed run provenance and checkpoint inventory when a real run is available. No successful SFT training record tied to a usable checkpoint was verified in the inspected repository/evidence and local checkpoint inventory. Training completion and usability remain unestablished.
+  creation. This is not generic drift tolerance or execution approval; preserve
+  v1 unchanged. The later free-T4 v17 run used its distinct per-run approval,
+  verified runtime and pinned weight inventory, recorded in the result above.
+- `training/sft.py` persists planned/running/completed-or-failed run provenance
+  and checkpoint inventory. The v17 record identifies the one-epoch, 9-step
+  synthetic run and its independently reloaded adapter. This artifact does not
+  establish incident gains or G8 evaluation. G7 remains PARTIAL; see the
+  canonical v17 result linked above.
 
 ### Gate G8: Evaluate SFT Before RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
 - `bench/sft_eval.py` now requires a completed, provenance-checked local checkpoint for real inference; mock evaluation remains explicitly non-empirical.

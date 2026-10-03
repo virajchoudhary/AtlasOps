@@ -128,6 +128,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-seq-len", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=TRAIN_SEED)
     parser.add_argument(
+        "--pilot-profile", choices=["frozen-v4", "free-t4-v1"], default="frozen-v4",
+        help="Select the separately approved pilot; the original frozen plan remains unchanged",
+    )
+    parser.add_argument(
         "--preflight-only", action="store_true",
         help="Verify the pinned pilot plan without creating output or importing model loaders",
     )
@@ -135,15 +139,20 @@ def _parse_args() -> argparse.Namespace:
         "--execution-approval",
         help="Future independently reviewed hash-pinned execution record; preparation has none",
     )
+    parser.add_argument(
+        "--execution-approval-sha256",
+        help="Independent operator digest for the free-T4 execution record",
+    )
     return parser.parse_args()
 
 
 def _hyperparameters(args: argparse.Namespace) -> dict[str, Any]:
-    return {
+    free_t4 = getattr(args, "pilot_profile", "frozen-v4") == "free-t4-v1"
+    values = {
         "quantization": {
             "load_in_4bit": True,
             "bnb_4bit_quant_type": "nf4",
-            "bnb_4bit_compute_dtype": "bfloat16",
+            "bnb_4bit_compute_dtype": "float16" if free_t4 else "bfloat16",
             "bnb_4bit_use_double_quant": True,
         },
         "lora": {
@@ -160,11 +169,14 @@ def _hyperparameters(args: argparse.Namespace) -> dict[str, Any]:
         "max_sequence_length": args.max_seq_len,
         "seed": args.seed,
         "optimizer": "paged_adamw_8bit",
-        "bf16": True,
+        "bf16": not free_t4,
         "assistant_only_loss": True,
         "chat_template_path": str(TEMPLATE_PATH),
         "chat_template_sha256": file_sha256(TEMPLATE_PATH),
     }
+    if free_t4:
+        values["fp16"] = True
+    return values
 
 
 def main() -> None:
@@ -240,7 +252,10 @@ def main() -> None:
         )
     validate_tool_call_role_acl(training_source_rows)
 
-    from training.sft_pilot_gate import require_execution_authority, validate_preparation
+    if args.pilot_profile == "free-t4-v1":
+        from training.sft_free_t4_gate import require_execution_authority, validate_preparation
+    else:
+        from training.sft_pilot_gate import require_execution_authority, validate_preparation
 
     admission = validate_preparation(
         corpus_snapshot,
@@ -256,9 +271,15 @@ def main() -> None:
 
         print(json.dumps(admission, sort_keys=True))
         return
+    approval_options = {}
+    if args.pilot_profile == "free-t4-v1":
+        approval_options["approval_sha256"] = args.execution_approval_sha256
+    elif args.execution_approval_sha256:
+        raise ValueError("External approval digests are only supported by the free-T4 profile")
     execution = require_execution_authority(
         admission, Path(args.execution_approval) if args.execution_approval else None,
         output_dir=output_dir,
+        **approval_options,
     )
 
     manifest = create_run_manifest(
@@ -307,6 +328,11 @@ def main() -> None:
         )
         from trl import SFTConfig, SFTTrainer
 
+        if args.pilot_profile == "free-t4-v1":
+            import torch
+
+            torch.cuda.reset_peak_memory_stats()
+
         sft_parameters = inspect.signature(SFTConfig).parameters
         if "assistant_only_loss" not in sft_parameters:
             raise RuntimeError(
@@ -345,9 +371,12 @@ def main() -> None:
         quantization = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype="bfloat16",
+            bnb_4bit_compute_dtype=_hyperparameters(args)["quantization"]["bnb_4bit_compute_dtype"],
             bnb_4bit_use_double_quant=True,
         )
+        model_precision_options = {}
+        if args.pilot_profile == "free-t4-v1":
+            model_precision_options = {"torch_dtype": torch.float16, "attn_implementation": "sdpa"}
         model = AutoModelForCausalLM.from_pretrained(
             args.model,
             revision=args.model_revision,
@@ -356,7 +385,23 @@ def main() -> None:
             trust_remote_code=False,
             local_files_only=True,
             **loader_cache_options,
+            **model_precision_options,
         )
+        if args.pilot_profile == "free-t4-v1":
+            from training.sft_t4_attention import install_t4_attention
+            from training.sft_chunked_loss import install_supervised_logits
+
+            install_t4_attention(model)
+            manifest["attention_implementation"] = {
+                "name": "pinned-SDPA-explicit-GQA-repeat",
+                "sha256": file_sha256(Path(__file__).with_name("sft_t4_attention.py")),
+            }
+            install_supervised_logits(model)
+            manifest["loss_implementation"] = {
+                "name": "supervised-logits-chunked-cross-entropy",
+                "sha256": file_sha256(Path(__file__).with_name("sft_chunked_loss.py")),
+                "purpose": "Bound temporary FP32 loss allocations without changing targets",
+            }
         resolved_model_revision = validate_resolved_hf_commit(
             args.model_revision,
             getattr(
@@ -367,6 +412,11 @@ def main() -> None:
             label="base model",
         )
         model = prepare_model_for_kbit_training(model)
+        if args.pilot_profile == "free-t4-v1":
+            for parameter in model.parameters():
+                if not parameter.requires_grad and parameter.dtype == torch.float32:
+                    parameter.data = parameter.data.to(torch.float16)
+            manifest["attention_memory_policy"] = "Explicit FP16 SDPA; frozen nonquantized parameters FP16"
         model = get_peft_model(
             model,
             LoraConfig(
@@ -378,6 +428,10 @@ def main() -> None:
                 bias="none",
             ),
         )
+        if args.pilot_profile == "free-t4-v1":
+            model.get_input_embeddings().to(dtype=torch.float16)
+            model.get_output_embeddings().to(dtype=torch.float16)
+            manifest["frozen_projection_dtype"] = "float16"
         model.print_trainable_parameters()
 
         manifest = mark_running(
@@ -394,7 +448,7 @@ def main() -> None:
             "learning_rate": args.lr,
             "per_device_train_batch_size": args.batch_size,
             "gradient_accumulation_steps": args.grad_accum,
-            "bf16": True,
+            "bf16": _hyperparameters(args)["bf16"],
             "logging_steps": 10,
             "save_strategy": "epoch",
             "report_to": [],
@@ -404,14 +458,42 @@ def main() -> None:
             "assistant_only_loss": True,
             length_parameter: args.max_seq_len,
         }
+        if args.pilot_profile == "free-t4-v1":
+            train_config_values["fp16"] = True
+            train_config_values["gradient_checkpointing"] = True
+            train_config_values["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
+            manifest["activation_memory_policy"] = "Non-reentrant checkpointing without host-RAM offloading"
         train_args = SFTConfig(**train_config_values)
-        trainer = SFTTrainer(
+        trainer_class = SFTTrainer
+        if args.pilot_profile == "free-t4-v1":
+            from training.sft_supervised_trainer import SupervisedLogitsSFTTrainer
+
+            trainer_class = SupervisedLogitsSFTTrainer
+            manifest["trainer_implementation"] = {
+                "name": "SFTTrainer-supervised-logit-metrics",
+                "sha256": file_sha256(Path(__file__).with_name("sft_supervised_trainer.py")),
+            }
+        trainer = trainer_class(
             model=model,
             processing_class=tokenizer,
             train_dataset=dataset,
             args=train_args,
         )
-        trainer.train()
+        if args.pilot_profile == "free-t4-v1":
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+
+            manifest["attention_kernel_policy"] = "FLASH_ATTENTION or EFFICIENT_ATTENTION; math fallback disabled"
+            write_manifest_atomic(manifest_path, manifest)
+            with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]):
+                trainer.train()
+        else:
+            trainer.train()
+        if args.pilot_profile == "free-t4-v1":
+            manifest["gpu_memory"] = {
+                "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
+                "peak_reserved_bytes": torch.cuda.max_memory_reserved(),
+                "total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
+            }
         model.save_pretrained(str(output_dir))
         tokenizer.save_pretrained(str(output_dir))
         trainer.save_state()

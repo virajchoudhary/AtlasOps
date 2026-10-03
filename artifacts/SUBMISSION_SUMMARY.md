@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-03T12:25:31.495192+00:00`
+- **Generated**: `2026-10-03T13:03:01.952009+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -70,7 +70,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `agents/tools/prometheus.py` | `dc8d87332f66dae8...` | 3586 |
 | `agents/verifier.py` | `850dc5f2f197887e...` | 37725 |
 | `app.py` | `fdb00ecb6349c3ba...` | 17388 |
-| `artifacts/evidence/.gitattributes` | `f5a13b0ba30c2c48...` | 1084 |
+| `artifacts/evidence/.gitattributes` | `bee3029f88f6899b...` | 1135 |
 | `artifacts/evidence/recovery/2026-09-05-workspace-recovery.json` | `710fddcaeb2ea6c8...` | 22788 |
 | `artifacts/evidence/recovery/SETUP-03_COMMANDS.md` | `0819c3ffe5e9cfe6...` | 15741 |
 | `artifacts/evidence/stage10/rs_baseline_eval.json` | `821c76fc6958593b...` | 4130 |
@@ -136,6 +136,23 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/evidence/stage7/sft_tokenizer_preflight_v5.json` | `9eccf0353af2e605...` | 82799 |
 | `artifacts/evidence/stage7/sft_training_config.json` | `be26026069c5f272...` | 583 |
 | `artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json` | `297724616fe6bdd1...` | 1358 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/base-transfer.log` | `99707604f7401397...` | 2025 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-path.txt` | `172fcd1550de2bee...` | 121 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-verification.json` | `2482a54d30604c03...` | 247 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/execution-approval.json` | `7322f86a44b0df25...` | 635 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.json` | `9a83ab0bafef03c1...` | 1214 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.log` | `0ee008c7cbadb8c1...` | 1074 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/install.log` | `9fa2bba5b53bdbfd...` | 1796 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/runtime.json` | `6e99604dd3a9c819...` | 2321 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/sft-pilot-linux-py312.lock` | `b649bfa91f1232b9...` | 167639 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-report.json` | `0693215deceab429...` | 20102 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-start.json` | `3991a4f1ab50fbef...` | 1386 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-exit-v1.json` | `8c7f2587da6388bf...` | 28 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-run-v1.log` | `41f1fdb41a89c24d...` | 2285 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/episodes.jsonl` | `99a45c1cdb08c8c2...` | 86961 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/raw_episodes.jsonl` | `97887f05dae5dd4f...` | 79638 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/run_manifest.json` | `878b01e079d294ad...` | 25804 |
+| `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json` | `b846b05c9a6bb0d2...` | 1853 |
 | `artifacts/models/hybrid_recommender.json` | `53d0a4fb640b4691...` | 2646 |
 | `artifacts/models/hybrid_recommender_synthetic_v2.json` | `21243d035fc2a972...` | 2192 |
 | `artifacts/overnight_experiments/rs-20260924/interactions.jsonl` | `4e60a94564124bb9...` | 8750 |
@@ -253,7 +270,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/project/STAGE_5_SCENARIO_TRUTH_AND_SPLITS.md` | `9deaabcca82444f9...` | 8997 |
 | `docs/project/STAGE_6_ZERO_SHOT_BASELINE.md` | `5ccb24f4ad94c9e0...` | 7872 |
 | `docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md` | `e696e25a182e2d42...` | 12389 |
-| `docs/project/STAGE_8_SFT_EVALUATION.md` | `677c001e637757d8...` | 7954 |
+| `docs/project/STAGE_8_SFT_EVALUATION.md` | `bb8b70af114597bd...` | 8193 |
 | `docs/project/STAGE_9_ONLINE_GRPO.md` | `846b7ebcbc3b4762...` | 12667 |
 | `docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md` | `47220a41c883ffd8...` | 10636 |
 | `docs/project/UPSTREAM_README_CURRENT_GAP_MATRIX.md` | `14b0ae256c863123...` | 20215 |
@@ -283,7 +300,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `scripts/collect_sft_remote_provenance.py` | `a844a13d6c6b74a2...` | 30654 |
 | `scripts/freeze_sft_pilot_plan.py` | `9239463af35384a4...` | 3076 |
 | `scripts/generate_training_plots.py` | `92e7cf64619d4f3b...` | 534 |
-| `scripts/package_submission.py` | `3f720ca888e95afb...` | 18137 |
+| `scripts/package_submission.py` | `459ee2235d7ac65c...` | 18202 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
 | `scripts/reload_sft_free_t4.py` | `36b076110ad39657...` | 5305 |
 | `scripts/run_g12_integrated_episode.py` | `eef1341de22994e2...` | 45882 |
@@ -313,6 +330,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_argocd_error_taxonomy.py` | `c6b43f9a2b9ac2b7...` | 6802 |
 | `tests/test_audit.py` | `21b92da15c7e67c8...` | 10105 |
 | `tests/test_base_sft_validation.py` | `eb0f9c74192e0739...` | 21486 |
+| `tests/test_base_sft_validation_evidence.py` | `8596a30542fefdd1...` | 2185 |
 | `tests/test_bench_runner.py` | `9f926ca6760507a7...` | 19828 |
 | `tests/test_bootstrap_lifecycle.py` | `68956a108f630f7c...` | 29227 |
 | `tests/test_candidate_adapters.py` | `fd2773fe820516e9...` | 32497 |

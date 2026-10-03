@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T12:25:31.495192+00:00",
+  "generated_at": "2026-10-03T13:03:01.952009+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 399,
+  "asset_count": 417,
   "assets": {
     "AGENTS.md": {
       "sha256": "17a9f526917b583f9ac463216d5cf0d0c7af64700d9212ac49e53566ea631a39",
@@ -385,8 +385,8 @@
       "size_bytes": 12389
     },
     "docs/project/STAGE_8_SFT_EVALUATION.md": {
-      "sha256": "677c001e637757d863cfa8fb99368aa89aad14dc09a575a9cb35bc91b189284d",
-      "size_bytes": 7954
+      "sha256": "bb8b70af114597bd473f2a8842095d17857f5675ad21558e6b465c46bcdccbd6",
+      "size_bytes": 8193
     },
     "docs/project/STAGE_9_ONLINE_GRPO.md": {
       "sha256": "846b7ebcbc3b4762cb8449d036fc0f74e574d850cf7edf5f9d400a925e90ee24",
@@ -401,8 +401,8 @@
       "size_bytes": 2192
     },
     "artifacts/evidence/.gitattributes": {
-      "sha256": "f5a13b0ba30c2c486a7413355f0c5a96a482827a1d2fdb658831c4844677a586",
-      "size_bytes": 1084
+      "sha256": "bee3029f88f6899bf24eb3e901ae5fa392343b01adf8955ad4ba4a8453665204",
+      "size_bytes": 1135
     },
     "artifacts/evidence/recovery/2026-09-05-workspace-recovery.json": {
       "sha256": "710fddcaeb2ea6c86272ad71f28a3ba9e02579d51428fa702f7a89b1e65e33bb",
@@ -643,6 +643,74 @@
     "artifacts/evidence/stage7/free-t4-v17/training-v17.log": {
       "sha256": "9fde0e4a5208f5f29d5fcf285ad68ba5e3af0cb0f906d4ea55319d0266e3e177",
       "size_bytes": 3529
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/base-transfer.log": {
+      "sha256": "99707604f740139708f5a28258ec9432232d58848167bbd1aff8db617bc36c4d",
+      "size_bytes": 2025
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-path.txt": {
+      "sha256": "172fcd1550de2bee6f36000fd5d1b63afb7a2447f0691ee3c7ff9786a5cd1dda",
+      "size_bytes": 121
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/checkpoint-verification.json": {
+      "sha256": "2482a54d30604c03ede8840d9f4117e708454ad11765378bb3389e6e6484cecc",
+      "size_bytes": 247
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/execution-approval.json": {
+      "sha256": "7322f86a44b0df25504821cefea207adc697e3a1915f733f59a95c5d25c6cd0a",
+      "size_bytes": 635
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.json": {
+      "sha256": "9a83ab0bafef03c11aa6d85957b9b57269b7a637a499405e41196e925f077a74",
+      "size_bytes": 1214
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/independent-recompute-v1.log": {
+      "sha256": "0ee008c7cbadb8c16b168d3c4cbcfbb11bab5ffe75c4bf219dc38550b13b2e41",
+      "size_bytes": 1074
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/install.log": {
+      "sha256": "9fa2bba5b53bdbfdfd7f77727a3cd41457f049277aea20d5d6a3a70f73a1f421",
+      "size_bytes": 1796
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/runtime.json": {
+      "sha256": "6e99604dd3a9c8195300a1bb5d1ff965f25cf65f3c900389df1f2ff4e8d07ff9",
+      "size_bytes": 2321
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/sft-pilot-linux-py312.lock": {
+      "sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+      "size_bytes": 167639
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-report.json": {
+      "sha256": "0693215deceab4293a95f76e1bb79b02af074d4c7f3ad422ba91307c7be3220d",
+      "size_bytes": 20102
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/transfer-start.json": {
+      "sha256": "3991a4f1ab50fbef09f337e59c472684092cc54ce8379289356f462b72e08162",
+      "size_bytes": 1386
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-exit-v1.json": {
+      "sha256": "8c7f2587da6388bf50add696e53af92863038460d1234b06884d16ee3f1f1647",
+      "size_bytes": 28
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/atlasops-validation-preparation/validation-run-v1.log": {
+      "sha256": "41f1fdb41a89c24d71a2b8a7d82e64a7fa7a005a70f0e5f8f1d074181ab4a653",
+      "size_bytes": 2285
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/episodes.jsonl": {
+      "sha256": "99a45c1cdb08c8c23f4b6d9c7c51153e00c6528bf976049cae6291bd16ad39c2",
+      "size_bytes": 86961
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/raw_episodes.jsonl": {
+      "sha256": "97887f05dae5dd4fc997185477b6c6b052d1578d8ca06ae2e0fdb58f080decff",
+      "size_bytes": 79638
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/run_manifest.json": {
+      "sha256": "878b01e079d294ad35a6ab73365c01e1a3d7cf138a2afaae72b73ecbb59d49b4",
+      "size_bytes": 25804
+    },
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json": {
+      "sha256": "b846b05c9a6bb0d26f414ef7e68ec363cf4f4f12657db1ae10871c08cd23ee11",
+      "size_bytes": 1853
     },
     "artifacts/evidence/stage10/rs_baseline_eval.json": {
       "sha256": "821c76fc6958593bc870084a08cfaba8d67d6dfec1d570f792cd38b8cf8da487",
@@ -1053,8 +1121,8 @@
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "3f720ca888e95afb12cffde682c1e2df42cdc956e913f7a65437f23d573fe206",
-      "size_bytes": 18137
+      "sha256": "459ee2235d7ac65ce50f464c5cb726cba7b6e0340cac31219cd902112b60355f",
+      "size_bytes": 18202
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -1219,6 +1287,10 @@
     "tests/test_base_sft_validation.py": {
       "sha256": "eb0f9c74192e0739eb093844388272d50fae09f4a48da870d51c9204d779cd30",
       "size_bytes": 21486
+    },
+    "tests/test_base_sft_validation_evidence.py": {
+      "sha256": "8596a30542fefdd14edf23d210e9211952a77e81c47afa6eeb63c99588aba2a0",
+      "size_bytes": 2185
     },
     "tests/test_bench_runner.py": {
       "sha256": "9f926ca6760507a73e5b1c9cc7f9d826f62a33f0fe5a57765a3bd13a8b42932d",

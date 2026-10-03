@@ -1,0 +1,521 @@
+{
+  "approved_scope": "Direct human approval: pinned files and hashing only",
+  "completed_at_utc": "2026-10-03T12:49:04.461392+00:00",
+  "encrypted_storage_verified": false,
+  "evidence_scope": "This helper only; no claim about prior notebook activity",
+  "execution_allowed": false,
+  "gate_promoted": false,
+  "held_out_outcomes_accessed": false,
+  "helper_sha256": "e66dd17fca7aff2e186bbb1081ae4917f31efc96533b463fff92468f73490b52",
+  "host_profile": "kaggle",
+  "independently_enforced_immutable_storage": false,
+  "index_tensor_total_bytes": 15231233024,
+  "inference_performed": false,
+  "inventory": [
+    {
+      "filename": "model-00001-of-00004.safetensors",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors",
+      "regular_file": true,
+      "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+      "size_bytes": 3945441440
+    },
+    {
+      "filename": "model-00002-of-00004.safetensors",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors",
+      "regular_file": true,
+      "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+      "size_bytes": 3864726352
+    },
+    {
+      "filename": "model-00003-of-00004.safetensors",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors",
+      "regular_file": true,
+      "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+      "size_bytes": 3864726424
+    },
+    {
+      "filename": "model-00004-of-00004.safetensors",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors",
+      "regular_file": true,
+      "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+      "size_bytes": 3556377672
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+      "regular_file": true,
+      "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+      "size_bytes": 27752
+    },
+    {
+      "filename": "LICENSE",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+      "regular_file": true,
+      "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "size_bytes": 11343
+    },
+    {
+      "filename": "config.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+      "regular_file": true,
+      "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+      "size_bytes": 663
+    },
+    {
+      "filename": "generation_config.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+      "regular_file": true,
+      "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+      "size_bytes": 243
+    },
+    {
+      "filename": "merges.txt",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+      "regular_file": true,
+      "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+      "size_bytes": 1671839
+    },
+    {
+      "filename": "tokenizer.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+      "regular_file": true,
+      "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+      "size_bytes": 7031645
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+      "regular_file": true,
+      "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+      "size_bytes": 7305
+    },
+    {
+      "filename": "vocab.json",
+      "hard_link_count": 1,
+      "mode": "0400",
+      "path": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+      "regular_file": true,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "size_bytes": 2776833
+    }
+  ],
+  "limits": {
+    "minimum_free_bytes": 21474836480,
+    "network_payload_bytes": 17179869184,
+    "seconds": 3600,
+    "starting_free_bytes": 42949672960,
+    "workspace_bytes": 21474836480
+  },
+  "minimum_observed_free_bytes": 1127438471168,
+  "model_loaded": false,
+  "network_payload_bytes": 15242799511,
+  "paid_compute_authorized": false,
+  "persistent_storage_verified": false,
+  "repository": "Qwen/Qwen2.5-7B-Instruct",
+  "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "schema_version": "atlasops-t4-pinned-file-transfer-v1",
+  "snapshot_dir": "/kaggle/temp/atlasops-t4-model-transfer-validation-20261003-v1/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28",
+  "snapshot_mode": "0500",
+  "started_at_utc": "2026-10-03T12:43:54.345052+00:00",
+  "starting_free_bytes": 1142681366528,
+  "status": "COMPLETE",
+  "total_file_bytes": 15242799511,
+  "training_performed": false,
+  "transfers": [
+    {
+      "filename": "model-00001-of-00004.safetensors",
+      "final_source": {
+        "host": "us.gcp.cdn.hf.co",
+        "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/ddfa1ff25e39c57076e10f1a8b02cc96888ce69b0717f0d296c57b842695c965",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 3945441440,
+      "redirects": [
+        {
+          "host": "us.gcp.cdn.hf.co",
+          "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/ddfa1ff25e39c57076e10f1a8b02cc96888ce69b0717f0d296c57b842695c965",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 302
+        }
+      ],
+      "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/model-00001-of-00004.safetensors",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "model-00002-of-00004.safetensors",
+      "final_source": {
+        "host": "us.gcp.cdn.hf.co",
+        "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/7a5652df2a86bd1ac6bfd0de4a00fb014360f98669f437fda9a4641947a28520",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 3864726352,
+      "redirects": [
+        {
+          "host": "us.gcp.cdn.hf.co",
+          "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/7a5652df2a86bd1ac6bfd0de4a00fb014360f98669f437fda9a4641947a28520",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 302
+        }
+      ],
+      "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/model-00002-of-00004.safetensors",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "model-00003-of-00004.safetensors",
+      "final_source": {
+        "host": "us.gcp.cdn.hf.co",
+        "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/4d520dc8bdd4416c539421314778ea8bae719387b2d14e13dd4dbb3bd2d74018",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 3864726424,
+      "redirects": [
+        {
+          "host": "us.gcp.cdn.hf.co",
+          "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/4d520dc8bdd4416c539421314778ea8bae719387b2d14e13dd4dbb3bd2d74018",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 302
+        }
+      ],
+      "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/model-00003-of-00004.safetensors",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "model-00004-of-00004.safetensors",
+      "final_source": {
+        "host": "us.gcp.cdn.hf.co",
+        "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/22555b6a3a2093431facfb11807dd591855196ee19b8543dcc05a66d16a39892",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 3556377672,
+      "redirects": [
+        {
+          "host": "us.gcp.cdn.hf.co",
+          "path": "/xet-bridge-us/66e81cbcd683a3f4e5291bbf/22555b6a3a2093431facfb11807dd591855196ee19b8543dcc05a66d16a39892",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 302
+        }
+      ],
+      "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/model-00004-of-00004.safetensors",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 27752,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/model.safetensors.index.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "LICENSE",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 11343,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/LICENSE",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "config.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 663,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/config.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "generation_config.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 243,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/generation_config.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "merges.txt",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 1671839,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/merges.txt",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "tokenizer.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 7031645,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 7305,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/tokenizer_config.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    },
+    {
+      "filename": "vocab.json",
+      "final_source": {
+        "host": "huggingface.co",
+        "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+        "query_present": true,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "mode": "0400",
+      "received_bytes": 2776833,
+      "redirects": [
+        {
+          "host": "huggingface.co",
+          "path": "/api/resolve-cache/models/Qwen/Qwen2.5-7B-Instruct/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+          "query_present": true,
+          "query_recorded": false,
+          "scheme": "https",
+          "status": 307
+        }
+      ],
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "source": {
+        "host": "huggingface.co",
+        "path": "/Qwen/Qwen2.5-7B-Instruct/resolve/a09a35458c702b33eeacc393d103063234e8bc28/vocab.json",
+        "query_present": false,
+        "query_recorded": false,
+        "scheme": "https"
+      },
+      "status": "VERIFIED"
+    }
+  ],
+  "workspace_bytes": 15242800897
+}

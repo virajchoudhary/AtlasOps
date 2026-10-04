@@ -1013,8 +1013,8 @@
       "size_bytes": 880
     },
     "config/g4_protocol.py": {
-      "sha256": "bb41df46aec2439f5e37403a6576526c73082f56d498f249ceaa025c8c2fde7f",
-      "size_bytes": 29398
+      "sha256": "8eca6e2b2db4daebbf8991a7d9e37633d260fd769b1f344727ee9714f96a965a",
+      "size_bytes": 30653
     },
     "config/runtime.py": {
       "sha256": "4502a5e27d2a0fdd88ae7842347e6c85d717e71de6c9f7710d42951fadbf4090",

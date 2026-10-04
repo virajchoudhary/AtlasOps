@@ -1,0 +1,4 @@
+# The historical SFT environment is a constraint, not a file to regenerate.
+-c sft-pilot-linux-py312.lock
+uvicorn==0.52.1
+click==8.4.2

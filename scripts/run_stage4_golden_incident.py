@@ -13,10 +13,11 @@ strict causal validity:
 6. Evidence persistence (immutable per-experiment manifest plus latest pointer).
 7. Post-verdict safety cleanup.
 
-Zero paid APIs. Local Ollama model selected through ATLASOPS_STAGE4_AGENT_MODEL.
+Zero paid APIs. Pinned Base inference only; all operational authority stays local.
 """
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -48,8 +49,9 @@ if REPO_ROOT not in sys.path:
 
 from config.g4_protocol import (
     APPROVED_G4_PROTOCOL_PROFILE,
+    APPROVED_G4_V38_MODEL,
     G4_PROTOCOL_MARKER,
-    build_runtime_protocol_profile,
+    build_integrated_protocol_profile,
     file_sha256,
     inspect_metrics_server_deployment,
     metrics_server_declaration,
@@ -214,6 +216,9 @@ log = logging.getLogger("stage4.golden")
 
 KIND_CONTEXT = "kind-atlasops-local"
 SELECTED_STAGE4_AGENT_MODEL = resolve_stage4_agent_model()
+_QUALIFIED_COMPLETION_PROVIDER = None
+_QUALIFIED_MODEL_IDENTITY: dict[str, Any] | None = None
+_INFERENCE_QUALIFICATION: dict[str, Any] | None = None
 # Populated only after the explicit operator-supplied experiment ID passes preflight.
 EXPERIMENT_ID = ""
 SCENARIO_ID = "single_fault/sf-002"
@@ -377,9 +382,12 @@ def _probe_metrics_server_contract() -> dict[str, Any]:
 
 
 def _observe_protocol_profile(selected_model: str) -> dict[str, Any]:
-    observed = build_runtime_protocol_profile(
-        selected_model=selected_model,
-        model_digest=_query_ollama_model_identity(selected_model)["digest"],
+    if _QUALIFIED_MODEL_IDENTITY is None or selected_model != APPROVED_G4_V38_MODEL["name"]:
+        raise RuntimeError(
+            "G4 approved protocol profile requires qualified pinned Base inference before reservation"
+        )
+    observed = build_integrated_protocol_profile(
+        model_identity=dict(_QUALIFIED_MODEL_IDENTITY),
         metrics_observation=_probe_metrics_server_contract(),
     )
     return validate_runtime_protocol_profile(observed)
@@ -808,13 +816,18 @@ def stage4_evidence_metadata() -> dict[str, Any]:
     """
     return {
         "model": SELECTED_STAGE4_AGENT_MODEL,
-        "inference_provider": "ollama-local",
+        "inference_provider": "pinned-integrated-inference",
         "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
         "protocol_profile": {
             "protocol_fingerprint": None,
             "validation_state": "PENDING_RESERVATION",
         },
         "trigger_type": "manual coordinator trigger over a real independently observed cluster fault",
+        "inference_qualification": _INFERENCE_QUALIFICATION,
+        "inference_journal": (
+            str(_QUALIFIED_COMPLETION_PROVIDER.engine.journal_path)
+            if _QUALIFIED_COMPLETION_PROVIDER is not None else None
+        ),
     }
 
 
@@ -1897,6 +1910,51 @@ def _handle_post_t0_interruption(
 
 
 async def main() -> dict[str, Any]:
+    global _QUALIFIED_COMPLETION_PROVIDER, _QUALIFIED_MODEL_IDENTITY, _INFERENCE_QUALIFICATION
+    from scripts.qualify_integrated_inference import engine_from_environment, qualify_engine
+
+    engine = engine_from_environment()
+    try:
+        qualification = await qualify_engine(engine)
+        _INFERENCE_QUALIFICATION = qualification
+        _QUALIFIED_MODEL_IDENTITY = qualification["model"]
+        _QUALIFIED_COMPLETION_PROVIDER = engine.provider("base")
+        async with asyncio.timeout(3600):
+            return await _main_with_qualified_inference()
+    finally:
+        try:
+            if _INFERENCE_QUALIFICATION is not None and EXPERIMENT_ID:
+                _persist_inference_reference(engine)
+        finally:
+            _QUALIFIED_COMPLETION_PROVIDER = None
+            _QUALIFIED_MODEL_IDENTITY = None
+            _INFERENCE_QUALIFICATION = None
+            await engine.close()
+
+
+def _persist_inference_reference(engine: Any) -> None:
+    journal = engine.journal_path
+    if journal is None or not journal.is_file():
+        raise RuntimeError("Qualified inference journal is missing")
+    raw = journal.read_bytes()
+    reference = {
+        "experiment_id": EXPERIMENT_ID,
+        "qualification": _INFERENCE_QUALIFICATION,
+        "journal": {
+            "path": str(journal),
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+        },
+        "recorded_at_utc": datetime.now(UTC).isoformat(),
+        "qualification_establishes_incident_resolution": False,
+    }
+    path = Path(_experiment_evidence_dir(EXPERIMENT_ID)) / f"{EXPERIMENT_ID}.inference-reference.json"
+    if path.exists():
+        raise FileExistsError("Refusing to overwrite inference evidence reference")
+    _write_json_atomic(str(path), reference)
+
+
+async def _main_with_qualified_inference() -> dict[str, Any]:
     secrets = load_stage4_secrets()
     from agents.approval import approval_gate
 
@@ -1977,6 +2035,10 @@ def _configure_stage4_runtime() -> None:
         "ARGOCD_URL": "http://localhost:18080",
         "ARGOCD_USER": "atlasops",
         "ARGOCD_VERIFY_TLS": "false",
+        "ATLASOPS_REMEDIATION_BACKEND": "rl_policy",
+        "ATLASOPS_RL_POLICY_EXECUTE_ACTIONS": "1",
+        "ATLASOPS_LIVE_JUDGE": "0",
+        "ATLASOPS_USE_HF_INFERENCE": "0",
         "POSTMORTEM_DIR": os.path.join(REPO_ROOT, "artifacts", "postmortems"),
         "TRAJECTORIES_DIR": os.path.join(REPO_ROOT, "artifacts", "trajectories"),
     })
@@ -2000,7 +2062,7 @@ async def _run_experiment() -> dict[str, Any]:
     evidence_dir = _experiment_evidence_dir(EXPERIMENT_ID)
     print("=" * 80)
     print(f" ATLASOPS STAGE 4 GOLDEN INCIDENT VALIDATION ({EXPERIMENT_ID}) ")
-    print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Ollama Local) ")
+    print(f" Scenario: {SCENARIO_ID} | Model: {SELECTED_STAGE4_AGENT_MODEL} (Pinned Base) ")
     print("=" * 80)
 
     _configure_stage4_runtime()
@@ -2303,7 +2365,30 @@ async def _run_experiment() -> dict[str, Any]:
 
         from agents.coordinator import handle_incident
 
-        incident_result = await handle_incident(alert_payload, scenario_id=SCENARIO_ID)
+        if _QUALIFIED_COMPLETION_PROVIDER is None:
+            raise RuntimeError("Qualified Base provider is unavailable")
+        incident_id = f"inc-{EXPERIMENT_ID}"
+        provider = _QUALIFIED_COMPLETION_PROVIDER.engine.provider(
+            "base",
+            evidence_context={
+                "run_id": EXPERIMENT_ID,
+                "incident_id": incident_id,
+                "arm": "base",
+                "scenario_id": SCENARIO_ID,
+            },
+        )
+        from bench.integrated_inference import DirectActionCompletionPolicy, EFFECTIVE_GENERATION_CONFIG
+
+        incident_result = await handle_incident(
+            alert_payload, incident_id=incident_id, scenario_id=SCENARIO_ID,
+            completion_provider=provider,
+            remediation_policy=DirectActionCompletionPolicy(provider),
+            policy_seed=EFFECTIVE_GENERATION_CONFIG["seed"],
+            policy_generation_config={
+                key: EFFECTIVE_GENERATION_CONFIG[key]
+                for key in ("max_new_tokens", "temperature", "top_p")
+            },
+        )
         triage_res = incident_result.get("triage", {})
         diagnosis_res = incident_result.get("diagnosis", {})
         remediation_res = incident_result.get("remediation", {})

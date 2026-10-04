@@ -14,7 +14,7 @@ from typing import Any
 
 from agents.tool_policy import CLUSTER_MUTATING_TOOLS
 
-DEFAULT_STAGE4_AGENT_MODEL = "qwen2.5:7b-instruct"
+DEFAULT_STAGE4_AGENT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
 def resolve_stage4_agent_model() -> str:

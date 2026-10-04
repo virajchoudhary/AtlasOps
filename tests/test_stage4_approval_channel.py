@@ -264,7 +264,7 @@ def test_missing_secrets_stop_runner_before_cluster_or_reservation(monkeypatch):
     monkeypatch.setattr(runner.subprocess, "run", lambda *args, **kwargs: pytest.fail("cluster contacted"))
     monkeypatch.setattr(runner, "reserve_experiment_attempt", lambda *args, **kwargs: pytest.fail("attempt reserved"))
     with pytest.raises(RuntimeError, match="Missing Stage 4 runtime secrets"):
-        asyncio.run(runner.main())
+        asyncio.run(runner._main_with_qualified_inference())
 
 
 def test_runner_starts_authenticated_host_listener_before_experiment(monkeypatch):
@@ -300,7 +300,7 @@ def test_runner_starts_authenticated_host_listener_before_experiment(monkeypatch
         return {"attempt_state": "NOT_RESERVED"}
 
     monkeypatch.setattr(runner, "_run_experiment", synthetic_experiment)
-    assert asyncio.run(runner.main()) == {"attempt_state": "NOT_RESERVED"}
+    assert asyncio.run(runner._main_with_qualified_inference()) == {"attempt_state": "NOT_RESERVED"}
     assert os.environ.get("ATLASOPS_PUBLIC_BASE_URL") == previous_base
 
 

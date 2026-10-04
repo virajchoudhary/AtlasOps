@@ -131,10 +131,45 @@ APPROVED_G4_V37_CAUSAL_SOURCE_SHA256 = {
     "agents/coordinator.py": "e9b638cbb72c763a87501196335bec792bd5a881ac6ab9ace588f53a394f9383",
 }
 
-# Active prospective v3.7 declaration; prior profiles and evidence stay separate.
-G4_PROTOCOL_MARKER = G4_V37_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V37_PROTOCOL_PROFILE_VERSION
-APPROVED_G4_MODEL = APPROVED_G4_V33_MODEL
+G4_V38_PROTOCOL_MARKER = "G4-RECOVERY-V3.8-2026-10-04"
+G4_V38_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.8"
+APPROVED_G4_V38_MODEL = {
+    "provider": "pinned-integrated-inference",
+    "name": "Qwen/Qwen2.5-7B-Instruct",
+    "revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "arm": "base",
+    "checkpoint_manifest_sha256": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+    "adapter_sha256": "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff",
+}
+APPROVED_G4_V38_INFERENCE_CONTRACT = {
+    "roles": ["triage", "diagnosis", "remediation", "comms"],
+    "seed": 1337,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512,
+    "do_sample": False,
+    "load_timeout_seconds": 600,
+    "request_timeout_seconds": 600,
+    "max_attempts": 1,
+    "golden_run_timeout_seconds": 3600,
+    "retry_rule": "no-model-replay-infrastructure-invalid-retries-preserved",
+    "qualification": "benign-base-response-before-reservation",
+    "remote_authority": "inference-only-no-operational-credentials",
+    "remediation": "existing-direct-action-policy-exact-human-approval",
+}
+APPROVED_G4_V38_CAUSAL_SOURCE_SHA256 = {
+    **APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
+    "scripts/run_stage4_golden_incident.py": "563b31688b0e6e6adf6790eabfacbad98eed982142b4cd26a0422ba96cb980a5",
+    "scripts/qualify_integrated_inference.py": "2b2c7cdeb6b4f7d68c2c25d66974c1a55be3673f6edde63a059620d667ed4998",
+    "scripts/serve_integrated_inference.py": "ad7851740cbeefb821d0a1f9fd80e2dd16f56100e4671ec4b4e6b2ca7f065e73",
+    "bench/integrated_inference_remote.py": "23fbdb114e8f982456307d8d8bd7c872b5ec60ce4040060a91ecbb9171d6cfca",
+}
+
+# Active prospective declaration; historical declarations remain unchanged.
+G4_PROTOCOL_MARKER = G4_V38_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V38_PROTOCOL_PROFILE_VERSION
+APPROVED_G4_MODEL = APPROVED_G4_V38_MODEL["name"]
+# Retained only for callers inspecting the historical Ollama identity.
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256
 APPROVED_TOOL_CONTRACT_SHA256 = APPROVED_G4_V33_TOOL_CONTRACT_SHA256
@@ -226,7 +261,7 @@ def causal_evidence_policy_profile() -> dict[str, Any]:
         **APPROVED_G4_V35_CAUSAL_POLICY,
         "source_sha256": {
             path: file_sha256(REPO_ROOT / path)
-            for path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256
+            for path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256
         },
     }
 
@@ -351,6 +386,29 @@ def build_runtime_protocol_profile(
         "diagnosis_prompt": diagnosis_prompt_profile(),
         "role_tool_contract": tool_contract_profile(),
         "llm_transport": llm_transport_profile(),
+        "approval_channel": approval_channel_profile(),
+        "pre_t0_safety": dict(APPROVED_G4_V34_PRE_T0_SAFETY),
+        "agent_prompt_sha256": agent_prompt_hashes(),
+        "causal_evidence_policy": causal_evidence_policy_profile(),
+        "settling_deadline_policy": settling_deadline_profile(),
+        "f1_contract": _f1_contract(),
+        "scenario_fault_contract": _scenario_fault_contract(),
+        "metrics_api": metrics_observation,
+    }
+
+
+def build_integrated_protocol_profile(
+    *, model_identity: dict[str, Any], metrics_observation: dict[str, Any]
+) -> dict[str, Any]:
+    """Observe the prospective model basis without repurposing an Ollama digest."""
+    return {
+        "protocol_marker": G4_V38_PROTOCOL_MARKER,
+        "profile_version": G4_V38_PROTOCOL_PROFILE_VERSION,
+        "model": model_identity,
+        "diagnosis_prompt": diagnosis_prompt_profile(),
+        "role_tool_contract": tool_contract_profile(),
+        "llm_transport": llm_transport_profile(),
+        "integrated_inference": dict(APPROVED_G4_V38_INFERENCE_CONTRACT),
         "approval_channel": approval_channel_profile(),
         "pre_t0_safety": dict(APPROVED_G4_V34_PRE_T0_SAFETY),
         "agent_prompt_sha256": agent_prompt_hashes(),
@@ -554,7 +612,23 @@ APPROVED_G4_V37_PROTOCOL_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V37_PROTOCOL_PROFILE
+APPROVED_G4_V38_PROTOCOL_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V37_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V38_PROTOCOL_MARKER,
+    "profile_version": G4_V38_PROTOCOL_PROFILE_VERSION,
+    "model": APPROVED_G4_V38_MODEL,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V37_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V38_PROTOCOL_PROFILE_VERSION,
+    },
+    "integrated_inference": APPROVED_G4_V38_INFERENCE_CONTRACT,
+    "causal_evidence_policy": {
+        **APPROVED_G4_V37_PROTOCOL_PROFILE["causal_evidence_policy"],
+        "source_sha256": APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V38_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

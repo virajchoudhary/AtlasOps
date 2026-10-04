@@ -18,7 +18,8 @@ import scripts.run_stage4_golden_incident as runner
 from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
-    APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V31_MODEL,
+    APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
     REQUIRED_METRICS_SERVER_ARGS,
     protocol_fingerprint,
 )
@@ -91,20 +92,16 @@ def isolated_protocol_runtime(monkeypatch, tmp_path):
             relative_path = pathlib.Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V38_CAUSAL_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
-    # These lifecycle tests model approved v3.7 identity; source drift is tested separately.
+    # These lifecycle tests model approved v3.8 identity; source drift is tested separately.
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,
-        "_query_ollama_model_identity",
-        lambda selected_model: {
-            "provider": "ollama-local",
-            "name": selected_model,
-            "digest": APPROVED_G4_PROTOCOL_PROFILE["model"]["digest"],
-        },
+        "_QUALIFIED_MODEL_IDENTITY",
+        dict(APPROVED_G4_PROTOCOL_PROFILE["model"]),
     )
     monkeypatch.setattr(
         runner,
@@ -138,12 +135,12 @@ def test_reservation_records_protocol_marker_and_spent_limit_is_two():
     assert MAX_ATTEMPTS_PER_PROTOCOL_MARKER == 2
 
 
-def test_default_and_arbitrary_models_cannot_consume_approved_protocol_budget():
+def test_legacy_default_and_arbitrary_models_cannot_consume_approved_protocol_budget():
     root = _attempt_root()
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         reserve_experiment_attempt(
-            "EXP-STAGE4-DEFAULT-MODEL",
-            selected_model="qwen2.5:1.5b",
+            "EXP-STAGE4-LEGACY-DEFAULT-MODEL",
+            selected_model=APPROVED_G4_V31_MODEL,
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -152,7 +149,7 @@ def test_default_and_arbitrary_models_cannot_consume_approved_protocol_budget():
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         reserve_experiment_attempt(
             "EXP-STAGE4-ARBITRARY-MODEL",
-            selected_model="qwen2.5:3b-instruct",
+            selected_model="arbitrary/unqualified-model",
             main_sha="test-sha",
             attempt_root=root,
         )
@@ -213,7 +210,7 @@ def test_prompt_or_tool_contract_drift_fails_closed_before_attempt_budget(
     monkeypatch,
 ):
     root = _attempt_root()
-    original_builder = runner.build_runtime_protocol_profile
+    original_builder = runner.build_integrated_protocol_profile
 
     # Keep the live model/Metrics probes valid so this test isolates declared
     # contract drift from unrelated runtime drift.
@@ -224,7 +221,7 @@ def test_prompt_or_tool_contract_drift_fails_closed_before_attempt_budget(
             profile[_field] = {**profile[_field], "sha256": "0" * 64}
             return profile
 
-        monkeypatch.setattr(runner, "build_runtime_protocol_profile", build_with_drift)
+        monkeypatch.setattr(runner, "build_integrated_protocol_profile", build_with_drift)
         with pytest.raises(RuntimeError, match="approved protocol profile"):
             reserve_experiment_attempt(
                 f"EXP-STAGE4-{field.upper()}-DRIFT",

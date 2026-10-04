@@ -45,6 +45,9 @@ from config.g4_protocol import (
     APPROVED_G4_V36_SETTLING_DEADLINE,
     APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
     APPROVED_G4_V37_PROTOCOL_PROFILE,
+    APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V38_MODEL,
+    APPROVED_G4_V38_PROTOCOL_PROFILE,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
@@ -54,6 +57,7 @@ from config.g4_protocol import (
     G4_V35_PROTOCOL_MARKER,
     G4_V36_PROTOCOL_MARKER,
     G4_V37_PROTOCOL_MARKER,
+    G4_V38_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -63,13 +67,9 @@ from config.g4_protocol import (
 )
 
 
-def test_active_v37_profile_pins_model_approval_causal_and_settling_contract():
-    assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
-        "provider": "ollama-local",
-        "name": APPROVED_G4_V33_MODEL,
-        "digest": APPROVED_G4_V33_MODEL_DIGEST,
-    }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V37_PROTOCOL_MARKER
+def test_active_v38_profile_pins_model_approval_causal_and_settling_contract():
+    assert APPROVED_G4_PROTOCOL_PROFILE["model"] == APPROVED_G4_V38_MODEL
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V38_PROTOCOL_MARKER
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
@@ -86,12 +86,17 @@ def test_active_v37_profile_pins_model_approval_causal_and_settling_contract():
         APPROVED_G4_V35_AGENT_PROMPT_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
-        APPROVED_G4_V37_CAUSAL_SOURCE_SHA256
+        APPROVED_G4_V38_CAUSAL_SOURCE_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["settling_deadline_policy"] == (
         APPROVED_G4_V36_SETTLING_DEADLINE
     )
-    assert APPROVED_G4_V37_PROTOCOL_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
+    assert APPROVED_G4_V38_PROTOCOL_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
+    assert protocol_fingerprint(APPROVED_G4_V37_PROTOCOL_PROFILE) == (
+        "ea72468a1237baf4c423552deb0911cd58ed3ba217b8074a36c1a94498223414"
+    )
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(APPROVED_G4_V37_PROTOCOL_PROFILE)
 
 
 def test_historical_v36_profile_remains_exact_and_is_rejected_as_active():
@@ -397,17 +402,16 @@ def frozen_g4_v37_source_hashes(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V38_CAUSAL_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
 
 
 def _approved_observation():
-    return build_runtime_protocol_profile(
-        selected_model=APPROVED_G4_MODEL,
-        model_digest=APPROVED_G4_MODEL_DIGEST,
+    return protocol.build_integrated_protocol_profile(
+        model_identity=dict(APPROVED_G4_V38_MODEL),
         metrics_observation=APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
     )
 
@@ -488,9 +492,8 @@ def test_metrics_server_image_drift_is_rejected_fail_closed(image):
 def test_metrics_server_missing_state_cannot_match_required_present_profile(
     frozen_g4_v37_source_hashes,
 ):
-    observed = build_runtime_protocol_profile(
-        selected_model=APPROVED_G4_MODEL,
-        model_digest=APPROVED_G4_MODEL_DIGEST,
+    observed = protocol.build_integrated_protocol_profile(
+        model_identity=dict(APPROVED_G4_V38_MODEL),
         metrics_observation={"state": "missing"},
     )
     assert observed != APPROVED_G4_PROTOCOL_PROFILE
@@ -505,15 +508,11 @@ def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
     with patch.object(
         runner, "_current_main_sha", return_value="test-sha"
     ), patch.object(
-        runner, "_query_ollama_model_identity"
+        runner, "_QUALIFIED_MODEL_IDENTITY", {}
     ) as model_query, patch.object(
         runner, "_probe_metrics_server_contract"
     ) as metrics_probe:
-        model_query.return_value = {
-            "provider": "ollama-local",
-            "name": APPROVED_G4_MODEL,
-            "digest": "0" * 64,
-        }
+        model_query.update({**APPROVED_G4_V38_MODEL, "revision": "0" * 40})
         metrics_probe.return_value = APPROVED_G4_PROTOCOL_PROFILE["metrics_api"]
         with pytest.raises(RuntimeError, match="approved protocol profile"):
             runner.reserve_experiment_attempt(
@@ -522,7 +521,6 @@ def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
                 main_sha="test-sha",
                 attempt_root=str(root),
             )
-    model_query.assert_called_once_with(APPROVED_G4_MODEL)
     metrics_probe.assert_called_once()
     assert not (root / "artifacts" / "evidence" / "stage4" / ".attempts").exists()
 
@@ -540,12 +538,8 @@ def test_coordinator_source_hash_drift_is_rejected_before_reservation(
     )
     with patch.object(runner, "_current_main_sha", return_value="test-sha"), patch.object(
         runner,
-        "_query_ollama_model_identity",
-        return_value={
-            "provider": "ollama-local",
-            "name": APPROVED_G4_MODEL,
-            "digest": APPROVED_G4_MODEL_DIGEST,
-        },
+        "_QUALIFIED_MODEL_IDENTITY",
+        dict(APPROVED_G4_V38_MODEL),
     ), patch.object(
         runner,
         "_probe_metrics_server_contract",
@@ -662,20 +656,11 @@ def test_ollama_identity_transport_failure_fails_closed():
             runner._query_ollama_model_identity(APPROVED_G4_MODEL)
 
 
-def test_observe_protocol_profile_with_corrected_ollama_identity(
-    frozen_g4_v37_source_hashes,
+def test_observe_protocol_profile_requires_qualified_integrated_identity(
+    frozen_g4_v37_source_hashes, monkeypatch,
 ):
-    mock_resp = Mock()
-    mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = {
-        "models": [
-            {
-                "name": APPROVED_G4_MODEL,
-                "digest": APPROVED_G4_MODEL_DIGEST,
-            },
-        ]
-    }
-    with patch("requests.get", return_value=mock_resp), patch.object(
+    monkeypatch.setattr(runner, "_QUALIFIED_MODEL_IDENTITY", dict(APPROVED_G4_V38_MODEL))
+    with patch.object(
         runner,
         "_probe_metrics_server_contract",
         return_value=APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-03T22:08:58.745211+00:00",
+  "generated_at": "2026-10-04T04:55:47.050289+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -1009,8 +1009,8 @@
       "size_bytes": 880
     },
     "config/g4_protocol.py": {
-      "sha256": "676227c8326e0526fa02076bf7ca220fa7fff0b1ef218568a4ec6599e3a8f656",
-      "size_bytes": 25141
+      "sha256": "9ae96663e8ca6000b0db9dca112d5660eec448cfcf5489a62c4b10ad340654be",
+      "size_bytes": 25962
     },
     "config/runtime.py": {
       "sha256": "96fe1d1834846cb36d70a165e0af316d873d6aa304cf98e1414248ae2c7d7721",
@@ -1373,15 +1373,15 @@
       "size_bytes": 12140
     },
     "tests/test_g4_protocol_profile.py": {
-      "sha256": "a483ac1812a92178b88140d2dece7ad5d4ccce3bf40a1c5cffeccd2460fcf384",
-      "size_bytes": 24095
+      "sha256": "1b91d9bb1a09b0ec206fee894b8213d4e205c5d165e82752929cc54ba0581276",
+      "size_bytes": 26388
     },
     "tests/test_g4_runtime_context_remediation_loop.py": {
       "sha256": "3e23f0441e3645d1342c55c8cc0eede62a14d05976afb1f56676cc17ec7c90d3",
       "size_bytes": 22261
     },
     "tests/test_g4_v31_transport_and_interruption.py": {
-      "sha256": "edd1f276258cbfd7200c169955d2c358c19138c02763f1d122dbdb24d18062ce",
+      "sha256": "10d53e0ea57d2398bdd1ea76fcee210fd10002d03caa2f251db111e5f45ef29c",
       "size_bytes": 35313
     },
     "tests/test_g6_empirical_contract.py": {
@@ -1641,7 +1641,7 @@
       "size_bytes": 40407
     },
     "tests/test_stage4_evidence_hardening.py": {
-      "sha256": "914289f220f9db34b66292375f7c82e0bdb2e3c474c2a6ef68979a3c583bc495",
+      "sha256": "3d1037daadfdc6ea02c286259ab663218291ce7b03fd8b48974e6a10eaef3c46",
       "size_bytes": 53854
     },
     "tests/test_stage4_f1_envelope_contract.py": {

@@ -43,6 +43,8 @@ from config.g4_protocol import (
     APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
     APPROVED_G4_V36_PROTOCOL_PROFILE,
     APPROVED_G4_V36_SETTLING_DEADLINE,
+    APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V37_PROTOCOL_PROFILE,
     APPROVED_TOOL_CONTRACT_SHA256,
     G4_V2_PROTOCOL_MARKER,
     G4_V3_PROTOCOL_MARKER,
@@ -51,6 +53,7 @@ from config.g4_protocol import (
     G4_V34_PROTOCOL_MARKER,
     G4_V35_PROTOCOL_MARKER,
     G4_V36_PROTOCOL_MARKER,
+    G4_V37_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
     expected_live_metrics_config_fingerprint,
@@ -60,13 +63,13 @@ from config.g4_protocol import (
 )
 
 
-def test_active_v36_profile_pins_model_approval_causal_and_settling_contract():
+def test_active_v37_profile_pins_model_approval_causal_and_settling_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == {
         "provider": "ollama-local",
         "name": APPROVED_G4_V33_MODEL,
         "digest": APPROVED_G4_V33_MODEL_DIGEST,
     }
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V36_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V37_PROTOCOL_MARKER
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
@@ -83,14 +86,36 @@ def test_active_v36_profile_pins_model_approval_causal_and_settling_contract():
         APPROVED_G4_V35_AGENT_PROMPT_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
-        APPROVED_G4_V36_CAUSAL_SOURCE_SHA256
+        APPROVED_G4_V37_CAUSAL_SOURCE_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["settling_deadline_policy"] == (
         APPROVED_G4_V36_SETTLING_DEADLINE
     )
+    assert APPROVED_G4_V37_PROTOCOL_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
+
+
+def test_historical_v36_profile_remains_exact_and_is_rejected_as_active():
+    assert APPROVED_G4_V36_PROTOCOL_PROFILE["protocol_marker"] == G4_V36_PROTOCOL_MARKER
+    assert APPROVED_G4_V36_CAUSAL_SOURCE_SHA256["agents/coordinator.py"] == (
+        "5d7be471592526fbf519fba571c2a1d2ccfd1d976f027736d00f2b3b39aadd0c"
+    )
+    assert APPROVED_G4_V37_CAUSAL_SOURCE_SHA256.keys() == (
+        APPROVED_G4_V36_CAUSAL_SOURCE_SHA256.keys()
+    )
+    assert {
+        path: digest
+        for path, digest in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256.items()
+        if path != "agents/coordinator.py"
+    } == {
+        path: digest
+        for path, digest in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256.items()
+        if path != "agents/coordinator.py"
+    }
     assert protocol_fingerprint(APPROVED_G4_V36_PROTOCOL_PROFILE) == (
         "eedcc9e09d30700c7d53d206398bf32ff8d7dee10ce4c90a96d6c60686a9b97a"
     )
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(APPROVED_G4_V36_PROTOCOL_PROFILE)
 
 
 def test_historical_v35_profile_remains_exact_and_immutable():
@@ -325,7 +350,7 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
 
 
 def test_v34_attempt_transition_terms_are_required_by_fingerprint(
-    frozen_g4_v36_source_hashes,
+    frozen_g4_v37_source_hashes,
 ):
     observed = _approved_observation()
     observed["pre_t0_safety"].pop("attempt_consumption")
@@ -348,7 +373,7 @@ def test_v34_attempt_transition_terms_are_required_by_fingerprint(
     ],
 )
 def test_v35_rejects_causal_source_or_prompt_drift(
-    monkeypatch, changed_name, frozen_g4_v36_source_hashes
+    monkeypatch, changed_name, frozen_g4_v37_source_hashes
 ):
     original_hash = protocol.file_sha256
     monkeypatch.setattr(
@@ -364,7 +389,7 @@ def test_v35_rejects_causal_source_or_prompt_drift(
 
 
 @pytest.fixture
-def frozen_g4_v36_source_hashes(monkeypatch):
+def frozen_g4_v37_source_hashes(monkeypatch):
     original_file_sha256 = protocol.file_sha256
 
     def file_sha256_with_frozen_sources(path):
@@ -372,8 +397,8 @@ def frozen_g4_v36_source_hashes(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V36_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
@@ -387,32 +412,31 @@ def _approved_observation():
     )
 
 
-def test_current_coordinator_source_drift_is_rejected():
+def test_current_coordinator_source_matches_v37_binding():
     coordinator_path = protocol.REPO_ROOT / "agents" / "coordinator.py"
     current_source_hash = protocol.file_sha256(coordinator_path)
-    approved_source_hash = APPROVED_G4_V36_CAUSAL_SOURCE_SHA256[
+    approved_source_hash = APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[
         "agents/coordinator.py"
     ]
-    assert current_source_hash != approved_source_hash
+    assert current_source_hash == approved_source_hash
 
     observed = _approved_observation()
     assert (
         observed["causal_evidence_policy"]["source_sha256"]["agents/coordinator.py"]
-        == current_source_hash
+        == approved_source_hash
     )
-    with pytest.raises(RuntimeError, match="approved protocol profile"):
-        protocol.validate_runtime_protocol_profile(observed)
+    assert protocol.validate_runtime_protocol_profile(observed) == APPROVED_G4_PROTOCOL_PROFILE
 
 
 def test_runtime_builder_reproduces_explicitly_approved_profile(
-    frozen_g4_v36_source_hashes,
+    frozen_g4_v37_source_hashes,
 ):
     assert _approved_observation() == APPROVED_G4_PROTOCOL_PROFILE
     assert protocol.validate_runtime_protocol_profile(_approved_observation())
 
 
 def test_stage4_approval_timeout_drift_fails_protocol_qualification(
-    monkeypatch, frozen_g4_v36_source_hashes
+    monkeypatch, frozen_g4_v37_source_hashes
 ):
     from agents.approval import approval_gate
 
@@ -462,7 +486,7 @@ def test_metrics_server_image_drift_is_rejected_fail_closed(image):
 
 
 def test_metrics_server_missing_state_cannot_match_required_present_profile(
-    frozen_g4_v36_source_hashes,
+    frozen_g4_v37_source_hashes,
 ):
     observed = build_runtime_protocol_profile(
         selected_model=APPROVED_G4_MODEL,
@@ -475,7 +499,7 @@ def test_metrics_server_missing_state_cannot_match_required_present_profile(
 
 
 def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
-    frozen_g4_v36_source_hashes,
+    frozen_g4_v37_source_hashes,
 ):
     root = __import__("pathlib").Path(__file__).parent / "scratch" / "never-used-profile"
     with patch.object(
@@ -501,6 +525,42 @@ def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
     model_query.assert_called_once_with(APPROVED_G4_MODEL)
     metrics_probe.assert_called_once()
     assert not (root / "artifacts" / "evidence" / "stage4" / ".attempts").exists()
+
+
+def test_coordinator_source_hash_drift_is_rejected_before_reservation(
+    monkeypatch, frozen_g4_v37_source_hashes, tmp_path
+):
+    original_hash = protocol.file_sha256
+    monkeypatch.setattr(
+        protocol,
+        "file_sha256",
+        lambda path: "0" * 64
+        if Path(path).name == "coordinator.py"
+        else original_hash(path),
+    )
+    with patch.object(runner, "_current_main_sha", return_value="test-sha"), patch.object(
+        runner,
+        "_query_ollama_model_identity",
+        return_value={
+            "provider": "ollama-local",
+            "name": APPROVED_G4_MODEL,
+            "digest": APPROVED_G4_MODEL_DIGEST,
+        },
+    ), patch.object(
+        runner,
+        "_probe_metrics_server_contract",
+        return_value=APPROVED_G4_PROTOCOL_PROFILE["metrics_api"],
+    ):
+        with pytest.raises(RuntimeError, match="approved protocol profile"):
+            runner.reserve_experiment_attempt(
+                "EXP-STAGE4-COORDINATOR-DRIFT-NEVER",
+                selected_model=APPROVED_G4_MODEL,
+                main_sha="test-sha",
+                attempt_root=str(tmp_path),
+            )
+    assert not (
+        tmp_path / "artifacts" / "evidence" / "stage4" / ".attempts"
+    ).exists()
 
 
 def test_ollama_identity_exact_match_returns_normalized_digest():
@@ -603,7 +663,7 @@ def test_ollama_identity_transport_failure_fails_closed():
 
 
 def test_observe_protocol_profile_with_corrected_ollama_identity(
-    frozen_g4_v36_source_hashes,
+    frozen_g4_v37_source_hashes,
 ):
     mock_resp = Mock()
     mock_resp.raise_for_status.return_value = None

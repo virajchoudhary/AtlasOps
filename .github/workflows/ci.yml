@@ -110,6 +110,31 @@ jobs:
           python -m pytest tests/test_base_sft_validation.py \
             tests/test_verify_base_sft_validation.py -q
 
+  inference-runtime:
+    name: G4 v3.8 locked inference runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_DATASETS_OFFLINE: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up exact Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.11"
+      - name: Install both immutable locks with hashes
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: \
+            -r requirements/sft-pilot-linux-py312.lock \
+            -r requirements/g4-v38-inference-runtime-v1.lock
+          python -m pip check
+      - name: Qualify imports and bounded server startup without models
+        run: python -B -m scripts.qualify_inference_runtime
+
   frontend:
     name: Frontend contracts
     runs-on: ubuntu-latest

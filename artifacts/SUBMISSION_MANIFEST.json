@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-04T08:56:35.999420+00:00",
+  "generated_at": "2026-10-04T09:50:34.622503+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 425,
+  "asset_count": 426,
   "assets": {
     "AGENTS.md": {
       "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
@@ -49,12 +49,12 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "5b30e8dd4a9dfb6866df9214fac4287c5b37ed6d18f2f058955e51fb323e4210",
-      "size_bytes": 2045
+      "sha256": "d7e828358cdd17333ed2c74b14cc6b7b94e6338e63878240903964c093c0f883",
+      "size_bytes": 2152
     },
     ".github/workflows/ci.yml": {
-      "sha256": "657d0611bc0d0830f5e153bdafe0545367eec2ca1479f5d943a6d4918e87540b",
-      "size_bytes": 5719
+      "sha256": "69a8ed8949c6a2332d2368cf73c7c5b87d808fb676441f65115a672415b340b3",
+      "size_bytes": 6587
     },
     "BENCHMARKS.md": {
       "sha256": "3191bc522a52706baf3624b1c59ff71436c58aaf4482b0b1ce1af2d2251a9688",
@@ -1459,6 +1459,10 @@
     "tests/test_http_retry.py": {
       "sha256": "d02cafae0d281658d1b4bc12932641fbfbff437f8387c0165cce766633537ef9",
       "size_bytes": 12800
+    },
+    "tests/test_inference_runtime.py": {
+      "sha256": "9f919d118c0358202d83bbdfbf2931284836aad3a5244d5cf71f9b3d9b72f058",
+      "size_bytes": 7783
     },
     "tests/test_infra_contract.py": {
       "sha256": "acf912e9f656d248833b1ea4be654e6ed542372d00083bd2e3c772008fd23d8f",

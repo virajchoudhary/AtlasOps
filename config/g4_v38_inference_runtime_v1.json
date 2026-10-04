@@ -1,0 +1,12 @@
+{
+  "version": "g4-v38-inference-runtime-v1",
+  "base_lock_path": "requirements/sft-pilot-linux-py312.lock",
+  "base_lock_sha256": "b649bfa91f1232b9b0fbf247927516a281c8769a6556330d561c7a9bd6992d9b",
+  "overlay_lock_path": "requirements/g4-v38-inference-runtime-v1.lock",
+  "overlay_lock_sha256": "63bb9cdbff576bc1bdd811f1229879ae6e48560d02a7c48ea97b57d24ec6929a",
+  "python_version": "3.12.11",
+  "added_packages": {
+    "click": "8.4.2",
+    "uvicorn": "0.52.1"
+  }
+}

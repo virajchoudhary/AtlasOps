@@ -1013,8 +1013,8 @@
       "size_bytes": 880
     },
     "config/g4_protocol.py": {
-      "sha256": "8eca6e2b2db4daebbf8991a7d9e37633d260fd769b1f344727ee9714f96a965a",
-      "size_bytes": 30653
+      "sha256": "12228a2c64084e24bb2baff5949c32c79f00f12c68487c4325896abe42600e10",
+      "size_bytes": 31552
     },
     "config/runtime.py": {
       "sha256": "4502a5e27d2a0fdd88ae7842347e6c85d717e71de6c9f7710d42951fadbf4090",
@@ -1377,16 +1377,16 @@
       "size_bytes": 12140
     },
     "tests/test_g4_protocol_profile.py": {
-      "sha256": "50b95b6c1c9b900191a97ea369779a5631d038d1d4d21b36f1b0ca7f5927ee49",
-      "size_bytes": 28684
+      "sha256": "2d5b8c8d2a56fde1888cfcdbfa7b98d8b210b5cfa6c951b5cbf6a419e234e072",
+      "size_bytes": 29839
     },
     "tests/test_g4_runtime_context_remediation_loop.py": {
       "sha256": "3e23f0441e3645d1342c55c8cc0eede62a14d05976afb1f56676cc17ec7c90d3",
       "size_bytes": 22261
     },
     "tests/test_g4_v31_transport_and_interruption.py": {
-      "sha256": "98e8eb13f67cce244d69d00421f4eb29ecc0837a4deb8c7669cece64e7900029",
-      "size_bytes": 35256
+      "sha256": "842486a9bf59597ef3f18d0faa768523157ac45a71f396ccc60a1980558871f8",
+      "size_bytes": 35250
     },
     "tests/test_g4_v38_qualification.py": {
       "sha256": "cd3f63a32992cb04ae9d8ef5ef357a106a9c189618f7c9aab54c2f2c34584b84",
@@ -1481,8 +1481,8 @@
       "size_bytes": 26934
     },
     "tests/test_integrated_inference_remote.py": {
-      "sha256": "93dbcd0383094103f23174cf56e708ce2ab0c17cbc39d2114e44edafb8f5ecf3",
-      "size_bytes": 27544
+      "sha256": "fdcc792172e31b7281ec042c44703bf2cc464e5166d427b1baddd5c5cd919fc3",
+      "size_bytes": 29182
     },
     "tests/test_integrated_provider_bridge.py": {
       "sha256": "6a3a163128ae7b7aa2797b83a76dde1bdb25a13f4ab6ea0c1ba035b1159fd605",
@@ -1513,8 +1513,8 @@
       "size_bytes": 2664
     },
     "tests/test_loopback_inference_qualification.py": {
-      "sha256": "60547cb108c5155493627478d77ae592d5ee2e60ba8083cfbd5cfde9a31a4f6e",
-      "size_bytes": 8823
+      "sha256": "9875f75a3a166f2caa8db6f23001f1aaec4240d80eb3bbb45110c821ec74c7eb",
+      "size_bytes": 9875
     },
     "tests/test_release_gate.py": {
       "sha256": "911bb0b14d07deec6925ddac0575703f2c14e1fdba94e85d234b80ad8fc95304",
@@ -1661,8 +1661,8 @@
       "size_bytes": 40407
     },
     "tests/test_stage4_evidence_hardening.py": {
-      "sha256": "e6ea84b65365728549d33a5cc0d92895c2edec937adf6fbc1b3ec46f1fe885e5",
-      "size_bytes": 53797
+      "sha256": "cf55badfffa344f1b5585e01178e942a09008ddc07a630c601dc89a2fd3acf9b",
+      "size_bytes": 53791
     },
     "tests/test_stage4_f1_envelope_contract.py": {
       "sha256": "b1b199f4e043bc5ab9929a082387dae0d2ebde8b115d7a35be71566ebf4edba5",

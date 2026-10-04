@@ -124,32 +124,65 @@ def test_actual_loopback_server_rpc_with_fixture_model_only(tmp_path, monkeypatc
             time.sleep(0.01)
         assert server.started
 
+        async def exchange(client, request):
+            packets = await remote._post_rpc(
+                client,
+                f"http://127.0.0.1:{port}",
+                KEY,
+                request,
+                2,
+                on_transport=observations.append,
+            )
+            assert packets
+
         async def run():
-            async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                trust_env=False, follow_redirects=False
+            ) as client:
                 for request in (
                     {"request_id": 1, "operation": "load"},
-                    {"request_id": 2, "operation": "complete", "arm": "base", "payload": {
-                        "messages": [{"role": "user", "content": "Reply READY."}],
-                    }},
+                    {
+                        "request_id": 2,
+                        "operation": "complete",
+                        "arm": "base",
+                        "payload": {
+                            "messages": [{"role": "user", "content": "Reply READY."}]
+                        },
+                    },
                     {"request_id": 3, "operation": "verify_final"},
                     {"request_id": 4, "operation": "close"},
                 ):
-                    packets = await remote._post_rpc(
-                        client, f"http://127.0.0.1:{port}", KEY, request, 2,
-                        on_transport=observations.append,
-                    )
-                    assert packets
+                    await exchange(client, request)
+            assert not model.gracefully_stopped
+            assert not model.terminated
+            async with httpx.AsyncClient(
+                trust_env=False, follow_redirects=False
+            ) as client:
+                for request in (
+                    {"request_id": 5, "operation": "load"},
+                    {
+                        "request_id": 6,
+                        "operation": "complete",
+                        "arm": "base",
+                        "payload": {
+                            "messages": [{"role": "user", "content": "Reply READY."}]
+                        },
+                    },
+                ):
+                    await exchange(client, request)
+
         asyncio.run(run())
         assert {row["operation"] for row in observations} == {
             "load", "complete", "verify_final", "close",
         }
         assert all(row["http_status"] == 200 for row in observations)
-        assert model.gracefully_stopped
+        assert len([call for call in model.calls if call[0] == "start"]) == 1
     finally:
         server.should_exit = True
         thread.join(timeout=5)
         sock.close()
     assert not thread.is_alive()
+    assert model.gracefully_stopped
 
 
 def test_silent_loopback_timeout_has_parent_transport_observation(tmp_path):

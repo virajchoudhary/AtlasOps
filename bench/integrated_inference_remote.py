@@ -9,6 +9,7 @@ import math
 import os
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Mapping
 from urllib.parse import urlsplit
@@ -25,6 +26,7 @@ INFERENCE_KEY_HEADER = "x-atlasops-inference-key"
 MAX_BRIDGE_BODY_BYTES = integrated.MAX_RPC_MESSAGE_BYTES
 PINNED_V17_MANIFEST_SHA256 = "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440"
 _OPERATIONS = frozenset({"load", "complete", "verify_final", "close"})
+_SAFE_RESPONSE_CONTENT_TYPES = integrated._SAFE_TRANSPORT_CONTENT_TYPES
 _IDENTITY_FIELDS = frozenset(
     {
         "checkpoint_manifest_sha256",
@@ -163,6 +165,35 @@ def _validated_url(value: Any, *, allow_test_http: bool = False) -> str:
         if not allow_test_http or not loopback:
             raise ValueError("Plain HTTP is allowed only for explicit loopback tests")
     return value.rstrip("/")
+
+
+def _safe_response_content_type(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    media_type = value.split(";", 1)[0].strip().casefold()
+    return media_type if media_type in _SAFE_RESPONSE_CONTENT_TYPES else None
+
+
+def _transport_metadata(
+    operation: str,
+    request_id: int,
+    http_status: int | None,
+    content_type: str | None,
+    started: float,
+) -> dict[str, Any]:
+    return {
+        "operation": operation,
+        "request_id": request_id,
+        "http_status": http_status,
+        "content_type": content_type,
+        "elapsed_seconds": round(
+            min(
+                integrated.MAX_PROCESS_TIMEOUT_SECONDS,
+                max(0.0, time.monotonic() - started),
+            ),
+            6,
+        ),
+    }
 
 
 def _bounded_timeout(value: Any, name: str) -> float:
@@ -597,8 +628,13 @@ async def _post_rpc(
     timeout_seconds: float,
     *,
     on_packet: Any = None,
+    on_transport: Any = None,
 ) -> list[dict[str, Any]]:
     raw_request = _json_bytes(request)
+    started = time.monotonic()
+    http_status = None
+    content_type = None
+    packets = None
     try:
         async with asyncio.timeout(timeout_seconds):
             async with client.stream(
@@ -615,6 +651,20 @@ async def _post_rpc(
                     INFERENCE_KEY_HEADER: inference_key,
                 },
             ) as response:
+                http_status = response.status_code
+                content_type = _safe_response_content_type(
+                    response.headers.get("content-type")
+                )
+                if on_transport is not None:
+                    on_transport(
+                        _transport_metadata(
+                            request["operation"],
+                            request["request_id"],
+                            http_status,
+                            content_type,
+                            started,
+                        )
+                    )
                 if response.status_code != 200:
                     category = (
                         "bridge_authentication_failure"
@@ -627,35 +677,52 @@ async def _post_rpc(
                     )
                     raise _RemoteBridgeFailure(category)
                 if request["operation"] == "complete":
-                    if response.headers.get("content-type", "").split(";", 1)[0].strip().casefold() != (
-                        "application/x-ndjson"
-                    ):
+                    if content_type != "application/x-ndjson":
                         raise _RemoteBridgeFailure("bridge_protocol_failure")
+
+                    def forward_encoded(packet: dict[str, Any]) -> None:
+                        if packet["kind"] == "encoded" and on_packet is not None:
+                            on_packet(packet)
+
                     packets = await _read_ndjson_packets(
-                        response, request["request_id"], on_packet=on_packet
+                        response, request["request_id"], on_packet=forward_encoded
                     )
                     _validate_complete_sequence(packets)
-                    return packets
-                if response.headers.get("content-type", "").split(";", 1)[0].strip().casefold() != (
-                    "application/json"
-                ):
+                elif content_type != "application/json":
                     raise _RemoteBridgeFailure("bridge_protocol_failure")
-                chunks = await _read_bounded_response(response)
+                else:
+                    chunks = await _read_bounded_response(response)
+                    payload = json.loads(b"".join(chunks).decode("utf-8"))
+                    packets = _packet_list(
+                        payload, request["operation"], request["request_id"]
+                    )
     except (TimeoutError, httpx.TimeoutException):
         raise _RemoteBridgeFailure(_request_failure_kind(request["operation"])) from None
     except _RemoteBridgeFailure:
         raise
     except httpx.HTTPError:
         raise _RemoteBridgeFailure("bridge_transport_failure") from None
-    try:
-        payload = json.loads(b"".join(chunks).decode("utf-8"))
-        packets = _packet_list(payload, request["operation"], request["request_id"])
-        if on_packet is not None:
-            for packet in packets:
-                on_packet(packet)
-        return packets
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
         raise _RemoteBridgeFailure("bridge_protocol_failure") from None
+    finally:
+        if on_transport is not None:
+            on_transport(
+                _transport_metadata(
+                    request["operation"],
+                    request["request_id"],
+                    http_status,
+                    content_type,
+                    started,
+                )
+            )
+    if packets is None:
+        raise _RemoteBridgeFailure("bridge_protocol_failure")
+    if on_packet is not None:
+        for packet in packets:
+            if request["operation"] == "complete" and packet["kind"] == "encoded":
+                continue
+            on_packet(packet)
+    return packets
 
 
 class _RemoteBridgeFailure(Exception):
@@ -740,6 +807,7 @@ def _read_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "rpc_timeout_seconds",
         "load_timeout_seconds",
         "shutdown_timeout_seconds",
+        "allow_loopback_http",
     }
     if not isinstance(config, Mapping) or set(config) != expected:
         raise ValueError("Remote inference worker config contains unsupported fields")
@@ -751,8 +819,20 @@ def _read_config(config: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("Remote inference worker requires the pinned v17 adapter manifest")
     if not isinstance(base_pin, str) or not _SHA256_RE.fullmatch(base_pin):
         raise ValueError("A lowercase base inventory SHA-256 pin is required")
+    allow_loopback_http = config["allow_loopback_http"]
+    if not isinstance(allow_loopback_http, bool):
+        raise ValueError("Loopback HTTP permission must be explicit")
+    url = _validated_url(config["url"], allow_test_http=allow_loopback_http)
+    if allow_loopback_http:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname != "127.0.0.1"
+            or parsed.path not in {"", "/"}
+        ):
+            raise ValueError("Plain HTTP is allowed only for the pinned loopback host")
     return {
-        "url": _validated_url(config["url"]),
+        "url": url,
         "inference_key": _validate_inference_key(config["inference_key"]),
         "checkpoint_manifest_sha256": checkpoint_pin,
         "base_snapshot_inventory_sha256": base_pin,
@@ -765,6 +845,7 @@ def _read_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "shutdown_timeout_seconds": _bounded_timeout(
             config["shutdown_timeout_seconds"], "shutdown_timeout_seconds"
         ),
+        "allow_loopback_http": allow_loopback_http,
     }
 
 
@@ -826,6 +907,16 @@ async def _remote_worker_loop(connection: Any, config: dict[str, Any]) -> None:
                     _send(connection, packet)
                     forwarded.append(packet)
 
+                def observe(transport: dict[str, Any]) -> None:
+                    _send(
+                        connection,
+                        {
+                            "request_id": request_id,
+                            "kind": "transport_observation",
+                            "transport": transport,
+                        },
+                    )
+
                 await _post_rpc(
                     client,
                     config["url"],
@@ -833,6 +924,7 @@ async def _remote_worker_loop(connection: Any, config: dict[str, Any]) -> None:
                     request,
                     deadline,
                     on_packet=forward,
+                    on_transport=observe,
                 )
             except _RemoteBridgeFailure as exc:
                 if not any(packet.get("kind") == "failure" for packet in forwarded):
@@ -1045,6 +1137,49 @@ def create_remote_engine(
             "rpc_timeout_seconds": rpc_timeout_seconds,
             "load_timeout_seconds": load_timeout_seconds,
             "shutdown_timeout_seconds": shutdown_timeout_seconds,
+            "allow_loopback_http": False,
+        }
+    )
+    return PairedCompletionEngine(
+        checkpoint=checkpoint,
+        checkpoint_manifest_sha256=checkpoint_manifest_sha256,
+        base_snapshot=base_snapshot,
+        base_snapshot_inventory_sha256=base_snapshot_inventory_sha256,
+        journal_path=journal_path,
+        rpc_timeout_seconds=config["rpc_timeout_seconds"],
+        load_timeout_seconds=config["load_timeout_seconds"],
+        shutdown_timeout_seconds=config["shutdown_timeout_seconds"],
+        process_worker_target=remote_inference_worker,
+        process_worker_config=config,
+    )
+
+
+def create_loopback_engine(
+    *,
+    checkpoint: str,
+    checkpoint_manifest_sha256: str,
+    base_snapshot: str,
+    base_snapshot_inventory_sha256: str,
+    journal_path: str,
+    inference_key: str,
+    port: int = 18765,
+    rpc_timeout_seconds: float = integrated.DEFAULT_RPC_TIMEOUT_SECONDS,
+    load_timeout_seconds: float = integrated.DEFAULT_LOAD_TIMEOUT_SECONDS,
+    shutdown_timeout_seconds: float = integrated.PROCESS_STOP_TIMEOUT_SECONDS,
+) -> PairedCompletionEngine:
+    """Create the same authenticated worker bound only to server-local loopback."""
+    if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+        raise ValueError("Loopback inference port must be between 1024 and 65535")
+    config = _read_config(
+        {
+            "url": f"http://127.0.0.1:{port}",
+            "inference_key": inference_key,
+            "checkpoint_manifest_sha256": checkpoint_manifest_sha256,
+            "base_snapshot_inventory_sha256": base_snapshot_inventory_sha256,
+            "rpc_timeout_seconds": rpc_timeout_seconds,
+            "load_timeout_seconds": load_timeout_seconds,
+            "shutdown_timeout_seconds": shutdown_timeout_seconds,
+            "allow_loopback_http": True,
         }
     )
     return PairedCompletionEngine(

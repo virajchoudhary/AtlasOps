@@ -75,6 +75,7 @@ def _worker_config(url: str = "https://inference.example") -> dict[str, Any]:
         "rpc_timeout_seconds": 600.0,
         "load_timeout_seconds": 600.0,
         "shutdown_timeout_seconds": 1.0,
+        "allow_loopback_http": False,
     }
 
 
@@ -167,7 +168,49 @@ def test_remote_worker_forwards_bounded_rpc_and_preserves_raw_packets(monkeypatc
         "arm": "base",
         "payload": REQUEST,
     }
-    assert pipe.responses == [
+    assert [response["kind"] for response in pipe.responses] == [
+        "transport_observation",
+        "transport_observation",
+        "loaded",
+        "transport_observation",
+        "encoded",
+        "transport_observation",
+        "completed",
+        "transport_observation",
+        "transport_observation",
+        "verified",
+        "transport_observation",
+        "transport_observation",
+        "closed",
+    ]
+    observations = [
+        response["transport"]
+        for response in pipe.responses
+        if response["kind"] == "transport_observation"
+    ]
+    assert [
+        (item["operation"], item["request_id"], item["http_status"], item["content_type"])
+        for item in observations
+    ] == [
+        ("load", 1, 200, "application/json"),
+        ("load", 1, 200, "application/json"),
+        ("complete", 2, 200, "application/x-ndjson"),
+        ("complete", 2, 200, "application/x-ndjson"),
+        ("verify_final", 3, 200, "application/json"),
+        ("verify_final", 3, 200, "application/json"),
+        ("close", 4, 200, "application/json"),
+        ("close", 4, 200, "application/json"),
+    ]
+    assert all(
+        isinstance(item["elapsed_seconds"], float)
+        and 0 <= item["elapsed_seconds"] <= 600
+        for item in observations
+    )
+    assert [
+        response
+        for response in pipe.responses
+        if response["kind"] != "transport_observation"
+    ] == [
         {"request_id": 1, "kind": "loaded", "identity": IDENTITY_WITH_RUNTIME},
         {"request_id": 2, "kind": "encoded", "prompt_token_ids": [11, 12]},
         {
@@ -228,13 +271,19 @@ def test_remote_worker_preserves_encoded_prompt_before_timeout_without_retry(mon
     remote.remote_inference_worker(pipe, _worker_config())
 
     assert len(calls) == 1
-    assert len(pipe.responses) == 2
-    assert pipe.responses[0] == {
+    assert len(pipe.responses) == 4
+    assert pipe.responses[0]["kind"] == "transport_observation"
+    assert pipe.responses[0]["transport"]["http_status"] == 200
+    assert pipe.responses[1] == {
         "request_id": 7,
         "kind": "encoded",
         "prompt_token_ids": [31, 32],
     }
-    assert pipe.responses[1] == {
+    assert pipe.responses[2]["kind"] == "transport_observation"
+    assert pipe.responses[2]["transport"]["operation"] == "complete"
+    assert pipe.responses[2]["transport"]["request_id"] == 7
+    assert pipe.responses[2]["transport"]["http_status"] == 200
+    assert pipe.responses[3] == {
         "request_id": 7,
         "kind": "failure",
         "failure_category": "rpc_timeout",
@@ -268,7 +317,88 @@ def test_remote_worker_rejects_redirect_without_following_it(monkeypatch):
 
     assert len(calls) == 1
     assert calls[0].url.host == "inference.example"
-    assert pipe.responses[0]["failure_category"] == "bridge_redirect_rejected"
+    assert [item["kind"] for item in pipe.responses] == [
+        "transport_observation",
+        "transport_observation",
+        "failure",
+    ]
+    assert pipe.responses[0]["transport"]["http_status"] == 307
+    assert pipe.responses[1]["transport"]["http_status"] == 307
+    assert pipe.responses[2]["failure_category"] == "bridge_redirect_rejected"
+
+
+@pytest.mark.parametrize(
+    ("operation", "status", "category"),
+    [
+        ("load", 401, "bridge_authentication_failure"),
+        ("complete", 524, "bridge_http_failure"),
+        ("verify_final", 500, "bridge_http_failure"),
+        ("close", 307, "bridge_redirect_rejected"),
+    ],
+)
+def test_non_200_transport_observation_is_safe_and_precedes_failure(
+    monkeypatch, operation, status, category
+):
+    body_secret = "body-secret-never-journaled"
+    header_secret = "header-secret-never-journaled"
+    location_secret = "tunnel-secret.never-journaled"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        content_type = (
+            f"{header_secret}; token={location_secret}"
+            if operation == "verify_final"
+            else f"application/json; api_key={header_secret}"
+        )
+        return httpx.Response(
+            status,
+            content=json.dumps({"detail": body_secret}).encode("utf-8"),
+            headers={
+                "content-type": content_type,
+                "x-api-key": header_secret,
+                "set-cookie": f"session={header_secret}",
+                "location": f"https://{location_secret}/rpc",
+            },
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        remote.httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    )
+    request = {"request_id": 20, "operation": operation}
+    if operation == "complete":
+        request.update({"arm": "base", "payload": REQUEST})
+    pipe = Pipe([request])
+
+    remote.remote_inference_worker(pipe, _worker_config())
+
+    assert [item["kind"] for item in pipe.responses] == [
+        "transport_observation",
+        "transport_observation",
+        "failure",
+    ]
+    observation = pipe.responses[0]
+    assert observation["request_id"] == 20
+    safe_transport = observation["transport"]
+    for observation in pipe.responses[:2]:
+        safe_transport = observation["transport"]
+        assert {
+            key: safe_transport[key]
+            for key in ("operation", "request_id", "http_status", "content_type")
+        } == {
+            "operation": operation,
+            "request_id": 20,
+            "http_status": status,
+            "content_type": None if operation == "verify_final" else "application/json",
+        }
+        assert 0 <= safe_transport["elapsed_seconds"] <= 600
+    assert pipe.responses[2]["failure_category"] == category
+    serialized = json.dumps(pipe.responses)
+    for secret in (KEY, body_secret, header_secret, location_secret, "inference.example"):
+        assert secret not in serialized
 
 
 def test_remote_worker_rejects_local_operational_secret_before_http(monkeypatch):
@@ -345,7 +475,15 @@ def test_proxy_rejects_server_identity_that_does_not_match_pinned_manifest(monke
 
     remote.remote_inference_worker(pipe, _worker_config())
 
-    assert pipe.responses == [
+    assert [item["kind"] for item in pipe.responses] == [
+        "transport_observation",
+        "transport_observation",
+        "failure",
+    ]
+    assert pipe.responses[0]["transport"]["operation"] == "load"
+    assert pipe.responses[0]["transport"]["request_id"] == 5
+    assert pipe.responses[0]["transport"]["http_status"] == 200
+    assert pipe.responses[2:] == [
         {
             "request_id": 5,
             "kind": "failure",
@@ -416,9 +554,46 @@ def test_create_remote_engine_keeps_model_paths_out_of_worker_transport_config(t
         "rpc_timeout_seconds",
         "load_timeout_seconds",
         "shutdown_timeout_seconds",
+        "allow_loopback_http",
     }
     assert str(checkpoint) not in json.dumps(engine._process_worker_config)
     assert str(base) not in json.dumps(engine._process_worker_config)
+
+
+def test_loopback_engine_is_hardwired_to_ipv4_loopback_and_same_deadlines(tmp_path):
+    checkpoint = tmp_path / "checkpoint"
+    base = tmp_path / "base"
+    checkpoint.mkdir()
+    base.mkdir()
+    engine = remote.create_loopback_engine(
+        checkpoint=str(checkpoint),
+        checkpoint_manifest_sha256=MANIFEST_PIN,
+        base_snapshot=str(base),
+        base_snapshot_inventory_sha256=BASE_PIN,
+        journal_path=str(tmp_path / "inference.jsonl"),
+        inference_key=KEY,
+    )
+
+    assert engine._process_worker_target is remote.remote_inference_worker
+    assert engine._process_worker_config["url"] == "http://127.0.0.1:18765"
+    assert engine._process_worker_config["allow_loopback_http"] is True
+    assert engine.rpc_timeout_seconds == 600
+    assert engine.load_timeout_seconds == 600
+    for unsafe_url in ("http://localhost:18765", "http://192.0.2.1:18765"):
+        with pytest.raises(ValueError):
+            remote._read_config(
+                {**engine._process_worker_config, "url": unsafe_url}
+            )
+    with pytest.raises(ValueError, match="port"):
+        remote.create_loopback_engine(
+            checkpoint=str(checkpoint),
+            checkpoint_manifest_sha256=MANIFEST_PIN,
+            base_snapshot=str(base),
+            base_snapshot_inventory_sha256=BASE_PIN,
+            journal_path=str(tmp_path / "other.jsonl"),
+            inference_key=KEY,
+            port=True,
+        )
 
 
 class FakeServerEngine:

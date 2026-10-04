@@ -698,7 +698,7 @@ def test_source_change_before_reservation_stops_without_marker_or_injection(
     monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
     source_checks = []
 
-    def changed_source(expected_sha=None):
+    def changed_source(expected_sha=None, **_kwargs):
         source_checks.append(expected_sha)
         if len(source_checks) == 1:
             return MAIN_SHA
@@ -738,7 +738,7 @@ def test_source_change_before_t0_releases_reservation_without_apply(
     monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", MAIN_SHA)
     source_checks = []
 
-    def changed_source(expected_sha=None):
+    def changed_source(expected_sha=None, **_kwargs):
         source_checks.append(expected_sha)
         if len(source_checks) <= 3:
             return MAIN_SHA
@@ -762,8 +762,10 @@ def test_source_change_before_t0_releases_reservation_without_apply(
             "experiment_id": experiment_id,
             "state": runner.ATTEMPT_STATE_RESERVED,
             "reservation_token": "synthetic-reservation-token",
-            "protocol_profile": {"model": {"name": selected_model}},
-            "protocol_fingerprint": "synthetic-protocol-fingerprint",
+            "protocol_profile": runner.APPROVED_G4_PROTOCOL_PROFILE,
+            "protocol_fingerprint": runner.protocol_fingerprint(
+                runner.APPROVED_G4_PROTOCOL_PROFILE
+            ),
             "main_sha": main_sha,
         }
         marker_path = Path(runner._attempt_marker_path(experiment_id, attempt_root))

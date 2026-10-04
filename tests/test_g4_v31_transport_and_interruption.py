@@ -21,7 +21,7 @@ from config.g4_protocol import (
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V32_PROTOCOL_PROFILE,
     APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256,
+    APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256,
     protocol_fingerprint,
 )
 import scripts.run_stage4_golden_incident as runner
@@ -36,8 +36,8 @@ def isolated_protocol_runtime(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256:
-            return APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256:
+            return APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     # Reservation tests model the declared diagnostics profile, not the source tree.
@@ -604,6 +604,7 @@ def _install_mocked_host_runner_boundaries(
     run_kubectl,
 ) -> dict[str, object]:
     main_sha = "a" * 40
+    monkeypatch.setenv("STAGE4_APPROVED_MAIN_SHA", main_sha)
     port_forward = object()
     stopped_port_forwards = []
 
@@ -617,7 +618,7 @@ def _install_mocked_host_runner_boundaries(
     monkeypatch.setattr(runner, "load_stage4_secrets", lambda: {"ATLASOPS_API_KEY": "synthetic"})
     monkeypatch.setattr(runner, "stage4_approval_server", mocked_approval_server)
     monkeypatch.setattr(
-        runner, "_current_main_sha", lambda expected_sha=None: expected_sha or main_sha
+        runner, "_current_main_sha", lambda expected_sha=None, **_kwargs: expected_sha or main_sha
     )
     monkeypatch.setattr(runner, "_configure_stage4_runtime", lambda: None)
     monkeypatch.setattr(runner, "_start_port_forwards", lambda *_args, **_kwargs: [port_forward])
@@ -850,4 +851,7 @@ def test_host_runner_transition_interruption_preserves_pre_t0_truth(
         assert not prefault_record["reservation_released"]
     else:
         assert not attempt_path.exists()
-        assert not prefault_path.exists()
+        prefault_record = json.loads(prefault_path.read_text(encoding="utf-8"))
+        assert prefault_record["attempt_state"] == "RELEASED_PRE_FAULT"
+        assert prefault_record["reservation_released"] is True
+        assert prefault_record["t0_crossed"] is False

@@ -48,7 +48,8 @@ from config.g4_protocol import (
     APPROVED_G4_V37_PROTOCOL_PROFILE,
     APPROVED_G4_V38_DIAGNOSTICS_PROFILE,
     APPROVED_G4_V38_LIFECYCLE_PROFILE,
-    APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256,
+    APPROVED_G4_V38_SOURCE_GUARD_PROFILE,
+    APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256,
     APPROVED_G4_V38_MODEL,
     APPROVED_G4_V38_PROTOCOL_PROFILE,
     APPROVED_TOOL_CONTRACT_SHA256,
@@ -64,6 +65,8 @@ from config.g4_protocol import (
     G4_V38_DIAGNOSTICS_PROTOCOL_MARKER,
     G4_V38_LIFECYCLE_PROFILE_VERSION,
     G4_V38_LIFECYCLE_PROTOCOL_MARKER,
+    G4_V38_SOURCE_GUARD_PROFILE_VERSION,
+    G4_V38_SOURCE_GUARD_PROTOCOL_MARKER,
     G4_V38_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
@@ -74,13 +77,13 @@ from config.g4_protocol import (
 )
 
 
-def test_active_v38_lifecycle_profile_pins_model_approval_causal_and_settling_contract():
+def test_active_v38_source_guard_profile_pins_model_approval_causal_and_settling_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == APPROVED_G4_V38_MODEL
     assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == (
-        G4_V38_LIFECYCLE_PROTOCOL_MARKER
+        G4_V38_SOURCE_GUARD_PROTOCOL_MARKER
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["profile_version"] == (
-        G4_V38_LIFECYCLE_PROFILE_VERSION
+        G4_V38_SOURCE_GUARD_PROFILE_VERSION
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
@@ -98,12 +101,12 @@ def test_active_v38_lifecycle_profile_pins_model_approval_causal_and_settling_co
         APPROVED_G4_V35_AGENT_PROMPT_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
-        APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256
+        APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["settling_deadline_policy"] == (
         APPROVED_G4_V36_SETTLING_DEADLINE
     )
-    assert APPROVED_G4_V38_LIFECYCLE_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
+    assert APPROVED_G4_V38_SOURCE_GUARD_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
     assert protocol_fingerprint(APPROVED_G4_V37_PROTOCOL_PROFILE) == (
         "ea72468a1237baf4c423552deb0911cd58ed3ba217b8074a36c1a94498223414"
     )
@@ -170,6 +173,25 @@ def test_lifecycle_revision_changes_only_version_labels_and_bridge_source_pin():
     assert revised == original
     assert original["protocol_marker"] == G4_V38_DIAGNOSTICS_PROTOCOL_MARKER
     assert original["profile_version"] == G4_V38_DIAGNOSTICS_PROFILE_VERSION
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(original)
+
+
+def test_source_guard_revision_preserves_lifecycle_profile_and_all_scientific_contracts():
+    original = APPROVED_G4_V38_LIFECYCLE_PROFILE
+    assert protocol_fingerprint(original) == (
+        "720c6d4592dfcd2be1cd1449347196d60f0a73ea0d287eb06136ea695ee67645"
+    )
+    revised = copy.deepcopy(APPROVED_G4_V38_SOURCE_GUARD_PROFILE)
+    revised["protocol_marker"] = original["protocol_marker"]
+    revised["profile_version"] = original["profile_version"]
+    revised["diagnosis_prompt"]["version"] = original["diagnosis_prompt"]["version"]
+    revised["causal_evidence_policy"]["source_sha256"]["scripts/run_stage4_golden_incident.py"] = (
+        original["causal_evidence_policy"]["source_sha256"]["scripts/run_stage4_golden_incident.py"]
+    )
+    assert revised == original
+    assert original["protocol_marker"] == G4_V38_LIFECYCLE_PROTOCOL_MARKER
+    assert original["profile_version"] == G4_V38_LIFECYCLE_PROFILE_VERSION
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         protocol.validate_runtime_protocol_profile(original)
 
@@ -477,8 +499,8 @@ def frozen_g4_v38_diagnostics_source_hashes(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256:
-            return APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256:
+            return APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)

@@ -16,12 +16,12 @@ import agents.coordinator as coordinator
 from agents._http_retry import post_with_retry
 import config.g4_protocol as protocol
 from config.g4_protocol import (
+    APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
-    APPROVED_G4_V31_MODEL,
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V32_PROTOCOL_PROFILE,
     APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
     protocol_fingerprint,
 )
 import scripts.run_stage4_golden_incident as runner
@@ -36,20 +36,16 @@ def isolated_protocol_runtime(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V38_CAUSAL_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
-    # Reservation tests model the declared v3.7 profile, not the current source tree.
+    # Reservation tests model the declared v3.8 profile, not the current source tree.
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,
-        "_query_ollama_model_identity",
-        lambda selected_model: {
-            "provider": "ollama-local",
-            "name": selected_model,
-            "digest": APPROVED_G4_PROTOCOL_PROFILE["model"]["digest"],
-        },
+        "_QUALIFIED_MODEL_IDENTITY",
+        dict(APPROVED_G4_PROTOCOL_PROFILE["model"]),
     )
     monkeypatch.setattr(
         runner,
@@ -561,7 +557,7 @@ def test_pre_t0_exception_releases_reservation(tmp_path):
     experiment_id = "EXP-STAGE4-PRE-T0"
     reservation = runner.reserve_experiment_attempt(
         experiment_id,
-        selected_model=APPROVED_G4_V31_MODEL,
+        selected_model=APPROVED_G4_MODEL,
         main_sha="test-sha",
         attempt_root=str(tmp_path),
     )
@@ -714,7 +710,7 @@ def test_host_runner_records_post_t0_baseexception_and_reraises(
     original_public_base = runner.os.environ.get("ATLASOPS_PUBLIC_BASE_URL")
 
     with pytest.raises(interruption_type) as raised:
-        asyncio.run(runner.main())
+        asyncio.run(runner._main_with_qualified_inference())
 
     assert raised.value is interruption
     assert boundaries["stopped_port_forwards"] == [[boundaries["port_forward"]]]
@@ -782,7 +778,7 @@ def test_host_runner_releases_reservation_on_pre_t0_baseexception(
     attempt_path = boundaries["evidence_dir"] / ".attempts" / f"{experiment_id}.attempt.json"
 
     with pytest.raises(interruption_type) as raised:
-        asyncio.run(runner.main())
+        asyncio.run(runner._main_with_qualified_inference())
 
     assert raised.value is interruption
     assert boundaries["stopped_port_forwards"] == [[boundaries["port_forward"]]]
@@ -835,7 +831,7 @@ def test_host_runner_transition_interruption_preserves_pre_t0_truth(
     monkeypatch.setattr(runner, "_write_json_atomic", interrupted_transition_write)
 
     with pytest.raises(interruption_type) as raised:
-        asyncio.run(runner.main())
+        asyncio.run(runner._main_with_qualified_inference())
 
     assert raised.value is interruption
     assert not any(command[0] == "apply" for command in commands)

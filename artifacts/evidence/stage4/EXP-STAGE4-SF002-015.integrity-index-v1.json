@@ -1,0 +1,34 @@
+{
+  "schema_version": "atlasops-prospective-integrity-index-v1",
+  "experiment_id": "EXP-STAGE4-SF002-015",
+  "source_sha": "1df1271f07ffc17ed1a862b7cb12d1a42d24f3b2",
+  "disposition": "INCONCLUSIVE_INFERENCE_TRANSPORT_TIMEOUT",
+  "scoring_allowed": false,
+  "retry_allowed": false,
+  "original_evidence_rewritten": false,
+  "evidence_location": "external preserved outputs/g4-attempt-015-evidence bundle; not bundled in this source revision",
+  "original_interruption_sha256": "c994b6798e317f1393bb0628c13060076400d6ca0e9dbb08809a91ff0a15760a",
+  "hash_semantics": "original interruption uses LF-normalized SHA-256; archived inventory uses raw-byte SHA-256",
+  "corrected_references": {
+    "attempt_json": {
+      "path": "EXP-STAGE4-SF002-015.attempt.json",
+      "original_recorded_sha256": "112bbed4f1690a5c0105ea4c638637d6a94b5462672fded4b1d6bd7ee3c4efef",
+      "preserved_file_lf_sha256": "112bbed4f1690a5c0105ea4c638637d6a94b5462672fded4b1d6bd7ee3c4efef",
+      "preserved_file_raw_sha256": "df8f684129f58dc0d1422271ada676396b45c620080f78df838df04b75db5da4",
+      "original_link_verified": true,
+      "size_bytes": 4882
+    },
+    "leftover_chaos_yaml": {
+      "path": "EXP-STAGE4-SF002-015.leftover-chaos.yaml",
+      "original_recorded_sha256": "7ba1c83a83666564c87689274fe00c8265e43cc878f734201b654f1391b0a881",
+      "preserved_file_lf_sha256": "7ba1c83a83666564c87689274fe00c8265e43cc878f734201b654f1391b0a881",
+      "preserved_file_raw_sha256": "d10030af4347db56a85c194bb60fc422b2e4dfc6730def8052efb475addb550a",
+      "original_link_verified": true,
+      "size_bytes": 1608
+    }
+  },
+  "cause_of_reported_mismatch": "raw CRLF bytes compared against LF-normalized digest; original links verify under their declared semantics",
+  "resolution": null,
+  "reward": null,
+  "time_to_resolve_s": null
+}

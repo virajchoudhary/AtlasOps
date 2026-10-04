@@ -175,9 +175,16 @@ APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256 = {
     "scripts/qualify_integrated_inference.py": "2953facbc97e5043b6e627f56c2343f50bef430145267f76acc948aebe33bbb5",
 }
 
+G4_V38_LIFECYCLE_PROTOCOL_MARKER = "G4-V3.8-BRIDGE-CLIENT-LIFECYCLE-V1"
+G4_V38_LIFECYCLE_PROFILE_VERSION = "g4-recovery-profile-v3.8-client-lifecycle-v1"
+APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256 = {
+    **APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256,
+    "bench/integrated_inference_remote.py": "f5cab645a0f4e1da2c0d5f4c4a48e940bb84f4b26f6c8016876d323670b58118",
+}
+
 # Active prospective binding; scientific and historical declarations stay fixed.
-G4_PROTOCOL_MARKER = G4_V38_DIAGNOSTICS_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V38_DIAGNOSTICS_PROFILE_VERSION
+G4_PROTOCOL_MARKER = G4_V38_LIFECYCLE_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V38_LIFECYCLE_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V38_MODEL["name"]
 # Retained only for callers inspecting the historical Ollama identity.
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
@@ -271,7 +278,7 @@ def causal_evidence_policy_profile() -> dict[str, Any]:
         **APPROVED_G4_V35_CAUSAL_POLICY,
         "source_sha256": {
             path: file_sha256(REPO_ROOT / path)
-            for path in APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256
+            for path in APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256
         },
     }
 
@@ -652,7 +659,21 @@ APPROVED_G4_V38_DIAGNOSTICS_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V38_DIAGNOSTICS_PROFILE
+APPROVED_G4_V38_LIFECYCLE_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V38_DIAGNOSTICS_PROFILE,
+    "protocol_marker": G4_V38_LIFECYCLE_PROTOCOL_MARKER,
+    "profile_version": G4_V38_LIFECYCLE_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V38_DIAGNOSTICS_PROFILE["diagnosis_prompt"],
+        "version": G4_V38_LIFECYCLE_PROFILE_VERSION,
+    },
+    "causal_evidence_policy": {
+        **APPROVED_G4_V38_DIAGNOSTICS_PROFILE["causal_evidence_policy"],
+        "source_sha256": APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256,
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V38_LIFECYCLE_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

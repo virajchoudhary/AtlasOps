@@ -19,7 +19,7 @@ from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
     APPROVED_G4_V31_MODEL,
-    APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256,
+    APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256,
     REQUIRED_METRICS_SERVER_ARGS,
     protocol_fingerprint,
 )
@@ -92,8 +92,8 @@ def isolated_protocol_runtime(monkeypatch, tmp_path):
             relative_path = pathlib.Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256:
-            return APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256:
+            return APPROVED_G4_V38_LIFECYCLE_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     # These lifecycle tests model approved diagnostics identity; source drift is tested separately.

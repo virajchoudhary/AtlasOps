@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import logging
 import math
 import os
 import re
@@ -568,12 +569,12 @@ async def _handle_server_rpc(
         if operation == "close":
             if engine._poisoned:
                 stopped = await engine._terminate_worker_uncancellable()
-            else:
-                stopped = await engine._graceful_stop_worker()
-            if not stopped:
-                category = await _poison_server_engine(engine, "worker_kill_failure")
-                return [_failure_packet(request_id, category)]
-            engine._closed = True
+                if not stopped:
+                    category = await _poison_server_engine(
+                        engine, "worker_kill_failure"
+                    )
+                    return [_failure_packet(request_id, category)]
+                engine._closed = True
             return [{"request_id": request_id, "kind": "closed"}]
 
         return [_failure_packet(request_id, "worker_protocol_failure")]
@@ -941,6 +942,8 @@ async def _remote_worker_loop(connection: Any, config: dict[str, Any]) -> None:
 
 def remote_inference_worker(connection: Any, config: dict[str, Any]) -> None:
     """Forward bounded local worker RPC to one authenticated inference bridge."""
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     try:
         validated = _read_config(config)
         asyncio.run(_remote_worker_loop(connection, validated))

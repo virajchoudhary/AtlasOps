@@ -224,6 +224,28 @@ def test_remote_worker_forwards_bounded_rpc_and_preserves_raw_packets(monkeypatc
     ]
 
 
+def test_remote_worker_suppresses_http_client_info_logs(monkeypatch, caplog):
+    import logging
+
+    loggers = [logging.getLogger("httpx"), logging.getLogger("httpcore")]
+    for logger in loggers:
+        monkeypatch.setattr(logger, "level", logging.INFO)
+    caplog.set_level(logging.INFO)
+
+    async def log_request_url(connection, config):
+        logging.getLogger("httpx").info("HTTP Request: POST https://secret-inference.example/rpc")
+        logging.getLogger("httpcore").info("connect_tcp.started host=secret-inference.example")
+
+    monkeypatch.setattr(remote, "_remote_worker_loop", log_request_url)
+    pipe = Pipe([])
+
+    remote.remote_inference_worker(pipe, _worker_config())
+
+    assert pipe.closed
+    assert "secret-inference.example" not in caplog.text
+    assert all(logger.level == logging.WARNING for logger in loggers)
+
+
 def test_remote_worker_preserves_encoded_prompt_before_timeout_without_retry(monkeypatch):
     calls = []
 
@@ -607,6 +629,7 @@ class FakeServerEngine:
         self.base_snapshot_inventory_sha256 = BASE_PIN
         self.load_timeout_seconds = 2.0
         self.rpc_timeout_seconds = 2.0
+        self.shutdown_timeout_seconds = 1.0
         self._poisoned = False
         self._poison_reason = None
         self._worker_loaded = False
@@ -757,6 +780,16 @@ def test_server_timeout_preserves_partial_raw_output_and_poison_cleans_worker(mo
             headers={remote.INFERENCE_KEY_HEADER: KEY},
             json=_rpc_body("complete", request_id=3, arm="sft", payload=REQUEST),
         )
+        close = client.post(
+            "/rpc",
+            headers={remote.INFERENCE_KEY_HEADER: KEY},
+            json=_rpc_body("close", request_id=4),
+        )
+        after_close = client.post(
+            "/rpc",
+            headers={remote.INFERENCE_KEY_HEADER: KEY},
+            json=_rpc_body("load", request_id=5),
+        )
 
     assert [
         json.loads(line)
@@ -773,6 +806,17 @@ def test_server_timeout_preserves_partial_raw_output_and_poison_cleans_worker(mo
     assert engine._poisoned
     assert engine._poison_reason == "rpc_timeout"
     assert engine.terminated
+    assert close.json()["packets"] == [{"request_id": 4, "kind": "closed"}]
+    assert after_close.json()["packets"] == [
+        {
+            "request_id": 5,
+            "kind": "failure",
+            "failure_category": "rpc_timeout",
+            "generated_token_ids": None,
+            "raw_model_response": None,
+        }
+    ]
+    assert len([call for call in engine.calls if call[0] == "start"]) == 1
 
 
 def test_server_rejects_non_pinned_manifest_or_identity():

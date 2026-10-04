@@ -116,7 +116,34 @@ async def main() -> None:
         record = await qualify_engine(engine)
         print(json.dumps(record, sort_keys=True))
     finally:
-        await engine.close()
+        try:
+            await engine.close()
+        finally:
+            preserve_final_transport_reference(engine)
+
+
+def preserve_final_transport_reference(engine: PairedCompletionEngine) -> None:
+    """Link the final journal separately; never rewrite the qualification prefix."""
+    journal = engine.journal_path
+    if journal is None or not journal.is_file():
+        return
+    raw = journal.read_bytes()
+    reference = {
+        "schema_version": "atlasops-transport-final-reference-v1",
+        "journal": {
+            "path": str(journal),
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw),
+        },
+        "proxy_cleanup_confirmed": engine._closed,
+        "incident_attempt_reserved": False,
+        "qualification_establishes_incident_resolution": False,
+    }
+    with journal.with_suffix(".transport-final.json").open("x", encoding="utf-8") as stream:
+        json.dump(reference, stream, sort_keys=True, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 if __name__ == "__main__":

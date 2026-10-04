@@ -32,6 +32,16 @@ PROCESS_STOP_TIMEOUT_SECONDS = 1.0
 STARTUP_CLEANUP_GRACE_SECONDS = 1.0
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
 MAX_RPC_MESSAGE_BYTES = 5 * 1024 * 1024
+_TRANSPORT_OPERATIONS = frozenset({"load", "complete", "verify_final", "close"})
+_SAFE_TRANSPORT_CONTENT_TYPES = frozenset(
+    {
+        "application/json",
+        "application/problem+json",
+        "application/x-ndjson",
+        "text/html",
+        "text/plain",
+    }
+)
 EFFECTIVE_GENERATION_CONFIG = {
     key: validation.EVALUATION_CONFIG[key]
     for key in ("seed", "temperature", "top_p", "max_new_tokens", "do_sample")
@@ -258,6 +268,59 @@ class _ProcessRPCFailure(Exception):
         self.category = category
         self.generated_token_ids = generated_token_ids
         self.raw_model_response = raw_model_response
+
+
+def _validated_transport_observation(
+    message: Any, operation: str, request_id: int
+) -> dict[str, Any]:
+    if (
+        not isinstance(message, dict)
+        or set(message) != {"request_id", "kind", "transport"}
+        or type(message.get("request_id")) is not int
+        or message.get("request_id") != request_id
+        or message.get("kind") != "transport_observation"
+    ):
+        raise _ProcessRPCFailure("worker_protocol_failure")
+    transport = message["transport"]
+    if (
+        not isinstance(transport, dict)
+        or set(transport)
+        != {
+            "operation",
+            "request_id",
+            "http_status",
+            "content_type",
+            "elapsed_seconds",
+        }
+        or transport.get("operation") != operation
+        or operation not in _TRANSPORT_OPERATIONS
+        or type(transport.get("request_id")) is not int
+        or transport.get("request_id") != request_id
+    ):
+        raise _ProcessRPCFailure("worker_protocol_failure")
+    status = transport["http_status"]
+    if status is not None and (
+        type(status) is not int or not 100 <= status <= 599
+    ):
+        raise _ProcessRPCFailure("worker_protocol_failure")
+    content_type = transport["content_type"]
+    if content_type is not None and content_type not in _SAFE_TRANSPORT_CONTENT_TYPES:
+        raise _ProcessRPCFailure("worker_protocol_failure")
+    elapsed = transport["elapsed_seconds"]
+    if (
+        isinstance(elapsed, bool)
+        or not isinstance(elapsed, (int, float))
+        or not math.isfinite(elapsed)
+        or not 0 <= elapsed <= MAX_PROCESS_TIMEOUT_SECONDS
+    ):
+        raise _ProcessRPCFailure("worker_protocol_failure")
+    return {
+        "request_id": request_id,
+        "operation": operation,
+        "http_status": status,
+        "content_type": content_type,
+        "elapsed_seconds": float(elapsed),
+    }
 
 
 class PairedCompletionEngine:
@@ -722,7 +785,8 @@ class PairedCompletionEngine:
         self._next_request_id += 1
         request_id = self._next_request_id
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
+        started = loop.time()
+        deadline = started + timeout
         send_result: queue.Queue[str | None] = queue.Queue(maxsize=1)
         writer = threading.Thread(
             target=self._write_worker_message,
@@ -735,6 +799,7 @@ class PairedCompletionEngine:
         self._io_threads.append(writer)
         writer.start()
         sent = False
+        transport_observed = False
         while True:
             if not sent:
                 try:
@@ -757,6 +822,25 @@ class PairedCompletionEngine:
                 if message.get("request_id") != request_id:
                     raise _ProcessRPCFailure("worker_protocol_failure")
                 kind = message.get("kind")
+                if kind == "transport_observation":
+                    observation = _validated_transport_observation(
+                        message, operation, request_id
+                    )
+                    try:
+                        if self._journal is None:
+                            raise OSError
+                        self._write(
+                            {
+                                "schema_version": "atlasops-integrated-inference-v1",
+                                "record": "transport_observation",
+                                **observation,
+                                "recorded_at_utc": datetime.now(UTC).isoformat(),
+                            }
+                        )
+                    except Exception:  # noqa: BLE001 - never include journal exception text
+                        raise _ProcessRPCFailure("journal_failure") from None
+                    transport_observed = True
+                    continue
                 if kind == "encoded" and operation == "complete":
                     if on_encoded is not None:
                         on_encoded(message)
@@ -789,6 +873,22 @@ class PairedCompletionEngine:
                 raise _ProcessRPCFailure("worker_process_exit")
             remaining = deadline - loop.time()
             if remaining <= 0:
+                if "url" in (self._process_worker_config or {}) and not transport_observed:
+                    try:
+                        self._write({
+                            "schema_version": "atlasops-integrated-inference-v1",
+                            "record": "transport_observation",
+                            "operation": operation,
+                            "request_id": request_id,
+                            "http_status": None,
+                            "content_type": None,
+                            "elapsed_seconds": min(
+                                MAX_PROCESS_TIMEOUT_SECONDS, loop.time() - started,
+                            ),
+                            "recorded_at_utc": datetime.now(UTC).isoformat(),
+                        })
+                    except Exception:  # noqa: BLE001 - hide journal exception text
+                        raise _ProcessRPCFailure("journal_failure") from None
                 category = "load_timeout" if operation == "load" else "rpc_timeout"
                 raise _ProcessRPCFailure(category)
             await asyncio.sleep(min(PROCESS_POLL_INTERVAL_SECONDS, remaining))

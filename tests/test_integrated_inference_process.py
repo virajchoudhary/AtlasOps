@@ -32,6 +32,28 @@ def _receive(connection: Any) -> dict[str, Any]:
     return json.loads(connection.recv_bytes(MAX_RPC_MESSAGE_BYTES).decode("utf-8"))
 
 
+def _send_transport_observation(
+    connection: Any, request_id: int, operation: str, mode: str
+) -> None:
+    if mode not in {"transport_observation", "transport_bad_correlation"}:
+        return
+    correlated_id = request_id + (mode == "transport_bad_correlation")
+    _send(
+        connection,
+        {
+            "request_id": request_id,
+            "kind": "transport_observation",
+            "transport": {
+                "operation": operation,
+                "request_id": correlated_id,
+                "http_status": 200,
+                "content_type": "application/json",
+                "elapsed_seconds": 0.0125,
+            },
+        },
+    )
+
+
 def _spawn_fixture_worker(connection: Any, config: dict[str, Any]) -> None:
     mode = config["mode"]
     identity = {
@@ -49,6 +71,7 @@ def _spawn_fixture_worker(connection: Any, config: dict[str, Any]) -> None:
         if operation == "load":
             if mode == "hang_load":
                 time.sleep(10)
+            _send_transport_observation(connection, request_id, operation, mode)
             _send(
                 connection,
                 {"request_id": request_id, "kind": "loaded", "identity": identity}
@@ -68,6 +91,7 @@ def _spawn_fixture_worker(connection: Any, config: dict[str, Any]) -> None:
                 time.sleep(10)
             if mode == "exit_after_encode":
                 os._exit(17)
+            _send_transport_observation(connection, request_id, operation, mode)
             _send(
                 connection,
                 {
@@ -78,11 +102,13 @@ def _spawn_fixture_worker(connection: Any, config: dict[str, Any]) -> None:
                 }
             )
         elif operation == "verify_final":
+            _send_transport_observation(connection, request_id, operation, mode)
             _send(
                 connection,
                 {"request_id": request_id, "kind": "verified", "identity": identity}
             )
         elif operation == "close":
+            _send_transport_observation(connection, request_id, operation, mode)
             _send(connection, {"request_id": request_id, "kind": "closed"})
             return
 
@@ -205,6 +231,90 @@ def test_spawned_worker_is_persistent_and_returns_only_raw_content(tmp_path):
             assert row["generated_token_ids"] == [91]
             assert row["raw_model_response_sha256"]
     assert not engine.worker_alive
+
+
+def test_transport_observations_are_request_bound_and_durable(tmp_path):
+    engine = _engine(
+        tmp_path,
+        "transport_observation",
+        rpc_timeout_seconds=2.0,
+        load_timeout_seconds=2.0,
+    )
+
+    async def run():
+        await engine.provider("base")("triage", _request())
+        await engine.verify_final()
+        await engine.close()
+
+    asyncio.run(run())
+    observations = [
+        row for row in _rows(engine.journal_path)
+        if row["record"] == "transport_observation"
+    ]
+    assert [
+        (row["operation"], row["request_id"], row["http_status"], row["content_type"])
+        for row in observations
+    ] == [
+        ("load", 1, 200, "application/json"),
+        ("complete", 2, 200, "application/json"),
+        ("verify_final", 3, 200, "application/json"),
+        ("close", 4, 200, "application/json"),
+    ]
+    assert all(row["elapsed_seconds"] == 0.0125 for row in observations)
+
+
+def test_transport_observation_rejects_correlation_mismatch_without_retry(tmp_path):
+    engine = _engine(
+        tmp_path,
+        "transport_bad_correlation",
+        rpc_timeout_seconds=2.0,
+        load_timeout_seconds=2.0,
+    )
+
+    async def run():
+        with pytest.raises(integrated.InferenceProviderError) as failure:
+            await engine.provider("base")("triage", _request())
+        assert failure.value.failure_category == "worker_protocol_failure"
+        assert engine._next_request_id == 1
+        assert engine._process is not None and not engine._process.is_alive()
+        await engine.close()
+
+    asyncio.run(run())
+    rows = _rows(engine.journal_path)
+    assert not any(row["record"] == "transport_observation" for row in rows)
+    assert rows[-1]["failure_category"] == "worker_protocol_failure"
+
+
+def test_transport_journal_failure_fails_closed_and_does_not_retry(tmp_path):
+    engine = _engine(
+        tmp_path,
+        "transport_observation",
+        rpc_timeout_seconds=2.0,
+        load_timeout_seconds=2.0,
+    )
+    write = engine._write
+
+    def fail_transport_write(row):
+        if row.get("record") == "transport_observation":
+            raise OSError("private journal failure detail")
+        write(row)
+
+    engine._write = fail_transport_write
+
+    async def run():
+        with pytest.raises(integrated.InferenceProviderError) as failure:
+            await engine.provider("base")("triage", _request())
+        assert failure.value.failure_category == "journal_failure"
+        assert engine._next_request_id == 1
+        assert engine._process is not None and not engine._process.is_alive()
+        await engine.close()
+
+    asyncio.run(run())
+    rows = _rows(engine.journal_path)
+    assert rows[-1]["failure_category"] == "journal_failure"
+    assert "private journal failure detail" not in engine.journal_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_rpc_timeout_is_bounded_kills_worker_and_poison_prevents_fallback(tmp_path):

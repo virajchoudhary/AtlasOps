@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -45,7 +46,8 @@ from config.g4_protocol import (
     APPROVED_G4_V36_SETTLING_DEADLINE,
     APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
     APPROVED_G4_V37_PROTOCOL_PROFILE,
-    APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V38_DIAGNOSTICS_PROFILE,
+    APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256,
     APPROVED_G4_V38_MODEL,
     APPROVED_G4_V38_PROTOCOL_PROFILE,
     APPROVED_TOOL_CONTRACT_SHA256,
@@ -57,6 +59,8 @@ from config.g4_protocol import (
     G4_V35_PROTOCOL_MARKER,
     G4_V36_PROTOCOL_MARKER,
     G4_V37_PROTOCOL_MARKER,
+    G4_V38_DIAGNOSTICS_PROFILE_VERSION,
+    G4_V38_DIAGNOSTICS_PROTOCOL_MARKER,
     G4_V38_PROTOCOL_MARKER,
     build_runtime_protocol_profile,
     diagnosis_prompt_profile,
@@ -67,9 +71,14 @@ from config.g4_protocol import (
 )
 
 
-def test_active_v38_profile_pins_model_approval_causal_and_settling_contract():
+def test_active_v38_diagnostics_profile_pins_model_approval_causal_and_settling_contract():
     assert APPROVED_G4_PROTOCOL_PROFILE["model"] == APPROVED_G4_V38_MODEL
-    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == G4_V38_PROTOCOL_MARKER
+    assert APPROVED_G4_PROTOCOL_PROFILE["protocol_marker"] == (
+        G4_V38_DIAGNOSTICS_PROTOCOL_MARKER
+    )
+    assert APPROVED_G4_PROTOCOL_PROFILE["profile_version"] == (
+        G4_V38_DIAGNOSTICS_PROFILE_VERSION
+    )
     assert APPROVED_G4_PROTOCOL_PROFILE["role_tool_contract"]["sha256"] == APPROVED_G4_V33_TOOL_CONTRACT_SHA256
     assert APPROVED_G4_PROTOCOL_PROFILE["llm_transport"] == {
         "request_timeout_seconds": 600,
@@ -86,17 +95,61 @@ def test_active_v38_profile_pins_model_approval_causal_and_settling_contract():
         APPROVED_G4_V35_AGENT_PROMPT_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["causal_evidence_policy"]["source_sha256"] == (
-        APPROVED_G4_V38_CAUSAL_SOURCE_SHA256
+        APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256
     )
     assert APPROVED_G4_PROTOCOL_PROFILE["settling_deadline_policy"] == (
         APPROVED_G4_V36_SETTLING_DEADLINE
     )
-    assert APPROVED_G4_V38_PROTOCOL_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
+    assert APPROVED_G4_V38_DIAGNOSTICS_PROFILE == APPROVED_G4_PROTOCOL_PROFILE
     assert protocol_fingerprint(APPROVED_G4_V37_PROTOCOL_PROFILE) == (
         "ea72468a1237baf4c423552deb0911cd58ed3ba217b8074a36c1a94498223414"
     )
     with pytest.raises(RuntimeError, match="approved protocol profile"):
         protocol.validate_runtime_protocol_profile(APPROVED_G4_V37_PROTOCOL_PROFILE)
+
+
+def test_historical_v38_profile_fingerprint_remains_immutable_and_is_rejected_as_active():
+    assert APPROVED_G4_V38_PROTOCOL_PROFILE["protocol_marker"] == G4_V38_PROTOCOL_MARKER
+    assert protocol_fingerprint(APPROVED_G4_V38_PROTOCOL_PROFILE) == (
+        "8f21f2b77981e040e63f0d12e78ecf336353aaf10a4fc109b16feaaef898c236"
+    )
+    with pytest.raises(RuntimeError, match="approved protocol profile"):
+        protocol.validate_runtime_protocol_profile(APPROVED_G4_V38_PROTOCOL_PROFILE)
+
+
+def test_diagnostics_revision_preserves_v38_scientific_model_and_decoding_contracts():
+    original = APPROVED_G4_V38_PROTOCOL_PROFILE
+    revised = APPROVED_G4_V38_DIAGNOSTICS_PROFILE
+
+    assert revised["model"] == original["model"]
+    assert revised["integrated_inference"] == original["integrated_inference"]
+    assert revised["f1_contract"] == original["f1_contract"]
+    assert revised["scenario_fault_contract"] == original["scenario_fault_contract"]
+
+    normalized = copy.deepcopy(revised)
+    normalized["protocol_marker"] = original["protocol_marker"]
+    normalized["profile_version"] = original["profile_version"]
+    normalized["diagnosis_prompt"]["version"] = original["diagnosis_prompt"]["version"]
+    normalized["causal_evidence_policy"]["source_sha256"] = (
+        original["causal_evidence_policy"]["source_sha256"]
+    )
+    assert normalized == original
+
+    original_sources = original["causal_evidence_policy"]["source_sha256"]
+    revised_sources = revised["causal_evidence_policy"]["source_sha256"]
+    assert set(revised_sources) - set(original_sources) == {
+        "bench/integrated_inference.py",
+        "scripts/qualify_loopback_inference.py",
+    }
+    assert revised_sources["bench/integrated_inference_remote.py"] != (
+        original_sources["bench/integrated_inference_remote.py"]
+    )
+    for path, digest in original_sources.items():
+        if path not in {
+            "bench/integrated_inference_remote.py",
+            "scripts/qualify_integrated_inference.py",
+        }:
+            assert revised_sources[path] == digest
 
 
 def test_historical_v36_profile_remains_exact_and_is_rejected_as_active():
@@ -355,7 +408,7 @@ def test_fingerprint_is_deterministic_and_covers_all_components():
 
 
 def test_v34_attempt_transition_terms_are_required_by_fingerprint(
-    frozen_g4_v37_source_hashes,
+    frozen_g4_v38_diagnostics_source_hashes,
 ):
     observed = _approved_observation()
     observed["pre_t0_safety"].pop("attempt_consumption")
@@ -378,7 +431,7 @@ def test_v34_attempt_transition_terms_are_required_by_fingerprint(
     ],
 )
 def test_v35_rejects_causal_source_or_prompt_drift(
-    monkeypatch, changed_name, frozen_g4_v37_source_hashes
+    monkeypatch, changed_name, frozen_g4_v38_diagnostics_source_hashes
 ):
     original_hash = protocol.file_sha256
     monkeypatch.setattr(
@@ -394,7 +447,7 @@ def test_v35_rejects_causal_source_or_prompt_drift(
 
 
 @pytest.fixture
-def frozen_g4_v37_source_hashes(monkeypatch):
+def frozen_g4_v38_diagnostics_source_hashes(monkeypatch):
     original_file_sha256 = protocol.file_sha256
 
     def file_sha256_with_frozen_sources(path):
@@ -402,8 +455,8 @@ def frozen_g4_v37_source_hashes(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V38_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256:
+            return APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
@@ -433,14 +486,14 @@ def test_current_coordinator_source_matches_v37_binding():
 
 
 def test_runtime_builder_reproduces_explicitly_approved_profile(
-    frozen_g4_v37_source_hashes,
+    frozen_g4_v38_diagnostics_source_hashes,
 ):
     assert _approved_observation() == APPROVED_G4_PROTOCOL_PROFILE
     assert protocol.validate_runtime_protocol_profile(_approved_observation())
 
 
 def test_stage4_approval_timeout_drift_fails_protocol_qualification(
-    monkeypatch, frozen_g4_v37_source_hashes
+    monkeypatch, frozen_g4_v38_diagnostics_source_hashes
 ):
     from agents.approval import approval_gate
 
@@ -490,7 +543,7 @@ def test_metrics_server_image_drift_is_rejected_fail_closed(image):
 
 
 def test_metrics_server_missing_state_cannot_match_required_present_profile(
-    frozen_g4_v37_source_hashes,
+    frozen_g4_v38_diagnostics_source_hashes,
 ):
     observed = protocol.build_integrated_protocol_profile(
         model_identity=dict(APPROVED_G4_V38_MODEL),
@@ -502,7 +555,7 @@ def test_metrics_server_missing_state_cannot_match_required_present_profile(
 
 
 def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
-    frozen_g4_v37_source_hashes,
+    frozen_g4_v38_diagnostics_source_hashes,
 ):
     root = __import__("pathlib").Path(__file__).parent / "scratch" / "never-used-profile"
     with patch.object(
@@ -526,7 +579,7 @@ def test_reservation_uses_live_identity_and_does_not_write_marker_on_mismatch(
 
 
 def test_coordinator_source_hash_drift_is_rejected_before_reservation(
-    monkeypatch, frozen_g4_v37_source_hashes, tmp_path
+    monkeypatch, frozen_g4_v38_diagnostics_source_hashes, tmp_path
 ):
     original_hash = protocol.file_sha256
     monkeypatch.setattr(
@@ -657,7 +710,7 @@ def test_ollama_identity_transport_failure_fails_closed():
 
 
 def test_observe_protocol_profile_requires_qualified_integrated_identity(
-    frozen_g4_v37_source_hashes, monkeypatch,
+    frozen_g4_v38_diagnostics_source_hashes, monkeypatch,
 ):
     monkeypatch.setattr(runner, "_QUALIFIED_MODEL_IDENTITY", dict(APPROVED_G4_V38_MODEL))
     with patch.object(

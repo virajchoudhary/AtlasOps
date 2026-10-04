@@ -165,9 +165,19 @@ APPROVED_G4_V38_CAUSAL_SOURCE_SHA256 = {
     "bench/integrated_inference_remote.py": "23fbdb114e8f982456307d8d8bd7c872b5ec60ce4040060a91ecbb9171d6cfca",
 }
 
-# Active prospective declaration; historical declarations remain unchanged.
-G4_PROTOCOL_MARKER = G4_V38_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V38_PROTOCOL_PROFILE_VERSION
+G4_V38_DIAGNOSTICS_PROTOCOL_MARKER = "G4-V3.8-TRANSPORT-DIAGNOSTICS-V1"
+G4_V38_DIAGNOSTICS_PROFILE_VERSION = "g4-recovery-profile-v3.8-diagnostics-v1"
+APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256 = {
+    **APPROVED_G4_V38_CAUSAL_SOURCE_SHA256,
+    "bench/integrated_inference.py": "44ed7a0c641aa44619c92ed645123e6f737ad1d3e367022856b5787aa0acfa9e",
+    "bench/integrated_inference_remote.py": "8eadf8ae4caa5d81c3d0d30db1e87cc208585a40c2941809185462563b1f2d8e",
+    "scripts/qualify_loopback_inference.py": "27188c442eeff02b92828c40b94e3ba90e89c7b8fc90ff03496e3ac177f4df01",
+    "scripts/qualify_integrated_inference.py": "2953facbc97e5043b6e627f56c2343f50bef430145267f76acc948aebe33bbb5",
+}
+
+# Active prospective binding; scientific and historical declarations stay fixed.
+G4_PROTOCOL_MARKER = G4_V38_DIAGNOSTICS_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V38_DIAGNOSTICS_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V38_MODEL["name"]
 # Retained only for callers inspecting the historical Ollama identity.
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
@@ -261,7 +271,7 @@ def causal_evidence_policy_profile() -> dict[str, Any]:
         **APPROVED_G4_V35_CAUSAL_POLICY,
         "source_sha256": {
             path: file_sha256(REPO_ROOT / path)
-            for path in APPROVED_G4_V38_CAUSAL_SOURCE_SHA256
+            for path in APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256
         },
     }
 
@@ -402,8 +412,8 @@ def build_integrated_protocol_profile(
 ) -> dict[str, Any]:
     """Observe the prospective model basis without repurposing an Ollama digest."""
     return {
-        "protocol_marker": G4_V38_PROTOCOL_MARKER,
-        "profile_version": G4_V38_PROTOCOL_PROFILE_VERSION,
+        "protocol_marker": G4_PROTOCOL_MARKER,
+        "profile_version": G4_PROTOCOL_PROFILE_VERSION,
         "model": model_identity,
         "diagnosis_prompt": diagnosis_prompt_profile(),
         "role_tool_contract": tool_contract_profile(),
@@ -628,7 +638,21 @@ APPROVED_G4_V38_PROTOCOL_PROFILE: dict[str, Any] = {
     },
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V38_PROTOCOL_PROFILE
+APPROVED_G4_V38_DIAGNOSTICS_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V38_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V38_DIAGNOSTICS_PROTOCOL_MARKER,
+    "profile_version": G4_V38_DIAGNOSTICS_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V38_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V38_DIAGNOSTICS_PROFILE_VERSION,
+    },
+    "causal_evidence_policy": {
+        **APPROVED_G4_V38_PROTOCOL_PROFILE["causal_evidence_policy"],
+        "source_sha256": APPROVED_G4_V38_DIAGNOSTICS_SOURCE_SHA256,
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V38_DIAGNOSTICS_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

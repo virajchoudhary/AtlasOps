@@ -219,6 +219,7 @@ SELECTED_STAGE4_AGENT_MODEL = resolve_stage4_agent_model()
 _QUALIFIED_COMPLETION_PROVIDER = None
 _QUALIFIED_MODEL_IDENTITY: dict[str, Any] | None = None
 _INFERENCE_QUALIFICATION: dict[str, Any] | None = None
+_RUN_OWNED_PREFLIGHT_BINDING: dict[str, Any] | None = None
 # Populated only after the explicit operator-supplied experiment ID passes preflight.
 EXPERIMENT_ID = ""
 SCENARIO_ID = "single_fault/sf-002"
@@ -1486,7 +1487,146 @@ def _approved_main_sha() -> str:
     return approved_sha.lower()
 
 
-def _current_main_sha(expected_sha: str | None = None) -> str:
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & reparse_flag
+    )
+
+
+def _preflight_path_has_reparse_component(root: str, path: str) -> bool:
+    root_path = Path(os.path.abspath(root))
+    target_path = Path(os.path.abspath(path))
+    try:
+        relative = target_path.relative_to(root_path)
+    except ValueError:
+        return True
+
+    current = root_path
+    components = [root_path]
+    for part in relative.parts:
+        current = current / part
+        components.append(current)
+    return any(_is_reparse_point(component) for component in components)
+
+
+def _validate_run_owned_preflight(
+    binding: dict[str, Any],
+    status_path: str,
+    *,
+    expected_sha: str,
+) -> None:
+    experiment_id = binding["experiment_id"]
+    expected_path = Path(
+        _experiment_evidence_dir(experiment_id)
+    ) / f"{experiment_id}.preflight.json"
+    reported_path = Path(REPO_ROOT) / status_path
+    expected_path_text = os.path.normcase(os.path.abspath(expected_path))
+    reported_path_text = os.path.normcase(os.path.abspath(reported_path))
+    binding_path_text = os.path.normcase(os.path.abspath(binding["path"]))
+    if (
+        reported_path_text != expected_path_text
+        or binding_path_text != expected_path_text
+        or binding.get("relative_path") != status_path.replace(os.sep, "/")
+    ):
+        raise RuntimeError("Stage 4 run-owned preflight path does not match its active experiment")
+    if _preflight_path_has_reparse_component(REPO_ROOT, str(expected_path)):
+        raise RuntimeError("Stage 4 run-owned preflight path contains a symlink or reparse point")
+
+    try:
+        file_info = expected_path.lstat()
+        if not stat.S_ISREG(file_info.st_mode):
+            raise RuntimeError("Stage 4 run-owned preflight is not a regular file")
+        expected_file_identity = (
+            binding["st_dev"],
+            binding["st_ino"],
+            binding["st_ctime_ns"],
+        )
+        if (
+            file_info.st_dev,
+            file_info.st_ino,
+            file_info.st_ctime_ns,
+        ) != expected_file_identity:
+            raise RuntimeError("Stage 4 run-owned preflight file identity changed after persistence")
+        if file_info.st_size != binding["size_bytes"]:
+            raise RuntimeError("Stage 4 run-owned preflight bytes changed after persistence")
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(expected_path, flags), "rb") as stream:
+            opened_info = os.fstat(stream.fileno())
+            if (
+                opened_info.st_dev,
+                opened_info.st_ino,
+            ) != expected_file_identity[:2]:
+                raise RuntimeError("Stage 4 run-owned preflight file identity changed after persistence")
+            raw = stream.read(binding["size_bytes"] + 1)
+        if len(raw) != binding["size_bytes"]:
+            raise RuntimeError("Stage 4 run-owned preflight bytes changed after persistence")
+        path_info = expected_path.lstat()
+        if (
+            path_info.st_dev,
+            path_info.st_ino,
+            path_info.st_ctime_ns,
+        ) != expected_file_identity or _preflight_path_has_reparse_component(
+            REPO_ROOT, str(expected_path)
+        ):
+            raise RuntimeError("Stage 4 run-owned preflight file identity changed after persistence")
+        record = json.loads(raw.decode("utf-8"))
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise RuntimeError("Stage 4 run-owned preflight cannot be read or parsed") from None
+    if hashlib.sha256(raw).hexdigest() != binding["raw_sha256"]:
+        raise RuntimeError("Stage 4 run-owned preflight bytes changed after persistence")
+
+    if not isinstance(record, dict):
+        raise RuntimeError("Stage 4 run-owned preflight record is not an object")
+    source_identity = record.get("source_identity")
+    source_commit = (
+        source_identity.get("git_commit")
+        if isinstance(source_identity, dict)
+        else None
+    )
+    approved_profile_sha256 = protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)
+    if (
+        record.get("experiment_id") != experiment_id
+        or record.get("scenario_id") != binding["scenario_id"]
+        or binding.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
+        or record.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
+        or binding.get("source_sha") != expected_sha.lower()
+        or not isinstance(source_identity, dict)
+        or source_identity.get("working_tree_clean") is not True
+        or not isinstance(source_commit, str)
+        or source_commit.lower() != expected_sha.lower()
+        or source_commit.lower() != binding["source_sha"]
+        or source_identity.get("protocol_fingerprint") != binding["protocol_fingerprint"]
+        or source_identity.get("protocol_fingerprint") != approved_profile_sha256
+    ):
+        raise RuntimeError("Stage 4 run-owned preflight identity does not match the active experiment")
+    profile = record.get("protocol_profile")
+    if (
+        not isinstance(profile, dict)
+        or profile != APPROVED_G4_PROTOCOL_PROFILE
+        or protocol_fingerprint(profile) != binding["profile_sha256"]
+        or binding["profile_sha256"] != approved_profile_sha256
+    ):
+        raise RuntimeError("Stage 4 run-owned preflight protocol profile changed after persistence")
+
+
+def _current_main_sha(
+    expected_sha: str | None = None,
+    *,
+    allow_run_owned_preflight: bool = False,
+) -> str:
+    global _RUN_OWNED_PREFLIGHT_BINDING
+
+    binding = _RUN_OWNED_PREFLIGHT_BINDING
+    _RUN_OWNED_PREFLIGHT_BINDING = None
     approved_sha = _approved_main_sha()
     if expected_sha is not None and approved_sha != expected_sha.lower():
         raise RuntimeError(
@@ -1520,9 +1660,32 @@ def _current_main_sha(expected_sha: str | None = None) -> str:
     if status.returncode != 0:
         raise RuntimeError("Unable to verify a clean main checkout for Stage 4")
     if status.stdout.strip():
+        lines = status.stdout.splitlines()
+        if (
+            not allow_run_owned_preflight
+            or binding is None
+            or len(lines) != 1
+            or not lines[0].startswith("?? ")
+        ):
+            raise RuntimeError(
+                "Stage 4 requires a clean main checkout; commit or preserve local changes "
+                "before contacting the cluster"
+            )
+        status_path = lines[0][3:]
+        try:
+            if (
+                binding.get("experiment_id") != EXPERIMENT_ID
+                or binding.get("scenario_id") != SCENARIO_ID
+            ):
+                raise RuntimeError(
+                    "Stage 4 run-owned preflight is not bound to the active experiment/scenario"
+                )
+            _validate_run_owned_preflight(binding, status_path, expected_sha=approved_sha)
+        finally:
+            _RUN_OWNED_PREFLIGHT_BINDING = None
+    elif allow_run_owned_preflight:
         raise RuntimeError(
-            "Stage 4 requires a clean main checkout; commit or preserve local changes "
-            "before contacting the cluster"
+            "Stage 4 run-owned preflight is not visible as the exact expected untracked file"
         )
     branch = git_read_only(["symbolic-ref", "--quiet", "--short", "HEAD"])
     if branch.returncode != 0 or branch.stdout.strip() != "main":
@@ -1594,6 +1757,8 @@ def _persist_stage4_preflight_evidence(
     root: str | None = None,
 ) -> str:
     """Freeze the successful telemetry/workload/zero-Chaos preflight before T0."""
+    global _RUN_OWNED_PREFLIGHT_BINDING
+
     phases = evidence.get("phases")
     phases = phases if isinstance(phases, dict) else {}
     telemetry = phases.get("telemetry_readiness")
@@ -1611,6 +1776,7 @@ def _persist_stage4_preflight_evidence(
     )
     zero_chaos = _chaos_state_observation(chaos_precheck)
     source_identity = evidence.get("source_identity")
+    profile = evidence.get("protocol_profile")
     if (
         not isinstance(telemetry, dict)
         or telemetry.get("ready") is not True
@@ -1621,6 +1787,7 @@ def _persist_stage4_preflight_evidence(
         or not pre_reservation_zero["verified_zero"]
         or not zero_chaos["verified_zero"]
         or not isinstance(source_identity, dict)
+        or not isinstance(profile, dict)
         or source_identity.get("working_tree_clean") is not True
         or not source_identity.get("git_commit")
         or not source_identity.get("protocol_fingerprint")
@@ -1630,12 +1797,41 @@ def _persist_stage4_preflight_evidence(
     experiment_id = str(evidence.get("experiment_id") or "")
     if not experiment_id:
         raise RuntimeError("Stage 4 preflight is missing an experiment ID")
+    effective_root = os.path.abspath(root or REPO_ROOT)
+    uses_runner_root = os.path.normcase(effective_root) == os.path.normcase(
+        os.path.abspath(REPO_ROOT)
+    )
+    if uses_runner_root and (
+        experiment_id != EXPERIMENT_ID or evidence.get("scenario_id") != SCENARIO_ID
+    ):
+        raise RuntimeError("Stage 4 preflight does not match the active experiment/scenario")
+    if uses_runner_root and _RUN_OWNED_PREFLIGHT_BINDING is not None:
+        raise RuntimeError("A Stage 4 run-owned preflight binding is already active")
     path = os.path.join(
         _experiment_evidence_dir(experiment_id, root),
         f"{experiment_id}.preflight.json",
     )
-    if os.path.exists(path):
+    if os.path.lexists(path):
         raise RuntimeError(f"Refusing to overwrite Stage 4 preflight evidence: {path}")
+    profile_sha256 = protocol_fingerprint(profile)
+    if uses_runner_root:
+        if (
+            not isinstance(source_identity.get("git_commit"), str)
+            or not _APPROVED_MAIN_SHA_RE.fullmatch(source_identity["git_commit"])
+            or not isinstance(source_identity.get("protocol_fingerprint"), str)
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", source_identity["protocol_fingerprint"])
+            or source_identity["git_commit"].lower() != _approved_main_sha()
+            or evidence.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
+            or profile != APPROVED_G4_PROTOCOL_PROFILE
+            or profile_sha256 != source_identity["protocol_fingerprint"]
+            or profile_sha256 != protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)
+        ):
+            raise RuntimeError("Refusing to bind Stage 4 preflight with incomplete source/profile identity")
+    if _preflight_path_has_reparse_component(effective_root, os.path.dirname(path)):
+        raise RuntimeError("Refusing to persist Stage 4 preflight through a symlink or reparse point")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if _preflight_path_has_reparse_component(effective_root, os.path.dirname(path)):
+        raise RuntimeError("Refusing to persist Stage 4 preflight through a symlink or reparse point")
     record = {
         "schema_version": 1,
         "experiment_id": experiment_id,
@@ -1643,7 +1839,7 @@ def _persist_stage4_preflight_evidence(
         "persisted_at": datetime.now(UTC).isoformat(),
         "source_identity": source_identity,
         "protocol_marker": evidence.get("protocol_marker"),
-        "protocol_profile": evidence.get("protocol_profile"),
+        "protocol_profile": profile,
         "telemetry_readiness": telemetry,
         "baseline": baseline,
         "zero_chaos_pre_reservation": {
@@ -1655,7 +1851,29 @@ def _persist_stage4_preflight_evidence(
             "result": chaos_precheck,
         },
     }
+    record_bytes = (
+        (json.dumps(record, indent=2, sort_keys=True) + "\n")
+        .replace("\n", os.linesep)
+        .encode("utf-8")
+    )
     _write_json_atomic(path, record)
+    if uses_runner_root:
+        file_info = Path(path).lstat()
+        _RUN_OWNED_PREFLIGHT_BINDING = {
+            "path": os.path.abspath(path),
+            "relative_path": os.path.relpath(path, effective_root).replace(os.sep, "/"),
+            "raw_sha256": hashlib.sha256(record_bytes).hexdigest(),
+            "size_bytes": len(record_bytes),
+            "st_dev": file_info.st_dev,
+            "st_ino": file_info.st_ino,
+            "st_ctime_ns": file_info.st_ctime_ns,
+            "experiment_id": experiment_id,
+            "scenario_id": evidence.get("scenario_id"),
+            "protocol_marker": evidence.get("protocol_marker"),
+            "source_sha": source_identity["git_commit"].lower(),
+            "protocol_fingerprint": source_identity["protocol_fingerprint"],
+            "profile_sha256": profile_sha256,
+        }
     evidence["preflight_evidence"] = {
         "path": os.path.relpath(path, root or REPO_ROOT).replace(os.sep, "/"),
         "sha256": file_sha256(Path(path)),
@@ -2046,7 +2264,7 @@ def _configure_stage4_runtime() -> None:
 
 
 async def _run_experiment() -> dict[str, Any]:
-    global EXPERIMENT_ID
+    global EXPERIMENT_ID, _RUN_OWNED_PREFLIGHT_BINDING
 
     EXPERIMENT_ID = _require_fresh_experiment_id()
     poisoned_path = _poisoned_environment_path()
@@ -2231,7 +2449,10 @@ async def _run_experiment() -> dict[str, Any]:
         manifest_path = os.path.join(REPO_ROOT, "bench", "chaos_manifests", "single_fault", "sf-002.yaml")
         # Treat an apply timeout/error as potentially side-effecting until
         # postflight proves the target resource is absent.
-        _current_main_sha(expected_sha=main_sha)
+        _current_main_sha(
+            expected_sha=main_sha,
+            allow_run_owned_preflight=True,
+        )
         immediate_chaos_check = run_kubectl(
             ["get", CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         )
@@ -2526,7 +2747,19 @@ async def _run_experiment() -> dict[str, Any]:
                 prefault_path = _persist_stage4_prefault_failure(evidence)
                 evidence["prefault_evidence"] = prefault_path
             else:
-                release_experiment_reservation(reservation)
+                released = release_experiment_reservation(reservation)
+                evidence["attempt_state"] = (
+                    "RELEASED_PRE_FAULT" if released else ATTEMPT_STATE_RESERVED
+                )
+                evidence["reservation_released"] = released
+                evidence["outcome"] = "INVALID"
+                evidence["failure_phase"] = "pre_fault_exception"
+                evidence["t0_crossed"] = False
+                evidence["observed_exception_class"] = type(exc).__name__
+                evidence["observed_exception_message"] = str(exc)
+                evidence["completed_at"] = datetime.now(UTC).isoformat()
+                prefault_path = _persist_stage4_prefault_failure(evidence)
+                evidence["prefault_evidence"] = prefault_path
         elif reservation is not None and fault_crossed:
             _handle_post_t0_interruption(
                 reservation=reservation,
@@ -2537,6 +2770,7 @@ async def _run_experiment() -> dict[str, Any]:
             )
         raise
     finally:
+        _RUN_OWNED_PREFLIGHT_BINDING = None
         _stop_port_forwards(pf_procs)
 
 

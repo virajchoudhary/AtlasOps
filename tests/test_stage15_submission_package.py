@@ -281,6 +281,7 @@ class TestStage15SubmissionPackage:
             "artifacts/evidence/stage4/EXP-STAGE4-SF002-013.interruption.json",
             "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.cleanup.json",
             "artifacts/evidence/stage4/EXP-STAGE4-SF002-014.interruption.json",
+            "artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json",
             "artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md",
             "artifacts/evidence/stage4/golden_incident_sf002_manifest.json",
         }

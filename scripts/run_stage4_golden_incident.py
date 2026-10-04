@@ -485,6 +485,7 @@ def _require_fresh_experiment_id() -> str:
         ("pre-fault evidence", os.path.join(attempts_dir, f"{experiment_id}.prefault.json")),
         ("run log", os.path.join(evidence_dir, f"{experiment_id}.runlog.txt")),
         ("leftover Chaos evidence", os.path.join(evidence_dir, f"{experiment_id}.leftover-chaos.yaml")),
+        ("inference reference", os.path.join(evidence_dir, f"{experiment_id}.inference-reference.json")),
     )
     for artifact, path in existing_artifacts:
         if os.path.lexists(path):

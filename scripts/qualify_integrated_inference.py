@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import time
@@ -90,6 +91,22 @@ async def qualify_engine(engine: PairedCompletionEngine) -> dict:
         record["finished_at_utc"] = datetime.now(UTC).isoformat()
         if engine._journal is not None:
             engine._write(record)
+        journal = engine.journal_path
+        if journal is not None and journal.is_file():
+            raw = journal.read_bytes()
+            linked = {
+                "qualification": record,
+                "journal": {
+                    "path": str(journal), "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                    "size_bytes": len(raw),
+                },
+                "incident_attempt_reserved": False,
+            }
+            with journal.with_suffix(".qualification.json").open("x", encoding="utf-8") as stream:
+                json.dump(linked, stream, sort_keys=True, indent=2)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
     return record
 
 

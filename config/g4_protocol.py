@@ -159,8 +159,8 @@ APPROVED_G4_V38_INFERENCE_CONTRACT = {
 }
 APPROVED_G4_V38_CAUSAL_SOURCE_SHA256 = {
     **APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
-    "scripts/run_stage4_golden_incident.py": "563b31688b0e6e6adf6790eabfacbad98eed982142b4cd26a0422ba96cb980a5",
-    "scripts/qualify_integrated_inference.py": "2b2c7cdeb6b4f7d68c2c25d66974c1a55be3673f6edde63a059620d667ed4998",
+    "scripts/run_stage4_golden_incident.py": "5e3c516f0a2f3502bcfc803af2be2ac7bf60fef5068da9b6138da76800e9a643",
+    "scripts/qualify_integrated_inference.py": "178ddb1118737efc10143f21de2c9ac4bd4805e9ca49ed7c545574f4b47a5f9c",
     "scripts/serve_integrated_inference.py": "ad7851740cbeefb821d0a1f9fd80e2dd16f56100e4671ec4b4e6b2ca7f065e73",
     "bench/integrated_inference_remote.py": "23fbdb114e8f982456307d8d8bd7c872b5ec60ce4040060a91ecbb9171d6cfca",
 }

@@ -20,6 +20,7 @@ def engine(*, response="READY", failure=None):
     }, side_effect=failure)
     return SimpleNamespace(
         fixture_backend=False, load_timeout_seconds=600, rpc_timeout_seconds=600,
+        journal_path=None,
         _journal=True, _write=records.append, records=records,
         provider=lambda arm: complete,
         verify_final=AsyncMock(return_value={
@@ -136,3 +137,27 @@ def test_raw_inference_reference_preserves_qualification_and_digest(monkeypatch,
     assert reference["qualification_establishes_incident_resolution"] is False
     with pytest.raises(FileExistsError):
         runner._persist_inference_reference(SimpleNamespace(journal_path=journal))
+
+
+def test_reference_only_collision_blocks_attempt_reuse(monkeypatch, tmp_path):
+    monkeypatch.setenv("STAGE4_EXPERIMENT_ID", "EXP-STAGE4-SF002-016")
+    monkeypatch.setattr(runner, "REPO_ROOT", str(tmp_path))
+    evidence = tmp_path / "artifacts" / "evidence" / "stage4"
+    evidence.mkdir(parents=True)
+    (evidence / "EXP-STAGE4-SF002-016.inference-reference.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="inference reference already exists"):
+        runner._require_fresh_experiment_id()
+
+
+@pytest.mark.asyncio
+async def test_failed_qualification_has_durable_journal_link(tmp_path):
+    candidate = engine(failure=TimeoutError())
+    journal = tmp_path / "qualification-transport.jsonl"
+    journal.write_bytes(b'{"record":"attempt_finished","status":"failed"}\n')
+    candidate.journal_path = journal
+    with pytest.raises(TimeoutError):
+        await qualification.qualify_engine(candidate)
+    reference = json.loads(journal.with_suffix(".qualification.json").read_bytes())
+    assert reference["qualification"]["status"] == "NOT_QUALIFIED"
+    assert reference["journal"]["raw_sha256"] == hashlib.sha256(journal.read_bytes()).hexdigest()
+    assert reference["incident_attempt_reserved"] is False

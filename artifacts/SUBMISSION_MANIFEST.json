@@ -1377,16 +1377,16 @@
       "size_bytes": 12140
     },
     "tests/test_g4_protocol_profile.py": {
-      "sha256": "f7b544b35642fc0bd2f1d115cef96168c44a4b9f4ceb32e43fb38a36ecfdedef",
-      "size_bytes": 26201
+      "sha256": "50b95b6c1c9b900191a97ea369779a5631d038d1d4d21b36f1b0ca7f5927ee49",
+      "size_bytes": 28684
     },
     "tests/test_g4_runtime_context_remediation_loop.py": {
       "sha256": "3e23f0441e3645d1342c55c8cc0eede62a14d05976afb1f56676cc17ec7c90d3",
       "size_bytes": 22261
     },
     "tests/test_g4_v31_transport_and_interruption.py": {
-      "sha256": "d8202855d4d2fbfdc8a198c7921db97962445f9d2ea045a3be396b6986064034",
-      "size_bytes": 35242
+      "sha256": "98e8eb13f67cce244d69d00421f4eb29ecc0837a4deb8c7669cece64e7900029",
+      "size_bytes": 35256
     },
     "tests/test_g4_v38_qualification.py": {
       "sha256": "cd3f63a32992cb04ae9d8ef5ef357a106a9c189618f7c9aab54c2f2c34584b84",
@@ -1477,12 +1477,12 @@
       "size_bytes": 13681
     },
     "tests/test_integrated_inference_process.py": {
-      "sha256": "362dc0835561a7137e90b86e949244de1c724200c7f20b728aabbc28b96f1aad",
-      "size_bytes": 23089
+      "sha256": "e522be5ba7c4ab543d2ada073aa9d705b7aedc835b556e0c8358be2ebe388c8f",
+      "size_bytes": 26934
     },
     "tests/test_integrated_inference_remote.py": {
-      "sha256": "ccbddff9ee5c622fdeaa5182984e254178a1dd4993d1ab27d4755a8dc6f88669",
-      "size_bytes": 20924
+      "sha256": "93dbcd0383094103f23174cf56e708ce2ab0c17cbc39d2114e44edafb8f5ecf3",
+      "size_bytes": 27544
     },
     "tests/test_integrated_provider_bridge.py": {
       "sha256": "6a3a163128ae7b7aa2797b83a76dde1bdb25a13f4ab6ea0c1ba035b1159fd605",
@@ -1657,8 +1657,8 @@
       "size_bytes": 40407
     },
     "tests/test_stage4_evidence_hardening.py": {
-      "sha256": "c7d5353e95b88e241a436e623386ab4062cb396f4ce29ca962997f8d5b5837a7",
-      "size_bytes": 53775
+      "sha256": "e6ea84b65365728549d33a5cc0d92895c2edec937adf6fbc1b3ec46f1fe885e5",
+      "size_bytes": 53797
     },
     "tests/test_stage4_f1_envelope_contract.py": {
       "sha256": "b1b199f4e043bc5ab9929a082387dae0d2ebde8b115d7a35be71566ebf4edba5",

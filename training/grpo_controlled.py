@@ -10,6 +10,7 @@ import os
 import platform
 import shutil
 import signal
+import subprocess
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -386,7 +387,11 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
         raise ValueError("Execution receipt must match its external SHA-256")
     receipt = json.loads(raw)
     source = source_identity()
-    protocol_path = Path(__file__).resolve().parents[1] / "docs/project/CONTROLLED_G9_ADMISSION_V1.md"
+    repo = Path(__file__).resolve().parents[1]
+    merged_main = subprocess.check_output(
+        ["git", "rev-parse", "origin/main"], cwd=repo, text=True
+    ).strip()
+    protocol_path = repo / "docs/project/CONTROLLED_G9_ADMISSION_V1.md"
     if (
         receipt.get("profile") != PROFILE
         or receipt.get("approved_by") != "Viraj Choudhary"
@@ -394,6 +399,7 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
         or receipt.get("spend_usd_max") != 0
         or receipt.get("host") not in {"Kaggle private free T4", "Colab free T4"}
         or source["source_state"] != "clean"
+        or source["code_sha"] != merged_main
         or receipt.get("source_sha") != source["code_sha"]
         or receipt.get("protocol_sha256") != hashlib.sha256(protocol_path.read_bytes()).hexdigest()
         or receipt.get("hyperparameters") != HYPERPARAMETERS
@@ -614,6 +620,14 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
     finally:
         ledger.close()
         manifest["finished_at"] = datetime.now(UTC).isoformat()
+        manifest["evidence_files"] = {
+            path.relative_to(output).as_posix(): {
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in sorted(output.rglob("*"))
+            if path.is_file() and path != manifest_path
+        }
         write_manifest_atomic(manifest_path, manifest)
 
 

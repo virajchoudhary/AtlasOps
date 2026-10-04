@@ -311,6 +311,11 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
         bos_token_id=2, eos_token_id=3, pad_token_id=1,
     ))
     model.config._name_or_path = "controlled-random-cpu-fixture"
+    from peft import LoraConfig, get_peft_model
+
+    model = get_peft_model(model, LoraConfig(
+        r=2, lora_alpha=4, target_modules=["c_attn"], task_type="CAUSAL_LM",
+    ))
     before = [p.detach().clone() for p in model.parameters()]
 
     def fixture_generate(_model, input_ids, **kwargs):

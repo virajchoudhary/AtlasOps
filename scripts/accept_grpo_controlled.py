@@ -23,6 +23,20 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
         raise ValueError("Exported evidence differs from preserved external hashes")
     manifest = json.loads(raw)
     reload = json.loads(reload_raw)
+    evidence_files = manifest.get("evidence_files")
+    if not isinstance(evidence_files, dict) or not evidence_files:
+        raise ValueError("Controlled export has no frozen evidence inventory")
+    actual_files = {}
+    for path in sorted(run.rglob("*")):
+        if has_redirecting_path_component(path):
+            raise ValueError("Controlled evidence tree contains redirects")
+        if path.is_file() and path != manifest_path:
+            actual_files[path.relative_to(run).as_posix()] = {
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+    if evidence_files != actual_files:
+        raise ValueError("Controlled exported evidence inventory mismatch")
     if (
         manifest.get("profile") != PROFILE
         or manifest.get("classification") != CLASSIFICATION

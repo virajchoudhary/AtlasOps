@@ -107,6 +107,17 @@ No synthetic action/reward is promoted to an empirical training record.
 
 ## Remaining work before production integration
 
+### Later Controlled Contract (5 October 2026)
+
+The [controlled-G9 admission](CONTROLLED_G9_ADMISSION_V1.md) adds a separate
+tiny random CPU PEFT fixture to the installed-TRL test module. That new
+test invokes one real optimizer step with predetermined fixture generation
+tokens and rewards from the closed simulator, without pretrained weights.
+The older two tests still perform no training. This software contract
+does not establish a trained Qwen policy, a live reset or any gate PASS.
+The original observation-first candidate and live training refusal remain
+unchanged.
+
 - Review and approve the prospective observation-first protocol, including
   generation-group reset/repetition and independent equivalent-state rules.
 - Connect separately governed live lifecycle callbacks with observed

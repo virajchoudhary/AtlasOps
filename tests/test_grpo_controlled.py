@@ -172,6 +172,23 @@ def test_reload_requires_distinct_loopback_only_namespace(monkeypatch):
         require_network_isolation()
 
 
+def test_export_rejects_missing_evidence_inventory(tmp_path):
+    import hashlib
+    from scripts.accept_grpo_controlled import accept_export
+
+    run = tmp_path / "run"
+    run.mkdir()
+    manifest = run / "controlled_grpo_manifest.json"
+    reload = tmp_path / "reload.json"
+    manifest.write_text("{}")
+    reload.write_text("{}")
+    with pytest.raises(ValueError, match="evidence inventory"):
+        accept_export(
+            run, reload, hashlib.sha256(manifest.read_bytes()).hexdigest(),
+            hashlib.sha256(reload.read_bytes()).hexdigest(),
+        )
+
+
 class TrainerDouble:
     def __init__(self, *, model, args, reward_funcs, train_dataset):
         self.model = model

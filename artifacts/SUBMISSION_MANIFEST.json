@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 426,
+  "asset_count": 427,
   "assets": {
     "AGENTS.md": {
       "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
@@ -1511,6 +1511,10 @@
     "tests/test_local_metrics_installer.py": {
       "sha256": "624f272690b2ee4da165767b9d99302b0c77524e1e0b16a71eec4b386e4977a7",
       "size_bytes": 2664
+    },
+    "tests/test_loopback_inference_qualification.py": {
+      "sha256": "60547cb108c5155493627478d77ae592d5ee2e60ba8083cfbd5cfde9a31a4f6e",
+      "size_bytes": 8823
     },
     "tests/test_release_gate.py": {
       "sha256": "911bb0b14d07deec6925ddac0575703f2c14e1fdba94e85d234b80ad8fc95304",

@@ -47,6 +47,17 @@ G9 REOPENED, and Stage 15 NOT_CERTIFIED remain unchanged.
 
 ## Decision Record Requirements
 
+### Controlled G9 Decision (5 October 2026)
+
+The project lead explicitly authorized the separate
+[controlled-G9 admission v1](CONTROLLED_G9_ADMISSION_V1.md).
+It prospectively removes live G4/G8 progression prerequisites **only for
+the bounded controlled Train-only pilot**, subject to merge, independent
+review, CI and fresh zero-cost named-host execution admission.
+Live D12 Option A, the unmet G8 criterion, D10 live refusal and all
+historical decision/evidence rows are preserved. G4 is frozen at
+NOT_PASSED with no attempt 018; G9 remains REOPENED, not empirically passed.
+
 The new [D3 candidate review sheet](G7_D3_CANDIDATE_REVIEW_V1.md) and
 [bounded SFT acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) prepare the
 data decision without approving it. Candidate technical checks and independent

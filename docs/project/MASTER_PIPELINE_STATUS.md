@@ -53,6 +53,18 @@ scientifically complete.
 
 ## Canonical Stage & Gate Sequence (v2.2 with GAI + RL scope revision)
 
+### Prospective Controlled Research Admission (5 October 2026)
+
+The [controlled-G9 amendment](CONTROLLED_G9_ADMISSION_V1.md) separates
+bounded simulator GRPO research from the frozen live systems track.
+G4 remains NOT_PASSED: 015 terminal INCONCLUSIVE/unscored, 016 pre-fault
+abort/non-result, 017 completed negative. No attempt 018 is authorized.
+The original G8 live incident-resolution criterion remains unmet.
+This prospective exception permits only conditional Train-only controlled
+G9 research from the verified v17 parent; it neither changes historical
+evidence nor closes any empirical gate. Earlier status snapshots below
+retain their historical scope. Current live admission remains refused.
+
 | Stage | Name | Gate | Target / Deliverable | Current Status |
 |---|---|---|---|---|
 | **Stage 0** | Freeze provenance and working scope | **G0** | Freeze upstream baseline SHA `bf9bd19`, preserve MIT license, establish repository boundaries. | **PASS** |

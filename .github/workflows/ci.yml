@@ -99,7 +99,7 @@ jobs:
             trl==0.19.1 transformers==4.57.6 peft==0.17.1 \
             accelerate==1.14.0 datasets==4.8.5 \
             tokenizers==0.22.2 huggingface-hub==0.36.2
-      - name: Test installed trainer without pretrained weights or training
+      - name: Test installed trainer and tiny controlled optimizer without pretrained weights
         run: python -m pytest tests/test_grpo_observation_installed_trl.py -q
       - name: Test free-T4 attention, loss, and metrics on tiny CPU fixtures
         run: |

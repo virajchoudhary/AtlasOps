@@ -124,9 +124,16 @@ APPROVED_G4_V36_SETTLING_DEADLINE = {
     "evidence": "explicit-not-timed-out-and-monotonic-observations",
 }
 
-# Active prospective v3.6 declaration; prior profiles and evidence stay separate.
-G4_PROTOCOL_MARKER = G4_V36_PROTOCOL_MARKER
-G4_PROTOCOL_PROFILE_VERSION = G4_V36_PROTOCOL_PROFILE_VERSION
+G4_V37_PROTOCOL_MARKER = "G4-RECOVERY-V3.7-2026-10-04"
+G4_V37_PROTOCOL_PROFILE_VERSION = "g4-recovery-profile-v3.7"
+APPROVED_G4_V37_CAUSAL_SOURCE_SHA256 = {
+    **APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
+    "agents/coordinator.py": "e9b638cbb72c763a87501196335bec792bd5a881ac6ab9ace588f53a394f9383",
+}
+
+# Active prospective v3.7 declaration; prior profiles and evidence stay separate.
+G4_PROTOCOL_MARKER = G4_V37_PROTOCOL_MARKER
+G4_PROTOCOL_PROFILE_VERSION = G4_V37_PROTOCOL_PROFILE_VERSION
 APPROVED_G4_MODEL = APPROVED_G4_V33_MODEL
 APPROVED_G4_MODEL_DIGEST = APPROVED_G4_V33_MODEL_DIGEST
 APPROVED_DIAGNOSIS_PROMPT_SHA256 = APPROVED_G4_V33_DIAGNOSIS_PROMPT_SHA256
@@ -219,7 +226,7 @@ def causal_evidence_policy_profile() -> dict[str, Any]:
         **APPROVED_G4_V35_CAUSAL_POLICY,
         "source_sha256": {
             path: file_sha256(REPO_ROOT / path)
-            for path in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256
+            for path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256
         },
     }
 
@@ -533,7 +540,21 @@ APPROVED_G4_V36_PROTOCOL_PROFILE: dict[str, Any] = {
     "settling_deadline_policy": APPROVED_G4_V36_SETTLING_DEADLINE,
 }
 
-APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V36_PROTOCOL_PROFILE
+APPROVED_G4_V37_PROTOCOL_PROFILE: dict[str, Any] = {
+    **APPROVED_G4_V36_PROTOCOL_PROFILE,
+    "protocol_marker": G4_V37_PROTOCOL_MARKER,
+    "profile_version": G4_V37_PROTOCOL_PROFILE_VERSION,
+    "diagnosis_prompt": {
+        **APPROVED_G4_V36_PROTOCOL_PROFILE["diagnosis_prompt"],
+        "version": G4_V37_PROTOCOL_PROFILE_VERSION,
+    },
+    "causal_evidence_policy": {
+        **APPROVED_G4_V36_PROTOCOL_PROFILE["causal_evidence_policy"],
+        "source_sha256": APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
+    },
+}
+
+APPROVED_G4_PROTOCOL_PROFILE: dict[str, Any] = APPROVED_G4_V37_PROTOCOL_PROFILE
 
 
 def protocol_fingerprint(profile: dict[str, Any]) -> str:

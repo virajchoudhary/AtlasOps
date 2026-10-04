@@ -21,7 +21,7 @@ from config.g4_protocol import (
     APPROVED_G4_V31_PROTOCOL_PROFILE,
     APPROVED_G4_V32_PROTOCOL_PROFILE,
     APPROVED_G4_V32_TOOL_CONTRACT_SHA256,
-    APPROVED_G4_V36_CAUSAL_SOURCE_SHA256,
+    APPROVED_G4_V37_CAUSAL_SOURCE_SHA256,
     protocol_fingerprint,
 )
 import scripts.run_stage4_golden_incident as runner
@@ -36,11 +36,11 @@ def isolated_protocol_runtime(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
-        if relative_path in APPROVED_G4_V36_CAUSAL_SOURCE_SHA256:
-            return APPROVED_G4_V36_CAUSAL_SOURCE_SHA256[relative_path]
+        if relative_path in APPROVED_G4_V37_CAUSAL_SOURCE_SHA256:
+            return APPROVED_G4_V37_CAUSAL_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
-    # Reservation tests model the declared v3.6 profile, not the current source tree.
+    # Reservation tests model the declared v3.7 profile, not the current source tree.
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,

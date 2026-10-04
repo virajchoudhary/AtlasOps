@@ -2,6 +2,12 @@
 
 **Status: REOPENED**
 
+The [5 October controlled-G9 admission](CONTROLLED_G9_ADMISSION_V1.md)
+prospectively permits one conditional Train-only simulator pilot from v17.
+It is separate from the historical live training path described below.
+G4 is failed and frozen, original G8 remains unmet, and no live G9 or
+empirical gate PASS is authorized. No genuine controlled checkpoint exists yet.
+
 The policy, environment, reward, provenance, and evaluator software contracts are
 implemented. No real GRPO training run, completed adapter, or empirical evaluation is
 currently preserved.

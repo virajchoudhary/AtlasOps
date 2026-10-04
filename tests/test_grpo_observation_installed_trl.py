@@ -279,3 +279,71 @@ def test_installed_trl_evaluation_refuses_before_observation_or_generation(
     assert trainer.observation_evidence == ()
     assert generated_inputs == []
     assert trainer._step == 0
+
+
+def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
+    _runtime, tmp_path
+):
+    """Actual TRL optimization on a random tiny fixture, NOT pretrained evidence."""
+    from training.grpo_controlled import (
+        CapacityEnvironment, ControlledGRPOMixin, EpisodeLedger, SCENARIO,
+    )
+    from tests.test_grpo_controlled import action
+
+    runtime = _runtime
+    ledger = EpisodeLedger(tmp_path / "episodes.jsonl")
+    environment = CapacityEnvironment(ledger)
+    preview = environment.begin(SCENARIO)["state"]
+    environment.finish({}, "fixture_preview")
+    preview["instruction"] = ACTION_INSTRUCTION
+    prompt = json.dumps(preview, sort_keys=True, separators=(",", ":"))
+    valid = action()
+    vocab = {"[UNK]": 0, "[PAD]": 1, "[BOS]": 2, "[EOS]": 3,
+             prompt: 4, valid: 5, "malformed": 6}
+    backend = runtime.Tokenizer(runtime.models.WordLevel(vocab, unk_token="[UNK]"))
+    backend.decoder = runtime.decoders.Fuse()
+    tokenizer = runtime.PreTrainedTokenizerFast(
+        tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]",
+        bos_token="[BOS]", eos_token="[EOS]",
+    )
+    model = runtime.GPT2LMHeadModel(runtime.GPT2Config(
+        vocab_size=len(tokenizer), n_positions=1024, n_embd=16, n_layer=1, n_head=2,
+        bos_token_id=2, eos_token_id=3, pad_token_id=1,
+    ))
+    model.config._name_or_path = "controlled-random-cpu-fixture"
+    before = [p.detach().clone() for p in model.parameters()]
+
+    def fixture_generate(_model, input_ids, **kwargs):
+        tokens = runtime.torch.tensor(
+            [[5, 3], [6, 3]], device=input_ids.device, dtype=input_ids.dtype
+        )
+        assert input_ids.shape[0] == 2
+        return runtime.torch.cat((input_ids, tokens), dim=1)
+
+    model.generate = MethodType(fixture_generate, model)
+    trainer_type = type("ControlledFixtureTrainer", (ControlledGRPOMixin, runtime.GRPOTrainer), {})
+    args = runtime.GRPOConfig(
+        output_dir=str(tmp_path / "trainer"), use_cpu=True, bf16=False, fp16=False,
+        max_steps=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
+        num_generations=2, max_prompt_length=None, max_completion_length=2,
+        beta=0.04, use_vllm=False, report_to=[], save_strategy="no",
+        remove_unused_columns=False, disable_tqdm=True, learning_rate=0.001,
+    )
+    try:
+        trainer = trainer_type(
+            model=model, args=args,
+            train_dataset=runtime.Dataset.from_list([{"prompt": "", "scenario_id": SCENARIO}]),
+            processing_class=tokenizer, observation_lifecycle=environment,
+        )
+        model.train()
+        trainer.train()
+        assert trainer.state.global_step == 1
+        assert trainer.optimizer is not None
+        assert any(
+            len({r["reward"] for r in group["records"]}) > 1
+            for group in trainer.observation_evidence
+        )
+        assert any(not runtime.torch.equal(a, b) for a, b in zip(before, model.parameters()))
+        assert environment.steps == 2
+    finally:
+        ledger.close()

@@ -39,7 +39,7 @@ def failed_probes():
 def test_offline_profile_requires_receipt_and_actual_egress_failure(tmp_path, monkeypatch):
     path, sha = receipt(tmp_path)
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
-    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self: None)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self, **kwargs: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
         monkeypatch.delenv(name, raising=False)
@@ -142,7 +142,7 @@ def test_probes_use_direct_addresses_timeouts_and_close(monkeypatch):
 def test_acceptance_rejects_nonempty_guard_latch(tmp_path, monkeypatch):
     path, sha = receipt(tmp_path)
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
-    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self: None)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self, **kwargs: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         monkeypatch.delenv(name, raising=False)

@@ -116,7 +116,7 @@ class LoopbackGuard:
         if self.attempts:
             raise PermissionError("Reload attempted a forbidden connection or fallback")
 
-    def install_syscall_guard(self) -> None:
+    def install_syscall_guard(self, *, block_creation: bool = True) -> None:
         """Linux x86_64 seccomp TSYNC blocks even native connect/send syscalls."""
         import ctypes
         import platform
@@ -144,8 +144,20 @@ class LoopbackGuard:
         instructions = [(0x20, 0, 0, 4), (0x15, 1, 0, 0xC000003E),
                         (0x06, 0, 0, 0x80000000), (0x20, 0, 0, 0),
                         (0x45, 0, 1, 0x40000000), (0x06, 0, 0, 0x80000000)]
-        for number in (41, 42, 44, 46, 53, 307, 425, 426):  # sockets/socketpair, sends, io_uring
+        numbers = (42, 44, 46, 307, 425, 426)
+        if block_creation:
+            numbers += (41, 53)
+        for number in numbers:
             instructions += [(0x15, 0, 1, number), (0x06, 0, 0, 0x00030000)]
+        if not block_creation:
+            # socket syscall: allow only IP/Unix families, never raw sockets.
+            instructions += [
+                (0x15, 0, 9, 41), (0x20, 0, 0, 16),
+                (0x15, 3, 0, 1), (0x15, 2, 0, 2), (0x15, 1, 0, 10),
+                (0x06, 0, 0, 0x00030000), (0x20, 0, 0, 24),
+                (0x54, 0, 0, 0xF), (0x15, 0, 1, 3),
+                (0x06, 0, 0, 0x00030000),
+            ]
         instructions += [(0x06, 0, 0, 0x7FFF0000)]
         array = (Filter * len(instructions))(*(Filter(*row) for row in instructions))
         program = Program(len(instructions), array)
@@ -218,6 +230,8 @@ def prepare_isolation(
         raise error
     guard = LoopbackGuard()
     guard.install()
+    guard.install_syscall_guard(block_creation=False)
+    evidence["import_syscall_guard_installed"] = True
     return evidence, guard
 
 
@@ -261,6 +275,7 @@ def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) ->
         and value.get("guard") == "cpython_audit_and_seccomp_tsync_v1"
         and value.get("inherited_socket_fds") == []
         and value.get("syscall_guard_installed") is True
+        and value.get("import_syscall_guard_installed") is True
         and value.get("forbidden_attempts") == []
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)

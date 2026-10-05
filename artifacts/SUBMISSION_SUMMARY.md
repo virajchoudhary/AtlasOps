@@ -4,8 +4,8 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Package readiness**: **READY_FOR_REVIEW**
 - **Scientific certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-05T18:22:16.398384+00:00`
-- **Deterministic asset inventory SHA-256**: `a9985c5d7edc48d0c84d92a84b96e7b7c3870506c063062b676348d1d0654751`
+- **Generated**: `2026-10-05T18:37:33.753864+00:00`
+- **Deterministic asset inventory SHA-256**: `941460fdc0d1ae5dfe3d2b48f84db148898ea3dfd2c5bf9e3243bb8e5acfb0c3`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 Package readiness means required reviewer surfaces and compact canonical evidence are present in the tracked inventory, hashed from checkout bytes, and current-facing local Markdown links resolve. It does not mean the scientific pipeline is certified or that external/private archives and model weights are bundled.
@@ -230,7 +230,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `config/sft_pilot_v4.json` | `914f7a5af5c22a35...` | 4341 |
 | `config/sft_remote_host_proposal_v1.json` | `07c476d9d378836e...` | 2203 |
 | `config/splits.py` | `ae95bab9f1bd5db6...` | 1360 |
-| `dashboard.py` | `baf1068873715e98...` | 30908 |
+| `dashboard.py` | `b85c91630a5cd954...` | 30934 |
 | `demo/launcher.py` | `9535140231cb7cf8...` | 2074 |
 | `docs/AtlasOps_Technical_Report.md` | `af31126d72c4f4af...` | 17947 |
 | `docs/BENCHMARKS.md` | `f4054130730f4981...` | 2831 |
@@ -270,7 +270,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `docs/project/G7_D3_INDEPENDENT_PREFREEZE_REVIEW.md` | `1ef5eca3ae5203a4...` | 3576 |
 | `docs/project/G7_D3_PREFREEZE_CHECKPOINT.md` | `6f5bd7fb051db624...` | 6768 |
 | `docs/project/G7_D3_PREPARATION_APPROVAL_V1.md` | `22be898fc999b935...` | 2881 |
-| `docs/project/G7_FREE_T4_PILOT_V1.md` | `cf3cf1f5237c5983...` | 3283 |
+| `docs/project/G7_FREE_T4_PILOT_V1.md` | `5cad23feec29c11d...` | 3728 |
 | `docs/project/G7_G13_DECISION_REGISTER.md` | `e104d4cc0ff2643f...` | 10055 |
 | `docs/project/G7_G13_REMOTE_EXECUTION_RUNBOOK.md` | `4c1b0f4f21b41a24...` | 19426 |
 | `docs/project/G7_G9_REMOTE_TRAINING_READINESS.md` | `4cdc4ea72a7671b8...` | 20011 |
@@ -456,7 +456,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `tests/test_stage11_hybrid_recommender.py` | `d0a7a55561f7e346...` | 7650 |
 | `tests/test_stage12_integrated_pipeline.py` | `cc61257b54023187...` | 6680 |
 | `tests/test_stage13_ablation_suite.py` | `d93d6fd48d0560ed...` | 43463 |
-| `tests/test_stage14_demo_safety.py` | `06d9cf2ff67cbad9...` | 5768 |
+| `tests/test_stage14_demo_safety.py` | `1766b39756744bde...` | 5793 |
 | `tests/test_stage15_submission_package.py` | `78824fd83dd045da...` | 37965 |
 | `tests/test_stage4_approval_channel.py` | `f173395947de8235...` | 13891 |
 | `tests/test_stage4_baseline_prereservation.py` | `d8697de76a455da8...` | 5445 |
@@ -505,4 +505,4 @@ Private archives and model weights are documented evidence references, not bundl
 | `training/sft_t4_attention.py` | `1bd360a54e2e9510...` | 959 |
 | `training/sft_tokenizer_preflight.py` | `e0027cc2c0c6ff13...` | 44949 |
 | `training/templates/qwen2_5_tool_sft.jinja` | `72c06246b2ce2bbd...` | 3346 |
-| `ui_read_model.py` | `4eab69aca629b8ff...` | 27741 |
+| `ui_read_model.py` | `939198d1da37a008...` | 27744 |

@@ -4,11 +4,11 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-05T18:22:16.398384+00:00",
+  "generated_at": "2026-10-05T18:37:33.753864+00:00",
   "status": "NOT_CERTIFIED",
   "status_scope": "scientific_pipeline_certification",
   "package_readiness_basis": "Required reviewer surfaces and canonical compact evidence are tracked, raw-byte hashed, and current-facing local Markdown links resolve. This does not establish scientific certification or include private archives and model weights.",
-  "asset_inventory_sha256": "a9985c5d7edc48d0c84d92a84b96e7b7c3870506c063062b676348d1d0654751",
+  "asset_inventory_sha256": "941460fdc0d1ae5dfe3d2b48f84db148898ea3dfd2c5bf9e3243bb8e5acfb0c3",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
     "G0": "PASS",
@@ -116,8 +116,8 @@
       "size_bytes": 1235
     },
     "ui_read_model.py": {
-      "sha256": "4eab69aca629b8ffe9d7a232a4ef4c8ec74243d5277332f63108f6364f219238",
-      "size_bytes": 27741
+      "sha256": "939198d1da37a008a61fdd57428d4dd5662daa534ce6f5a568ebcb93856076a0",
+      "size_bytes": 27744
     },
     "docs/AtlasOps_Technical_Report.md": {
       "sha256": "af31126d72c4f4af13af4678527ab659d360a4e56941e3b092cfaad1fac8ec70",
@@ -400,8 +400,8 @@
       "size_bytes": 1990
     },
     "docs/project/G7_FREE_T4_PILOT_V1.md": {
-      "sha256": "cf3cf1f5237c59839ac06118612ab525880439a71499f94019cacf5ba9af3a94",
-      "size_bytes": 3283
+      "sha256": "5cad23feec29c11dc5c7e7cf92d5868c2de136b47c4de4a82c0efe9fa64e9649",
+      "size_bytes": 3728
     },
     "docs/project/G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md": {
       "sha256": "468171583fd94090a9f29f4d3b1a7c3c13a4cae1c226831010db43c1961d63e3",
@@ -1072,8 +1072,8 @@
       "size_bytes": 67772
     },
     "dashboard.py": {
-      "sha256": "baf1068873715e9806d4342c27c62583b7f5c5c1c27938f3231fe05488a5229a",
-      "size_bytes": 30908
+      "sha256": "b85c91630a5cd954045b77594205dba25d3b09a50f5bf093d6a1d1df456c7c8c",
+      "size_bytes": 30934
     },
     "demo/launcher.py": {
       "sha256": "9535140231cb7cf86007b6c9745685f47ab67aee0323c2017b78fb0480255f99",
@@ -1788,8 +1788,8 @@
       "size_bytes": 43463
     },
     "tests/test_stage14_demo_safety.py": {
-      "sha256": "06d9cf2ff67cbad9bc45c1af767b2104f08c7fe9847908e45c4d3eb249b17164",
-      "size_bytes": 5768
+      "sha256": "1766b39756744bde026bcb640e522fd708ada70ead67f12298a2e02e0a2bfc79",
+      "size_bytes": 5793
     },
     "tests/test_stage15_submission_package.py": {
       "sha256": "78824fd83dd045da07add580fba19666eb9eefc4919973f23a64d41c53ef67ad",

@@ -316,6 +316,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "artifacts/evidence/stage7/qwen_a09a354_weight_metadata_v1.json",
         "artifacts/evidence/stage7/sft_tokenizer_preflight*.json",
         "artifacts/evidence/stage7/free-t4-v17/*",
+        "artifacts/evidence/stage8/base-sft-validation-v1/*.json",
         "artifacts/evidence/stage8/base-sft-validation-v1/**/*",
         "artifacts/evidence/stage10/rs_baseline_eval.json",
         "artifacts/evidence/stage10/rs_dataset_manifest.json",

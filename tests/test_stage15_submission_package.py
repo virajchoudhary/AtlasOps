@@ -829,7 +829,7 @@ class TestStage15SubmissionPackage:
         for section in required_sections:
             assert section in slides
 
-        lower_slides = slides.lower()
+        lower_slides = " ".join(slides.lower().split())
         for value in ("0.16875", "0.15935", "-0.00940", "not_certified"):
             assert value in lower_slides
         assert "G4 remains NOT_PASSED" in slides

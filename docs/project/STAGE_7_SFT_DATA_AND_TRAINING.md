@@ -1,6 +1,6 @@
 # Stage 7: Generate SFT Data and Train (Gate G7)
 
-**Status: PARTIAL**
+**Status: PASS (bounded synthetic artifact/reload deliverable)**
 
 The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) accepts
 the frozen candidate's documented limitations for preparation only.
@@ -12,7 +12,7 @@ output creation or training. The frozen v4 plan still has no execution permit;
 the later v17 run used a separate free-T4 profile and per-run approval recorded
 in the [v17 result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 See [model identity](G7_D2_PINNED_MODEL_V1.md), [environment](G7_PILOT_ENVIRONMENT_V1.md)
-and [future run record](G7_PILOT_EXECUTION_RECORD_V1.md).
+and [historical preparation run record](G7_PILOT_EXECUTION_RECORD_V1.md).
 Descriptions below about D3 being wholly pending describe the earlier
 corpus-preparation snapshot; the frozen corpus/audit itself is not rewritten.
 
@@ -38,7 +38,36 @@ The training corpus and SFT software contract are implemented. The bounded v17
 Qwen2.5-7B-Instruct run and preserved, independently reloaded adapter are
 recorded in the [canonical result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 Because its examples are synthetic, this artifact does not establish incident
-improvement; G7 remains PARTIAL and G8 evaluation remains outstanding.
+improvement. The matched [Base/SFT Validation diagnostic](BASE_SFT_VALIDATION_RESULT_V1.md)
+now exists and found no diagnostic improvement. G8 incident-resolution
+acceptance remains unmet.
+
+## Final Acceptance Review (5 October 2026)
+
+The original [G7 acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) requires
+completed provenance, full output inventory and independent network-isolated
+reload. v17 supplies the genuine completed 9-step run, frozen 68-row
+Train-only candidate, 72-package hash lock, model inventory, 27 checkpoint
+files, and fresh-process reload of 392 finite LoRA tensors. The
+[free-T4 profile](G7_FREE_T4_PILOT_V1.md) prospectively replaces the earlier
+OCI image requirement with an isolated hash-locked Colab venv. The named
+approval predates training and the exact gate sets
+`oci_image_digest_required=false`. This is a preapproved profile exception,
+not a post-result waiver. The original numerical repeatability tolerance
+applies before a separately authorized replicate; no replicate is required
+or claimed for this bounded run.
+
+The bounded artifact/reload target is met: G7 advances from PARTIAL to PASS
+under the approved profile and preserved evidence. Synthetic training does
+not establish incident improvement or downstream gate closure. No retraining,
+replicate, model loading or retroactive gate relaxation is authorized.
+Historical records of PARTIAL remain unchanged under their dated scope.
+
+## Historical Preparation Snapshot
+
+The preparation and implementation detail below retains its original
+historical scope. Statements about pending D3 or absent training refer to
+the older fixture/v4 path, not the separately approved completed v17 run.
 
 ## Frozen Data
 
@@ -194,7 +223,9 @@ handoff, immutable revision preflight and fake-loader pin/basis checks,
 lifecycle persistence, and checkpoint hashing.
 The v17 record documents the completed one-epoch synthetic pilot and the
 independent offline reload of its preserved adapter. These establish a
-loadable artifact, not incident performance. G7 remains PARTIAL and G8
-evaluation has not been run; see the [canonical result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
+loadable artifact, not incident performance. G7 is PASS for the
+bounded target justified above. The real G8 diagnostic ran and found
+no improvement; its live resolution criterion remains unmet. See the
+[canonical result](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json).
 
-**Gate G7 Status: PARTIAL**
+**Gate G7 Status: PASS (bounded artifact/reload; no incident improvement claim)**

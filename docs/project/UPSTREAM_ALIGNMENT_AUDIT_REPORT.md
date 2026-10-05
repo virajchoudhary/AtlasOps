@@ -5,10 +5,15 @@
 > report overclaimed scientific completion. Its PASS tables and numerical
 > results below are a historical audit snapshot, not current empirical gate
 > evidence. The [Master Pipeline gate inventory](MASTER_PIPELINE_STATUS.md)
-> and preserved raw evidence control current status: G4 is NOT_PASSED,
-> G6/G8/G12 lack empirical evidence, G9/G13 are REOPENED, and G15 is PARTIAL.
+> and preserved raw evidence control current status. As of 5 October 2026,
+> G4/G9 are frozen NOT_PASSED, v17 and the real negative Base/SFT diagnostic
+> exist, G6/G8/G12 incident evidence remains deferred, G13 retains REOPENED
+> as withdrawal of an unsupported PASS, and G15 remains PARTIAL/NOT_CERTIFIED.
 > Do not use this report to assert 15/15 certification or reproduced upstream
 > training and benchmark outcomes.
+
+> The body below is a historical audit snapshot. Use the
+> [current evidence index](../EVIDENCE_INDEX.md) for the final results.
 
 **Project Fork:** `virajchoudhary/AtlasOps`  
 **Upstream Source Baseline:** `Harikishanth/AtlasOps` @ `bf9bd197c9f4a05ae55ade254802a9eef1a74356`  

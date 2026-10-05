@@ -31,6 +31,14 @@ This governance document records the repository's alignment with the adopted non
 
 ---
 
+The current non-experimental finalization is based on freshly fetched remote main
+`7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, verified on 5 October 2026.
+G4/G9 are frozen and further model/live experiments are deferred. The
+[evidence index](../EVIDENCE_INDEX.md) distinguishes current results from
+unchanged historical snapshots. The
+[deferred research handoff](DEFERRED_RESEARCH_HANDOFF.md) is the current
+experimental next-work entry point, not an execution permit.
+
 The original evidence reconciliation was performed on 2026-09-06 against main
 `fa2eed2bbb75eb81dedfecd6a80f3bc87915ee38` (including evidence recovery
 PR #58). The software/status inventory was reviewed again against main
@@ -53,17 +61,17 @@ scientifically complete.
 
 ## Canonical Stage & Gate Sequence (v2.2 with GAI + RL scope revision)
 
-### Prospective Controlled Research Admission (5 October 2026)
+### Historical Controlled Research Admission (5 October 2026)
 
 The [controlled-G9 amendment](CONTROLLED_G9_ADMISSION_V1.md) separates
 bounded simulator GRPO research from the frozen live systems track.
 G4 remains NOT_PASSED: 015 terminal INCONCLUSIVE/unscored, 016 pre-fault
 abort/non-result, 017 completed negative. No attempt 018 is authorized.
 The original G8 live incident-resolution criterion remains unmet.
-This prospective exception permits only conditional Train-only controlled
+That prospective exception permitted only conditional Train-only controlled
 G9 research from the verified v17 parent; it neither changes historical
-evidence nor closes any empirical gate. Earlier status snapshots below
-retain their historical scope. Current live admission remains refused.
+evidence nor closed any empirical gate. The final negative stop below
+supersedes its prospective execution language. Current live admission remains refused.
 
 ### Final Controlled G9 Freeze (5 October 2026)
 
@@ -81,18 +89,18 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
 | **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
 | **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** (historical local Kind acceptance; wrapper limitations below) |
-| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (010 completed negative; 009 and 011-014 interrupted/inconclusive) |
+| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (frozen: 015 terminal INCONCLUSIVE/unscored; 016 pre-fault abort/non-result; 017 completed negative; no 018) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (scenario/split governance; not proof of every downstream consumer isolation) |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic baseline exists; incident-resolution evidence missing; historical outputs are MOCK) |
-| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (bounded synthetic free-T4 v17 pilot completed; preserved adapter passed independent reload; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
+| **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PASS** (bounded synthetic v17 artifact/reload deliverable under the preapproved free-T4 profile; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic result: no diagnostic improvement observed; incident-resolution criterion remains unmet) |
 | **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **NOT_PASSED** (final controlled negative; experimentally unsuccessful and frozen; no acceptable SFT+GRPO checkpoint) |
 | **Stage 10** | Historical RS data and baselines | **G10** | Retained optional dataset and baseline research; no longer a final prerequisite. | **OUT_OF_SCOPE** (formerly PARTIAL; scenario-derived data do not establish historical feedback) |
 | **Stage 11** | Historical hybrid recommender | **G11** | Retained optional small-data ranking research; no longer a final prerequisite. | **OUT_OF_SCOPE** (former PASS was bounded synthetic offline ranking, not incident resolution) |
-| **Stage 12** | Integrate GAI + RL | **G12** | Multi-agent safety/approval, direct policy action and objective verifier without an RS dependency. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (local software path; real checkpoint/environment execution missing) |
-| **Stage 13** | Final ablation and stress evaluation | **G13** | Matched base GAI, SFT and SFT + GRPO comparisons with independently recomputed raw evidence under a future frozen protocol. | **REOPENED** (old five-arm profiles are historical, not actual evaluation) |
-| **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **PARTIAL** (UI/demo helpers exist; safe deployment not established by code alone) |
-| **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (report/package implementation exists; scientific certification and submission unestablished) |
+| **Stage 12** | Integrate GAI + RL | **G12** | Multi-agent safety/approval, direct policy action and objective verifier without an RS dependency. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (software deliverables complete; accepted policy checkpoint and live integrated evidence deferred) |
+| **Stage 13** | Final ablation and stress evaluation | **G13** | Matched base GAI, SFT and SFT + GRPO comparisons with independently recomputed raw evidence under a future frozen protocol. | **REOPENED** (unsupported historical PASS withdrawn; software review deliverables complete; empirical matrix deferred without an accepted GRPO arm or frozen measurement protocol) |
+| **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **PARTIAL** (local read-only presentation deliverable complete; peer-host/operator deployment acceptance not established) |
+| **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (presentation/review package complete; scientific certification and actual external submission unestablished) |
 
 ---
 
@@ -140,6 +148,12 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 - Its overall verdict is PASS, but `kubectl_describe` and `kubectl_logs` wrapper entries are false, `kubectl_get` returns zero items, and Jaeger returns no traces. Retain the local environment milestone without claiming every wrapper passed or trace ingestion was proved. Current cluster health and cloud billing were not checked here.
 
 ### Gate G4: Real End-to-End Golden Incident — [NOT_PASSED]
+- Current chronology is frozen: attempt 015 is terminal INCONCLUSIVE/unscored,
+  016 aborted before fault injection and is a non-result, and 017 is the
+  latest completed negative. The [controlled admission record](CONTROLLED_G9_ADMISSION_V1.md)
+  anchors the external Pre-RL audit and attempt-017 archive hashes.
+  Attempt 017 includes prompt/evaluator and Comms inconsistencies and is not
+  pure model-performance evidence. No attempt 018 or new G4 execution is authorized.
 - Initial attempt 001 was invalidated for out-of-band harness fault clearance; subsequent negative results remain preserved. No newer authoritative PASS was found in the tracked Stage 4 evidence.
 - `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json` is the latest completed negative result among 009-014: `gate_g4_pass=false`, objective `env_resolved=false`, and incorrect adservice targeting instead of paymentservice.
 - Attempts 009 and 011-014 are interrupted/inconclusive, not successes. Cleanup for 012-014 failed with TLS timeouts; current cleanup state is unverified. Successful cleanup cannot retroactively establish agent resolution.
@@ -152,8 +166,8 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
   rejects late verifier success and over-budget reports without changing
   frozen v3.3-v3.5 or historical records. Synthetic
   tests establish neither a real operator decision nor resolved environment,
-  cleanup, or G4 PASS. A future attempt 015 requires a fresh ignored-ledger
-  and poison-latch check before any reservation.
+  cleanup, or G4 PASS. Their older attempt-015 planning language is historical,
+  superseded by the terminal chronology above; no existing ID may be reused.
 
 ### Gate G5: Scenario Truth and Benchmark Splits — [PASS]
 - `config/scenario_catalog.py`, `config/splits.py`, and `tests/test_stage5_scenario_splits_and_truth.py` define/check 28 frozen manifests, hashes, verifier coverage and disjoint Train(16)/Val(6)/Test(6) populations.
@@ -166,7 +180,7 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
   genuine pinned-base diagnostic inference; it does not supply incident-resolution
   evidence or close G6.
 
-### Gate G7: Generate SFT Data and Train — [PARTIAL]
+### Gate G7: Generate SFT Data and Train — [PASS: BOUNDED ARTIFACT/RELOAD]
 - `training/build_sft_dataset.py` synthesizes training-scenario examples; rendering/masking and training code exist in `training/sft_rendering.py`, `training/templates/qwen2_5_tool_sft.jinja`, and `training/sft.py`.
 - `artifacts/evidence/stage7/sft_corpus_manifest.json` records 64 examples / 16 training scenarios and corpus hash; `sft_training_config.json` records QLoRA settings. These are corpus/configuration evidence, not a completed training run or proof of successful live expert trajectories.
 - The separate frozen 68-row `train-candidate-v1` review bundle remains synthetic.
@@ -182,8 +196,21 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
   and checkpoint inventory. The v17 record identifies the one-epoch, 9-step
   synthetic run and its independently reloaded adapter. This artifact does not
   establish incident gains. Its later matched Validation evaluation is recorded
-  separately below. G7 remains PARTIAL; see the
-  canonical v17 result linked above.
+  separately below. G7 is promoted from PARTIAL to PASS for the bounded
+  artifact/reload deliverable. The original
+  [acceptance contract](G7_SFT_PILOT_ACCEPTANCE_V1.md) required completed
+  provenance/inventory and real independent reload. The separately
+  [preapproved free-T4 profile](G7_FREE_T4_PILOT_V1.md) prospectively replaces
+  the OCI requirement with an isolated 72-package hash-locked Colab venv;
+  `training/sft_free_t4_gate.py` explicitly sets `oci_image_digest_required=false`.
+  The named approval predates the completed 9-step run. The frozen Train-only
+  68-row corpus, source/model/configuration hashes, 27-file checkpoint
+  inventory and separate network-isolated reload meet that bounded target.
+  The original tolerance requirement applies before a separately authorized
+  replicate; no replicate is required or claimed here. This is evidence
+  reconciliation, not a new experiment or retroactive acceptance change.
+  Synthetic limitations remain visible; incident-performance acceptance
+  belongs to G8, which remains unmet. Historical PARTIAL records stay unchanged.
 
 ### Gate G8: Evaluate SFT Before RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
 - `bench/sft_eval.py` now requires a completed, provenance-checked local checkpoint for real inference; mock evaluation remains explicitly non-empirical.
@@ -199,14 +226,16 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
     [the result and caveats](CONTROLLED_G9_FINAL_NEGATIVE_V1.md). No further
     GRPO training retry is authorized. The following software/history facts
     remain intact and do not override the final negative result.
-- Training entrypoints are blocked for a confirmed observation-order defect:
+- The historical live training entrypoints remain blocked for an observation-order defect:
   static catalogue prompts generate completions before the reward callback
   obtains the live incident alert. The
   [prospective observation-first repair](G9_OBSERVATION_FIRST_PROTOCOL_V1_PROPOSAL.md)
   is not an approved protocol or production replacement. The disconnected
   [software candidate](G9_OBSERVATION_FIRST_SOFTWARE_CANDIDATE_V1.md) tests
   observation-before-generation routing without live callbacks or admission
-  changes. Exact action
+  changes. This older live-path defect does not explain away the later
+  controlled negative, whose observed interface mismatch was not proven to be
+  the sole causal explanation. Exact action
   dispatch and verifier scoring alone do not establish observation-conditioned
   learning.
 - `training/grpo.py` now sends the policy completion to `DirectPolicyEnvironment` as the exact proposed action. That adapter checks approval and tool policy, executes at most one action, settles, and carries objective verifier fields into reward and curriculum updates.
@@ -229,21 +258,36 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 - Retain the original saved checkpoint and Stage 11 metrics as historical synthetic results. The newly saved `rs_hybrid_eval_synthetic_v2.json` records Test Hit@3=1.0000 and MRR@3=0.7083 on four scenario-derived Test rows; BM25 Hit@3=0.7500 and MRR@3=0.6250 on the same rows. The former bounded-offline PASS is historical, not a current gate status. The small sample and synthetic labels do not establish broad superiority or historical-feedback learning.
 
 ### Gate G12: Integrate GAI + RL — [IMPLEMENTED / EMPIRICAL EVIDENCE MISSING]
+- Non-experimental implementation, contracts and review documentation are complete.
+  Accepted checkpoint/environment execution is deferred empirical work.
 - The required path has no recommender dependency. The existing recommender checkpoint and `recommended_runbooks` remain optional advisory compatibility behavior, not approval or remediation truth.
 - An explicit `rl_policy` backend loads a provenance-checked G9 checkpoint and executes its exact structured actions through approval, tool policy, settling, and verification. Local injected-policy tests prove control flow but are non-empirical. Complete end-to-end validation still depends on a real G9 checkpoint and live evidence.
 - The governed G12 capture wrapper reuses the Stage 4 harness, preserves raw attempt and coordinator records with hashes, and never certifies a gate from capture alone. It has not run with a real checkpoint or cluster in this continuation.
 
 ### Gate G13: Run Final Ablation and Stress Evaluation — [REOPENED]
+- REOPENED retains the parser-supported withdrawal of the old unsupported PASS.
+  Final software/evidence-review deliverables are complete for existing inputs.
+  The empirical three-arm matrix is deferred: there is no accepted SFT+GRPO
+  checkpoint, and measurement/adversarial/access decisions are not frozen.
+  This is not an instruction to manufacture the absent third arm.
 - `bench/ablation_suite.py` now consumes variant episode artifacts and rejects incomplete or unsupported real comparisons; it does not supply model-name constant metrics as empirical results.
 - Preserve `artifacts/evidence/stage13/ablation_benchmark_results.json` as historical predetermined five-arm output. Previous 100% resolution, 18-second TTR and 0.918 reward claims are not empirical findings. The new required three-arm comparison needs valid checkpoints, independently recomputed raw outcomes, and approved held-out stress provenance under a frozen protocol.
 
 ### Gate G14: Deploy Final Demo Safely — [PARTIAL]
+- Local read-only presentation readiness is the completed deliverable in this
+  finalization. The original/current deployment contract also requires
+  peer-host/operator and security acceptance; local startup and tests alone
+  do not justify a formal G14 PASS or public/live deployment claim.
 - The local Gradio demo in `dashboard.py` and `demo/launcher.py` is read-only. Scenario selection and cleanup guidance execute no kubectl command, inject no fault, and claim no simulated incident outcome. It displays the checked-in G0-G15 status and selected preserved G4 negative/interrupted attempts with source hashes.
 - This console does not certify the separate FastAPI/coordinator entrypoints, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]
 - The technical report now separates implementation, mock/historical evidence, and missing empirical results. `scripts/package_submission.py` derives the declared G0-G15 inventory and emits `NOT_CERTIFIED` with asset hashes and no invented performance figures.
-- Scientific certification and final submission readiness remain unestablished while empirical gates remain open. The prior unsupported report/package statements remain available in Git history; file hashes alone do not close a gate.
+- The report, slides, reviewer entry point, deferred handoff and hash-verified
+  review package are the completed non-experimental deliverables.
+  Presentation/submission-package readiness does not equal full scientific
+  certification or an actual university submission. G15 remains PARTIAL
+  and NOT_CERTIFIED under its full original contract.
 
 ---
 

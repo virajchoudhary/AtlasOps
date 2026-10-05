@@ -2,6 +2,37 @@
 
 This registry preserves dated run records under the governance rules in `AGENTS.md`. The project lead adopted *Master Implementation Pipeline v2.2* Sections 1-24 and 26-27 for current non-live status and evidence standards on 29 September 2026; Section 25 is still an unapproved proposal. Earlier runs retain their contemporaneous v1.1 protocol and wording. For present gate status, see [the master inventory](project/MASTER_PIPELINE_STATUS.md); G4 remains `NOT_PASSED`, not the historical "IN PROGRESS / BLOCKED" label on attempt 004 below.
 
+## Current Evidence Index (5 October 2026)
+
+Fresh source basis: `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`.
+The [reviewer evidence index](EVIDENCE_INDEX.md) supplies canonical paths,
+full integrity anchors and external-storage boundaries without duplicating
+raw archives. The records below are the modern genuine results.
+
+| Run / record | Date | Classification | Result | Canonical reference |
+|---|---|---|---|---|
+| `sft-pilot-free-t4-20261003-v17` | 3 October 2026 | Completed bounded SFT artifact | 68 synthetic Train rows, 1 epoch, 9 optimizer steps, real adapter | [RESULT.json](../artifacts/evidence/stage7/free-t4-v17/RESULT.json) |
+| Independent v17 reload | 3 October 2026 | Completed artifact integrity/reload | Fresh network-isolated load, 392 finite LoRA tensors, no inference | [reload receipt](../artifacts/evidence/stage7/free-t4-v17/reload-v17.json) |
+| `base-sft-validation-20261003-v1` | 3 October 2026 | Completed real diagnostic-only comparison | Base F1 0.16875, SFT 0.15935, delta -0.00940, schema 6/6 each. No diagnostic improvement observed. | [result and raw evidence](project/BASE_SFT_VALIDATION_RESULT_V1.md) |
+| `EXP-STAGE4-SF002-015` | Before 5 October final freeze | Terminal INCONCLUSIVE/unscored | Transport timeout, no retry or score | [integrity index](../artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json) |
+| `EXP-STAGE4-SF002-016` | Before 5 October final freeze | Pre-fault abort/non-result | No model-resolution score | [preflight record](project/G4_V38_RUN_OWNED_PREFLIGHT_GUARD_V1.md) |
+| `EXP-STAGE4-SF002-017` | Before 5 October final freeze | Completed negative | G4 NOT_PASSED with methodological caveats | [chronology and external archive anchors](project/CONTROLLED_G9_ADMISSION_V1.md) |
+| `controlled-g9-replacement-20261005-v2` | 5 October 2026 | Genuine failed/frozen training pilot | 2 optimizer steps, 4 malformed/blocked completions, all rewards -1, both advantage groups zero, no acceptable checkpoint | [final result](project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md) |
+| Final aligned diagnostic v1 | 5 October 2026 | Completed negative diagnostic | 0/8 admissible actions, zero optimizer steps, 392 unchanged tensor hashes | [raw diagnostic](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json) |
+
+Dates not repeated in compact tracked records remain bounded chronology,
+not invented exact timestamps. G4/G9 are frozen, no attempt 018 or training
+retry is authorized. Negative diagnostics do not establish population-zero
+probability, sole-cause attribution or incident improvement. The remaining
+scientific work is [deferred](project/DEFERRED_RESEARCH_HANDOFF.md).
+
+## Historical Registry Snapshot
+
+The dated records below retain their original wording and provenance.
+Old "IN PROGRESS" or approval-predicate statements are not current
+authorization or proof of explicit human approval. Later fail-closed
+SAFETY-01 and preserved evidence control current claims.
+
 ---
 
 ## Experiment Summary Index

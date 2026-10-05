@@ -2,6 +2,7 @@
 # Stable checkout EOL for tracked raw-byte package assets selected by Stage 15.
 stage3/acceptance_report.json text eol=crlf
 stage4/EXP-STAGE4-SF002-00[2-8]* text eol=crlf
+stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json text eol=crlf
 stage4/golden_incident_sf002_manifest.json text eol=crlf
 stage7/sft_corpus_manifest.json text eol=crlf
 stage7/sft_training_config.json text eol=crlf

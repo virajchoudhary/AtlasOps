@@ -98,15 +98,21 @@ authorization. Estimate storage before any multi-GB operation.
 
 ## Known review items (do not fix without a scoped task)
 
-- G4 remains NOT_PASSED: attempt 010 is the latest completed negative result among
-  009-014; 009 and 011-014 are interrupted/inconclusive. Cleanup failures remain recorded.
-- GRPO now has a locally tested direct-action policy/environment adapter. Real settling,
-  explicit live-run authorization and pinned cluster context, P1 integration, and dense
-  reward evidence still require verification before a live training claim.
-- G7 remains PARTIAL: the bounded synthetic free-T4 v17 SFT pilot produced a preserved
+- G4 remains NOT_PASSED and frozen: 015 is terminal INCONCLUSIVE/unscored,
+  016 is a pre-fault abort/non-result, and 017 is the latest completed negative.
+  Earlier negative/interrupted evidence and cleanup failures remain recorded.
+  There is no attempt 018 in this finalization scope.
+- G9 is final negative and frozen. The genuine replacement pilot completed two
+  optimizer steps and four malformed/blocked completions, all rewards -1 and both
+  advantage groups zero. No reward-driven GRPO learning or acceptable checkpoint
+  resulted. The aligned diagnostic yielded 0/8 admissible actions, zero optimizer
+  steps and unchanged hashes for all 392 LoRA tensors. This does not prove zero
+  population probability or that interface mismatch was the sole cause.
+- G7 is PASS for the bounded artifact/reload deliverable: the synthetic free-T4 v17 SFT pilot produced a preserved
   adapter that passed an independent offline reload
   ([evidence](artifacts/evidence/stage7/free-t4-v17/RESULT.json)). This establishes an
-  artifact, not incident improvement. The real matched Validation comparison records
+  artifact, not incident improvement. The preapproved free-T4 profile uses an
+  isolated hash-locked venv rather than an OCI image. The real matched Validation comparison records
   Base diagnostic F1 0.16875, SFT 0.15935, paired difference -0.00940 and 6/6
   diagnostic JSON conformance per arm: no diagnostic improvement observed.
   G8 incident-resolution evidence remains missing. Archived Stage 6/8/9 mock outputs
@@ -123,3 +129,7 @@ authorization. Estimate storage before any multi-GB operation.
   12 runbooks. Neither is genuine historical interaction feedback.
 - Infrastructure scripts have static/local validation; real provisioning or portability
   claims require target-specific verification and explicit authorization.
+- Current evidence and deferred work are indexed in
+  [the evidence index](docs/EVIDENCE_INDEX.md) and
+  [the deferred research handoff](docs/project/DEFERRED_RESEARCH_HANDOFF.md).
+  Presentation/package readiness is distinct from NOT_CERTIFIED scientific status.

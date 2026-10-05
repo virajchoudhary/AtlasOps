@@ -1,5 +1,11 @@
 # G7-G13 staged remote execution runbook
 
+> **HISTORICAL / SUPERSEDED EXECUTION-NEXT-STEP SNAPSHOT.**
+> The source-bounded plan below grants no execution authority. v17 and the
+> matched Validation diagnostic subsequently completed; G4/G9 are frozen.
+> [Current deferred handoff](DEFERRED_RESEARCH_HANDOFF.md) is the sole
+> experimental handoff for this finalization.
+
 **Status: FUTURE EXECUTION PLAN / NOT AUTHORIZED.** This document is a
 non-live handoff, not a launch instruction for the current machine or a
 provider reservation. No command below was executed to train, load model

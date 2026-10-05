@@ -1,5 +1,12 @@
 # Free Colab T4 Pilot v1
 
+> **Historical execution/profile record; gate-status wording superseded on
+> 5 October 2026.** The outcome and approved profile below remain unchanged.
+> The [current Stage 7 acceptance review](STAGE_7_SFT_DATA_AND_TRAINING.md)
+> reconciles G7 to PASS for the bounded Train-only artifact/reload target.
+> The older PARTIAL sentence describes the status at recording time.
+> No incident improvement, replicate or further training is authorized.
+
 This is a separate execution profile. The frozen `sft_pilot_v4.json` and
 its execution refusal remain unchanged. On 2026-10-03 the project lead
 approved the free-T4 preparation and workflow in this chat:

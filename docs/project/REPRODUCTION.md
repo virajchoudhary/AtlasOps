@@ -1,5 +1,12 @@
 # Reproducing the AtlasOps local development baseline
 
+Current source/evidence basis: `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`,
+5 October 2026. The commands below validate software without model
+execution or live infrastructure. The Stage 0D figures are historical.
+Current results and package hashes are in the
+[evidence index](../EVIDENCE_INDEX.md) and
+[submission summary](../../artifacts/SUBMISSION_SUMMARY.md).
+
 This procedure reproduces the safe local unit/static baseline. It does not validate
 live infrastructure, external integrations, model execution, or training.
 
@@ -74,7 +81,7 @@ Run these commands from the repository root:
 python --version
 python -m pip check
 python -m compileall -q agents bench config training scripts app.py dashboard.py eval.py inference.py leaderboard.py
-python -m ruff check . --select E9,F63,F7
+python -m ruff check . --select E9,F63,F7,F821
 python -m pytest tests/
 python -m build
 python -c "import config.runtime, agents.coordinator, bench.runner; print('safe imports passed')"
@@ -100,14 +107,30 @@ warning and the former insecure audit-fallback warning. Stage 1A removes that fa
 and its warning. The test count and warning text may change after intentional project
 changes; record actual results rather than copying this baseline blindly.
 
-For diagnostic evidence only, this command is expected to fail at the frozen baseline:
+The original Stage 0D `F821` failure at `bench/runner.py:92` is historical.
+G2 repaired the tier-ordering defect. The current CI correctness gate
+includes F821 and must pass:
 
 ```powershell
 python -m ruff check . --select F821
 ```
 
-It reports one undefined `tier` use at `bench/runner.py:92`. Do not weaken the standard
-gate or silently fix that defect as part of environment setup.
+Do not weaken the current correctness gate to match the old negative baseline.
+
+## Current Safe Review Path
+
+```powershell
+python -m pytest tests/test_stage14_demo_safety.py tests/test_stage15_submission_package.py tests/test_current_project_truth.py
+python -m demo.launcher --host 127.0.0.1 --port 7860
+```
+
+The demo reads preserved evidence and requires no cluster, model endpoint or
+GPU. Optional installed-trainer tests use tiny random local fixtures, never
+pretrained weights or real project training. Offline environment variables
+`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, `HF_DATASETS_OFFLINE=1`
+and `CUDA_VISIBLE_DEVICES=""` keep optional test execution bounded.
+Full pytest includes mocked partition-isolation checks. Those fixtures are
+not access to empirical final-Test or Leaderboard outcomes.
 
 ## Known limitations
 

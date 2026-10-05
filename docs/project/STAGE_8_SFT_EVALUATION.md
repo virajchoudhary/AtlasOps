@@ -9,7 +9,11 @@ The valid v17 checkpoint was evaluated under the same pinned inference condition
 This is a real diagnosis-only result, not empirical environment-resolution evidence.
 The master pre-RL resolution criterion is not met by this diagnosis-only path;
 the [D12 decision proposal](G8_D12_PRE_RL_RESOLUTION_PROPOSAL_V1.md) remains
-unapproved and does not change this evaluator or the gate status.
+historical and does not change this evaluator or the gate status. The later
+[controlled admission](CONTROLLED_G9_ADMISSION_V1.md) retains D12 Option A
+for live work while making a separate simulator-only exception.
+The diagnostic result is complete. Incident-resolution evaluation is deferred
+empirical work, not an unfinished diagnostic software deliverable.
 
 ## Evaluation Contract
 

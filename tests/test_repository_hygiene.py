@@ -357,8 +357,8 @@ def test_old_training_shortcuts_do_not_launch_python():
 def test_review_guide_does_not_recommend_ungoverned_chaos():
     guide = (ROOT / "JUDGES_START_HERE.md").read_text(encoding="utf-8")
     assert "NOT_CERTIFIED" in guide
-    assert "G4 is `NOT_PASSED`" in guide
-    assert "python dashboard.py" in guide
+    assert "G4 remains NOT_PASSED" in guide
+    assert "python -m demo.launcher --host 127.0.0.1 --port 7860" in guide
     assert "kubectl apply" not in guide
     assert "kubectl delete" not in guide
     assert "Everything below hits a live GKE cluster" not in guide

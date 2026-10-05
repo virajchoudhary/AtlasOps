@@ -1,6 +1,24 @@
 # Stage 9: Correct and Train Online GRPO (Gate G9)
 
-**Status: REOPENED**
+**Status: NOT_PASSED / FINAL NEGATIVE / FROZEN**
+
+The [final controlled result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md) supersedes
+prospective launch language. The genuine replacement pilot completed two
+optimizer steps and four malformed/blocked completions with rewards all -1,
+both advantage groups zero, no reward-driven GRPO learning and no accepted
+checkpoint. The aligned diagnostic yielded 0/8 admissible actions, zero
+optimizer steps and unchanged hashes for all 392 LoRA tensors. This does
+not prove population probability exactly zero or sole causation by the
+observed interface mismatch.
+
+No further GRPO training is authorized. Software, evidence-review and
+presentation deliverables are complete for the preserved results. Accepted
+checkpoint and incident-level evaluation are deferred research.
+
+## Historical Live-Path Software Contract
+
+The following implementation/planning snapshot describes the guarded live
+path and earlier admission. It is not current permission to execute.
 
 The [5 October controlled-G9 admission](CONTROLLED_G9_ADMISSION_V1.md)
 prospectively permits one conditional Train-only simulator pilot from v17.
@@ -9,8 +27,8 @@ G4 is failed and frozen, original G8 remains unmet, and no live G9 or
 empirical gate PASS is authorized. No genuine controlled checkpoint exists yet.
 
 The policy, environment, reward, provenance, and evaluator software contracts are
-implemented. No real GRPO training run, completed adapter, or empirical evaluation is
-currently preserved.
+implemented. No acceptable real-environment GRPO adapter or incident evaluation
+is preserved. The later genuine controlled pilot is negative, as recorded above.
 
 **Training admission is blocked for a confirmed observation-order defect.**
 
@@ -199,4 +217,4 @@ the ML dependency stack, a reviewed operator protocol, and a controlled live
 environment with serialized mutations. No standalone positive P1 decision has
 been observed in a real experiment.
 
-**Gate G9 Status: REOPENED**
+**Gate G9 Status: NOT_PASSED (frozen final negative)**

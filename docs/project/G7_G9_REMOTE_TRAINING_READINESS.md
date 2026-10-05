@@ -1,5 +1,11 @@
 # G7-G9 remote-training readiness assessment
 
+> **HISTORICAL / SUPERSEDED STATUS SNAPSHOT.**
+> The findings below retain their dated source basis. The later v17 artifact,
+> matched Validation diagnostic and final negative G9 freeze appear in
+> [current status](MASTER_PIPELINE_STATUS.md). No new training follows from
+> this document; use [the deferred handoff](DEFERRED_RESEARCH_HANDOFF.md).
+
 **Historical status: NON-LIVE SOFTWARE REVIEW / TRAINING NOT AUTHORIZED / EMPIRICAL
 EVIDENCE MISSING.** Source basis:
 `56575293c0f6bfaebbbf98404d7cb1f5fd19d44e`. This assessment does not

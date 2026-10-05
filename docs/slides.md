@@ -2,142 +2,258 @@
 marp: true
 theme: default
 paginate: true
-backgroundColor: '#F7F9FB'
-color: '#1B2933'
+backgroundColor: "#F7F9FB"
+color: "#1B2933"
 style: |
-  section { font-family: Arial, sans-serif; padding: 52px 64px; }
+  section { font-family: Arial, sans-serif; padding: 48px 64px; }
   h1 { color: #12333B; font-size: 2.5em; }
   h2 { color: #12333B; font-size: 1.65em; }
   strong { color: #007D85; }
   small, footer { color: #52636B; }
-  img { max-height: 440px; object-fit: contain; }
 ---
 
 # AtlasOps
 
-## Project continuation and real-validation status
+## Governed multi-agent SRE research
 
-Scope updated 29 September 2026
+University continuation of Harikishanth/AtlasOps<br>
+Evidence state: 5 October 2026<br>
+Research status: **NOT_CERTIFIED**
 
-Historical presentation evidence baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`
-
-<small>University team continuation of Harikishanth/AtlasOps, upstream baseline
-`bf9bd197c9f4a05ae55ade254802a9eef1a74356`. MIT attribution retained.</small>
-
-<!-- Source: AGENTS.md; docs/project/GAI_RL_SCOPE_REVISION.md; historical main at 8560a8c before the presentation merge. -->
+<!-- Evidence: AGENTS.md; docs/project/GAI_RL_SCOPE_REVISION.md -->
 
 ---
 
-## The operator console
+## Incident Response Problem
 
-![Current local AtlasOps operator console](media/console-overview-20260926.png)
+An incident workflow must interpret alerts, gather evidence, make a diagnosis, control
+changes, and verify system state.
 
-The merged UI distinguishes **current process observations** from **historical
-incident evidence**. This capture is a local read-only view with cluster health
-unverified. It is not a successful remediation demonstration.
+AtlasOps assigns distinct roles to these steps. A model response proposes work. The
+environment verifier decides whether a required condition has been met.
 
-<!-- Source: static/console.js; ui_read_model.py; local startup smoke on 2026-09-26. -->
+The current evidence describes software, one bounded SFT artifact, a diagnostic
+comparison, and a negative controlled GRPO result.
 
----
-
-## Incident decision path
-
-1. An alert reaches Triage and Diagnosis.
-2. The safety gate requires explicit P1 approval before remediation.
-3. A trained GRPO policy, when one exists, must propose one structured action
-   through the tool ACL and environment adapter.
-4. The objective verifier determines resolution before Comms records the result.
-
-The direct policy-action software path has local test coverage. **No completed
-GRPO checkpoint or real integrated episode has been verified.**
-The historical runbook recommender is optional advisory research.
-
-<!-- Source: agents/coordinator.py; agents/tool_policy.py; training/grpo_environment.py; docs/project/MASTER_PIPELINE_STATUS.md. -->
+<!-- Evidence: agents/coordinator.py; agents/verifier.py; docs/project/MASTER_PIPELINE_STATUS.md -->
 
 ---
 
-## What the evidence supports
+## Agent Workflow
 
-- G0-G3 and G5 retain their bounded project milestones. The historical G3
-  acceptance report does not prove current cluster health.
-- The professional UI and Gradio browser are read-only evidence views.
-  Judge outages remain ungraded, and Chaos tool rewards follow the canonical
-  mutation policy. These are locally tested software contracts.
-- CI for the reviewed code baseline passed frontend contracts and Python
-  3.11/3.12, including the full unit suite.
-- G10/G11 are out of the current GAI + RL scope. Their preserved recommender
-  results use a small scenario-derived set, not historical operator feedback.
-- The submission inventory verifies file integrity and remains
-  **NOT_CERTIFIED**.
+1. An alert enters the coordinator.
+2. Triage classifies the incident and requests evidence.
+3. Diagnosis interprets observations and proposes a cause.
+4. Safety policy checks the proposed action and required approval.
+5. Remediation dispatches an allowed action after approval.
+6. The environment verifier checks required conditions.
+7. Comms records the verified outcome or the reason work remained blocked.
 
-<!-- Source: docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json; GitHub Actions main run 36235943522 at 8560a8c. -->
+<!-- Evidence: agents/coordinator.py; agents/approval.py; agents/verifier.py -->
 
 ---
 
-## G4: the completed attempt was negative
+## Four Agent Roles
 
-`EXP-STAGE4-SF002-010` is the latest completed result among attempts 009-014.
-Its recorded gate verdict is **false** and objective environment resolution is
-**false**. The agent targeted adservice instead of the frozen paymentservice
-target. Approval timed out, while a criterion marked approval satisfied: an
-unresolved inconsistency, not proof of human approval.
+- **Triage** structures incoming alerts and identifies what evidence to collect.
+- **Diagnosis** reasons over observations and proposes a cause.
+- **Remediation** uses only its permitted tools after required approval.
+- **Comms** reports the verifier-backed result and preserves uncertainty.
 
-Attempts 009 and 011-014 are interrupted or inconclusive. Cleanup for 012-014
-failed, so the present cluster state cannot be inferred from those records.
-
-**G4 remains NOT_PASSED.**
-
-<!-- Source: artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json; artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md. -->
+<!-- Evidence: agents/prompts/; agents/coordinator.py -->
 
 ---
 
-## Real evaluation dependencies
+## Safety and Verification
 
-- G6 needs an approved endpoint with an observed exact model revision and
-  preserved raw predictions. Existing Stage 6 outputs are mock evidence.
-- G7's synthetic Train corpus can be generated without overwriting canonical
-  evidence. Real training still needs approved BF16-capable compute and a
-  pinned runtime. G8 then needs a completed, hashed SFT adapter.
-- G9 needs a real policy checkpoint and governed environment rollouts. Local
-  direct-action tests do not establish trained-policy performance.
-- G12 needs that checkpoint and a live, clean controlled environment.
-- G13 plans three matched arms: base GAI, SFT, and SFT+GRPO. It needs raw
-  outcome evidence and a reviewed frozen protocol before any Test campaign.
+- Role policy exposes 19 of 24 registered SRE tool wrappers.
+- P1 mutations require explicit approval. Rejection, timeout, and missing decisions
+  block dispatch.
+- The objective environment verifier controls resolution outcomes.
+- An HMAC-chained audit log records agent actions and incident boundaries.
+- Local tests cover software contracts. They do not certify live safety or a successful
+  incident.
 
-No new model or full-pipeline metric was measured for this deck.
-
-<!-- Source: docs/project/STAGE_6_ZERO_SHOT_BASELINE.md through STAGE_13_FINAL_ABLATION_EVALUATION.md; bench/ablation_suite.py. -->
+<!-- Evidence: agents/tool_policy.py; agents/approval.py; agents/verifier.py; agents/audit.py -->
 
 ---
 
-## A safe five-minute demo
+## Frozen Evaluation Design
 
-![Read-only Gradio evidence browser](media/gradio-demo-20260926.png)
+The catalogue contains 28 frozen scenarios.
 
-Show the gate inventory and inspect the preserved G4 negative and interrupted
-attempts. Optional historical runbook ranking remains separate. The scenario selector reads a
-checked-in manifest; it does not inject Chaos. The Gradio launcher binds to
-localhost without a public share link by default.
+Train contains 16 scenarios. Validation contains 6. Test contains 6.
 
-<!-- Source: demo/launcher.py; dashboard.py; docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md; local startup smoke on 2026-09-26. -->
+The v17 corpus contains 68 synthetic, scenario-derived Train-only rows. The Base-vs-SFT
+diagnostic used six alert-only Validation scenarios per arm. No final-Test outcome is
+reported.
+
+<!-- Evidence: config/scenario_catalog.py; config/splits.py; docs/project/BASE_SFT_VALIDATION_RESULT_V1.md -->
 
 ---
 
-## Closure decision
+## SFT Artifact v17
 
-**Non-live engineering is substantial; scientific closure remains open.**
+Base model: `Qwen/Qwen2.5-7B-Instruct`<br>
+Pinned revision: `a09a35458c702b33eeacc393d103063234e8bc28`<br>
+Training: one epoch, 9 optimizer steps, free Tesla T4<br>
+Method: four-bit NF4 QLoRA, LoRA rank 16, alpha 32<br>
+Data: 68 synthetic Train-only examples
 
-At the recorded 26 September local preflight: Docker Linux engine absent,
-Kind API unreachable, no approved model endpoint observed, GTX 1650 with
-4 GiB VRAM, and no optional ML training stack in the project environment.
-Independent agent review was unavailable after a transport/decode failure;
-no verifier PASS is claimed.
+Fresh-process independent reload passed. The adapter is a genuine bounded artifact.
+Its existence and reload do not demonstrate incident improvement.
 
-Next, an operator must establish a clean disposable Kind environment, confirm
-zero active Chaos and an approved model identity, arrange legitimate P1
-approval, and then run one predeclared G4 attempt. Suitable training compute
-and a frozen adversarial evaluation protocol remain separate prerequisites.
+<!-- Evidence: artifacts/evidence/stage7/free-t4-v17/RESULT.json; artifacts/evidence/stage7/free-t4-v17/reload-v17.json -->
 
-**Package state: NOT_CERTIFIED. No production certification is claimed.**
+---
 
-<!-- Source: recorded local preflight on 2026-09-26; docs/project/MASTER_PIPELINE_STATUS.md; artifacts/SUBMISSION_MANIFEST.json. -->
+## Base-vs-SFT Validation Diagnostic
+
+**Base mean token-set F1: 0.16875**
+
+**SFT mean token-set F1: 0.15935**
+
+**Paired difference: -0.00940**
+
+Diagnostic JSON conformance: 6/6 in each arm<br>
+**No diagnostic improvement observed**
+
+The comparison is descriptive. It measures neither resolution nor action validity,
+safety, reward, or time to resolve.
+
+<!-- Evidence: docs/project/BASE_SFT_VALIDATION_RESULT_V1.md; artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json -->
+
+---
+
+## Controlled GRPO Design
+
+The pilot used a bounded capacity simulator and the frozen Train scenario
+`single_fault/sf-002`.
+
+The policy observed simulator state before generating a structured action. Policy and
+approval checks preceded simulator transition and objective scoring.
+
+This protocol describes controlled synthetic training. It does not reproduce a live
+Kubernetes incident or the original G4 recovery criterion.
+
+<!-- Evidence: docs/project/CONTROLLED_G9_ADMISSION_V1.md; training/grpo_controlled.py -->
+
+---
+
+## Controlled G9 Pilot Outcome
+
+- Two optimizer steps produced four policy completions.
+- All four actions were malformed or blocked.
+- Each completion received reward -1.
+- Both advantage groups were zero.
+- No reward-driven GRPO learning was established.
+- No acceptable SFT+GRPO checkpoint was saved.
+
+The experiment ended as a negative result. The G9 track is frozen.
+
+<!-- Evidence: docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md -->
+
+---
+
+## Final Aligned Action Diagnostic
+
+**Admissible actions: 0 of 8**
+
+Optimizer steps: 0<br>
+Reward-based updates: 0<br>
+LoRA tensor hashes unchanged: 392 of 392
+
+This is the final negative decision under the tested serialization contract. Zero of
+eight does not establish an exactly zero population probability.
+
+<!-- Evidence: artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json; artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json -->
+
+---
+
+## G4 Live Incident Track
+
+Attempt 015: terminal INCONCLUSIVE and unscored<br>
+Attempt 016: pre-fault abort and non-result<br>
+Attempt 017: completed negative outcome
+
+**G4 remains NOT_PASSED. No attempt 018 exists.**
+
+The original G8 live incident-resolution criterion remains unmet. The G4 raw bundles
+for 015 and 017 are preserved outside this repository.
+
+<!-- Evidence: docs/project/CONTROLLED_G9_ADMISSION_V1.md; artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json -->
+
+---
+
+## Historical Claim Boundary
+
+Archived upstream material reported resolution values of 54%, 68%, and 82%, with
+rewards of 0.481, 0.601, and 0.729. The continuation did not reproduce those results.
+
+Predetermined Stage 13 profiles include 100% resolution, 18-second TTR, and 0.918
+reward. Those values are not observed outcomes.
+
+The charts under `assets/training/` remain historical illustrations and do not describe
+current model performance.
+
+<!-- Evidence: README.md; docs/project/MASTER_PIPELINE_STATUS.md; artifacts/evidence/stage13/ablation_benchmark_results.json -->
+
+---
+
+## Read-Only Local Demo
+
+```powershell
+python -m demo.launcher --host 127.0.0.1 --port 7860
+```
+
+Open `http://127.0.0.1:7860/`. The demo browses repository evidence on localhost. It
+requires no model endpoint, GPU, Docker, or Kind cluster. It runs no model inference,
+kubectl command, fault injection, approval action, or remediation.
+
+<!-- Evidence: demo/launcher.py; docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md -->
+
+---
+
+## Evidence and Reproducibility
+
+Canonical records preserve source revisions, run configuration, raw results, and
+SHA-256 checks. Independent recomputations support the Base-vs-SFT summary. A fresh
+process reload supports the v17 artifact identity. The G9 diagnostic preserves raw
+samples and before-and-after adapter hashes.
+
+The submission manifest checks tracked-file integrity. Hashes do not certify scientific
+gates.
+
+<!-- Evidence: artifacts/SUBMISSION_MANIFEST.json; docs/project/BASE_SFT_VALIDATION_RESULT_V1.md; docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md -->
+
+---
+
+## Limitations
+
+- The SFT corpus is synthetic and scenario-derived.
+- The six-scenario Validation result showed no diagnostic improvement.
+- The GRPO pilot established no reward-driven learning.
+- No acceptable SFT+GRPO checkpoint exists.
+- No G4 incident passed, and G8 live resolution remains unproven.
+- The read-only demo does not certify deployment or current cluster health.
+- The project remains NOT_CERTIFIED.
+
+<!-- Evidence: docs/project/MASTER_PIPELINE_STATUS.md; docs/project/BASE_SFT_VALIDATION_RESULT_V1.md; docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md -->
+
+---
+
+## Conclusion and Deferred Research
+
+AtlasOps now has a governed multi-agent implementation, a reloadable bounded SFT
+artifact, a real Base-vs-SFT diagnostic, and a preserved negative controlled-GRPO
+result.
+
+The Base-vs-SFT diagnostic found no improvement. The final controlled GRPO track
+produced no accepted checkpoint. G4 and the original G8 incident-resolution criterion
+remain open.
+
+Any future empirical work requires separate authorization and evidence under the
+approved criteria. This presentation does not authorize G4, training, Test access,
+cluster mutation, or paid compute.
+
+<!-- Evidence: docs/project/MASTER_PIPELINE_STATUS.md; docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md -->

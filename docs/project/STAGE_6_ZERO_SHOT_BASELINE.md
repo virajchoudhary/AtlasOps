@@ -3,8 +3,12 @@
 **Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**
 
 The zero-shot evaluator now separates deterministic compatibility tests from genuine
-base-model inference. No approved Qwen2.5-7B-Instruct inference run is preserved in the
-repository, so G6 has no empirical performance result.
+base-model inference. The real six-scenario
+[matched Base-vs-SFT Validation diagnostic](BASE_SFT_VALIDATION_RESULT_V1.md)
+is preserved: Base F1 0.16875 and diagnostic schema conformance 6/6.
+It does not measure incident resolution or close the original G6 gate.
+The software and reproducibility deliverables are complete for the current
+non-experimental scope. Remaining incident-level evaluation is deferred.
 
 The older `bench.runner` CLI is retained only for explicit `--mock` compatibility fixtures.
 It cannot apply Chaos or clean a cluster, and writes comparison output inside its unique

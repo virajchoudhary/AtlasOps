@@ -25,7 +25,8 @@ from dashboard import (
     _reset_chaos,
     build_app,
 )
-from demo.launcher import launch_demo, main as launcher_main
+from demo.launcher import launch_demo
+from demo.launcher import main as launcher_main
 
 
 class TestStage14DemoSafety:

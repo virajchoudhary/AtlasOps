@@ -33,8 +33,8 @@ EVIDENCE = (
      "SFT v17 training and preservation record", "Current artifact provenance", "SFT"),
     ("artifacts/evidence/stage7/free-t4-v17/reload-v17.json",
      "SFT v17 independent reload", "Independent reload verification", "SFT"),
-    ("artifacts/evidence/stage8/base-sft-validation-v1/"
-     "base-sft-validation-20261003-v1/summary.json",
+    (("artifacts/evidence/stage8/base-sft-validation-v1/"
+      "base-sft-validation-20261003-v1/summary.json"),
      "Matched Base-vs-SFT Validation summary", "Current diagnostic result", "Validation"),
     ("docs/project/CONTROLLED_G9_ADMISSION_V1.md",
      "G4 final chronology reference", "Current G4 disposition summary", "G4"),

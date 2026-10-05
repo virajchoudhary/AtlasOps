@@ -7,8 +7,10 @@ import re
 from pathlib import Path
 
 import gradio as gr
+
 from ui_read_model import catalog as read_model_catalog
-from ui_read_model import current_results, final_g4_attempts, gates as read_model_gates
+from ui_read_model import current_results, final_g4_attempts
+from ui_read_model import gates as read_model_gates
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 EVIDENCE_DIR = PROJECT_ROOT / "artifacts/evidence"

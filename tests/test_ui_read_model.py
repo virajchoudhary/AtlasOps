@@ -11,7 +11,7 @@ def test_governance_snapshot_is_complete_and_preserves_negative_results():
     rows = gates()
     assert [row["gate"] for row in rows] == [f"G{i}" for i in range(16)]
     assert rows[4]["status"] == "NOT_PASSED"
-    assert rows[9]["status"] == "REOPENED"
+    assert rows[9]["status"] == "NOT_PASSED"
     assert rows[13]["status"] == "REOPENED"
     assert "EMPIRICAL EVIDENCE MISSING" in rows[6]["status"]
 

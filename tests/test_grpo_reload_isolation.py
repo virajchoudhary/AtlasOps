@@ -188,3 +188,41 @@ print('INHERITED_SOCKET_REFUSED')
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only GPU socket classes")
+def test_gpu_discovery_audit_rejects_ip_and_subprocesses():
+    guard = isolation.LoopbackGuard()
+    guard.gpu_discovery = True
+    guard.audit("socket.__new__", (None, socket.AF_UNIX, socket.SOCK_SEQPACKET, 0))
+    for event, args in (
+        ("socket.__new__", (None, socket.AF_INET, socket.SOCK_STREAM, 0)),
+        ("socket.connect", (None, "/tmp/nvidia-mps/control")),
+        ("subprocess.Popen", ("/sbin/ldconfig", ["/sbin/ldconfig", "-p"], None, None)),
+    ):
+        with pytest.raises(PermissionError):
+            guard.audit(event, args)
+    assert len(guard.attempts) == 3
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only two-phase syscall guard")
+def test_gpu_discovery_native_socket_classes_and_sealed_exec():
+    code = """
+import ctypes,socket
+from training.grpo_reload_isolation import LoopbackGuard
+g=LoopbackGuard();g.install();g.install_syscall_guard(block_creation=False,gpu_discovery=True)
+c=ctypes.CDLL(None,use_errno=True)
+fd=c.socket(1,524293,0)
+assert fd>=0
+assert c.connect(fd,0,0)==-1 and ctypes.get_errno()==2
+c.close(fd)
+g.install_syscall_guard()
+for number in (41,42,59,322,53):
+ try:c.syscall(number,-1,0,0)
+ except PermissionError:pass
+ else:raise AssertionError(number)
+assert len(g.attempts)==5
+print('GPU_SEAL_REFUSALS_PASS')
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr

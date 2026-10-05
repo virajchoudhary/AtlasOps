@@ -5,25 +5,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from training.grpo_reload_isolation import (
+    NAMESPACE_PROFILE, prepare_isolation, require_network_isolation,
+)
 
 
-def require_network_isolation() -> dict[str, str]:
-    """Require a distinct Linux namespace containing no external interface."""
-    interfaces = {path.name for path in Path("/sys/class/net").iterdir()}
-    own = os.readlink("/proc/self/ns/net")
-    host = os.readlink("/proc/1/ns/net")
-    if own == host or interfaces - {"lo"}:
-        raise ValueError("Controlled reload requires an isolated network namespace")
-    return {"namespace": own, "host_namespace": host, "interfaces": ",".join(sorted(interfaces))}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run", type=Path, required=True)
-    parser.add_argument("--manifest-sha256", required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    isolation = require_network_isolation()
+def reload_checkpoint(args):
     from training.grpo_controlled import (
         CLASSIFICATION, MODEL, PROFILE, REVISION, validate_v17_parent,
     )
@@ -59,10 +46,22 @@ def main():
         "profile": PROFILE, "status": "started", "manifest_sha256": args.manifest_sha256,
         "classification": CLASSIFICATION, "certification_status": "NOT_CERTIFIED",
         "inference_performed": False, "held_out_accessed": False,
-        "network_isolation": isolation,
+        "network_isolation": None,
     }
     write_manifest_atomic(args.output, report)
+    guard = None
     try:
+        source_sha = __import__("subprocess").check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip()
+        if source_sha != receipt["source_sha"]:
+            raise ValueError("Reload source differs from the training receipt")
+        isolation, guard = prepare_isolation(
+            args.reload_profile, receipt_path=args.offline_receipt,
+            receipt_sha256=args.offline_receipt_sha256, source_sha=source_sha,
+        )
+        report["network_isolation"] = isolation
+        write_manifest_atomic(args.output, report)
         os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
         import torch
         from peft import PeftModel
@@ -78,7 +77,9 @@ def main():
                 bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True,
             ),
         )
-        model = PeftModel.from_pretrained(base, str(adapter), is_trainable=False)
+        model = PeftModel.from_pretrained(
+            base, str(adapter), is_trainable=False, local_files_only=True,
+        )
         model.eval()
         tensors = [p for n, p in model.named_parameters() if "lora_" in n]
         if not tensors or not all(torch.isfinite(p).all().item() for p in tensors):
@@ -87,13 +88,54 @@ def main():
             raise ValueError("Controlled checkpoint changed during reload")
         validate_v17_parent(Path(receipt["parent_path"]))
         _verify_model_inventory(receipt)
+        if guard:
+            guard.require_clean()
         report.update(status="PASS", finite_lora_tensors=len(tensors),
                       model_class=type(model).__name__, tokenizer_class=type(tokenizer).__name__)
     except BaseException as exc:
-        report.update(status="failed", failure_type=type(exc).__name__)
+        report.update(status="NOT_VERIFIED", failure_type=type(exc).__name__)
+        if hasattr(exc, "isolation_evidence"):
+            report["network_isolation"] = exc.isolation_evidence
         raise
     finally:
+        if guard and report["network_isolation"]:
+            report["network_isolation"]["forbidden_attempts"] = guard.attempts
+            if guard.attempts:
+                report["status"] = "NOT_VERIFIED"
         write_manifest_atomic(args.output, report)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run", type=Path, required=True)
+    parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reload-profile", default=NAMESPACE_PROFILE,
+                        choices=[NAMESPACE_PROFILE, "kaggle-verified-offline-v1"])
+    parser.add_argument("--offline-receipt", type=Path)
+    parser.add_argument("--offline-receipt-sha256")
+    args = parser.parse_args()
+    from training.sft_provenance import has_redirecting_path_component, write_manifest_atomic
+
+    if (
+        args.output.exists() or not args.output.is_absolute()
+        or has_redirecting_path_component(args.output)
+        or args.output.resolve().is_relative_to(args.run.resolve())
+    ):
+        raise ValueError("Reload report needs a fresh external path")
+    try:
+        reload_checkpoint(args)
+    except BaseException as exc:
+        if not args.output.exists():
+            write_manifest_atomic(args.output, {
+                "profile": "controlled-g9-capacity-v1", "status": "NOT_VERIFIED",
+                "classification": "CONTROLLED_SYNTHETIC_TRAINING",
+                "certification_status": "NOT_CERTIFIED",
+                "manifest_sha256": args.manifest_sha256,
+                "reload_profile": args.reload_profile, "failure_type": type(exc).__name__,
+                "inference_performed": False, "held_out_accessed": False,
+            })
+        raise
 
 
 if __name__ == "__main__":

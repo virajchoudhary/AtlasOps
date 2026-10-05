@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-04T20:28:46.004094+00:00`
+- **Generated**: `2026-10-05T03:37:34.258142+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -40,7 +40,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | :--- | :--- | :---: |
 | `.dockerignore` | `d644c02067441408...` | 773 |
 | `.gitattributes` | `d7e828358cdd1733...` | 2152 |
-| `.github/workflows/ci.yml` | `b6062c9663e1f7d4...` | 6605 |
+| `.github/workflows/ci.yml` | `277be053aeb03bd5...` | 6740 |
 | `.gitignore` | `845c7801d352bee0...` | 1121 |
 | `AGENTS.md` | `6d1e8d1a1f674867...` | 6823 |
 | `BENCHMARKS.md` | `3191bc522a52706b...` | 4663 |
@@ -223,7 +223,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `docs/media/console-overview-20260926.png` | `4e9d204e953ee2f9...` | 101431 |
 | `docs/media/gradio-demo-20260926.png` | `399c06bad7c2dca0...` | 53821 |
 | `docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md` | `d314299cbb2574a3...` | 33235 |
-| `docs/project/CONTROLLED_G9_ADMISSION_V1.md` | `385bee32abbbdd01...` | 9457 |
+| `docs/project/CONTROLLED_G9_ADMISSION_V1.md` | `97fda938ceb736d3...` | 9833 |
+| `docs/project/CONTROLLED_G9_RELOAD_OFFLINE_V1.md` | `4a84c40defa26766...` | 3568 |
 | `docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md` | `60653270d21b9971...` | 3301 |
 | `docs/project/FINAL_PIPELINE_V22_STATUS.md` | `62fe337b3c887914...` | 9794 |
 | `docs/project/G13_COMMON_MEASUREMENT_CONTRACT_V0_3_PROPOSAL.md` | `66e442b7b7ff95c5...` | 12133 |
@@ -298,14 +299,14 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `requirements/dev.in` | `d33e385453f82e49...` | 169 |
 | `requirements/sft-pilot-linux-py312.lock` | `b649bfa91f1232b9...` | 167639 |
 | `requirements/sft-pilot-v1.in` | `605781e837ab301a...` | 717 |
-| `scripts/accept_grpo_controlled.py` | `6883e775f39f9169...` | 4925 |
+| `scripts/accept_grpo_controlled.py` | `f8f8848dc36c9c09...` | 5029 |
 | `scripts/acceptance_stage3_local.py` | `e57dd68b474629eb...` | 8987 |
 | `scripts/collect_sft_remote_provenance.py` | `a844a13d6c6b74a2...` | 30654 |
 | `scripts/freeze_sft_pilot_plan.py` | `9239463af35384a4...` | 3076 |
 | `scripts/generate_training_plots.py` | `92e7cf64619d4f3b...` | 534 |
-| `scripts/package_submission.py` | `b39d33d347a67f53...` | 18385 |
+| `scripts/package_submission.py` | `9bf7763cde394347...` | 18489 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
-| `scripts/reload_grpo_controlled.py` | `a0a5aaa0d5248c48...` | 4675 |
+| `scripts/reload_grpo_controlled.py` | `ed999100a26a23f7...` | 6505 |
 | `scripts/reload_sft_free_t4.py` | `36b076110ad39657...` | 5305 |
 | `scripts/run_g12_integrated_episode.py` | `eef1341de22994e2...` | 45882 |
 | `scripts/run_stage4_golden_incident.py` | `689d9d3f1addab78...` | 116027 |
@@ -374,6 +375,8 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `tests/test_grpo_observation_journal.py` | `e733f46d96a18115...` | 11487 |
 | `tests/test_grpo_observation_journal_integration.py` | `73307b3c700b3c70...` | 10181 |
 | `tests/test_grpo_observation_trl_routing.py` | `3b066dbfc38a87ce...` | 6153 |
+| `tests/test_grpo_reload_installed.py` | `03703ccf11f1a0c3...` | 1899 |
+| `tests/test_grpo_reload_isolation.py` | `064029589a4fb847...` | 5359 |
 | `tests/test_grpo_training_provenance.py` | `f6b35b6ef47822e8...` | 78952 |
 | `tests/test_hf_space_env.py` | `b751b5630e980aa1...` | 3278 |
 | `tests/test_http_retry.py` | `d02cafae0d281658...` | 12800 |
@@ -456,6 +459,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `training/grpo_observation_first.py` | `f5fb624b714e0c50...` | 29168 |
 | `training/grpo_observation_journal.py` | `6c6176ca4e32c8a3...` | 19995 |
 | `training/grpo_provenance.py` | `8903bf0e576a9585...` | 50476 |
+| `training/grpo_reload_isolation.py` | `a99769170db09772...` | 8161 |
 | `training/grpo_reward.py` | `23e7cde82209595e...` | 3180 |
 | `training/merge_lora_for_hub.py` | `9b60893abce70515...` | 574 |
 | `training/sft.py` | `7b2ff51eae460a69...` | 19734 |

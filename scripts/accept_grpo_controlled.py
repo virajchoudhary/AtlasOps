@@ -9,6 +9,7 @@ from pathlib import Path
 def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_sha256: str):
     from training.grpo_controlled import CLASSIFICATION, PROFILE
     from training.sft_provenance import checkpoint_inventory, has_redirecting_path_component
+    from training.grpo_reload_isolation import validate_isolation_evidence
 
     for path in (run, reload_report):
         if has_redirecting_path_component(path):
@@ -46,7 +47,7 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
         or reload.get("profile") != PROFILE
         or reload.get("classification") != CLASSIFICATION
         or reload.get("manifest_sha256") != manifest_sha256
-        or not reload.get("network_isolation")
+        or not validate_isolation_evidence(reload.get("network_isolation"))
         or reload.get("inference_performed") is not False
         or reload.get("held_out_accessed") is not False
         or checkpoint_inventory(run / "adapter", manifest_path) != manifest["checkpoint"]

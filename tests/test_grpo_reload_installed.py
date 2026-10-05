@@ -31,12 +31,14 @@ get_peft_model(base,LoraConfig(r=2,target_modules=['c_attn'],task_type='CAUSAL_L
 from pathlib import Path
 import sys
 from training.grpo_reload_isolation import LoopbackGuard
-g=LoopbackGuard();g.install();g.install_syscall_guard()
+g=LoopbackGuard();g.install()
 from transformers import AutoModelForCausalLM
 from peft import PeftModel
+g.require_clean();g.install_syscall_guard()
 p=Path(sys.argv[1])
 b=AutoModelForCausalLM.from_pretrained(p/'base',local_files_only=True)
 m=PeftModel.from_pretrained(b,p/'adapter',local_files_only=True,is_trainable=False)
+print('GUARD_ATTEMPTS',g.attempts)
 g.require_clean()
 assert any('lora_' in n for n,_ in m.named_parameters())
 print('LOCAL_GUARDED_RELOAD_PASS')

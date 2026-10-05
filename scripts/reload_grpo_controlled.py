@@ -66,6 +66,10 @@ def reload_checkpoint(args):
         import torch
         from peft import PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        if guard:
+            guard.require_clean()
+            guard.install_syscall_guard()
+            report["network_isolation"]["syscall_guard_installed"] = True
 
         common = {"revision": REVISION, "cache_dir": cache, "local_files_only": True,
                   "trust_remote_code": False}

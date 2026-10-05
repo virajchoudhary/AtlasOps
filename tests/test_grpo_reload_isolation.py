@@ -46,6 +46,7 @@ def test_offline_profile_requires_receipt_and_actual_egress_failure(tmp_path, mo
     evidence, guard = isolation.prepare_isolation(
         isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40
     )
+    evidence["syscall_guard_installed"] = True
     assert isolation.validate_isolation_evidence(evidence)
     assert guard.attempts == []
     monkeypatch.setattr(isolation, "outbound_probes", lambda: [

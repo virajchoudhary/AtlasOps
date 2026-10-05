@@ -32,8 +32,10 @@ URLs, proxy values or operational secrets. Failed bounded probes are
 evidence for those routes, not universal egress proof by themselves.
 
 After those probes, install a permanent CPython audit/socket guard plus a
-Linux x86_64 seccomp TSYNC filter before
-model-library imports. It rejects non-literal-loopback socket connects,
+Linux x86_64 seccomp TSYNC filter before model loading.
+The Python guard precedes model-library imports; the syscall guard is
+installed after imports and an empty socket-descriptor check, still before
+any model/tokenizer/adapter load. It rejects non-literal-loopback socket connects,
 connect_ex, datagram sendto/sendmsg, external DNS resolution, raw/non-IP
 sockets, fork and subprocess network fallback. Seccomp also traps native
 connect/sendto/sendmsg/sendmmsg calls in every thread; all socket sends

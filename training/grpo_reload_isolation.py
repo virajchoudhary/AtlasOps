@@ -209,6 +209,7 @@ def prepare_isolation(
         "offline_flags": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
         "guard": "cpython_audit_and_seccomp_tsync_v1",
         "inherited_socket_fds": [],
+        "syscall_guard_installed": False,
         "forbidden_attempts": [],
     }
     if not all(probe_proves_blocked(record) for record in probes):
@@ -217,7 +218,6 @@ def prepare_isolation(
         raise error
     guard = LoopbackGuard()
     guard.install()
-    guard.install_syscall_guard()
     return evidence, guard
 
 
@@ -260,6 +260,7 @@ def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) ->
         and value.get("offline_flags") == {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
         and value.get("guard") == "cpython_audit_and_seccomp_tsync_v1"
         and value.get("inherited_socket_fds") == []
+        and value.get("syscall_guard_installed") is True
         and value.get("forbidden_attempts") == []
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)

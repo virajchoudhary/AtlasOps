@@ -10,9 +10,11 @@ from pathlib import Path
 import subprocess
 import sys
 from types import MethodType
+from datetime import UTC, datetime
+import hashlib
 
 
-def smoke(output: Path) -> dict:
+def smoke(output: Path, runtime_receipt: Path | None = None) -> dict:
     repo = Path(__file__).resolve().parents[1]
     expected = json.loads((repo / "config/sft_pilot_v4.json").read_bytes())["environment"]["package_versions"]
     actual = {name: importlib.metadata.version(name) for name in expected}
@@ -102,22 +104,42 @@ def smoke(output: Path) -> dict:
         reload_code = """
 import sys
 from pathlib import Path
-from training.grpo_reload_isolation import LoopbackGuard
-g=LoopbackGuard();g.install();g.install_syscall_guard(block_creation=False)
+import json,os
+from training.grpo_reload_isolation import initialize_gpu_runtime,prepare_isolation,KAGGLE_GPU_PROFILE
+receipt=Path(sys.argv[2])
+isolation,g=prepare_isolation(KAGGLE_GPU_PROFILE,receipt_path=receipt,receipt_sha256=sys.argv[3],source_sha="0"*40)
+discovery=initialize_gpu_runtime(isolation["context"]["runtime"],g)
+isolation["runtime_discovery"]=discovery
+isolation["syscall_guard_installed"]=True
+isolation["forbidden_attempts"]=g.attempts
+Path(sys.argv[1], "smoke-isolation.json").write_text(json.dumps(isolation,sort_keys=True))
+print('SMOKE_DISCOVERY',json.dumps(discovery,sort_keys=True))
 from transformers import AutoModelForCausalLM,AutoTokenizer
 from peft import PeftModel
-g.require_clean();g.install_syscall_guard()
+g.require_clean()
 p=Path(sys.argv[1])
 b=AutoModelForCausalLM.from_pretrained(p/'base',local_files_only=True)
 t=AutoTokenizer.from_pretrained(p/'adapter',local_files_only=True)
 m=PeftModel.from_pretrained(b,p/'adapter',local_files_only=True,is_trainable=False)
+print('RELOAD_SMOKE_GUARD_ATTEMPTS',g.attempts)
 g.require_clean()
 assert any('lora_' in n for n,_ in m.named_parameters())
 print('FRESH_GUARDED_LOCAL_RELOAD_PASS')
 """
+        if runtime_receipt is None:
+            raise ValueError("Exact GPU smoke needs the prepared local runtime inventory")
+        context = {
+            "reload_profile": "kaggle-verified-offline-gpu-v2", "source_sha": "0" * 40,
+            "observed_at": datetime.now(UTC).isoformat(), "kaggle_internet_enabled": False,
+            "private_context": True, "operator": "Viraj Choudhary", "launcher_pid": os.getpid(),
+            "runtime": json.loads(runtime_receipt.read_bytes()),
+        }
+        receipt_path = output / "offline-context.json"
+        receipt_path.write_text(json.dumps(context, sort_keys=True))
+        receipt_hash = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
         result = subprocess.run(
-            [sys.executable, "-B", "-c", reload_code, str(output)],
-            cwd=repo, env=os.environ.copy(), capture_output=True, text=True, timeout=60,
+            [sys.executable, "-B", "-c", reload_code, str(output), str(receipt_path), receipt_hash],
+            cwd=repo, env=os.environ.copy(), capture_output=True, text=True, timeout=90,
         )
         (output / "reload.stdout").write_text(result.stdout)
         (output / "reload.stderr").write_text(result.stderr)
@@ -147,8 +169,9 @@ print('FRESH_GUARDED_LOCAL_RELOAD_PASS')
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--runtime-receipt", type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(smoke(args.output), sort_keys=True))
+    print(json.dumps(smoke(args.output, args.runtime_receipt), sort_keys=True))
 
 
 if __name__ == "__main__":

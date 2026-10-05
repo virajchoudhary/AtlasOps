@@ -6,7 +6,8 @@ import json
 import os
 from pathlib import Path
 from training.grpo_reload_isolation import (
-    NAMESPACE_PROFILE, prepare_isolation, require_network_isolation,  # noqa: F401 - retained public alias
+    KAGGLE_GPU_PROFILE, NAMESPACE_PROFILE, initialize_gpu_runtime, prepare_isolation,
+    require_network_isolation,  # noqa: F401 - retained public alias
 )
 
 
@@ -63,10 +64,14 @@ def reload_checkpoint(args):
         report["network_isolation"] = isolation
         write_manifest_atomic(args.output, report)
         os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
+        if guard and args.reload_profile == KAGGLE_GPU_PROFILE:
+            isolation["runtime_discovery"] = initialize_gpu_runtime(isolation["context"]["runtime"], guard)
+            isolation["syscall_guard_installed"] = True
+            write_manifest_atomic(args.output, report)
         import torch
         from peft import PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-        if guard:
+        if guard and args.reload_profile != KAGGLE_GPU_PROFILE:
             guard.require_clean()
             guard.install_syscall_guard()
             report["network_isolation"]["syscall_guard_installed"] = True
@@ -115,7 +120,7 @@ def main():
     parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reload-profile", default=NAMESPACE_PROFILE,
-                        choices=[NAMESPACE_PROFILE, "kaggle-verified-offline-v1"])
+                        choices=[NAMESPACE_PROFILE, "kaggle-verified-offline-v1", KAGGLE_GPU_PROFILE])
     parser.add_argument("--offline-receipt", type=Path)
     parser.add_argument("--offline-receipt-sha256")
     args = parser.parse_args()

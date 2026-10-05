@@ -32,6 +32,53 @@ ALLOWED_GATE_STATES = {
     "BLOCKED",
     "OUT_OF_SCOPE",
 }
+REQUIRED_REVIEW_ASSETS = (
+    "README.md",
+    "LICENSE",
+    "JUDGES_START_HERE.md",
+    "docs/AtlasOps_Technical_Report.md",
+    "docs/slides.md",
+    "docs/EXPERIMENT_REGISTRY.md",
+    "docs/EVIDENCE_INDEX.md",
+    "docs/project/IMPLEMENTATION_STATUS.md",
+    "docs/project/FINAL_PIPELINE_V22_STATUS.md",
+    "docs/project/MASTER_PIPELINE_STATUS.md",
+    "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+    "docs/project/REPRODUCTION.md",
+    "docs/project/STAGE_6_ZERO_SHOT_BASELINE.md",
+    "docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md",
+    "docs/project/STAGE_8_SFT_EVALUATION.md",
+    "docs/project/STAGE_9_ONLINE_GRPO.md",
+    "docs/project/STAGE_12_INTEGRATED_PIPELINE.md",
+    "docs/project/STAGE_13_FINAL_ABLATION_EVALUATION.md",
+    "docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md",
+    "docs/project/STAGE_15_FINAL_SUBMISSION.md",
+    "docs/project/BASE_SFT_VALIDATION_RESULT_V1.md",
+    "docs/project/CONTROLLED_G9_ADMISSION_V1.md",
+    "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md",
+    "docs/project/G4_V38_RUN_OWNED_PREFLIGHT_GUARD_V1.md",
+    "artifacts/evidence/mock_archive/README.md",
+    "artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json",
+    "artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "artifacts/evidence/stage7/free-t4-v17/reload-v17.json",
+    "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json",
+    "artifacts/evidence/stage8/base-sft-validation-v1/local-independent-recompute-v1.json",
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json",
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl",
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json",
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json",
+    "dashboard.py",
+    "ui_read_model.py",
+    "demo/launcher.py",
+    "static/index.html",
+    "static/console.css",
+    "static/console.js",
+    "scripts/package_submission.py",
+    "scripts/check_submission_links.py",
+    "tests/test_stage14_demo_safety.py",
+    "tests/test_stage15_submission_package.py",
+    "tests/test_current_project_truth.py",
+)
 
 
 def declared_gate_statuses(path: Path = MASTER_STATUS_PATH) -> dict[str, str]:
@@ -61,6 +108,35 @@ def compute_sha256(file_path: Path) -> str:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
+
+
+def compute_asset_inventory_sha256(assets: dict[str, dict[str, Any]]) -> str:
+    """Hash the sorted checkout path/hash/size rows, independent of generation time."""
+    canonical_rows = [
+        [path, assets[path]["sha256"], assets[path]["size_bytes"]]
+        for path in sorted(assets)
+    ]
+    payload = json.dumps(
+        canonical_rows,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def evaluate_package_readiness(
+    assets: dict[str, dict[str, Any]],
+    link_errors: list[str],
+) -> dict[str, Any]:
+    """Separate review-material completeness from scientific certification."""
+    missing = sorted(set(REQUIRED_REVIEW_ASSETS) - assets.keys())
+    ready = not missing and not link_errors
+    return {
+        "package_ready": ready,
+        "package_readiness": "READY_FOR_REVIEW" if ready else "INCOMPLETE",
+        "package_readiness_missing_assets": missing,
+        "package_readiness_link_errors": list(link_errors),
+    }
 
 
 def _is_link_or_reparse_point(path: Path) -> bool:
@@ -146,6 +222,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "requirements/dev.in",
         "requirements/dev-win-py312.lock",
         "README.md",
+        "LICENSE",
         "DEPLOYMENT.md",
         "JUDGES_START_HERE.md",
         "app.py",
@@ -158,6 +235,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/TRAINING_STORY.md",
         "docs/END_TO_END_FLOW.md",
         "docs/EXPERIMENT_REGISTRY.md",
+        "docs/EVIDENCE_INDEX.md",
         "docs/HF_SPACE_SETUP.md",
         "docs/slides.md",
         "docs/media/*.png",
@@ -179,6 +257,10 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/CONTROLLED_G9_ADMISSION_V1.md",
         "docs/project/CONTROLLED_G9_RELOAD_OFFLINE_V1.md",
         "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md",
+        "docs/project/BASE_SFT_VALIDATION_RESULT_V1.md",
+        "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+        "docs/project/REPRODUCTION.md",
+        "docs/project/G4_V38_RUN_OWNED_PREFLIGHT_GUARD_V1.md",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/*.json",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/*.json",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/**/*.json",
@@ -219,6 +301,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "artifacts/models/hybrid_recommender.json",
         "artifacts/models/hybrid_recommender_synthetic_v2.json",
         "artifacts/evidence/.gitattributes",
+        "artifacts/evidence/mock_archive/README.md",
         "artifacts/evidence/recovery/2026-09-05-workspace-recovery.json",
         "artifacts/evidence/recovery/SETUP-03_COMMANDS.md",
         "artifacts/evidence/stage3/acceptance_report.json",
@@ -310,6 +393,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "scripts/smoke-e2e-local.ps1",
         "scripts/generate_training_plots.py",
         "scripts/package_submission.py",
+        "scripts/check_submission_links.py",
         "scripts/release_gate.py",
         "scripts/reload_grpo_controlled.py",
         "scripts/accept_grpo_controlled.py",
@@ -368,6 +452,11 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
     """Assemble an integrity inventory without inventing gate or model metrics."""
     assets = collect_submission_assets()
     gates = declared_gate_statuses()
+    from scripts.check_submission_links import check_current_markdown_links
+
+    link_errors = check_current_markdown_links(Path.cwd().resolve())
+    readiness = evaluate_package_readiness(assets, link_errors)
+    inventory_sha256 = compute_asset_inventory_sha256(assets)
     log.info("Collected %d canonical submission assets.", len(assets))
 
     manifest = {
@@ -378,6 +467,14 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         "scope_revision": "GAI + RL (RS optional historical research)",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "NOT_CERTIFIED",
+        "status_scope": "scientific_pipeline_certification",
+        "package_readiness_basis": (
+            "Required reviewer surfaces and canonical compact evidence are tracked, "
+            "raw-byte hashed, and current-facing local Markdown links resolve. This "
+            "does not establish scientific certification or include private archives "
+            "and model weights."
+        ),
+        "asset_inventory_sha256": inventory_sha256,
         "gate_status_source": str(MASTER_STATUS_PATH.as_posix()),
         "gate_statuses_declared": gates,
         "academic_workstreams": [
@@ -391,6 +488,7 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
         "asset_count": len(assets),
         "assets": assets,
+        **readiness,
     }
 
     destination = output_dir or ARTIFACTS_DIR
@@ -410,29 +508,64 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
 
 def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
     lines = [
-        "# AtlasOps — Submission Readiness and Asset Inventory",
+        "# AtlasOps Submission Review Package",
         "",
         f"- **Project Repository**: `{manifest['project_repository']}`",
         f"- **Upstream Baseline**: `{manifest['upstream_baseline']}`",
-        f"- **Working Pipeline**: `{manifest['pipeline_version']}` with [{manifest['scope_revision']}](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen",
-        f"- **Certification**: **{manifest['status']}**",
+        f"- **Package readiness**: **{manifest['package_readiness']}**",
+        f"- **Scientific certification**: **{manifest['status']}**",
         f"- **Generated**: `{manifest['generated_at']}`",
+        f"- **Deterministic asset inventory SHA-256**: `{manifest['asset_inventory_sha256']}`",
         f"- **Gate inventory source**: `{manifest['gate_status_source']}`",
         "",
+        (
+            "Package readiness means required reviewer surfaces and compact canonical "
+            "evidence are present in the tracked inventory, hashed from checkout bytes, "
+            "and current-facing local Markdown links resolve. It does not mean the "
+            "scientific pipeline is certified or that external/private archives and model "
+            "weights are bundled."
+        ),
+        "",
+    ]
+    if manifest["package_readiness_missing_assets"]:
+        lines.extend([
+            "## Missing Required Review Assets",
+            "",
+            *[f"- `{path}`" for path in manifest["package_readiness_missing_assets"]],
+            "",
+        ])
+    if manifest["package_readiness_link_errors"]:
+        lines.extend([
+            "## Broken Current-Facing Links",
+            "",
+            *[f"- {error}" for error in manifest["package_readiness_link_errors"]],
+            "",
+        ])
+    lines.extend([
         "## Declared Gate Statuses",
         "",
         "| Gate | Status |",
         "| :--- | :--- |",
-    ]
+    ])
     for gate, status in manifest["gate_statuses_declared"].items():
         lines.append(f"| {gate} | {status} |")
     lines.extend([
         "",
-        "G3 PASS is historical local Kind acceptance with wrapper and tracing caveats; it does not establish current cluster health.",
-        "G10/G11 OUT_OF_SCOPE retain historical scenario-derived RS evidence; the former bounded G11 PASS was not real incident improvement.",
+        (
+            "G3 PASS records historical local Kind acceptance with wrapper and tracing "
+            "caveats; it does not establish current cluster health."
+        ),
+        (
+            "G10/G11 remain OUT_OF_SCOPE for the required GAI + RL completion scope; "
+            "retained recommender work is optional historical research."
+        ),
         "",
         manifest["metric_note"],
         "Asset hashes establish file integrity, not scientific gate closure.",
+        (
+            "Private archives and model weights are documented evidence references, not "
+            "bundled assets."
+        ),
         "",
         "## Canonical Submission Artifacts",
         "",

@@ -19,11 +19,15 @@ from types import SimpleNamespace
 import pytest
 
 from config.scenario_catalog import SCENARIO_CATALOG
+from scripts.check_submission_links import check_current_markdown_links
 from scripts.package_submission import (
+    REQUIRED_REVIEW_ASSETS,
     _matching_tracked_files,
     build_submission_package,
     collect_submission_assets,
+    compute_asset_inventory_sha256,
     compute_sha256,
+    evaluate_package_readiness,
 )
 
 
@@ -75,6 +79,91 @@ def test_audit_implementation_is_selected_when_tracked(monkeypatch):
 
 
 class TestStage15SubmissionPackage:
+    def test_inventory_digest_is_stable_across_asset_mapping_order(self):
+        assets = collect_submission_assets()
+        reversed_assets = dict(reversed(list(assets.items())))
+
+        digest = compute_asset_inventory_sha256(assets)
+        assert len(digest) == 64
+        assert compute_asset_inventory_sha256(reversed_assets) == digest
+
+    def test_package_readiness_requires_assets_and_clean_local_links(self):
+        complete_assets = {
+            path: {"sha256": "0" * 64, "size_bytes": 1}
+            for path in REQUIRED_REVIEW_ASSETS
+        }
+
+        assert evaluate_package_readiness(complete_assets, []) == {
+            "package_ready": True,
+            "package_readiness": "READY_FOR_REVIEW",
+            "package_readiness_missing_assets": [],
+            "package_readiness_link_errors": [],
+        }
+        missing_one = dict(complete_assets)
+        missing_one.pop(REQUIRED_REVIEW_ASSETS[0])
+        incomplete = evaluate_package_readiness(missing_one, [])
+        assert incomplete["package_ready"] is False
+        assert incomplete["package_readiness"] == "INCOMPLETE"
+        assert incomplete["package_readiness_missing_assets"] == [
+            REQUIRED_REVIEW_ASSETS[0]
+        ]
+        broken_links = evaluate_package_readiness(complete_assets, ["README.md:1 broken"])
+        assert broken_links["package_ready"] is False
+        assert broken_links["package_readiness_link_errors"] == ["README.md:1 broken"]
+
+    def test_link_checker_resolves_relative_targets_and_ignores_code_and_external_urls(
+        self, tmp_path
+    ):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "target.md").write_text("# Target\n", encoding="utf-8")
+        (docs / "source.md").write_text(
+            "[target](target.md#section)\n"
+            "[external](https://example.com/doc)\n"
+            "`[inline code](missing-inline.md)`\n"
+            "```md\n[code fence](missing-fence.md)\n```\n",
+            encoding="utf-8",
+        )
+
+        assert check_current_markdown_links(tmp_path, ["docs/source.md"]) == []
+
+    def test_link_checker_reports_missing_local_targets_and_repository_escapes(
+        self, tmp_path
+    ):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "source.md").write_text(
+            "[missing](missing.md)\n[outside](../../outside.md)\n",
+            encoding="utf-8",
+        )
+
+        errors = check_current_markdown_links(tmp_path, ["docs/source.md"])
+        assert any("local link target does not exist: missing.md" in error for error in errors)
+        assert any("local link escapes the repository: ../../outside.md" in error for error in errors)
+
+    def test_link_checker_allows_documented_external_evidence_and_never_stats_heldout_outcomes(
+        self, tmp_path, monkeypatch
+    ):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "source.md").write_text(
+            '[archive](../artifacts/evidence/stage9/full-archive.zip '
+            '"External evidence SHA-256: ' + ("a" * 64) + '")\n'
+            "[heldout](../artifacts/evidence/stage8/leaderboard-results.json)\n",
+            encoding="utf-8",
+        )
+        original_exists = Path.exists
+
+        def reject_heldout_stat(path):
+            if "leaderboard-results.json" in str(path).lower():
+                pytest.fail("protected held-out outcome path was statted")
+            return original_exists(path)
+
+        monkeypatch.setattr(Path, "exists", reject_heldout_stat)
+        errors = check_current_markdown_links(tmp_path, ["docs/source.md"])
+        assert len(errors) == 1
+        assert "protected Test/Leaderboard outcome link is not checked" in errors[0]
+
     def test_submission_package_generator_creates_manifest_and_summary(self, tmp_path):
         manifest = build_submission_package(output_dir=tmp_path)
         assert manifest["project_name"] == "AtlasOps"
@@ -82,12 +171,21 @@ class TestStage15SubmissionPackage:
         assert manifest["scope_revision"] == "GAI + RL (RS optional historical research)"
         assert manifest["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
         assert manifest["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
+        assert manifest["gate_statuses_declared"]["G7"] == "PASS"
         assert len(manifest["academic_workstreams"]) == 2
         assert len(manifest["historical_optional_workstreams"]) == 1
         assert manifest["status"] == "NOT_CERTIFIED"
+        assert manifest["status_scope"] == "scientific_pipeline_certification"
         assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
-        assert manifest["gate_statuses_declared"]["G13"] == "REOPENED"
+        assert manifest["gate_statuses_declared"]["G9"] == "NOT_PASSED"
         assert manifest["gate_statuses_declared"]["G15"] == "PARTIAL"
+        assert manifest["package_ready"] == (
+            not manifest["package_readiness_missing_assets"]
+            and not manifest["package_readiness_link_errors"]
+        )
+        assert manifest["asset_inventory_sha256"] == compute_asset_inventory_sha256(
+            manifest["assets"]
+        )
 
         manifest_path = tmp_path / "SUBMISSION_MANIFEST.json"
         summary_path = tmp_path / "SUBMISSION_SUMMARY.md"
@@ -98,11 +196,14 @@ class TestStage15SubmissionPackage:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert data["status"] == "NOT_CERTIFIED"
         assert data["empirical_metrics"] is None
+        assert data["package_readiness"] in {"READY_FOR_REVIEW", "INCOMPLETE"}
         summary = summary_path.read_text(encoding="utf-8")
         assert "NOT_CERTIFIED" in summary
-        assert "Section 25 and the measurement protocol are not frozen" in summary
-        assert "G3 PASS is historical local Kind acceptance" in summary
-        assert "G10/G11 OUT_OF_SCOPE" in summary
+        assert "Package readiness" in summary
+        assert "Scientific certification" in summary
+        assert data["asset_inventory_sha256"] in summary
+        assert "G3 PASS records historical local Kind acceptance" in summary
+        assert "Private archives and model weights" in summary
         assert "100.0%" not in summary
 
     def test_technical_report_structure_and_completeness(self):
@@ -111,14 +212,14 @@ class TestStage15SubmissionPackage:
         content = report_path.read_text(encoding="utf-8")
 
         required_sections = [
-            "# AtlasOps: Multi-Agent Incident Response via Generative AI and Online Policy Optimization",
+            "# AtlasOps: Multi-Agent Incident Response with Generative AI and Policy Optimization",
             "## Abstract",
-            "## 1. Introduction & Background",
-            "## 2. System Architecture & Multi-Agent Flow",
-            "## 3. Academic Workstreams & Methodology",
-            "## 4. Empirical Evaluation & Multi-Model Ablations",
-            "## 5. Demonstration & Operator Console",
-            "## 6. Conclusion & Attribution",
+            "## 1. Problem and Motivation",
+            "## 2. Architecture",
+            "## 3. Safety and Governance",
+            "## 7. Base-versus-SFT Validation Result",
+            "## 9. Final Negative GRPO Result",
+            "## 15. Conclusion and Deferred Research",
         ]
 
         for sec in required_sections:
@@ -143,8 +244,27 @@ class TestStage15SubmissionPackage:
             "static/vendor/LUCIDE-LICENSE",
             "AGENTS.md",
             "BLOG.md",
+            "LICENSE",
             "docs/slides.md",
             "docs/EXPERIMENT_REGISTRY.md",
+            "docs/EVIDENCE_INDEX.md",
+            "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+            "docs/project/REPRODUCTION.md",
+            "docs/project/BASE_SFT_VALIDATION_RESULT_V1.md",
+            "docs/project/CONTROLLED_G9_ADMISSION_V1.md",
+            "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md",
+            "docs/project/G4_V38_RUN_OWNED_PREFLIGHT_GUARD_V1.md",
+            "artifacts/evidence/mock_archive/README.md",
+            "artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+            "artifacts/evidence/stage7/free-t4-v17/reload-v17.json",
+            "artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json",
+            "artifacts/evidence/stage8/base-sft-validation-v1/local-independent-recompute-v1.json",
+            "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json",
+            "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl",
+            "artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json",
+            "artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json",
+            "scripts/check_submission_links.py",
+            "tests/test_current_project_truth.py",
             "docs/media/console-overview-20260926.png",
             "docs/media/gradio-demo-20260926.png",
             "agents/_http_retry.py",
@@ -248,8 +368,16 @@ class TestStage15SubmissionPackage:
         assert data["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
         assert data["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
         assert data["gate_statuses_declared"]["G4"] == "NOT_PASSED"
+        assert data["gate_statuses_declared"]["G7"] == "PASS"
+        assert data["gate_statuses_declared"]["G9"] == "NOT_PASSED"
         assert data["gate_statuses_declared"]["G15"] == "PARTIAL"
         assert data["empirical_metrics"] is None
+        assert data["status_scope"] == "scientific_pipeline_certification"
+        assert data["asset_inventory_sha256"] == compute_asset_inventory_sha256(assets)
+        assert data["package_ready"] == (
+            not data["package_readiness_missing_assets"]
+            and not data["package_readiness_link_errors"]
+        )
 
         expected_stage4_assets = {
             "artifacts/evidence/stage4/EXP-STAGE4-SF002-002.json",
@@ -351,9 +479,12 @@ class TestStage15SubmissionPackage:
         pre009_result_paths.add(
             "artifacts/evidence/stage4/golden_incident_sf002_manifest.json"
         )
-        crlf_blob_assets = frozen_manifest_paths | pre009_result_paths
+        crlf_blob_assets = frozen_manifest_paths | pre009_result_paths | {
+            "artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json",
+            "LICENSE",
+        }
         assert len(pre009_result_paths) == 11
-        assert len(crlf_blob_assets) == 39
+        assert len(crlf_blob_assets) == 41
 
         metadata_only_crlf_assets = {
             "artifacts/evidence/recovery/2026-09-05-workspace-recovery.json",
@@ -603,14 +734,20 @@ class TestStage15SubmissionPackage:
             assert p.stat().st_size == meta["size_bytes"]
 
         assert assets.keys() == collect_submission_assets().keys()
+        assert data["asset_inventory_sha256"] == compute_asset_inventory_sha256(assets)
+        assert data["package_ready"] == (
+            not data["package_readiness_missing_assets"]
+            and not data["package_readiness_link_errors"]
+        )
+        assert data["status"] == "NOT_CERTIFIED"
+        assert data["status_scope"] == "scientific_pipeline_certification"
 
     def test_pipeline_master_status_records_all_gates(self):
         status_path = Path("docs/project/MASTER_PIPELINE_STATUS.md")
         assert status_path.exists()
         content = status_path.read_text(encoding="utf-8")
 
-        # Verify all 15 Gates are recorded
-        for g_idx in range(1, 16):
+        for g_idx in range(16):
             gate_tag = f"**G{g_idx}**"
             assert gate_tag in content, f"Missing Gate G{g_idx} in MASTER_PIPELINE_STATUS.md"
 
@@ -653,7 +790,7 @@ class TestStage15SubmissionPackage:
         assert "Items 1-4 retain their selected A directions" in contract
         assert "G13 `REOPENED`" in contract
         assert "TRAINING NOT AUTHORIZED" in readiness
-        assert "G9 `REOPENED`" in readiness
+        assert "historical" in readiness.lower()
         assert "FUTURE EXECUTION PLAN / NOT AUTHORIZED" in runbook
         assert "G4 is still `NOT_PASSED`" in runbook
         assert "D3 PREPARATION APPROVED, EXECUTION NOT APPROVED" in decisions
@@ -677,11 +814,28 @@ class TestStage15SubmissionPackage:
 
     def test_presentation_keeps_empirical_claims_open(self):
         slides = Path("docs/slides.md").read_text(encoding="utf-8")
-        assert slides.count("\n---\n") == 8
-        assert "Historical presentation evidence baseline: `8560a8c7c46a8f91d74c574ebdf9c456e2835b4b`" in slides
-        assert "Current reviewed main:" not in slides
+        required_sections = (
+            "## Incident Response Problem",
+            "## Agent Workflow",
+            "## SFT Artifact v17",
+            "## Base-vs-SFT Validation Diagnostic",
+            "## Controlled G9 Pilot Outcome",
+            "## Final Aligned Action Diagnostic",
+            "## G4 Live Incident Track",
+            "## Historical Claim Boundary",
+            "## Read-Only Local Demo",
+            "## Conclusion and Deferred Research",
+        )
+        for section in required_sections:
+            assert section in slides
+
+        lower_slides = slides.lower()
+        for value in ("0.16875", "0.15935", "-0.00940", "not_certified"):
+            assert value in lower_slides
         assert "G4 remains NOT_PASSED" in slides
-        assert "G13 plans three matched arms" in slides
-        assert "NOT_CERTIFIED" in slides
+        assert "the g9 track is frozen" in lower_slides
+        assert "no acceptable sft+grpo checkpoint" in lower_slides
+        assert "zero of eight does not establish an exactly zero population probability" in lower_slides
+        assert "Historical presentation evidence baseline" not in slides
         assert "SFT + Online GRPO Trained" not in slides
         assert "One real GKE cluster. No simulations." not in slides

@@ -1,5 +1,12 @@
 # GAI + RL scope revision to Pipeline v2.2
 
+> The approved GAI + RL scope direction below remains authoritative.
+> Its dated gate-status and execution-next-step snapshot is historical.
+> [Current master status](MASTER_PIPELINE_STATUS.md) records v17, the real
+> negative Validation diagnostic and final frozen G9 NOT_PASSED.
+> [Deferred research](DEFERRED_RESEARCH_HANDOFF.md) supersedes immediate
+> experimental work-order language without changing this scope direction.
+
 **Status: PROJECT-LEAD SCOPE DIRECTION / NON-LIVE / NOT AN EXPERIMENTAL FREEZE.**
 The project lead has removed Recommender Systems (RS) from the final AtlasOps
 requirement. This prospective revision supersedes the RS-required portions of

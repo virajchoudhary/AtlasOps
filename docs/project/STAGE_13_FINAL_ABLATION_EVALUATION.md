@@ -7,7 +7,13 @@ The ablation runner is artifact driven. The later
 [v0.3 amendment](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md) replace
 the former RS-inclusive five-arm requirement with three arms. Neither is a
 frozen experimental protocol. The required empirical artifact matrix does
-not exist, so no final model comparison is currently supported.
+not exist. The real two-arm Validation diagnostic exists separately and found
+no diagnostic improvement. There is no acceptable SFT+GRPO arm after the
+[final negative G9 freeze](CONTROLLED_G9_FINAL_NEGATIVE_V1.md).
+The software and evidence-review deliverables are complete for existing
+inputs. The final empirical matrix is deferred, not replaced by mock output.
+REOPENED is retained as the parser-supported withdrawal of the old
+unsupported PASS, not a direction to keep retrying G9.
 
 ## Required Matrix
 
@@ -189,7 +195,11 @@ the three prospective arms but cannot establish scientific approval or
 reproduce missing evaluators. Dry-run
 mode emits only a non-empirical execution plan.
 
-G13 can advance only after genuine prerequisite model/checkpoint and integrated-environment
-artifacts exist.
+G13 can advance only after separately authorized genuine model/checkpoint and
+integrated-environment evidence, and a prospectively frozen measurement
+protocol. The current non-experimental scope cannot approve missing
+measurement choices or redefine eligibility to obtain PASS. These decisions
+and the absent accepted policy are isolated in
+[the deferred handoff](DEFERRED_RESEARCH_HANDOFF.md).
 
 **Gate G13 Status: REOPENED**

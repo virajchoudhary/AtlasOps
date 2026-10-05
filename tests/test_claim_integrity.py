@@ -69,7 +69,13 @@ def test_current_status_preserves_negative_validation_result_without_gate_closur
         assert "no diagnostic improvement observed" in content.lower(), path
     statuses = declared_gate_statuses()
     assert statuses["G4"] == "NOT_PASSED"
-    assert statuses["G7"] == "PARTIAL"
+    assert statuses["G7"] == "PASS"
+    stage7 = Path("docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md").read_text(
+        encoding="utf-8"
+    )
+    assert "preapproved" in stage7
+    assert "oci_image_digest_required=false" in stage7
+    assert "no incident improvement claim" in stage7
     assert statuses["G8"] != "PASS"
 
 

@@ -1,5 +1,13 @@
 # G7-G13 remaining decision register
 
+> **HISTORICAL DECISION/STATUS SNAPSHOT.** Decisions and their original
+> scope remain preserved below. The current 5 October state is v17
+> artifact/reload complete, real negative Base/SFT Validation diagnostic,
+> G4/G9 frozen NOT_PASSED and no accepted SFT+GRPO checkpoint.
+> [Current master status](MASTER_PIPELINE_STATUS.md) and
+> [deferred handoff](DEFERRED_RESEARCH_HANDOFF.md) supersede old pending
+> experiment-next-step language without approving new execution.
+
 **Historical status: REVIEW REGISTER; D3 PREPARATION APPROVED, EXECUTION NOT APPROVED.**
 The later [D3 preparation approval](G7_D3_PREPARATION_APPROVAL_V1.md) records
 the project lead's exact limited decision. Historical source basis:

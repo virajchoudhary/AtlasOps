@@ -145,4 +145,14 @@ API and Docker Linux engine were unavailable, and no completed GRPO checkpoint
 was supplied. The existing control-flow tests and new capture tests are
 non-live software evidence only.
 
+## Finalization Boundary (5 October 2026)
+
+The non-experimental integration, contract tests, capture tooling and
+documentation are complete. The genuine v17 parent exists, but the final
+controlled G9 result produced no acceptable SFT+GRPO checkpoint. A real
+integrated policy/environment episode therefore remains deferred empirical
+work. The historical host-unavailability observations above are dated facts,
+not a current cluster-health check or an instruction to start services.
+See [the deferred handoff](DEFERRED_RESEARCH_HANDOFF.md).
+
 **Gate G12 Status: IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**

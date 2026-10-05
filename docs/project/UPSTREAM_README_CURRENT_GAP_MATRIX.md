@@ -1,5 +1,12 @@
 # Original README to current continuation: evidence matrix
 
+> **HISTORICAL / SUPERSEDED STATUS SNAPSHOT, 29 September 2026.**
+> The source-bounded audit below retains its original findings and wording.
+> It is not the current SFT/G9/evaluation inventory. See the
+> [5 October master status](MASTER_PIPELINE_STATUS.md) and
+> [current evidence index](../EVIDENCE_INDEX.md): v17 and the matched
+> Validation diagnostic exist; controlled G9 is final negative/frozen.
+
 **Verdict: NOT_CERTIFIED.** This is a source-and-evidence comparison, not a
 declaration that the original hackathon results were reproduced. It compares
 the upstream README at `Harikishanth/AtlasOps`

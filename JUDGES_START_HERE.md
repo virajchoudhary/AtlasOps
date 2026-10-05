@@ -75,6 +75,11 @@ historical optional research and OUT_OF_SCOPE.
 
 ## Package and Checks
 
+The [evidence index](docs/EVIDENCE_INDEX.md) distinguishes tracked compact
+evidence from external operational archives and model weights. The
+[deferred research handoff](docs/project/DEFERRED_RESEARCH_HANDOFF.md) is
+the single current experimental handoff and grants no execution authority.
+
 The [submission manifest](artifacts/SUBMISSION_MANIFEST.json) lists selected tracked
 files with their checkout-byte SHA-256 hashes and sizes. The
 [submission summary](artifacts/SUBMISSION_SUMMARY.md) records the declared gate statuses.

@@ -15,6 +15,11 @@ upstream README and v1.0/v1.1 documents remain dated references.
 
 ## Review basis
 
+- Current finalization basis, freshly fetched on 5 October 2026:
+  `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`. The table below now reflects
+  preserved final evidence. Earlier source SHAs remain provenance for their
+  dated adoption and experiment records, not a claim of current live health.
+
 - Reviewed clean remote `main`:
   `39bb97ca23b9e9497360860c53b5d8cba36fd707`. This is the source
   snapshot used for the matrix below, not a frozen SHA for a future experiment.
@@ -46,8 +51,7 @@ produced no admissible canonical action, so the final training pilot was not
 launched. Reporting excludes an absent SFT+GRPO model and uses only preserved
 actual Base/v17 results and negatives; no new held-out or live evaluation.
 
-Except for the G7 and G8 rows, the status column remains the declared gate
-inventory at the historical reviewed source SHA above. The G7/G8 implementation
+The current status column uses the 5 October final evidence state. G7/G8 implementation
 rows were last reconciled to reviewed-source basis
 `1b13695f0e405883d7d66da20fe52d23435d8a7d`; the G7 row now also records the
 later v17 execution evidence, whose training source SHA is given in its result
@@ -62,18 +66,18 @@ The G7 D3 preparation decision is separate from the G13 measurement D3 below.
 | G1 | PASS | `requirements/dev-win-py312.lock`, `.github/workflows/ci.yml`, `tests/test_app_endpoints.py`; refresh security and environment checks at the eventual execution SHA. |
 | G2 | PASS | `agents/verifier.py`, `agents/tool_policy.py`, `agents/approval.py`, `tests/test_approval_fail_closed.py`; local contracts do not prove live backend reachability. |
 | G3 | PASS (historical, caveated) | `artifacts/evidence/stage3/acceptance_report.json` records a local Kind milestone, but `kubectl_describe`/`kubectl_logs` wrapper failures and absent Jaeger traces remain; fresh target acceptance is required. |
-| G4 | NOT_PASSED | `artifacts/evidence/stage4/RECOVERY_INDEX_009_014.md` and `EXP-STAGE4-SF002-010.json`: 010 is a completed negative outcome; 009/011-014 are interrupted/inconclusive. Prospective [v3.4](G4_PROTOCOL_V34_APPROVAL_CHANNEL.md), [v3.5](G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md), and [v3.6](G4_PROTOCOL_V36_SETTLING_DEADLINE.md) are software/protocol candidates, not a successful live incident. Attempt 015 remains unreserved. |
+| G4 | NOT_PASSED | Frozen: 015 terminal INCONCLUSIVE/unscored; 016 pre-fault abort/non-result; 017 completed negative, with methodological caveats. No 018. [Current chronology and external archive anchors](CONTROLLED_G9_ADMISSION_V1.md); the older 009-014 recovery index remains historical and unchanged. |
 | G5 | PASS (governance) | `config/splits.py`, `config/scenario_catalog.py`, `tests/test_stage5_scenario_splits_and_truth.py`; Train 16 / Val 6 / Test 6 are frozen. Audit every downstream consumer; Leaderboard overlaps Train/Val. |
 | G6 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Archived Stage 6 metrics are mock. The separate matched Validation campaign records real pinned-base diagnostic inference and raw provenance; it does not establish incident resolution or close G6. |
-| G7 | PARTIAL | The historical 64-row builder fixture is for schema/rendering checks only. G7 D3 is `APPROVED_FOR_PREPARATION` for the exact synthetic 68-row `train-candidate-v1` corpus/manifest. The separate free-T4 v17 run completed one epoch / 9 optimizer steps under a named $0-cap approval; its preserved adapter passed independent offline reload. This proves a bounded loadable artifact, not incident improvement; see [canonical evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json). The original v4 refusal remains unchanged. |
-| G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | The independently verified [real Validation comparison](BASE_SFT_VALIDATION_RESULT_V1.md) records Base diagnostic F1 0.16875, SFT 0.15935, paired difference -0.00940, and 6/6 diagnostic JSON conformance per arm: no diagnostic improvement observed. Raw outputs, ordered split and model/checkpoint hashes are preserved. D12 remains `PENDING / NOT APPROVED`; resolution is null and no integrated evaluator or G8 gate PASS is claimed. Historical Stage 8 outputs remain mock. |
+| G7 | PASS (bounded artifact/reload) | v17, 68 synthetic Train rows, 1 epoch / 9 steps, named $0-cap approval, verified inventory and independent offline reload meet the bounded target. Preapproved free-T4 profile replaces OCI with a hash-locked isolated venv. Tolerance applies only before a future replicate; see [acceptance review](STAGE_7_SFT_DATA_AND_TRAINING.md). No incident improvement inferred. |
+| G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | The complete [real Validation comparison](BASE_SFT_VALIDATION_RESULT_V1.md) records Base F1 0.16875, SFT 0.15935, delta -0.00940, schema 6/6 each: no diagnostic improvement observed. Resolution remains null; D12 Option A retains the original live criterion. Remaining incident evaluation is deferred. Historical Stage 8 outputs remain mock. |
 | G9 | NOT_PASSED / FROZEN | Final controlled negative: the replacement pilot had zero reward-driven advantages; the final aligned diagnostic had 0/8 canonical admissible actions. No acceptable SFT+GRPO checkpoint and no further training retries. Historical direct-action software remains non-empirical. |
 | G10 | OUT_OF_SCOPE | Historical `artifacts/evidence/stage10/rs_dataset_manifest.json` and `recommender/dataset.py`; former PARTIAL, with no historical operator feedback. Retain both 28-row and corrected 21-row synthetic cohorts. |
 | G11 | OUT_OF_SCOPE | Historical bounded-offline PASS in `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`; four synthetic Test rows support small-data ranking only, not incident resolution improvement. |
-| G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `agents/coordinator.py`, `scripts/run_g12_integrated_episode.py`; direct policy-action/status capture is locally tested. RS is optional, not a GAI + RL prerequisite. A real checkpoint/environment episode is missing. |
-| G13 | REOPENED | `bench/ablation_suite.py`, `bench/episode_membership.py`; the prospective base/SFT/SFT+GRPO three-arm matrix has no independently recomputed raw incident outcomes, common eligible population, approved adversarial membership/seed, or frozen protocol. Historical five-arm output remains non-empirical. See [v0.3](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_3.md) and the preserved [partial v0.2 record](G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_2.md). |
-| G14 | PARTIAL | `app.py`, `dashboard.py`, `demo/launcher.py`, `tests/test_stage14_demo_safety.py`; read-only software is not a fresh peer-host safe deployment or operator sign-off. Deployment is deferred. |
-| G15 | PARTIAL / NOT_CERTIFIED | `scripts/package_submission.py`, `artifacts/SUBMISSION_MANIFEST.json`, `artifacts/SUBMISSION_SUMMARY.md`; hashes establish inventory integrity, not scientific certification. Regenerate after each accepted source/evidence change. |
+| G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Direct-action integration and capture software complete, RS optional. Accepted checkpoint and live integrated episode deferred; final G9 produced no accepted policy. |
+| G13 | REOPENED | Unsupported historical PASS withdrawn. Software/review deliverables complete; empirical three-arm matrix deferred without a valid third arm and prospectively frozen measurement/adversarial/access protocol. Historical profiles remain non-empirical. |
+| G14 | PARTIAL | Local read-only evidence demo complete. Fresh peer-host, operator and deployment-security acceptance remains absent; no public/live deployment claim. |
+| G15 | PARTIAL / NOT_CERTIFIED | Current report, slides, reviewer guide, evidence index and hash-verified package complete. Scientific certification and actual external submission remain unestablished. |
 
 No new empirical PASS, overall completion percentage, or live readiness verdict
 is inferred from this matrix.
@@ -99,13 +103,15 @@ is inferred from this matrix.
    validators for base, SFT and SFT+GRPO. Preserve mock/source labels and
    historical V3/V5 material. A measured Stage 13 claim cannot use declared
    summary values alone.
-4. **Prerequisite empirical lane (separate authorization):** fresh G3 host,
+4. **Deferred empirical lane (separate future authorization):** fresh G3 host,
    model and operator preflight; causally valid G4; immutable-serving G6;
    the G7 synthetic checkpoint and real paired Validation diagnostic comparison
-   now exist; G8 incident-resolution evidence remains outstanding; serialized direct-action G9;
+   now exist; G8 incident-resolution evidence remains outstanding; an accepted direct-action policy;
    real GAI + RL G12 integration; then approved G13 Test and adversarial campaigns.
-   Do not reserve 015, request P1, inject faults, train, or access quarantined
-   outcomes from this adoption.
+   G4/G9 are frozen, no attempt 018 exists, and no retry is authorized.
+   The [deferred handoff](DEFERRED_RESEARCH_HANDOFF.md) replaces immediate
+   experiment-next-step language. Do not request P1, inject faults, train,
+   or access quarantined outcomes from this finalization.
 5. **Deployment lane (deferred):** G14 peer-host safe-mode/operator and
    security acceptance only after the project is finished and approved;
    G15 final certification only after raw evidence, recomputation and

@@ -119,13 +119,17 @@ The historical Space setup notes are retained for provenance, not as deployment 
 - [Technical report](docs/AtlasOps_Technical_Report.md)
 - [Presentation source](docs/slides.md)
 - [Reviewer guide](JUDGES_START_HERE.md)
+- [Evidence index](docs/EVIDENCE_INDEX.md)
+- [Deferred research handoff](docs/project/DEFERRED_RESEARCH_HANDOFF.md)
 - [v17 SFT evidence](artifacts/evidence/stage7/free-t4-v17/)
 - [Base-vs-SFT raw and scored evidence](artifacts/evidence/stage8/base-sft-validation-v1/)
 - [Final aligned G9 diagnostic evidence](artifacts/evidence/stage9/final-aligned-diagnostic-v1/)
 - [Submission manifest](artifacts/SUBMISSION_MANIFEST.json) and [summary](artifacts/SUBMISSION_SUMMARY.md)
 
-The submission inventory hashes selected tracked files. It checks file integrity, not
-model quality, incident resolution, or certification.
+The submission inventory hashes selected tracked files. The presentation and
+review package are the non-experimental deliverable. The full research pipeline
+remains NOT_CERTIFIED. G7 is PASS for the bounded v17 artifact/reload target under
+its preapproved free-T4 profile, without any incident-improvement claim.
 
 ## Historical Upstream Results
 

@@ -101,6 +101,8 @@ jobs:
             tokenizers==0.22.2 huggingface-hub==0.36.2
       - name: Test installed trainer and tiny controlled optimizer without pretrained weights
         run: python -m pytest tests/test_grpo_observation_installed_trl.py -q
+      - name: Test fresh local reload with permanent socket guard
+        run: python -m pytest tests/test_grpo_reload_installed.py -q
       - name: Test free-T4 attention, loss, and metrics on tiny CPU fixtures
         run: |
           python -m pytest tests/test_sft_chunked_loss.py \

@@ -143,6 +143,12 @@ launched separately with network isolation. Training returns
 
 ## Operational Boundary
 
+The later [reload-only offline amendment](CONTROLLED_G9_RELOAD_OFFLINE_V1.md)
+adds the explicit Kaggle-compatible `kaggle-verified-offline-v1` profile.
+The namespace requirement below describes the retained original route;
+the alternative preserves fresh-process/local-artifact/no-egress acceptance.
+The failed Kaggle namespace preflight stays negative environment evidence.
+
 Fresh-process reload refuses a shared network namespace or any interface
 other than loopback. The caller uses `unshare --net`; offline loader flags
 alone do not satisfy it. The training process enforces the receipt deadline

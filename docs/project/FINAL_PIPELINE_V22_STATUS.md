@@ -39,6 +39,13 @@ upstream README and v1.0/v1.1 documents remain dated references.
 
 ## Current status and gaps
 
+The later [final controlled-G9 result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md)
+supersedes the historical G9 REOPENED status: G9 is now NOT_PASSED and frozen
+as experimentally unsuccessful. Exactly eight aligned inference-only samples
+produced no admissible canonical action, so the final training pilot was not
+launched. Reporting excludes an absent SFT+GRPO model and uses only preserved
+actual Base/v17 results and negatives; no new held-out or live evaluation.
+
 Except for the G7 and G8 rows, the status column remains the declared gate
 inventory at the historical reviewed source SHA above. The G7/G8 implementation
 rows were last reconciled to reviewed-source basis
@@ -60,7 +67,7 @@ The G7 D3 preparation decision is separate from the G13 measurement D3 below.
 | G6 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Archived Stage 6 metrics are mock. The separate matched Validation campaign records real pinned-base diagnostic inference and raw provenance; it does not establish incident resolution or close G6. |
 | G7 | PARTIAL | The historical 64-row builder fixture is for schema/rendering checks only. G7 D3 is `APPROVED_FOR_PREPARATION` for the exact synthetic 68-row `train-candidate-v1` corpus/manifest. The separate free-T4 v17 run completed one epoch / 9 optimizer steps under a named $0-cap approval; its preserved adapter passed independent offline reload. This proves a bounded loadable artifact, not incident improvement; see [canonical evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json). The original v4 refusal remains unchanged. |
 | G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | The independently verified [real Validation comparison](BASE_SFT_VALIDATION_RESULT_V1.md) records Base diagnostic F1 0.16875, SFT 0.15935, paired difference -0.00940, and 6/6 diagnostic JSON conformance per arm: no diagnostic improvement observed. Raw outputs, ordered split and model/checkpoint hashes are preserved. D12 remains `PENDING / NOT APPROVED`; resolution is null and no integrated evaluator or G8 gate PASS is claimed. Historical Stage 8 outputs remain mock. |
-| G9 | REOPENED | `training/grpo.py`, `training/grpo_environment.py`, `bench/grpo_eval.py`, `tests/test_stage9_grpo_pipeline.py`; direct-action software exists, not a completed trained adapter or held-out real evaluation. |
+| G9 | NOT_PASSED / FROZEN | Final controlled negative: the replacement pilot had zero reward-driven advantages; the final aligned diagnostic had 0/8 canonical admissible actions. No acceptable SFT+GRPO checkpoint and no further training retries. Historical direct-action software remains non-empirical. |
 | G10 | OUT_OF_SCOPE | Historical `artifacts/evidence/stage10/rs_dataset_manifest.json` and `recommender/dataset.py`; former PARTIAL, with no historical operator feedback. Retain both 28-row and corrected 21-row synthetic cohorts. |
 | G11 | OUT_OF_SCOPE | Historical bounded-offline PASS in `artifacts/evidence/stage11/rs_hybrid_eval_synthetic_v2.json`; four synthetic Test rows support small-data ranking only, not incident resolution improvement. |
 | G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | `agents/coordinator.py`, `scripts/run_g12_integrated_episode.py`; direct policy-action/status capture is locally tested. RS is optional, not a GAI + RL prerequisite. A real checkpoint/environment episode is missing. |

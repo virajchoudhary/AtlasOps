@@ -1,0 +1,15 @@
+{
+  "G4": "NOT_PASSED",
+  "G8_live_criterion_met": false,
+  "G9": "NOT_PASSED_FINAL_NEGATIVE_FROZEN",
+  "admissible_count": 0,
+  "archive_sha256": "6137ce1d88eada54152b0c58bb7dd02f9c8758ddacf73adfafffb5a8f598e6c8",
+  "checkpoint_accepted": false,
+  "diagnostic_sha256": "e31d898cc31e72c1099f092b1952c540024d0c41a84cdcb6745fd09508b99403",
+  "limitation": "Internet/private UI fields are root-observed receipt evidence, not provider attestation",
+  "optimizer_steps": 0,
+  "raw_samples_sha256": "84e30346b8948cca44b164f69106fbfbba8bb189f31e892aa0ff7f6d4034439b",
+  "sample_count": 8,
+  "status": "LOCAL_RAW_DIAGNOSTIC_VERIFICATION_PASS",
+  "unchanged_lora_tensors": 392
+}

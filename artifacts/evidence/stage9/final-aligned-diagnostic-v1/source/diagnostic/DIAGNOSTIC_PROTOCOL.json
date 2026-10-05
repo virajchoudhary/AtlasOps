@@ -1,0 +1,34 @@
+{
+  "interface": "controlled-qwen-single-tool-call-v2",
+  "status": "PROSPECTIVE_INFERENCE_ONLY_NOT_STARTED",
+  "diagnosis_sha256": "1216a09fc5134b8efa4932d3c060245f87139171690cea764a8c85c7a24b4d38",
+  "parent_manifest_sha256": "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440",
+  "parent_weight_sha256": "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff",
+  "base": "Qwen/Qwen2.5-7B-Instruct",
+  "base_tokenizer_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+  "sample_count": 8,
+  "sampling": {
+    "seed": 2026,
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": 50,
+    "max_new_tokens": 192
+  },
+  "state": "initial controlled Train single_fault/sf-002 capacity state; no state transitions or rewards used",
+  "tools": ["kubectl_get", "kubectl_scale"],
+  "generation_mode": "eval and torch.inference_mode; eight sequential frozen-configuration samples",
+  "model_mutation": "prohibited; pre/post LoRA tensor hashes and no gradients required",
+  "optimizer_steps": 0,
+  "parser": "one complete tool_call envelope; exactly name and arguments; no surrounding prose; no duplicate keys, nonfinite numbers, unknown tools, ambiguous content or invalid arguments",
+  "claim_field": "absent in prospective v2 action; no model recovery claim invented",
+  "evidence": ["all raw completions including special-token view", "all generated token IDs", "parsed actions separately", "admission outcomes", "exact rendered prompt", "parent and Base inventories", "tensor hashes"],
+  "prospective_gate": {
+    "zero_admissible": "FINAL_NEGATIVE_G9; no training, no retry; final reporting",
+    "at_least_one_admissible": "permits focused PR/CI/Luna Max review; training only after green merge and declared final-pilot budget",
+    "statistical_limitation": "one or more observed admissible samples supports nonzero observed frequency, not a precise probability estimate; zero of eight does not prove population probability exactly zero"
+  },
+  "validation_test_leaderboard": "not accessed",
+  "spend_usd_max": 0,
+  "G4": "NOT_PASSED",
+  "G8_live_criterion_met": false
+}

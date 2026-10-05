@@ -39,6 +39,7 @@ def failed_probes():
 def test_offline_profile_requires_receipt_and_actual_egress_failure(tmp_path, monkeypatch):
     path, sha = receipt(tmp_path)
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
         monkeypatch.delenv(name, raising=False)
@@ -140,6 +141,7 @@ def test_probes_use_direct_addresses_timeouts_and_close(monkeypatch):
 def test_acceptance_rejects_nonempty_guard_latch(tmp_path, monkeypatch):
     path, sha = receipt(tmp_path)
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         monkeypatch.delenv(name, raising=False)
@@ -148,3 +150,24 @@ def test_acceptance_rejects_nonempty_guard_latch(tmp_path, monkeypatch):
     )
     evidence["forbidden_attempts"] = [{"operation": "socket.connect", "outcome": "blocked"}]
     assert not isolation.validate_isolation_evidence(evidence)
+
+
+@pytest.mark.parametrize("error", ["ConnectionRefusedError", "ConnectionResetError", "OSError"])
+def test_remote_or_unknown_probe_errors_never_prove_isolation(error):
+    assert not isolation.probe_proves_blocked({"connected": False, "error_type": error})
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only native syscall guard")
+def test_native_socket_syscall_is_trapped_before_network():
+    code = """
+import ctypes
+from training.grpo_reload_isolation import LoopbackGuard
+g=LoopbackGuard();g.install();g.install_syscall_guard()
+try:ctypes.CDLL(None).syscall(42,-1,0,0)
+except PermissionError:pass
+else:raise AssertionError('native connect bypass')
+assert g.attempts
+print('NATIVE_GUARD_PASS')
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr

@@ -47,7 +47,9 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
         or reload.get("profile") != PROFILE
         or reload.get("classification") != CLASSIFICATION
         or reload.get("manifest_sha256") != manifest_sha256
-        or not validate_isolation_evidence(reload.get("network_isolation"))
+        or not validate_isolation_evidence(
+            reload.get("network_isolation"), source_sha=manifest["receipt"]["source_sha"]
+        )
         or reload.get("inference_performed") is not False
         or reload.get("held_out_accessed") is not False
         or checkpoint_inventory(run / "adapter", manifest_path) != manifest["checkpoint"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import errno
 import ipaddress
 import json
 import os
@@ -15,6 +16,17 @@ NAMESPACE_PROFILE = "network-namespace-v1"
 KAGGLE_PROFILE = "kaggle-verified-offline-v1"
 PROBE_TARGETS = (("1.1.1.1", 443), ("8.8.8.8", 53), ("2606:4700:4700::1111", 443))
 PROBE_TIMEOUT_SECONDS = 2.0
+RECEIPT_KEYS = frozenset({
+    "reload_profile", "source_sha", "observed_at", "kaggle_internet_enabled",
+    "private_context", "operator", "launcher_pid",
+})
+
+
+def probe_proves_blocked(record: dict[str, Any]) -> bool:
+    return record.get("connected") is False and (
+        record.get("error_type") in {"TimeoutError", "PermissionError"}
+        or record.get("errno") in {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.EACCES, errno.EPERM, errno.ETIMEDOUT}
+    )
 
 
 def require_network_isolation() -> dict[str, str]:
@@ -80,7 +92,7 @@ class LoopbackGuard:
             self.check_address(event, (args[0], args[1]))
         elif event in {"socket.gethostbyname", "socket.gethostbyaddr"}:
             self.check_address(event, (args[0], 0))
-        elif event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec"}:
+        elif event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec", "os.fork", "os.forkpty"}:
             self.reject(event)
         elif event == "socket.__new__":
             _, family, kind, _ = args
@@ -104,6 +116,43 @@ class LoopbackGuard:
         if self.attempts:
             raise PermissionError("Reload attempted a forbidden connection or fallback")
 
+    def install_syscall_guard(self) -> None:
+        """Linux x86_64 seccomp TSYNC blocks even native connect/send syscalls."""
+        import ctypes
+        import platform
+        import signal
+
+        if platform.system() != "Linux" or platform.machine() != "x86_64":
+            raise ValueError("Verified-offline profile requires Linux x86_64 seccomp")
+
+        class Filter(ctypes.Structure):
+            _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
+                        ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint)]
+
+        class Program(ctypes.Structure):
+            _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Filter))]
+
+        # Check architecture, then trap every connect/sendto/sendmsg syscall.
+        # Blocking all socket sends is deliberately stricter than loopback-only.
+        instructions = [(0x20, 0, 0, 4), (0x15, 1, 0, 0xC000003E),
+                        (0x06, 0, 0, 0x80000000), (0x20, 0, 0, 0),
+                        (0x45, 0, 1, 0x40000000), (0x06, 0, 0, 0x80000000)]
+        for number in (42, 44, 46, 307, 425, 426):  # socket sends and io_uring bypass
+            instructions += [(0x15, 0, 1, number), (0x06, 0, 0, 0x00030000)]
+        instructions += [(0x06, 0, 0, 0x7FFF0000)]
+        array = (Filter * len(instructions))(*(Filter(*row) for row in instructions))
+        program = Program(len(instructions), array)
+        libc = ctypes.CDLL(None, use_errno=True)
+
+        def violation(_number, _frame):
+            self.reject("native_socket_syscall")
+
+        signal.signal(signal.SIGSYS, violation)
+        if libc.prctl(38, 1, 0, 0, 0) != 0:
+            raise PermissionError("Cannot establish no_new_privs")
+        if libc.syscall(317, 1, 1, ctypes.byref(program)) != 0:
+            raise PermissionError("Cannot install seccomp TSYNC guard")
+
 
 def prepare_isolation(
     profile: str, *, receipt_path: Path | None, receipt_sha256: str | None,
@@ -121,7 +170,11 @@ def prepare_isolation(
     if len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != receipt_sha256:
         raise ValueError("Offline receipt hash mismatch")
     receipt = json.loads(raw)
+    if not isinstance(receipt, dict) or set(receipt) != RECEIPT_KEYS:
+        raise ValueError("Offline receipt must contain only sanitized context fields")
     observed = datetime.fromisoformat(receipt["observed_at"])
+    if observed.tzinfo is None:
+        raise ValueError("Offline receipt observation requires a timezone")
     age = (datetime.now(UTC) - observed).total_seconds()
     if (
         receipt.get("reload_profile") != KAGGLE_PROFILE
@@ -144,21 +197,23 @@ def prepare_isolation(
     evidence = {
         "reload_profile": profile, "receipt_sha256": receipt_sha256,
         "context": receipt, "reload_pid": os.getpid(), "launcher_pid": os.getppid(),
+        "receipt_raw": raw.decode("utf-8"),
         "outbound_probes": probes,
         "offline_flags": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
-        "guard": "permanent_cpython_socket_audit_v1",
+        "guard": "cpython_audit_and_seccomp_tsync_v1",
         "forbidden_attempts": [],
     }
-    if any(record["connected"] for record in probes):
+    if not all(probe_proves_blocked(record) for record in probes):
         error = PermissionError("External egress is available; reload NOT_VERIFIED")
         error.isolation_evidence = evidence
         raise error
     guard = LoopbackGuard()
     guard.install()
+    guard.install_syscall_guard()
     return evidence, guard
 
 
-def validate_isolation_evidence(value: Any) -> bool:
+def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) -> bool:
     if not isinstance(value, dict):
         return False
     profile = value.get("reload_profile", NAMESPACE_PROFILE)
@@ -172,7 +227,21 @@ def validate_isolation_evidence(value: Any) -> bool:
         return False
     context = value.get("context", {})
     probes = value.get("outbound_probes")
+    try:
+        raw = value["receipt_raw"].encode("utf-8")
+        receipt_matches = (
+            json.loads(raw) == context and set(context) == RECEIPT_KEYS
+            and hashlib.sha256(raw).hexdigest() == value["receipt_sha256"]
+            and context["operator"] == "Viraj Choudhary"
+            and context["reload_profile"] == KAGGLE_PROFILE
+            and (source_sha is None or context["source_sha"] == source_sha)
+            and datetime.fromisoformat(context["observed_at"]).tzinfo is not None
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return False
     return (
+        receipt_matches
+        and
         context.get("kaggle_internet_enabled") is False
         and context.get("private_context") is True
         and type(value.get("reload_pid")) is int and value["reload_pid"] > 0
@@ -181,9 +250,9 @@ def validate_isolation_evidence(value: Any) -> bool:
         and context.get("launcher_pid") == value.get("launcher_pid")
         and isinstance(value.get("receipt_sha256"), str) and len(value["receipt_sha256"]) == 64
         and value.get("offline_flags") == {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
-        and value.get("guard") == "permanent_cpython_socket_audit_v1"
+        and value.get("guard") == "cpython_audit_and_seccomp_tsync_v1"
         and value.get("forbidden_attempts") == []
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)
-        and all(r.get("connected") is False and r.get("error_type") for r in probes)
+        and all(probe_proves_blocked(r) for r in probes)
     )

@@ -24,15 +24,20 @@ launch a fresh Python process from the private context.
 Before loading models, the process rejects proxy settings, sets
 `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, and probes TCP directly at
 three fixed public IPv4/IPv6 IP/port pairs, each with a two-second timeout.
-Any successful connection is NOT_VERIFIED. Preserve target/port, timeout,
+Any successful connection, refusal/reset or unknown error is NOT_VERIFIED.
+Only timeout, permission denial or explicit route-unavailable errors qualify.
+Preserve target/port, timeout,
 connected flag and exception class/errno only; no response bodies, tokens,
 URLs, proxy values or operational secrets. Failed bounded probes are
 evidence for those routes, not universal egress proof by themselves.
 
-After those probes, install a permanent CPython audit/socket guard before
+After those probes, install a permanent CPython audit/socket guard plus a
+Linux x86_64 seccomp TSYNC filter before
 model-library imports. It rejects non-literal-loopback socket connects,
 connect_ex, datagram sendto/sendmsg, external DNS resolution, raw/non-IP
-sockets and subprocess network fallback. It latches attempted forbidden
+sockets, fork and subprocess network fallback. Seccomp also traps native
+connect/sendto/sendmsg/sendmmsg calls in every thread; all socket sends
+(including loopback) are conservatively blocked. It latches attempted forbidden
 operations even when a library catches PermissionError; any latch makes
 the reload NOT_VERIFIED. Local Unix IPC and literal loopback are allowed.
 No proxies, tunnels or remote lookup fallback are permitted.
@@ -40,8 +45,9 @@ No proxies, tunnels or remote lookup fallback are permitted.
 The combined claim rests on the independently observed Kaggle Internet-off
 setting, unsuccessful direct probes, explicit local-only pinned loaders,
 permanent process guard and byte inventories, not merely offline flags.
-This is a controlled trusted-Python reload, not an OS sandbox against
-malicious native extensions. No operational credentials are present.
+The syscall filter closes the native socket bypass; inability to install
+it is NOT_VERIFIED, not permission to use Python flags alone.
+No operational credentials are present.
 Missing prerequisites or uncertain Internet state refuse verification.
 
 Rehash complete pinned Base, original v17 parent and GRPO output inventories

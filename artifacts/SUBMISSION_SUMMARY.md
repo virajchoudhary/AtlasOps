@@ -4,8 +4,8 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Package readiness**: **READY_FOR_REVIEW**
 - **Scientific certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-05T18:10:40.801431+00:00`
-- **Deterministic asset inventory SHA-256**: `fd9c2c4aeb1358d2e50396491e6246e729aba79561e1afc70fad7891f47a85be`
+- **Generated**: `2026-10-05T18:22:16.398384+00:00`
+- **Deterministic asset inventory SHA-256**: `a9985c5d7edc48d0c84d92a84b96e7b7c3870506c063062b676348d1d0654751`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 Package readiness means required reviewer surfaces and compact canonical evidence are present in the tracked inventory, hashed from checkout bytes, and current-facing local Markdown links resolve. It does not mean the scientific pipeline is certified or that external/private archives and model weights are bundled.
@@ -426,7 +426,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `tests/test_local_metrics_installer.py` | `624f272690b2ee4d...` | 2664 |
 | `tests/test_loopback_inference_qualification.py` | `9875f75a3a166f2c...` | 9875 |
 | `tests/test_release_gate.py` | `911bb0b14d07deec...` | 13992 |
-| `tests/test_repository_hygiene.py` | `e420ec6953c2d9b5...` | 16104 |
+| `tests/test_repository_hygiene.py` | `c12b4a56d970a4f3...` | 16140 |
 | `tests/test_reward_tool_policy.py` | `504584e6937d2ce2...` | 1387 |
 | `tests/test_rs_cli_isolation.py` | `92efe002a987b752...` | 4785 |
 | `tests/test_rs_dataset_provenance.py` | `cf14c29cb8b64929...` | 9462 |

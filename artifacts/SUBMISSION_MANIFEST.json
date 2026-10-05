@@ -4,11 +4,11 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-05T18:10:40.801431+00:00",
+  "generated_at": "2026-10-05T18:22:16.398384+00:00",
   "status": "NOT_CERTIFIED",
   "status_scope": "scientific_pipeline_certification",
   "package_readiness_basis": "Required reviewer surfaces and canonical compact evidence are tracked, raw-byte hashed, and current-facing local Markdown links resolve. This does not establish scientific certification or include private archives and model weights.",
-  "asset_inventory_sha256": "fd9c2c4aeb1358d2e50396491e6246e729aba79561e1afc70fad7891f47a85be",
+  "asset_inventory_sha256": "a9985c5d7edc48d0c84d92a84b96e7b7c3870506c063062b676348d1d0654751",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
     "G0": "PASS",
@@ -1668,8 +1668,8 @@
       "size_bytes": 13992
     },
     "tests/test_repository_hygiene.py": {
-      "sha256": "e420ec6953c2d9b5bd7a63129b3e0d3f721f664c766651d6b764cb9094d23c95",
-      "size_bytes": 16104
+      "sha256": "c12b4a56d970a4f325e953cb2f038eebf491eafb491a28d30129ef390ce6c8db",
+      "size_bytes": 16140
     },
     "tests/test_reward_tool_policy.py": {
       "sha256": "504584e6937d2ce21cb2908cfb82f19f3177d7390f631f8ea5769a94bf0893c6",

@@ -13,7 +13,10 @@ from __future__ import annotations
 import pytest
 
 from dashboard import (
+    _UI_CSS,
     _apply_chaos,
+    _comparison_html,
+    _header_html,
     _list_stage4_attempts,
     _load_ablation_matrix,
     _load_comparison_table,
@@ -42,6 +45,21 @@ class TestStage14DemoSafety:
         assert "Scenario Control" not in labels
         assert "Rank runbooks" not in str(app.config)
         assert "Symptoms" not in str(app.config)
+
+    def test_modern_ui_shell_is_read_only_and_accessible(self):
+        header = _header_html()
+        comparison = _comparison_html()
+        assert "atlas-hero" in header
+        assert "READ-ONLY RESEARCH SNAPSHOT" in header
+        assert "NOT CERTIFIED" in header
+        assert "atlas-chart" in comparison
+        assert "0.16875" in comparison
+        assert "0.15935" in comparison
+        assert "@media (prefers-reduced-motion: reduce)" in _UI_CSS
+        assert "@keyframes atlasRise" in _UI_CSS
+        assert "@keyframes atlasFlow" in _UI_CSS
+        assert "kubectl apply" not in header
+        assert "share=True" not in header
 
     def test_scenario_selection_never_claims_or_runs_a_fault(self, monkeypatch):
         monkeypatch.setenv("DEMO_SAFE_MODE", "0")

@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-05T12:55:55.299360+00:00",
+  "generated_at": "2026-10-05T16:37:22.711746+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -17,7 +17,7 @@
     "G6": "IMPLEMENTED / EMPIRICAL EVIDENCE MISSING",
     "G7": "PARTIAL",
     "G8": "IMPLEMENTED / EMPIRICAL EVIDENCE MISSING",
-    "G9": "REOPENED",
+    "G9": "NOT_PASSED",
     "G10": "OUT_OF_SCOPE",
     "G11": "OUT_OF_SCOPE",
     "G12": "IMPLEMENTED / EMPIRICAL EVIDENCE MISSING",
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 438,
+  "asset_count": 451,
   "assets": {
     "AGENTS.md": {
       "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
@@ -49,8 +49,8 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "d7e828358cdd17333ed2c74b14cc6b7b94e6338e63878240903964c093c0f883",
-      "size_bytes": 2152
+      "sha256": "3681c94b27e6c1cf44fb07b6e732800a63650c8cfe1fe7f144d658856db64de6",
+      "size_bytes": 2220
     },
     ".github/workflows/ci.yml": {
       "sha256": "277be053aeb03bd54c9c2cf18361d9f6eade2d77cd075a81737dc2be27eff855",
@@ -193,8 +193,8 @@
       "size_bytes": 3220
     },
     "docs/project/IMPLEMENTATION_STATUS.md": {
-      "sha256": "810ddad077352656b35cce685dd322e42fdf115f88a79c55d7f1d8ae42d6da5e",
-      "size_bytes": 4298
+      "sha256": "bcd006506337f83737a9e873b817f009996fe04c5398e1bee2487b8b2e65c8df",
+      "size_bytes": 4498
     },
     "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md": {
       "sha256": "d314299cbb2574a34c4c62c4093a5a389b860f0d2b9e8acb0ff63af8341b5ae8",
@@ -232,9 +232,61 @@
       "sha256": "fef9b1dceec366e00b0672f2e8eec68ed82a674a8ec4c31c685095d0974a1ca9",
       "size_bytes": 4389
     },
+    "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md": {
+      "sha256": "ff0db5eafbc81097f5e26b9344cc4e97f8a1fbb0a86add73703eed5833b25dfc",
+      "size_bytes": 4909
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json": {
+      "sha256": "a388451e8c34fda90bd1e07dc6420a882981dde2dd168fc7d1623ecc1954dc6b",
+      "size_bytes": 1583
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json": {
+      "sha256": "b9a559f2fb925924493e6f9125838cc536e1c1aea49ada170c3f847e75976ed5",
+      "size_bytes": 683
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/DIAGNOSTIC_PROTOCOL.json": {
+      "sha256": "fa8719f55ea49f3e2e7b077e5f7bf776f7d32cd363ac9935c1282990feecb3d9",
+      "size_bytes": 2100
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/READ_ONLY_DIAGNOSIS.json": {
+      "sha256": "1216a09fc5134b8efa4932d3c060245f87139171690cea764a8c85c7a24b4d38",
+      "size_bytes": 410954
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/source-hashes.json": {
+      "sha256": "57cb8dc36cb70083781e55668500a687623b9e5d8b4a80a6cfd1c9d9e9bf2e1c",
+      "size_bytes": 428
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json": {
+      "sha256": "e31d898cc31e72c1099f092b1952c540024d0c41a84cdcb6745fd09508b99403",
+      "size_bytes": 132187
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/preparation/inference-receipt.json": {
+      "sha256": "c94c4133dcff8de5475b7ff9dd4d1dcc99f8a1c38011ed9590523020dce69fce",
+      "size_bytes": 3772
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/preparation/runtime-versions.json": {
+      "sha256": "f7527741b89ca94d1ae196abe2aa8ca5256269075d3c45f512434d165dcd4889",
+      "size_bytes": 1797
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl": {
+      "sha256": "84e30346b8948cca44b164f69106fbfbba8bb189f31e892aa0ff7f6d4034439b",
+      "size_bytes": 10293
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/rendered-prompt.txt": {
+      "sha256": "9b10aec8deca7c6fde1f85a0ee0ed003b1736257fedd7566fd790fbd26c2dfad",
+      "size_bytes": 6908
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/scripts/diagnose_grpo_qwen_interface.py": {
+      "sha256": "05adb46bd047cad316988270dc57217490add8aec3b6875f0b3281e51adb8836",
+      "size_bytes": 9590
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/training/grpo_qwen_interface.py": {
+      "sha256": "4e074334669603ff383c4ea3023eb7c48f8942fb25f2c4fe465d0d3ee594e392",
+      "size_bytes": 3065
+    },
     "docs/project/FINAL_PIPELINE_V22_STATUS.md": {
-      "sha256": "62fe337b3c887914983be401485d7d29c98df289797764e06816fe408cc51362",
-      "size_bytes": 9794
+      "sha256": "afcde2788ffdfc5ef66a2f3dedebf6b3b2adbcd00e953cb67615764472649308",
+      "size_bytes": 10337
     },
     "docs/project/G13_PROSPECTIVE_MEASUREMENT_PROTOCOL_V0_1.md": {
       "sha256": "613bbdfe304225f0c330a959f2281aad9ecd39721d086a50ff59c2022f765ce0",
@@ -341,8 +393,8 @@
       "size_bytes": 4993
     },
     "docs/project/MASTER_PIPELINE_STATUS.md": {
-      "sha256": "fae1b08f03bab30964cd2ef0dbd5cdfe21728a7638179013b2aa8b707c417af6",
-      "size_bytes": 30288
+      "sha256": "77b1aefb570c9baa4cdf2ca3f85a7b6b0f1273c7de193d29a9128c5eb75adc4a",
+      "size_bytes": 31367
     },
     "docs/project/UPSTREAM_ALIGNMENT_AUDIT_REPORT.md": {
       "sha256": "47220a41c883ffd88ec7cba72e2c1a022ccd040ae50928807e20c3e5b6e283a6",
@@ -1133,8 +1185,8 @@
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "9bf7763cde3943472ab28845162b43993aea68ee4e73773c2d701b004e78bdbf",
-      "size_bytes": 18489
+      "sha256": "bbc0a722668bc7f05e18d08cbdad778c39df6131d5f3c1c6dba6a97d4bd80bfb",
+      "size_bytes": 19015
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",
@@ -1761,8 +1813,8 @@
       "size_bytes": 6724
     },
     "tests/test_ui_read_model.py": {
-      "sha256": "1942099a2975dd69809a1e9dbe4f8522d7e32b4bfc9dbb3a82a443a43656fb03",
-      "size_bytes": 3093
+      "sha256": "b208461b7dbc25134138e7f2c75120be94c61efa3c73750b527eae2c3cb81c40",
+      "size_bytes": 3095
     },
     "tests/test_verifier.py": {
       "sha256": "b76b4563adbe04e257c48d5845d88ea9eca9fe164c1f78024f2f3ab538f683d3",

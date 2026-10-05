@@ -1,0 +1,30 @@
+{
+  "classification": "READ_ONLY_INDEPENDENT_ARTIFACT_REVIEW",
+  "model": "azure-kmamc/gpt-6-luna",
+  "reasoning_effort": "max",
+  "identity_source": "reviewer requestMeta",
+  "verdict": "PASS_PREDECLARED_ZERO_OF_EIGHT_FINAL_NEGATIVE",
+  "archive_sha256": "6137ce1d88eada54152b0c58bb7dd02f9c8758ddacf73adfafffb5a8f598e6c8",
+  "verified": {
+    "samples_preserved": 8,
+    "admissible_actions": 0,
+    "optimizer_steps": 0,
+    "unchanged_lora_tensor_hashes": 392,
+    "base_parent_integrity_checks": true,
+    "python": "3.12.11",
+    "matching_frozen_package_versions": 72,
+    "prior_negative_and_diagnosis_hashes_unchanged": true
+  },
+  "caveats": [
+    "Bare name/arguments JSON in samples 1, 3 and 6 remains inadmissible under the predeclared envelope-only parser; not semantically wrong by inference.",
+    "Zero of eight is the authorized final-negative decision, not proof of population probability exactly zero.",
+    "Internet/private context fields are root-observed receipt evidence, not provider attestation.",
+    "Setup log does not echo the lock hash or full installation command; root's tool call used uv pip sync --require-hashes with the frozen repository lock.",
+    "The immutable archive omits the prior diagnosis JSON referenced in its source hashes; that unchanged separately preserved file is included alongside the tracked evidence.",
+    "Reviewer performed no inference, model load, training, tests or file changes."
+  ],
+  "G4": "NOT_PASSED",
+  "G8_live_criterion_met": false,
+  "G9": "NOT_PASSED_FINAL_NEGATIVE_FROZEN",
+  "checkpoint_accepted": false
+}

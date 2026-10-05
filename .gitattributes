@@ -31,6 +31,7 @@ static/vendor/* text eol=lf
 artifacts/SUBMISSION_MANIFEST.json text eol=lf
 artifacts/SUBMISSION_SUMMARY.md text eol=lf
 artifacts/evidence/stage7/candidates/train-candidate-v1/* text eol=lf
+artifacts/evidence/stage9/final-aligned-diagnostic-v1/** -text !eol
 artifacts/models/hybrid_recommender.json text eol=crlf
 artifacts/models/hybrid_recommender_synthetic_v2.json text eol=crlf
 artifacts/evidence/stage10/rs_dataset_manifest.json text eol=crlf

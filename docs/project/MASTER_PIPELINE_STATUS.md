@@ -65,6 +65,16 @@ G9 research from the verified v17 parent; it neither changes historical
 evidence nor closes any empirical gate. Earlier status snapshots below
 retain their historical scope. Current live admission remains refused.
 
+### Final Controlled G9 Freeze (5 October 2026)
+
+The [final controlled result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md) is negative.
+The genuine two-step replacement pilot produced zero reward-driven advantages.
+The final predeclared aligned inference diagnostic produced 0/8 admissible
+canonical actions with no updates and unchanged model inventories. No final
+training launch followed it. G9 is experimentally unsuccessful and frozen:
+no further training retries, no acceptable SFT+GRPO checkpoint and no G9 PASS.
+Reporting now uses the actual Base/v17 and preserved negative results only.
+
 | Stage | Name | Gate | Target / Deliverable | Current Status |
 |---|---|---|---|---|
 | **Stage 0** | Freeze provenance and working scope | **G0** | Freeze upstream baseline SHA `bf9bd19`, preserve MIT license, establish repository boundaries. | **PASS** |
@@ -76,7 +86,7 @@ retain their historical scope. Current live admission remains refused.
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic baseline exists; incident-resolution evidence missing; historical outputs are MOCK) |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PARTIAL** (bounded synthetic free-T4 v17 pilot completed; preserved adapter passed independent reload; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
 | **Stage 8** | Evaluate SFT before RL | **G8** | Benchmark SFT checkpoint; verify resolution rate and format compliance before starting RL. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic result: no diagnostic improvement observed; incident-resolution criterion remains unmet) |
-| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **REOPENED** (direct-action software contract implemented; real training/checkpoint/evaluation missing) |
+| **Stage 9** | Correct and train online GRPO | **G9** | Correct policy-environment-reward coupling, execute online GRPO with objective verifier reward. | **NOT_PASSED** (final controlled negative; experimentally unsuccessful and frozen; no acceptable SFT+GRPO checkpoint) |
 | **Stage 10** | Historical RS data and baselines | **G10** | Retained optional dataset and baseline research; no longer a final prerequisite. | **OUT_OF_SCOPE** (formerly PARTIAL; scenario-derived data do not establish historical feedback) |
 | **Stage 11** | Historical hybrid recommender | **G11** | Retained optional small-data ranking research; no longer a final prerequisite. | **OUT_OF_SCOPE** (former PASS was bounded synthetic offline ranking, not incident resolution) |
 | **Stage 12** | Integrate GAI + RL | **G12** | Multi-agent safety/approval, direct policy action and objective verifier without an RS dependency. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (local software path; real checkpoint/environment execution missing) |
@@ -184,7 +194,11 @@ retain their historical scope. Current live admission remains refused.
   Raw outputs, hashes and independent recomputation are preserved. Resolution,
   safety, reward and TTR remain null; the G8 incident-resolution criterion remains unmet.
 
-### Gate G9: Correct and Train Online GRPO — [REOPENED]
+### Gate G9: Correct and Train Online GRPO — [NOT_PASSED / FROZEN FINAL NEGATIVE]
+  - The final controlled research result is experimentally unsuccessful; see
+    [the result and caveats](CONTROLLED_G9_FINAL_NEGATIVE_V1.md). No further
+    GRPO training retry is authorized. The following software/history facts
+    remain intact and do not override the final negative result.
 - Training entrypoints are blocked for a confirmed observation-order defect:
   static catalogue prompts generate completions before the reward callback
   obtains the live incident alert. The
@@ -197,7 +211,12 @@ retain their historical scope. Current live admission remains refused.
   learning.
 - `training/grpo.py` now sends the policy completion to `DirectPolicyEnvironment` as the exact proposed action. That adapter checks approval and tool policy, executes at most one action, settles, and carries objective verifier fields into reward and curriculum updates.
 - New trainer provenance records declared and loaded model revisions, frozen Train hash, source state, seed/configuration, rollout ledger, and a hashed completed adapter inventory. `bench/grpo_eval.py` validates this record and rejects missing or incomplete checkpoints; its mock path is explicitly non-empirical.
-- No completed GRPO training run, usable local adapter, or safe real evaluation was obtained. Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/` remain mock evidence. G9 remains reopened pending real authorized trajectories, training, and held-out evaluation.
+- No acceptable trained GRPO adapter or safe real evaluation was obtained.
+  The genuine controlled replacement pilot completed two optimizer steps
+  but had zero reward-driven advantages. The final aligned diagnostic
+  reached the authorized negative stop rule; G9 is frozen NOT_PASSED.
+  Archived Stage 9 outputs in `artifacts/evidence/mock_archive/stage9/`
+  remain mock evidence, separate from these genuine controlled negatives.
 
 ### Gate G10: Historical RS Data and Baselines — [OUT_OF_SCOPE]
 - Retain bounded algorithmic work: 12 runbooks, scenario-derived interaction generation, Random/Popularity/BM25 baselines and ranking metrics in `recommender/`. Evaluation fits on Train rows and scores separate splits.

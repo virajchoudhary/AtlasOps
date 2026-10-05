@@ -4,7 +4,7 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Working Pipeline**: `v2.2` with [GAI + RL (RS optional historical research)](../docs/project/GAI_RL_SCOPE_REVISION.md); Section 25 and the measurement protocol are not frozen
 - **Certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-05T16:15:37.392330+00:00`
+- **Generated**: `2026-10-05T16:25:01.920389+00:00`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 ## Declared Gate Statuses
@@ -154,11 +154,16 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/raw_episodes.jsonl` | `97887f05dae5dd4f...` | 79638 |
 | `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/run_manifest.json` | `878b01e079d294ad...` | 25804 |
 | `artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/summary.json` | `b846b05c9a6bb0d2...` | 1853 |
+| `artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json` | `a388451e8c34fda9...` | 1583 |
+| `artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json` | `b9a559f2fb925924...` | 683 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json` | `e31d898cc31e72c1...` | 132187 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/rendered-prompt.txt` | `9b10aec8deca7c6f...` | 6908 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl` | `84e30346b8948cca...` | 10293 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/preparation/inference-receipt.json` | `c94c4133dcff8de5...` | 3772 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/preparation/runtime-versions.json` | `f7527741b89ca94d...` | 1797 |
+| `artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/DIAGNOSTIC_PROTOCOL.json` | `fa8719f55ea49f3e...` | 2100 |
+| `artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/READ_ONLY_DIAGNOSIS.json` | `1216a09fc5134b8e...` | 410954 |
+| `artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/source-hashes.json` | `57cb8dc36cb70083...` | 428 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/scripts/diagnose_grpo_qwen_interface.py` | `05adb46bd047cad3...` | 9590 |
 | `artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/training/grpo_qwen_interface.py` | `4e074334669603ff...` | 3065 |
 | `artifacts/models/hybrid_recommender.json` | `53d0a4fb640b4691...` | 2646 |
@@ -312,7 +317,7 @@ Asset hashes establish file integrity, not scientific gate closure.
 | `scripts/collect_sft_remote_provenance.py` | `a844a13d6c6b74a2...` | 30654 |
 | `scripts/freeze_sft_pilot_plan.py` | `9239463af35384a4...` | 3076 |
 | `scripts/generate_training_plots.py` | `92e7cf64619d4f3b...` | 534 |
-| `scripts/package_submission.py` | `33bf680af6aa79cd...` | 18853 |
+| `scripts/package_submission.py` | `bbc0a722668bc7f0...` | 19015 |
 | `scripts/release_gate.py` | `39f87773681a2f9a...` | 18205 |
 | `scripts/reload_grpo_controlled.py` | `6f53ec4b589f00f9...` | 7108 |
 | `scripts/reload_sft_free_t4.py` | `36b076110ad39657...` | 5305 |

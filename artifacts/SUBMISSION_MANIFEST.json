@@ -4,7 +4,7 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-05T16:15:37.392330+00:00",
+  "generated_at": "2026-10-05T16:25:01.920389+00:00",
   "status": "NOT_CERTIFIED",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
@@ -34,7 +34,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 446,
+  "asset_count": 451,
   "assets": {
     "AGENTS.md": {
       "sha256": "6d1e8d1a1f6748677c78a4ab31fc8c4fb4f00ff522bebfb2aa52755e00e06fe1",
@@ -235,6 +235,26 @@
     "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md": {
       "sha256": "ff0db5eafbc81097f5e26b9344cc4e97f8a1fbb0a86add73703eed5833b25dfc",
       "size_bytes": 4909
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json": {
+      "sha256": "a388451e8c34fda90bd1e07dc6420a882981dde2dd168fc7d1623ecc1954dc6b",
+      "size_bytes": 1583
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/LOCAL_VERIFICATION.json": {
+      "sha256": "b9a559f2fb925924493e6f9125838cc536e1c1aea49ada170c3f847e75976ed5",
+      "size_bytes": 683
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/DIAGNOSTIC_PROTOCOL.json": {
+      "sha256": "fa8719f55ea49f3e2e7b077e5f7bf776f7d32cd363ac9935c1282990feecb3d9",
+      "size_bytes": 2100
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/READ_ONLY_DIAGNOSIS.json": {
+      "sha256": "1216a09fc5134b8efa4932d3c060245f87139171690cea764a8c85c7a24b4d38",
+      "size_bytes": 410954
+    },
+    "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/source-hashes.json": {
+      "sha256": "57cb8dc36cb70083781e55668500a687623b9e5d8b4a80a6cfd1c9d9e9bf2e1c",
+      "size_bytes": 428
     },
     "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json": {
       "sha256": "e31d898cc31e72c1099f092b1952c540024d0c41a84cdcb6745fd09508b99403",
@@ -1165,8 +1185,8 @@
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "33bf680af6aa79cdc877dd243b5ba3f0a1fa83644ccb2aef60c99f180a007aa2",
-      "size_bytes": 18853
+      "sha256": "bbc0a722668bc7f05e18d08cbdad778c39df6131d5f3c1c6dba6a97d4bd80bfb",
+      "size_bytes": 19015
     },
     "scripts/release_gate.py": {
       "sha256": "39f87773681a2f9abcdd82079c1487c28be8129f147b7d9e772070ee569f0d6e",

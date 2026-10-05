@@ -7,7 +7,6 @@ import hmac
 import socket
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Security
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
@@ -58,6 +57,8 @@ def approval_app(gate: ApprovalGate, api_key: str) -> FastAPI:
 @asynccontextmanager
 async def loopback_approval_server(gate: ApprovalGate, api_key: str):
     """Start on an ephemeral loopback port in the gate waiter's event loop."""
+    import uvicorn
+
     app = approval_app(gate, api_key)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:

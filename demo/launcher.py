@@ -6,12 +6,22 @@ Launches the read-only Gradio demonstration console from preserved project evide
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
 import os
 import sys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("demo_launcher")
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def launch_demo(
@@ -23,13 +33,17 @@ def launch_demo(
     """Launch the AtlasOps Gradio demo console."""
     if not safe_mode:
         raise ValueError("The Gradio demo is read-only; use the governed Stage 4 harness for live Chaos")
+    if not _is_loopback_host(host):
+        raise ValueError("The read-only demo may bind only to a loopback host")
+    if share:
+        raise ValueError("Public Gradio sharing is disabled for this local evidence demo")
     os.environ["DEMO_SAFE_MODE"] = "1"
     log.info("Launching read-only AtlasOps Demo Console on http://%s:%d", host, port)
 
     try:
         from dashboard import _UI_CSS, build_app
         demo = build_app()
-        demo.launch(server_name=host, server_port=port, share=share, css=_UI_CSS)
+        demo.launch(server_name=host, server_port=port, share=False, css=_UI_CSS)
     except Exception as e:  # noqa: BLE001 - report optional UI/dependency startup failures
         log.error("Failed to launch demo (%s): %s", type(e).__name__, e)
         sys.exit(1)
@@ -39,14 +53,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Safe Operator Demo Console")
     parser.add_argument("--host", default="127.0.0.1", help="Binding host interface")
     parser.add_argument("--port", type=int, default=7860, help="Web server port")
-    parser.add_argument("--share", action="store_true", default=False, help="Create a public Gradio share link")
     args = parser.parse_args()
 
     launch_demo(
         host=args.host,
         port=args.port,
         safe_mode=True,
-        share=args.share,
+        share=False,
     )
 
 

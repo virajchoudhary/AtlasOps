@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "atlasops"
 version = "1.0.0"
-description = "AtlasOps — Multi-agent incident response on real GCP/GKE with AMD MI300X"
+description = "AtlasOps governed multi-agent SRE research and read-only evidence demo"
 requires-python = ">=3.11"
 dependencies = [
     # Agent runtime

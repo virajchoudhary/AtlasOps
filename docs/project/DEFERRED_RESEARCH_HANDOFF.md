@@ -15,6 +15,10 @@ and [final controlled result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md).
   and [016/017 chronology plus external audit/archive hashes](CONTROLLED_G9_ADMISSION_V1.md)
   locate canonical evidence. Attempt 017 has prompt/evaluator and Comms
   mismatches and is not pure model-performance evidence.
+  Owner-local G4/audit store:
+  `C:/Users/viraj/Documents/Codex/2026-10-03/continue-atlasops-from-latest-clean-main-2/outputs/`.
+  The evidence index names the precise records; no contents are republished
+  and no credential or access authority is granted.
 - G7's genuine [v17 artifact](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)
   and independent reload satisfy bounded G7 artifact acceptance: PASS.
   The preapproved free-T4 profile replaces OCI with a hash-locked venv;

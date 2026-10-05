@@ -33,6 +33,13 @@ certify the full pipeline.
 - Attempt-017 archive SHA-256: `82d0b62ed33d0fb6ebc2924233a70fb1a1ae2e2385b8e374d06c931456eefb31`.
   Audit and operational archives stay in the prior execution chat's external
   `outputs` store. These are documented anchors, not bundled-byte claims.
+  Owner-local location verified without republishing contents:
+  `C:/Users/viraj/Documents/Codex/2026-10-03/continue-atlasops-from-latest-clean-main-2/outputs/`.
+  The audit filename is `AtlasOps_Pre_RL_Audit_Report_20261005.md`;
+  attempt 015 uses `g4-attempt-015-evidence/`, attempt 016 has
+  `G4_PREFLIGHT_ABORT_V2.json`, and attempt 017 has `G4_ATTEMPT017_RESULT_V1.json`.
+  Reviewers need a separately authorized evidence transfer; these paths
+  are not portable package assets or an access grant.
 - Controlled replacement archive SHA-256: `39834cc3911bf6e32deec509a1c139d905e17aee802563abcb2ce3802f23cd33`.
   Failed manifest SHA-256: `c8faa1afb8948c504a23fa45f57edf76fc4eb1f47a4074623aed4659ed1809cc`.
   Local preserved extraction: `C:/AtlasOps/controlled-g9-replacement-20261005-v2/`.

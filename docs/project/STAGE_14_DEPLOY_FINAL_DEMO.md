@@ -43,6 +43,20 @@ Run the focused local safety and read-model tests:
 
 Start the launcher and confirm `http://127.0.0.1:7860/` returns HTTP 200. This verifies local startup only.
 
+Fresh 5 October local verification passed 49 Stage 14/read-model/app tests.
+Headless Edge loaded all eight desktop tabs, exercised snapshot refresh and
+mobile overflow-menu navigation, and reported no page script errors. At
+390px width, DOM bounds showed no page-width, heading or text overflow.
+These are local browser/software checks, not deployment or model evidence.
+
+Fresh captured views:
+[desktop overview](../media/gradio-demo-20261005.png),
+[current results](../media/gradio-results-20261005.png), and
+[mobile results](../media/gradio-mobile-20261005.png).
+Desktop viewport was 1440x1000 and mobile viewport 390x844.
+Captures come from the final local UI; visual image inspection was unavailable
+in the authoring session. Older `20260926` captures remain historical.
+
 ## G14 Acceptance
 
 The current deliverable improves the local read-only presentation and exposes provenance for current findings. G14 stays `PARTIAL` because the approved gate asks for a reproducibly packaged and deployed demo; no such deployment evidence is established by these local checks. No public/live deployment or deployment-safety claim is made.

@@ -17,26 +17,30 @@ from dashboard import (
     _list_stage4_attempts,
     _load_ablation_matrix,
     _load_comparison_table,
+    _load_current_results,
+    _load_g4_final_chronology,
     _load_project_status,
     _load_stage4_attempt,
-    _query_hybrid_recommender,
+    _load_static_runbooks,
     _reset_chaos,
     build_app,
 )
-from demo.launcher import main as launcher_main
+from demo.launcher import launch_demo, main as launcher_main
 
 
 class TestStage14DemoSafety:
     def test_build_app_constructs_product_views_without_execution_controls(self):
         app = build_app()
         assert app is not None
-        assert app.title == "AtlasOps | Read-only demonstration"
+        assert app.title == "AtlasOps | Read-only evidence demo"
         assert app.analytics_enabled is False
         assert len(app.blocks) > 0
         labels = {component.get("props", {}).get("label") for component in app.config["components"]}
         assert {"Overview", "Incidents", "Agents", "Models", "Evaluations",
                 "Runbooks", "Evidence", "Settings"} <= labels
         assert "Scenario Control" not in labels
+        assert "Rank runbooks" not in str(app.config)
+        assert "Symptoms" not in str(app.config)
 
     def test_scenario_selection_never_claims_or_runs_a_fault(self, monkeypatch):
         monkeypatch.setenv("DEMO_SAFE_MODE", "0")
@@ -54,6 +58,13 @@ class TestStage14DemoSafety:
         status = _load_project_status()
         assert "G4" in status and "NOT_PASSED" in status
         assert "G13" in status and "REOPENED" in status
+        assert "G14" in status and "PARTIAL" in status
+        chronology = _load_g4_final_chronology()
+        assert "015" in chronology and "INCONCLUSIVE / UNSCORED" in chronology
+        assert "016" in chronology and "PRE-FAULT ABORT / NON-RESULT" in chronology
+        assert "017" in chronology and "COMPLETED NEGATIVE" in chronology
+        assert "referenced raw attempt is external" in chronology
+        assert "intentionally not republished" in chronology
         summary, provenance = _load_stage4_attempt("EXP-STAGE4-SF002-010.json")
         assert "NOT PASSED" in summary
         assert "timeout" in summary
@@ -68,37 +79,53 @@ class TestStage14DemoSafety:
         assert "no completed verifier verdict" in interrupted
         invalid, _ = _load_stage4_attempt("../EXP-STAGE4-SF002-010.json")
         assert "Select a preserved" in invalid
+        protected, _ = _load_stage4_attempt("EXP-STAGE4-SF002-017.json")
+        assert "Select a preserved" in protected
         for attempt_name in _list_stage4_attempts():
             attempt_summary, source = _load_stage4_attempt(attempt_name)
             assert "Preserved attempt" in attempt_summary
             assert "SHA-256" in source
 
-    def test_dashboard_recommender_query_interactive(self):
-        res = _query_hybrid_recommender(
-            alertname="KubeMemoryOvercommit",
-            service="frontend",
-            symptoms="OOMKilled memory limit exceeded",
-            top_k=3,
-        )
-        assert "Top 3 Recommended Runbooks" in res
-        assert "RB-POD-OOM" in res
-        assert "Suggested Tools" in res
-        assert "Ranking Score" in res
-        assert "scenario-derived" in res
+    def test_current_results_are_foregrounded_and_archive_is_not_loaded(self):
+        result = _load_current_results()
+        assert "0.16875" in result
+        assert "0.15935" in result
+        assert "-0.00940" in result
+        assert "2 optimizer steps" in result
+        assert "4/4" in result
+        assert "0/8" in result
+        assert "392 LoRA tensor hashes" in result
+        assert "time-to-resolve" in result
+        assert "unavailable" in result.lower()
 
     def test_load_ablation_matrix_and_comparison_table(self):
         ablation_text = _load_ablation_matrix()
-        assert "NON-EMPIRICAL" in ablation_text
-        assert "AtlasOps Final Multi-Generation Ablation & Stress Matrix" in ablation_text or "results" in ablation_text
-        assert "Zero-Shot Baseline" in ablation_text
+        assert "HISTORICAL ARCHIVE / NON-EMPIRICAL" in ablation_text
+        assert "not a measured ablation" in ablation_text
+        assert "0.918" not in ablation_text
 
         table_text = _load_comparison_table()
-        assert len(table_text) > 0
-        assert "UNVERIFIED" in table_text or "No verified" in table_text
+        assert "HISTORICAL ARCHIVE / NON-EMPIRICAL" in table_text
+        assert "not loaded or displayed as current results" in table_text
+
+    def test_runbook_view_is_static_and_not_a_recommender_query(self):
+        catalog = _load_static_runbooks()
+        assert "Static catalog only" in catalog
+        assert "RB-POD-OOM" in catalog
+        assert "does not rank, fit, or query a recommender" in catalog
 
     def test_demo_launcher_cli_configuration(self, monkeypatch):
         monkeypatch.setattr("sys.argv", ["launcher.py", "--port", "8080", "--host", "127.0.0.1"])
         import demo.launcher as dl
         monkeypatch.setattr(dl, "launch_demo", lambda **kwargs: kwargs)
         # Verify main executes and parses arguments
-        launcher_main()
+        assert launcher_main() is None
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.5"])
+    def test_demo_launcher_rejects_non_loopback_hosts(self, host):
+        with pytest.raises(ValueError, match="loopback"):
+            launch_demo(host=host)
+
+    def test_demo_launcher_rejects_public_share(self):
+        with pytest.raises(ValueError, match="sharing is disabled"):
+            launch_demo(share=True)

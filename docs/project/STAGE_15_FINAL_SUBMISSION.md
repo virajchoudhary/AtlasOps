@@ -1,25 +1,66 @@
 # Stage 15: Report, Package, and Submit (Gate G15)
 
-Stage 15 is **PARTIAL**. The report and asset package exist, but the full research pipeline is not certified or submitted. The authoritative current gate inventory is in [MASTER_PIPELINE_STATUS.md](MASTER_PIPELINE_STATUS.md); executable behavior and preserved raw evidence outrank any summary.
+The presentation and reviewer package is prepared for review; full scientific
+certification and external submission are separate and remain unestablished.
+The [Master Pipeline inventory](MASTER_PIPELINE_STATUS.md) is authoritative for
+gate status. G15 remains **PARTIAL**.
 
-## Current package
+## Readiness Contract
 
-- [Technical report draft](../AtlasOps_Technical_Report.md): separates implementation, historical negative evidence, mock outputs, and absent empirical results.
-- [Submission manifest](../../artifacts/SUBMISSION_MANIFEST.json) and [summary](../../artifacts/SUBMISSION_SUMMARY.md): generated asset hashes and declared G0-G15 statuses. `NOT_CERTIFIED` is the only supported package status while empirical gates remain open.
-- [Package generator](../../scripts/package_submission.py): hashes selected files and reads the master gate inventory. Hashes prove file integrity, not model quality, live safety, or gate closure. Tests write to isolated temporary directories.
-- [Evidence-led presentation source](../slides.md) and its two local UI captures in `docs/media/`: describe the current continuation status without promoting upstream claims or historical mock output into measured results. The presentation source and captures are included in the asset inventory; a rendered deck is a review artifact, not scientific certification.
+`artifacts/SUBMISSION_MANIFEST.json` keeps `status: NOT_CERTIFIED` as the
+scientific certification result and reports package completeness separately
+with `package_ready` and `package_readiness`. `READY_FOR_REVIEW` means the
+required current-facing review surfaces and compact canonical evidence are
+tracked and byte-hashed, and local Markdown links resolve. If a required file
+or local link is missing, the generated manifest reports `INCOMPLETE` and
+lists the missing items. Neither state promotes an empirical gate or claims
+that an outside party has received the submission.
 
-The checked-in manifest records **raw checkout bytes** and emits only each selected asset's SHA-256 and size. The generator selects paths from the Git index, excludes untracked and ignored files, and rejects paths resolving outside the repository through symlinks. Root and evidence-level `.gitattributes` pin the 28 G5 scenario YAML files, pre-009 Stage 4 records and selected run logs, Stage 3 acceptance report, Stage 7 corpus/config files, Stage 10 baseline, recovered workspace provenance JSON, and SFT template to CRLF checkout bytes across platforms; the 009-014 Stage 4 records and frozen mock archives retain their `-text` rules, and the recovery command record remains LF. These rules preserve the existing Git blobs and do not rewrite evidence contents. Verify the manifest after checkout with `python -m pytest -q tests/test_stage15_submission_package.py`; do not normalize evidence bytes to make a hash pass.
+The generator records a deterministic SHA-256 over sorted asset path, content
+hash, and byte-size rows. Its timestamp is informational and is excluded from
+that digest. Each asset hash is computed from checkout bytes selected from the
+Git index; untracked and ignored files are excluded. Path traversal through a
+symbolic link or reparse point is rejected. The inventory does not rewrite
+line endings or evidence bytes. Root and evidence `.gitattributes` also pin the
+G4-015 integrity index and MIT `LICENSE` to their existing CRLF checkout bytes;
+their evidence/license content is unchanged.
 
-## Evidence needed for completion
+## Included Review Material
 
-1. A valid G4 golden incident with explicit P1 approval, objective resolution, and verified cleanup.
-2. Real G6 baseline predictions and model provenance.
-3. A completed G7 SFT checkpoint and real G8 evaluation.
-4. Safe real G9 GRPO trajectories, a hashed checkpoint, and real evaluation.
-5. Real G12 integrated execution and the complete G13 ablation/stress artifact matrix.
-6. Target-specific G14 demo/deployment validation and final independent review.
+The allowlist includes the README, reviewer guide, technical report, slides,
+experiment registry, evidence index, current gate/status documents, Stage 14
+and Stage 15 material, and the read-only demo source. It also includes compact
+canonical records for:
 
-The historic Stage 13 predetermined profiles and mock Stage 6/8/9 outputs are retained as historical artifacts, not recast as empirical findings. The generator does not emit unobserved resolution, TTR, or reward metrics.
+- The bounded v17 SFT result and independent reload.
+- The matched Base-vs-SFT Validation result and independent recomputation.
+- G4 attempt 015's integrity index and the 016/017 chronology references.
+- The final controlled-G9 result and aligned diagnostic evidence.
+- The historical mock archive classification and relevant software tests.
 
-**Gate G15 status: PARTIAL.** No 15/15 certification or submission claim is made.
+The [evidence index](../EVIDENCE_INDEX.md) identifies which full archives and
+weights remain outside ordinary Git and records their documented hash anchors.
+They are references, not bundled-byte claims. Model weights, private archives,
+credentials, and other large generated bundles are not copied into this package.
+
+## Verification
+
+Run the focused package and current-truth checks, then check current-facing
+Markdown links:
+
+```powershell
+& .\.venv\Scripts\python.exe -m pytest -q tests/test_stage15_submission_package.py tests/test_current_project_truth.py
+& .\.venv\Scripts\python.exe -m scripts.check_submission_links
+```
+
+The Stage 15 tests recompute every selected asset hash from the current checkout,
+check deterministic inventory hashing, preserve frozen evidence/EOL rules, and
+verify that package readiness cannot replace `NOT_CERTIFIED`. The link checker
+does not fetch external URLs or open linked evidence contents. Missing external
+evidence can be documented as an external-evidence link with a SHA-256 in its
+Markdown link title; Test/Leaderboard outcome paths are rejected without
+checking their existence.
+
+**Gate G15 status: PARTIAL.** The presentation/review package is ready when the
+manifest reports `READY_FOR_REVIEW`; this does not mean the full G0-G15 research
+pipeline is certified or that an external submission has occurred.

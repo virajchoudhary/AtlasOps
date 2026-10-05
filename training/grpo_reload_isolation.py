@@ -124,6 +124,13 @@ class LoopbackGuard:
 
         if platform.system() != "Linux" or platform.machine() != "x86_64":
             raise ValueError("Verified-offline profile requires Linux x86_64 seccomp")
+        for descriptor in Path("/proc/self/fd").iterdir():
+            try:
+                target = os.readlink(descriptor)
+            except FileNotFoundError:
+                continue
+            if target.startswith("socket:"):
+                raise PermissionError("Reload process must inherit no socket descriptors")
 
         class Filter(ctypes.Structure):
             _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
@@ -137,7 +144,7 @@ class LoopbackGuard:
         instructions = [(0x20, 0, 0, 4), (0x15, 1, 0, 0xC000003E),
                         (0x06, 0, 0, 0x80000000), (0x20, 0, 0, 0),
                         (0x45, 0, 1, 0x40000000), (0x06, 0, 0, 0x80000000)]
-        for number in (42, 44, 46, 307, 425, 426):  # socket sends and io_uring bypass
+        for number in (41, 42, 44, 46, 53, 307, 425, 426):  # sockets/socketpair, sends, io_uring
             instructions += [(0x15, 0, 1, number), (0x06, 0, 0, 0x00030000)]
         instructions += [(0x06, 0, 0, 0x7FFF0000)]
         array = (Filter * len(instructions))(*(Filter(*row) for row in instructions))
@@ -201,6 +208,7 @@ def prepare_isolation(
         "outbound_probes": probes,
         "offline_flags": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
         "guard": "cpython_audit_and_seccomp_tsync_v1",
+        "inherited_socket_fds": [],
         "forbidden_attempts": [],
     }
     if not all(probe_proves_blocked(record) for record in probes):
@@ -251,6 +259,7 @@ def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) ->
         and isinstance(value.get("receipt_sha256"), str) and len(value["receipt_sha256"]) == 64
         and value.get("offline_flags") == {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
         and value.get("guard") == "cpython_audit_and_seccomp_tsync_v1"
+        and value.get("inherited_socket_fds") == []
         and value.get("forbidden_attempts") == []
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)

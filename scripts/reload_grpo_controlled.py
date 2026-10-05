@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 from training.grpo_reload_isolation import (
-    NAMESPACE_PROFILE, prepare_isolation, require_network_isolation,
+    NAMESPACE_PROFILE, prepare_isolation, require_network_isolation,  # noqa: F401 - retained public alias
 )
 
 

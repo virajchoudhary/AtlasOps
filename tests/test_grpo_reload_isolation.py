@@ -171,3 +171,19 @@ print('NATIVE_GUARD_PASS')
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only descriptor check")
+def test_preconnected_local_socket_refuses_guard_install():
+    code = """
+import socket
+from training.grpo_reload_isolation import LoopbackGuard
+a,b=socket.socketpair()
+try:LoopbackGuard().install_syscall_guard()
+except PermissionError as e:assert 'socket descriptors' in str(e)
+else:raise AssertionError('connected socket was admitted')
+a.close();b.close()
+print('INHERITED_SOCKET_REFUSED')
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr

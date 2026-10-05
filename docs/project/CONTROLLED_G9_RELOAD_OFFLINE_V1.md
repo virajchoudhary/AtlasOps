@@ -39,7 +39,10 @@ sockets, fork and subprocess network fallback. Seccomp also traps native
 connect/sendto/sendmsg/sendmmsg calls in every thread; all socket sends
 (including loopback) are conservatively blocked. It latches attempted forbidden
 operations even when a library catches PermissionError; any latch makes
-the reload NOT_VERIFIED. Local Unix IPC and literal loopback are allowed.
+the reload NOT_VERIFIED. The Kaggle profile admits no inherited socket
+descriptors and traps native socket/socketpair creation. All socket IPC,
+including Unix IPC and loopback, is conservatively unavailable under this
+profile; ordinary file/pipe I/O remains available.
 No proxies, tunnels or remote lookup fallback are permitted.
 
 The combined claim rests on the independently observed Kaggle Internet-off

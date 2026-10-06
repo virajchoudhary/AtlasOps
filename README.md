@@ -136,7 +136,13 @@ The historical Space setup notes are retained for provenance, not as deployment 
 - [Final aligned G9 diagnostic evidence](artifacts/evidence/stage9/final-aligned-diagnostic-v1/)
 - [Submission manifest](artifacts/SUBMISSION_MANIFEST.json) and [summary](artifacts/SUBMISSION_SUMMARY.md)
 
-The submission inventory hashes selected tracked files. The presentation and
+The checked-in submission inventory preserves the pre-redesign package at
+`d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4`; it is not a hash inventory of the
+current React source. `scripts.package_submission.build_submission_package`
+can generate a fresh inventory into a separate output directory without replacing
+that preserved record. Package tests independently verify both snapshots.
+
+The submission generator hashes selected tracked files. The presentation and
 review package are the non-experimental deliverable. The full research pipeline
 remains NOT_CERTIFIED. G7 is PASS for the bounded v17 artifact/reload target under
 its preapproved free-T4 profile, without any incident-improvement claim.

@@ -229,6 +229,25 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "Dockerfile",
         "Dockerfile.coordinator",
         "ui_read_model.py",
+        "demo/read_api.py",
+        "frontend/.gitattributes",
+        "frontend/.npmrc",
+        "frontend/index.html",
+        "frontend/package.json",
+        "frontend/package-lock.json",
+        "frontend/tsconfig.json",
+        "frontend/vite.config.ts",
+        "frontend/playwright.config.ts",
+        "frontend/THIRD_PARTY_NOTICES.md",
+        "frontend/src/*.ts",
+        "frontend/src/*.tsx",
+        "frontend/src/*/*.ts",
+        "frontend/src/*/*.tsx",
+        "frontend/src/components/*/*.tsx",
+        "frontend/src/*.css",
+        "frontend/e2e/*.ts",
+        "docs/project/UI_SOURCE_REVIEW.md",
+        "docs/media/research-console-20261006/*.jpg",
         "docs/AtlasOps_Technical_Report.md",
         "docs/BENCHMARKS.md",
         "docs/MI300X_EVIDENCE.md",
@@ -465,7 +484,7 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         "project_repository": "virajchoudhary/AtlasOps",
         "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
         "pipeline_version": "v2.2",
-        "scope_revision": "GAI + RL (RS optional historical research)",
+        "scope_revision": "Current agent-system research scope (RS optional historical research)",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "NOT_CERTIFIED",
         "status_scope": "scientific_pipeline_certification",
@@ -557,7 +576,7 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
             "caveats; it does not establish current cluster health."
         ),
         (
-            "G10/G11 remain OUT_OF_SCOPE for the required GAI + RL completion scope; "
+            "G10/G11 remain OUT_OF_SCOPE for the required completion scope; "
             "retained recommender work is optional historical research."
         ),
         "",

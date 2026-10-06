@@ -4,8 +4,8 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Package readiness**: **READY_FOR_REVIEW**
 - **Scientific certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-06T03:12:23.000478+00:00`
-- **Deterministic asset inventory SHA-256**: `abf83ed44cfb2a37bacb14c00e294fdd893120381db5772bb576b8464c09238f`
+- **Generated**: `2026-10-06T03:17:45.628880+00:00`
+- **Deterministic asset inventory SHA-256**: `2bc795c6ac4d837100f177596db57ae144bc6f3c831adc17f76714f8ab3dfdac`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 Package readiness means required reviewer surfaces and compact canonical evidence are present in the tracked inventory, hashed from checkout bytes, and current-facing local Markdown links resolve. It does not mean the scientific pipeline is certified or that external/private archives and model weights are bundled.
@@ -235,7 +235,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `demo/icons.json` | `b75f2e5007d1cc14...` | 7830 |
 | `demo/launcher.py` | `3fe915d89d58f1ec...` | 2282 |
 | `demo/presentation.css` | `398a739b1354b407...` | 22484 |
-| `demo/presentation.py` | `e8996c918a002955...` | 22476 |
+| `demo/presentation.py` | `a6d37bb02a0ccbe2...` | 22811 |
 | `docs/AtlasOps_Technical_Report.md` | `af31126d72c4f4af...` | 17947 |
 | `docs/BENCHMARKS.md` | `f4054130730f4981...` | 2831 |
 | `docs/END_TO_END_FLOW.md` | `3e594773cf15c6b7...` | 5629 |
@@ -385,7 +385,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
 | `tests/test_current_project_truth.py` | `ea2b1356ffb38497...` | 3570 |
-| `tests/test_demo_presentation.py` | `b42d1e900541193f...` | 6046 |
+| `tests/test_demo_presentation.py` | `dfd151d1ff43c5d2...` | 6295 |
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |
 | `tests/test_frontend_ui.py` | `65ccf5bf652001cd...` | 6058 |
 | `tests/test_g12_policy_integration_contract.py` | `07da4051c8f01873...` | 21727 |

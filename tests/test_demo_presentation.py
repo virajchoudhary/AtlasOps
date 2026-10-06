@@ -101,6 +101,8 @@ def test_missing_g9_sources_do_not_claim_a_negative_result(monkeypatch):
     assert "GRPO status unavailable" in presentation.models()
     assert "A real attempt. A negative result." not in rendered
     assert "Observed sample" not in rendered
+    for caption in ("Genuine completions", "For every pilot action", "Across two groups"):
+        assert caption not in rendered
 
 
 def test_missing_sft_sources_are_not_presented_as_a_preserved_artifact(monkeypatch):
@@ -111,6 +113,8 @@ def test_missing_sft_sources_are_not_presented_as_a_preserved_artifact(monkeypat
     assert "PRESERVED ARTIFACT" not in rendered
     assert "A preserved SFT artifact." not in rendered
     assert "A real QLoRA adapter" not in rendered
+    assert "Artifact success" not in rendered
+    assert "preserved QLoRA SFT artifact" not in presentation.overview()
 
 
 def test_launcher_keeps_unscoped_responsive_styles_and_share_disabled(monkeypatch):

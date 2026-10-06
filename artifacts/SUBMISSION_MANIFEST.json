@@ -4,11 +4,11 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-06T03:12:23.000478+00:00",
+  "generated_at": "2026-10-06T03:17:45.628880+00:00",
   "status": "NOT_CERTIFIED",
   "status_scope": "scientific_pipeline_certification",
   "package_readiness_basis": "Required reviewer surfaces and canonical compact evidence are tracked, raw-byte hashed, and current-facing local Markdown links resolve. This does not establish scientific certification or include private archives and model weights.",
-  "asset_inventory_sha256": "abf83ed44cfb2a37bacb14c00e294fdd893120381db5772bb576b8464c09238f",
+  "asset_inventory_sha256": "2bc795c6ac4d837100f177596db57ae144bc6f3c831adc17f76714f8ab3dfdac",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
     "G0": "PASS",
@@ -1080,8 +1080,8 @@
       "size_bytes": 2282
     },
     "demo/presentation.py": {
-      "sha256": "e8996c918a0029559a342b89fe746c097af51d53aaef62489798b8f33eeabd39",
-      "size_bytes": 22476
+      "sha256": "a6d37bb02a0ccbe27e997b565229e622a9158aad8e764f3a712b500000e5d33c",
+      "size_bytes": 22811
     },
     "demo/presentation.css": {
       "sha256": "398a739b1354b4077d3a7e7b1bfa5f25a5b3a3ea811097ea986f374aafdced15",
@@ -1504,8 +1504,8 @@
       "size_bytes": 3570
     },
     "tests/test_demo_presentation.py": {
-      "sha256": "b42d1e900541193f828da3ea0bf5eb2b75d14867c034bffe33c5900af0812a12",
-      "size_bytes": 6046
+      "sha256": "dfd151d1ff43c5d237c296ee44878109e3e410d5f9c5fde3a3d14cb7cce323d4",
+      "size_bytes": 6295
     },
     "tests/test_diagnosis_prompt_contract.py": {
       "sha256": "8e1dc152aad848ce4c65d7fefde080fafcb505a64876b0887e36a2b31b23ea7d",

@@ -148,8 +148,9 @@ def overview() -> str:
         f'{workflow()}'
         '<div class="ao-overview-bottom"><section><span class="ao-eyebrow">WHAT EXISTS</span>'
         '<h3>Implementation with traceable evidence</h3><p>Multi-agent orchestration, '
-        'role-scoped tools, fail-closed approval, objective verification, and a '
-        'preserved QLoRA SFT artifact.</p></section><section>'
+        'role-scoped tools, fail-closed approval, and objective verification. '
+        f'{"A preserved QLoRA SFT artifact has reload evidence." if sft["available"] else "SFT artifact evidence is unavailable."}'
+        '</p></section><section>'
         '<span class="ao-eyebrow">WHAT THE EVIDENCE DOES NOT ESTABLISH</span>'
         '<h3>Incident gains and an accepted RL policy</h3><p>'
         f'{"The matched diagnostic shows no improvement. " if validation["paired_delta"] is not None and validation["paired_delta"] <= 0 else "The diagnostic conclusion is unavailable. "}'
@@ -200,7 +201,7 @@ def models() -> str:
         f'<dt>Run</dt><dd><code>{esc(result["run_id"])}</code></dd>'
         f'<dt>Adapter SHA-256</dt><dd><code>{esc(result["adapter_sha256"])}</code></dd>'
         '</dl></section></div>'
-        + notice("Artifact success is not diagnostic improvement",
+        + notice("Artifact success is not diagnostic improvement" if result["available"] else "Artifact evidence unavailable",
                  "Artifact acceptance and measured performance are separate. The paired Validation "
                  "result does not establish improved diagnosis or incident resolution.")
         + provenance(result["evidence"])
@@ -276,10 +277,10 @@ def evaluations() -> str:
         '<span class="ao-eyebrow">CONTROLLED G9 / TRAIN-ONLY</span>'
         f'<h3>{"A real attempt. A negative result." if pilot["available"] else "Controlled pilot evidence unavailable."}</h3></div>'
         f'{chip(pilot["status"], "rose")}</div><div class="ao-g9-facts">'
-        f'{fact("Policy completions", pilot["completions"], "Genuine completions")}'
+        f'{fact("Policy completions", pilot["completions"], "Genuine completions" if pilot["available"] else "Canonical report unavailable")}'
         f'{fact("Malformed / blocked", pilot["malformed_or_blocked"], "No admissible pilot actions" if pilot["available"] else "Canonical report unavailable", "rose")}'
-        f'{fact("Objective reward", pilot["reward_each"], "For every pilot action", "rose")}'
-        f'{fact("Reward-driven advantages", 0 if pilot["available"] else None, "Across two groups")}'
+        f'{fact("Objective reward", pilot["reward_each"], "For every pilot action" if pilot["available"] else "Canonical report unavailable", "rose")}'
+        f'{fact("Reward-driven advantages", 0 if pilot["available"] else None, "Across two groups" if pilot["available"] else "Canonical report unavailable")}'
         '</div><div class="ao-g9-disposition">'
         f'<span>{number(pilot["optimizer_steps"])} optimizer steps</span>'
         f'<strong>{"No accepted checkpoint" if pilot["available"] else "Checkpoint status unavailable"}</strong>'

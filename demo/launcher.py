@@ -1,27 +1,18 @@
 """AtlasOps Standalone Demonstration Launcher (Gate G14).
 
-Launches the read-only Gradio demonstration console from preserved project evidence.
+Serves the built React frontend and read-only API from preserved project evidence.
 """
 
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import logging
 import os
-import sys
+
+from demo.read_api import create_app, is_loopback_host
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("demo_launcher")
-
-
-def _is_loopback_host(host: str) -> bool:
-    if host.casefold() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 def launch_demo(
@@ -30,23 +21,19 @@ def launch_demo(
     safe_mode: bool = True,
     share: bool = False,
 ) -> None:
-    """Launch the AtlasOps Gradio demo console."""
+    """Launch the localhost-only presentation, without an operational runtime."""
     if not safe_mode:
-        raise ValueError("The Gradio demo is read-only; use the governed Stage 4 harness for live Chaos")
-    if not _is_loopback_host(host):
+        raise ValueError("The presentation demo is read-only")
+    if not is_loopback_host(host):
         raise ValueError("The read-only demo may bind only to a loopback host")
     if share:
-        raise ValueError("Public Gradio sharing is disabled for this local evidence demo")
+        raise ValueError("Public sharing is disabled for this local evidence demo")
     os.environ["DEMO_SAFE_MODE"] = "1"
     log.info("Launching read-only AtlasOps Demo Console on http://%s:%d", host, port)
 
-    try:
-        from dashboard import _UI_CSS, build_app
-        demo = build_app()
-        demo.launch(server_name=host, server_port=port, share=False, css=_UI_CSS)
-    except Exception as e:  # noqa: BLE001 - report optional UI/dependency startup failures
-        log.error("Failed to launch demo (%s): %s", type(e).__name__, e)
-        sys.exit(1)
+    import uvicorn
+
+    uvicorn.run(create_app(), host=host, port=port, access_log=False)
 
 
 def main() -> None:

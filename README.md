@@ -80,28 +80,38 @@ Additional implementation includes:
 - HMAC-chained audit records and evidence manifests with source and artifact hashes.
 - A read-only repository-evidence demo for local review.
 
-The required current academic scope is Generative AI and Reinforcement Learning. The
-project lead [revised the required scope to GAI + RL](docs/project/GAI_RL_SCOPE_REVISION.md).
+The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
+defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for
 current completion. Historical scenario-derived ranking results do not establish
 operator feedback or incident improvement.
 
 ## Quick Start
 
-The safe local entry point is the read-only evidence demo. On Windows with Python 3.12,
-the canonical development lock includes Gradio:
+The safe local entry point is the React/TypeScript research console. With Python 3.11+
+and Node.js 22+, install the small presentation dependencies and build once:
 
 ```powershell
-py -3.12 -m venv .venv
-& .\.venv\Scripts\python.exe -m pip --isolated install --index-url https://pypi.org/simple -r requirements/dev-win-py312.lock
-& .\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7860
+python -m pip install fastapi uvicorn
+npm ci --prefix frontend
+npm run build --prefix frontend
+python -m demo.launcher --host 127.0.0.1 --port 7860
 ```
 
 Open `http://127.0.0.1:7860/`. The demo browses checked-in evidence on localhost. It
 requires no Docker, Kind cluster, GPU, model endpoint, or operational credentials. It
 does not load a model or run inference, call kubectl, inject a fault, request approval,
 or execute remediation. Its status view is a repository snapshot, not live service
-health. See the [Stage 14 demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md).
+health. The demo API is separate from the operational application and allows only
+GET/HEAD requests. See the [Stage 14 demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md)
+and [component sources](frontend/THIRD_PARTY_NOTICES.md).
+
+For frontend development, run the Python launcher on port `7862` and
+`npm run dev --prefix frontend` in a second terminal. Vite proxies only the
+presentation API. Build output and dependencies are local, ignored artifacts.
+The existing `requirements/dev-win-py312.lock` remains the Python development
+test lock, including historical Gradio regression dependencies; it is not needed
+for the new presentation-only launch.
 
 The launcher flags can be inspected without starting the server:
 
@@ -126,7 +136,13 @@ The historical Space setup notes are retained for provenance, not as deployment 
 - [Final aligned G9 diagnostic evidence](artifacts/evidence/stage9/final-aligned-diagnostic-v1/)
 - [Submission manifest](artifacts/SUBMISSION_MANIFEST.json) and [summary](artifacts/SUBMISSION_SUMMARY.md)
 
-The submission inventory hashes selected tracked files. The presentation and
+The checked-in submission inventory preserves the pre-redesign package at
+`d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4`; it is not a hash inventory of the
+current React source. `scripts.package_submission.build_submission_package`
+can generate a fresh inventory into a separate output directory without replacing
+that preserved record. Package tests independently verify both snapshots.
+
+The submission generator hashes selected tracked files. The presentation and
 review package are the non-experimental deliverable. The full research pipeline
 remains NOT_CERTIFIED. G7 is PASS for the bounded v17 artifact/reload target under
 its preapproved free-T4 profile, without any incident-improvement claim.

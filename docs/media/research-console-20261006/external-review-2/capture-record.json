@@ -1,0 +1,255 @@
+{
+  "source_head": "936547d6bf6761ba285e330eaff2288a1dad0c70",
+  "frontend_tree": "4a52349d82bff05d95a66f78194e9b2e89bae071",
+  "note": "Captured from committed source. The subsequent capture-only commit preserves this frontend tree.",
+  "captured_at": "2026-10-06T05:52:48.912Z",
+  "base_url": "http://127.0.0.1:7863",
+  "reduced_motion": true,
+  "build_hashes": {
+    "index-C3_E1yRO.css": "cc3f6d250f06e63cf0671f31dae295267e8e9b227c7cf2d3fc288d25b9a28492",
+    "index-DJ4wfSX6.js": "6f5706dbe0a741c4815741263b11a7e6e548e88ebb7096e704570b92aee1e7a2"
+  },
+  "page_errors": [],
+  "captures": [
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-overview.jpg",
+      "sha256": "493a49ac5cb419ada8ed00da443e3fc346fb0c0960213a38afcc65295c71097a",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1000,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-models.jpg",
+      "sha256": "0bb7394f1837416a3b6ceff3c36e2100d6488f8fa2b21a4b343ae56e8d81646c",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1370.015625,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-evaluations.jpg",
+      "sha256": "340016c4d637eada469626df983935c7b5edade2dcd6c5669f75499b926aa87d",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1048.859375,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-incidents.jpg",
+      "sha256": "57870b8d8396b3ff5433669a5f34680fbf8990487d22446343870c956382fbe7",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1000,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-evidence.jpg",
+      "sha256": "1fa89aa5e9905b2ffaf593058acab0fcdc2093def2818cd239e931a4b3eda148",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1838.546875,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-agents.jpg",
+      "sha256": "b31aacf963b90944e6191638e4254a9ae26ca9fd27c478e3058e897a3d91d82c",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1356.90625,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-runbooks.jpg",
+      "sha256": "80a3154bebaf7113e0bd701d040e139849903d98cc4c29d8475e5975463325bd",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1749.421875,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/desktop-system.jpg",
+      "sha256": "4eafc87295a56c546e9868d0c9d04ddd8562a7d84d5b80320430e44ccf77b148",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "bounds": {
+        "documentWidth": 1440,
+        "viewportWidth": 1440,
+        "mainBottom": 1084.625,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/tablet-overview.jpg",
+      "sha256": "1a6bb9946c1512ebe7771069450a44367b7bec0cfed6d1a55abac19653612b8a",
+      "viewport": {
+        "width": 768,
+        "height": 1024
+      },
+      "bounds": {
+        "documentWidth": 768,
+        "viewportWidth": 768,
+        "mainBottom": 1372.40625,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/narrow-overview.jpg",
+      "sha256": "1d25e6327812b0dcd03d3d4037a60083a3dffbb5c038e0fd5d494412bb98e91d",
+      "viewport": {
+        "width": 1024,
+        "height": 900
+      },
+      "bounds": {
+        "documentWidth": 1024,
+        "viewportWidth": 1024,
+        "mainBottom": 1321.015625,
+        "navTop": null,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-overview.jpg",
+      "sha256": "a7b73d0598536e9fcdc316c653d496a9bdb5481b5016e173982219a17870413c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-overview-architecture.jpg",
+      "sha256": "8ce3eb3c9d085b3b7d04768da6a49f0f9fadbe1d5376874f638cc58a513308a1",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 574
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-overview-bottom.jpg",
+      "sha256": "c707299a65fedae370c099b5b9a363b66403e86cceeed78e7e73f9c235db9a41",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 829
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-evaluations.jpg",
+      "sha256": "e0cadb83d6ca5898c2a8bbe4dfddba0d6af10ca7b28ad82718911e2a87680597",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 0
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-evaluations-rl.jpg",
+      "sha256": "b1646960a999dbb0a9f6336391eedd0f359c93d70cf01c5812a87036683fe490",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 687
+      }
+    },
+    {
+      "path": "docs/media/research-console-20261006/external-review-2/mobile-evaluations-bottom.jpg",
+      "sha256": "e381819332cc84374a2e378319972826ea9ff074028fdd8bef9d1e817f509550",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "bounds": {
+        "documentWidth": 390,
+        "viewportWidth": 390,
+        "mainBottom": 780,
+        "navTop": 780,
+        "scrollTop": 781
+      }
+    }
+  ]
+}

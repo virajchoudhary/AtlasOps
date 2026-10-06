@@ -168,7 +168,9 @@ class TestStage15SubmissionPackage:
         manifest = build_submission_package(output_dir=tmp_path)
         assert manifest["project_name"] == "AtlasOps"
         assert manifest["pipeline_version"] == "v2.2"
-        assert manifest["scope_revision"] == "GAI + RL (RS optional historical research)"
+        assert manifest["scope_revision"] == (
+            "Current agent-system research scope (RS optional historical research)"
+        )
         assert manifest["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
         assert manifest["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
         assert manifest["gate_statuses_declared"]["G7"] == "PASS"
@@ -233,6 +235,16 @@ class TestStage15SubmissionPackage:
         assets = data["assets"]
         assert len(assets) >= 15
         assert assets == generated["assets"] == collect_submission_assets()
+        frontend_sources = {
+            str(path).replace("\\", "/")
+            for pattern in ("*.ts", "*.tsx", "*.css")
+            for path in Path("frontend/src").rglob(pattern)
+        }
+        assert frontend_sources <= assets.keys()
+        assert {"frontend/package-lock.json", "demo/read_api.py"} <= assets.keys()
+        for path, meta in assets.items():
+            assert compute_sha256(Path(path)) == meta["sha256"]
+            assert Path(path).stat().st_size == meta["size_bytes"]
         assert {
             "ui_read_model.py",
             "static/index.html",
@@ -364,7 +376,9 @@ class TestStage15SubmissionPackage:
 
         assert data["status"] == "NOT_CERTIFIED"
         assert data["pipeline_version"] == "v2.2"
-        assert data["scope_revision"] == "GAI + RL (RS optional historical research)"
+        assert data["scope_revision"] == (
+            "Current agent-system research scope (RS optional historical research)"
+        )
         assert data["gate_statuses_declared"]["G10"] == "OUT_OF_SCOPE"
         assert data["gate_statuses_declared"]["G11"] == "OUT_OF_SCOPE"
         assert data["gate_statuses_declared"]["G4"] == "NOT_PASSED"
@@ -720,8 +734,17 @@ class TestStage15SubmissionPackage:
         assert "bench/episode_membership.py" in collect_submission_assets()
 
     def test_checked_in_submission_manifest_integrity_and_asset_keys(self):
+        # Keep the original package immutable; verify its own checkout revision.
+        revision = "d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4"
+        manifest_path = Path("artifacts/SUBMISSION_MANIFEST.json")
+        assert manifest_path.read_bytes() == subprocess.check_output(
+            ["git", "show", f"{revision}:artifacts/SUBMISSION_MANIFEST.json"]
+        )
+        assert Path(".gitattributes").read_bytes() == subprocess.check_output(
+            ["git", "show", f"{revision}:.gitattributes"]
+        )
         data = json.loads(
-            Path("artifacts/SUBMISSION_MANIFEST.json").read_text(encoding="utf-8")
+            manifest_path.read_text(encoding="utf-8")
         )
         assets = data["assets"]
         assert data["asset_count"] == len(assets)
@@ -729,11 +752,15 @@ class TestStage15SubmissionPackage:
         for path_str, meta in assets.items():
             p = Path(path_str)
             assert p.exists(), f"Tracked asset {path_str} does not exist!"
-            actual_sha = compute_sha256(p)
+            snapshot_bytes = subprocess.check_output(
+                ["git", "cat-file", "--filters", f"{revision}:{path_str}"]
+            )
+            actual_sha = hashlib.sha256(snapshot_bytes).hexdigest()
             assert actual_sha == meta["sha256"], f"Checksum mismatch for {path_str}!"
-            assert p.stat().st_size == meta["size_bytes"]
+            assert len(snapshot_bytes) == meta["size_bytes"]
 
-        assert assets.keys() == collect_submission_assets().keys()
+        current_assets = collect_submission_assets()
+        assert assets.keys() <= current_assets.keys()
         assert data["asset_inventory_sha256"] == compute_asset_inventory_sha256(assets)
         assert data["package_ready"] == (
             not data["package_readiness_missing_assets"]

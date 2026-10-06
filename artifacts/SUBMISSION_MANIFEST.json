@@ -4,11 +4,11 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-05T18:37:33.753864+00:00",
+  "generated_at": "2026-10-06T03:17:45.628880+00:00",
   "status": "NOT_CERTIFIED",
   "status_scope": "scientific_pipeline_certification",
   "package_readiness_basis": "Required reviewer surfaces and canonical compact evidence are tracked, raw-byte hashed, and current-facing local Markdown links resolve. This does not establish scientific certification or include private archives and model weights.",
-  "asset_inventory_sha256": "941460fdc0d1ae5dfe3d2b48f84db148898ea3dfd2c5bf9e3243bb8e5acfb0c3",
+  "asset_inventory_sha256": "2bc795c6ac4d837100f177596db57ae144bc6f3c831adc17f76714f8ab3dfdac",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
     "G0": "PASS",
@@ -37,7 +37,7 @@
   ],
   "empirical_metrics": null,
   "metric_note": "No full-pipeline empirical metric is certified by this asset inventory.",
-  "asset_count": 464,
+  "asset_count": 469,
   "assets": {
     "AGENTS.md": {
       "sha256": "193d73516ae082acbae73e7cdebe2568be2c0b7df1a7cf96b73fefc0317b09bd",
@@ -52,8 +52,8 @@
       "size_bytes": 1121
     },
     ".gitattributes": {
-      "sha256": "272c56b6e34d09f346c61149a5ece29924d432801268b1049d0e0d9f004ec0d7",
-      "size_bytes": 2242
+      "sha256": "60361b9b2f7de9a527c8184a4c55a34142ce4eb19aa3cd214a732aeb31b229a4",
+      "size_bytes": 2337
     },
     ".github/workflows/ci.yml": {
       "sha256": "277be053aeb03bd54c9c2cf18361d9f6eade2d77cd075a81737dc2be27eff855",
@@ -72,7 +72,7 @@
       "size_bytes": 4010
     },
     "pyproject.toml": {
-      "sha256": "933576f7eeadcec6ab54cf79f7c22e2030c330905d0741626033764bd63bbce6",
+      "sha256": "1929ead8a2a49fb15525bdf1573711249638d1f8a049ed6a28e937ddf324b780",
       "size_bytes": 1789
     },
     "requirements/README.md": {
@@ -1072,12 +1072,28 @@
       "size_bytes": 67772
     },
     "dashboard.py": {
-      "sha256": "b85c91630a5cd954045b77594205dba25d3b09a50f5bf093d6a1d1df456c7c8c",
-      "size_bytes": 30934
+      "sha256": "47a48c90c683eacf0c20c673db2c417ec56581f1a4c65c8e7cbd497e099b0563",
+      "size_bytes": 21454
     },
     "demo/launcher.py": {
-      "sha256": "9535140231cb7cf86007b6c9745685f47ab67aee0323c2017b78fb0480255f99",
-      "size_bytes": 2074
+      "sha256": "3fe915d89d58f1ecd18ce06706edabae9c4031ba7a513e9873f717a615dc4e6b",
+      "size_bytes": 2282
+    },
+    "demo/presentation.py": {
+      "sha256": "a6d37bb02a0ccbe27e997b565229e622a9158aad8e764f3a712b500000e5d33c",
+      "size_bytes": 22811
+    },
+    "demo/presentation.css": {
+      "sha256": "398a739b1354b4077d3a7e7b1bfa5f25a5b3a3ea811097ea986f374aafdced15",
+      "size_bytes": 22484
+    },
+    "demo/icons.json": {
+      "sha256": "b75f2e5007d1cc14d9d2e1f7d2b242b38a26cf22e5d4c04b6f342ea85aa2421f",
+      "size_bytes": 7830
+    },
+    "demo/build_icons.cjs": {
+      "sha256": "0db75f0d8ff788f51e773e36a8e3d3271ffae9bf8afeb2bfdb5e6031cbe6b959",
+      "size_bytes": 1037
     },
     "eval.py": {
       "sha256": "2896fd5e0814501e3fcc04ba8c8264ba1828c5e38c8d38c0710b8307a2f8f940",
@@ -1232,8 +1248,8 @@
       "size_bytes": 534
     },
     "scripts/package_submission.py": {
-      "sha256": "fc9eff0805532a11f24171640aa469c8bf1244559fac39747c4f8cf203a9d9b8",
-      "size_bytes": 24546
+      "sha256": "c865e6863fef150f580a82edc1180838064a144fd96a1b97e0812298631e9b0b",
+      "size_bytes": 24750
     },
     "scripts/check_submission_links.py": {
       "sha256": "81924324b2dae3536b764a8137a923c493b5a8b76f88641f8eca178fa9b6897c",
@@ -1486,6 +1502,10 @@
     "tests/test_current_project_truth.py": {
       "sha256": "ea2b1356ffb384971b5202a51327533172feed798b356fc51ebd10f27c07f1ec",
       "size_bytes": 3570
+    },
+    "tests/test_demo_presentation.py": {
+      "sha256": "dfd151d1ff43c5d237c296ee44878109e3e410d5f9c5fde3a3d14cb7cce323d4",
+      "size_bytes": 6295
     },
     "tests/test_diagnosis_prompt_contract.py": {
       "sha256": "8e1dc152aad848ce4c65d7fefde080fafcb505a64876b0887e36a2b31b23ea7d",
@@ -1788,8 +1808,8 @@
       "size_bytes": 43463
     },
     "tests/test_stage14_demo_safety.py": {
-      "sha256": "1766b39756744bde026bcb640e522fd708ada70ead67f12298a2e02e0a2bfc79",
-      "size_bytes": 5793
+      "sha256": "3a1e21919515b4d2c78cc7254f7069709219dda8789a47cd69ee5ac2018ae5ef",
+      "size_bytes": 6414
     },
     "tests/test_stage15_submission_package.py": {
       "sha256": "78824fd83dd045da07add580fba19666eb9eefc4919973f23a64d41c53ef67ad",

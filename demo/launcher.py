@@ -43,7 +43,12 @@ def launch_demo(
     try:
         from dashboard import _UI_CSS, build_app
         demo = build_app()
-        demo.launch(server_name=host, server_port=port, share=False, css=_UI_CSS)
+        # Keep media queries intact; Gradio's component CSS rewriting scopes
+        # outer-container selectors below the container on newer releases.
+        demo.launch(
+            server_name=host, server_port=port, share=False,
+            head=f"<style>{_UI_CSS}</style>",
+        )
     except Exception as e:  # noqa: BLE001 - report optional UI/dependency startup failures
         log.error("Failed to launch demo (%s): %s", type(e).__name__, e)
         sys.exit(1)

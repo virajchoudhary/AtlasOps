@@ -80,6 +80,8 @@ def test_unavailable_validation_metrics_are_not_replaced_with_performance_values
     assert "0.16875" not in rendered
     assert "0.15935" not in rendered
     assert "-0.00940" not in rendered
+    assert "Paired delta / no improvement" not in presentation.overview()
+    assert "The matched diagnostic shows no improvement." not in presentation.overview()
 
 
 def test_missing_g9_sources_do_not_claim_a_negative_result(monkeypatch):
@@ -97,6 +99,18 @@ def test_missing_g9_sources_do_not_claim_a_negative_result(monkeypatch):
     assert "No accepted checkpoint" not in rendered
     assert "392 tensor hashes unchanged" not in rendered
     assert "GRPO status unavailable" in presentation.models()
+    assert "A real attempt. A negative result." not in rendered
+    assert "Observed sample" not in rendered
+
+
+def test_missing_sft_sources_are_not_presented_as_a_preserved_artifact(monkeypatch):
+    results = deepcopy(presentation.current_results())
+    results["sft_v17"].update(available=False, status="UNAVAILABLE")
+    monkeypatch.setattr(presentation, "current_results", lambda: results)
+    rendered = presentation.models()
+    assert "PRESERVED ARTIFACT" not in rendered
+    assert "A preserved SFT artifact." not in rendered
+    assert "A real QLoRA adapter" not in rendered
 
 
 def test_launcher_keeps_unscoped_responsive_styles_and_share_disabled(monkeypatch):

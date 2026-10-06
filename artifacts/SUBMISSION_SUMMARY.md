@@ -4,8 +4,8 @@
 - **Upstream Baseline**: `Harikishanth/AtlasOps @ bf9bd19`
 - **Package readiness**: **READY_FOR_REVIEW**
 - **Scientific certification**: **NOT_CERTIFIED**
-- **Generated**: `2026-10-06T03:03:01.303066+00:00`
-- **Deterministic asset inventory SHA-256**: `836a418de8136ccb73b8a16340da6ebc4810cc5ec1afcb7ecdb6d3cd94e54387`
+- **Generated**: `2026-10-06T03:12:23.000478+00:00`
+- **Deterministic asset inventory SHA-256**: `abf83ed44cfb2a37bacb14c00e294fdd893120381db5772bb576b8464c09238f`
 - **Gate inventory source**: `docs/project/MASTER_PIPELINE_STATUS.md`
 
 Package readiness means required reviewer surfaces and compact canonical evidence are present in the tracked inventory, hashed from checkout bytes, and current-facing local Markdown links resolve. It does not mean the scientific pipeline is certified or that external/private archives and model weights are bundled.
@@ -231,11 +231,11 @@ Private archives and model weights are documented evidence references, not bundl
 | `config/sft_remote_host_proposal_v1.json` | `07c476d9d378836e...` | 2203 |
 | `config/splits.py` | `ae95bab9f1bd5db6...` | 1360 |
 | `dashboard.py` | `47a48c90c683eacf...` | 21454 |
-| `demo/build_icons.cjs` | `7bac2466feceb927...` | 1037 |
+| `demo/build_icons.cjs` | `0db75f0d8ff788f5...` | 1037 |
 | `demo/icons.json` | `b75f2e5007d1cc14...` | 7830 |
 | `demo/launcher.py` | `3fe915d89d58f1ec...` | 2282 |
 | `demo/presentation.css` | `398a739b1354b407...` | 22484 |
-| `demo/presentation.py` | `ceb7e14b1a70fbba...` | 21510 |
+| `demo/presentation.py` | `e8996c918a002955...` | 22476 |
 | `docs/AtlasOps_Technical_Report.md` | `af31126d72c4f4af...` | 17947 |
 | `docs/BENCHMARKS.md` | `f4054130730f4981...` | 2831 |
 | `docs/END_TO_END_FLOW.md` | `3e594773cf15c6b7...` | 5629 |
@@ -319,7 +319,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `notebooks/README.md` | `3a85f1d5c6cab23f...` | 1580 |
 | `notebooks/kaggle_grpo_training.ipynb` | `4684dd5e8815c37e...` | 1342 |
 | `notebooks/kaggle_sft_training.ipynb` | `dec2dde740fba480...` | 1288 |
-| `pyproject.toml` | `933576f7eeadcec6...` | 1789 |
+| `pyproject.toml` | `1929ead8a2a49fb1...` | 1789 |
 | `recommender/_cli.py` | `405bb05576cbb763...` | 425 |
 | `recommender/baselines.py` | `db549fdb200c90cd...` | 7284 |
 | `recommender/dataset.py` | `a668f349de1fec76...` | 13519 |
@@ -385,7 +385,7 @@ Private archives and model weights are documented evidence references, not bundl
 | `tests/test_coordinator_turn_observability.py` | `edc1f4b08135e9f3...` | 13518 |
 | `tests/test_correlator.py` | `ce0f51ecaf9ff9ee...` | 2212 |
 | `tests/test_current_project_truth.py` | `ea2b1356ffb38497...` | 3570 |
-| `tests/test_demo_presentation.py` | `d8ead4153f44494a...` | 5299 |
+| `tests/test_demo_presentation.py` | `b42d1e900541193f...` | 6046 |
 | `tests/test_diagnosis_prompt_contract.py` | `8e1dc152aad848ce...` | 1001 |
 | `tests/test_frontend_ui.py` | `65ccf5bf652001cd...` | 6058 |
 | `tests/test_g12_policy_integration_contract.py` | `07da4051c8f01873...` | 21727 |

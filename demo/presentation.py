@@ -125,6 +125,11 @@ def overview() -> str:
     artifact_state = "Reload verified" if sft["available"] else "Unavailable"
     g4_state = next(row["status"] for row in gates() if row["gate"] == "G4")
     g9_state = "Final negative" if pilot["available"] else "Unavailable"
+    validation_note = (
+        "Paired delta / no improvement"
+        if validation["paired_delta"] is not None and validation["paired_delta"] <= 0
+        else "Diagnostic conclusion unavailable"
+    )
     return (
         '<section class="ao-page ao-overview"><div class="ao-hero">'
         '<span class="ao-eyebrow">GENERATIVE AI + REINFORCEMENT LEARNING</span>'
@@ -136,18 +141,19 @@ def overview() -> str:
         f'{chip("24 TOOL WRAPPERS")}{chip(f"{len(SCENARIO_CATALOG)} FROZEN SCENARIOS")}'
         f'{chip("NOT CERTIFIED", "amber")}</div></div>'
         '<div class="ao-result-row">'
-        f'{fact("SFT v17 / artifact", artifact_state, "Artifact creation, not performance", "green")}'
-        f'{fact("Base vs SFT / diagnostic F1", delta, "Paired delta / no improvement", "rose")}'
+        f'{fact("SFT v17 / artifact", artifact_state, "Artifact creation, not performance" if sft["available"] else "Artifact evidence unavailable", "green" if sft["available"] else "")}'
+        f'{fact("Base vs SFT / diagnostic F1", delta, validation_note, "rose" if validation["available"] else "")}'
         f'{fact("G4 / incident-resolution gate", g4_state, "Final chronology: 015 > 016 > 017", "amber")}'
-        f'{fact("Controlled G9 / GRPO", g9_state, "No accepted checkpoint", "rose")}</div>'
+        f'{fact("Controlled G9 / GRPO", g9_state, "No accepted checkpoint" if pilot["available"] else "Canonical report unavailable", "rose" if pilot["available"] else "")}</div>'
         f'{workflow()}'
         '<div class="ao-overview-bottom"><section><span class="ao-eyebrow">WHAT EXISTS</span>'
         '<h3>Implementation with traceable evidence</h3><p>Multi-agent orchestration, '
         'role-scoped tools, fail-closed approval, objective verification, and a '
         'preserved QLoRA SFT artifact.</p></section><section>'
         '<span class="ao-eyebrow">WHAT THE EVIDENCE DOES NOT ESTABLISH</span>'
-        '<h3>Incident gains and an accepted RL policy</h3><p>The matched diagnostic '
-        'shows no improvement. G4 and G9 remain NOT_PASSED. '
+        '<h3>Incident gains and an accepted RL policy</h3><p>'
+        f'{"The matched diagnostic shows no improvement. " if validation["paired_delta"] is not None and validation["paired_delta"] <= 0 else "The diagnostic conclusion is unavailable. "}'
+        'G4 and G9 remain NOT_PASSED. '
         'Final empirical evaluation and deployment acceptance remain deferred.</p></section></div>'
         '<footer class="ao-footnote">Checked-in research evidence, not live telemetry. '
         'Software delivery and scientific gate closure are separate.</footer></section>'
@@ -162,7 +168,9 @@ def models() -> str:
     model = result["model"]
     lineage = [
         ("01", "Base Qwen", model, "BASE MODEL", "neutral"),
-        ("02", "QLoRA SFT v17", state, "PRESERVED ARTIFACT", "green"),
+        ("02", "QLoRA SFT v17", state,
+         "PRESERVED ARTIFACT" if result["available"] else "UNAVAILABLE",
+         "green" if result["available"] else "neutral"),
         ("03", "Controlled GRPO attempt", "Train-only bounded simulator research",
          "EXPERIMENTALLY UNSUCCESSFUL" if pilot["available"] else "UNAVAILABLE", "amber"),
         ("04", "No accepted GRPO checkpoint" if pilot["available"] else "GRPO status unavailable",
@@ -197,7 +205,11 @@ def models() -> str:
                  "result does not establish improved diagnosis or incident resolution.")
         + provenance(result["evidence"])
     )
-    return page("Models & lineage", "A preserved SFT artifact. No accepted GRPO checkpoint.", body)
+    subtitle = (
+        ("A preserved SFT artifact." if result["available"] else "SFT artifact evidence unavailable.")
+        + (" No accepted GRPO checkpoint." if pilot["available"] else " GRPO status unavailable.")
+    )
+    return page("Models & lineage", subtitle, body)
 
 
 def comparison_chart(validation: dict) -> str:
@@ -262,7 +274,7 @@ def evaluations() -> str:
         'time-to-resolve were not measured and remain unavailable.</p></section></div>'
         '<section class="ao-g9"><div class="ao-section-head"><div>'
         '<span class="ao-eyebrow">CONTROLLED G9 / TRAIN-ONLY</span>'
-        '<h3>A real attempt. A negative result.</h3></div>'
+        f'<h3>{"A real attempt. A negative result." if pilot["available"] else "Controlled pilot evidence unavailable."}</h3></div>'
         f'{chip(pilot["status"], "rose")}</div><div class="ao-g9-facts">'
         f'{fact("Policy completions", pilot["completions"], "Genuine completions")}'
         f'{fact("Malformed / blocked", pilot["malformed_or_blocked"], "No admissible pilot actions" if pilot["available"] else "Canonical report unavailable", "rose")}'
@@ -275,7 +287,7 @@ def evaluations() -> str:
         '</div></section><section class="ao-aligned"><div>'
         '<span class="ao-eyebrow">FINAL ALIGNED DIAGNOSTIC</span>'
         f'<h3>{number(aligned["admissible_count"])}/{number(aligned["sample_count"])} '
-        'admissible actions</h3><p>Observed sample, not proof of a zero population probability.</p>'
+        f'admissible actions</h3><p>{"Observed sample, not proof of a zero population probability." if aligned["available"] else "Aligned diagnostic evidence unavailable."}</p>'
         '</div><div>'
         f'<strong>{number(aligned["tensor_hash_count"])} tensor hashes '
         f'{"unchanged" if aligned["tensor_hashes_unchanged"] is True else "unavailable"}</strong>'

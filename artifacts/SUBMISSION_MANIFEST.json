@@ -4,11 +4,11 @@
   "upstream_baseline": "Harikishanth/AtlasOps @ bf9bd19",
   "pipeline_version": "v2.2",
   "scope_revision": "GAI + RL (RS optional historical research)",
-  "generated_at": "2026-10-06T03:03:01.303066+00:00",
+  "generated_at": "2026-10-06T03:12:23.000478+00:00",
   "status": "NOT_CERTIFIED",
   "status_scope": "scientific_pipeline_certification",
   "package_readiness_basis": "Required reviewer surfaces and canonical compact evidence are tracked, raw-byte hashed, and current-facing local Markdown links resolve. This does not establish scientific certification or include private archives and model weights.",
-  "asset_inventory_sha256": "836a418de8136ccb73b8a16340da6ebc4810cc5ec1afcb7ecdb6d3cd94e54387",
+  "asset_inventory_sha256": "abf83ed44cfb2a37bacb14c00e294fdd893120381db5772bb576b8464c09238f",
   "gate_status_source": "docs/project/MASTER_PIPELINE_STATUS.md",
   "gate_statuses_declared": {
     "G0": "PASS",
@@ -72,7 +72,7 @@
       "size_bytes": 4010
     },
     "pyproject.toml": {
-      "sha256": "933576f7eeadcec6ab54cf79f7c22e2030c330905d0741626033764bd63bbce6",
+      "sha256": "1929ead8a2a49fb15525bdf1573711249638d1f8a049ed6a28e937ddf324b780",
       "size_bytes": 1789
     },
     "requirements/README.md": {
@@ -1080,8 +1080,8 @@
       "size_bytes": 2282
     },
     "demo/presentation.py": {
-      "sha256": "ceb7e14b1a70fbba248576bb225eed952629cbbfd2eff8ba8fce7eba603c6956",
-      "size_bytes": 21510
+      "sha256": "e8996c918a0029559a342b89fe746c097af51d53aaef62489798b8f33eeabd39",
+      "size_bytes": 22476
     },
     "demo/presentation.css": {
       "sha256": "398a739b1354b4077d3a7e7b1bfa5f25a5b3a3ea811097ea986f374aafdced15",
@@ -1092,7 +1092,7 @@
       "size_bytes": 7830
     },
     "demo/build_icons.cjs": {
-      "sha256": "7bac2466feceb927f8eabcb941041517fcea5dbbac339277236787563670af67",
+      "sha256": "0db75f0d8ff788f51e773e36a8e3d3271ffae9bf8afeb2bfdb5e6031cbe6b959",
       "size_bytes": 1037
     },
     "eval.py": {
@@ -1504,8 +1504,8 @@
       "size_bytes": 3570
     },
     "tests/test_demo_presentation.py": {
-      "sha256": "d8ead4153f44494a61fd2ec61caf73c6bf15d72b27b803048013866ba5ddd41e",
-      "size_bytes": 5299
+      "sha256": "b42d1e900541193f828da3ea0bf5eb2b75d14867c034bffe33c5900af0812a12",
+      "size_bytes": 6046
     },
     "tests/test_diagnosis_prompt_contract.py": {
       "sha256": "8e1dc152aad848ce4c65d7fefde080fafcb505a64876b0887e36a2b31b23ea7d",

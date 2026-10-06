@@ -1,4 +1,4 @@
-// Generate offline icons from the existing MIT-licensed Lucide bundle.
+// Generate offline icons from the existing ISC-licensed Lucide bundle.
 const fs = require("node:fs");
 const path = require("node:path");
 const lucide = require("../static/vendor/lucide.min.js");

@@ -1,12 +1,4 @@
-"""Tests for Stage 14: Deploy Final Demo Safely (Gate G14).
-
-Validates:
-1. Gradio Ops Console tab construction and UI component registration.
-2. Read-only scenario selection and cleanup guidance.
-3. Interactive Hybrid Runbook Recommender UI querying.
-4. Multi-model ablation matrix and benchmark loading.
-5. Standalone demo launcher argument parsing and configuration.
-"""
+"""Contracts for the Stage 14 read-only demo and preserved evidence."""
 
 from __future__ import annotations
 
@@ -36,12 +28,35 @@ class TestStage14DemoSafety:
         assert app.title == "AtlasOps | Read-only evidence demo"
         assert app.analytics_enabled is False
         assert len(app.blocks) > 0
-        labels = {component.get("props", {}).get("label") for component in app.config["components"]}
-        assert {"Overview", "Incidents", "Agents", "Models", "Evaluations",
-                "Runbooks", "Evidence", "Settings"} <= labels
-        assert "Scenario Control" not in labels
-        assert "Rank runbooks" not in str(app.config)
-        assert "Symptoms" not in str(app.config)
+        expected_tabs = [
+            "Overview", "Models", "Evaluations", "Agents",
+            "Incidents", "Evidence", "Runbooks", "Settings",
+        ]
+        component_labels = [
+            component.get("props", {}).get("label")
+            for component in app.config["components"]
+        ]
+        assert [label for label in component_labels if label in expected_tabs] == expected_tabs
+        config_text = str(app.config)
+        assert "ao-topbar" in config_text
+        assert "ao-hero" in config_text
+        assert "Governed Multi-Agent SRE Intelligence" in config_text
+        assert "Scenario Control" not in config_text
+        assert "Rank runbooks" not in config_text
+        assert "Symptoms" not in config_text
+        execution_labels = (
+            "approve", "remediate", "inject fault", "run incident", "run model",
+            "train model", "cleanup cluster", "reset cluster", "kubectl",
+        )
+        button_text = [
+            " ".join(
+                str(component.get("props", {}).get(key, ""))
+                for key in ("value", "label")
+            ).casefold()
+            for component in app.config["components"]
+            if component.get("type") == "button"
+        ]
+        assert not any(term in label for label in button_text for term in execution_labels)
 
     def test_scenario_selection_never_claims_or_runs_a_fault(self, monkeypatch):
         monkeypatch.setenv("DEMO_SAFE_MODE", "0")

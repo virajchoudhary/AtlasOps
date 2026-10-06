@@ -1,13 +1,13 @@
 """Read-only AtlasOps demonstration console with explicit evidence labels (G14)."""
 
 import hashlib
-import html
 import json
 import re
 from pathlib import Path
 
 import gradio as gr
 
+from demo import presentation
 from ui_read_model import catalog as read_model_catalog
 from ui_read_model import current_results, final_g4_attempts
 from ui_read_model import gates as read_model_gates
@@ -393,85 +393,22 @@ def _load_stage4_attempt(name: str) -> tuple[str, str]:
 
 
 # ── Read-only product views ────────────────────────────────────────────────────
-_UI_CSS = """
-:root { --atlas-ink:#182421; --atlas-line:#d9e1dd; --atlas-muted:#56645f;
-  --atlas-paper:#f4f7f5; --atlas-green:#087c68; --atlas-red:#a83f36;
-  --atlas-gold:#855b16; }
-body, .gradio-container { background:var(--atlas-paper) !important; color:var(--atlas-ink) !important; }
-.gradio-container { max-width:1380px !important; padding:18px 26px 44px !important; }
-.atlas-header { background:#172522; color:#f1f6f3; padding:19px 23px; border-radius:6px; }
-.atlas-header strong { font-size:20px; }
-.atlas-header small { display:block; color:#c2d1ca; margin-top:4px; }
-.atlas-status { display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
-  background:#fff; border:1px solid var(--atlas-line); border-radius:6px; margin:15px 0 24px; }
-.atlas-status div { min-width:0; padding:13px 16px; border-right:1px solid var(--atlas-line); }
-.atlas-status div:last-child { border:0; }
-.atlas-status span { display:block; color:var(--atlas-muted); font-size:12px; }
-.atlas-status b { display:block; overflow-wrap:anywhere; font-size:16px; margin-top:5px; }
-.atlas-status .negative b { color:var(--atlas-red); }
-.atlas-status .result b { color:var(--atlas-green); }
-.atlas-flow { border-left:3px solid var(--atlas-green); padding:11px 15px;
-  background:#fff; margin:8px 0 18px; line-height:1.8; }
-.gradio-container .tab-nav { border-bottom:1px solid var(--atlas-line); gap:3px; }
-.gradio-container .tab-nav button { border-radius:5px 5px 0 0 !important; font-size:13px; }
-.gradio-container .tab-nav button.selected { border-bottom:2px solid var(--atlas-green) !important; }
-.gradio-container .prose h2 { font-size:22px; margin-top:17px; }
-.gradio-container .prose h3 { font-size:16px; }
-.gradio-container button { border-radius:5px !important; }
-@media(max-width:720px) {
-  .gradio-container { padding:11px 13px 30px !important; }
-  .atlas-status { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .atlas-status div:nth-child(2) { border-right:0; }
-  .atlas-status div:nth-child(-n+2) { border-bottom:1px solid var(--atlas-line); }
-}
-"""
+_UI_CSS = presentation.CSS
 
 
 def _header_html() -> str:
-    result = current_results()
-    delta = html.escape(_format_value(result["base_vs_sft"]["paired_delta"], 5))
-    sft_state = html.escape(result["sft_v17"]["status"])
-    pilot_state = html.escape(result["g9_pilot"]["status"])
-    return (
-        '<div class="atlas-header"><strong>AtlasOps</strong>'
-        "<small>Governed multi-agent SRE research / local read-only evidence snapshot</small></div>"
-        '<div class="atlas-status">'
-        '<div class="negative"><span>G4 governance</span><b>NOT_PASSED</b></div>'
-        f'<div class="result"><span>SFT v17 artifact</span><b>{sft_state}</b></div>'
-        f'<div class="negative"><span>Validation delta</span><b>{delta}</b></div>'
-        f'<div class="negative"><span>Controlled G9</span><b>{pilot_state}</b></div>'
-        "</div>"
-    )
+    return presentation.header()
 
 
 def build_overview_tab():
     with gr.Tab("Overview"):
-        gr.Markdown("## Project snapshot")
-        gr.Markdown(
-            "AtlasOps is a governed multi-agent SRE research system. This console presents "
-            "checked-in implementation and evidence; it is not an operations console or a live health view."
-        )
-        gr.Markdown("### Incident workflow")
-        gr.HTML(
-            '<div class="atlas-flow">Incident / Alert -&gt; Triage Agent -&gt; Diagnosis Agent '
-            "-&gt; Safety / Approval Gate -&gt; Remediation Agent -&gt; Objective Environment "
-            "Verifier -&gt; Comms Agent</div>"
-        )
-        gr.Markdown("### Current findings")
-        gr.Markdown(_load_results_overview())
-        gr.Markdown("### Gate summary")
-        status_out = gr.Markdown(_load_project_status())
-        gr.Button("Refresh repository snapshot").click(_load_project_status, outputs=[status_out])
+        gr.HTML(presentation.overview())
 
 
 def build_incidents_tab():
     with gr.Tab("Incidents"):
-        gr.Markdown("## Final G4 chronology")
-        current_out = gr.Markdown(_load_g4_final_chronology())
-        gr.Button("Refresh G4 references").click(
-            _load_g4_final_chronology, outputs=[current_out]
-        )
-        with gr.Accordion("Earlier preserved G4 records", open=False):
+        gr.HTML(presentation.incidents())
+        with gr.Accordion("Earlier preserved G4 records / historical", open=False, elem_id="ao-earlier"):
             gr.Markdown(
                 "These older records are historical context only. They do not replace the "
                 "015/016/017 chronology or change G4's frozen NOT_PASSED status."
@@ -482,9 +419,7 @@ def build_incidents_tab():
                 if "EXP-STAGE4-SF002-010.json" in choices
                 else choices[0] if choices else None
             )
-            with gr.Row():
-                incident_list = gr.Dropdown(choices=choices, value=initial, label="Earlier record")
-                refresh_btn = gr.Button("Refresh earlier records")
+            incident_list = gr.Dropdown(choices=choices, value=initial, label="Earlier record")
             summary, source = _load_stage4_attempt(initial) if initial else (
                 "No earlier Stage 4 record is available.", ""
             )
@@ -493,143 +428,36 @@ def build_incidents_tab():
             incident_list.change(
                 _load_stage4_attempt, inputs=[incident_list], outputs=[summary_out, provenance_out]
             )
-            refresh_btn.click(
-                lambda: gr.update(choices=_list_stage4_attempts()), outputs=[incident_list]
-            )
-        with gr.Accordion("Scenario manifest references", open=False):
-            gr.Markdown(
-                "Selection only checks for a known local manifest. It does not inject a fault, "
-                "run agents, call kubectl, or change a cluster."
-            )
-            with gr.Row():
-                scenario = gr.Dropdown(
-                    choices=list(SINGLE_FAULT),
-                    value=next(iter(SINGLE_FAULT)),
-                    label="Manifest reference",
-                )
-                inspect = gr.Button("Inspect reference")
-            selection_out = gr.Textbox(
-                label="Read-only reference result", lines=2, interactive=False
-            )
-            inspect.click(
-                lambda selected: _apply_chaos(SINGLE_FAULT[selected]),
-                inputs=[scenario],
-                outputs=[selection_out],
-            )
 
 
 def build_agents_tab():
     with gr.Tab("Agents"):
-        gr.Markdown("## Architecture and controls")
-        gr.Markdown(
-            "**Generative agents propose. Role and tool policy constrain actions. "
-            "Explicit approval gates P1 remediation. Objective environment verification "
-            "decides whether resolution occurred.**"
-        )
-        gr.Markdown(
-            "Incident / Alert -> Triage Agent -> Diagnosis Agent -> Safety / Approval Gate "
-            "-> Remediation Agent -> Environment Verifier -> Comms Agent"
-        )
-        gr.Markdown(
-            "| Component | Responsibility | Demo/runtime state |\n|---|---|---|\n"
-            "| Triage Agent | Classify the alert and affected services | Not executed by this demo |\n"
-            "| Diagnosis Agent | Ground a proposed cause in observations | Not executed by this demo |\n"
-            "| Remediation Agent | Submit only policy-allowed actions after approval | No action controls here |\n"
-            "| Comms Agent | Record incident updates and outcome | No incident run here |\n"
-            "| Safety / Approval Gate | Role ACL, tool policy, explicit P1 approval; fail closed | No approval mutation here |\n"
-            "| Environment Verifier | Check objective state before a success claim | No live environment probe here |"
-        )
+        gr.HTML(presentation.agents())
 
 
 def build_models_tab():
     with gr.Tab("Models"):
-        result = current_results()["sft_v17"]
-        gr.Markdown("## Preserved SFT artifact")
-        gr.Markdown(
-            f"- Status: **{result['status']}**.\n"
-            f"- Run: `{_format_value(result['run_id'])}`.\n"
-            f"- Base model: `{_format_value(result['model'])}@"
-            f"{_format_value(result['model_revision'])}`.\n"
-            f"- Corpus: {_format_value(result['corpus_rows'])} "
-            f"{_format_value(result['corpus_split'])}-split rows; synthetic: "
-            f"`{_format_value(result['synthetic_corpus'])}`.\n"
-            f"- Completed training steps: {_format_value(result['training_steps'])}.\n"
-            f"- Adapter SHA-256: `{_format_value(result['adapter_sha256'])}`.\n"
-            f"- Fresh-process independent reload: `{_format_value(result['reload_status'])}`; "
-            f"{_format_value(result['reload_tensor_count'])} LoRA tensors checked.\n\n"
-            "The artifact is genuine and reloadable. These records do not show incident "
-            "improvement. This demo performs no model loading or inference."
-        )
+        gr.HTML(presentation.models())
 
 
 def build_evaluations_tab():
     with gr.Tab("Evaluations"):
-        gr.Markdown("## Current results")
-        result_out = gr.Markdown(_load_current_results())
-        gr.Button("Refresh result summaries").click(
-            _load_current_results, outputs=[result_out]
-        )
-        gr.Markdown("### Current gate statuses")
-        status_out = gr.Markdown(_load_project_status())
-        gr.Button("Refresh gate snapshot").click(_load_project_status, outputs=[status_out])
-        with gr.Accordion(
-            "Historical archive: NON-EMPIRICAL and excluded from current results", open=False
-        ):
-            gr.Markdown(_load_archive_index())
+        gr.HTML(presentation.evaluations())
 
 
 def build_runbooks_tab():
     with gr.Tab("Runbooks"):
-        gr.Markdown("## Advisory catalog")
-        gr.Markdown(
-            "Optional historical recommender work is scenario-derived and out of scope for "
-            "required GAI+RL completion. This static catalog does not rank, fit, infer, or "
-            "execute runbooks."
-        )
-        gr.Markdown(_load_static_runbooks())
+        gr.HTML(presentation.runbooks())
 
 
 def build_evidence_tab():
     with gr.Tab("Evidence"):
-        gr.Markdown("## Current evidence provenance")
-        gr.Markdown(_load_current_evidence())
-        gr.Markdown("### Historical archive")
-        gr.Markdown(_load_archive_index())
-        with gr.Accordion("Named scenario references", open=False):
-            gr.Markdown(
-                "Inspecting a local manifest reference is not a replay or a new incident."
-            )
-            named = gr.Dropdown(
-                choices=list(NAMED_REPLAYS),
-                value=next(iter(NAMED_REPLAYS)),
-                label="Scenario reference",
-            )
-            output = gr.Textbox(
-                label="Read-only reference result", lines=2, interactive=False
-            )
-            gr.Button("Inspect reference").click(
-                lambda selected: _apply_chaos(NAMED_REPLAYS[selected]),
-                inputs=[named],
-                outputs=[output],
-            )
+        gr.HTML(presentation.evidence())
 
 
 def build_settings_tab():
     with gr.Tab("Settings"):
-        gr.Markdown("## Read-only demo boundary")
-        gr.Markdown(
-            "| Surface | State |\n|---|---|\n"
-            "| Binding | Loopback only |\n"
-            "| Evidence | Checked-in repository snapshot |\n"
-            "| Runtime health / Kubernetes | Not queried |\n"
-            "| Model loading or inference | Not performed |\n"
-            "| Fault injection or kubectl | Not available |\n"
-            "| Approval, remediation, or cleanup | No controls or actions |"
-        )
-        gr.Markdown(
-            "G14 remains PARTIAL: a locally verifiable read-only UI is not evidence of a "
-            "reproducible deployment or deployment acceptance."
-        )
+        gr.HTML(presentation.settings())
 
 
 def build_app():
@@ -639,16 +467,19 @@ def build_app():
     ) as demo:
         gr.HTML(_header_html())
         build_overview_tab()
-        build_incidents_tab()
-        build_agents_tab()
         build_models_tab()
         build_evaluations_tab()
-        build_runbooks_tab()
+        build_agents_tab()
+        build_incidents_tab()
         build_evidence_tab()
+        build_runbooks_tab()
         build_settings_tab()
     return demo
 
 
 if __name__ == "__main__":
     demo = build_app()
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=False, css=_UI_CSS)
+    demo.launch(
+        server_name="127.0.0.1", server_port=7860, share=False,
+        head=f"<style>{_UI_CSS}</style>",
+    )

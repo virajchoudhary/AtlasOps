@@ -157,6 +157,31 @@ jobs:
       - name: Test live incident projection
         run: node --test static/live-incident.test.js
 
+      - name: Set up presentation-only Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install presentation dependencies
+        run: |
+          python -m pip install fastapi uvicorn httpx
+          npm ci --prefix frontend
+
+      - name: Build and test React presentation
+        working-directory: frontend
+        run: |
+          npm run build
+          npm test
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Preserve browser QA on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presentation-browser-qa
+          path: frontend/test-results
+
   quality:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest

@@ -62,3 +62,7 @@ artifacts/evidence/stage4/.attempts/
 /.ruff-cache*/
 /artifacts/overnight_test_outputs/
 /docs/RELEASE_READINESS.md
+/frontend/node_modules/
+/frontend/dist/
+/frontend/test-results/
+/frontend/playwright-report/

@@ -304,6 +304,7 @@ def _g9_pilot_summary(report_text: str | None) -> dict[str, Any]:
         "malformed_or_blocked": parsed_blocked if canonical else None,
         "reward_each": int(blocked.group("reward")) if canonical and blocked else None,
         "zero_advantage_groups": 2 if canonical else None,
+        "reward_driven_advantage_groups": 0 if canonical else None,
         "acceptable_checkpoint": False if canonical else None,
     }
 

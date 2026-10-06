@@ -88,20 +88,27 @@ operator feedback or incident improvement.
 
 ## Quick Start
 
-The safe local entry point is the read-only evidence demo. On Windows with Python 3.12,
-the canonical development lock includes Gradio:
+The safe local entry point is the React/TypeScript research console. With Python 3.11+
+and Node.js 22+, install the small presentation dependencies and build once:
 
 ```powershell
-py -3.12 -m venv .venv
-& .\.venv\Scripts\python.exe -m pip --isolated install --index-url https://pypi.org/simple -r requirements/dev-win-py312.lock
-& .\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7860
+python -m pip install fastapi uvicorn
+npm ci --prefix frontend
+npm run build --prefix frontend
+python -m demo.launcher --host 127.0.0.1 --port 7860
 ```
 
 Open `http://127.0.0.1:7860/`. The demo browses checked-in evidence on localhost. It
 requires no Docker, Kind cluster, GPU, model endpoint, or operational credentials. It
 does not load a model or run inference, call kubectl, inject a fault, request approval,
 or execute remediation. Its status view is a repository snapshot, not live service
-health. See the [Stage 14 demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md).
+health. The demo API is separate from the operational application and allows only
+GET/HEAD requests. See the [Stage 14 demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md)
+and [component sources](frontend/THIRD_PARTY_NOTICES.md).
+
+For frontend development, run the Python launcher on port `7862` and
+`npm run dev --prefix frontend` in a second terminal. Vite proxies only the
+presentation API. Build output and dependencies are local, ignored artifacts.
 
 The launcher flags can be inspected without starting the server:
 

@@ -16,7 +16,7 @@ test("overview shows API inventory and stays distinct from certification", async
   await expect(page.getByRole("heading", { level: 1, name: "AtlasOps" })).toBeVisible();
   await expect(page.getByText("Governed Multi-Agent SRE Intelligence")).toBeVisible();
   await expect(page.getByText("Read-only research demo")).toBeVisible();
-  await expect(page.getByText("GAI + RL")).toBeVisible();
+  await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
 
   const tools = page.locator(".metric-tile").filter({ hasText: "Registered tool wrappers" });
   await expect(tools.locator(".metric-value")).toHaveText("24");
@@ -32,6 +32,7 @@ test("every primary route is reachable through the hash router", async ({ page }
   for (const [label, path, heading] of routes) {
     await page.goto(`/#${path}`);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+    await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
   }
 });
 

@@ -79,7 +79,6 @@ def product() -> dict[str, Any]:
         "subtitle": "Governed Multi-Agent SRE Intelligence",
         "description": "Specialized agents reason about incidents; governance constrains actions "
                        "and objective verification determines the outcome.",
-        "workstreams": ["GAI", "RL"],
         "agent_count": len(agents),
         "tool_count": len(tools),
         "agent_exposed_tool_count": len(set().union(*ROLE_ALLOWED_TOOLS.values())),
@@ -208,6 +207,10 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
     @application.get("/api/catalog")
     def read_catalog():
         snapshot = catalog()
+        snapshot["gates"] = [
+            {**gate, "name": gate["name"].replace("GAI + RL", "agent system")}
+            for gate in snapshot["gates"]
+        ]
         return {**snapshot, "product": product(), "evidence_browser": evidence_browser(snapshot)}
 
     @application.get("/api/attempts/{name}")

@@ -25,7 +25,8 @@ def test_open_gates_are_not_presented_as_certified_results():
         encoding="utf-8"
     )
     assert "Current continuation status: NOT_CERTIFIED" in readme
-    assert "revised the required scope to GAI + RL" in readme
+    assert "current scope revision" in readme
+    assert "GAI + RL" not in readme
     assert "Genuine five-arm results remain" not in readme
     assert "short_description: Evidence-led multi-agent SRE research demo (not certified)" in readme
     assert "responding to real GKE incidents" not in readme

@@ -371,7 +371,7 @@ def test_runtime_dependency_declarations_have_no_retired_clients():
     assert {"httpx", "kubernetes", "google-cloud-logging"} <= dependencies
     assert "gradio" not in dependencies
     extras = project["optional-dependencies"]
-    assert "gradio" in {Requirement(value).name for value in extras["demo"]}
+    assert {Requirement(value).name for value in extras["demo"]} == {"fastapi", "uvicorn"}
     assert "gradio" in {Requirement(value).name for value in extras["dev"]}
     assert "matplotlib" not in {Requirement(value).name for value in extras["dev"]}
 

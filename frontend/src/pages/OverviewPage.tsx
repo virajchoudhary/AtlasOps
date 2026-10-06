@@ -9,9 +9,6 @@ import { displayNumber, displayText } from "../lib/format";
 
 export function OverviewPage({ catalog }: CatalogPageProps) {
   const product = catalog?.product;
-  const workstreams = product?.workstreams?.length
-    ? product.workstreams.join(" + ")
-    : "Unavailable";
 
   return (
     <div className="page-stack overview-page">
@@ -35,7 +32,6 @@ export function OverviewPage({ catalog }: CatalogPageProps) {
             <span className="hero-subtitle-mark" aria-hidden="true"><GitBranch size={16} /></span>
             <span>{displayText(product?.subtitle)}</span>
           </div>
-          <Badge tone="outline" className="workstream-badge">{workstreams}</Badge>
           <span className="hero-source">{displayText(catalog?.source)}</span>
         </div>
       </section>

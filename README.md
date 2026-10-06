@@ -80,8 +80,8 @@ Additional implementation includes:
 - HMAC-chained audit records and evidence manifests with source and artifact hashes.
 - A read-only repository-evidence demo for local review.
 
-The required current academic scope is Generative AI and Reinforcement Learning. The
-project lead [revised the required scope to GAI + RL](docs/project/GAI_RL_SCOPE_REVISION.md).
+The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
+defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for
 current completion. Historical scenario-derived ranking results do not establish
 operator feedback or incident improvement.
@@ -109,6 +109,9 @@ and [component sources](frontend/THIRD_PARTY_NOTICES.md).
 For frontend development, run the Python launcher on port `7862` and
 `npm run dev --prefix frontend` in a second terminal. Vite proxies only the
 presentation API. Build output and dependencies are local, ignored artifacts.
+The existing `requirements/dev-win-py312.lock` remains the Python development
+test lock, including historical Gradio regression dependencies; it is not needed
+for the new presentation-only launch.
 
 The launcher flags can be inspected without starting the server:
 

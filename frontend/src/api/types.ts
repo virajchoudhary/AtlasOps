@@ -168,7 +168,6 @@ export interface Product {
   name: string;
   subtitle: string;
   description: string;
-  workstreams: string[];
   agent_count: Nullable<number>;
   tool_count: Nullable<number>;
   agent_exposed_tool_count: Nullable<number>;

@@ -25,6 +25,8 @@ def test_exact_current_results_and_g4_chronology(client):
     response = client.get("/api/catalog")
     assert response.status_code == 200
     data = response.json()
+    assert "workstreams" not in data["product"]
+    assert all("GAI + RL" not in gate["name"] for gate in data["gates"])
     validation = data["current_results"]["base_vs_sft"]
     assert (validation["base_f1"], validation["sft_f1"], validation["paired_delta"]) == (
         0.16875, 0.15935, -0.0094,

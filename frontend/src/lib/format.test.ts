@@ -3,6 +3,7 @@ import {
   comparisonWidth,
   displayBoolean,
   displayNumber,
+  displayNumberWithUnit,
   displayRatio,
   displayText,
   matchesEvidenceFilter,
@@ -39,6 +40,14 @@ describe("truth-safe display helpers", () => {
     expect(comparisonWidth(1)).toBe(100);
     expect(comparisonWidth(-0.1)).toBeNull();
     expect(comparisonWidth(1.1)).toBeNull();
+  });
+
+  it("only adds units to finite numeric values", () => {
+    for (const value of [null, undefined, NaN, Infinity, ""]) {
+      expect(displayNumberWithUnit(value, "s")).toBe("Unavailable");
+    }
+    expect(displayNumberWithUnit(0, "s")).toBe("0 s");
+    expect(displayNumberWithUnit(12, "s")).toBe("12 s");
   });
 });
 

@@ -17,6 +17,11 @@ export function displayRatio(value: unknown): string {
     : UNAVAILABLE;
 }
 
+export function displayNumberWithUnit(value: unknown, unit: string): string {
+  const number = displayNumber(value);
+  return number === UNAVAILABLE ? number : `${number} ${unit}`;
+}
+
 export function displayBoolean(value: unknown, yes = "Yes", no = "No"): string {
   if (typeof value !== "boolean") return UNAVAILABLE;
   return value ? yes : no;

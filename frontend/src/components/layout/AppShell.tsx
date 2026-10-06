@@ -65,6 +65,11 @@ function ShellContent({
   const pageProps = { catalog, loading: status === "loading" || status === "refreshing" };
 
   useEffect(() => {
+    const main = document.querySelector(".main-content");
+    if (main) main.scrollTop = 0;
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (!moreOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMoreOpen(false);

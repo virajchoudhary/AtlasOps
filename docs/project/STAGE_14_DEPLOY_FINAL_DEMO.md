@@ -112,7 +112,7 @@ Three review passes were performed within the available capabilities:
    Independent Luna Max critique identified small chart labels, incorrect menu
    semantics, overlong gate detail and clipped caveats; these were corrected.
 
-Final captures:
+First-iteration captures:
 [desktop Overview](../media/research-console-20261006/desktop-overview.jpg),
 [Models](../media/research-console-20261006/desktop-models.jpg),
 [Evaluations](../media/research-console-20261006/desktop-evaluations.jpg),
@@ -121,11 +121,19 @@ Final captures:
 [tablet Overview](../media/research-console-20261006/tablet-overview.jpg),
 [mobile Overview](../media/research-console-20261006/mobile-overview.jpg).
 
-**Pixel-level visual acceptance remains DEFERRED.** Screenshots were generated,
-but the root and Luna image-input tools rejected them as unsupported. DOM bounds,
-computed typography and browser tests were inspected; no unviewed screenshot is
-claimed as visually approved. Keep the redesign PR unmerged until an image-capable
-or human review establishes the user's visual acceptance criterion.
+An external image-capable review of committed head
+`b2c53f89640baf74bbaa33000b2eb72a202abf9e` replaced the unavailable root/Luna
+pixel review and returned **CHANGES REQUIRED**. The second iteration reserves a
+mobile scroll area above the fixed navigation, removes the redundant hero subtitle,
+enlarges meaningful metadata, omits units for unavailable values, and tightens the
+mobile architecture. Seven component tests and eleven browser tests passed,
+including all-route mobile clearance and metadata regression checks.
+
+Second-iteration captures are in `docs/media/research-console-20261006/external-review-2/`.
+The capture record identifies the committed source and built asset hashes. Mobile
+captures include both the initial viewport and scrolled architecture/RL views.
+**Final external visual acceptance remains pending.** Keep PR #187 draft and
+unmerged until the user accepts these regenerated screenshots.
 
 ## G14 Acceptance
 

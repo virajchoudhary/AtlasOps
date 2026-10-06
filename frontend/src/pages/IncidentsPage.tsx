@@ -7,7 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "..
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import type { CatalogPageProps } from "./types";
-import { displayBoolean, displayNumber, displayText, shortDigest } from "../lib/format";
+import { displayBoolean, displayNumber, displayNumberWithUnit, displayText, shortDigest } from "../lib/format";
 
 type AttemptLoad =
   | { status: "loading" }
@@ -150,7 +150,7 @@ function FinalAttemptRow({ attempt, last }: { attempt: FinalAttempt; last: boole
         <div className="timeline-entry-foot">
           <span><ShieldCheck size={14} aria-hidden="true" /> Resolution: {displayBoolean(attempt.resolution)}</span>
           <span>Reward: {displayNumber(attempt.reward)}</span>
-          <span>Time to resolve: {displayNumber(attempt.time_to_resolve_s)} s</span>
+          <span>Time to resolve: {displayNumberWithUnit(attempt.time_to_resolve_s, "s")}</span>
         </div>
         <Accordion type="single" collapsible className="timeline-source">
           <AccordionItem value="source">

@@ -18,6 +18,8 @@
   --ink-soft: #c6ceca;
   --muted: #9ba6a0;
   --dim: #78847e;
+  --mobile-nav-height: 64px;
+  --mobile-nav-space: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
   --mint: #94dbc2;
   --mint-strong: #64ba99;
   --mint-wash: #1c302a;
@@ -157,7 +159,7 @@ input:focus-visible {
 
 .brand-wordmark small {
   color: #a4aea9;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -179,7 +181,7 @@ input:focus-visible {
 .nav-group-label {
   margin: 0 11px 8px;
   color: #929d97;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1.2;
 }
@@ -264,7 +266,7 @@ input:focus-visible {
 
 .sidebar-foot span {
   color: #a4aea9;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .main-shell {
@@ -322,7 +324,7 @@ input:focus-visible {
   align-items: center;
   gap: 7px;
   color: #b5bfba;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -380,7 +382,7 @@ input:focus-visible {
 .eyebrow {
   margin: 0 0 8px;
   color: #a7b2ac;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 1.35;
 }
@@ -439,7 +441,7 @@ input:focus-visible {
 
 .hero-certification span {
   color: #aab4af;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .hero-certification strong {
@@ -448,36 +450,11 @@ input:focus-visible {
   font-weight: 650;
 }
 
-.hero-meta {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  min-width: 0;
-  margin-top: -12px;
-}
-
-.hero-subtitle {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: #d0d7d3;
-  font-size: 16px;
-  font-weight: 570;
-}
-
-.hero-subtitle-mark {
-  display: inline-flex;
-  color: var(--mint);
-}
-
 .hero-source {
-  overflow: hidden;
-  margin-left: auto;
-  color: #9ba6a0;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 14px 0 0;
+  color: #adb8b1;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .metric-grid {
@@ -558,7 +535,7 @@ input:focus-visible {
   overflow-wrap: anywhere;
   margin: 0;
   color: #9ba6a0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -607,7 +584,7 @@ input:focus-visible {
 .architecture-caption {
   margin: 3px 0 0;
   color: #a2ada7;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .architecture-flow {
@@ -725,7 +702,7 @@ input:focus-visible {
 .architecture-kind {
   overflow: hidden;
   color: #a8b2ad;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -760,7 +737,7 @@ input:focus-visible {
 .architecture-agent-label {
   padding: 1px 4px;
   color: #a7d7bd;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
   line-height: 1.3;
 }
@@ -790,7 +767,7 @@ input:focus-visible {
   flex-wrap: wrap;
   gap: 9px 20px;
   color: #acb6b0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -973,7 +950,7 @@ input:focus-visible {
   border: 1px solid transparent;
   border-radius: 4px;
   color: #c3ccc7;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 610;
   line-height: 1.3;
   overflow-wrap: anywhere;
@@ -2354,13 +2331,13 @@ input:focus-visible {
   align-items: center;
   gap: 6px;
   margin: 6px 0 1px;
-  color: #adb8b1;
-  font-size: 10px;
+  color: #bac5be;
+  font-size: 12px;
 }
 
 .evidence-row-meta code {
   color: #c1cbc5;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .evidence-detail {
@@ -2369,7 +2346,7 @@ input:focus-visible {
 
 .evidence-detail .accordion-trigger {
   min-height: 33px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .evidence-detail-grid {
@@ -2386,7 +2363,7 @@ input:focus-visible {
 
 .evidence-detail-grid dt {
   color: #a3aea7;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -2394,13 +2371,13 @@ input:focus-visible {
   overflow-wrap: anywhere;
   margin: 0;
   color: #d0d8d3;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .evidence-detail-grid code {
   color: #c7d2cb;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .evidence-placeholder {
@@ -2881,16 +2858,6 @@ input:focus-visible {
     justify-items: end;
   }
 
-  .hero-meta {
-    flex-wrap: wrap;
-    margin-top: -8px;
-  }
-
-  .hero-source {
-    width: 100%;
-    margin-left: 25px;
-  }
-
   .agent-grid {
     gap: 10px;
   }
@@ -2923,6 +2890,12 @@ input:focus-visible {
 }
 
 @media (max-width: 640px) {
+  html,
+  body {
+    overflow: hidden;
+    height: 100%;
+  }
+
   .sidebar {
     display: none;
   }
@@ -2954,7 +2927,7 @@ input:focus-visible {
 
   .api-indicator {
     gap: 5px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .topbar-actions {
@@ -2967,8 +2940,12 @@ input:focus-visible {
   }
 
   .main-content {
-    min-height: calc(100vh - 55px);
-    padding: 23px 16px calc(89px + env(safe-area-inset-bottom));
+    height: calc(100dvh - 55px - var(--mobile-nav-space));
+    min-height: 0;
+    overflow-y: auto;
+    padding: 23px 16px calc(20px + var(--mobile-nav-space));
+    scroll-padding-bottom: calc(20px + var(--mobile-nav-space));
+    overscroll-behavior-y: contain;
   }
 
   .page-stack {
@@ -3014,26 +2991,12 @@ input:focus-visible {
 
   .hero-status .badge {
     max-width: 205px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .hero-certification span,
   .hero-certification strong {
-    font-size: 10px;
-  }
-
-  .hero-meta {
-    gap: 8px;
-    margin-top: -5px;
-  }
-
-  .hero-subtitle {
-    font-size: 13px;
-  }
-
-  .hero-source {
-    margin-left: 24px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .metric-grid {
@@ -3050,7 +3013,7 @@ input:focus-visible {
   }
 
   .metric-label {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .metric-value {
@@ -3071,16 +3034,36 @@ input:focus-visible {
   }
 
   .architecture-caption {
-    white-space: nowrap;
+    white-space: normal;
   }
 
   .architecture-flow {
-    margin: 15px 0;
+    margin: 12px 0;
+  }
+
+  .architecture-node {
+    min-height: 52px;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .architecture-stage--control .architecture-node {
+    min-height: 54px;
+    padding: 8px 10px;
+  }
+
+  .architecture-agent-cluster {
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .architecture-stage:not(:last-child)::after {
+    height: 7px;
   }
 
   .architecture-agent-track {
     grid-template-columns: minmax(0, 1fr);
-    gap: 5px;
+    gap: 3px;
   }
 
   .architecture-inner-arrow {
@@ -3089,16 +3072,17 @@ input:focus-visible {
   }
 
   .architecture-agent-track .architecture-node {
-    min-height: 58px;
+    min-height: 48px;
   }
 
   .architecture-node-top {
-    min-width: 125px;
+    min-width: 0;
+    flex: 0 0 145px;
     gap: 6px;
   }
 
   .architecture-kind {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .architecture-node strong {
@@ -3107,7 +3091,7 @@ input:focus-visible {
 
   .architecture-legend {
     gap: 7px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .capability-strip {
@@ -3129,7 +3113,7 @@ input:focus-visible {
   }
 
   .overview-footer-note {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .mobile-nav {
@@ -3139,10 +3123,11 @@ input:focus-visible {
     bottom: 0;
     left: 0;
     display: grid;
-    min-height: calc(61px + env(safe-area-inset-bottom));
+    height: var(--mobile-nav-space);
+    min-height: 0;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
-    padding: 5px 7px calc(5px + env(safe-area-inset-bottom));
+    padding: 5px 7px calc(5px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid #343c39;
     background: rgb(20 23 25 / 97%);
     box-shadow: 0 -4px 17px rgb(0 0 0 / 24%);
@@ -3161,7 +3146,7 @@ input:focus-visible {
     border: 0;
     border-radius: 5px;
     color: #afb9b3;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 550;
     line-height: 1.1;
     text-decoration: none;
@@ -3295,7 +3280,7 @@ input:focus-visible {
   }
 
   .result-section-heading .badge {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .validation-metrics {
@@ -3330,7 +3315,7 @@ input:focus-visible {
 
   .comparison-label,
   .comparison-value {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .comparison-track {
@@ -3427,7 +3412,7 @@ input:focus-visible {
 
   .filter-tab {
     padding: 0 4px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .evidence-columns {

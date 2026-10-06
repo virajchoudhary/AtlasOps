@@ -1,4 +1,4 @@
-import { ArrowUpRight, CheckCircle2, GitBranch, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, ShieldCheck, UsersRound, Wrench } from "lucide-react";
 import { motion } from "motion/react";
 import { ArchitectureDiagram } from "../components/ArchitectureDiagram";
 import { MetricTile } from "../components/MetricTile";
@@ -27,13 +27,7 @@ export function OverviewPage({ catalog }: CatalogPageProps) {
             </div>
           }
         />
-        <div className="hero-meta">
-          <div className="hero-subtitle">
-            <span className="hero-subtitle-mark" aria-hidden="true"><GitBranch size={16} /></span>
-            <span>{displayText(product?.subtitle)}</span>
-          </div>
-          <span className="hero-source">{displayText(catalog?.source)}</span>
-        </div>
+        <p className="hero-source">{displayText(catalog?.source)}</p>
       </section>
 
       <section className="overview-metrics" aria-label="System inventory">

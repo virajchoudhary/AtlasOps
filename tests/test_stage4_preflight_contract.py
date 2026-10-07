@@ -14,7 +14,6 @@ import pytest
 
 import scripts.run_stage4_golden_incident as runner
 
-
 MAIN_SHA = "a" * 40
 OTHER_SHA = "b" * 40
 SECRET_FILES = {
@@ -454,7 +453,10 @@ def test_new_chaos_after_reservation_releases_marker_before_apply(
             "experiment_id": experiment_id,
             "state": runner.ATTEMPT_STATE_RESERVED,
             "reservation_token": "synthetic-reservation-token",
-            "protocol_profile": {"model": {"name": selected_model}},
+            "protocol_profile": {
+                "model": {"name": selected_model},
+                "protocol_marker": runner.G4_PLATFORM_HARDENING_MARKER,
+            },
             "protocol_fingerprint": "synthetic-protocol-fingerprint",
             "main_sha": main_sha,
         }
@@ -507,7 +509,10 @@ def test_final_chaos_read_after_source_check_blocks_apply(
             "experiment_id": experiment_id,
             "state": runner.ATTEMPT_STATE_RESERVED,
             "reservation_token": "synthetic-reservation-token",
-            "protocol_profile": {"model": {"name": runner.SELECTED_STAGE4_AGENT_MODEL}},
+            "protocol_profile": {
+                "model": {"name": runner.SELECTED_STAGE4_AGENT_MODEL},
+                "protocol_marker": runner.G4_PLATFORM_HARDENING_MARKER,
+            },
             "protocol_fingerprint": "synthetic-protocol-fingerprint",
             "main_sha": MAIN_SHA,
         }

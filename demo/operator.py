@@ -13,14 +13,14 @@ import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from agents.tool_policy import AGENT_EXPOSED_TOOLS, CLUSTER_MUTATING_TOOLS
+from config.g4_launch_authority import LOCAL_OPERATOR_AUTHORITY
 from demo.incident_monitor import _object, _safe_file, read_incident
-
-LOCAL_OPERATOR_AUTHORITY = Path(r"C:\AtlasOps\.codex-tmp\website-launch-claims")
 
 
 class OperatorConfig(BaseModel):
@@ -34,6 +34,7 @@ class OperatorConfig(BaseModel):
     attempt_ledger_inventory_sha256: str
     source_sha: str
     protocol_fingerprint: str
+    protocol_profile: Literal["historical", "website-demo-candidate"] = "historical"
     experiment_id: str
     approved_by: str
 
@@ -107,11 +108,11 @@ class OperatorRun:
     def readiness(self) -> dict:
         """No cluster, inference, reservation, or resource writes in this precheck."""
         from config.g4_protocol import (
-            APPROVED_G4_PROTOCOL_PROFILE,
             agent_prompt_hashes,
             causal_evidence_policy_profile,
             protocol_fingerprint,
         )
+        from config.g4_protocol_selection import declared_profile
         from scripts.run_stage4_golden_incident import (
             MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
             _claimed_attempts_for_protocol_fingerprint,
@@ -121,8 +122,13 @@ class OperatorRun:
         if self._capture.exists():
             blockers.append("capture_already_exists")
         used = None
-        profile = APPROVED_G4_PROTOCOL_PROFILE
+        profile = declared_profile(self.config.protocol_profile)
         fingerprint = protocol_fingerprint(profile)
+        attempt_limit = (
+            profile["website_demo"]["maximum_website_launches"]
+            if self.config.protocol_profile == "website-demo-candidate"
+            else MAX_ATTEMPTS_PER_PROTOCOL_MARKER
+        )
         try:
             if Path(__file__).resolve().parents[1] != self.config.checkout.resolve():
                 blockers.append("operator_source_mismatch")
@@ -140,7 +146,12 @@ class OperatorRun:
                 blockers.append("protocol_fingerprint_mismatch")
             if agent_prompt_hashes() != profile["agent_prompt_sha256"]:
                 blockers.append("prompt_profile_mismatch")
-            if causal_evidence_policy_profile() != profile["causal_evidence_policy"]:
+            if self.config.protocol_profile == "website-demo-candidate":
+                from config.g4_demo_candidate import inspect_candidate
+
+                if inspect_candidate()["status"] != "PREPARED":
+                    blockers.append("candidate_source_profile_mismatch")
+            elif causal_evidence_policy_profile() != profile["causal_evidence_policy"]:
                 blockers.append("causal_source_profile_mismatch")
             used = _claimed_attempts_for_protocol_fingerprint(
                 fingerprint, str(self.config.checkout),
@@ -178,7 +189,7 @@ class OperatorRun:
                 ).encode()).hexdigest()
                 if inventory_digest != self.config.attempt_ledger_inventory_sha256:
                     blockers.append("preserved_ledger_inventory_mismatch")
-            if used >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
+            if used >= attempt_limit:
                 blockers.append("protocol_attempt_budget_exhausted")
             evidence = self.config.checkout / "artifacts/evidence/stage4"
             if any((evidence / suffix).exists() for suffix in (
@@ -203,7 +214,7 @@ class OperatorRun:
             blockers.append("server_launch_already_used")
         return {
             "can_start": not blockers, "blockers": list(dict.fromkeys(blockers)),
-            "attempts_used": used, "attempt_limit": MAX_ATTEMPTS_PER_PROTOCOL_MARKER,
+            "attempts_used": used, "attempt_limit": attempt_limit,
             "runtime_qualified": False,
         }
 
@@ -234,17 +245,23 @@ class OperatorRun:
             claim_path = LOCAL_OPERATOR_AUTHORITY / self._launch_claim
             claim_path.parent.mkdir(parents=True, exist_ok=True)
             _safe_file(LOCAL_OPERATOR_AUTHORITY, self._launch_claim, 16384)
+            launch_token = secrets.token_urlsafe(32)
             # Fixed machine authority, independent of configurable/copyable ledgers.
             _write_new(claim_path, {
                 "experiment_id": self.config.experiment_id,
                 "source_sha": self.config.source_sha,
                 "protocol_fingerprint": self.config.protocol_fingerprint,
+                "channel_path": str(self._capture / "channel.json"),
+                "launch_token_sha256": hashlib.sha256(launch_token.encode()).hexdigest(),
                 "claimed_at": datetime.now(UTC).isoformat(),
             })
             self._capture.mkdir(parents=True, exist_ok=False)
             env = os.environ.copy()
             env.update({
                 "STAGE4_APPROVED_MAIN_SHA": self.config.source_sha,
+                "ATLASOPS_STAGE4_PROTOCOL": self.config.protocol_profile,
+                "STAGE4_APPROVED_PROTOCOL_SHA256": self.config.protocol_fingerprint,
+                "ATLASOPS_STAGE4_LAUNCH_TOKEN": launch_token,
                 "STAGE4_EXPERIMENT_ID": self.config.experiment_id,
                 "ATLASOPS_STAGE4_SECRET_DIR": str(self.config.secret_dir),
                 "ATLASOPS_INFERENCE_CONFIG": str(self.config.inference_config),
@@ -410,6 +427,7 @@ class OperatorRun:
             "experiment_id": self.config.experiment_id,
             "source_sha": self.config.source_sha,
             "protocol_fingerprint": self.config.protocol_fingerprint,
+            "protocol_profile": self.config.protocol_profile,
             "scenario_id": "single_fault/sf-002", "kube_context": "kind-atlasops-local",
             "readiness": self.readiness(), "capture": capture,
             "pending": pending, "channel_error": channel_error, "events": self.events(),

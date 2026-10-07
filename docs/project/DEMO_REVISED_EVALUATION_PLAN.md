@@ -30,6 +30,23 @@ runtime qualification, a new active protocol, an available attempt, or G4 PASS.
 Activation must use an independently reviewed final execution SHA and candidate
 fingerprint, and preserve the exhausted historical declaration.
 
+The prospective selection wiring is now explicit:
+`protocol_profile: "website-demo-candidate"` in the startup-only operator config
+passes the candidate name and exact fingerprint into the owned runner.
+`config/g4_protocol_selection.py` rejects unknown selections, missing fingerprint,
+missing operator channel, and source drift before inference setup. Historical mode
+remains the default; no active configuration is changed by adding this code.
+Candidate preflight evidence and reservation use the selected marker/profile,
+while the existing verifier and thresholds are unchanged. The source pins and
+candidate fingerprint must be refreshed and independently reviewed after wiring
+changes; the basis commit above records the earlier output-contract revision,
+not a claim that later execution code is identical.
+The candidate runner also verifies the fixed website launch claim's experiment,
+source, fingerprint, channel path and per-launch token, then exclusively consumes
+it before model initialization. A direct CLI invocation without that claim fails.
+Candidate reservation is capped at one; the historical profile retains its
+unchanged two-slot limit. Authority records are not reset after startup failure.
+
 1. Independently review and freeze the corrected source through its PR and CI.
    Record the exact commit, normalized prompt/causal-source hashes, frontend tree,
    built assets, and reviewer disposition.

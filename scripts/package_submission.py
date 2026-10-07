@@ -395,6 +395,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "static/vendor/LUCIDE-LICENSE",
         "config/g4_protocol.py",
         "config/g4_demo_candidate.py",
+        "config/g4_protocol_selection.py",
+        "config/g4_launch_authority.py",
         "config/runtime.py",
         "config/scenario_catalog.py",
         "config/splits.py",

@@ -254,6 +254,18 @@ administrator filesystem deletion is outside this guarantee.
 A server restart reads the existing capture but cannot approve through a lost
 process handle; pending requests remain fail-closed and expire normally.
 
+The startup-only `protocol_profile` accepts `historical` (default) or
+`website-demo-candidate`. Candidate mode requires the candidate's exact fingerprint,
+governed operator channel, pinned source, clean accepted execution checkout and
+fresh inference qualification. It does not reset historical slots or select a
+candidate from browser input. The checked local config remains historical and
+blocked; the selector's existence is not a successful live run.
+Candidate mode requires the exact website-generated fixed-authority claim and
+per-launch token; a direct runner invocation cannot substitute an arbitrary
+channel path. The runner consumes that claim before constructing inference.
+Candidate attempt accounting permits one attempt, while historical limits stay
+unchanged.
+
 The [revised evaluation plan](DEMO_REVISED_EVALUATION_PLAN.md) records the
 remaining acceptance steps. It is prepared, not an active protocol or live
 result. The website controls have software-test coverage; a reliable successful

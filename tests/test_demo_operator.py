@@ -178,7 +178,17 @@ def test_launch_is_fixed_and_cannot_be_repeated(operator, monkeypatch):
     args, kwargs = launched[0]
     assert args[-2:] == ["-m", "scripts.run_stage4_golden_incident"]
     assert kwargs["env"]["KUBECONFIG_CONTEXT"] == "kind-atlasops-local"
+    assert kwargs["env"]["ATLASOPS_STAGE4_PROTOCOL"] == "historical"
     assert json.loads((operator._capture / "exit.json").read_text())["exit_code"] == 1
+
+
+def test_operator_config_explicit_candidate_selection_and_unknown_profile_refusal(operator):
+    revised = OperatorConfig.model_validate({
+        **operator.config.model_dump(), "protocol_profile": "website-demo-candidate",
+    })
+    assert revised.protocol_profile == "website-demo-candidate"
+    with pytest.raises(ValueError):
+        OperatorConfig.model_validate({**operator.config.model_dump(), "protocol_profile": "reset"})
 
 
 def test_activity_projects_only_metadata_from_owned_runner(operator, monkeypatch):

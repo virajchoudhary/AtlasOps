@@ -815,7 +815,13 @@ def _journal_explicit_provider_failure(
 
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
-    "diagnosis":   "Based on the tool results above, output ONLY a JSON object with keys: root_cause, confidence, evidence, recommended_fix. No prose.",
+    "diagnosis": (
+        "Based on the tool results above, output ONLY a JSON object with keys: "
+        "root_cause (non-empty text, not an object), confidence (finite number from 0 to 1), "
+        "evidence (actual tool observations), recommended_fix (list). "
+        "If observations are insufficient, report an unknown cause; no_series is not "
+        "positive metric evidence. No prose outside the JSON."
+    ),
     "remediation": (
         "Based on the actions taken above, output ONLY a JSON object with keys: "
         "outcome (resolved/unresolved/escalated), proposed_actions (list of intended tools), "
@@ -2463,6 +2469,10 @@ async def handle_incident(
                     incident_id=incident_id,
                     severity=severity,
                     action=action,
+                    operator_scope={
+                        "kube_context": os.environ.get("KUBECONFIG_CONTEXT", "").strip(),
+                        "scenario_id": str(scenario_id or alert.get("scenario_id") or ""),
+                    } if os.environ.get("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE") else None,
                 )
             except Exception:  # noqa: BLE001 - request failure must block the action
                 approval_record["decision"] = "request_failed"
@@ -2705,6 +2715,19 @@ async def handle_incident(
                 blocked_summary = (
                     "Remediation blocked / not executed — approval outcome: "
                     f"{status}. Human review required."
+                )
+            elif remediation_backend == "rl_policy" and remediation_final.get("status") == "blocked":
+                terminal = remediation_final.get("terminal_block") or {}
+                category = terminal.get("category") if isinstance(terminal, dict) else None
+                if category not in {
+                    "already_resolved", "approval_required", "invalid_action",
+                    "missing_evidence", "policy_block", "tool_unavailable",
+                }:
+                    category = "blocked"
+                blocked_status = f"policy_{category}"
+                blocked_summary = (
+                    "Policy remediation stopped / escalated — safety validation "
+                    f"blocked a decision ({category}). No recovery is claimed."
                 )
             else:
                 blocked_status = "target_mismatch"

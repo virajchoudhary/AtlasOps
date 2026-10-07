@@ -58,6 +58,7 @@ def test_exact_current_results_and_g4_chronology(client):
 @pytest.mark.parametrize("path", [
     "/api/catalog", "/inject", "/reset", "/webhook", "/approve",
     "/api/recommender/recommend",
+    "/api/rehearsal",
 ])
 def test_all_mutations_are_rejected(client, method, path):
     response = getattr(client, method)(path)
@@ -103,13 +104,15 @@ def test_fresh_import_never_imports_execution_modules():
 
     result = subprocess.run(
         [sys.executable, "-B", "-c",
-         "import sys; from demo.read_api import create_app; "
+         ("import sys; from demo.read_api import create_app; "
          "from fastapi.testclient import TestClient; "
          "c=TestClient(create_app(),base_url='http://localhost',client=('127.0.0.1',50000)); "
          "assert c.get('/api/catalog').status_code==200; "
+         "assert c.get('/api/rehearsal').status_code==200; "
          "assert not any(n in sys.modules for n in "
-         "('app','dashboard','agents.coordinator','agents.tools','torch','transformers','kubernetes')); "
-         "print('NO_EXECUTION_IMPORTS')"],
+         "('app','dashboard','agents.coordinator','agents.approval','agents.tools',"
+         "'torch','transformers','kubernetes')); "
+         "print('NO_EXECUTION_IMPORTS')")],
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stderr
@@ -126,3 +129,35 @@ def test_built_assets_and_index_are_served_without_execution(tmp_path):
     assert client.get("/").text == "<title>AtlasOps</title>"
     assert client.get("/assets/test.js").status_code == 200
     assert client.get("/health").json()["frontend_built"] is True
+
+
+def test_rehearsal_is_synthetic_and_uses_frozen_scenario_and_role_policy(client):
+    from agents.approval import approval_mode_for_severity
+    from agents.tool_policy import ROLE_ALLOWED_TOOLS
+    from config.scenario_catalog import SCENARIO_CATALOG
+
+    response = client.get("/api/rehearsal")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["classification"] == "SYNTHETIC / NON-LIVE / NON-EMPIRICAL"
+    assert data["agent_output"] == "Scripted fixtures, not model inference"
+    assert len(data["scenarios"]) == 2
+    for scenario in data["scenarios"]:
+        metadata = SCENARIO_CATALOG[scenario["id"]]
+        assert scenario["sha256"] == metadata.manifest_sha256
+        assert scenario["service"] in metadata.target_services
+        assert scenario["alert"] == metadata.expected_alert
+        assert scenario["approval_mode"] == approval_mode_for_severity(scenario["severity"])
+        assert scenario["proposal"]["tool"] in ROLE_ALLOWED_TOOLS["remediation"]
+
+
+def test_rehearsal_fails_closed_on_manifest_drift(monkeypatch, tmp_path):
+    import demo.rehearsal as module
+
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(module, "_p1_approval_mode", lambda: "approve")
+    manifest = tmp_path / "bench/chaos_manifests/single_fault/sf-002.yaml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("changed", encoding="utf-8")
+    with pytest.raises(ValueError, match="frozen catalog"):
+        module.rehearsal_catalog()

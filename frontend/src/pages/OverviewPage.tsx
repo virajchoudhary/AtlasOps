@@ -1,4 +1,5 @@
-import { ArrowUpRight, CheckCircle2, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Play, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import { ArchitectureDiagram } from "../components/ArchitectureDiagram";
 import { MetricTile } from "../components/MetricTile";
@@ -19,6 +20,9 @@ export function OverviewPage({ catalog }: CatalogPageProps) {
           description={displayText(product?.description)}
           actions={
             <div className="hero-status">
+              <Link to="/demo" className="button button--primary button--md">
+                <Play size={16} aria-hidden="true" /> Open workflow rehearsal
+              </Link>
               <Badge tone="mint"><span className="badge-dot" /> Read-only research demo</Badge>
               <div className="hero-certification">
                 <span>Scientific certification</span>

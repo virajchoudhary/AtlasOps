@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MoreHorizontal,
   Network,
+  Play,
   RefreshCw,
   ShieldCheck,
   UsersRound,
@@ -25,10 +26,12 @@ import { ModelsPage } from "../../pages/ModelsPage";
 import { OverviewPage } from "../../pages/OverviewPage";
 import { RunbooksPage } from "../../pages/RunbooksPage";
 import { SystemPage } from "../../pages/SystemPage";
+import { DemoPage } from "../../pages/DemoPage";
 import { Button } from "../ui/button";
 
 const navigation = [
   { to: "/", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
+  { to: "/demo", label: "Rehearsal", icon: Play, group: "Workspace" },
   { to: "/agents", label: "Agents", icon: UsersRound, group: "Workspace" },
   { to: "/models", label: "Models", icon: GitBranch, group: "Workspace" },
   { to: "/evaluations", label: "Evaluations", icon: ChartNoAxesColumnIncreasing, group: "Workspace" },
@@ -38,7 +41,7 @@ const navigation = [
   { to: "/system", label: "System", icon: ShieldCheck, group: "Reference" },
 ];
 
-const mainMobileRoutes = new Set(["/", "/agents", "/evaluations", "/evidence"]);
+const mainMobileRoutes = new Set(["/", "/demo", "/evaluations", "/evidence"]);
 const pageHeadings = new Map(navigation.map((item) => [item.to, item.label]));
 
 function ShellContent({
@@ -127,8 +130,8 @@ function ShellContent({
           <div className="sidebar-foot">
             <div className="sidebar-foot-icon" aria-hidden="true"><ShieldCheck size={17} /></div>
             <div>
-              <strong>Read-only demo</strong>
-              <span>Local evidence snapshot</span>
+              <strong>{catalog?.product?.operator_enabled ? "Governed operator" : "Read-only demo"}</strong>
+              <span>{catalog?.product?.operator_enabled ? "Exact-action approval" : "Local evidence snapshot"}</span>
             </div>
           </div>
         </aside>
@@ -171,6 +174,7 @@ function ShellContent({
               >
                 <Routes location={location}>
                   <Route path="/" element={<OverviewPage {...pageProps} />} />
+                  <Route path="/demo" element={<DemoPage />} />
                   <Route path="/agents" element={<AgentsPage {...pageProps} />} />
                   <Route path="/models" element={<ModelsPage {...pageProps} />} />
                   <Route path="/evaluations" element={<EvaluationsPage {...pageProps} />} />

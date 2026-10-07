@@ -378,7 +378,11 @@ def test_direct_action_policy_returns_raw_completion_and_strips_untrusted_state(
 
     asyncio.run(run())
     rows = _rows(rig.journal)
-    assert rows[0]["requested_request"]["tools"] == tool_schemas
+    assert "tools" not in rows[0]["requested_request"]
+    system = rows[0]["requested_request"]["messages"][0]["content"]
+    assert "Canonical remediation prompt." not in system
+    assert "Runtime action schemas" in system
+    assert json.dumps(tool_schemas, sort_keys=True, ensure_ascii=False) in system
     user_state = json.loads(rows[0]["requested_request"]["messages"][1]["content"])
     assert user_state["instruction"] == integrated.ACTION_INSTRUCTION
     assert "_runtime_control" not in user_state

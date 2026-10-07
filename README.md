@@ -55,7 +55,7 @@ continuation deployment or current team results.
 | SFT v17 | Real QLoRA adapter from 68 synthetic Train-only rows; 9 optimizer steps; fresh-process reload passed | Reloadable bounded artifact. This does not establish incident improvement. |
 | Controlled GRPO pilot | Two optimizer steps; four completions; all malformed or blocked with reward -1; both advantage groups zero | No reward-driven GRPO learning established. No acceptable SFT+GRPO checkpoint. |
 | Final aligned G9 diagnostic | 0/8 admissible actions; zero optimizer steps; all 392 LoRA tensor hashes unchanged | Negative under the tested parser contract. Zero of eight does not prove the population probability is exactly zero. |
-| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 completed negative | G4 remains NOT_PASSED. No attempt 018 exists. |
+| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 and 018 completed negative | G4 remains NOT_PASSED. Attempt 018 is preserved externally; recovery failed and later cleanup verified zero Chaos. |
 | Certification | NOT_CERTIFIED | No full-pipeline scientific or deployment certification is claimed. |
 
 The [Base-vs-SFT result](docs/project/BASE_SFT_VALIDATION_RESULT_V1.md) includes
@@ -105,6 +105,19 @@ or execute remediation. Its status view is a repository snapshot, not live servi
 health. The demo API is separate from the operational application and allows only
 GET/HEAD requests. See the [Stage 14 demo contract](docs/project/STAGE_14_DEPLOY_FINAL_DEMO.md)
 and [component sources](frontend/THIRD_PARTY_NOTICES.md).
+
+Open **Rehearsal** for an interactive scripted incident walkthrough. It pauses for a
+simulated P1 decision and demonstrates recovery, rejected/expired approval, and failed
+verification. Every output is SYNTHETIC / NON-LIVE / NON-EMPIRICAL, not agent inference
+or live incident proof. The [presentation runbook](docs/project/DEMO_RUNBOOK.md) gives
+the click path and restart command.
+
+An opt-in local operator mode adds a fixed governed-run launcher, live agent activity
+metadata, exact-action approval controls and separate verifier/cleanup results.
+It preserves the default read-only mode and rejects dirty source, mismatched profiles,
+missing preserved ledger records and exhausted attempt budgets. The current protocol
+has used 2/2 slots; the [revised evaluation plan](docs/project/DEMO_REVISED_EVALUATION_PLAN.md)
+is prepared but not executed. This software does not establish a successful live demo.
 
 For frontend development, run the Python launcher on port `7862` and
 `npm run dev --prefix frontend` in a second terminal. Vite proxies only the

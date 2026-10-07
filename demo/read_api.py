@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import ast
 import ipaddress
+import os
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from agents.tool_policy import ADMIN_OR_UNEXPOSED_TOOLS, ROLE_ALLOWED_TOOLS
 from config.scenario_catalog import SCENARIO_CATALOG
+from demo.incident_monitor import read_incident
+from demo.live_status import observe_services
+from demo.rehearsal import rehearsal_catalog
 from ui_read_model import ROOT, attempt_detail, catalog
 
 
@@ -171,7 +177,14 @@ def evidence_browser(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def create_app(frontend_dist: Path | None = None) -> FastAPI:
+def create_app(
+    frontend_dist: Path | None = None,
+    *,
+    incident_capture_root: Path | None = None,
+    incident_id: str = "EXP-STAGE4-SF002-018",
+    incident_capture: str = "golden",
+    operator=None,
+) -> FastAPI:
     """Build a separate application, never mount the operational app."""
     application = FastAPI(
         title="AtlasOps read-only research demo",
@@ -184,7 +197,19 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
         peer = request.client.host if request.client else ""
         if not is_loopback_host(peer) or not is_loopback_host(request.url.hostname or ""):
             return JSONResponse({"detail": "Loopback host required"}, status_code=403)
-        if request.method not in {"GET", "HEAD"}:
+        operator_command = (
+            operator is not None and request.method == "POST"
+            and request.url.path in {"/api/operator/start", "/api/operator/decision"}
+        )
+        if request.url.path.startswith("/api/operator") and operator is not None:
+            origin = request.headers.get("origin")
+            if (
+                (origin is not None and origin != str(request.base_url).rstrip("/"))
+                or request.headers.get("sec-fetch-site") in {"cross-site", "same-site"}
+                or (operator_command and origin is None)
+            ):
+                return JSONResponse({"detail": "Same-origin operator access required"}, status_code=403)
+        if request.method not in {"GET", "HEAD"} and not operator_command:
             return JSONResponse(
                 {"detail": "Read-only presentation; no execution endpoints"},
                 status_code=405, headers={"Allow": "GET, HEAD"},
@@ -202,7 +227,10 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
 
     @application.get("/health")
     def health():
-        return {"status": "ok", "mode": "read-only", "frontend_built": (dist / "index.html").is_file()}
+        return {
+            "status": "ok", "mode": "operator" if operator is not None else "read-only",
+            "frontend_built": (dist / "index.html").is_file(),
+        }
 
     @application.get("/api/catalog")
     def read_catalog():
@@ -211,7 +239,19 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
             {**gate, "name": gate["name"].replace("GAI + RL", "agent system")}
             for gate in snapshot["gates"]
         ]
-        return {**snapshot, "product": product(), "evidence_browser": evidence_browser(snapshot)}
+        metadata = product()
+        if operator is not None:
+            metadata["boundaries"] = [
+                item for item in metadata["boundaries"]
+                if item["id"] in {"localhost", "share"}
+            ]
+            metadata["operator_enabled"] = True
+            for agent in metadata["agents"]:
+                if agent["id"] == "remediation":
+                    agent["governance_boundary"] = (
+                        "Role ACL and fail-closed exact-action P1 approval through the owned runner."
+                    )
+        return {**snapshot, "product": metadata, "evidence_browser": evidence_browser(snapshot)}
 
     @application.get("/api/attempts/{name}")
     def read_attempt(name: str):
@@ -219,6 +259,77 @@ def create_app(frontend_dist: Path | None = None) -> FastAPI:
             return attempt_detail(name)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Attempt not found") from exc
+
+    @application.get("/api/rehearsal")
+    def read_rehearsal():
+        try:
+            return rehearsal_catalog()
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Rehearsal fixtures unavailable") from exc
+
+    @application.get("/api/live-status")
+    def read_live_status():
+        if os.environ.get("ATLASOPS_DEMO_LIVE_OBSERVATIONS") != "1":
+            return {"enabled": False, "services": [], "observed_at": None}
+        return observe_services()
+
+    @application.get("/api/incident-monitor")
+    def incident_monitor():
+        if incident_capture_root is None:
+            return {"enabled": False}
+        try:
+            return read_incident(incident_capture_root, incident_id, incident_capture)
+        except (OSError, ValueError, TypeError, KeyError):
+            return JSONResponse(
+                {"enabled": True, "available": False, "status": "CAPTURE_UNAVAILABLE"},
+                status_code=503,
+            )
+
+    @application.get("/api/operator")
+    def operator_status():
+        if operator is None:
+            return {"enabled": False}
+        try:
+            return operator.snapshot()
+        except (OSError, ValueError, RuntimeError, TypeError, KeyError):
+            return JSONResponse({"detail": "Operator status unavailable"}, status_code=503)
+
+    if operator is not None:
+        from pydantic import BaseModel, ConfigDict, Field
+
+        class Decision(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            token: str = Field(min_length=1, max_length=120)
+            action_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+            decision: str = Field(pattern=r"^(approved|rejected)$")
+
+        async def command(request: Request):
+            try:
+                csrf = request.headers.get("X-AtlasOps-Operator", "")
+                operator.authenticate(csrf)
+                if request.url.path.endswith("/start"):
+                    if await request.body() not in {b"", b"{}"}:
+                        raise ValueError("Launch accepts no browser-supplied configuration")
+                    return await run_in_threadpool(operator.start, csrf)
+                if len(await request.body()) > 2048:
+                    raise ValueError("Decision exceeds bound")
+                decision = Decision.model_validate(await request.json())
+                return await run_in_threadpool(
+                    operator.decide, csrf, decision.token, decision.action_digest, decision.decision,
+                )
+            except PermissionError:
+                return JSONResponse({"detail": "Invalid operator session"}, status_code=403)
+            except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+                return JSONResponse(
+                    {"detail": "Governed operation blocked; refresh status before proceeding"},
+                    status_code=409,
+                )
+            except httpx.HTTPError:
+                # Never return credential-bearing transport errors to the browser.
+                return JSONResponse({"detail": "Operator transport unavailable"}, status_code=503)
+
+        application.add_api_route("/api/operator/start", command, methods=["POST"])
+        application.add_api_route("/api/operator/decision", command, methods=["POST"])
 
     if (dist / "assets").is_dir():
         application.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")

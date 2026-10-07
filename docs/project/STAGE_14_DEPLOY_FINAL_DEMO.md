@@ -55,6 +55,34 @@ twenty-four autonomous permissions: the existing role ACL exposes nineteen.
 
 The demo can be presented without Docker, Kind, a model endpoint, or a GPU. It is a local evidence presentation, not a live incident replay.
 
+## Interactive Rehearsal
+
+The **Rehearsal** route adds a scripted, browser-local walkthrough of alert, Triage,
+Diagnosis, P1 approval, Remediation, objective verification, and Comms. It is always
+labelled **SYNTHETIC / NON-LIVE / NON-EMPIRICAL**. The read-only
+`GET /api/rehearsal` supplies two fixtures using frozen scenario metadata, LF-normalized
+manifest hashes, actual checkout-byte hashes, and the existing approval policy/role ACL.
+It imports no operational tool implementations. The numeric observations and agent
+outputs are presentation fixtures, not measured telemetry or model completions.
+
+Playback pauses for an explicit simulated decision. Rejection and timeout skip
+remediation and verification. An approved fixture action does not determine resolution:
+the selected simulated verifier observation determines recovered versus unresolved.
+The browser can inspect past stages, reset, and download a labelled rehearsal transcript.
+No rehearsal state is written to the backend or research evidence.
+See [the presentation runbook](DEMO_RUNBOOK.md).
+
+### Prospective Website Operator
+
+The opt-in `--operator-config` mode adds one fixed SF002 launch and authenticated
+exact-action decisions through the owned runner's same-process gate. The default
+presentation remains GET/HEAD-only. Activity is allowlisted role/phase/tool metadata,
+not model thoughts. Verifier outcome and cleanup stay separate.
+The current historical protocol remains exhausted at 2/2; corrected source/profile
+and preserved-ledger mismatches block the Start button. Software tests do not close
+G4. See [the revised evaluation plan](DEMO_REVISED_EVALUATION_PLAN.md) before any
+prospective empirical execution.
+
 ## Evidence Boundary
 
 - The overview and gate table are repository snapshots; they are not live environment observations.

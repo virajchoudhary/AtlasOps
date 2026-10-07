@@ -164,10 +164,29 @@ def stage4_approval_app(api_key: str) -> FastAPI:
     async def approval_pending() -> JSONResponse:
         return JSONResponse({"pending": approval_gate.pending()})
 
+    async def operator_events() -> JSONResponse:
+        from agents.stream import get_history
+        from agents.tool_policy import AGENT_EXPOSED_TOOLS
+
+        # Narration can contain prompt/credential data; expose activity metadata only.
+        return JSONResponse({"events": [
+            {"ts": event["ts"], "role": event["role"], "phase": event["phase"],
+             "tool": event["tool"] if event["tool"] in AGENT_EXPOSED_TOOLS else None}
+            for event in get_history()
+            if event["role"] in {"triage", "diagnosis", "remediation", "comms"}
+            and event["phase"] in {
+                "thinking", "tool_call", "tool_result", "waiting_approval", "conclusion",
+            }
+        ]})
+
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_api_route("/approve", approve, methods=["POST"], dependencies=[Security(require_operator)])
     app.add_api_route(
         "/approval/pending", approval_pending, methods=["GET"],
+        dependencies=[Security(require_operator)],
+    )
+    app.add_api_route(
+        "/operator/events", operator_events, methods=["GET"],
         dependencies=[Security(require_operator)],
     )
     return app
@@ -2130,6 +2149,8 @@ def _handle_post_t0_interruption(
 
 async def main() -> dict[str, Any]:
     global _QUALIFIED_COMPLETION_PROVIDER, _QUALIFIED_MODEL_IDENTITY, _INFERENCE_QUALIFICATION
+    if os.environ.get("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE"):
+        _current_main_sha(expected_sha=_approved_main_sha())
     from scripts.qualify_integrated_inference import engine_from_environment, qualify_engine
 
     engine = engine_from_environment()
@@ -2182,6 +2203,19 @@ async def _main_with_qualified_inference() -> dict[str, Any]:
     try:
         async with stage4_approval_server(secrets["ATLASOPS_API_KEY"]) as base_url:
             os.environ["ATLASOPS_PUBLIC_BASE_URL"] = base_url
+            channel_path = os.environ.get("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE")
+            if channel_path:
+                channel = Path(channel_path)
+                if not channel.is_absolute() or Path(REPO_ROOT).resolve() in channel.resolve().parents:
+                    raise RuntimeError("Operator channel must be an absolute path outside the checkout")
+                with channel.open("x", encoding="utf-8") as stream:
+                    json.dump({
+                        "pid": os.getpid(), "url": base_url,
+                        "experiment_id": os.environ.get("STAGE4_EXPERIMENT_ID"),
+                        "source_sha": _approved_main_sha(),
+                    }, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
             print(f" Stage 4 host approval endpoint: {base_url}/approval/pending")
             print(
                 " Operator access requires X-AtlasOps-Key; only this host process "
@@ -2599,7 +2633,10 @@ async def _run_experiment() -> dict[str, Any]:
                 "scenario_id": SCENARIO_ID,
             },
         )
-        from bench.integrated_inference import DirectActionCompletionPolicy, EFFECTIVE_GENERATION_CONFIG
+        from bench.integrated_inference import (
+            EFFECTIVE_GENERATION_CONFIG,
+            DirectActionCompletionPolicy,
+        )
 
         incident_result = await handle_incident(
             alert_payload, incident_id=incident_id, scenario_id=SCENARIO_ID,

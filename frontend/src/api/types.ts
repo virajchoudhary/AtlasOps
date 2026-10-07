@@ -165,6 +165,7 @@ export interface ProductBoundary {
 }
 
 export interface Product {
+  operator_enabled?: boolean;
   name: string;
   subtitle: string;
   description: string;

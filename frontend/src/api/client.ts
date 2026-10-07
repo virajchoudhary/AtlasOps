@@ -1,4 +1,5 @@
 import type { AttemptDetail, Catalog } from "./types";
+import type { RehearsalCatalog } from "../demo/workflow";
 
 async function readJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
@@ -19,4 +20,8 @@ export function fetchCatalog(signal?: AbortSignal): Promise<Catalog> {
 
 export function fetchAttempt(name: string, signal?: AbortSignal): Promise<AttemptDetail> {
   return readJson<AttemptDetail>(`/api/attempts/${encodeURIComponent(name)}`, signal);
+}
+
+export function fetchRehearsal(signal?: AbortSignal): Promise<RehearsalCatalog> {
+  return readJson<RehearsalCatalog>("/api/rehearsal", signal);
 }

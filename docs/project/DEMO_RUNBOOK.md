@@ -246,8 +246,11 @@ Private settings stay server-side. The runner rechecks its own full admission
 before reservation or injection. One server instance starts at most one run,
 and an existing capture prevents relaunch after restart. No reset/stop endpoint
 terminates a live run or substitutes harness cleanup for recovery.
-An atomic, never-released website launch claim beside the preserved ledger limits
-this evaluation to one website launch per protocol across execution checkouts.
+An atomic, never-released website launch claim in the fixed
+`C:\AtlasOps\.codex-tmp\website-launch-claims` authority limits this evaluation to
+one website launch per protocol across execution checkouts and ledger copies.
+The startup config and browser cannot select/reset this authority. Local
+administrator filesystem deletion is outside this guarantee.
 A server restart reads the existing capture but cannot approve through a lost
 process handle; pending requests remain fail-closed and expire normally.
 

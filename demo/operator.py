@@ -20,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from agents.tool_policy import AGENT_EXPOSED_TOOLS, CLUSTER_MUTATING_TOOLS
 from demo.incident_monitor import _object, _safe_file, read_incident
 
+LOCAL_OPERATOR_AUTHORITY = Path(r"C:\AtlasOps\.codex-tmp\website-launch-claims")
+
 
 class OperatorConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -89,7 +91,7 @@ class OperatorRun:
         self._process: subprocess.Popen | None = None
         self._capture = config.capture_root / "operator"
         self._launched = self._capture.exists()
-        self._launch_claim = f"artifacts/evidence/stage4/.website-launches/{config.protocol_fingerprint}.json"
+        self._launch_claim = f"{config.protocol_fingerprint}.json"
         self._worker: threading.Thread | None = None
         self._capture_error = False
         self._start_event = threading.Event()
@@ -185,7 +187,9 @@ class OperatorRun:
                 ".poisoned-environment.json",
             )):
                 blockers.append("attempt_exists_or_environment_poisoned")
-            if _safe_file(self.config.attempt_ledger_root, self._launch_claim, 16384) is not None:
+            if not LOCAL_OPERATOR_AUTHORITY.is_absolute():
+                blockers.append("local_operator_authority_unavailable")
+            elif _safe_file(LOCAL_OPERATOR_AUTHORITY, self._launch_claim, 16384) is not None:
                 blockers.append("protocol_website_launch_already_claimed")
             for path in (self.config.inference_config, self.config.secret_dir / "atlasops-api-key.secret"):
                 # Inspect only bounded regular-file metadata here, not secret values.
@@ -225,9 +229,12 @@ class OperatorRun:
             remote = self._git("ls-remote", "--exit-code", "origin", "refs/heads/main")
             if remote.split() != [self.config.source_sha, "refs/heads/main"]:
                 raise ValueError("Remote source freshness mismatch")
-            claim_path = self.config.attempt_ledger_root / self._launch_claim
+            if not LOCAL_OPERATOR_AUTHORITY.is_absolute():
+                raise ValueError("Local operator authority unavailable")
+            claim_path = LOCAL_OPERATOR_AUTHORITY / self._launch_claim
             claim_path.parent.mkdir(parents=True, exist_ok=True)
-            # This single-launch claim is never released, including on failure.
+            _safe_file(LOCAL_OPERATOR_AUTHORITY, self._launch_claim, 16384)
+            # Fixed machine authority, independent of configurable/copyable ledgers.
             _write_new(claim_path, {
                 "experiment_id": self.config.experiment_id,
                 "source_sha": self.config.source_sha,

@@ -40,9 +40,12 @@ attempt budget, or preapprove a model's future exact remediation proposal.
 - One prospective incident attempt, at most 3600 seconds. No automatic incident
   retry, parser widening after seeing output, model replay, or post-failure
   protocol adjustment in this evaluation.
-- An atomic, never-released website launch claim is kept beside the independent
-  preserved ledger for this protocol. Even a preflight/process failure consumes
+- An atomic, never-released website launch claim is kept in the fixed local
+  `C:\AtlasOps\.codex-tmp\website-launch-claims` authority, not configurable ledger
+  storage. Even a preflight/process failure consumes
   that website launch; changing execution checkout or capture path cannot retry it.
+  There is no UI/config reset operation. This is not protection against an
+  administrator deleting local files; such deletion is outside authorized operation.
 - The website launches the fixed SF002 runner only, after admission. The runner
   qualifies, reserves durably, injects the frozen paymentservice StressChaos,
   and verifies real degradation before triggering the agents.

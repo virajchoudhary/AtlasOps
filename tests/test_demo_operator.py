@@ -13,7 +13,8 @@ from demo.read_api import create_app
 
 
 @pytest.fixture
-def operator(tmp_path):
+def operator(tmp_path, monkeypatch):
+    monkeypatch.setattr("demo.operator.LOCAL_OPERATOR_AUTHORITY", tmp_path / "authority")
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     secret_dir = tmp_path / "private"
@@ -261,6 +262,7 @@ def test_persistent_website_claim_blocks_another_checkout_even_if_capture_change
     operator._worker.join(timeout=5)
     other = OperatorRun(OperatorConfig.model_validate({
         **operator.config.model_dump(), "capture_root": operator.config.capture_root.parent / "other",
+        "attempt_ledger_root": operator.config.attempt_ledger_root.parent / "copied-ledger",
     }))
     monkeypatch.setattr(other, "readiness", lambda: {"can_start": True, "blockers": []})
     monkeypatch.setattr(other, "_git", lambda *args: "a" * 40 + "\trefs/heads/main")

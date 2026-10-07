@@ -36,7 +36,7 @@ def test_startup_failure_is_not_an_incident_result_and_secrets_are_not_exposed(t
         "qualification": {"status": "NOT_QUALIFIED", "failure_category": "bridge_transport_failure",
                           "key": "do-not-expose", "url": "https://private.example"},
     })
-    (tmp_path / "golden/stdout.log").write_text("password=do-not-expose", encoding="utf-8")
+    (tmp_path / "golden/stdout.log").write_text("sensitive-fixture=do-not-expose", encoding="utf-8")
     result = read_incident(tmp_path, EXPERIMENT)
     assert result["status"] == "STARTUP_FAILED / NOT_RESERVED"
     assert result["reserved"] is False
@@ -94,7 +94,7 @@ def test_terminal_policy_block_is_projected_without_raw_reason(tmp_path, categor
     write(tmp_path, f"execution-v3b/artifacts/evidence/stage4/{EXPERIMENT}.json", {
         "experiment_id": EXPERIMENT, "gate_g4_pass": False,
         "phases": {"coordinator_execution": {"model_proposed_action": {
-            "terminal_block": {"category": category, "reason": "password=private-secret"},
+            "terminal_block": {"category": category, "reason": "sensitive-fixture=private-secret"},
         }}},
     })
     result = read_incident(tmp_path, EXPERIMENT, "golden-v3b")

@@ -426,3 +426,21 @@ test("an active runner with an unavailable channel never looks like an empty app
   await expect(panel.getByRole("button", { name: "Approve exact action" })).toHaveCount(0);
   await expect(panel.locator("dl div").filter({ hasText: "Environment resolved" }).locator("dd")).toHaveText("Unavailable");
 });
+
+test("operator polling clears a transient status error after a successful read", async ({ page }) => {
+  let failed = true;
+  await page.route("**/api/operator", (route) => route.fulfill(failed ? { status: 503 } : { json: {
+    enabled: true, csrf_token: "test-session", source_sha: "a".repeat(40),
+    protocol_fingerprint: "b".repeat(64), experiment_id: "EXP-STAGE4-SF002-019",
+    kube_context: "kind-atlasops-local", scenario_id: "single_fault/sf-002",
+    readiness: { can_start: false, blockers: ["protocol_attempt_budget_exhausted"],
+      attempts_used: 2, attempt_limit: 2, runtime_qualified: false },
+    pending: [], channel_error: null, events: null, capture: null,
+  } }));
+  await page.goto("/#/demo");
+  const panel = page.getByRole("region", { name: "Live incident controls" });
+  await expect(panel.getByRole("alert")).toContainText("Operator status unavailable");
+  failed = false;
+  await expect(panel).toContainText("protocol attempt budget exhausted", { timeout: 10000 });
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+});

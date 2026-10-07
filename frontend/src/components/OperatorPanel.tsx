@@ -49,7 +49,7 @@ export function OperatorPanel({ onMode }: { onMode: (enabled: boolean) => void }
         if (!response.ok) throw new Error("Operator status unavailable");
         const value = await response.json() as OperatorStatus;
         if (!controller.signal.aborted) {
-          setStatus(value); onMode(value.enabled);
+          setStatus(value); setError(""); onMode(value.enabled);
           if (value.enabled) timer = window.setTimeout(() => setRefresh((n) => n + 1), 3000);
         }
       })

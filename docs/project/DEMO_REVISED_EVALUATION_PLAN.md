@@ -17,6 +17,19 @@ attempt budget, or preapprove a model's future exact remediation proposal.
 
 ## Admission Before Any Launch
 
+`config/g4_demo_candidate.py` now contains the prepared declaration and exact
+normalized source hashes, based on code commit
+`18e3010b76c7ad4b57a1a525717b469e5b87202f`. Its read-only check is:
+
+```powershell
+& C:\AtlasOps\.venv\Scripts\python.exe -B -m config.g4_demo_candidate
+```
+
+`PREPARED` means only that these local source hashes match. It is not approval,
+runtime qualification, a new active protocol, an available attempt, or G4 PASS.
+Activation must use an independently reviewed final execution SHA and candidate
+fingerprint, and preserve the exhausted historical declaration.
+
 1. Independently review and freeze the corrected source through its PR and CI.
    Record the exact commit, normalized prompt/causal-source hashes, frontend tree,
    built assets, and reviewer disposition.

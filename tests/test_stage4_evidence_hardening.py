@@ -92,11 +92,14 @@ def isolated_protocol_runtime(monkeypatch, tmp_path):
             relative_path = pathlib.Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
+        if relative_path == APPROVED_G4_PROTOCOL_PROFILE["diagnosis_prompt"]["path"]:
+            return APPROVED_G4_PROTOCOL_PROFILE["diagnosis_prompt"]["sha256"]
         if relative_path in APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256:
             return APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
-    # These lifecycle tests model approved diagnostics identity; source drift is tested separately.
+    # These lifecycle tests model the frozen profile boundary; source drift is
+    # tested separately.
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,

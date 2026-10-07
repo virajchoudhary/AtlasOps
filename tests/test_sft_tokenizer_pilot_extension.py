@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from training import sft_tokenizer_preflight as preflight
 from training import sft_candidate_compatibility as candidate_compatibility
+from training import sft_tokenizer_preflight as preflight
 from training.sft_candidate import canonical_bytes_sha256
 from training.sft_provenance import snapshot_training_corpus
 from training.sft_rendering import TEMPLATE_PATH
@@ -38,6 +38,14 @@ _MARKER_IDS = {
 @pytest.fixture
 def frozen_historical_coordinator_source(monkeypatch):
     coordinator_path = preflight.REPO_ROOT / "agents" / "coordinator.py"
+    diagnosis_path = preflight.REPO_ROOT / "agents/prompts/diagnosis.md"
+    diagnosis_source = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/prompts/diagnosis.md"],
+        cwd=preflight.REPO_ROOT, check=True, capture_output=True,
+    ).stdout
+    assert canonical_bytes_sha256(diagnosis_source) == (
+        "26265a2007477eed58a69b80c0a1faf74a00cfc257374590dd6b96a6b7b9b7b6"
+    )
     frozen_source = subprocess.run(
         ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
         cwd=preflight.REPO_ROOT,
@@ -50,9 +58,17 @@ def frozen_historical_coordinator_source(monkeypatch):
     def read_bytes(path):
         if path.resolve() == coordinator_path.resolve():
             return frozen_source
+        if path.resolve() == diagnosis_path.resolve():
+            return diagnosis_source
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    original_read_text = Path.read_text
+    def read_text(path, *args, **kwargs):
+        if path.resolve() == diagnosis_path.resolve():
+            return diagnosis_source.decode("utf-8")
+        return original_read_text(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read_text)
 
 
 def _local_bundle(directory: Path, *, revision: str = REVISION) -> Path:

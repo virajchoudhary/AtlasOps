@@ -11,10 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from agents.approval import approval_gate
 import agents.coordinator as coordinator
-from agents._http_retry import post_with_retry
 import config.g4_protocol as protocol
+import scripts.run_stage4_golden_incident as runner
+from agents._http_retry import post_with_retry
+from agents.approval import approval_gate
 from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
@@ -24,7 +25,6 @@ from config.g4_protocol import (
     APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256,
     protocol_fingerprint,
 )
-import scripts.run_stage4_golden_incident as runner
 
 
 @pytest.fixture(autouse=True)
@@ -36,11 +36,13 @@ def isolated_protocol_runtime(monkeypatch):
             relative_path = Path(path).resolve().relative_to(protocol.REPO_ROOT).as_posix()
         except ValueError:
             return original_file_sha256(path)
+        if relative_path == APPROVED_G4_PROTOCOL_PROFILE["diagnosis_prompt"]["path"]:
+            return APPROVED_G4_PROTOCOL_PROFILE["diagnosis_prompt"]["sha256"]
         if relative_path in APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256:
             return APPROVED_G4_V38_SOURCE_GUARD_SOURCE_SHA256[relative_path]
         return original_file_sha256(path)
 
-    # Reservation tests model the declared diagnostics profile, not the source tree.
+    # Lifecycle tests model the frozen profile boundary, including its prompt pin.
     monkeypatch.setattr(protocol, "file_sha256", file_sha256_with_frozen_sources)
     monkeypatch.setattr(
         runner,

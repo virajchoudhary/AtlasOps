@@ -628,6 +628,8 @@ async def test_handle_incident_preserves_context_and_blocks_unsubstantiated_targ
     assert [role for role, _ in calls] == ["triage", "diagnosis"]
     assert result["remediation"]["final"]["status"] == "target_mismatch"
     assert result["remediation"]["final"]["executed_actions"] == []
+    assert result["comms"]["final"]["status"] == "target_mismatch"
+    assert "target contradicted" in result["comms"]["final"]["summary"]
     assert result["resolved"] is False
     assert "settling" in result
     assert "scenario_id" not in json.dumps(calls[0][1])

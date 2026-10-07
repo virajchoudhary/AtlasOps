@@ -1,0 +1,104 @@
+.demo-page { max-width: 1320px; }
+.operator-panel { border-bottom: 1px solid var(--line); padding-bottom: 24px; font-size: 13px; line-height: 1.7; }
+.operator-panel h2 { display: flex; align-items: center; gap: 8px; font-size: 19px; }
+.operator-panel code, .operator-panel dd { overflow-wrap: anywhere; }
+.operator-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.operator-blockers { color: var(--amber); padding-left: 20px; }
+.operator-activity ol { padding-left: 20px; max-height: 300px; overflow-y: auto; }
+.operator-activity li { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+.incident-monitor { padding-bottom: 24px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
+.incident-monitor h2 { display: flex; align-items: center; gap: 8px; }
+.monitor-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin: 20px 0; }
+.monitor-facts dt { color: var(--muted); font-size: 12px; }
+.monitor-facts dd { margin: 4px 0 0; font-size: 15px; }
+.monitor-phases { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.monitor-phases li { display: grid; padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.monitor-phases span { font-size: 12px; color: var(--muted); }
+.monitor-actions > div { display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--line); padding: 12px 0; }
+.monitor-failure { color: var(--rose); }
+.demo-live { border-bottom: 1px solid var(--line); padding-bottom: 18px; font-size: 13px; line-height: 1.7; }
+.demo-live-rows > div { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.demo-live-rows strong { min-width: 150px; }
+.demo-live-rows span:last-child { color: var(--ink-soft); }
+.demo-boundary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0;
+  color: var(--amber); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  font-size: 13px; line-height: 1.6;
+}
+.demo-boundary svg { flex: 0 0 auto; }
+.demo-setup {
+  display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 22px 0;
+}
+.demo-field { display: grid; gap: 8px; flex: 1 1 220px; font-size: 13px; color: var(--ink-soft); }
+.demo-field select {
+  width: 100%; height: 42px; min-width: 0; border: 1px solid var(--line); border-radius: 5px;
+  padding: 0 12px; background: var(--panel); color: var(--ink); font-size: 14px;
+}
+.demo-field select:disabled { opacity: .65; }
+.demo-toolbar {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 18px;
+  padding: 20px 0; border-top: 1px solid var(--line);
+}
+.demo-toolbar h2, .demo-inspector h3 { margin: 6px 0 0; font-size: 19px; }
+.demo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.demo-stages {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 0; margin: 0 0 24px;
+  list-style: none; border-bottom: 1px solid var(--line);
+}
+.demo-stage {
+  display: grid; gap: 10px; width: 100%; height: 128px; padding: 12px 9px; text-align: left;
+  background: transparent; color: var(--ink-soft); border: 0; border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+.demo-stage:hover:not(:disabled) { background: var(--panel-hover); }
+.demo-stage:disabled { cursor: default; color: var(--dim); }
+.demo-stage.is-current { color: var(--mint); border-bottom-color: var(--mint); background: var(--mint-wash); }
+.demo-stage strong { font-size: 13px; line-height: 1.5; font-weight: 600; }
+.demo-stage small { font-size: 12px; }
+.demo-stage-number {
+  display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line);
+  border-radius: 50%; font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.demo-approval {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 20px 0; border-top: 2px solid var(--amber); border-bottom: 1px solid var(--line);
+}
+.demo-approval p { font-size: 13px; line-height: 1.6; }
+.demo-outcome { display: grid; gap: 8px; border-left: 3px solid var(--amber); padding: 16px; font-size: 14px; }
+.demo-outcome--resolved { border-color: var(--mint); color: var(--mint); }
+.demo-outcome--unresolved { border-color: var(--rose); color: var(--rose); }
+.demo-outcome--blocked { color: var(--amber); }
+.demo-inspector { display: grid; grid-template-columns: 1fr 1.2fr; gap: 28px; padding: 24px 0; }
+.demo-inspector p { font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.demo-inspector pre {
+  margin: 0; padding: 18px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 5px; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere;
+  min-width: 0; max-height: 420px; overflow-y: auto;
+}
+.demo-empty { padding: 20px 0; color: var(--muted); font-size: 14px; }
+.demo-log { border-top: 1px solid var(--line); padding-top: 20px; }
+.demo-log h2 { font-size: 18px; }
+.demo-log ol { list-style: none; padding: 0; }
+.demo-log li {
+  display: grid; grid-template-columns: 28px 150px 1fr; align-items: baseline; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; line-height: 1.7;
+}
+.demo-log li > span { color: var(--dim); font-variant-numeric: tabular-nums; }
+.demo-log li button { padding: 0; background: none; border: 0; color: var(--mint); text-align: left; cursor: pointer; }
+.demo-log li p { margin: 0; color: var(--ink-soft); }
+.demo-provenance { font-size: 12px; color: var(--muted); line-height: 1.8; overflow-wrap: anywhere; }
+@media (max-width: 1000px) {
+  .demo-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .demo-stage { height: 112px; }
+}
+@media (max-width: 600px) {
+  .monitor-facts, .monitor-phases { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .incident-monitor code { overflow-wrap: anywhere; }
+  .demo-inspector { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .demo-setup > .button { width: 100%; }
+  .demo-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .demo-stage { height: 110px; }
+  .demo-log li { grid-template-columns: 25px 1fr; gap: 8px; }
+  .demo-log li p { grid-column: 2; }
+  .demo-actions .button { min-height: 42px; }
+}

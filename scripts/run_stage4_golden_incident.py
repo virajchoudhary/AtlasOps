@@ -48,7 +48,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from config.g4_protocol import (
-    APPROVED_G4_PROTOCOL_PROFILE,
+    APPROVED_G4_PROTOCOL_PROFILE,  # noqa: F401 - retained public runner contract for test callers
     APPROVED_G4_V38_MODEL,
     G4_PROTOCOL_MARKER,
     build_integrated_protocol_profile,
@@ -58,6 +58,7 @@ from config.g4_protocol import (
     protocol_fingerprint,
     validate_runtime_protocol_profile,
 )
+from config.g4_protocol_selection import observe_selected_profile, selected_profile
 from config.runtime import resolve_stage4_agent_model
 
 # Reconfigure standard UTF-8 stream handling on Windows
@@ -164,10 +165,29 @@ def stage4_approval_app(api_key: str) -> FastAPI:
     async def approval_pending() -> JSONResponse:
         return JSONResponse({"pending": approval_gate.pending()})
 
+    async def operator_events() -> JSONResponse:
+        from agents.stream import get_history
+        from agents.tool_policy import AGENT_EXPOSED_TOOLS
+
+        # Narration can contain prompt/credential data; expose activity metadata only.
+        return JSONResponse({"events": [
+            {"ts": event["ts"], "role": event["role"], "phase": event["phase"],
+             "tool": event["tool"] if event["tool"] in AGENT_EXPOSED_TOOLS else None}
+            for event in get_history()
+            if event["role"] in {"triage", "diagnosis", "remediation", "comms"}
+            and event["phase"] in {
+                "thinking", "tool_call", "tool_result", "waiting_approval", "conclusion",
+            }
+        ]})
+
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_api_route("/approve", approve, methods=["POST"], dependencies=[Security(require_operator)])
     app.add_api_route(
         "/approval/pending", approval_pending, methods=["GET"],
+        dependencies=[Security(require_operator)],
+    )
+    app.add_api_route(
+        "/operator/events", operator_events, methods=["GET"],
         dependencies=[Security(require_operator)],
     )
     return app
@@ -287,6 +307,14 @@ CHAOS_RESOURCE_KINDS = "podchaos,networkchaos,stresschaos,dnschaos,iochaos,timec
 POISONED_ENVIRONMENT_FILENAME = ".poisoned-environment.json"
 MAX_POSTFLIGHT_CLEANUP_ATTEMPTS = 3
 POSTFLIGHT_CLEANUP_RETRY_INTERVAL_SECONDS = 2
+
+
+def _selected_protocol_marker() -> str:
+    if os.environ.get("ATLASOPS_STAGE4_PROTOCOL", "historical") == "historical":
+        return G4_PLATFORM_HARDENING_MARKER
+    return selected_profile()["protocol_marker"]
+
+
 BLOCKED_ACTION_MARKERS = (
     "blocked_by_policy",
     "blocked_by_circuit_breaker",
@@ -386,6 +414,11 @@ def _observe_protocol_profile(selected_model: str) -> dict[str, Any]:
     if _QUALIFIED_MODEL_IDENTITY is None or selected_model != APPROVED_G4_V38_MODEL["name"]:
         raise RuntimeError(
             "G4 approved protocol profile requires qualified pinned Base inference before reservation"
+        )
+    if os.environ.get("ATLASOPS_STAGE4_PROTOCOL", "historical") != "historical":
+        return observe_selected_profile(
+            model_identity=dict(_QUALIFIED_MODEL_IDENTITY),
+            metrics_observation=_probe_metrics_server_contract(),
         )
     observed = build_integrated_protocol_profile(
         model_identity=dict(_QUALIFIED_MODEL_IDENTITY),
@@ -633,6 +666,11 @@ def reserve_experiment_attempt(
     marker_path = _attempt_marker_path(experiment_id, attempt_root)
     profile = _observe_protocol_profile(selected_model)
     profile_fingerprint = protocol_fingerprint(profile)
+    attempt_limit = (
+        profile["website_demo"]["maximum_website_launches"]
+        if os.environ.get("ATLASOPS_STAGE4_PROTOCOL", "historical") != "historical"
+        else MAX_ATTEMPTS_PER_PROTOCOL_MARKER
+    )
     with _reservation_budget_lock(attempt_root):
         _validate_attempts_directory(attempts_dir)
         if os.path.lexists(poisoned_path):
@@ -643,11 +681,11 @@ def reserve_experiment_attempt(
         spent_attempts = _claimed_attempts_for_protocol_fingerprint(
             profile_fingerprint, attempt_root
         )
-        if spent_attempts >= MAX_ATTEMPTS_PER_PROTOCOL_MARKER:
+        if spent_attempts >= attempt_limit:
             raise RuntimeError(
                 "protocol attempt limit reached for "
                 f"profile {profile_fingerprint}: "
-                f"{spent_attempts}/{MAX_ATTEMPTS_PER_PROTOCOL_MARKER}"
+                f"{spent_attempts}/{attempt_limit}"
             )
         if os.path.lexists(marker_path):
             existing = _read_json_file(marker_path) or {}
@@ -666,7 +704,7 @@ def reserve_experiment_attempt(
             "state": ATTEMPT_STATE_RESERVED,
             "reserved_at": datetime.now(UTC).isoformat(),
             "reservation_token": uuid.uuid4().hex,
-            "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+            "protocol_marker": profile["protocol_marker"],
             "protocol_profile": profile,
             "protocol_fingerprint": profile_fingerprint,
             "main_sha": main_sha,
@@ -819,7 +857,7 @@ def stage4_evidence_metadata() -> dict[str, Any]:
     return {
         "model": SELECTED_STAGE4_AGENT_MODEL,
         "inference_provider": "pinned-integrated-inference",
-        "protocol_marker": G4_PLATFORM_HARDENING_MARKER,
+        "protocol_marker": _selected_protocol_marker(),
         "protocol_profile": {
             "protocol_fingerprint": None,
             "validation_state": "PENDING_RESERVATION",
@@ -1133,7 +1171,7 @@ def _settling_report_satisfied(incident_result: dict[str, Any]) -> bool:
         return False
     if not finite_number(poll_interval) or poll_interval <= 0:
         return False
-    deadline_policy = APPROVED_G4_PROTOCOL_PROFILE.get("settling_deadline_policy")
+    deadline_policy = selected_profile().get("settling_deadline_policy")
     if not isinstance(deadline_policy, dict):
         return False
     if (
@@ -1592,12 +1630,13 @@ def _validate_run_owned_preflight(
         if isinstance(source_identity, dict)
         else None
     )
-    approved_profile_sha256 = protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)
+    approved_profile = selected_profile()
+    approved_profile_sha256 = protocol_fingerprint(approved_profile)
     if (
         record.get("experiment_id") != experiment_id
         or record.get("scenario_id") != binding["scenario_id"]
-        or binding.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
-        or record.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
+        or binding.get("protocol_marker") != _selected_protocol_marker()
+        or record.get("protocol_marker") != _selected_protocol_marker()
         or binding.get("source_sha") != expected_sha.lower()
         or not isinstance(source_identity, dict)
         or source_identity.get("working_tree_clean") is not True
@@ -1611,7 +1650,7 @@ def _validate_run_owned_preflight(
     profile = record.get("protocol_profile")
     if (
         not isinstance(profile, dict)
-        or profile != APPROVED_G4_PROTOCOL_PROFILE
+        or profile != approved_profile
         or protocol_fingerprint(profile) != binding["profile_sha256"]
         or binding["profile_sha256"] != approved_profile_sha256
     ):
@@ -1821,10 +1860,10 @@ def _persist_stage4_preflight_evidence(
             or not isinstance(source_identity.get("protocol_fingerprint"), str)
             or not re.fullmatch(r"[0-9a-fA-F]{64}", source_identity["protocol_fingerprint"])
             or source_identity["git_commit"].lower() != _approved_main_sha()
-            or evidence.get("protocol_marker") != G4_PLATFORM_HARDENING_MARKER
-            or profile != APPROVED_G4_PROTOCOL_PROFILE
+            or evidence.get("protocol_marker") != _selected_protocol_marker()
+            or profile != selected_profile()
             or profile_sha256 != source_identity["protocol_fingerprint"]
-            or profile_sha256 != protocol_fingerprint(APPROVED_G4_PROTOCOL_PROFILE)
+            or profile_sha256 != protocol_fingerprint(selected_profile())
         ):
             raise RuntimeError("Refusing to bind Stage 4 preflight with incomplete source/profile identity")
     if _preflight_path_has_reparse_component(effective_root, os.path.dirname(path)):
@@ -2130,6 +2169,16 @@ def _handle_post_t0_interruption(
 
 async def main() -> dict[str, Any]:
     global _QUALIFIED_COMPLETION_PROVIDER, _QUALIFIED_MODEL_IDENTITY, _INFERENCE_QUALIFICATION
+    if (
+        os.environ.get("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE")
+        or os.environ.get("ATLASOPS_STAGE4_PROTOCOL", "historical") != "historical"
+    ):
+        selected_profile()
+        _current_main_sha(expected_sha=_approved_main_sha())
+        if os.environ.get("ATLASOPS_STAGE4_PROTOCOL", "historical") != "historical":
+            from config.g4_launch_authority import consume_candidate_launch
+
+            consume_candidate_launch(protocol_fingerprint(selected_profile()))
     from scripts.qualify_integrated_inference import engine_from_environment, qualify_engine
 
     engine = engine_from_environment()
@@ -2182,6 +2231,19 @@ async def _main_with_qualified_inference() -> dict[str, Any]:
     try:
         async with stage4_approval_server(secrets["ATLASOPS_API_KEY"]) as base_url:
             os.environ["ATLASOPS_PUBLIC_BASE_URL"] = base_url
+            channel_path = os.environ.get("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE")
+            if channel_path:
+                channel = Path(channel_path)
+                if not channel.is_absolute() or Path(REPO_ROOT).resolve() in channel.resolve().parents:
+                    raise RuntimeError("Operator channel must be an absolute path outside the checkout")
+                with channel.open("x", encoding="utf-8") as stream:
+                    json.dump({
+                        "pid": os.getpid(), "url": base_url,
+                        "experiment_id": os.environ.get("STAGE4_EXPERIMENT_ID"),
+                        "source_sha": _approved_main_sha(),
+                    }, stream)
+                    stream.flush()
+                    os.fsync(stream.fileno())
             print(f" Stage 4 host approval endpoint: {base_url}/approval/pending")
             print(
                 " Operator access requires X-AtlasOps-Key; only this host process "
@@ -2417,6 +2479,7 @@ async def _run_experiment() -> dict[str, Any]:
         )
         evidence["model"] = reservation["protocol_profile"]["model"]["name"]
         evidence["protocol_profile"] = reservation["protocol_profile"]
+        evidence["protocol_marker"] = reservation["protocol_profile"]["protocol_marker"]
         evidence["source_identity"] = {
             "git_commit": reservation["main_sha"],
             "working_tree_clean": True,
@@ -2599,7 +2662,10 @@ async def _run_experiment() -> dict[str, Any]:
                 "scenario_id": SCENARIO_ID,
             },
         )
-        from bench.integrated_inference import DirectActionCompletionPolicy, EFFECTIVE_GENERATION_CONFIG
+        from bench.integrated_inference import (
+            EFFECTIVE_GENERATION_CONFIG,
+            DirectActionCompletionPolicy,
+        )
 
         incident_result = await handle_incident(
             alert_payload, incident_id=incident_id, scenario_id=SCENARIO_ID,

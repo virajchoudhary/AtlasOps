@@ -4,8 +4,8 @@ import builtins
 import copy
 import hashlib
 import json
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,6 +22,14 @@ FROZEN_COORDINATOR_COMMIT = "4280a586fef7b860a069f60ef9af171aaa9d75a4"
 @pytest.fixture
 def frozen_historical_coordinator_source(monkeypatch):
     coordinator_path = REPO_ROOT / "agents" / "coordinator.py"
+    diagnosis_path = REPO_ROOT / "agents/prompts/diagnosis.md"
+    diagnosis_source = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/prompts/diagnosis.md"],
+        cwd=REPO_ROOT, check=True, capture_output=True,
+    ).stdout
+    assert sft_candidate.canonical_bytes_sha256(diagnosis_source) == (
+        "26265a2007477eed58a69b80c0a1faf74a00cfc257374590dd6b96a6b7b9b7b6"
+    )
     frozen_source = subprocess.run(
         ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
         cwd=REPO_ROOT,
@@ -36,14 +44,24 @@ def frozen_historical_coordinator_source(monkeypatch):
     def read_bytes(path):
         if path.resolve() == coordinator_path.resolve():
             return frozen_source
+        if path.resolve() == diagnosis_path.resolve():
+            return diagnosis_source
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    original_read_text = Path.read_text
+    def read_text(path, *args, **kwargs):
+        if path.resolve() == diagnosis_path.resolve():
+            return diagnosis_source.decode("utf-8")
+        return original_read_text(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read_text)
     original_bounded_snapshot = sft_pilot_gate._read_bounded_snapshot
 
     def read_bounded_snapshot(path, bound):
         if Path(path).resolve() == coordinator_path.resolve():
             return frozen_source, "fixture"
+        if Path(path).resolve() == diagnosis_path.resolve():
+            return diagnosis_source, "fixture"
         return original_bounded_snapshot(path, bound)
 
     monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", read_bounded_snapshot)
@@ -215,6 +233,23 @@ def test_plan_cannot_approve_execution_or_change_setting(
     )
     with pytest.raises(ValueError, match="cannot grant"):
         sft_pilot_gate.validate_preparation(snapshot_training_corpus(CORPUS), **common)
+
+
+def test_revised_diagnosis_refuses_old_preparation_even_with_frozen_coordinator(monkeypatch):
+    coordinator = subprocess.run(
+        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
+        cwd=REPO_ROOT, check=True, capture_output=True,
+    ).stdout
+    read_bytes = Path.read_bytes
+    def historical_coordinator_only(path):
+        if path.resolve() == (REPO_ROOT / "agents/coordinator.py").resolve():
+            return coordinator
+        return read_bytes(path)
+    monkeypatch.setattr(Path, "read_bytes", historical_coordinator_only)
+    snapshot = snapshot_training_corpus(CORPUS)
+    manifest = sft_candidate.read_candidate_manifest(CORPUS)
+    with pytest.raises(ValueError, match="manifest/provenance mismatch"):
+        candidate_compatibility.validate_pilot_candidate(snapshot, manifest)
 
 
 def test_current_coordinator_source_drift_refuses_preparation():

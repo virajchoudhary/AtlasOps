@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const routes = [
   ["Overview", "/", "AtlasOps"],
+  ["Rehearsal", "/demo", "Incident workflow"],
   ["Agents", "/agents", "Four roles. Clear authority boundaries."],
   ["Models", "/models", "Model lineage"],
   ["Evaluations", "/evaluations", "Evaluations"],
@@ -205,4 +206,241 @@ test("the presentation makes no non-GET API requests", async ({ page }) => {
   await expect(page.getByText("Reading this historical record…")).toHaveCount(0);
   expect(apiMethods.length).toBeGreaterThan(0);
   expect(apiMethods.every((method) => method === "GET")).toBe(true);
+});
+
+async function reachApproval(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Start rehearsal", exact: true }).click();
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Simulated P1 decision" })).toBeVisible();
+}
+
+test("rehearsal pauses for approval, completes, inspects prior stages and exports labels", async ({ page }) => {
+  const methods: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) methods.push(request.method());
+  });
+  await page.goto("/#/demo");
+  await expect(page.getByText("SYNTHETIC / NON-LIVE / NON-EMPIRICAL", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Start rehearsal", exact: true }).click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Simulated P1 decision" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("button", { name: "Next stage", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeDisabled();
+  await expect(page.locator(".demo-log li")).toHaveCount(4);
+  await page.getByRole("button", { name: "Approve simulation", exact: true }).click();
+  await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await expect(page.getByText("SIMULATED RECOVERY", { exact: true })).toBeVisible();
+  await expect(page.locator(".demo-log li")).toHaveCount(7);
+  await page.locator(".demo-stage").filter({ hasText: "Triage" }).click();
+  await expect(page.locator(".demo-inspector h3")).toHaveText("Triage");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download simulated transcript" }).click();
+  const download = await downloadPromise;
+  const file = await download.path();
+  const fs = await import("node:fs/promises");
+  const exported = JSON.parse(await fs.readFile(file!, "utf-8"));
+  expect(exported.experimental_evidence).toBe(false);
+  expect(exported.real_tool_executed).toBe(false);
+  expect(exported.classification).toContain("NON-EMPIRICAL");
+  expect(exported.entries).toHaveLength(7);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("rejected and timed-out approval never reach remediation", async ({ page }) => {
+  await page.goto("/#/demo");
+  for (const decision of ["Reject", "Simulate timeout"]) {
+    await reachApproval(page);
+    await page.getByRole("button", { name: decision, exact: true }).click();
+    await expect(page.getByText("SIMULATED REMEDIATION BLOCKED", { exact: true })).toBeVisible();
+    await expect(page.locator(".demo-stage.is-skipped")).toHaveCount(2);
+    await expect(page.locator(".demo-log li")).toHaveCount(5);
+    await expect(page.locator(".demo-log")).not.toContainText("Fixture action accepted");
+    await page.getByRole("button", { name: "Reset rehearsal" }).click();
+  }
+});
+
+test("tool success with failed verification stays unresolved on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#/demo");
+  await page.getByLabel("Scenario", { exact: true }).selectOption("single_fault/sf-004");
+  await page.getByLabel("Simulated verifier observation").selectOption("unhealthy");
+  await reachApproval(page);
+  await page.getByRole("button", { name: "Approve simulation", exact: true }).click();
+  await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await expect(page.getByText("SIMULATED UNRESOLVED INCIDENT", { exact: true })).toBeVisible();
+  await expect(page.locator(".demo-outcome")).toContainText("despite the simulated tool success");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.getByRole("button", { name: "Reset rehearsal" }).click();
+  await expect(page.getByText("No rehearsal started.", { exact: true })).toBeVisible();
+});
+
+test("missing rehearsal fixtures do not invent a replacement run", async ({ page }) => {
+  await page.route("**/api/rehearsal", (route) => route.fulfill({ status: 503, body: "{}" }));
+  await page.goto("/#/demo");
+  await expect(page.getByRole("alert")).toContainText("Rehearsal fixtures unavailable");
+  await expect(page.getByRole("button", { name: "Start rehearsal", exact: true })).toBeDisabled();
+  await expect(page.locator(".demo-log")).toHaveCount(0);
+});
+
+test("manual pause stops playback and desktop/mobile rehearsal views are captured", async ({ page }, testInfo) => {
+  await page.goto("/#/demo");
+  await page.getByRole("button", { name: "Start rehearsal", exact: true }).click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.waitForTimeout(1700);
+  await expect(page.locator(".demo-log li")).toHaveCount(1);
+  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next stage", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("desktop-approval.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("mobile-approval.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
+test("live observations stay separate from the simulation and refresh failure is unavailable", async ({ page }) => {
+  await page.route("**/api/live-status", (route) => route.fulfill({
+    json: { enabled: true, observed_at: "2026-10-07T03:00:00Z", services: [
+      { id: "coordinator", label: "Coordinator process", available: true, detail: "Process health only; model execution not tested" },
+      { id: "inference", label: "Cached model server", available: false, detail: "Service unavailable" },
+    ] },
+  }));
+  await page.goto("/#/demo");
+  const live = page.getByRole("region", { name: "Live service observations" });
+  await expect(live).toContainText("Responding");
+  await expect(live).toContainText("Unavailable");
+  await expect(live).toContainText("not agent execution or incident-resolution evidence");
+  await expect(page.getByText("SYNTHETIC / NON-LIVE / NON-EMPIRICAL", { exact: true })).toBeVisible();
+  await page.route("**/api/live-status", (route) => route.fulfill({ status: 503 }));
+  await page.getByRole("button", { name: "Refresh live observations" }).click();
+  await expect(live.getByRole("alert")).toContainText("No substitute health result");
+  await expect(live.getByText("Responding", { exact: true })).toHaveCount(0);
+});
+
+test("governed capture displays unreserved startup failure without a recovery claim", async ({ page }) => {
+  await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    observed_at: "2026-10-07T06:00:00Z", status: "STARTUP_FAILED / NOT_RESERVED",
+    process_running: false, reserved: false, attempt_state: null,
+    failure: "bridge_transport_failure", gate_g4_pass: null, env_resolved: null,
+    cleanup_verified_zero: null, approval: null, severity: null, services: [],
+    phases: [{ id: "agents", label: "Agent workflow", observed: false }],
+    actions: [], proposal: null, sources: [{ name: "Process exit", sha256: "a".repeat(64) }],
+  } }));
+  await page.goto("/#/demo");
+  const monitor = page.getByRole("region", { name: "Governed incident monitor" });
+  await expect(monitor).toContainText("STARTUP_FAILED / NOT_RESERVED");
+  await expect(monitor).toContainText("bridge_transport_failure");
+  await expect(monitor).toContainText("RECORDED / NOT A SIMULATION");
+  await expect(monitor.locator("dl div").filter({ hasText: "Recorded G4 pass" }).locator("dd")).toHaveText("Unavailable");
+  await expect(monitor.locator("dl div").filter({ hasText: "Attempt reserved" }).locator("dd")).toHaveText("No");
+  await expect(monitor).toContainText("Not recorded");
+  await expect(page.getByText("SYNTHETIC / NON-LIVE / NON-EMPIRICAL", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.route("**/api/incident-monitor", (route) => route.fulfill({ status: 503 }));
+  await monitor.getByRole("button", { name: "Refresh incident capture" }).click();
+  await expect(monitor.getByRole("alert")).toContainText("Previous observations are not shown");
+  await expect(monitor.getByText("STARTUP_FAILED / NOT_RESERVED", { exact: true })).toHaveCount(0);
+});
+
+test("governed negative result remains negative despite tool success and cleanup", async ({ page }) => {
+  await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    observed_at: "2026-10-07T06:00:00Z", status: "RECORDED_NEGATIVE",
+    process_running: false, reserved: true, attempt_state: "COMPLETED",
+    failure: null, gate_g4_pass: false, env_resolved: false,
+    cleanup_verified_zero: true, approval: "timeout", severity: "P1", services: ["paymentservice"],
+    policy_block: "invalid_action",
+    phases: [{ id: "agents", label: "Agent workflow", observed: true }],
+    actions: [{ tool: "chaos_stop_experiment", target: "sf-002-paymentservice-cpu", namespace: "chaos-mesh", success: true }],
+    proposal: null, sources: [],
+  } }));
+  await page.goto("/#/demo");
+  const monitor = page.getByRole("region", { name: "Governed incident monitor" });
+  await expect(monitor).toContainText("RECORDED_NEGATIVE");
+  await expect(monitor).toContainText("Recorded policy block: invalid_action");
+  await expect(monitor.locator("dl div").filter({ hasText: "Environment resolved" }).locator("dd")).toHaveText("No");
+  await expect(monitor.locator("dl div").filter({ hasText: "Cleanup verified zero Chaos" }).locator("dd")).toHaveText("Yes");
+  await expect(monitor.locator("dl div").filter({ hasText: "Recorded P1 decision" }).locator("dd")).toHaveText("timeout");
+  await expect(monitor.getByRole("region", { name: "Recorded tool outcomes" })).toContainText("Tool success: Yes");
+});
+
+test("operator blocks exhausted launches and submits only the displayed exact action", async ({ page }, testInfo) => {
+  const proposal = {
+    token: "apr-test", action_digest: "c".repeat(64), incident_id: "incident-019", severity: "P1",
+    action: { tool: "chaos_stop_experiment", arguments: { name: "sf-002-paymentservice-cpu", namespace: "chaos-mesh" } },
+    operator_scope: { kube_context: "kind-atlasops-local", scenario_id: "single_fault/sf-002" },
+  };
+  let pending: typeof proposal[] = [];
+  await page.route("**/api/operator", (route) => route.fulfill({ json: {
+    enabled: true, csrf_token: "test-session", source_sha: "a".repeat(40),
+    protocol_fingerprint: "b".repeat(64), experiment_id: "EXP-STAGE4-SF002-019",
+    kube_context: "kind-atlasops-local", scenario_id: "single_fault/sf-002",
+    readiness: { can_start: false, blockers: ["protocol_attempt_budget_exhausted"],
+      attempts_used: 2, attempt_limit: 2, runtime_qualified: false },
+    pending, channel_error: null, capture: null,
+  } }));
+  const decisions: unknown[] = [];
+  await page.route("**/api/operator/decision", (route) => {
+    decisions.push(route.request().postDataJSON());
+    expect(route.request().headers()["x-atlasops-operator"]).toBe("test-session");
+    pending = [];
+    return route.fulfill({ json: { decision: "approved" } });
+  });
+  await page.goto("/#/demo");
+  const panel = page.getByRole("region", { name: "Live incident controls" });
+  await expect(panel).toContainText("protocol attempt budget exhausted");
+  await expect(panel.getByRole("button", { name: "Start governed SF002 run" })).toBeDisabled();
+  pending = [proposal];
+  await panel.getByRole("button", { name: "Refresh operator status" }).click();
+  await expect(panel.getByRole("region", { name: "Exact live action approval" })).toContainText("sf-002-paymentservice-cpu");
+  await page.screenshot({ path: testInfo.outputPath("operator-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("operator-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await panel.getByRole("button", { name: "Approve exact action" }).click();
+  expect(decisions).toEqual([{ token: proposal.token, action_digest: proposal.action_digest, decision: "approved" }]);
+  await expect(panel.getByRole("region", { name: "Exact live action approval" })).toHaveCount(0);
+});
+
+test("an active runner with an unavailable channel never looks like an empty approval queue", async ({ page }) => {
+  await page.route("**/api/operator", (route) => route.fulfill({ json: {
+    enabled: true, csrf_token: "test-session", source_sha: "a".repeat(40),
+    protocol_fingerprint: "b".repeat(64), experiment_id: "EXP-STAGE4-SF002-019",
+    kube_context: "kind-atlasops-local", scenario_id: "single_fault/sf-002",
+    readiness: { can_start: false, blockers: ["server_launch_already_used"],
+      attempts_used: 1, attempt_limit: 2, runtime_qualified: false },
+    pending: [], channel_error: "approval_channel_unavailable", events: null,
+    capture: { status: "RUNNING", process_running: true, phases: [],
+      env_resolved: null, gate_g4_pass: null, cleanup_verified_zero: null,
+      policy_block: null, comms_status: null },
+  } }));
+  await page.goto("/#/demo");
+  const panel = page.getByRole("region", { name: "Live incident controls" });
+  await expect(panel.getByRole("alert")).toContainText("Approval channel unavailable");
+  await expect(panel).toContainText("Agent activity unavailable");
+  await expect(panel.getByRole("button", { name: "Approve exact action" })).toHaveCount(0);
+  await expect(panel.locator("dl div").filter({ hasText: "Environment resolved" }).locator("dd")).toHaveText("Unavailable");
+});
+
+test("operator polling clears a transient status error after a successful read", async ({ page }) => {
+  let failed = true;
+  await page.route("**/api/operator", (route) => route.fulfill(failed ? { status: 503 } : { json: {
+    enabled: true, csrf_token: "test-session", source_sha: "a".repeat(40),
+    protocol_fingerprint: "b".repeat(64), experiment_id: "EXP-STAGE4-SF002-019",
+    kube_context: "kind-atlasops-local", scenario_id: "single_fault/sf-002",
+    readiness: { can_start: false, blockers: ["protocol_attempt_budget_exhausted"],
+      attempts_used: 2, attempt_limit: 2, runtime_qualified: false },
+    pending: [], channel_error: null, events: null, capture: null,
+  } }));
+  await page.goto("/#/demo");
+  const panel = page.getByRole("region", { name: "Live incident controls" });
+  await expect(panel.getByRole("alert")).toContainText("Operator status unavailable");
+  failed = false;
+  await expect(panel).toContainText("protocol attempt budget exhausted", { timeout: 10000 });
+  await expect(panel.getByRole("alert")).toHaveCount(0);
 });

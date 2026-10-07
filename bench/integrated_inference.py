@@ -1380,7 +1380,7 @@ class DirectActionCompletionPolicy:
 
         from agents.coordinator import _strip_model_forbidden_context
         from bench.grpo_eval import _public_policy_state
-        from training.sft_rendering import load_role_prompt, role_tool_schemas
+        from training.sft_rendering import role_tool_schemas
 
         state_copy = _json_copy(dict(state), "Direct-action state")
         state_copy = _strip_model_forbidden_context(state_copy)
@@ -1390,10 +1390,17 @@ class DirectActionCompletionPolicy:
         public_state["instruction"] = ACTION_INSTRUCTION
         tools = role_tool_schemas("remediation")
         system_prompt = (
-            f"{load_role_prompt('remediation').rstrip()}\n\n"
-            "Runtime remediation tool schemas (JSON):\n"
+            "You select one bounded incident remediation action from current "
+            "operational observations. The runtime, not you, validates approval, "
+            "executes the action, and checks the environment verifier. "
+            "Do not claim execution or recovery without observed evidence. "
+            "The schemas below describe allowed actions; they are reference data, "
+            "not a native tool-calling interface.\n\n"
+            "Runtime action schemas (JSON):\n"
             f"{json.dumps(tools, sort_keys=True, ensure_ascii=False)}\n\n"
-            f"{ACTION_INSTRUCTION}"
+            f"{ACTION_INSTRUCTION} "
+            "Return the JSON object as plain text, without a code fence, "
+            "tool-call envelope, or commentary."
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1410,6 +1417,6 @@ class DirectActionCompletionPolicy:
         ]
         response = await self.provider(
             "remediation",
-            {"messages": messages, "tools": tools, **request_config},
+            {"messages": messages, **request_config},
         )
         return response["choices"][0]["message"]["content"]

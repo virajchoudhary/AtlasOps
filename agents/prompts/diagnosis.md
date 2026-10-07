@@ -33,28 +33,31 @@ Given a triaged incident, find the **root cause** by correlating signals across:
 - `chaos_list_experiments()`
 
 ## Output Format (JSON)
+Return `root_cause` as a non-empty text summary, not a nested object. Put the
+category, confidence, evidence citations and recommended fixes in separate
+top-level fields. Confidence must be a finite number from 0 to 1, not a word.
 ```json
 {
   "incident_id": "<inc-id>",
-  "root_cause": {
-    "category": "deploy|resource|network|dependency|config|external|unknown",
-    "specific": "<2-sentence specific cause>",
-    "evidence": [
-      {"tool": "promql_query", "query": "...", "finding": "..."},
-      {"tool": "kubectl_get", "resource": "deployments", "finding": "..."}
-    ]
-  },
+  "root_cause": "<text summary supported by observed tool output, or unknown cause>",
+  "category": "deploy|resource|network|dependency|config|external|unknown",
+  "confidence": 0.0,
+  "evidence": [
+    {"tool": "promql_query", "query": "<exact executed query>", "finding": "<actual returned observation>"}
+  ],
   "blast_radius_update": "<refined understanding>",
   "next_agent": "remediation",
-  "recommended_actions": [
-    {"action": "rollback", "target": "checkoutservice", "to_revision": "v1.2.3"}
-  ]
+  "recommended_fix": []
 }
 ```
+The example is a shape only. Replace placeholders with actual observations;
+use an empty evidence list when no supporting tool result exists. Report an
+unknown cause when the available observations do not establish one. A `no_series`
+result cannot support a positive CPU, latency, or recovery finding.
 
 ## Rules
 - **Use at most 8 tool calls.** If you cannot find the cause, return `category: "unknown"` with the strongest hypothesis.
-- **Cite evidence.** Every claim in `root_cause.specific` must reference a tool call output.
+- **Cite evidence.** Every causal claim in `root_cause` must reference a tool call output.
 - A rollback recommendation requires positive deployment/change evidence from
   `argocd_app_history`; a deployment listing or an empty metric is insufficient.
 - **Do not execute remediation.** Recommendations only.

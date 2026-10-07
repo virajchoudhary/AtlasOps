@@ -72,6 +72,66 @@ async def _no_settle(**_kwargs):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("environment_recovered", [False, True])
+async def test_invalid_direct_policy_output_is_not_reported_as_target_mismatch(
+    monkeypatch, safe_runtime, environment_recovered,
+):
+    from training import grpo_environment
+    from training.grpo_environment import parse_policy_action
+
+    raw = (
+        '<tool_call>\n{"name":"kubectl_scale","arguments":'
+        '{"deployment":"paymentservice","namespace":"default","replicas":5}}\n</tool_call>'
+    )
+    with pytest.raises(ValueError, match="Policy completion must be one JSON object"):
+        parse_policy_action(raw)
+
+    class Policy:
+        def generate(self, *_args, **_kwargs):
+            return raw
+
+    class Verification:
+        env_resolved = environment_recovered
+        verification_status = "verified" if environment_recovered else "failed"
+
+        def to_dict(self):
+            return {"env_resolved": self.env_resolved,
+                    "verification_status": self.verification_status}
+
+    async def agent(role, *_args, **_kwargs):
+        assert role in {"triage", "diagnosis"}
+        final = (
+            {"severity": "P2", "affected_services": ["paymentservice"], "title": "High CPU"}
+            if role == "triage" else {"root_cause": "unknown", "confidence": 0.1}
+        )
+        return {"role": role, "trajectory": [], "final": final}
+
+    monkeypatch.setenv("ATLASOPS_RL_POLICY_EXECUTE_ACTIONS", "1")
+    monkeypatch.setenv("KUBECONFIG_CONTEXT", "kind-atlasops-synthetic")
+    monkeypatch.setattr(coord, "call_agent", agent)
+    monkeypatch.setattr(coord, "settle_environment", _no_settle)
+    monkeypatch.setattr("agents.verifier.verify_environment", lambda **_: Verification())
+    mutation = MagicMock(side_effect=AssertionError("Invalid policy must not execute"))
+    monkeypatch.setitem(grpo_environment.TOOL_REGISTRY, "kubectl_scale", mutation)
+    result = await coord.handle_incident(
+        {"commonLabels": {"alertname": "HighCPU", "service": "paymentservice",
+                          "severity": "warning"}},
+        incident_id="inc-policy-format-block", scenario_id="single_fault/sf-002",
+        remediation_policy=Policy(),
+    )
+    mutation.assert_not_called()
+    assert result["target_consistency"]["requires_review"] is False
+    assert result["remediation"]["final"]["terminal_block"]["category"] == "invalid_action"
+    assert result["comms"]["final"]["status"] == "policy_invalid_action"
+    assert "target contradicted" not in result["comms"]["final"]["summary"]
+    assert result["env_resolved"] is environment_recovered
+    assert result["resolved"] is False
+    persisted = json.loads((safe_runtime / "inc-policy-format-block.json").read_text())
+    assert persisted == result
+    assert persisted["remediation"]["policy_steps"][0]["raw_policy_output"] == raw
+
+
+@pytest.mark.asyncio
 async def test_handle_incident_uses_provider_for_all_four_roles_and_real_tool_loops(
     monkeypatch, safe_runtime
 ):

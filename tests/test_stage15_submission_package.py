@@ -594,6 +594,63 @@ class TestStage15SubmissionPackage:
         selected = _matching_tracked_files(repo_root, ["tests/test_*.py"])
         assert set(selected) == {"tests/test_tracked_asset.py"}
 
+    def test_recursive_frontend_assets_are_tracked_and_exclude_generated_paths(
+        self,
+        tmp_path,
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        included = {
+            "frontend/src/App.tsx",
+            "frontend/src/reference/tests/fixtures/deep/fixture.tsx",
+            "frontend/src/reference/tests/fixtures/deep/fixture.html",
+            "frontend/src/reference/resources/GeistMono-Variable.woff2",
+            "frontend/src/reference/resources/OFL.txt",
+            "frontend/public/images/nested/diagram.webp",
+            "frontend/public/fonts/nested/GeistMono.woff2",
+            "frontend/public/fixtures/nested/index.html",
+            "frontend/public/fixtures/nested/OFL.txt",
+        }
+        excluded = {
+            "frontend/src/reference/tests/results/captured.tsx",
+            "frontend/src/node_modules/package/index.ts",
+            "frontend/src/dist/generated.css",
+            "frontend/src/private/config.ts",
+            "frontend/public/test-results/screenshot.webp",
+            "frontend/public/node_modules/package/icon.svg",
+            "frontend/public/build/bundle.js",
+            "frontend/public/private/credentials.html",
+        }
+        untracked = "frontend/src/reference/tests/fixtures/deep/untracked.tsx"
+
+        for relative_path in included | excluded | {untracked}:
+            file_path = repo_root / relative_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(b"tracked frontend fixture\n")
+        subprocess.run(
+            ["git", "add", "--", *sorted(included | excluded)],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        selected = _matching_tracked_files(
+            repo_root,
+            [],
+            include_frontend_assets=True,
+        )
+        assert included <= selected.keys()
+        assert excluded.isdisjoint(selected)
+        assert set(selected) <= included
+        assert untracked not in selected
+
     def test_tracked_asset_selection_rejects_symlink_escapes(self, tmp_path):
         repo_root = tmp_path / "repo"
         repo_root.mkdir()

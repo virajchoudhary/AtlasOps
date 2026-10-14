@@ -81,6 +81,14 @@ LLM_BASE_BACKOFF_SECONDS: float = 1.5
 TOOL_OUTPUT_MAX_CHARS: int = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
+_WINDOWS_RESERVED_INCIDENT_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {
+        f"{prefix}{digit}"
+        for prefix in ("COM", "LPT")
+        for digit in range(1, 10)
+    }
+)
 
 class AlertWebhookPayload(BaseModel):
     alerts: list[dict[str, Any]] = Field(default_factory=list)
@@ -2060,10 +2068,41 @@ def _live_judge_requested() -> bool:
     return os.getenv("ATLASOPS_USE_HF_INFERENCE", "").strip().lower() in ("1", "true", "yes")
 
 
+def _validate_incident_id(incident_id: Any) -> str:
+    if (
+        not isinstance(incident_id, str)
+        or not incident_id
+        or len(incident_id) > 128
+        or not incident_id[0].isascii()
+        or not incident_id[0].isalnum()
+        or incident_id.endswith(".")
+        or any(
+            not (char.isascii() and (char.isalnum() or char in "._-"))
+            for char in incident_id
+        )
+        or incident_id.split(".", 1)[0].upper() in _WINDOWS_RESERVED_INCIDENT_NAMES
+    ):
+        raise ValueError("incident_id must be a safe filename component")
+    return incident_id
+
+
+def _validate_execution_id(execution_id: Any) -> str:
+    if not isinstance(execution_id, str):
+        raise TypeError("execution_id must be 32-character lowercase UUID hex")
+    try:
+        normalized = uuid.UUID(hex=execution_id).hex
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError(
+            "execution_id must be 32-character lowercase UUID hex"
+        ) from None
+    if normalized != execution_id:
+        raise ValueError("execution_id must be 32-character lowercase UUID hex")
+    return execution_id
+
+
 def _persist_incident_record(record: dict[str, Any]) -> None:
-    """Keep the legacy first-record path while preserving later executions."""
-    incident_id = record["incident_id"]
-    execution_id = record["execution_id"]
+    incident_id = _validate_incident_id(record["incident_id"])
+    execution_id = _validate_execution_id(record["execution_id"])
     serialized = json.dumps(record, indent=2)
     TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
     canonical_path = TRAJECTORIES_DIR / f"{incident_id}.json"
@@ -2093,6 +2132,8 @@ async def handle_incident(
     ``scenario_id`` is an evaluation-only channel: it selects the frozen
     verifier spec without ever being placed inside the model-visible alert.
     """
+    if incident_id is not None:
+        incident_id = _validate_incident_id(incident_id)
     if remediation_policy is None and (
         policy_seed is not None or policy_generation_config is not None
     ):

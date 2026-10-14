@@ -23,7 +23,7 @@ operations.
 | SFT artifact v17 | Qwen2.5-7B-Instruct adapter, 68 synthetic Train-only rows, 9 optimizer steps, independent fresh-process reload passed | Artifact existence and reload do not show incident improvement. |
 | Controlled G9 pilot | Two optimizer steps and four completions; all four were malformed or blocked, each reward was -1, and both advantage groups were zero | No reward-driven learning was established. No acceptable SFT+GRPO checkpoint exists. |
 | Final aligned G9 diagnostic | 0/8 admissible actions, zero optimizer steps, and all 392 LoRA tensor hashes unchanged | Zero of eight does not prove that the population probability is exactly zero. |
-| G4 live incident | Attempt 015 inconclusive and unscored; 016 pre-fault abort; 017 completed negative result | G4 remains NOT_PASSED. No attempt 018 exists. The original G8 live incident-resolution criterion remains unmet. |
+| G4 live incident | Attempt 015 inconclusive and unscored; 016 pre-fault abort; 017 latest verified completed negative; 018 completion marker only | G4 remains NOT_PASSED. Attempt 018 has no primary result or cleanup sidecar, so its outcome and cleanup are unverified. The original G8 live incident-resolution criterion remains unmet. |
 
 The [Master Pipeline status](docs/project/MASTER_PIPELINE_STATUS.md) is the gate-status
 source. The [technical report](docs/AtlasOps_Technical_Report.md) explains methods,
@@ -60,9 +60,11 @@ short project review.
 5. Review G4 chronology in
    [CONTROLLED_G9_ADMISSION_V1.md](docs/project/CONTROLLED_G9_ADMISSION_V1.md) and the
    [015 integrity index](artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json).
+   The [evidence index](docs/EVIDENCE_INDEX.md) records the owner-local 018 marker
+   and its hash. The primary result and cleanup sidecar are absent.
    The attempt-017 archive SHA-256 is `82d0b62ed33d0fb6ebc2924233a70fb1a1ae2e2385b8e374d06c931456eefb31`.
-   The 015 and 017 raw bundles are preserved outside this repository. No attempt 018 is
-   authorized.
+   The 015 and 017 raw bundles are preserved outside this repository. Do not treat
+   the 018 marker as an outcome or cleanup record. No new G4 execution is authorized.
 
 ## Historical Claims
 

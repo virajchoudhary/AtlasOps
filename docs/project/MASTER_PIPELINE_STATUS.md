@@ -89,7 +89,7 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 | **Stage 1** | Local reproducibility baseline | **G1** | Clean local Python environment, dependency lock, static syntax/name analysis, test harness baseline. | **PASS** |
 | **Stage 2** | Stabilize upstream blockers | **G2** | Fix tier ordering, coordinator naming, tool ACL/RBAC, verifier contract (24 exact + 4 reviewed exceptions), offline benchmark reaches judge. | **PASS** |
 | **Stage 3** | Provision controlled SRE environment | **G3** | Local Kind cluster (or optional GKE), Online Boutique (12 Deployments), Prometheus/Alertmanager, Jaeger, Argo CD, Chaos Mesh, non-destructive tool verification. **$0 external cost.** | **PASS** (historical local Kind acceptance; wrapper limitations below) |
-| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (frozen: 015 terminal INCONCLUSIVE/unscored; 016 pre-fault abort/non-result; 017 completed negative; no 018) |
+| **Stage 4** | Prove one real end-to-end incident | **G4** | Single fault injection $\rightarrow$ alert $\rightarrow$ triage $\rightarrow$ diagnosis $\rightarrow$ gate $\rightarrow$ remediation $\rightarrow$ objective verification $\rightarrow$ comms. | **NOT_PASSED** (015 terminal INCONCLUSIVE/unscored; 016 pre-fault abort/non-result; 017 latest verified completed negative; 018 marker only, outcome and cleanup unverified) |
 | **Stage 5** | Freeze scenario truth and benchmark splits | **G5** | Explicit scenario metadata and success predicates; training, validation, and final-test populations/variants; final-test isolation; frozen seeds, manifests, and content hashes. | **PASS** (scenario/split governance; not proof of every downstream consumer isolation) |
 | **Stage 6** | Reproduce GAI zero-shot baseline | **G6** | Execute zero-shot benchmark run across evaluation split; record genuine baseline metrics. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (real paired Validation diagnostic baseline exists; incident-resolution evidence missing; historical outputs are MOCK) |
 | **Stage 7** | Generate SFT data and train | **G7** | Cleaned training-only trajectory corpus without test-set leakage; QLoRA SFT; frozen corpus manifest, config, checkpoint, and evidence. | **PASS** (bounded synthetic v17 artifact/reload deliverable under the preapproved free-T4 profile; no incident improvement claimed; [evidence](../../artifacts/evidence/stage7/free-t4-v17/RESULT.json)) |
@@ -150,10 +150,16 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 ### Gate G4: Real End-to-End Golden Incident — [NOT_PASSED]
 - Current chronology is frozen: attempt 015 is terminal INCONCLUSIVE/unscored,
   016 aborted before fault injection and is a non-result, and 017 is the
-  latest completed negative. The [controlled admission record](CONTROLLED_G9_ADMISSION_V1.md)
+  latest verifiable completed negative. The [controlled admission record](CONTROLLED_G9_ADMISSION_V1.md)
   anchors the external Pre-RL audit and attempt-017 archive hashes.
   Attempt 017 includes prompt/evaluator and Comms inconsistencies and is not
-  pure model-performance evidence. No attempt 018 or new G4 execution is authorized.
+  pure model-performance evidence. An owner-local attempt-018 marker reports
+  `COMPLETED`, but its primary result, interruption file, and cleanup sidecar
+  are absent. The result and cleanup are unverified, so the dated
+  [evaluation-plan claim](DEMO_REVISED_EVALUATION_PLAN.md) cannot be verified
+  from the surviving files at that execution root. The
+  [evidence index](../EVIDENCE_INDEX.md) records the marker hash and source pin.
+  No new G4 execution is authorized.
 - Initial attempt 001 was invalidated for out-of-band harness fault clearance; subsequent negative results remain preserved. No newer authoritative PASS was found in the tracked Stage 4 evidence.
 - `artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json` is the latest completed negative result among 009-014: `gate_g4_pass=false`, objective `env_resolved=false`, and incorrect adservice targeting instead of paymentservice.
 - Attempts 009 and 011-014 are interrupted/inconclusive, not successes. Cleanup for 012-014 failed with TLS timeouts; current cleanup state is unverified. Successful cleanup cannot retroactively establish agent resolution.

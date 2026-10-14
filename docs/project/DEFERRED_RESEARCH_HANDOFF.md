@@ -10,11 +10,16 @@ and [final controlled result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md).
 ## Frozen State
 
 - G4 NOT_PASSED: 015 terminal INCONCLUSIVE/unscored, 016 pre-fault
-  abort/non-result, 017 completed negative. No attempt 018.
+  abort/non-result, 017 latest verifiable completed negative. An owner-local
+  018 marker reports `COMPLETED`, but its primary result and cleanup sidecar
+  are absent. The result and cleanup are unverified; the dated revised-plan
+  claim cannot be verified from the surviving files at that execution root.
+  No new G4 execution is authorized.
   [015 integrity record](../../artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json)
   and [016/017 chronology plus external audit/archive hashes](CONTROLLED_G9_ADMISSION_V1.md)
   locate canonical evidence. Attempt 017 has prompt/evaluator and Comms
   mismatches and is not pure model-performance evidence.
+  The [evidence index](../EVIDENCE_INDEX.md) records the 018 marker hash and source pin.
   Owner-local G4/audit store:
   `C:/Users/viraj/Documents/Codex/2026-10-03/continue-atlasops-from-latest-clean-main-2/outputs/`.
   The evidence index names the precise records; no contents are republished

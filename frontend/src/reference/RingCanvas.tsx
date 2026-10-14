@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import geistMonoUrl from "./resources/GeistMono-Variable.woff2?url";
 import {
   ATLAS_COLUMNS,
+  ATLAS_UPLOAD_FLIP_Y,
   INSTANCE_ANGLE,
   INSTANCE_GLYPH,
   INSTANCE_RADIUS,
@@ -10,6 +11,7 @@ import {
   INSTANCE_SPEED,
   INSTANCE_STRIDE,
   RING_COUNT,
+  RING_MAX_RADIUS,
   createGlyphAtlas,
   createRingModel,
 } from "./ring-canvas-model";
@@ -62,6 +64,10 @@ type Point = {
   x: number;
   y: number;
 };
+
+function getRadiusScale(height: number): number {
+  return height * 0.5 / RING_MAX_RADIUS;
+}
 
 export type RingCanvasProps = {
   text: string;
@@ -252,7 +258,7 @@ function createRenderer(
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_UPLOAD_FLIP_Y ? 1 : 0);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -299,7 +305,7 @@ function drawStaticFallback(
   const context = canvas.getContext("2d");
   if (!context) return false;
 
-  const radiusScale = Math.min(width, height) * 0.46 / 1.45;
+  const radiusScale = getRadiusScale(height);
   const glyphScale = Math.min(height, 1080) / 1080;
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, width, height);
@@ -386,7 +392,7 @@ export function RingCanvas({ text, className, ariaLabel }: RingCanvasProps) {
       cssWidth = bounds.width;
       cssHeight = bounds.height;
       pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      radiusScale = Math.min(cssWidth, cssHeight) * 0.46 / 1.45;
+      radiusScale = getRadiusScale(cssHeight);
       glyphScale = Math.min(cssHeight, 1080) / 1080;
 
       if (cssWidth <= 0 || cssHeight <= 0) {
@@ -565,7 +571,7 @@ export function RingCanvas({ text, className, ariaLabel }: RingCanvasProps) {
     const updatePointer = (event: PointerEvent) => {
       if (reducedMotion.matches) return;
       const bounds = container.getBoundingClientRect();
-      const cssRadiusScale = Math.min(bounds.width, bounds.height) * 0.46 / 1.45;
+      const cssRadiusScale = getRadiusScale(bounds.height);
       if (cssRadiusScale <= 0) return;
 
       pointer = {

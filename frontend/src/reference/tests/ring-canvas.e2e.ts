@@ -3,32 +3,56 @@ import { expect, test } from "@playwright/test";
 type PixelSummary = {
   nonblankPixels: number;
   checksum: number;
+  horizontalEdgePixels: number;
+  verticalEdgePixels: number;
 };
 
 async function getVisiblePixelSummary(page: import("@playwright/test").Page): Promise<PixelSummary> {
   return page.locator("canvas.ring-canvas__webgl").evaluate((element) => {
     if (!(element instanceof HTMLCanvasElement)) {
-      return { nonblankPixels: 0, checksum: 0 };
+      return {
+        nonblankPixels: 0,
+        checksum: 0,
+        horizontalEdgePixels: 0,
+        verticalEdgePixels: 0,
+      };
     }
     const gl = element.getContext("webgl2");
-    if (!gl) return { nonblankPixels: 0, checksum: 0 };
+    if (!gl) {
+      return {
+        nonblankPixels: 0,
+        checksum: 0,
+        horizontalEdgePixels: 0,
+        verticalEdgePixels: 0,
+      };
+    }
 
     const pixels = new Uint8Array(element.width * element.height * 4);
     gl.readPixels(0, 0, element.width, element.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     let nonblankPixels = 0;
+    let horizontalEdgePixels = 0;
+    let verticalEdgePixels = 0;
     let checksum = 2166136261;
+    const edgeBand = Math.min(16, Math.floor(Math.min(element.width, element.height) / 4));
 
-    for (let index = 0; index < pixels.length; index += 4) {
-      const red = pixels[index] ?? 0;
-      const green = pixels[index + 1] ?? 0;
-      const blue = pixels[index + 2] ?? 0;
-      if (red > 0 || green > 0 || blue > 0) nonblankPixels += 1;
-      checksum = Math.imul(checksum ^ red, 16777619) >>> 0;
-      checksum = Math.imul(checksum ^ green, 16777619) >>> 0;
-      checksum = Math.imul(checksum ^ blue, 16777619) >>> 0;
+    for (let y = 0; y < element.height; y += 1) {
+      for (let x = 0; x < element.width; x += 1) {
+        const index = (y * element.width + x) * 4;
+        const red = pixels[index] ?? 0;
+        const green = pixels[index + 1] ?? 0;
+        const blue = pixels[index + 2] ?? 0;
+        if (red > 0 || green > 0 || blue > 0) {
+          nonblankPixels += 1;
+          if (x < edgeBand || x >= element.width - edgeBand) horizontalEdgePixels += 1;
+          if (y < edgeBand || y >= element.height - edgeBand) verticalEdgePixels += 1;
+        }
+        checksum = Math.imul(checksum ^ red, 16777619) >>> 0;
+        checksum = Math.imul(checksum ^ green, 16777619) >>> 0;
+        checksum = Math.imul(checksum ^ blue, 16777619) >>> 0;
+      }
     }
 
-    return { nonblankPixels, checksum };
+    return { nonblankPixels, checksum, horizontalEdgePixels, verticalEdgePixels };
   });
 }
 
@@ -66,10 +90,14 @@ test("renders visible moving rings and retains matching desktop/mobile captures"
   await page.waitForTimeout(180);
   const firstFramePixels = await getVisiblePixelSummary(page);
   expect(firstFramePixels.nonblankPixels).toBeGreaterThan(0);
+  expect(firstFramePixels.horizontalEdgePixels).toBeGreaterThan(0);
+  expect(firstFramePixels.verticalEdgePixels).toBeGreaterThan(0);
 
   await page.waitForTimeout(200);
   const secondFramePixels = await getVisiblePixelSummary(page);
   expect(secondFramePixels.nonblankPixels).toBeGreaterThan(0);
+  expect(secondFramePixels.horizontalEdgePixels).toBeGreaterThan(0);
+  expect(secondFramePixels.verticalEdgePixels).toBeGreaterThan(0);
   expect(secondFramePixels.checksum).not.toBe(firstFramePixels.checksum);
 
   const desktopDpr = await page.evaluate(() => String(Math.min(window.devicePixelRatio, 2)));
@@ -91,8 +119,22 @@ test("renders visible moving rings and retains matching desktop/mobile captures"
     element.scrollTop = 0;
   });
   await expect(ringField).toHaveAttribute("data-animation-state", "running", { timeout: 10_000 });
+  await page.waitForTimeout(180);
+  const mobilePixels = await getVisiblePixelSummary(page);
+  expect(mobilePixels.horizontalEdgePixels).toBeGreaterThan(0);
+  expect(mobilePixels.verticalEdgePixels).toBeGreaterThan(0);
   await page.screenshot({ path: testInfo.outputPath("mobile-rings.png") });
   expect(pageErrors).toEqual([]);
+});
+
+test("maps every initial phrase glyph to its own flipped GPU atlas tile", async ({ page }) => {
+  await page.goto("/glyph-atlas-fixture.html");
+
+  await expect(page.locator("#glyph-atlas-identity")).toHaveAttribute(
+    "data-glyph-identities",
+    "T:1|H:2|E:3|_:4|C:5|O:6|N:7|A:8|R:9|I:10|U:11|.:12",
+    { timeout: 10_000 },
+  );
 });
 
 test("stops drawing outside the viewport and resumes only after it re-enters", async ({ page }) => {
@@ -211,7 +253,7 @@ test("caps the rendering pixel ratio at 2 on a high-DPR display", async ({ brows
     deviceScaleFactor: 3,
   });
   const page = await context.newPage();
-  await page.goto("http://127.0.0.1:7865/fixture.html");
+  await page.goto("http://127.0.0.1:7866/fixture.html");
   const ringField = page.getByRole("img", { name: "Thirty rotating typographic rings" });
 
   await expect(ringField).toHaveAttribute("data-renderer", "webgl2", { timeout: 15_000 });

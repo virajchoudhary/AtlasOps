@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createRingModel, INSTANCE_STRIDE, RING_COUNT } from "./ring-canvas-model";
+import {
+  createRingModel,
+  INSTANCE_STRIDE,
+  RING_MIN_RADIUS,
+  RING_COUNT,
+  RING_MAX_RADIUS,
+} from "./ring-canvas-model";
 
 describe("createRingModel", () => {
   it("makes stable, independently configurable glyph fields with thirty radial bands", () => {
@@ -21,9 +27,9 @@ describe("createRingModel", () => {
     const firstRing = model.instances.slice(0, INSTANCE_STRIDE);
     const lastRingOffset = (model.instanceCount - 1) * INSTANCE_STRIDE;
 
-    expect(firstRing[0]).toBeCloseTo(0.06);
+    expect(firstRing[0]).toBeCloseTo(RING_MIN_RADIUS);
     expect(firstRing[2]).toBeGreaterThan(0);
-    expect(model.instances[lastRingOffset + 0]).toBeCloseTo(1.45);
+    expect(model.instances[lastRingOffset + 0]).toBeCloseTo(RING_MAX_RADIUS);
     expect(model.instances[lastRingOffset + 2]).toBeLessThan(0);
   });
 });

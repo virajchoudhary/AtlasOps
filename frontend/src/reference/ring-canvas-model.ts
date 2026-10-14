@@ -1,6 +1,9 @@
 export const RING_COUNT = 30;
+export const RING_MIN_RADIUS = 0.06;
+export const RING_MAX_RADIUS = 1.45;
 export const ATLAS_COLUMNS = 8;
 export const ATLAS_CELL_SIZE = 64;
+export const ATLAS_UPLOAD_FLIP_Y = true;
 export const MAX_ATLAS_GLYPHS = 128;
 export const INSTANCE_STRIDE = 6;
 
@@ -61,7 +64,7 @@ export function createRingModel(text: string): RingModel {
 
   for (let ringIndex = 0; ringIndex < RING_COUNT; ringIndex += 1) {
     const progress = ringIndex / (RING_COUNT - 1);
-    const radius = 0.06 + 1.39 * progress;
+    const radius = RING_MIN_RADIUS + (RING_MAX_RADIUS - RING_MIN_RADIUS) * progress;
     const speedMagnitude = 0.006 + (1 - progress) * 0.029;
     const speed = (ringIndex % 2 === 0 ? 1 : -1) * speedMagnitude;
     const fontSize = 14 + 16 * progress;

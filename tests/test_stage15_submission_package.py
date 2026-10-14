@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +31,184 @@ from scripts.package_submission import (
     compute_sha256,
     evaluate_package_readiness,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FROZEN_SUBMISSION_MANIFEST_REVISION = "d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4"
+
+
+def _stub_package_inputs(monkeypatch):
+    import scripts.package_submission as packaging
+
+    monkeypatch.setattr(packaging, "collect_submission_assets", dict)
+    monkeypatch.setattr(packaging, "declared_gate_statuses", dict)
+    monkeypatch.setattr(
+        "scripts.check_submission_links.check_current_markdown_links",
+        lambda _: [],
+    )
+
+
+@pytest.mark.parametrize("destination", ["default", "canonical", "manifest", "summary"])
+def test_submission_builder_refuses_to_replace_existing_outputs(
+    tmp_path,
+    monkeypatch,
+    destination,
+):
+    import scripts.package_submission as packaging
+
+    _stub_package_inputs(monkeypatch)
+    canonical = tmp_path / "frozen"
+    canonical.mkdir()
+    monkeypatch.setattr(packaging, "ARTIFACTS_DIR", canonical)
+    output = canonical if destination in {"default", "canonical"} else tmp_path
+    name = "SUBMISSION_SUMMARY.md" if destination == "summary" else "SUBMISSION_MANIFEST.json"
+    preserved = output / name
+    preserved.write_bytes(b"preserved evidence")
+
+    with pytest.raises(
+        ValueError,
+        match="output_dir|canonical artifacts|existing submission",
+    ):
+        if destination == "default":
+            build_submission_package()
+        else:
+            build_submission_package(output_dir=output)
+
+    assert preserved.read_bytes() == b"preserved evidence"
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md"],
+)
+def test_submission_builder_does_not_overwrite_output_created_after_validation(
+    tmp_path,
+    monkeypatch,
+    filename,
+):
+    _stub_package_inputs(monkeypatch)
+    output_path = tmp_path / filename
+    previous_bytes = b"created concurrently"
+    original_open = Path.open
+    competing_writer_created_file = False
+
+    def race_at_file_creation(path, mode="r", *args, **kwargs):
+        nonlocal competing_writer_created_file
+        if (
+            path == output_path
+            and mode in {"x", "w"}
+            and not competing_writer_created_file
+        ):
+            competing_writer_created_file = True
+            output_path.write_bytes(previous_bytes)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", race_at_file_creation)
+
+    with pytest.raises(FileExistsError):
+        build_submission_package(output_dir=tmp_path)
+
+    assert competing_writer_created_file
+    assert output_path.read_bytes() == previous_bytes
+
+
+def _run_submission_package_cli(*arguments: str, cwd: Path = REPO_ROOT):
+    env = os.environ.copy()
+    env["ATLASOPS_AUTO_HF_INFERENCE"] = "0"
+    env["PYTHONPATH"] = os.pathsep.join(
+        path for path in (str(REPO_ROOT), env.get("PYTHONPATH")) if path
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.package_submission", *arguments],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_submission_package_cli_requires_explicit_output_dir(tmp_path):
+    result = _run_submission_package_cli(cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "the following arguments are required: --output-dir" in result.stderr
+    assert not (tmp_path / "artifacts").exists()
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    [
+        "artifacts",
+        str(REPO_ROOT / "artifacts" / ".." / "artifacts"),
+    ],
+)
+def test_submission_package_cli_rejects_canonical_artifacts_output(output_dir):
+    manifest_path = REPO_ROOT / "artifacts/SUBMISSION_MANIFEST.json"
+    summary_path = REPO_ROOT / "artifacts/SUBMISSION_SUMMARY.md"
+    frozen_manifest = manifest_path.read_bytes()
+    frozen_summary = summary_path.read_bytes()
+
+    result = _run_submission_package_cli("--output-dir", output_dir)
+
+    assert result.returncode == 2
+    assert "canonical artifacts directory" in result.stderr
+    assert manifest_path.read_bytes() == frozen_manifest
+    assert summary_path.read_bytes() == frozen_summary
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md"],
+)
+def test_submission_package_cli_refuses_to_overwrite_existing_outputs(
+    tmp_path,
+    filename,
+):
+    output_dir = tmp_path / "existing-package"
+    output_dir.mkdir()
+    destination = output_dir / filename
+    previous_bytes = b"preserved prior submission evidence\r\n"
+    destination.write_bytes(previous_bytes)
+
+    result = _run_submission_package_cli("--output-dir", str(output_dir))
+
+    assert result.returncode == 2
+    assert "existing submission output" in result.stderr
+    assert destination.read_bytes() == previous_bytes
+
+
+def test_submission_package_cli_writes_isolated_output_and_preserves_frozen_manifest(
+    tmp_path,
+):
+    frozen_manifest_path = REPO_ROOT / "artifacts/SUBMISSION_MANIFEST.json"
+    frozen_manifest_before = frozen_manifest_path.read_bytes()
+    pinned_manifest = subprocess.check_output(
+        [
+            "git",
+            "show",
+            (
+                f"{FROZEN_SUBMISSION_MANIFEST_REVISION}:"
+                "artifacts/SUBMISSION_MANIFEST.json"
+            ),
+        ],
+        cwd=REPO_ROOT,
+    )
+    assert frozen_manifest_before == pinned_manifest
+
+    output_dir = tmp_path / "fresh-package"
+    result = _run_submission_package_cli("--output-dir", str(output_dir))
+
+    assert result.returncode == 0, result.stderr
+    manifest_path = output_dir / "SUBMISSION_MANIFEST.json"
+    summary_path = output_dir / "SUBMISSION_SUMMARY.md"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["status"] == "NOT_CERTIFIED"
+    assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
+    assert manifest["gate_statuses_declared"]["G9"] == "NOT_PASSED"
+    assert manifest["empirical_metrics"] is None
+    assert "NOT_CERTIFIED" in summary_path.read_text(encoding="utf-8")
+    assert frozen_manifest_path.read_bytes() == frozen_manifest_before
+    assert frozen_manifest_path.read_bytes() == pinned_manifest
 
 
 def _git_attributes(paths: set[str] | list[str]) -> dict[str, dict[str, str]]:

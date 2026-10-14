@@ -64,7 +64,11 @@ export function IncidentMonitor() {
       : capture && <>
         <div className="demo-actions">
           <code>{capture.experiment_id}</code>
-          <Badge tone="outline">RECORDED / NOT A SIMULATION</Badge>
+          <Badge tone="outline">
+            {capture.status === "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+              ? "ATTEMPT MARKER ONLY"
+              : "RECORDED / NOT A SIMULATION"}
+          </Badge>
           <Badge tone={capture.status.includes("FAILED") || capture.status.includes("NEGATIVE") ? "rose" : "outline"}>
             {capture.status}
           </Badge>

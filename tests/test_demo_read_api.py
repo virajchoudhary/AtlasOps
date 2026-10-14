@@ -38,7 +38,15 @@ def test_exact_current_results_and_g4_chronology(client):
     assert diagnostic["optimizer_steps"] == 0
     assert diagnostic["tensor_hash_count"] == 392
     assert diagnostic["tensor_hashes_unchanged"] is True
-    assert [row["attempt"] for row in data["current_results"]["g4_attempts"]] == ["015", "016", "017"]
+    g4_attempts = data["current_results"]["g4_attempts"]
+    assert [row["attempt"] for row in g4_attempts] == ["015", "016", "017", "018"]
+    assert g4_attempts[3]["state"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert g4_attempts[3]["marker_sha256"] == (
+        "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208"
+    )
+    assert g4_attempts[3]["gate_g4_pass"] is None
+    assert g4_attempts[3]["env_resolved"] is None
+    assert g4_attempts[3]["cleanup_verified_zero"] is None
     assert data["gates"][4]["status"] == "NOT_PASSED"
     assert all("mock_archive" not in row["path"] for row in data["evidence"])
     assert "NON-EMPIRICAL" in data["historical_archive"][0]["classification"]

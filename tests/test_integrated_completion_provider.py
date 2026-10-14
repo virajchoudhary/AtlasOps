@@ -408,6 +408,10 @@ async def test_provider_failures_keep_partial_episode_and_never_fall_back(
     post.assert_not_awaited()
     partial_path = next(coord.TRAJECTORIES_DIR.glob("inc-provider-partial.partial-*.json"))
     partial = json.loads(partial_path.read_text(encoding="utf-8"))
+    assert len(partial["execution_id"]) == 32
+    assert partial_path.name == (
+        f"inc-provider-partial.partial-{partial['execution_id']}.json"
+    )
     assert partial["alert"]["commonLabels"]["alertname"] == "PartialFixture"
     assert partial["scenario_id"] == "validation-partial"
     assert partial["triage"]["final"]["severity"] == "P3"

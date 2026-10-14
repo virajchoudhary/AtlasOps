@@ -72,7 +72,7 @@ class IncidentCorrelator:
                     alert_names=set(alert_names),
                     alerts=[alert],
                     dispatch_claims=set(alert_keys),
-                    active_processing=False,
+                    active_processing=True,
                     last_alert_at=now,
                 )
                 self._incidents[incident_id] = inc
@@ -95,6 +95,7 @@ class IncidentCorrelator:
                 should_dispatch = not inc.active_processing
                 if should_dispatch:
                     inc.dispatch_claims.update(new_alert_keys)
+                    inc.active_processing = True
                 return inc.incident_id, False, should_dispatch
 
         incident_id = f"inc-{int(now)}-{uuid.uuid4().hex[:6]}"
@@ -106,7 +107,7 @@ class IncidentCorrelator:
             alert_names=set(alert_names),
             alerts=[alert],
             dispatch_claims=set(alert_keys),
-            active_processing=False,
+            active_processing=True,
             last_alert_at=now,
         )
         self._incidents[incident_id] = inc
@@ -143,20 +144,54 @@ class IncidentCorrelator:
 
     @classmethod
     def _alert_keys(cls, alert: dict[str, Any]) -> set[str]:
-        alerts = alert.get("alerts") if isinstance(alert, dict) else None
+        if not isinstance(alert, dict):
+            return {cls._payload_key(alert)}
+        alerts = alert.get("alerts")
         if isinstance(alerts, list):
             keys: set[str] = set()
             for item in alerts:
                 if not isinstance(item, dict):
                     continue
-                fingerprint = item.get("fingerprint")
-                if isinstance(fingerprint, str) and fingerprint.strip():
-                    keys.add(f"fingerprint:{fingerprint.strip()}")
-                else:
-                    keys.add(cls._payload_key(item))
+                keys.add(cls._alert_occurrence_key(item, alert))
             if keys:
                 return keys
-        return {cls._payload_key(alert)}
+        return {cls._alert_occurrence_key(alert, alert)}
+
+    @classmethod
+    def _alert_occurrence_key(
+        cls,
+        alert_item: dict[str, Any],
+        envelope: dict[str, Any],
+    ) -> str:
+        fingerprint = alert_item.get("fingerprint")
+        if isinstance(fingerprint, str) and fingerprint.strip():
+            identity = {"fingerprint": fingerprint.strip()}
+        else:
+            labels = alert_item.get("labels")
+            if not isinstance(labels, dict) or not labels:
+                labels = envelope.get("commonLabels")
+            if isinstance(labels, dict) and labels:
+                identity = {"labels": labels}
+            else:
+                stable_payload = {
+                    key: value
+                    for key, value in alert_item.items()
+                    if key not in {"annotations", "endsAt"}
+                }
+                identity = {"payload": stable_payload}
+
+        status = alert_item.get("status")
+        if status is None or (isinstance(status, str) and not status.strip()):
+            status = envelope.get("status")
+        starts_at = alert_item.get("startsAt")
+        if starts_at is None:
+            starts_at = envelope.get("startsAt")
+        occurrence = {
+            "identity": identity,
+            "status": str(status or "").strip().lower(),
+            "startsAt": starts_at,
+        }
+        return f"occurrence:{cls._payload_key(occurrence)}"
 
     def _should_correlate(
         self,

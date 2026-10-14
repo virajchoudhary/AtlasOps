@@ -49,7 +49,9 @@ def test_unknown_selection_fails_closed(monkeypatch, value):
         selection.selected_profile()
 
 
-def test_candidate_requires_exact_fingerprint_operator_channel_and_pinned_source(monkeypatch, website_claim):
+def test_candidate_requires_exact_fingerprint_operator_channel_and_pinned_source(
+    monkeypatch, website_claim, prepared_g4_candidate_source_pins,
+):
     monkeypatch.setenv("ATLASOPS_STAGE4_PROTOCOL", selection.WEBSITE_CANDIDATE)
     monkeypatch.delenv("STAGE4_APPROVED_PROTOCOL_SHA256", raising=False)
     with pytest.raises(RuntimeError, match="fingerprint"):
@@ -60,10 +62,14 @@ def test_candidate_requires_exact_fingerprint_operator_channel_and_pinned_source
     with pytest.raises(RuntimeError, match="operator channel"):
         selection.selected_profile()
     monkeypatch.setenv("ATLASOPS_STAGE4_OPERATOR_CHANNEL_FILE", "channel")
-    monkeypatch.setattr(candidate, "inspect_candidate", lambda: {"status": "SOURCE_MISMATCH"})
+    prepared_file_sha256 = candidate.file_sha256
+    coordinator_path = candidate.REPO_ROOT / "agents/coordinator.py"
+    monkeypatch.setattr(candidate, "file_sha256", lambda path: (
+        "0" * 64 if path == coordinator_path else prepared_file_sha256(path)
+    ))
     with pytest.raises(RuntimeError, match="source"):
         selection.selected_profile()
-    monkeypatch.setattr(candidate, "inspect_candidate", lambda: {"status": "PREPARED"})
+    monkeypatch.setattr(candidate, "file_sha256", prepared_file_sha256)
     website_claim()
     assert selection.selected_profile() == expected
     assert historical.APPROVED_G4_PROTOCOL_PROFILE != expected
@@ -87,7 +93,33 @@ async def test_candidate_without_operator_channel_refuses_before_engine_setup(mo
         await runner.main()
 
 
-def test_selected_candidate_builder_and_runner_use_same_exact_profile(monkeypatch, website_claim):
+@pytest.mark.asyncio
+async def test_frozen_source_drift_refuses_before_engine_or_attempt_reservation(
+    monkeypatch, website_claim,
+):
+    import scripts.run_stage4_golden_incident as runner
+
+    expected = candidate.candidate_profile()
+    monkeypatch.setenv("ATLASOPS_STAGE4_PROTOCOL", selection.WEBSITE_CANDIDATE)
+    monkeypatch.setenv("STAGE4_APPROVED_PROTOCOL_SHA256", historical.protocol_fingerprint(expected))
+    website_claim()
+    monkeypatch.setattr(runner, "_current_main_sha", lambda expected_sha=None: expected_sha)
+    monkeypatch.setattr(
+        "scripts.qualify_integrated_inference.engine_from_environment",
+        lambda: pytest.fail("model engine constructed before frozen-source rejection"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "reserve_experiment_attempt",
+        lambda *args, **kwargs: pytest.fail("attempt reserved before frozen-source rejection"),
+    )
+    with pytest.raises(RuntimeError, match="source does not match"):
+        await runner.main()
+
+
+def test_selected_candidate_builder_and_runner_use_same_exact_profile(
+    monkeypatch, website_claim, prepared_g4_candidate_source_pins,
+):
     import scripts.run_stage4_golden_incident as runner
 
     expected = candidate.candidate_profile()
@@ -106,7 +138,9 @@ def test_selected_candidate_builder_and_runner_use_same_exact_profile(monkeypatc
         selection.observe_selected_profile(changed, expected["metrics_api"])
 
 
-def test_candidate_marker_and_profile_survive_run_owned_preflight(monkeypatch, tmp_path, website_claim):
+def test_candidate_marker_and_profile_survive_run_owned_preflight(
+    monkeypatch, tmp_path, website_claim, prepared_g4_candidate_source_pins,
+):
     import json
 
     import scripts.run_stage4_golden_incident as runner
@@ -147,7 +181,9 @@ def test_candidate_marker_and_profile_survive_run_owned_preflight(monkeypatch, t
         runner._validate_run_owned_preflight(binding, binding["relative_path"], expected_sha=source)
 
 
-def test_direct_candidate_invocation_without_claim_fails_and_claim_consumes_once(monkeypatch, website_claim):
+def test_direct_candidate_invocation_without_claim_fails_and_claim_consumes_once(
+    monkeypatch, website_claim, prepared_g4_candidate_source_pins,
+):
     from config import g4_launch_authority as authority
 
     fingerprint = historical.protocol_fingerprint(candidate.candidate_profile())

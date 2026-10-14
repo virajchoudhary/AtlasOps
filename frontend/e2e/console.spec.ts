@@ -567,9 +567,9 @@ test("governed capture displays unreserved startup failure without a recovery cl
   await expect(monitor.getByText("STARTUP_FAILED / NOT_RESERVED", { exact: true })).toHaveCount(0);
 });
 
-test("governed negative result remains negative despite tool success and cleanup", async ({ page }) => {
+test("synthetic governed negative remains negative despite tool success and cleanup", async ({ page }) => {
   await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
-    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-999",
     observed_at: "2026-10-07T06:00:00Z", status: "RECORDED_NEGATIVE",
     process_running: false, reserved: true, attempt_state: "COMPLETED",
     failure: null, gate_g4_pass: false, env_resolved: false,

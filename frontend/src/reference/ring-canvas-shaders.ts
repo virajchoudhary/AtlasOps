@@ -70,7 +70,7 @@ void main() {
   float row = floor(glyphIndex / uAtlasGrid.x);
   vAtlasUv = vec2(
     (column + aUv.x) / uAtlasGrid.x,
-    (row + aUv.y) / uAtlasGrid.y
+    1.0 - (row + aUv.y) / uAtlasGrid.y
   );
   vAlpha = mix(0.56, 0.92, clamp(aRingIndex / 29.0, 0.0, 1.0))
     * (1.0 - hover * 0.15);

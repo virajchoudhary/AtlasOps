@@ -279,10 +279,10 @@ test("matched comparison and controlled RL findings display canonical API values
   await expect(aligned).toContainText("does not estimate population probability");
 });
 
-test("G4 shows 015 through the latest completed negative 017", async ({ page }) => {
+test("G4 chronology separates the 018 marker from the latest completed negative 017", async ({ page }) => {
   await page.goto("/#/incidents");
   const rows = page.locator(".timeline-item");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText("015");
   await expect(rows.nth(0)).toContainText("INCONCLUSIVE");
   await expect(rows.nth(1)).toContainText("016");
@@ -290,8 +290,17 @@ test("G4 shows 015 through the latest completed negative 017", async ({ page }) 
   await expect(rows.nth(2)).toContainText("017");
   await expect(rows.nth(2)).toContainText("COMPLETED NEGATIVE");
   await expect(rows.nth(2)).toContainText("Last completed attempt");
+  await expect(rows.nth(3)).toContainText("018");
+  await expect(rows.nth(3)).toContainText("COMPLETED MARKER / OUTCOME UNAVAILABLE");
+  await expect(rows.nth(3)).toContainText("Attempt marker only; not an incident outcome");
+  await expect(rows.nth(3)).not.toContainText("Last completed attempt");
+  await rows.nth(3).getByRole("button", { name: "Source and scoring details" }).click();
+  await expect(rows.nth(3)).toContainText(
+    "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+  );
+  await expect(rows.nth(3)).toContainText("docs/EVIDENCE_INDEX.md");
   await expect(page.locator(".gate-status")).toContainText("NOT_PASSED");
-  await expect(page.getByText("Time to resolve: Unavailable", { exact: true })).toHaveCount(3);
+  await expect(page.getByText("Time to resolve: Unavailable", { exact: true })).toHaveCount(4);
   await expect(page.getByText("Time to resolve: Unavailable s", { exact: true })).toHaveCount(0);
 });
 
@@ -578,6 +587,40 @@ test("governed negative result remains negative despite tool success and cleanup
   await expect(monitor.locator("dl div").filter({ hasText: "Cleanup verified zero Chaos" }).locator("dd")).toHaveText("Yes");
   await expect(monitor.locator("dl div").filter({ hasText: "Recorded P1 decision" }).locator("dd")).toHaveText("timeout");
   await expect(monitor.getByRole("region", { name: "Recorded tool outcomes" })).toContainText("Tool success: Yes");
+});
+
+test("completed attempt marker is visible without inferring incident outcome", async ({ page }) => {
+  await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    observed_at: "2026-10-07T06:00:00Z",
+    status: "COMPLETED MARKER / OUTCOME UNAVAILABLE",
+    process_running: false, reserved: true, attempt_state: "COMPLETED",
+    failure: null, gate_g4_pass: null, env_resolved: null,
+    cleanup_verified_zero: null, approval: null, severity: null, services: [],
+    phases: [], actions: [], proposal: null,
+    sources: [{
+      name: "Attempt marker (accounting only; not an outcome)",
+      sha256: "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+    }],
+  } }));
+  await page.goto("/#/demo");
+  const monitor = page.getByRole("region", { name: "Governed incident monitor" });
+  await expect(monitor).toContainText("COMPLETED MARKER / OUTCOME UNAVAILABLE");
+  await expect(monitor).toContainText("ATTEMPT MARKER ONLY");
+  await expect(monitor.getByText("RECORDED / NOT A SIMULATION", { exact: true })).toHaveCount(0);
+  await expect(monitor).not.toContainText("RECORDED_NEGATIVE");
+  await expect(monitor).not.toContainText("RECORDED_PASS");
+  await expect(monitor.locator("dl div").filter({ hasText: "Attempt reserved" }).locator("dd"))
+    .toHaveText("Yes");
+  await expect(monitor.locator("dl div").filter({ hasText: "Environment resolved" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor.locator("dl div").filter({ hasText: "Recorded G4 pass" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor.locator("dl div").filter({ hasText: "Cleanup verified zero Chaos" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor).toContainText(
+    "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+  );
 });
 
 test("operator blocks exhausted launches and submits only the displayed exact action", async ({ page }, testInfo) => {

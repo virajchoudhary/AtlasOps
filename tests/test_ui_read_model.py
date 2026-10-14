@@ -85,7 +85,7 @@ def test_current_result_projection_uses_current_evidence_and_keeps_nulls():
 
 def test_final_g4_chronology_shows_missing_raw_records_without_filling_metrics():
     rows = catalog()["current_results"]["g4_attempts"]
-    assert [row["attempt"] for row in rows] == ["015", "016", "017"]
+    assert [row["attempt"] for row in rows] == ["015", "016", "017", "018"]
     assert rows[0]["state"] == "Terminal INCONCLUSIVE / UNSCORED"
     assert rows[1]["state"] == "PRE-FAULT ABORT / NON-RESULT"
     assert rows[2]["state"] == "COMPLETED NEGATIVE"
@@ -96,6 +96,20 @@ def test_final_g4_chronology_shows_missing_raw_records_without_filling_metrics()
     assert all(row["resolution"] is None for row in rows)
     assert all(row["reward"] is None for row in rows)
     assert all(row["time_to_resolve_s"] is None for row in rows)
+    marker = rows[3]
+    assert marker["state"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert marker["classification"] == "Attempt marker only; not an incident outcome"
+    assert marker["source"]["path"] == "docs/EVIDENCE_INDEX.md"
+    assert marker["source"]["available"] is True
+    assert marker["source"]["sha256"]
+    assert marker["marker_sha256"] == (
+        "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208"
+    )
+    assert marker["source"]["sha256"] != marker["marker_sha256"]
+    assert "not an outcome" in marker["source_note"].lower()
+    assert marker["gate_g4_pass"] is None
+    assert marker["env_resolved"] is None
+    assert marker["cleanup_verified_zero"] is None
 
 
 def test_malformed_nested_evidence_projects_unavailable_without_crashing(monkeypatch):

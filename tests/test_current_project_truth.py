@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -111,11 +112,14 @@ def test_completed_attempt_marker_without_result_does_not_project_a_g4_outcome(t
 
     assert result["attempt_state"] == "COMPLETED"
     assert result["reserved"] is True
-    assert result["status"] not in {"RECORDED_NEGATIVE", "RECORDED_PASS"}
+    assert result["status"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
     assert result["gate_g4_pass"] is None
     assert result["env_resolved"] is None
     assert result["cleanup_verified_zero"] is None
-    assert result["sources"] == []
+    assert result["sources"] == [{
+        "name": "Attempt marker (accounting only; not an outcome)",
+        "sha256": hashlib.sha256(marker.read_bytes()).hexdigest(),
+    }]
 
 
 def test_current_g4_summaries_do_not_claim_an_attempt_018_outcome():

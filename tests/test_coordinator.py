@@ -218,6 +218,7 @@ class TestCoordinatorExecutionAndVerificationTruth:
 
         traj_dir = tmp_path / "trajectories"
         monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
+        monkeypatch.setenv("TRAJECTORIES_DIR", str(traj_dir))
         assert not traj_dir.exists()
 
         call_order = []
@@ -348,6 +349,35 @@ class TestCoordinatorExecutionAndVerificationTruth:
         assert persisted_data["verification"]["verification_status"] == "authoritative-final"
         assert persisted_data["verification"]["evidence"] == ["authoritative_final"]
         assert persisted_data["comms"] == comms
+
+        first_bytes = persisted_file.read_bytes()
+        call_order.clear()
+        verifier_calls.clear()
+        followup_alert = {
+            **alert,
+            "commonLabels": {
+                **alert["commonLabels"],
+                "alertname": "RelatedEventFollowup",
+            },
+        }
+        followup = asyncio.run(
+            coord.handle_incident(
+                followup_alert,
+                incident_id=incident_id,
+                scenario_id="single_fault/sf-001",
+            )
+        )
+        assert persisted_file.read_bytes() == first_bytes
+        assert json.loads(first_bytes) == result
+        assert followup["incident_id"] == result["incident_id"]
+        assert followup["execution_id"] != result["execution_id"]
+        followup_path = traj_dir / f"{incident_id}.execution-{followup['execution_id']}.json"
+        assert json.loads(followup_path.read_text(encoding="utf-8")) == followup
+        from scripts.run_stage4_golden_incident import (
+            _primary_incident_evidence_persisted,
+        )
+
+        assert _primary_incident_evidence_persisted(result) is True
 
     def test_agent_claims_resolved_but_verifier_fails(self, monkeypatch, tmp_path):
         import agents.coordinator as coord

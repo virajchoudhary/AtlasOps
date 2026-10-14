@@ -35,6 +35,7 @@ CURRENT_G4_DOCS = (
     "docs/project/MASTER_PIPELINE_STATUS.md",
     "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
     "docs/EVIDENCE_INDEX.md",
+    "docs/project/DEMO_RUNBOOK.md",
 )
 STALE_CURRENT_CLAIMS = (
     "g9 reopened",
@@ -131,6 +132,33 @@ def test_current_g4_summaries_do_not_claim_an_attempt_018_outcome():
         assert "018 completed negative" not in content, (
             f"{path} treats the marker as a completed negative"
         )
+
+
+def test_demo_runbook_presents_attempt_018_as_marker_only():
+    runbook = " ".join(_read("docs/project/DEMO_RUNBOOK.md").lower().split())
+
+    assert "--incident-capture golden" in runbook
+    assert "--incident-capture golden-v3b" not in runbook
+    assert "rehearsal / governed incident monitor" in runbook
+    assert "completed marker / outcome unavailable" in runbook
+    assert "attempt marker only" in runbook
+    assert (
+        "`gate_g4_pass`, `env_resolved`, and `cleanup_verified_zero` fields are `null`"
+        in runbook
+    )
+    assert "no primary result, interruption record, or cleanup sidecar exists there" in runbook
+    assert "the two-attempt protocol budget remains exhausted" in runbook
+
+    unsupported_claims = (
+        "as recorded_negative with policy block invalid_action",
+        "cleanup then verified zero chaos independently",
+        "show that recovery remained false",
+        "post-verdict safety cleanup succeeded",
+        "attempt 018 remains unreserved",
+        "changes the completed live run",
+    )
+    for claim in unsupported_claims:
+        assert claim not in runbook, f"unsupported attempt-018 claim remains: {claim}"
 
 
 def test_current_summary_surfaces_report_the_real_diagnostic_and_negative_results():

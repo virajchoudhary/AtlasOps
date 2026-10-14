@@ -144,7 +144,7 @@ def test_frozen_plan_does_not_reauthorize_changed_candidate_targets(
         batch_size=settings["batch_size"], grad_accum=settings["gradient_accumulation_steps"],
         max_seq_len=settings["max_sequence_length"], seed=settings["seed"],
     ))
-    with pytest.raises(ValueError, match="unknown schema version"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*unexpected outcome"):
         sft_pilot_gate.validate_preparation(
             snapshot_training_corpus(CORPUS),
             model=sft_pilot_gate.BASE_MODEL, model_revision=sft_pilot_gate.REVISION,
@@ -214,7 +214,7 @@ def test_linux_lf_normalization_does_not_reauthorize_frozen_candidate(
         batch_size=settings["batch_size"], grad_accum=settings["gradient_accumulation_steps"],
         max_seq_len=settings["max_sequence_length"], seed=settings["seed"],
     ))
-    with pytest.raises(ValueError, match="unknown schema version"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*unexpected outcome"):
         sft_pilot_gate.validate_preparation(
             snapshot_training_corpus(CORPUS), model=sft_pilot_gate.BASE_MODEL,
             model_revision=sft_pilot_gate.REVISION, tokenizer=sft_pilot_gate.BASE_MODEL,
@@ -289,7 +289,7 @@ def test_run_manifest_refuses_frozen_candidate_with_stale_target_contract(
 
     monkeypatch.setattr(sft_provenance, "runtime_environment", lambda: {"packages": {}})
     output_dir = tmp_path / "no-run"
-    with pytest.raises(ValueError, match="unknown schema version"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*unexpected outcome"):
         sft_provenance.create_run_manifest(
             corpus_path=CORPUS, output_dir=output_dir,
             base_model=sft_pilot_gate.BASE_MODEL, base_model_revision=sft_pilot_gate.REVISION,

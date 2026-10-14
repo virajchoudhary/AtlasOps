@@ -1543,7 +1543,7 @@ def _diagnosis_row(
         safety=safety,
         messages=messages,
     )
-    return row, diagnosis, diagnosis_observations
+    return row, diagnosis_target, diagnosis_observations
 
 
 def _remediation_action(
@@ -1629,7 +1629,7 @@ def _remediation_row(
     if blocked:
         final = {
             "incident_id": alert["alerts"][0]["incident_id"],
-            "proposed_actions": diagnosis.get("recommended_actions", []),
+            "proposed_actions": diagnosis.get("recommended_fix", []),
             "executed_actions": [],
             "outcome": _runtime_outcome("blocked"),
             "time_to_resolve_seconds": None,

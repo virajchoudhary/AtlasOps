@@ -66,6 +66,16 @@ _SYNTHETIC_ROLE_TARGETS_SHA256 = {
     "remediation": "e2c0ddd6678a7e41946c6d431c3210dc618a3f8ff09f04cf1569dd2a7d7c99a6",
     "comms": "74e69f96d81adb5c5d97973b50f02d251c5019b841c76d378ccbcd376cd28b3e",
 }
+_FORBIDDEN_DIAGNOSIS_LABEL_KEYS = frozenset(
+    {
+        "benchmark", "benchmark_labels", "benchmark_truth", "case_id", "corpus_version",
+        "data_origin", "diagnosis_outcome", "expected_alert", "expected_checks",
+        "expected_predicates", "expected_remediation", "expected_root_cause",
+        "ground_truth", "judge", "judge_score", "known_good_runbook", "outcome",
+        "reward", "reward_contract", "scenario_id", "split", "synthetic_outcome",
+        "tier",
+    }
+)
 
 
 def _assistant_targets_sha256(rows: tuple[dict[str, Any], ...]) -> str:
@@ -191,10 +201,30 @@ def _finite_confidence(value: float) -> bool:
         return False
 
 
+def _contains_forbidden_diagnosis_labels(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = (
+                "_".join(key.strip().casefold().replace("-", " ").split())
+                if isinstance(key, str)
+                else ""
+            )
+            if (
+                normalized in _FORBIDDEN_DIAGNOSIS_LABEL_KEYS
+                or normalized.startswith("expected_")
+                or normalized.endswith("_outcome")
+                or _contains_forbidden_diagnosis_labels(item)
+            ):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_forbidden_diagnosis_labels(item) for item in value)
+    return False
+
+
 def validate_diagnosis_target_contracts(
     examples: Iterable[dict[str, Any]],
 ) -> None:
-    """Reject Diagnosis targets that contradict the prompt before SFT admission.
+    """Reject Diagnosis targets and Remediation handoffs that contradict the prompt.
 
     The validator checks only. Frozen corpus rows are never normalized or
     rewritten; a mismatch requires a new reviewed corpus version.
@@ -215,38 +245,71 @@ def validate_diagnosis_target_contracts(
         if isinstance(category_example, str) and "|" in category_example
         else None
     )
+    prompt_fields = set(prompt_example)
     for example in examples:
-        if example.get("role") != "diagnosis":
+        role = example.get("role")
+        if role not in {"diagnosis", "remediation"}:
             continue
         messages = example.get("messages")
-        if (
-            not isinstance(messages, list)
-            or not messages
-            or not isinstance(messages[-1], dict)
-            or messages[-1].get("role") != "assistant"
-            or messages[-1].get("tool_calls")
-        ):
-            raise ValueError(
-                "Diagnosis SFT target must end with a final assistant conclusion"
-            )
-        content = messages[-1].get("content")
-        try:
-            target = json.loads(content) if isinstance(content, str) else None
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                "Diagnosis SFT target must be one JSON object matching the "
-                "canonical runtime prompt"
-            ) from exc
+        if role == "diagnosis":
+            label = "Diagnosis SFT target"
+            if (
+                not isinstance(messages, list)
+                or not messages
+                or not isinstance(messages[-1], dict)
+                or messages[-1].get("role") != "assistant"
+                or messages[-1].get("tool_calls")
+            ):
+                raise ValueError(
+                    "Diagnosis SFT target must end with a final assistant conclusion"
+                )
+            content = messages[-1].get("content")
+            try:
+                target = json.loads(content) if isinstance(content, str) else None
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Diagnosis SFT target must be one JSON object matching the "
+                    "canonical runtime prompt"
+                ) from exc
+        else:
+            label = "Remediation SFT diagnosis handoff"
+            if (
+                not isinstance(messages, list)
+                or len(messages) < 2
+                or not isinstance(messages[1], dict)
+                or messages[1].get("role") != "user"
+            ):
+                raise ValueError(
+                    "Remediation SFT diagnosis handoff must be in the first user context"
+                )
+            content = messages[1].get("content")
+            try:
+                context = json.loads(content) if isinstance(content, str) else None
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Remediation SFT diagnosis handoff context must be a JSON object"
+                ) from exc
+            if not isinstance(context, dict):
+                raise TypeError(
+                    "Remediation SFT diagnosis handoff context must be a JSON object"
+                )
+            target = context.get("diagnosis")
+            if not isinstance(target, dict):
+                raise TypeError(
+                    "Remediation SFT diagnosis handoff must be a canonical Diagnosis object"
+                )
         if not isinstance(target, dict):
             raise TypeError(
-                "Diagnosis SFT target must be one JSON object matching the "
-                "canonical runtime prompt"
+                f"{label} must be one JSON object matching the canonical runtime prompt"
             )
 
         errors: list[str] = []
+        for field in sorted(prompt_fields - set(target)):
+            errors.append(f"missing {field}")
+        for field in sorted(set(target) - prompt_fields):
+            errors.append(f"unexpected {field}")
         for field, expected in prompt_example.items():
             if field not in target:
-                errors.append(f"missing {field}")
                 continue
             actual = target[field]
             if field == "confidence":
@@ -281,12 +344,14 @@ def validate_diagnosis_target_contracts(
                     f"{field} must be {type(expected).__name__}, "
                     f"got {type(actual).__name__}"
                 )
+        if _contains_forbidden_diagnosis_labels(target):
+            errors.append("outcome or training-label metadata is forbidden")
 
         if errors:
             scenario_id = example.get("scenario_id", "<unknown>")
             raise ValueError(
-                "Diagnosis SFT target is incompatible with the canonical runtime "
-                f"prompt for {scenario_id!r}: {'; '.join(errors)}"
+                f"{label} is incompatible with the canonical runtime prompt "
+                f"for {scenario_id!r}: {'; '.join(errors)}"
             )
 
 

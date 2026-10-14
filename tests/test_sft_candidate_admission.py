@@ -1,7 +1,10 @@
 """Candidate admission tests are entirely synthetic and non-executing."""
 
+import builtins
 import copy
+import hashlib
 import json
+import sys
 
 import pytest
 
@@ -31,7 +34,8 @@ def test_candidate_validates_without_mutation(rows):
     [
         "split", "duplicate", "tool_name", "pairing", "schema", "injected_label",
         "escaped_label", "normalized_label", "nonfinite", "falsey_calls", "delimiter", "approval",
-        "outcome", "unbound_verifier", "empty_executed",
+        "outcome", "unbound_verifier", "empty_executed", "diagnosis_handoff_outcome",
+        "diagnosis_handoff_mismatch", "diagnosis_handoff_nested_outcome",
     ],
 )
 def test_candidate_rejects_corruption(rows, change):
@@ -85,8 +89,81 @@ def test_candidate_rejects_corruption(rows, change):
         final = json.loads(row["messages"][-1]["content"])
         final["executed_actions"] = []
         row["messages"][-1]["content"] = json.dumps(final)
+    elif change == "diagnosis_handoff_outcome":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["outcome"] = "leaked-training-label"
+        row["messages"][1]["content"] = json.dumps(context)
+    elif change == "diagnosis_handoff_mismatch":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["root_cause"] = "A different but structurally valid diagnosis."
+        row["messages"][1]["content"] = json.dumps(context)
+    elif change == "diagnosis_handoff_nested_outcome":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["evidence"][0]["outcome"] = "leaked-training-label"
+        row["messages"][1]["content"] = json.dumps(context)
     with pytest.raises((ValueError, TypeError)):
         sft_candidate.inspect_candidate_rows(rows)
+
+
+def test_training_rejects_malformed_diagnosis_handoff_before_loader(
+    tmp_path, monkeypatch
+):
+    from training import sft
+    from training.build_sft_candidate import build_candidate_rows, serialize_candidate_rows
+
+    rows = build_candidate_rows()
+    row = next(row for row in rows if row["role"] == "remediation")
+    context = json.loads(row["messages"][1]["content"])
+    context["diagnosis"] = {
+        "incident_id": context["incident_id"],
+        "root_cause": {
+            "category": "resource",
+            "specific": "legacy nested diagnosis",
+            "evidence": [],
+        },
+        "blast_radius_update": "synthetic scope",
+        "next_agent": "remediation",
+        "recommended_actions": [],
+        "outcome": "successful",
+    }
+    row["messages"][1]["content"] = json.dumps(context)
+
+    corpus = tmp_path / "malformed-handoff.jsonl"
+    corpus.write_bytes(serialize_candidate_rows(rows))
+    output = tmp_path / "checkpoint"
+    original_import = builtins.__import__
+
+    def guard_ml_imports(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"datasets", "transformers", "torch", "trl", "peft"}:
+            raise AssertionError("malformed handoff reached an ML loader")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guard_ml_imports)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "training.sft",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "a09a35458c702b33eeacc393d103063234e8bc28",
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Remediation SFT diagnosis handoff.*canonical runtime prompt",
+    ):
+        sft.main()
+    assert not output.exists()
 
 
 def test_nontrain_catalog_is_never_indexed(monkeypatch):
@@ -160,7 +237,25 @@ def test_stored_candidate_remains_frozen_but_legacy_diagnosis_shape_is_refused()
     from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
+    candidate_dir = corpus.parent
     assert corpus.is_file(), "required versioned review corpus is missing"
+    frozen_paths = (
+        corpus,
+        candidate_dir / "sft_corpus_manifest.json",
+        candidate_dir / "README.md",
+        candidate_dir / "quality_audit.md",
+        REPO_ROOT / "docs/project/G7_D3_PREPARATION_APPROVAL_V1.md",
+        REPO_ROOT / "docs/project/G7_D2_PINNED_MODEL_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_ENVIRONMENT_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md",
+        REPO_ROOT / "config/sft_pilot_v4.json",
+        REPO_ROOT / "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json",
+    )
+    frozen_hashes = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in frozen_paths
+    }
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
     sft_candidate.validate_source_revision(manifest)
@@ -177,6 +272,10 @@ def test_stored_candidate_remains_frozen_but_legacy_diagnosis_shape_is_refused()
         sft_candidate.validate_candidate_snapshot(snapshot, manifest)
     with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         sft_candidate.refuse_unapproved_candidate(snapshot)
+    assert frozen_hashes == {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in frozen_paths
+    }
 
 
 def test_settling_compatibility_cannot_bypass_legacy_diagnosis_shape():

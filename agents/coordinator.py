@@ -2061,6 +2061,24 @@ def _live_judge_requested() -> bool:
     return os.getenv("ATLASOPS_USE_HF_INFERENCE", "").strip().lower() in ("1", "true", "yes")
 
 
+def _persist_incident_record(record: dict[str, Any]) -> None:
+    """Keep the legacy first-record path while preserving later executions."""
+    incident_id = record["incident_id"]
+    execution_id = record["execution_id"]
+    serialized = json.dumps(record, indent=2)
+    TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
+    canonical_path = TRAJECTORIES_DIR / f"{incident_id}.json"
+    try:
+        with canonical_path.open("x", encoding="utf-8") as stream:
+            stream.write(serialized)
+    except FileExistsError:
+        followup_path = (
+            TRAJECTORIES_DIR / f"{incident_id}.execution-{execution_id}.json"
+        )
+        with followup_path.open("x", encoding="utf-8") as stream:
+            stream.write(serialized)
+
+
 async def handle_incident(
     alert: dict[str, Any],
     incident_id: str | None = None,
@@ -2108,6 +2126,7 @@ async def handle_incident(
         TRAJECTORIES_DIR / f"{incident_id}.json"
     ).exists():
         raise FileExistsError(f"trajectory already exists for incident {incident_id}")
+    execution_id = uuid.uuid4().hex
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
         incident_id=incident_id,
@@ -2188,6 +2207,7 @@ async def handle_incident(
         }
         partial = {
             "incident_id": incident_id,
+            "execution_id": execution_id,
             "alert": alert,
             "scenario_id": scenario_id if scenario_id is not None else alert.get("scenario_id"),
             "triage": triage,
@@ -2216,7 +2236,7 @@ async def handle_incident(
             partial["failed_role_trajectory"] = failed_trajectory
         try:
             TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-            path = TRAJECTORIES_DIR / f"{incident_id}.partial-{uuid.uuid4().hex}.json"
+            path = TRAJECTORIES_DIR / f"{incident_id}.partial-{execution_id}.json"
             with path.open("x", encoding="utf-8") as stream:
                 stream.write(json.dumps(partial, indent=2))
         except Exception as exc:  # noqa: BLE001 - preserve provider failure if capture fails
@@ -2803,6 +2823,7 @@ async def handle_incident(
         )
         full_record = {
             "incident_id": incident_id,
+            "execution_id": execution_id,
             "alert": alert,
             "scenario_id": scenario_id,
             "incident_anchors": incident_anchors,
@@ -2828,13 +2849,7 @@ async def handle_incident(
                 certification_status="NOT_CERTIFIED",
                 provider_injected=True,
             )
-        TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-        trajectory_path = TRAJECTORIES_DIR / f"{incident_id}.json"
-        if completion_provider is not None:
-            with trajectory_path.open("x", encoding="utf-8") as stream:
-                stream.write(json.dumps(full_record, indent=2))
-        else:
-            trajectory_path.write_text(json.dumps(full_record, indent=2), encoding="utf-8")
+        _persist_incident_record(full_record)
         if _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory
 

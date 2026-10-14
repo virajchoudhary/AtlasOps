@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RingCanvas fixture</title>
+    <style>
+      :root { color-scheme: light; font-family: GeistSans, Arial, sans-serif; }
+      * { box-sizing: border-box; }
+      html, body, #root { width: 100%; height: 100%; margin: 0; }
+      body { overflow: hidden; }
+      body:has(.fixture--offscreen) { overflow-x: hidden; overflow-y: auto; }
+      #root:has(.fixture--offscreen) { height: auto; }
+      .fixture {
+        display: grid;
+        width: 100%;
+        height: 100%;
+        grid-template-columns: 1fr 1fr;
+        color: #232323;
+        background: #f1eee7;
+      }
+      .fixture-copy { display: grid; align-content: center; padding: 48px; }
+      .fixture-copy h1 { max-width: 12ch; margin: 0; font-size: 52px; font-weight: 540; line-height: 1; }
+      .fixture-field { min-width: 0; min-height: 0; background: #222222; }
+      .fixture-field .ring-canvas { height: 100%; }
+      .fixture-controls { display: flex; gap: 8px; margin-top: 24px; }
+      .fixture-controls button { min-height: 32px; padding: 0 10px; }
+      .fixture-offscreen-space { height: 115vh; background: #f1eee7; }
+      .fixture-offscreen { height: 100vh; background: #222222; }
+      .fixture--offscreen { display: block; height: auto; overflow: visible; }
+      .fixture--offscreen .fixture-copy { height: 100vh; }
+      .fixture--offscreen .fixture-field .ring-canvas { height: 100vh; }
+      .fixture--mobile { display: block; height: 100%; overflow: auto; }
+      .fixture--mobile .fixture-copy { min-height: 270px; padding: 24px; }
+      .fixture--mobile .fixture-copy h1 { font-size: 37px; }
+      .fixture--mobile .fixture-field { height: 100vh; }
+      @media (max-width: 600px) {
+        .fixture:not(.fixture--offscreen) { display: block; overflow: auto; }
+        .fixture:not(.fixture--offscreen) .fixture-copy { min-height: 270px; padding: 24px; }
+        .fixture:not(.fixture--offscreen) .fixture-copy h1 { font-size: 37px; }
+        .fixture:not(.fixture--offscreen) .fixture-field { height: 100vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

@@ -27,6 +27,8 @@ def _calls(row: dict) -> list[tuple[int, dict]]:
 def test_builder_is_deterministic_train_only_and_admission_ready():
     rows = builder.build_candidate_rows()
     assert rows == builder.build_candidate_rows()
+    assert {row["schema_version"] for row in rows} == {"atlasops-sft-candidate-v2"}
+    assert {row["corpus_version"] for row in rows} == {"train-candidate-v2"}
 
     inventory = inspect_candidate_rows(rows)
     assert len(rows) == 68

@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
+import math
+import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +40,7 @@ from training.sft_provenance import (
 )
 from training.sft_rendering import (
     TEMPLATE_PATH,
+    load_role_prompt,
     normalize_tool_arguments,
     prepare_example_for_training,
     validate_tool_call_role_acl,
@@ -179,6 +184,112 @@ def _hyperparameters(args: argparse.Namespace) -> dict[str, Any]:
     return values
 
 
+def _finite_confidence(value: float) -> bool:
+    try:
+        return math.isfinite(value) and 0 <= value <= 1
+    except OverflowError:
+        return False
+
+
+def validate_diagnosis_target_contracts(
+    examples: Iterable[dict[str, Any]],
+) -> None:
+    """Reject Diagnosis targets that contradict the prompt before SFT admission.
+
+    The validator checks only. Frozen corpus rows are never normalized or
+    rewritten; a mismatch requires a new reviewed corpus version.
+    """
+    prompt = load_role_prompt("diagnosis")
+    match = re.search(r"```json\s*(.*?)\s*```", prompt, re.DOTALL)
+    if match is None:
+        raise ValueError(
+            "Canonical Diagnosis prompt must contain a JSON output example"
+        )
+    prompt_example = json.loads(match.group(1))
+    if not isinstance(prompt_example, dict):
+        raise TypeError("Canonical Diagnosis prompt example must be a JSON object")
+
+    category_example = prompt_example.get("category")
+    categories = (
+        set(category_example.split("|"))
+        if isinstance(category_example, str) and "|" in category_example
+        else None
+    )
+    for example in examples:
+        if example.get("role") != "diagnosis":
+            continue
+        messages = example.get("messages")
+        if (
+            not isinstance(messages, list)
+            or not messages
+            or not isinstance(messages[-1], dict)
+            or messages[-1].get("role") != "assistant"
+            or messages[-1].get("tool_calls")
+        ):
+            raise ValueError(
+                "Diagnosis SFT target must end with a final assistant conclusion"
+            )
+        content = messages[-1].get("content")
+        try:
+            target = json.loads(content) if isinstance(content, str) else None
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "Diagnosis SFT target must be one JSON object matching the "
+                "canonical runtime prompt"
+            ) from exc
+        if not isinstance(target, dict):
+            raise TypeError(
+                "Diagnosis SFT target must be one JSON object matching the "
+                "canonical runtime prompt"
+            )
+
+        errors: list[str] = []
+        for field, expected in prompt_example.items():
+            if field not in target:
+                errors.append(f"missing {field}")
+                continue
+            actual = target[field]
+            if field == "confidence":
+                if (
+                    isinstance(actual, bool)
+                    or not isinstance(actual, int | float)
+                    or not _finite_confidence(actual)
+                ):
+                    errors.append("confidence must be finite and in [0, 1]")
+            elif field == "category":
+                if not isinstance(actual, str) or (
+                    categories is not None and actual not in categories
+                ):
+                    errors.append("category is outside the canonical prompt choices")
+            elif isinstance(expected, str):
+                if not isinstance(actual, str) or not actual.strip():
+                    errors.append(
+                        f"{field} must be non-empty text "
+                        f"(got {type(actual).__name__})"
+                    )
+                elif field == "next_agent" and actual != expected:
+                    errors.append("next_agent differs from the canonical prompt handoff")
+            elif isinstance(expected, list):
+                if not isinstance(actual, list):
+                    errors.append(f"{field} must be an array")
+                elif expected and isinstance(expected[0], dict) and any(
+                    not isinstance(item, dict) for item in actual
+                ):
+                    errors.append(f"{field} entries must be objects")
+            elif not isinstance(actual, type(expected)):
+                errors.append(
+                    f"{field} must be {type(expected).__name__}, "
+                    f"got {type(actual).__name__}"
+                )
+
+        if errors:
+            scenario_id = example.get("scenario_id", "<unknown>")
+            raise ValueError(
+                "Diagnosis SFT target is incompatible with the canonical runtime "
+                f"prompt for {scenario_id!r}: {'; '.join(errors)}"
+            )
+
+
 def main() -> None:
     args = _parse_args()
     output_dir = Path(args.output)
@@ -251,6 +362,7 @@ def main() -> None:
             "SFT training admission rejected the canonical Train corpus for every role"
         )
     validate_tool_call_role_acl(training_source_rows)
+    validate_diagnosis_target_contracts(training_source_rows)
 
     if args.pilot_profile == "free-t4-v1":
         from training.sft_free_t4_gate import require_execution_authority, validate_preparation
@@ -388,8 +500,8 @@ def main() -> None:
             **model_precision_options,
         )
         if args.pilot_profile == "free-t4-v1":
-            from training.sft_t4_attention import install_t4_attention
             from training.sft_chunked_loss import install_supervised_logits
+            from training.sft_t4_attention import install_t4_attention
 
             install_t4_attention(model)
             manifest["attention_implementation"] = {

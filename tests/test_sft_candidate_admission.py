@@ -155,9 +155,9 @@ def test_source_revision_must_contain_generator_and_exact_hashes(monkeypatch):
         sft_candidate.validate_source_revision({"source_git_sha": "a" * 40})
 
 
-def test_stored_candidate_preserves_frozen_provenance_but_current_drift_blocks_admission():
-    from training.sft_provenance import REPO_ROOT
+def test_stored_candidate_remains_frozen_but_legacy_diagnosis_shape_is_refused():
     from training.build_sft_candidate import build_candidate_rows
+    from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
     assert corpus.is_file(), "required versioned review corpus is missing"
@@ -165,33 +165,26 @@ def test_stored_candidate_preserves_frozen_provenance_but_current_drift_blocks_a
     manifest = sft_candidate.read_candidate_manifest(corpus)
     sft_candidate.validate_source_revision(manifest)
     assert sft_candidate.canonical_bytes_sha256(snapshot.raw_bytes) == manifest["corpus_sha256_canonical_lf"]
-    assert sft_candidate.canonical_json_sha256(build_candidate_rows()) == manifest["rows_semantic_sha256"]
+    assert sft_candidate.canonical_json_sha256(list(snapshot.rows)) == manifest["rows_semantic_sha256"]
+    assert sft_candidate.canonical_json_sha256(build_candidate_rows()) != manifest["rows_semantic_sha256"]
     assert manifest["d3_approval"] == "PENDING"
     assert manifest["technical_admissibility"] == "PASS"
     assert (
         sft_candidate.canonical_bytes_sha256((REPO_ROOT / "agents/coordinator.py").read_bytes())
         != manifest["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
     )
-    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         sft_candidate.validate_candidate_snapshot(snapshot, manifest)
-    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         sft_candidate.refuse_unapproved_candidate(snapshot)
 
 
-def test_settling_compatibility_does_not_admit_other_source_hashes(monkeypatch):
+def test_settling_compatibility_cannot_bypass_legacy_diagnosis_shape():
     from training import sft_candidate_compatibility as compatibility
     from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
-    original = compatibility.candidate_manifest
-
-    def changed(*args):
-        result = original(*args)
-        result["source_file_sha256_canonical_lf"]["agents/coordinator.py"] = "f" * 64
-        return result
-
-    monkeypatch.setattr(compatibility, "candidate_manifest", changed)
-    with pytest.raises(ValueError, match="manifest/provenance"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         compatibility.validate_pilot_candidate(snapshot, manifest)

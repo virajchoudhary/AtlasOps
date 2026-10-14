@@ -217,49 +217,51 @@ def _patch_runtime(monkeypatch, tokenizer: FakeTokenizer) -> None:
     )
 
 
-def test_full_candidate_uses_core_offsets_and_reports_minimum_length(
+def test_frozen_v1_preflight_refuses_legacy_target_before_row_tokenization(
     tmp_path,
     monkeypatch,
-    frozen_historical_coordinator_source,
 ):
     tokenizer_dir = _local_bundle(tmp_path / "tokenizer")
     _patch_runtime(monkeypatch, FakeTokenizer())
-
-    report = preflight.run_preflight(CORPUS, tokenizer_dir, REVISION, 2048)
-
-    assert report["schema_version"] == "atlasops-sft-tokenizer-preflight-v1"
-    assert report["status"] == "FAIL"
-    assert report["settings"]["max_seq_length"] == 2048
-    assert report["settings"]["tokenizer_repository"] == preflight.TOKENIZER_REPOSITORY
-    assert report["settings"]["tokenizer_revision"] == REVISION
-    assert report["candidate"]["corpus_version"] == "train-candidate-v1"
-    assert report["candidate"]["d3_approval"] == "PENDING"
-    assert report["candidate"]["total_examples"] == 68
-    assert len(report["rows"]) == 68
-    assert report["summary"]["mask_contract_pass"] is True
-    assert report["summary"]["truncation_status"] == "TRUNCATION_REQUIRED"
-    assert report["summary"]["truncated_row_count"] > 0
-    assert report["summary"]["recommended_min_max_seq_length"] > 2048
-    assert all(row["lengths_equal"] for row in report["rows"])
-    assert all(row["target_count"] > 0 for row in report["rows"])
-    assert all(row["mask_contract_pass"] for row in report["rows"])
-    assert all(
-        row["truncation_disposition"] == "WOULD_TRUNCATE"
-        for row in report["rows"]
+    monkeypatch.setattr(
+        preflight,
+        "_render_template_with_generation_offsets",
+        lambda *_args, **_kwargs: pytest.fail(
+            "legacy candidate reached row tokenization"
+        ),
     )
-    assert report["summary"]["model_weights_loaded"] is False
-    assert report["summary"]["training_started"] is False
-    assert report["summary"]["truncation_applied"] is False
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
+        preflight.run_preflight(CORPUS, tokenizer_dir, REVISION, 2048)
 
-    fit_report = preflight.run_preflight(
-        CORPUS,
-        tokenizer_dir,
-        REVISION,
-        report["summary"]["recommended_min_max_seq_length"],
+
+def test_prospective_v2_candidate_uses_core_offsets_and_reports_minimum_length():
+    from training.build_sft_candidate import build_candidate_rows
+
+    rows = build_candidate_rows()
+    assert {row["corpus_version"] for row in rows} == {"train-candidate-v2"}
+    report = preflight.preflight_rows(
+        rows,
+        FakeTokenizer(),
+        max_seq_length=2048,
+    )
+
+    assert report["status"] == "REFUSE"
+    assert report["summary"]["rows"] == len(rows) == 68
+    assert report["summary"]["refused"] > 0
+    assert report["summary"]["unverified"] == 0
+    assert all(type(row["length"]) is int for row in report["rows"])
+    assert all(row["supervised_tokens"] > 0 for row in report["rows"])
+    minimum_length = max(row["length"] for row in report["rows"])
+
+    fit_report = preflight.preflight_rows(
+        rows,
+        FakeTokenizer(),
+        max_seq_length=minimum_length,
     )
     assert fit_report["status"] == "PASS"
-    assert fit_report["summary"]["truncated_row_count"] == 0
-    assert all(row["truncation_disposition"] == "FITS" for row in fit_report["rows"])
+    assert all(row["disposition"] == "FITS" for row in fit_report["rows"])
+    assert fit_report["training_started"] is False
+    assert fit_report["model_weights_loaded"] is False
 
 
 def test_context_mask_leak_fails_the_core_offset_contract():

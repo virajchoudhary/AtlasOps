@@ -565,6 +565,26 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
 
 def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
     """Assemble an integrity inventory without inventing gate or model metrics."""
+    if output_dir is None:
+        raise ValueError("output_dir is required; choose a separate directory")
+
+    destination = output_dir.resolve()
+    if destination == ARTIFACTS_DIR.resolve():
+        raise ValueError(
+            "output_dir resolves to the canonical artifacts directory; "
+            "choose a separate directory"
+        )
+    existing_outputs = [
+        name
+        for name in ("SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md")
+        if (destination / name).exists() or (destination / name).is_symlink()
+    ]
+    if existing_outputs:
+        raise ValueError(
+            "output_dir contains existing submission output(s): "
+            + ", ".join(existing_outputs)
+        )
+
     assets = collect_submission_assets()
     gates = declared_gate_statuses()
     from scripts.check_submission_links import check_current_markdown_links
@@ -606,16 +626,17 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         **readiness,
     }
 
-    destination = output_dir or ARTIFACTS_DIR
     destination.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / "SUBMISSION_MANIFEST.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
+    with manifest_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(manifest, indent=2))
     log.info("Wrote %s", manifest_path)
 
     # Generate Markdown Summary
     summary_path = destination / "SUBMISSION_SUMMARY.md"
     summary_md = generate_submission_summary_md(manifest)
-    summary_path.write_text(summary_md, encoding="utf-8", newline="\n")
+    with summary_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(summary_md)
     log.info("Wrote %s", summary_path)
 
     return manifest
@@ -698,8 +719,18 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Submission Package Generator")
-    parser.parse_args()
-    build_submission_package()
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Write a fresh manifest and summary into a separate directory",
+    )
+    args = parser.parse_args()
+
+    try:
+        build_submission_package(output_dir=args.output_dir)
+    except (ValueError, FileExistsError) as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

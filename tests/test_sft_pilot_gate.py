@@ -96,7 +96,7 @@ def test_preparation_cli_has_no_model_import_or_output(monkeypatch, tmp_path, ca
 
     monkeypatch.setattr(builtins, "__import__", guard)
     output = tmp_path / "never-created"
-    _args(monkeypatch, output, extra=("--preflight-only",))
+    _args(monkeypatch, output, extra=("--preflight-only", "--role", "triage"))
     sft.main()
     assert json.loads(capsys.readouterr().out)["execution_allowed"] is False
     assert not output.exists()
@@ -105,7 +105,7 @@ def test_preparation_cli_has_no_model_import_or_output(monkeypatch, tmp_path, ca
 def test_cli_execution_stops_before_output_and_load(monkeypatch, tmp_path):
     monkeypatch.setattr(sft_pilot_gate, "validate_preparation", lambda *_a, **_k: {})
     output = tmp_path / "never-created"
-    _args(monkeypatch, output)
+    _args(monkeypatch, output, extra=("--role", "triage"))
     with pytest.raises(ValueError, match="Training refused"):
         sft.main()
     assert not output.exists()
@@ -130,34 +130,34 @@ def test_exact_candidate_requires_exact_model_and_role():
             sft_pilot_gate.validate_preparation(snapshot, **altered)
 
 
-def test_frozen_plan_and_preflight_integrity(frozen_historical_coordinator_source):
+def test_frozen_plan_does_not_reauthorize_changed_candidate_targets(
+    frozen_historical_coordinator_source,
+):
     assert sft_pilot_gate.PLAN_PATH.is_file()
     plan = json.loads(sft_pilot_gate.PLAN_PATH.read_text())
     from types import SimpleNamespace
 
+    assert plan["execution_allowed"] is False
     settings = plan["hyperparameters"]
     actual = sft._hyperparameters(SimpleNamespace(
         epochs=settings["epochs"], lr=settings["learning_rate"],
         batch_size=settings["batch_size"], grad_accum=settings["gradient_accumulation_steps"],
         max_seq_len=settings["max_sequence_length"], seed=settings["seed"],
     ))
-    result = sft_pilot_gate.validate_preparation(
-        snapshot_training_corpus(CORPUS),
-        model=sft_pilot_gate.BASE_MODEL, model_revision=sft_pilot_gate.REVISION,
-        tokenizer=sft_pilot_gate.BASE_MODEL, tokenizer_revision=sft_pilot_gate.REVISION,
-        role="all", hyperparameters=actual,
-    )
-    assert result["d3_status"] == "APPROVED_FOR_PREPARATION"
-    assert result["execution_allowed"] is False
+    with pytest.raises(ValueError, match="unknown schema version"):
+        sft_pilot_gate.validate_preparation(
+            snapshot_training_corpus(CORPUS),
+            model=sft_pilot_gate.BASE_MODEL, model_revision=sft_pilot_gate.REVISION,
+            tokenizer=sft_pilot_gate.BASE_MODEL, tokenizer_revision=sft_pilot_gate.REVISION,
+            role="all", hyperparameters=actual,
+        )
 
 
-def test_exact_preparation_cli_cannot_authorize_training(
+def test_exact_preparation_cli_rejects_target_prompt_mismatch(
     monkeypatch,
     tmp_path,
-    capsys,
-    frozen_historical_coordinator_source,
 ):
-    """Use real admission at the CLI boundary, not a substituted gate result."""
+    """The current prompt rejects the frozen Train row before model/output work."""
     original = builtins.__import__
 
     def guard(name, *args, **kwargs):
@@ -168,20 +168,33 @@ def test_exact_preparation_cli_cannot_authorize_training(
     monkeypatch.setattr(builtins, "__import__", guard)
     output = tmp_path / "never-created"
     _args(monkeypatch, output, extra=("--preflight-only",))
-    sft.main()
-    admission = json.loads(capsys.readouterr().out)
-    assert admission["d3_status"] == "APPROVED_FOR_PREPARATION"
-    assert admission["preparation_admissible"] is True
-    assert admission["execution_allowed"] is False
-    assert not output.exists()
-
-    _args(monkeypatch, output)
-    with pytest.raises(ValueError, match="Training refused"):
+    with pytest.raises(ValueError, match=r"Diagnosis.*root_cause"):
         sft.main()
     assert not output.exists()
 
 
-def test_preflight_source_hashes_accept_linux_lf_checkout(
+def test_prospective_v2_corpus_cannot_reuse_frozen_v1_preparation(tmp_path):
+    from training import build_sft_candidate
+
+    rows = build_sft_candidate.build_candidate_rows()
+    assert {row["corpus_version"] for row in rows} == {"train-candidate-v2"}
+    corpus = tmp_path / "sft_corpus_train.jsonl"
+    corpus.write_bytes(build_sft_candidate.serialize_candidate_rows(rows))
+    snapshot = snapshot_training_corpus(corpus)
+
+    with pytest.raises(ValueError, match="corpus hash differs from D3 preparation approval"):
+        sft_pilot_gate.validate_preparation(
+            snapshot,
+            model=sft_pilot_gate.BASE_MODEL,
+            model_revision=sft_pilot_gate.REVISION,
+            tokenizer=sft_pilot_gate.BASE_MODEL,
+            tokenizer_revision=sft_pilot_gate.REVISION,
+            role="all",
+            hyperparameters={},
+        )
+
+
+def test_linux_lf_normalization_does_not_reauthorize_frozen_candidate(
     monkeypatch,
     frozen_historical_coordinator_source,
 ):
@@ -201,13 +214,13 @@ def test_preflight_source_hashes_accept_linux_lf_checkout(
         batch_size=settings["batch_size"], grad_accum=settings["gradient_accumulation_steps"],
         max_seq_len=settings["max_sequence_length"], seed=settings["seed"],
     ))
-    result = sft_pilot_gate.validate_preparation(
-        snapshot_training_corpus(CORPUS), model=sft_pilot_gate.BASE_MODEL,
-        model_revision=sft_pilot_gate.REVISION, tokenizer=sft_pilot_gate.BASE_MODEL,
-        tokenizer_revision=sft_pilot_gate.REVISION, role="all",
-        hyperparameters=hyperparameters,
-    )
-    assert result["execution_allowed"] is False
+    with pytest.raises(ValueError, match="unknown schema version"):
+        sft_pilot_gate.validate_preparation(
+            snapshot_training_corpus(CORPUS), model=sft_pilot_gate.BASE_MODEL,
+            model_revision=sft_pilot_gate.REVISION, tokenizer=sft_pilot_gate.BASE_MODEL,
+            tokenizer_revision=sft_pilot_gate.REVISION, role="all",
+            hyperparameters=hyperparameters,
+        )
 
 
 def test_plan_cannot_approve_execution_or_change_setting(
@@ -217,11 +230,14 @@ def test_plan_cannot_approve_execution_or_change_setting(
 ):
     assert sft_pilot_gate.PLAN_PATH.is_file()
     original = json.loads(sft_pilot_gate.PLAN_PATH.read_text())
-    common = dict(
-        model=sft_pilot_gate.BASE_MODEL, model_revision=sft_pilot_gate.REVISION,
-        tokenizer=sft_pilot_gate.BASE_MODEL, tokenizer_revision=sft_pilot_gate.REVISION,
-        role="all", hyperparameters=original["hyperparameters"],
-    )
+    common = {
+        "model": sft_pilot_gate.BASE_MODEL,
+        "model_revision": sft_pilot_gate.REVISION,
+        "tokenizer": sft_pilot_gate.BASE_MODEL,
+        "tokenizer_revision": sft_pilot_gate.REVISION,
+        "role": "all",
+        "hyperparameters": original["hyperparameters"],
+    }
     changed = copy.deepcopy(original)
     changed["execution_allowed"] = True
     alternate = tmp_path / "plan.json"
@@ -231,6 +247,7 @@ def test_plan_cannot_approve_execution_or_change_setting(
         sft_pilot_gate, "PLAN_SHA256",
         hashlib.sha256(alternate.read_bytes()).hexdigest(),
     )
+    monkeypatch.setattr(sft_pilot_gate, "validate_pilot_candidate", lambda *_a: {})
     with pytest.raises(ValueError, match="cannot grant"):
         sft_pilot_gate.validate_preparation(snapshot_training_corpus(CORPUS), **common)
 
@@ -248,37 +265,22 @@ def test_revised_diagnosis_refuses_old_preparation_even_with_frozen_coordinator(
     monkeypatch.setattr(Path, "read_bytes", historical_coordinator_only)
     snapshot = snapshot_training_corpus(CORPUS)
     manifest = sft_candidate.read_candidate_manifest(CORPUS)
-    with pytest.raises(ValueError, match="manifest/provenance mismatch"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         candidate_compatibility.validate_pilot_candidate(snapshot, manifest)
 
 
-def test_current_coordinator_source_drift_refuses_preparation():
+def test_current_candidate_manifest_rejects_legacy_diagnosis_target():
     snapshot = snapshot_training_corpus(CORPUS)
     manifest = sft_candidate.read_candidate_manifest(CORPUS)
-    current = sft_candidate.candidate_manifest(
-        list(snapshot.rows),
-        snapshot.raw_bytes,
-        manifest["source_git_sha"],
-    )
-    current_coordinator = current["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
-    frozen_coordinator = manifest["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
-    assert frozen_coordinator == candidate_compatibility.OLD_COORDINATOR
-    assert current_coordinator != candidate_compatibility.NEW_COORDINATOR
-    assert current_coordinator != frozen_coordinator
-
-    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
-        sft_pilot_gate.validate_preparation(
-            snapshot,
-            model=sft_pilot_gate.BASE_MODEL,
-            model_revision=sft_pilot_gate.REVISION,
-            tokenizer=sft_pilot_gate.BASE_MODEL,
-            tokenizer_revision=sft_pilot_gate.REVISION,
-            role="all",
-            hyperparameters={},
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
+        sft_candidate.candidate_manifest(
+            list(snapshot.rows),
+            snapshot.raw_bytes,
+            manifest["source_git_sha"],
         )
 
 
-def test_prep_manifest_preserves_exact_review_candidate_origin(
+def test_run_manifest_refuses_frozen_candidate_with_stale_target_contract(
     monkeypatch,
     tmp_path,
     frozen_historical_coordinator_source,
@@ -286,19 +288,15 @@ def test_prep_manifest_preserves_exact_review_candidate_origin(
     from training import sft_provenance
 
     monkeypatch.setattr(sft_provenance, "runtime_environment", lambda: {"packages": {}})
-    manifest = sft_provenance.create_run_manifest(
-        corpus_path=CORPUS, output_dir=tmp_path / "no-run",
-        base_model=sft_pilot_gate.BASE_MODEL, base_model_revision=sft_pilot_gate.REVISION,
-        tokenizer=sft_pilot_gate.BASE_MODEL, tokenizer_revision=sft_pilot_gate.REVISION,
-        role="all", hyperparameters={},
-    )
-    assert manifest["dataset"]["data_origin"] == sft_provenance.REVIEW_CANDIDATE_ORIGIN
-    assert manifest["dataset"]["synthetic"] is True
-    normalized = sft_provenance.normalize_training_data_provenance(
-        manifest["dataset"], approved_corpus_path=CORPUS,
-    )
-    assert normalized["data_origin"] == sft_provenance.REVIEW_CANDIDATE_ORIGIN
-    assert normalized["corpus_manifest"]["content_verified"] is True
+    output_dir = tmp_path / "no-run"
+    with pytest.raises(ValueError, match="unknown schema version"):
+        sft_provenance.create_run_manifest(
+            corpus_path=CORPUS, output_dir=output_dir,
+            base_model=sft_pilot_gate.BASE_MODEL, base_model_revision=sft_pilot_gate.REVISION,
+            tokenizer=sft_pilot_gate.BASE_MODEL, tokenizer_revision=sft_pilot_gate.REVISION,
+            role="all", hyperparameters={},
+        )
+    assert not output_dir.exists()
 
 
 def test_future_permit_schema_is_closed_on_incomplete_source(monkeypatch, tmp_path):

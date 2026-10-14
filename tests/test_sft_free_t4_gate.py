@@ -133,7 +133,7 @@ def frozen_historical_coordinator_source(monkeypatch):
     monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", read_bounded_snapshot)
 
 
-def test_free_t4_preparation_delegates_to_original_gate_without_model_import(
+def test_free_t4_preparation_refuses_frozen_v1_target_without_model_import(
     monkeypatch,
     frozen_historical_coordinator_source,
 ):
@@ -146,18 +146,11 @@ def test_free_t4_preparation_delegates_to_original_gate_without_model_import(
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
-    result = gate.validate_preparation(
-        snapshot_training_corpus(CORPUS),
-        **_preparation_arguments(),
-    )
-
-    assert result["profile"] == "free-t4-v1"
-    assert result["preparation_admissible"] is True
-    assert result["execution_allowed"] is False
-    assert result["plan_sha256"] == gate.PLAN_SHA256
-    assert result["parent_plan_sha256"] == gate.PARENT_PLAN_SHA256
-    assert result["parent_preparation"]["plan_sha256"] == gate.PARENT_PLAN_SHA256
-    assert result["row_count"] == 68
+    with pytest.raises(ValueError, match="unknown schema version"):
+        gate.validate_preparation(
+            snapshot_training_corpus(CORPUS),
+            **_preparation_arguments(),
+        )
 
 
 def test_free_t4_preparation_uses_baseline_parameters_only_for_original_gate(

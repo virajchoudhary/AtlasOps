@@ -30,12 +30,12 @@ from training.sft_rendering import (
     normalize_tool_arguments,
     prepare_example_for_training,
     render_messages,
-    validate_tool_call_role_acl,
     validate_message_sequence,
+    validate_tool_call_role_acl,
 )
 
-SCHEMA_VERSION = "atlasops-sft-candidate-v1"
-CORPUS_VERSION = "train-candidate-v1"
+SCHEMA_VERSION = "atlasops-sft-candidate-v2"
+CORPUS_VERSION = "train-candidate-v2"
 DATA_ORIGIN = "scenario_derived_synthetic_review_candidate"
 OUTCOMES = frozenset(
     {"successful", "failed", "inconclusive", "unresolved", "blocked", "malformed"}
@@ -43,6 +43,7 @@ OUTCOMES = frozenset(
 SOURCE_FILES = (
     "training/build_sft_candidate.py",
     "training/sft_candidate.py",
+    "training/sft.py",
     "training/sft_rendering.py",
     "training/templates/qwen2_5_tool_sft.jinja",
     "agents/tool_policy.py",
@@ -290,11 +291,11 @@ def _validate_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str], str]:
     final = _object_text(messages[-1]["content"], label="conclusion")
     required_conclusions = {
         "triage": {"incident_id", "severity", "title", "blast_radius", "correlated_alerts", "next_agent", "handoff_notes"},
-        "diagnosis": {"incident_id", "root_cause", "blast_radius_update", "next_agent", "recommended_actions"},
         "remediation": {"incident_id", "proposed_actions", "executed_actions", "outcome", "time_to_resolve_seconds", "next_agent", "handoff_notes"},
         "comms": {"incident_id", "slack_posted", "postmortem_path", "summary_for_dashboard", "lessons_learned"},
     }
-    _require(required_conclusions[row["role"]] <= set(final), "canonical role conclusion missing fields")
+    if row["role"] != "diagnosis":
+        _require(required_conclusions[row["role"]] <= set(final), "canonical role conclusion missing fields")
     _require(final["incident_id"] == incident_id, "conclusion incident differs from input")
     limits = {"triage": 4, "diagnosis": 8, "remediation": 5, "comms": 3}
     _require(len(tool_names) <= limits[row["role"]], "runtime role tool budget exceeded")
@@ -303,13 +304,6 @@ def _validate_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str], str]:
         _require(final["next_agent"] == "diagnosis", "triage handoff missing")
     if row["role"] == "diagnosis":
         _require(final["next_agent"] == "remediation", "diagnosis handoff missing")
-        _require(isinstance(final["root_cause"], dict), "structured root cause missing")
-        _require(
-            final["root_cause"].get("category") in {
-                "deploy", "resource", "network", "dependency", "config", "external", "unknown"
-            },
-            "unknown root cause category",
-        )
     if row["role"] == "comms":
         p1_blocked = severity == "P1" and decision != "approved"
         if p1_blocked:
@@ -352,7 +346,7 @@ def _validate_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str], str]:
             final.get("time_to_resolve_seconds") is None,
             "candidate cannot fabricate incident timing",
         )
-    else:
+    elif row["role"] != "diagnosis":
         _require(final.get("outcome") == row["outcome"], "outcome label differs from conclusion")
     if row["role"] in {"remediation", "comms"} and row["outcome"] == "successful":
         _require(not blocked, "successful incident was approval-blocked")
@@ -402,6 +396,11 @@ def _validate_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str], str]:
 def inspect_candidate_rows(rows: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> dict[str, Any]:
     _require(bool(rows), "empty candidate")
     validate_tool_call_role_acl(rows)
+    diagnosis_rows = [row for row in rows if row.get("role") == "diagnosis"]
+    if diagnosis_rows:
+        from training.sft import validate_diagnosis_target_contracts
+
+        validate_diagnosis_target_contracts(diagnosis_rows)
     identities: set[tuple[str, str, str]] = set()
     fingerprints: set[tuple[str, str]] = set()
     roles: Counter = Counter()
@@ -556,7 +555,7 @@ def validate_candidate_snapshot(snapshot: TrainingCorpusSnapshot, manifest: dict
 
 
 def refuse_unapproved_candidate(snapshot: TrainingCorpusSnapshot) -> None:
-    """Candidate v1 is review-only; no general approval/bypass switch exists."""
+    """Versioned candidates are review-only; no approval or bypass switch exists."""
     if any(row.get("schema_version") == SCHEMA_VERSION or "corpus_version" in row for row in snapshot.rows):
         manifest = read_candidate_manifest(snapshot.source_path)
         validate_candidate_snapshot(snapshot, manifest)

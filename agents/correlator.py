@@ -36,6 +36,13 @@ class CorrelatedIncident:
         }
 
 
+@dataclass(frozen=True)
+class CorrelationResult:
+    incident_id: str
+    is_new_incident: bool
+    new_occurrence_keys: tuple[str, ...]
+
+
 class IncidentCorrelator:
     CORRELATION_WINDOW_S = 300
 
@@ -43,12 +50,12 @@ class IncidentCorrelator:
         self._lock = RLock()
         self._incidents: dict[str, CorrelatedIncident] = {}
 
-    def ingest(self, alert: dict[str, Any]) -> tuple[str, bool, bool]:
-        """Return (incident_id, is_new_incident, should_dispatch_chain)."""
+    def ingest(self, alert: dict[str, Any]) -> CorrelationResult:
+        """Atomically correlate an alert and claim any previously unseen occurrences."""
         with self._lock:
             return self._ingest_locked(alert)
 
-    def _ingest_locked(self, alert: dict[str, Any]) -> tuple[str, bool, bool]:
+    def _ingest_locked(self, alert: dict[str, Any]) -> CorrelationResult:
         now = time.time()
         self._expire_old(now)
         alert_keys = self._alert_keys(alert)
@@ -76,7 +83,11 @@ class IncidentCorrelator:
                     last_alert_at=now,
                 )
                 self._incidents[incident_id] = inc
-                return incident_id, True, True
+                return CorrelationResult(
+                    incident_id=incident_id,
+                    is_new_incident=True,
+                    new_occurrence_keys=tuple(sorted(alert_keys)),
+                )
 
         namespace = self._extract_namespace(alert)
         services = self._extract_services(alert)
@@ -87,16 +98,22 @@ class IncidentCorrelator:
                 new_alert_keys = alert_keys - inc.dispatch_claims
                 if not new_alert_keys:
                     inc.last_alert_at = now
-                    return inc.incident_id, False, False
+                    return CorrelationResult(
+                        incident_id=inc.incident_id,
+                        is_new_incident=False,
+                        new_occurrence_keys=(),
+                    )
                 inc.alerts.append(alert)
                 inc.alert_names.update(alert_names)
                 inc.services.update(services)
                 inc.last_alert_at = now
-                should_dispatch = not inc.active_processing
-                if should_dispatch:
-                    inc.dispatch_claims.update(new_alert_keys)
-                    inc.active_processing = True
-                return inc.incident_id, False, should_dispatch
+                inc.dispatch_claims.update(new_alert_keys)
+                inc.active_processing = True
+                return CorrelationResult(
+                    incident_id=inc.incident_id,
+                    is_new_incident=False,
+                    new_occurrence_keys=tuple(sorted(new_alert_keys)),
+                )
 
         incident_id = f"inc-{int(now)}-{uuid.uuid4().hex[:6]}"
         inc = CorrelatedIncident(
@@ -111,7 +128,11 @@ class IncidentCorrelator:
             last_alert_at=now,
         )
         self._incidents[incident_id] = inc
-        return incident_id, True, True
+        return CorrelationResult(
+            incident_id=incident_id,
+            is_new_incident=True,
+            new_occurrence_keys=tuple(sorted(alert_keys)),
+        )
 
     def mark_processing(self, incident_id: str, active: bool) -> None:
         with self._lock:

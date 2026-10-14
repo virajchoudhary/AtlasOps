@@ -44,35 +44,47 @@ def _alertmanager_alert(
 
 def test_ingest_creates_new_incident():
     c = IncidentCorrelator()
-    incident_id, is_new, should_dispatch = c.ingest(_alert("HighCPU"))
-    assert incident_id.startswith("inc-")
-    assert is_new is True
-    assert should_dispatch is True
+    result = c.ingest(_alert("HighCPU"))
+    assert result.incident_id.startswith("inc-")
+    assert result.is_new_incident is True
+    assert result.new_occurrence_keys
 
 
 def test_ingest_correlates_similar_alerts():
     c = IncidentCorrelator()
-    inc1, _, _ = c.ingest(_alert("HighCPU", service="frontend"))
-    inc2, is_new, _ = c.ingest(_alert("HighLatency", service="frontend"))
-    assert inc1 == inc2
-    assert is_new is False
+    first = c.ingest(_alert("HighCPU", service="frontend"))
+    second = c.ingest(_alert("HighLatency", service="frontend"))
+    assert first.incident_id == second.incident_id
+    assert second.is_new_incident is False
+    assert second.new_occurrence_keys
 
 
-def test_dedup_skips_dispatch_while_processing():
+def test_novel_correlated_alert_is_claimed_once_while_processing():
     c = IncidentCorrelator()
-    inc, _, _ = c.ingest(_alert("HighCPU", service="frontend"))
-    c.mark_processing(inc, True)
-    _inc2, _is_new, should_dispatch = c.ingest(_alert("High5xx", service="frontend"))
-    assert should_dispatch is False
+    first = c.ingest(_alert("HighCPU", service="frontend"))
+    c.mark_processing(first.incident_id, True)
+    follow_up = _alert("High5xx", service="frontend")
+
+    result = c.ingest(follow_up)
+    assert result.incident_id == first.incident_id
+    assert result.is_new_incident is False
+    assert result.new_occurrence_keys
+
+    replay = c.ingest(follow_up)
+    assert replay.incident_id == first.incident_id
+    assert replay.is_new_incident is False
+    assert not replay.new_occurrence_keys
+    assert c.get_active()[0]["alert_count"] == 2
 
 
 def test_replayed_alert_is_not_redispatched_after_processing_completes():
     c = IncidentCorrelator()
     alert = _alertmanager_alert(fingerprint="alert-high-cpu")
 
-    incident_id, is_new, should_dispatch = c.ingest(alert)
-    assert is_new is True
-    assert should_dispatch is True
+    first = c.ingest(alert)
+    incident_id = first.incident_id
+    assert first.is_new_incident is True
+    assert first.new_occurrence_keys
 
     c.mark_processing(incident_id, True)
     replay = _alertmanager_alert(
@@ -80,47 +92,50 @@ def test_replayed_alert_is_not_redispatched_after_processing_completes():
         ends_at="2026-10-15T10:05:00Z",
         annotations={"summary": "still high"},
     )
-    _same_incident, _is_new, during_processing = c.ingest(replay)
-    assert during_processing is False
+    during_processing = c.ingest(replay)
+    assert during_processing.incident_id == incident_id
+    assert not during_processing.new_occurrence_keys
     c.mark_processing(incident_id, False)
 
-    replay_id, replay_is_new, replay_dispatch = c.ingest(replay)
-    assert replay_id == incident_id
-    assert replay_is_new is False
-    assert replay_dispatch is False
+    replay_result = c.ingest(replay)
+    assert replay_result.incident_id == incident_id
+    assert replay_result.is_new_incident is False
+    assert not replay_result.new_occurrence_keys
 
     follow_up = _alertmanager_alert(
         alertname="HighLatency",
         fingerprint="alert-high-latency",
         starts_at="2026-10-15T10:01:00Z",
     )
-    follow_up_id, follow_up_is_new, follow_up_dispatch = c.ingest(follow_up)
-    assert follow_up_id == incident_id
-    assert follow_up_is_new is False
-    assert follow_up_dispatch is True
+    follow_up_result = c.ingest(follow_up)
+    assert follow_up_result.incident_id == incident_id
+    assert follow_up_result.is_new_incident is False
+    assert follow_up_result.new_occurrence_keys
 
 
 def test_same_fingerprint_with_new_starts_at_is_a_new_occurrence():
     c = IncidentCorrelator()
     first = _alertmanager_alert(fingerprint="alert-high-cpu")
-    incident_id, _, first_dispatch = c.ingest(first)
-    assert first_dispatch is True
+    first_result = c.ingest(first)
+    incident_id = first_result.incident_id
+    assert first_result.new_occurrence_keys
     c.mark_processing(incident_id, False)
 
     next_occurrence = _alertmanager_alert(
         fingerprint="alert-high-cpu",
         starts_at="2026-10-15T10:01:00Z",
     )
-    next_id, is_new, should_dispatch = c.ingest(next_occurrence)
-    assert next_id == incident_id
-    assert is_new is False
-    assert should_dispatch is True
+    next_result = c.ingest(next_occurrence)
+    assert next_result.incident_id == incident_id
+    assert next_result.is_new_incident is False
+    assert next_result.new_occurrence_keys
 
 
 def test_status_transition_is_distinct_from_firing_occurrence():
     c = IncidentCorrelator()
     firing = _alertmanager_alert(fingerprint="alert-high-cpu")
-    incident_id, _, _ = c.ingest(firing)
+    first = c.ingest(firing)
+    incident_id = first.incident_id
     c.mark_processing(incident_id, False)
 
     resolved = _alertmanager_alert(
@@ -129,17 +144,18 @@ def test_status_transition_is_distinct_from_firing_occurrence():
         ends_at="2026-10-15T10:05:00Z",
     )
     resolved["status"] = "firing"
-    resolved_id, is_new, should_dispatch = c.ingest(resolved)
-    assert resolved_id == incident_id
-    assert is_new is False
-    assert should_dispatch is True
+    result = c.ingest(resolved)
+    assert result.incident_id == incident_id
+    assert result.is_new_incident is False
+    assert result.new_occurrence_keys
 
 
 def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
     c = IncidentCorrelator()
     first = _alertmanager_alert(fingerprint=None)
-    incident_id, _, first_dispatch = c.ingest(first)
-    assert first_dispatch is True
+    first_result = c.ingest(first)
+    incident_id = first_result.incident_id
+    assert first_result.new_occurrence_keys
     c.mark_processing(incident_id, False)
 
     replay = _alertmanager_alert(
@@ -147,26 +163,27 @@ def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
         ends_at="2026-10-15T10:05:00Z",
         annotations={"summary": "updated summary"},
     )
-    replay_id, is_new, should_dispatch = c.ingest(replay)
-    assert replay_id == incident_id
-    assert is_new is False
-    assert should_dispatch is False
+    replay_result = c.ingest(replay)
+    assert replay_result.incident_id == incident_id
+    assert replay_result.is_new_incident is False
+    assert not replay_result.new_occurrence_keys
 
     next_occurrence = _alertmanager_alert(
         fingerprint=None,
         starts_at="2026-10-15T10:01:00Z",
     )
-    next_id, next_is_new, next_dispatch = c.ingest(next_occurrence)
-    assert next_id == incident_id
-    assert next_is_new is False
-    assert next_dispatch is True
+    next_result = c.ingest(next_occurrence)
+    assert next_result.incident_id == incident_id
+    assert next_result.is_new_incident is False
+    assert next_result.new_occurrence_keys
 
 
 def test_missing_starts_at_uses_stable_fallback():
     c = IncidentCorrelator()
     first = _alertmanager_alert(fingerprint=None, starts_at=None)
-    incident_id, _, first_dispatch = c.ingest(first)
-    assert first_dispatch is True
+    first_result = c.ingest(first)
+    incident_id = first_result.incident_id
+    assert first_result.new_occurrence_keys
     c.mark_processing(incident_id, False)
 
     replay = _alertmanager_alert(
@@ -175,10 +192,10 @@ def test_missing_starts_at_uses_stable_fallback():
         ends_at="2026-10-15T10:05:00Z",
         annotations={"summary": "updated summary"},
     )
-    replay_id, is_new, should_dispatch = c.ingest(replay)
-    assert replay_id == incident_id
-    assert is_new is False
-    assert should_dispatch is False
+    replay_result = c.ingest(replay)
+    assert replay_result.incident_id == incident_id
+    assert replay_result.is_new_incident is False
+    assert not replay_result.new_occurrence_keys
 
 
 def test_concurrent_same_episode_ingest_dispatches_once():
@@ -194,12 +211,12 @@ def test_concurrent_same_episode_ingest_dispatches_once():
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(ingest_same_episode, range(workers)))
 
-    assert len({result[0] for result in results}) == 1
-    assert sum(result[1] for result in results) == 1
-    assert sum(result[2] for result in results) == 1
+    assert len({result.incident_id for result in results}) == 1
+    assert sum(result.is_new_incident for result in results) == 1
+    assert sum(bool(result.new_occurrence_keys) for result in results) == 1
 
 
-def test_concurrent_distinct_related_alerts_reserve_one_dispatch():
+def test_concurrent_distinct_related_occurrences_are_claimed_once():
     c = IncidentCorrelator()
     workers = 24
     alerts = [
@@ -219,17 +236,17 @@ def test_concurrent_distinct_related_alerts_reserve_one_dispatch():
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(ingest_related, alerts))
 
-    assert len({result[0] for result in results}) == 1
-    assert sum(result[1] for result in results) == 1
-    assert sum(result[2] for result in results) == 1
+    assert len({result.incident_id for result in results}) == 1
+    assert sum(result.is_new_incident for result in results) == 1
+    assert sum(len(result.new_occurrence_keys) for result in results) == workers
 
 
 def test_different_namespace_does_not_correlate():
     c = IncidentCorrelator()
-    inc1, _, _ = c.ingest(_alert("HighCPU", namespace="prod-a"))
-    inc2, is_new, _ = c.ingest(_alert("HighCPU", namespace="prod-b"))
-    assert inc1 != inc2
-    assert is_new is True
+    first = c.ingest(_alert("HighCPU", namespace="prod-a"))
+    second = c.ingest(_alert("HighCPU", namespace="prod-b"))
+    assert first.incident_id != second.incident_id
+    assert second.is_new_incident is True
 
 
 def test_ui_inject_correlation_id_always_dispatches():
@@ -241,9 +258,9 @@ def test_ui_inject_correlation_id_always_dispatches():
     }
     a1 = {**base, "correlation_id": "inj-1-aaa", "scenario_id": "single_fault/sf-006"}
     a2 = {**base, "correlation_id": "inj-2-bbb", "scenario_id": "single_fault/sf-002"}
-    inc1, new1, d1 = c.ingest(a1)
-    c.mark_processing(inc1, True)
-    inc2, new2, d2 = c.ingest(a2)
-    assert inc1 != inc2
-    assert new1 is True and new2 is True
-    assert d1 is True and d2 is True
+    result1 = c.ingest(a1)
+    c.mark_processing(result1.incident_id, True)
+    result2 = c.ingest(a2)
+    assert result1.incident_id != result2.incident_id
+    assert result1.is_new_incident is True and result2.is_new_incident is True
+    assert result1.new_occurrence_keys and result2.new_occurrence_keys

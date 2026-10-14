@@ -97,6 +97,53 @@ class AlertWebhookPayload(BaseModel):
     status: str | None = None
 
 
+MAX_ALERT_WEBHOOK_BODY_BYTES = 1_048_576
+
+
+async def read_alert_webhook_body(request: Request) -> bytes:
+    """Read an Alertmanager request with a fixed memory bound."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header") from exc
+        if declared_length < 0:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header")
+        if declared_length > MAX_ALERT_WEBHOOK_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Alertmanager webhook payload exceeds size limit",
+            )
+
+    chunks: list[bytes] = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_ALERT_WEBHOOK_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Alertmanager webhook payload exceeds size limit",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def parse_alert_webhook_payload(body: bytes) -> dict[str, Any]:
+    """Decode and validate webhook data through the canonical Alertmanager schema."""
+    try:
+        decoded = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    try:
+        return AlertWebhookPayload.model_validate(decoded).model_dump()
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid Alertmanager webhook payload",
+        ) from exc
+
+
 class ApprovalCallbackPayload(BaseModel):
     token: str = Field(min_length=1)
     decision: str = Field(min_length=1)
@@ -2982,7 +3029,7 @@ _WEBHOOK_SECRET = os.getenv("ALERTMANAGER_WEBHOOK_SECRET", "")
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    body = await request.body()
+    body = await read_alert_webhook_body(request)
 
     if not _WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="ALERTMANAGER_WEBHOOK_SECRET is required")
@@ -2994,7 +3041,7 @@ async def webhook(request: Request):
     if not _hmac.compare_digest(token.encode(), _WEBHOOK_SECRET.encode()):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
-    payload = AlertWebhookPayload.model_validate(json.loads(body)).model_dump()
+    payload = parse_alert_webhook_payload(body)
     log.info("received alertmanager webhook: %d alerts", len(payload.get("alerts", [])))
     correlation = correlator.ingest(payload)
     if not correlation.new_occurrence_keys:
@@ -3006,7 +3053,7 @@ async def webhook(request: Request):
                 "dispatched": False,
             }
         )
-    submission = await incident_dispatcher.submit(
+    submission = incident_dispatcher.submit(
         incident_id=correlation.incident_id,
         occurrence_keys=correlation.new_occurrence_keys,
         payload=payload,

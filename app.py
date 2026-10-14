@@ -63,7 +63,13 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
-from agents.coordinator import app as coordinator_app
+from agents.coordinator import (
+    app as coordinator_app,
+)
+from agents.coordinator import (
+    parse_alert_webhook_payload,
+    read_alert_webhook_body,
+)
 from agents.correlator import correlator
 from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
@@ -436,12 +442,9 @@ async def webhook_proxy(request: Request):
                   type: Bearer
                   credentials: <ALERTMANAGER_WEBHOOK_SECRET>
     """
-    body = await request.body()
+    body = await read_alert_webhook_body(request)
     _verify_webhook_signature(body, request.headers.get("Authorization"))
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    payload = parse_alert_webhook_payload(body)
     correlation = correlator.ingest(payload)
     if not correlation.new_occurrence_keys:
         return JSONResponse(
@@ -453,7 +456,7 @@ async def webhook_proxy(request: Request):
                 "dispatch_state": "duplicate",
             }
         )
-    submission = await incident_dispatcher.submit(
+    submission = incident_dispatcher.submit(
         incident_id=correlation.incident_id,
         occurrence_keys=correlation.new_occurrence_keys,
         payload=payload,

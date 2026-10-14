@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -133,6 +134,35 @@ def test_recorded_negative_and_cleanup_do_not_become_pass(tmp_path):
     assert result["approval"] == "timeout"
     assert result["actions"][0]["success"] is True
     assert "hidden" not in str(result)
+
+
+def test_operator_capture_reads_completed_marker_from_execution_root_artifacts(tmp_path):
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    execution_root = tmp_path / "execution-checkout"
+    relative = (
+        "artifacts/evidence/stage4/.attempts/"
+        f"{EXPERIMENT}.attempt.json"
+    )
+    write(execution_root, relative, {
+        "experiment_id": EXPERIMENT, "scenario_id": "single_fault/sf-002",
+        "state": "COMPLETED",
+    })
+    marker = execution_root / relative
+
+    result = read_incident(
+        capture_root, EXPERIMENT, "operator", execution_root=execution_root,
+    )
+
+    assert result["status"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert result["attempt_state"] == "COMPLETED"
+    assert result["gate_g4_pass"] is None
+    assert result["env_resolved"] is None
+    assert result["cleanup_verified_zero"] is None
+    assert result["sources"] == [{
+        "name": "Attempt marker (accounting only; not an outcome)",
+        "sha256": hashlib.sha256(marker.read_bytes()).hexdigest(),
+    }]
 
 
 @pytest.mark.parametrize("relative,value", [

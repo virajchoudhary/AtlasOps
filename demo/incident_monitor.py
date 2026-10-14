@@ -170,7 +170,7 @@ def read_incident(
     base = "artifacts/evidence/stage4/"
     primary, primary_digest = _object(evidence_root, base + experiment + ".json")
     interrupted, _ = _object(evidence_root, base + experiment + ".interruption.json")
-    marker, _ = _object(evidence_root, base + ".attempts/" + experiment + ".attempt.json")
+    marker, marker_digest = _object(evidence_root, base + ".attempts/" + experiment + ".attempt.json")
     cleanup, cleanup_digest = _object(evidence_root, base + experiment + ".cleanup.json")
     for record in (primary, interrupted, marker, cleanup):
         if record and record.get("experiment_id") != experiment:
@@ -182,6 +182,11 @@ def read_incident(
     if marker and state not in {"RESERVED", "CONSUMED", "COMPLETED"}:
         raise ValueError("Invalid attempt accounting state")
     result["attempt_state"] = state
+    if marker:
+        result["sources"].append({
+            "name": "Attempt marker (accounting only; not an outcome)",
+            "sha256": marker_digest,
+        })
     phases = primary.get("phases") or {}
     if not isinstance(phases, dict):
         raise TypeError("Invalid recorded phases")
@@ -260,6 +265,8 @@ def read_incident(
         result["sources"].append({"name": "Primary incident record", "sha256": primary_digest})
     elif interrupted:
         result["status"] = "INTERRUPTED / INCONCLUSIVE"
+    elif marker and state == "COMPLETED":
+        result["status"] = "COMPLETED MARKER / OUTCOME UNAVAILABLE"
     if cleanup:
         result["sources"].append({"name": "Cleanup sidecar", "sha256": cleanup_digest})
     qualification, _ = _object(root, "startup-evidence/g4-inference-v1.qualification.json") if capture == "golden" else ({}, None)

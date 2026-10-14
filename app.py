@@ -65,6 +65,7 @@ from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
 from agents.coordinator import app as coordinator_app
 from agents.correlator import correlator
+from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import get_history, subscribe
 from ui_read_model import attempt_detail, catalog
@@ -441,22 +442,37 @@ async def webhook_proxy(request: Request):
         payload = json.loads(body)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
-    incident_id, _is_new, should_dispatch = correlator.ingest(payload)
-    if not should_dispatch:
-        return JSONResponse({"ok": True, "incident_id": incident_id, "dispatched": False})
-    correlator.mark_processing(incident_id, True)
-    import asyncio
-    asyncio.create_task(_dispatch_incident(payload, incident_id))
-    return JSONResponse({"ok": True, "incident_id": incident_id, "dispatched": True})
+    correlation = correlator.ingest(payload)
+    if not correlation.new_occurrence_keys:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": correlation.incident_id,
+                "dispatched": False,
+                "queued": False,
+                "dispatch_state": "duplicate",
+            }
+        )
+    submission = await incident_dispatcher.submit(
+        incident_id=correlation.incident_id,
+        occurrence_keys=correlation.new_occurrence_keys,
+        payload=payload,
+        handler=_dispatch_incident,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "incident_id": correlation.incident_id,
+            "dispatched": submission.state == "started",
+            "queued": submission.state == "queued",
+            "dispatch_state": submission.state,
+        }
+    )
 
 
-async def _dispatch_incident(payload: dict, incident_id: str) -> None:
+async def _dispatch_incident(payload: dict, incident_id: str):
     from agents.coordinator import handle_incident
-    from agents.correlator import correlator
-    try:
-        await handle_incident(payload, incident_id=incident_id)
-    finally:
-        correlator.mark_processing(incident_id, False)
+    return await handle_incident(payload, incident_id=incident_id)
 
 
 @app.get("/slack/feed")

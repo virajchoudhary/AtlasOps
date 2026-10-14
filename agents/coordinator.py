@@ -29,6 +29,7 @@ from agents.audit import audit_log, require_audit_log
 from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
 from agents.grounding import build_grounding_reports
+from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import emit as thought_emit
 from agents.tool_policy import (
@@ -2939,15 +2940,40 @@ async def webhook(request: Request):
 
     payload = AlertWebhookPayload.model_validate(json.loads(body)).model_dump()
     log.info("received alertmanager webhook: %d alerts", len(payload.get("alerts", [])))
-    incident_id, _is_new, should_dispatch = correlator.ingest(payload)
-    if not should_dispatch:
-        return JSONResponse({"ok": True, "incident_id": incident_id, "correlated": True, "dispatched": False})
-    correlator.mark_processing(incident_id, True)
-    try:
-        result = await handle_incident(payload, incident_id=incident_id)
-        return JSONResponse({"ok": True, "incident_id": result["incident_id"], "correlated": True, "dispatched": True})
-    finally:
-        correlator.mark_processing(incident_id, False)
+    correlation = correlator.ingest(payload)
+    if not correlation.new_occurrence_keys:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": correlation.incident_id,
+                "correlated": True,
+                "dispatched": False,
+            }
+        )
+    submission = await incident_dispatcher.submit(
+        incident_id=correlation.incident_id,
+        occurrence_keys=correlation.new_occurrence_keys,
+        payload=payload,
+        handler=handle_incident,
+    )
+    if submission.state == "duplicate":
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": correlation.incident_id,
+                "correlated": True,
+                "dispatched": False,
+            }
+        )
+    result = await submission.wait()
+    return JSONResponse(
+        {
+            "ok": True,
+            "incident_id": result["incident_id"],
+            "correlated": True,
+            "dispatched": True,
+        }
+    )
 
 
 @app.post("/approve", dependencies=[Security(_require_runtime_api_key)])

@@ -138,6 +138,11 @@ def test_demo_runbook_presents_attempt_018_as_marker_only():
     runbook = " ".join(_read("docs/project/DEMO_RUNBOOK.md").lower().split())
 
     assert "--incident-capture golden" in runbook
+    assert (
+        "--incident-execution-root c:\\atlasops\\.codex-tmp\\website-execution-20261008-v4"
+        in runbook
+    )
+    assert "`d:\\codex\\atlasops-demo-20261007` is the historical golden capture root" in runbook
     assert "--incident-capture golden-v3b" not in runbook
     assert "rehearsal / governed incident monitor" in runbook
     assert "completed marker / outcome unavailable" in runbook

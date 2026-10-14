@@ -108,27 +108,70 @@ def test_candidate_rejects_corruption(rows, change):
         sft_candidate.inspect_candidate_rows(rows)
 
 
+@pytest.mark.parametrize(
+    "citation",
+    [
+        {},
+        {"tool": "promql_query"},
+        {"tool": "", "finding": "no metric claim made"},
+        {"tool": [], "finding": "observed result"},
+        {"tool": "promql_query", "finding": []},
+        {"tool": "promql_query", "finding": "  "},
+        {"tool": "promql_query", "query": 42, "finding": "observed result"},
+    ],
+)
+def test_candidate_rejects_invalid_paired_diagnosis_citations(rows, citation):
+    diagnosis_row = next(row for row in rows if row["role"] == "diagnosis")
+    case_key = (diagnosis_row["scenario_id"], diagnosis_row["case_id"])
+    handoff_row = next(
+        row
+        for row in rows
+        if row["role"] == "remediation"
+        and (row["scenario_id"], row["case_id"]) == case_key
+    )
+    target = json.loads(diagnosis_row["messages"][-1]["content"])
+    target["evidence"] = [copy.deepcopy(citation)]
+    diagnosis_row["messages"][-1]["content"] = json.dumps(target)
+    context = json.loads(handoff_row["messages"][1]["content"])
+    context["diagnosis"]["evidence"] = [copy.deepcopy(citation)]
+    handoff_row["messages"][1]["content"] = json.dumps(context)
+
+    with pytest.raises((ValueError, TypeError)):
+        sft_candidate.inspect_candidate_rows(rows)
+
+
+@pytest.mark.parametrize("role", ["diagnosis", "remediation"])
+def test_candidate_rejects_deeply_nested_outcome_metadata_in_diagnosis_citations(
+    rows, role
+):
+    row = next(row for row in rows if row["role"] == role)
+    if role == "diagnosis":
+        target = json.loads(row["messages"][-1]["content"])
+        evidence = target["evidence"]
+        evidence[0]["metadata"] = {"source": {"outcome": "unverified"}}
+        row["messages"][-1]["content"] = json.dumps(target)
+    else:
+        context = json.loads(row["messages"][1]["content"])
+        evidence = context["diagnosis"]["evidence"]
+        evidence[0]["metadata"] = {"source": {"outcome": "unverified"}}
+        row["messages"][1]["content"] = json.dumps(context)
+
+    with pytest.raises(
+        ValueError, match="outcome or training-label metadata is forbidden"
+    ):
+        sft_candidate.inspect_candidate_rows(rows)
+
+
 def test_training_rejects_malformed_diagnosis_handoff_before_loader(
     tmp_path, monkeypatch
 ):
-    from training import sft
+    from training import sft, sft_pilot_gate
     from training.build_sft_candidate import build_candidate_rows, serialize_candidate_rows
 
     rows = build_candidate_rows()
     row = next(row for row in rows if row["role"] == "remediation")
     context = json.loads(row["messages"][1]["content"])
-    context["diagnosis"] = {
-        "incident_id": context["incident_id"],
-        "root_cause": {
-            "category": "resource",
-            "specific": "legacy nested diagnosis",
-            "evidence": [],
-        },
-        "blast_radius_update": "synthetic scope",
-        "next_agent": "remediation",
-        "recommended_actions": [],
-        "outcome": "successful",
-    }
+    context["diagnosis"]["evidence"] = [{}]
     row["messages"][1]["content"] = json.dumps(context)
 
     corpus = tmp_path / "malformed-handoff.jsonl"
@@ -141,7 +184,13 @@ def test_training_rejects_malformed_diagnosis_handoff_before_loader(
             raise AssertionError("malformed handoff reached an ML loader")
         return original_import(name, *args, **kwargs)
 
+    def guard_preparation_admission(*_args, **_kwargs):
+        raise AssertionError("malformed handoff reached preparation admission")
+
     monkeypatch.setattr(builtins, "__import__", guard_ml_imports)
+    monkeypatch.setattr(
+        sft_pilot_gate, "validate_preparation", guard_preparation_admission
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -160,7 +209,7 @@ def test_training_rejects_malformed_diagnosis_handoff_before_loader(
 
     with pytest.raises(
         ValueError,
-        match="Remediation SFT diagnosis handoff.*canonical runtime prompt",
+        match=r"Remediation SFT diagnosis handoff.*evidence\[0\]",
     ):
         sft.main()
     assert not output.exists()

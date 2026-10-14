@@ -157,7 +157,6 @@ def test_exact_preparation_cli_rejects_target_prompt_mismatch(
     monkeypatch,
     tmp_path,
 ):
-    """The current prompt rejects the frozen Train row before model/output work."""
     original = builtins.__import__
 
     def guard(name, *args, **kwargs):

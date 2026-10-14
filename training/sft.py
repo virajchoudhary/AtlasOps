@@ -238,6 +238,21 @@ def validate_diagnosis_target_contracts(
     prompt_example = json.loads(match.group(1))
     if not isinstance(prompt_example, dict):
         raise TypeError("Canonical Diagnosis prompt example must be a JSON object")
+    evidence_example = prompt_example.get("evidence")
+    if (
+        not isinstance(evidence_example, list)
+        or not evidence_example
+        or not isinstance(evidence_example[0], dict)
+    ):
+        raise ValueError(
+            "Canonical Diagnosis prompt must include an evidence citation example"
+        )
+    citation_example = evidence_example[0]
+    required_citation_fields = ("tool", "finding")
+    if any(field not in citation_example for field in required_citation_fields):
+        raise ValueError(
+            "Canonical Diagnosis prompt citation must include tool and finding"
+        )
 
     category_example = prompt_example.get("category")
     categories = (
@@ -324,6 +339,34 @@ def validate_diagnosis_target_contracts(
                     categories is not None and actual not in categories
                 ):
                     errors.append("category is outside the canonical prompt choices")
+            elif field == "evidence":
+                if not isinstance(actual, list):
+                    errors.append("evidence must be an array")
+                    continue
+                for index, citation in enumerate(actual):
+                    citation_label = f"evidence[{index}]"
+                    if not isinstance(citation, dict):
+                        errors.append(f"{citation_label} must be a citation object")
+                        continue
+                    for citation_field in required_citation_fields:
+                        if citation_field not in citation:
+                            errors.append(
+                                f"{citation_label} is missing {citation_field}"
+                            )
+                    for citation_field, expected_value in citation_example.items():
+                        if citation_field not in citation:
+                            continue
+                        value = citation[citation_field]
+                        value_label = f"{citation_label}.{citation_field}"
+                        if isinstance(expected_value, str):
+                            if not isinstance(value, str) or not value.strip():
+                                errors.append(f"{value_label} must be non-empty text")
+                        elif not isinstance(value, type(expected_value)):
+                            errors.append(
+                                f"{value_label} must be "
+                                f"{type(expected_value).__name__}, "
+                                f"got {type(value).__name__}"
+                            )
             elif isinstance(expected, str):
                 if not isinstance(actual, str) or not actual.strip():
                     errors.append(

@@ -1,16 +1,19 @@
-"""Installed pinned-TRL integration checks without weights or training."""
+"""Pinned-TRL mechanics checks with tiny random CPU fixtures only."""
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
+import subprocess
+import sys
 from types import MethodType, SimpleNamespace
 
 import pytest
 
 from bench.grpo_eval import ACTION_INSTRUCTION
-from tests.test_grpo_observation_first import COMPLETION, _Lifecycle, _inputs
+from tests.test_grpo_observation_first import COMPLETION, _inputs, _Lifecycle
 from training.grpo_observation_first import (
     ObservationFirstGRPOMixin,
     make_trl_0191_observation_first_trainer,
@@ -139,8 +142,27 @@ def _tiny_tokenizer(runtime, lifecycle: _Lifecycle):
     )
 
 
+def _lora_state_sha256(model, torch) -> str:
+    digest = hashlib.sha256()
+    parameters = sorted(
+        (name, parameter)
+        for name, parameter in model.named_parameters()
+        if "lora_" in name
+    )
+    if not parameters:
+        raise AssertionError("Expected trainable LoRA parameters")
+    for name, parameter in parameters:
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(
+            parameter.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
+        )
+    return digest.hexdigest()
+
+
 def _build_trainer(runtime, tmp_path):
     torch = runtime.torch
+    torch.manual_seed(2026)
     lifecycle = _Lifecycle()
     tokenizer = _tiny_tokenizer(runtime, lifecycle)
     model = runtime.GPT2LMHeadModel(
@@ -164,6 +186,7 @@ def _build_trainer(runtime, tmp_path):
 
     args = runtime.GRPOConfig(
         output_dir=str(tmp_path),
+        seed=2026,
         use_cpu=True,
         bf16=False,
         fp16=False,
@@ -250,6 +273,14 @@ def test_installed_trl_uses_observed_tokens_and_scores_the_exact_generated_actio
     assert evidence[0]["result_classification"] == "NON_EMPIRICAL"
     assert evidence[0]["certification_status"] == "NOT_CERTIFIED"
     assert [record["reward"] for record in evidence[0]["records"]] == [0.125, 0.125]
+    from training.grpo_reward import has_reward_driven_advantages
+
+    equal_reward_advantages = prepared["advantages"].detach().cpu().reshape(-1).tolist()
+    assert not _runtime.torch.any(prepared["advantages"] != 0).item()
+    assert not has_reward_driven_advantages(
+        [record["reward"] for record in evidence[0]["records"]],
+        equal_reward_advantages,
+    )
     assert trainer.optimizer is None
     assert model.training is True
     assert all(
@@ -285,12 +316,16 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
     _runtime, tmp_path
 ):
     """Actual TRL optimization on a random tiny fixture, NOT pretrained evidence."""
-    from training.grpo_controlled import (
-        CapacityEnvironment, ControlledGRPOMixin, EpisodeLedger, SCENARIO,
-    )
     from tests.test_grpo_controlled import action
+    from training.grpo_controlled import (
+        SCENARIO,
+        CapacityEnvironment,
+        ControlledGRPOMixin,
+        EpisodeLedger,
+    )
 
     runtime = _runtime
+    runtime.torch.manual_seed(2026)
     ledger = EpisodeLedger(tmp_path / "episodes.jsonl")
     environment = CapacityEnvironment(ledger)
     preview = environment.begin(SCENARIO)["state"]
@@ -306,17 +341,24 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
         tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]",
         bos_token="[BOS]", eos_token="[EOS]",
     )
-    model = runtime.GPT2LMHeadModel(runtime.GPT2Config(
+    base_model = runtime.GPT2LMHeadModel(runtime.GPT2Config(
         vocab_size=len(tokenizer), n_positions=1024, n_embd=16, n_layer=1, n_head=2,
         bos_token_id=2, eos_token_id=3, pad_token_id=1,
     ))
-    model.config._name_or_path = "controlled-random-cpu-fixture"
+    base_model.config._name_or_path = "controlled-random-cpu-fixture"
+    base_checkpoint = tmp_path / "base"
+    base_model.save_pretrained(base_checkpoint)
     from peft import LoraConfig, get_peft_model
 
-    model = get_peft_model(model, LoraConfig(
+    model = get_peft_model(base_model, LoraConfig(
         r=2, lora_alpha=4, target_modules=["c_attn"], task_type="CAUSAL_LM",
     ))
-    before = [p.detach().clone() for p in model.parameters()]
+    before = {
+        name: parameter.detach().clone()
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+    assert before and all("lora_" in name for name in before)
 
     def fixture_generate(_model, input_ids, **kwargs):
         tokens = runtime.torch.tensor(
@@ -326,29 +368,130 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
         return runtime.torch.cat((input_ids, tokens), dim=1)
 
     model.generate = MethodType(fixture_generate, model)
-    trainer_type = type("ControlledFixtureTrainer", (ControlledGRPOMixin, runtime.GRPOTrainer), {})
+
+    class ControlledFixtureTrainer(ControlledGRPOMixin, runtime.GRPOTrainer):
+        def __init__(self, *args, **kwargs):
+            self.reward_mechanics_groups = []
+            super().__init__(*args, **kwargs)
+
+        def _generate_and_score_completions(self, inputs):
+            result = super()._generate_and_score_completions(inputs)
+            group = self.observation_evidence[-1]
+            rewards = [record["reward"] for record in group["records"]]
+            advantages = (
+                result["advantages"].detach().cpu().reshape(-1).tolist()
+            )
+            from training.grpo_reward import has_reward_driven_advantages
+
+            self.reward_mechanics_groups.append(
+                has_reward_driven_advantages(rewards, advantages)
+            )
+            return result
+
+    from transformers import TrainerCallback
+
+    gradient_records = []
+
+    class GradientProbe(TrainerCallback):
+        def on_pre_optimizer_step(self, args, state, control, **kwargs):
+            gradients = [
+                parameter.grad
+                for parameter in model.parameters()
+                if parameter.requires_grad and parameter.grad is not None
+            ]
+            finite = bool(gradients) and all(
+                runtime.torch.isfinite(gradient).all().item()
+                for gradient in gradients
+            )
+            norm = sum(
+                float(gradient.float().norm().item()) for gradient in gradients
+            )
+            gradient_records.append({"finite": finite, "norm": norm})
+
     args = runtime.GRPOConfig(
         output_dir=str(tmp_path / "trainer"), use_cpu=True, bf16=False, fp16=False,
+        seed=2026,
         max_steps=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
         num_generations=2, max_prompt_length=None, max_completion_length=2,
         beta=0.04, use_vllm=False, report_to=[], save_strategy="no",
         remove_unused_columns=False, disable_tqdm=True, learning_rate=0.001,
     )
     try:
-        trainer = trainer_type(
+        trainer = ControlledFixtureTrainer(
             model=model, args=args,
             train_dataset=runtime.Dataset.from_list([{"prompt": "", "scenario_id": SCENARIO}]),
             processing_class=tokenizer, observation_lifecycle=environment,
+            callbacks=[GradientProbe()],
         )
         model.train()
         trainer.train()
         assert trainer.state.global_step == 1
         assert trainer.optimizer is not None
+        assert len(gradient_records) == 1
+        assert gradient_records[0]["finite"]
+        assert gradient_records[0]["norm"] > 0
         assert any(
             len({r["reward"] for r in group["records"]}) > 1
             for group in trainer.observation_evidence
         )
-        assert any(not runtime.torch.equal(a, b) for a, b in zip(before, model.parameters()))
+        assert trainer.reward_mechanics_groups == [True]
+        parameters_after = dict(model.named_parameters())
+        assert any(
+            not runtime.torch.equal(before[name], parameters_after[name].detach())
+            for name in before
+        )
         assert environment.steps == 2
+
+        adapter = tmp_path / "adapter"
+        model.save_pretrained(adapter, safe_serialization=True)
+        expected_sha256 = _lora_state_sha256(model, runtime.torch)
+        reload_code = r"""
+import hashlib
+import sys
+import torch
+from peft import PeftModel
+from transformers import GPT2LMHeadModel
+
+base = GPT2LMHeadModel.from_pretrained(sys.argv[1], local_files_only=True)
+model = PeftModel.from_pretrained(
+    base, sys.argv[2], local_files_only=True, is_trainable=False
+)
+digest = hashlib.sha256()
+parameters = sorted(
+    (name, parameter)
+    for name, parameter in model.named_parameters()
+    if "lora_" in name
+)
+for name, parameter in parameters:
+    digest.update(name.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(
+        parameter.detach().cpu().contiguous().view(torch.uint8).numpy().tobytes()
+    )
+print("ADAPTER_SHA256=" + digest.hexdigest())
+"""
+        reload_result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                reload_code,
+                str(base_checkpoint),
+                str(adapter),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+            env={
+                **os.environ,
+                "ATLASOPS_AUTO_HF_INFERENCE": "0",
+                "CUDA_VISIBLE_DEVICES": "",
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+            },
+        )
+        assert reload_result.returncode == 0, reload_result.stderr
+        assert f"ADAPTER_SHA256={expected_sha256}" in reload_result.stdout
     finally:
         ledger.close()

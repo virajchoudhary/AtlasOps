@@ -56,6 +56,65 @@ def score_direct_action_step(
     }
 
 
+def has_reward_driven_advantages(
+    rewards: Sequence[float],
+    advantages: Sequence[float],
+) -> bool:
+    """Require per-completion GRPO advantages to preserve objective reward order."""
+    if (
+        isinstance(rewards, (str, bytes))
+        or not isinstance(rewards, Sequence)
+        or isinstance(advantages, (str, bytes))
+        or not isinstance(advantages, Sequence)
+    ):
+        raise TypeError("GRPO group rewards and advantages must be sequences")
+    if len(rewards) < 2 or not advantages:
+        raise ValueError("GRPO group evidence requires rewards and advantages")
+    if len(rewards) != len(advantages):
+        raise ValueError("GRPO group reward and advantage sample counts differ")
+
+    reward_values = []
+    for value in rewards:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            raise ValueError("GRPO group contains an invalid objective reward")
+        reward_values.append(float(value))
+
+    advantage_values = []
+    for value in advantages:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            raise ValueError("GRPO group contains an invalid advantage")
+        advantage_values.append(float(value))
+
+    rewards_varied = any(value != reward_values[0] for value in reward_values[1:])
+    advantages_nonzero = any(value != 0.0 for value in advantage_values)
+    for index, reward in enumerate(reward_values):
+        for other_index in range(index + 1, len(reward_values)):
+            other_reward = reward_values[other_index]
+            advantage = advantage_values[index]
+            other_advantage = advantage_values[other_index]
+            if reward == other_reward:
+                if advantage != other_advantage:
+                    raise ValueError(
+                        "GRPO advantages do not preserve tied objective rewards"
+                    )
+            elif (
+                (reward < other_reward and advantage >= other_advantage)
+                or (reward > other_reward and advantage <= other_advantage)
+            ):
+                raise ValueError("GRPO advantages do not follow objective reward ordering")
+    if advantages_nonzero and not rewards_varied:
+        raise ValueError("Equal-reward groups cannot have reward-driven advantages")
+    return rewards_varied and advantages_nonzero
+
+
 def aggregate_direct_action_steps(
     steps: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:

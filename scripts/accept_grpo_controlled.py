@@ -3,13 +3,154 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
+from typing import Any
+
+
+def _reward_driven_groups(rows: list[dict[str, Any]]) -> dict[int, bool]:
+    from training.grpo_controlled import HYPERPARAMETERS
+    from training.grpo_reward import has_reward_driven_advantages
+
+    group_count = HYPERPARAMETERS["max_steps"]
+    samples_per_group = HYPERPARAMETERS["num_generations"]
+    expected_groups = set(range(1, group_count + 1))
+    rewards_by_group: dict[int, list[tuple[int, Any]]] = {}
+    group_statuses: dict[int, str] = {}
+    generations: dict[int, dict[str, Any]] = {}
+
+    for row in rows:
+        event = row["event"]
+        if event == "transition_verified":
+            group = row.get("group")
+            sample = row.get("sample")
+            if (
+                type(group) is not int or group < 1
+                or type(sample) is not int or sample < 0
+            ):
+                raise ValueError("Controlled transition has an invalid reward group")
+            rewards_by_group.setdefault(group, []).append((sample, row.get("reward")))
+        elif event == "group_finished":
+            group = row.get("group")
+            if type(group) is not int or group < 1 or group in group_statuses:
+                raise ValueError("Controlled completion has an invalid reward group")
+            group_statuses[group] = row.get("status")
+        elif event == "generation_tokens":
+            group = row.get("group")
+            if type(group) is not int or group < 1 or group in generations:
+                raise ValueError("GRPO token record has an invalid reward group")
+            generations[group] = row
+
+    if (
+        set(rewards_by_group) != expected_groups
+        or set(group_statuses) != expected_groups
+        or set(generations) != expected_groups
+    ):
+        raise ValueError("Controlled reward and generation groups do not match")
+
+    signals = {}
+    for group in sorted(expected_groups):
+        samples = sorted(rewards_by_group[group])
+        if (
+            group_statuses[group] != "completed"
+            or len(samples) != samples_per_group
+            or [sample for sample, _reward in samples] != list(range(samples_per_group))
+        ):
+            raise ValueError("Controlled reward group is incomplete or out of order")
+        objective_rewards = [reward for _sample, reward in samples]
+        generation = generations[group]
+        if generation.get("objective_rewards") != objective_rewards:
+            raise ValueError("GRPO tokens are not bound to their objective rewards")
+        signal = has_reward_driven_advantages(
+            objective_rewards, generation.get("advantages")
+        )
+        signals[group] = signal
+    return signals
+
+
+def _has_matched_optimizer_update(
+    rows: list[dict[str, Any]],
+    finished: dict[str, Any],
+    reward_signals: dict[int, bool],
+) -> bool:
+    from training.grpo_controlled import HYPERPARAMETERS
+
+    group_count = HYPERPARAMETERS["max_steps"]
+    expected_groups = set(range(1, group_count + 1))
+    gradients = finished.get("gradients")
+    optimizer_steps = finished.get("optimizer_steps")
+    if not isinstance(gradients, list) or not isinstance(optimizer_steps, list):
+        return False
+
+    gradient_fields = ("step", "group", "finite", "norm")
+    optimizer_fields = ("step", "group", "changed_trainable_tensors")
+    raw_gradients = [
+        {field: row.get(field) for field in gradient_fields}
+        for row in rows if row.get("event") == "gradient_observed"
+    ]
+    raw_optimizer_steps = [
+        {field: row.get(field) for field in optimizer_fields}
+        for row in rows if row.get("event") == "optimizer_step_observed"
+    ]
+    if (
+        len(gradients) != group_count
+        or len(optimizer_steps) != group_count
+        or raw_gradients != gradients
+        or raw_optimizer_steps != optimizer_steps
+    ):
+        return False
+
+    gradients_by_group = {}
+    optimizer_steps_by_group = {}
+    for record in gradients:
+        if not isinstance(record, dict):
+            return False
+        group = record.get("group")
+        norm = record.get("norm")
+        if (
+            type(group) is not int or group not in expected_groups
+            or type(record.get("step")) is not int
+            or record.get("step") != group - 1
+            or type(record.get("finite")) is not bool
+            or not isinstance(norm, int | float)
+            or isinstance(norm, bool) or not math.isfinite(float(norm))
+            or group in gradients_by_group
+        ):
+            return False
+        gradients_by_group[group] = record
+    for record in optimizer_steps:
+        if not isinstance(record, dict):
+            return False
+        group = record.get("group")
+        changed = record.get("changed_trainable_tensors")
+        if (
+            type(group) is not int or group not in expected_groups
+            or type(record.get("step")) is not int
+            or record.get("step") != group
+            or type(changed) is not int or changed < 0
+            or group in optimizer_steps_by_group
+        ):
+            return False
+        optimizer_steps_by_group[group] = record
+
+    if (
+        set(gradients_by_group) != expected_groups
+        or set(optimizer_steps_by_group) != expected_groups
+    ):
+        return False
+    return any(
+        reward_signals[group]
+        and gradients_by_group[group]["finite"]
+        and gradients_by_group[group]["norm"] > 0
+        and optimizer_steps_by_group[group]["changed_trainable_tensors"] > 0
+        for group in expected_groups
+    )
 
 
 def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_sha256: str):
     from training.grpo_controlled import CLASSIFICATION, PROFILE
-    from training.sft_provenance import checkpoint_inventory, has_redirecting_path_component
     from training.grpo_reload_isolation import validate_isolation_evidence
+    from training.sft_provenance import checkpoint_inventory, has_redirecting_path_component
 
     for path in (run, reload_report):
         if has_redirecting_path_component(path):
@@ -56,23 +197,32 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
     ):
         raise ValueError("Controlled export does not establish trained/reloaded evidence")
     rows = [json.loads(line) for line in (run / "episodes.jsonl").read_text().splitlines()]
-    if any(row.get("classification") != CLASSIFICATION for row in rows):
+    if any(
+        not isinstance(row, dict)
+        or not isinstance(row.get("event"), str)
+        or row.get("classification") != CLASSIFICATION
+        for row in rows
+    ):
         raise ValueError("Controlled export contains unclassified evidence")
+    if any(row["event"] in {"training_failed", "verifier_failure"} for row in rows):
+        raise ValueError("Controlled export contains a failed or unscorable run")
     finished = [row for row in rows if row["event"] == "training_finished"]
     if (
-        len(finished) != 1 or finished[0]["global_step"] != 2
+        len(finished) != 1
+        or type(finished[0].get("global_step")) is not int
+        or finished[0]["global_step"] != 2
+        or type(finished[0].get("changed_tensors")) is not int
         or finished[0]["changed_tensors"] <= 0
-        or len(finished[0]["gradients"]) != 2
-        or not all(g["finite"] for g in finished[0]["gradients"])
-        or not any(g["norm"] > 0 for g in finished[0]["gradients"])
-        or not any(
-            row["event"] == "generation_tokens"
-            and any(value != 0 for value in row["advantages"])
-            for row in rows
-        )
-        or any(row["event"] in {"training_failed", "verifier_failure"} for row in rows)
     ):
         raise ValueError("Controlled export lacks genuine finite reward-driven training")
+    reward_signals = _reward_driven_groups(rows)
+    if (
+        not any(reward_signals.values())
+        or not _has_matched_optimizer_update(rows, finished[0], reward_signals)
+    ):
+        raise ValueError(
+            "Controlled export lacks a same-group reward-driven gradient and parameter update"
+        )
     inventory = [
         {"path": path.relative_to(run).as_posix(), "bytes": path.stat().st_size,
          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}

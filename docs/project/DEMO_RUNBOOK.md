@@ -88,12 +88,18 @@ recorded triage/approval/tool outcomes, verifier result, and cleanup sidecar.
 It starts no run, approves no proposal, executes no tools, and loads no model.
 Missing results remain unavailable.
 
+`D:\Codex\AtlasOps-demo-20261007` is the historical golden capture root, not the
+execution root for the surviving attempt-018 marker. The marker is under
+`C:\AtlasOps\.codex-tmp\website-execution-20261008-v4`; the monitor does not scan
+for alternate roots, so select that execution root explicitly.
+
 ```powershell
-& C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --live-observations --incident-capture-root D:\Codex\AtlasOps-demo-20261007 --incident-id EXP-STAGE4-SF002-018 --incident-capture golden
+& C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --incident-capture-root D:\Codex\AtlasOps-demo-20261007 --incident-execution-root C:\AtlasOps\.codex-tmp\website-execution-20261008-v4 --incident-id EXP-STAGE4-SF002-018 --incident-capture golden
 ```
 
-The preserved launch shows `STARTUP_FAILED / NOT_RESERVED` and
-`bridge_transport_failure`, separate from the scripted rehearsal.
+The October 7 launch record in the historical D: capture shows
+`STARTUP_FAILED / NOT_RESERVED` and `bridge_transport_failure`, separate from the
+scripted rehearsal.
 A second inference preparation completed its pinned transfer and checkpoint
 admission, but the notebook session was subsequently replaced: its process handle
 and preparation/source paths were absent on the fresh connection. No model load,
@@ -127,10 +133,10 @@ before process creation. That launch left attempt 018 unreserved and injected no
 fault.
 
 The dated evaluation plan contains negative-result and zero-Chaos cleanup claims
-for attempt 018. The surviving G4 outcome record at the owner-local execution
-root is only a `COMPLETED` attempt marker. No primary result, interruption
-record, or cleanup sidecar exists there, so the dated claims are unverified. See
-the [evidence index](../EVIDENCE_INDEX.md).
+for attempt 018. The surviving G4 record under
+`C:\AtlasOps\.codex-tmp\website-execution-20261008-v4` is only a `COMPLETED`
+attempt marker. No primary result, interruption record, or cleanup sidecar exists
+there, so the dated claims are unverified. See the [evidence index](../EVIDENCE_INDEX.md).
 
 The current Rehearsal page at `/#/demo` includes the governed incident monitor.
 For attempt 018, it reports `COMPLETED MARKER / OUTCOME UNAVAILABLE` with the

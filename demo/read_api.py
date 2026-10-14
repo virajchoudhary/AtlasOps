@@ -181,6 +181,7 @@ def create_app(
     frontend_dist: Path | None = None,
     *,
     incident_capture_root: Path | None = None,
+    incident_execution_root: Path | None = None,
     incident_id: str = "EXP-STAGE4-SF002-018",
     incident_capture: str = "golden",
     operator=None,
@@ -278,7 +279,12 @@ def create_app(
         if incident_capture_root is None:
             return {"enabled": False}
         try:
-            return read_incident(incident_capture_root, incident_id, incident_capture)
+            if incident_execution_root is not None and not incident_execution_root.is_dir():
+                raise ValueError("Execution root is unavailable")
+            return read_incident(
+                incident_capture_root, incident_id, incident_capture,
+                execution_root=incident_execution_root,
+            )
         except (OSError, ValueError, TypeError, KeyError):
             return JSONResponse(
                 {"enabled": True, "available": False, "status": "CAPTURE_UNAVAILABLE"},

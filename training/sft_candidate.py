@@ -396,11 +396,9 @@ def _validate_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str], str]:
 def inspect_candidate_rows(rows: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> dict[str, Any]:
     _require(bool(rows), "empty candidate")
     validate_tool_call_role_acl(rows)
-    diagnosis_rows = [row for row in rows if row.get("role") == "diagnosis"]
-    if diagnosis_rows:
-        from training.sft import validate_diagnosis_target_contracts
+    from training.sft import validate_diagnosis_target_contracts
 
-        validate_diagnosis_target_contracts(diagnosis_rows)
+    validate_diagnosis_target_contracts(rows)
     identities: set[tuple[str, str, str]] = set()
     fingerprints: set[tuple[str, str]] = set()
     roles: Counter = Counter()
@@ -414,6 +412,8 @@ def inspect_candidate_rows(rows: tuple[dict[str, Any], ...] | list[dict[str, Any
     scenario_ids: set[str] = set()
     case_roles: dict[tuple[str, str], set[str]] = {}
     case_safety: dict[tuple[str, str], str] = {}
+    diagnosis_targets: dict[tuple[str, str], dict[str, Any]] = {}
+    remediation_handoffs: list[tuple[tuple[str, str], Any]] = []
     for row in rows:
         safety, names, fingerprint = _validate_row(row)
         identity = (row["scenario_id"], row["case_id"], row["role"])
@@ -421,6 +421,17 @@ def inspect_candidate_rows(rows: tuple[dict[str, Any], ...] | list[dict[str, Any
         identities.add(identity)
         case_key = (row["scenario_id"], row["case_id"])
         case_roles.setdefault(case_key, set()).add(row["role"])
+        if row["role"] == "diagnosis":
+            diagnosis_targets[case_key] = _object_text(
+                row["messages"][-1]["content"],
+                label="Diagnosis conclusion",
+            )
+        elif row["role"] == "remediation":
+            context = _object_text(
+                row["messages"][1]["content"],
+                label="Remediation input context",
+            )
+            remediation_handoffs.append((case_key, context.get("diagnosis")))
         safety_hash = canonical_json_sha256(safety)
         _require(
             case_key not in case_safety or case_safety[case_key] == safety_hash,
@@ -438,6 +449,15 @@ def inspect_candidate_rows(rows: tuple[dict[str, Any], ...] | list[dict[str, Any
         role_outcomes[row["role"]][row["outcome"]] += 1
         decisions[f'{safety["severity"]}:{safety["approval"]["status"]}'] += 1
         severities[safety["severity"]] += 1
+    for case_key, handoff in remediation_handoffs:
+        _require(
+            case_key in diagnosis_targets,
+            "remediation handoff lacks its canonical Diagnosis target",
+        )
+        _require(
+            handoff == diagnosis_targets[case_key],
+            "remediation handoff differs from its canonical Diagnosis target",
+        )
     _require(scenario_ids == set(TRAIN_SPLIT), "candidate must cover exactly frozen Train")
     _require(set(roles) == set(SFT_ROLES), "candidate must cover all runtime roles")
     _require(

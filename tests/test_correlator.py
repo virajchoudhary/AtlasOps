@@ -34,6 +34,33 @@ def test_dedup_skips_dispatch_while_processing():
     assert should_dispatch is False
 
 
+def test_replayed_alert_is_not_redispatched_after_processing_completes():
+    c = IncidentCorrelator()
+    alert = _alert("HighCPU", service="frontend")
+    alert["alerts"][0]["fingerprint"] = "alert-high-cpu"
+
+    incident_id, is_new, should_dispatch = c.ingest(alert)
+    assert is_new is True
+    assert should_dispatch is True
+
+    c.mark_processing(incident_id, True)
+    _same_incident, _is_new, during_processing = c.ingest(alert)
+    assert during_processing is False
+    c.mark_processing(incident_id, False)
+
+    replay_id, replay_is_new, replay_dispatch = c.ingest(alert)
+    assert replay_id == incident_id
+    assert replay_is_new is False
+    assert replay_dispatch is False
+
+    follow_up = _alert("HighLatency", service="frontend")
+    follow_up["alerts"][0]["fingerprint"] = "alert-high-latency"
+    follow_up_id, follow_up_is_new, follow_up_dispatch = c.ingest(follow_up)
+    assert follow_up_id == incident_id
+    assert follow_up_is_new is False
+    assert follow_up_dispatch is True
+
+
 def test_different_namespace_does_not_correlate():
     c = IncidentCorrelator()
     inc1, _, _ = c.ingest(_alert("HighCPU", namespace="prod-a"))

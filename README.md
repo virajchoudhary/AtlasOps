@@ -55,7 +55,7 @@ continuation deployment or current team results.
 | SFT v17 | Real QLoRA adapter from 68 synthetic Train-only rows; 9 optimizer steps; fresh-process reload passed | Reloadable bounded artifact. This does not establish incident improvement. |
 | Controlled GRPO pilot | Two optimizer steps; four completions; all malformed or blocked with reward -1; both advantage groups zero | No reward-driven GRPO learning established. No acceptable SFT+GRPO checkpoint. |
 | Final aligned G9 diagnostic | 0/8 admissible actions; zero optimizer steps; all 392 LoRA tensor hashes unchanged | Negative under the tested parser contract. Zero of eight does not prove the population probability is exactly zero. |
-| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 and 018 completed negative | G4 remains NOT_PASSED. Attempt 018 is preserved externally; recovery failed and later cleanup verified zero Chaos. |
+| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 latest verified completed negative; 018 completion marker only | G4 remains NOT_PASSED. The 018 marker reports `COMPLETED`, but its primary result and cleanup sidecar are absent. Its outcome and cleanup are unverified. See the [evidence index](docs/EVIDENCE_INDEX.md). |
 | Certification | NOT_CERTIFIED | No full-pipeline scientific or deployment certification is claimed. |
 
 The [Base-vs-SFT result](docs/project/BASE_SFT_VALIDATION_RESULT_V1.md) includes

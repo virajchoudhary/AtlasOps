@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from demo.read_api import create_app
 from scripts.package_submission import (
     REQUIRED_REVIEW_ASSETS,
     collect_submission_assets,
@@ -22,6 +26,14 @@ STATUS_REVIEW_DOCS = (
     "docs/project/MASTER_PIPELINE_STATUS.md",
     "docs/EVIDENCE_INDEX.md",
     "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+)
+CURRENT_G4_DOCS = (
+    "README.md",
+    "AGENTS.md",
+    "JUDGES_START_HERE.md",
+    "docs/project/MASTER_PIPELINE_STATUS.md",
+    "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+    "docs/EVIDENCE_INDEX.md",
 )
 STALE_CURRENT_CLAIMS = (
     "g9 reopened",
@@ -52,17 +64,69 @@ def test_authoritative_gate_table_preserves_final_scientific_status():
     assert statuses["G11"] == "OUT_OF_SCOPE"
 
     master = _read("docs/project/MASTER_PIPELINE_STATUS.md").lower()
-    assert "015 terminal inconclusive/unscored" in master
-    assert "016 pre-fault abort/non-result" in master
-    assert "017 completed negative" in master
-    assert "no 018" in master
+    current_g4 = " ".join(
+        master.split("### gate g4:", 1)[1].split("### gate g5:", 1)[0].split()
+    )
+    assert "attempt 015 is terminal inconclusive/unscored" in current_g4
+    assert "016 aborted before fault injection and is a non-result" in current_g4
+    assert "017 is the latest verifiable completed negative" in current_g4
+    assert "018 marker reports" in current_g4
+    assert "the result and cleanup are unverified" in current_g4
+    assert "no new g4 execution is authorized" in current_g4
     assert "no acceptable sft+grpo checkpoint" in master
     assert "the original g8 live incident-resolution criterion remains unmet" in master
     assert "preapproved free-t4 profile" in master
 
+    evidence = _read("docs/EVIDENCE_INDEX.md").lower()
+    assert "g4 attempt 018" in evidence
+    assert "marker sha-256: `50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208`" in evidence
+    assert "no primary result, interruption record, or cleanup sidecar" in evidence
+    assert "dated revised evaluation plan's negative-result and zero-chaos claims cannot be verified" in evidence
+    plan = _read("docs/project/DEMO_REVISED_EVALUATION_PLAN.md").lower()
+    assert "attempt 018 is completed negative" in plan
+
     stage7 = _read("docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md").lower()
     assert "not a post-result waiver" in stage7
     assert "no incident improvement claim" in stage7
+
+
+def test_completed_attempt_marker_without_result_does_not_project_a_g4_outcome(tmp_path):
+    experiment = "EXP-STAGE4-SF002-018"
+    marker = (
+        tmp_path / "execution" / "artifacts" / "evidence" / "stage4" / ".attempts"
+        / f"{experiment}.attempt.json"
+    )
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps({"experiment_id": experiment, "state": "COMPLETED"}),
+        encoding="utf-8",
+    )
+
+    client = TestClient(
+        create_app(incident_capture_root=tmp_path, incident_id=experiment),
+        base_url="http://localhost",
+        client=("127.0.0.1", 1),
+    )
+    result = client.get("/api/incident-monitor").json()
+
+    assert result["attempt_state"] == "COMPLETED"
+    assert result["reserved"] is True
+    assert result["status"] not in {"RECORDED_NEGATIVE", "RECORDED_PASS"}
+    assert result["gate_g4_pass"] is None
+    assert result["env_resolved"] is None
+    assert result["cleanup_verified_zero"] is None
+    assert result["sources"] == []
+
+
+def test_current_g4_summaries_do_not_claim_an_attempt_018_outcome():
+    for path in CURRENT_G4_DOCS:
+        content = " ".join(_read(path).lower().split())
+        assert "018" in content, f"{path} omits the surviving attempt-018 marker"
+        assert "marker" in content, f"{path} does not identify the marker-only record"
+        assert "unverified" in content, f"{path} does not qualify the missing outcome"
+        assert "018 completed negative" not in content, (
+            f"{path} treats the marker as a completed negative"
+        )
 
 
 def test_current_summary_surfaces_report_the_real_diagnostic_and_negative_results():

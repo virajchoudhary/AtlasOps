@@ -27,6 +27,73 @@ describe("public secondary reference pages", () => {
     );
   });
 
+  it("reuses the reference navigation and points secondary section links at the local home", async () => {
+    const onNavigate = vi.fn();
+    const { container, rerender } = render(
+      <ReferenceSecondaryPages pathname="/blog/articles" onNavigate={onNavigate} />,
+    );
+    const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    const blogLink = within(navigation).getByRole("link", { name: "Blog" });
+    for (const [label, id] of [
+      ["Features", "features"],
+      ["The repo", "the-repo"],
+      ["Showcase", "showcase"],
+      ["Pricing", "pricing"],
+      ["FAQ", "faq"],
+    ]) {
+      expect(within(navigation).getByRole("link", { name: label })).toHaveAttribute(
+        "href",
+        `/reference#${id}`,
+      );
+    }
+    expect(within(navigation).getByRole("link", { name: "Home" })).toHaveAttribute(
+      "href",
+      "/reference",
+    );
+    expect(blogLink).toHaveClass("is-active");
+    expect(blogLink).toHaveAttribute("aria-current", "page");
+    expect(container.querySelector(".reference-minimap")).not.toBeInTheDocument();
+    expect(container.querySelector(".reference-scroll-cue")).not.toBeInTheDocument();
+
+    rerender(
+      <ReferenceSecondaryPages
+        pathname="/blog/stale-sanity-content-nextjs-caching-revalidation"
+        onNavigate={onNavigate}
+      />,
+    );
+    const articleNavigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(
+      within(articleNavigation).getByRole("link", { name: "Blog" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("closes the mobile menu on Escape, outside click, and local navigation", async () => {
+    const onNavigate = vi.fn();
+    const user = userEvent.setup();
+    render(<ReferenceSecondaryPages pathname="/blog/articles" onNavigate={onNavigate} />);
+    const trigger = screen.getByRole("button", { name: /menu/i });
+
+    await user.click(trigger);
+    let menu = screen.getByRole("navigation", { name: "Page navigation" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(within(menu).getByRole("link", { name: "Blog" })).toHaveAttribute("aria-current", "page");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("navigation", { name: "Page navigation" })).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    menu = screen.getByRole("navigation", { name: "Page navigation" });
+    await user.click(screen.getByRole("heading", { level: 1, name: "Knowledge Hub" }));
+    expect(screen.queryByRole("navigation", { name: "Page navigation" })).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    menu = screen.getByRole("navigation", { name: "Page navigation" });
+    await user.click(within(menu).getByRole("link", { name: "Blog" }));
+    expect(onNavigate).toHaveBeenCalledWith("/blog");
+    expect(screen.queryByRole("navigation", { name: "Page navigation" })).not.toBeInTheDocument();
+  });
+
   it("supports the articles deep-link alias and keeps the roadmap home link local", async () => {
     const onNavigate = vi.fn();
     render(<ReferenceSecondaryPages pathname="/blog/articles" onNavigate={onNavigate} />);

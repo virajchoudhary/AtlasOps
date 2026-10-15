@@ -147,11 +147,21 @@ function sanitizeText(value: string, maximum = MAX_TEXT_LENGTH): string {
   return safe;
 }
 
+function parseSafeNumber(value: number): number {
+  if (
+    !Number.isFinite(value) ||
+    (Number.isInteger(value) && !Number.isSafeInteger(value))
+  ) {
+    return malformed();
+  }
+  return value;
+}
+
 function parseSafeValue(value: unknown, depth = 0): IncidentHistoryValue {
   if (depth > MAX_VALUE_DEPTH) return malformed();
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "string") return sanitizeText(value);
-  if (typeof value === "number") return Number.isFinite(value) ? value : malformed();
+  if (typeof value === "number") return parseSafeNumber(value);
   if (Array.isArray(value)) {
     if (value.length > MAX_COLLECTION_ITEMS) return malformed();
     return value.map((item) => parseSafeValue(item, depth + 1));
@@ -208,15 +218,10 @@ function parseObservedMetrics(value: unknown): IncidentHistoryValue {
   if (!isRecord(value)) return malformed();
   const entries: [string, IncidentHistoryValue][] = [];
   for (const [query, result] of Object.entries(value)) {
-    if (
-      isOmittedKey(query) ||
-      typeof result !== "number" ||
-      !Number.isFinite(result)
-    ) {
-      continue;
-    }
+    if (isOmittedKey(query) || typeof result !== "number") continue;
+    const safeResult = parseSafeNumber(result);
     const safeQuery = sanitizeText(query, 256);
-    if (safeQuery) entries.push([safeQuery, result]);
+    if (safeQuery) entries.push([safeQuery, safeResult]);
   }
   return Object.fromEntries(entries);
 }

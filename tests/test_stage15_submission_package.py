@@ -538,7 +538,9 @@ class TestStage15SubmissionPackage:
             asset_path = Path(path)
             raw_bytes = asset_path.read_bytes()
             attr = attributes[path]
-            if attr["eol"] == "crlf":
+            if attr["text"] == "unset":
+                linux_checkout_bytes = raw_bytes
+            elif attr["eol"] == "crlf":
                 assert attr["text"] == "set"
                 linux_checkout_bytes = raw_bytes.replace(b"\r\n", b"\n").replace(
                     b"\n", b"\r\n"
@@ -546,8 +548,6 @@ class TestStage15SubmissionPackage:
             elif attr["eol"] == "lf":
                 assert attr["text"] == "set"
                 linux_checkout_bytes = raw_bytes.replace(b"\r\n", b"\n")
-            elif attr["text"] == "unset":
-                linux_checkout_bytes = raw_bytes
             elif attr["text"] == "unspecified":
                 worktree_blob = subprocess.check_output(
                     ["git", "hash-object", "--no-filters", "--", path],

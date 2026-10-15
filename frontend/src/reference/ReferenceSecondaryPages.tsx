@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowUp, ArrowUpRight } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
-import { useEffect } from "react";
+import type { FormEvent, MouseEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   articleImagesBySourceUrl,
   legalPages,
@@ -122,6 +122,40 @@ function NewsletterPreview({ title, copy, actionLabel }: {
   );
 }
 
+function FooterEmailSignup() {
+  const [result, setResult] = useState("");
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setResult("This local reproduction does not submit or save email addresses.");
+  };
+
+  return (
+    <form
+      className="reference-email-form secondary-footer-email-form"
+      aria-label="Newsletter signup (local preview)"
+      onSubmit={onSubmit}
+    >
+      <label className="reference-sr-only" htmlFor="secondary-footer-email">
+        Email
+      </label>
+      <input
+        id="secondary-footer-email"
+        type="email"
+        name="email"
+        autoComplete="email"
+        placeholder="you@email.com"
+        required
+      />
+      <button type="submit">
+        <span>Stay updated</span>
+        <ArrowUpRight size={12} aria-hidden="true" />
+      </button>
+      <span className="reference-form-status" role="status">{result}</span>
+    </form>
+  );
+}
+
 function SecondaryPattern() {
   const line = "A STARTER IS A SNAPSHOT  ·  EVERY DECISION ALREADY MADE  ·  SKIP TO THE ACTUAL WORK  ·";
   return (
@@ -152,13 +186,7 @@ function SecondaryFooter({ onNavigate }: { onNavigate: (href: string) => void })
             />
           </InternalLink>
           <p>One short email when the repo changes or a discount goes live.</p>
-          <div
-            className="secondary-footer-email-preview"
-            aria-label="Newsletter signup preview"
-          >
-            <span>your@email.com</span>
-            <span>STAY UPDATED</span>
-          </div>
+          <FooterEmailSignup />
         </div>
         <nav className="reference-footer-links" aria-label="Footer">
           <div>
@@ -340,11 +368,14 @@ function ArticlePage({ article, onNavigate }: {
   );
 }
 
-function RoadmapCard({ item }: {
+function RoadmapCard({ item, selected, inProgress, onToggleVote }: {
   item: RoadmapItem;
+  selected: boolean;
+  inProgress: boolean;
+  onToggleVote: () => void;
 }) {
   return (
-    <article className="secondary-roadmap-card">
+    <article className={`secondary-roadmap-card${inProgress ? " secondary-roadmap-card--in-progress" : ""}`}>
       <header>
         <span>{item.number}</span>
         <span>{item.category}</span>
@@ -355,9 +386,11 @@ function RoadmapCard({ item }: {
         <button
           className="secondary-roadmap-votes"
           type="button"
-          disabled
-          aria-label={`${item.votes} votes. Voting is not available in this local reproduction.`}
-          title="Voting is not connected in this local reproduction."
+          aria-label={`${item.votes} historical votes. Toggle a local vote for ${item.title}.`}
+          aria-describedby="secondary-roadmap-vote-note"
+          aria-pressed={selected}
+          onClick={onToggleVote}
+          title="Local-only preview. Selection is not saved; historical totals do not change."
         >
           <ArrowUp size={12} aria-hidden="true" />
           <span>{String(item.votes).padStart(2, "0")}</span>
@@ -368,6 +401,27 @@ function RoadmapCard({ item }: {
 }
 
 function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
+  const [localVotePreview, setLocalVotePreview] = useState({
+    selected: new Set<string>(),
+    status: "",
+  });
+
+  const toggleLocalVote = (key: string, item: RoadmapItem) => {
+    setLocalVotePreview((current) => {
+      const selected = new Set(current.selected);
+      const wasSelected = selected.has(key);
+      if (wasSelected) {
+        selected.delete(key);
+      } else {
+        selected.add(key);
+      }
+      return {
+        selected,
+        status: `Local vote ${wasSelected ? "removed" : "selected"} for ${item.title}. Historical total remains ${item.votes}; nothing was sent or saved.`,
+      };
+    });
+  };
+
   return (
     <PageFrame className="secondary-roadmap-page" onNavigate={onNavigate}>
       <main className="secondary-container">
@@ -384,7 +438,18 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
               </header>
               {lane.items.length ? (
                 <div className="secondary-roadmap-cards">
-                  {lane.items.map((item) => <RoadmapCard key={item.number} item={item} />)}
+                  {lane.items.map((item) => {
+                    const voteKey = `${lane.label}:${item.number}`;
+                    return (
+                      <RoadmapCard
+                        key={voteKey}
+                        item={item}
+                        selected={localVotePreview.selected.has(voteKey)}
+                        inProgress={lane.label === "IN PROGRESS"}
+                        onToggleVote={() => toggleLocalVote(voteKey, item)}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="secondary-roadmap-empty">
@@ -397,6 +462,18 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
             </section>
           ))}
         </div>
+        <p id="secondary-roadmap-vote-note" className="secondary-visually-hidden">
+          Vote selections only change this local preview and are not saved or sent. Displayed vote totals are historical.
+        </p>
+        <p
+          className="secondary-visually-hidden"
+          role="status"
+          aria-label="Roadmap vote feedback"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {localVotePreview.status}
+        </p>
       </main>
     </PageFrame>
   );

@@ -179,6 +179,7 @@ body:has(.reference-secondary-page) #root {
 .secondary-article-meta {
   display: flex;
   grid-column: 1;
+  grid-row: 1;
   align-items: center;
   justify-content: space-between;
   width: 100%;
@@ -190,6 +191,8 @@ body:has(.reference-secondary-page) #root {
 }
 
 .secondary-article-card h2 {
+  grid-column: 1;
+  grid-row: 2;
   align-self: center;
   max-width: 740px;
   margin: 70px 34px 20px 0;
@@ -213,6 +216,7 @@ body:has(.reference-secondary-page) #root {
 .secondary-article-action {
   display: flex;
   grid-column: 2;
+  grid-row: 3;
   align-self: end;
   justify-self: start;
   gap: 4px;
@@ -492,12 +496,14 @@ body:has(.reference-secondary-page) #root {
 }
 
 .secondary-roadmap-heading {
-  justify-content: flex-start;
-  gap: 42px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .secondary-roadmap-heading p {
   max-width: 470px;
+  margin: 0;
 }
 
 .secondary-roadmap-lanes {
@@ -565,10 +571,21 @@ body:has(.reference-secondary-page) #root {
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
+.secondary-roadmap-card--in-progress {
+  border-color: rgb(35 35 35 / 14%);
+  background: #f1eee7;
+  color: #232323;
+}
+
 .secondary-roadmap-card:hover {
   border-color: #f1eee7;
   background: #f1eee7;
   color: #232323;
+}
+
+.secondary-roadmap-card--in-progress:hover {
+  border-color: #ffffff;
+  background: #ffffff;
 }
 
 .secondary-roadmap-card > header {
@@ -589,6 +606,10 @@ body:has(.reference-secondary-page) #root {
 }
 
 .secondary-roadmap-card:hover > header span:last-child {
+  background: rgb(35 35 35 / 8%);
+}
+
+.secondary-roadmap-card--in-progress > header span:last-child {
   background: rgb(35 35 35 / 8%);
 }
 
@@ -621,8 +642,28 @@ body:has(.reference-secondary-page) #root {
   border-radius: 999px;
   background: transparent;
   color: inherit;
+  cursor: pointer;
   font-family: GeistMono, ui-monospace, "SFMono-Regular", monospace;
   font-size: 11px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.secondary-roadmap-votes:hover {
+  background: rgb(255 255 255 / 9%);
+}
+
+.secondary-roadmap-card--in-progress .secondary-roadmap-votes:hover {
+  background: rgb(35 35 35 / 8%);
+}
+
+.secondary-roadmap-votes[aria-pressed="true"] {
+  border-color: #f0aa13;
+  background: rgb(240 170 19 / 16%);
+}
+
+.secondary-roadmap-votes:focus-visible {
+  outline: 2px solid #f0aa13;
+  outline-offset: 2px;
 }
 
 .secondary-roadmap-card-footer {
@@ -635,9 +676,8 @@ body:has(.reference-secondary-page) #root {
   border-top: 1px solid rgb(255 255 255 / 14%);
 }
 
-.secondary-roadmap-votes:disabled {
-  cursor: not-allowed;
-  opacity: 0.85;
+.secondary-roadmap-card--in-progress .secondary-roadmap-card-footer {
+  border-color: rgb(35 35 35 / 14%);
 }
 
 .secondary-roadmap-empty {
@@ -748,36 +788,39 @@ body:has(.reference-secondary-page) #root {
   margin-bottom: 3px;
 }
 
-.secondary-footer-email-preview {
-  display: flex;
+.secondary-footer .secondary-footer-email-form {
+  position: relative;
   width: min(100%, 390px);
+  min-height: 43px;
+}
+
+.secondary-footer .secondary-footer-email-form input:focus-visible {
+  outline: 2px solid #f0aa13;
+  outline-offset: 2px;
+}
+
+.secondary-footer .secondary-footer-email-form button:focus-visible {
+  outline: 2px solid #f0aa13;
+  outline-offset: 2px;
+}
+
+.secondary-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+}
+
+.secondary-footer-email-form {
+  display: flex;
   min-height: 43px;
   align-items: stretch;
   gap: 5px;
-  font: 9px var(--reference-mono);
-  text-transform: uppercase;
-}
-
-.secondary-footer-email-preview span {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid #c3c0b8;
-  border-radius: 4px;
-}
-
-.secondary-footer-email-preview span:first-child {
-  flex: 1 1 auto;
-  color: #85837d;
-  text-transform: none;
-}
-
-.secondary-footer-email-preview span:last-child {
-  min-width: 116px;
-  justify-content: center;
-  background: #d8d6d0;
-  color: #242422;
 }
 
 @media (max-width: 1360px) {
@@ -835,6 +878,10 @@ body:has(.reference-secondary-page) #root {
     background-image: radial-gradient(circle at 25px 100%, #232323 0 10px, transparent 10.5px);
   }
 
+  .secondary-article-card::before {
+    display: none;
+  }
+
   .secondary-article-card::after {
     top: auto;
     bottom: -10px;
@@ -859,7 +906,7 @@ body:has(.reference-secondary-page) #root {
 
   .secondary-article-summary {
     grid-column: 1;
-    grid-row: auto;
+    grid-row: 3;
     margin: 0 0 21px;
     padding: 0;
     font-size: 15px;
@@ -868,6 +915,7 @@ body:has(.reference-secondary-page) #root {
 
   .secondary-article-action {
     grid-column: 1;
+    grid-row: 4;
     margin: 0;
   }
 
@@ -1025,7 +1073,7 @@ body:has(.reference-secondary-page) #root {
     max-width: 100%;
   }
 
-  .secondary-footer-email-preview {
+  .secondary-footer .secondary-footer-email-form {
     width: min(100%, 390px);
   }
 }

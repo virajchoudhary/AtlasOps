@@ -109,8 +109,9 @@ describe("public secondary reference pages", () => {
     expect(screen.getByText(/These terms govern your purchase and use/)).toBeInTheDocument();
   });
 
-  it("keeps secondary-page footer links local and the signup preview inert", async () => {
+  it("keeps footer navigation local and makes the newsletter form preview-only", async () => {
     const onNavigate = vi.fn();
+    const user = userEvent.setup();
     render(
       <ReferenceSecondaryPages
         pathname="/legal/privacy-policy"
@@ -130,13 +131,22 @@ describe("public secondary reference pages", () => {
       "/legal/terms-of-service",
     );
 
-    const preview = within(footer).getByLabelText("Newsletter signup preview");
-    expect(preview.querySelector("form, input, button")).toBeNull();
+    const email = within(footer).getByRole("textbox", { name: "Email" });
+    expect(email).toHaveAttribute("type", "email");
+    expect(email).toBeRequired();
+    await user.type(email, "person@example.test");
+    await user.click(within(footer).getByRole("button", { name: /stay updated/i }));
+    expect(within(footer).getByRole("status")).toHaveTextContent(
+      "This local reproduction does not submit or save email addresses.",
+    );
+    expect(email).toHaveValue("person@example.test");
+
     await userEvent.click(within(footer).getByRole("link", { name: /Blog/ }));
     expect(onNavigate).toHaveBeenCalledWith("/blog");
   });
 
-  it("preserves roadmap sections while leaving public vote controls disabled", () => {
+  it("preserves historical roadmap totals while toggling an accessible local vote", async () => {
+    const user = userEvent.setup();
     render(<ReferenceSecondaryPages pathname="/roadmap" onNavigate={() => {}} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Roadmap" })).toBeInTheDocument();
@@ -147,10 +157,31 @@ describe("public secondary reference pages", () => {
     expect(within(shipped).getByRole("heading", { name: "Sanity + Astro version" })).toBeInTheDocument();
     expect(within(shipped).getByRole("heading", { name: "AI-generated llms.txt" })).toBeInTheDocument();
     expect(shipped.querySelectorAll(".secondary-roadmap-card-footer")).toHaveLength(3);
-    expect(screen.getAllByRole("button", { name: /Voting is not available/ })).toHaveLength(4);
-    expect(screen.getAllByRole("button", { name: /Voting is not available/ }).every((button) => (
-      button.hasAttribute("disabled")
-    ))).toBe(true);
+
+    const inProgress = screen.getByRole("region", { name: "IN PROGRESS" });
+    expect(within(inProgress).getByRole("article")).toHaveClass(
+      "secondary-roadmap-card--in-progress",
+    );
+
+    const vote = within(shipped).getByRole("button", { name: /31 historical votes/i });
+    expect(vote).toHaveAttribute("aria-pressed", "false");
+    expect(vote).not.toBeDisabled();
+    expect(within(vote).getByText("31")).toBeInTheDocument();
+
+    const feedback = screen.getByRole("status", { name: "Roadmap vote feedback" });
+    await user.click(vote);
+    expect(vote).toHaveAttribute("aria-pressed", "true");
+    expect(within(vote).getByText("31")).toBeInTheDocument();
+    expect(feedback).toHaveTextContent(
+      "Local vote selected for Sanity + Astro version. Historical total remains 31; nothing was sent or saved.",
+    );
+
+    await user.keyboard(" ");
+    expect(vote).toHaveAttribute("aria-pressed", "false");
+    expect(within(vote).getByText("31")).toBeInTheDocument();
+    expect(feedback).toHaveTextContent(
+      "Local vote removed for Sanity + Astro version. Historical total remains 31; nothing was sent or saved.",
+    );
   });
 
   it("returns no secondary surface for unrelated application routes", () => {

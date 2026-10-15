@@ -11,6 +11,7 @@ import os
 import subprocess
 from collections import deque
 from pathlib import Path
+from types import MappingProxyType
 
 from config.hf_space_env import apply_hf_space_inference_defaults
 
@@ -18,6 +19,7 @@ apply_hf_space_inference_defaults()
 
 from fastapi import FastAPI, HTTPException, Query, Request, Security
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.routing import APIRoute
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -76,9 +78,192 @@ from agents.correlator import correlator
 from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import get_history, subscribe
+from demo import read_api as presentation_read_api
 from ui_read_model import attempt_detail, catalog
 
 app = FastAPI(title="AtlasOps", docs_url="/api/docs")
+
+_PRESENTATION_READ_PATHS = (
+    "/api/catalog",
+    "/api/attempts/{name}",
+    "/api/rehearsal",
+    "/api/live-status",
+    "/api/incident-monitor",
+    "/api/operator",
+)
+_FALLBACK_FRONTEND_PATHS = (
+    "/",
+    "/reference",
+    "/blog",
+    "/blog/articles",
+    "/blog/the-content-architecture-four-months-in",
+    "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    "/blog/stale-sanity-content-nextjs-caching-revalidation",
+    "/blog/articles/the-content-architecture-four-months-in",
+    "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+    "/roadmap",
+    "/legal/privacy-policy",
+    "/legal/terms-of-service",
+)
+_FRONTEND_PATHS = tuple(
+    getattr(presentation_read_api, "FRONTEND_PATHS", _FALLBACK_FRONTEND_PATHS)
+)
+_APP_PRESENTATION_BOUNDARIES = (
+    {
+        "id": "read-api",
+        "label": "PRESENTATION READS GET/HEAD ONLY",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "approval-auth",
+        "label": "APPROVAL ENDPOINTS REQUIRE OPERATOR API KEY",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "webhook-auth",
+        "label": "ALERT WEBHOOK REQUIRES BEARER SECRET",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "retired-fault-routes",
+        "label": "WEB INJECTION AND RESET ARE RETIRED",
+        "state": "ENFORCED",
+    },
+)
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+
+
+def _presentation_read_handlers():
+    projection_app = presentation_read_api.create_app()
+    handlers = {
+        route.path: route.endpoint
+        for route in projection_app.routes
+        if isinstance(route, APIRoute)
+    }
+    missing = set(_PRESENTATION_READ_PATHS) - handlers.keys()
+    if missing:
+        raise RuntimeError(f"Presentation read API routes are unavailable: {sorted(missing)}")
+    return handlers
+
+
+_PRESENTATION_READ_HANDLERS = MappingProxyType(_presentation_read_handlers())
+
+
+def _is_presentation_read_path(path: str) -> bool:
+    return (
+        path
+        in {
+            "/api/catalog",
+            "/api/rehearsal",
+            "/api/live-status",
+            "/api/incident-monitor",
+            "/api/operator",
+        }
+        or path == "/api/attempts"
+        or path.startswith("/api/attempts/")
+    )
+
+
+@app.middleware("http")
+async def presentation_read_boundary(request: Request, call_next):
+    if _is_presentation_read_path(request.url.path):
+        if request.method not in {"GET", "HEAD"}:
+            return JSONResponse(
+                {"detail": "Read-only presentation; no execution endpoints"},
+                status_code=405,
+                headers={"Allow": "GET, HEAD"},
+            )
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    return await call_next(request)
+
+
+def _register_frontend_routes(application: FastAPI, dist: Path) -> None:
+    asset_dir = dist / "assets"
+    reference_asset_dir = dist / "reference" / "assets"
+    if asset_dir.is_dir():
+        application.mount("/assets", StaticFiles(directory=str(asset_dir)), name="frontend-assets")
+    if reference_asset_dir.is_dir():
+        application.mount(
+            "/reference/assets",
+            StaticFiles(directory=str(reference_asset_dir)),
+            name="reference-assets",
+        )
+
+    def index_response():
+        index_path = dist / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(
+                status_code=503,
+                detail="React frontend build missing. Run npm ci and npm run build in frontend/.",
+            )
+        try:
+            html = index_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="React frontend build is unavailable.",
+            ) from exc
+        html = html.replace('src="./assets/', 'src="/assets/')
+        html = html.replace('href="./assets/', 'href="/assets/')
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    def index():
+        return index_response()
+
+    for frontend_path in _FRONTEND_PATHS:
+        application.add_api_route(
+            frontend_path,
+            index,
+            methods=["GET", "HEAD"],
+            include_in_schema=False,
+            name=f"frontend_{frontend_path.strip('/').replace('/', '_') or 'root'}",
+        )
+
+
+def create_frontend_app(frontend_dist: Path | None = None) -> FastAPI:
+    """Build a small HTTP app for exercising the built frontend routes."""
+    frontend = FastAPI(
+        title="AtlasOps frontend",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    dist = frontend_dist if frontend_dist is not None else FRONTEND_DIST
+    _register_frontend_routes(frontend, dist)
+    return frontend
+
+
+def read_integrated_catalog():
+    payload = _PRESENTATION_READ_HANDLERS["/api/catalog"]()
+    product = payload["product"]
+    product["serving_mode"] = "integrated-operational-app"
+    product["operator_enabled"] = False
+    product["boundaries"] = [dict(item) for item in _APP_PRESENTATION_BOUNDARIES]
+    for agent in product["agents"]:
+        if agent["id"] == "remediation":
+            agent["governance_boundary"] = (
+                "Role ACL and fail-closed exact-action P1 approval through the operator API."
+            )
+    return payload
+
+
+for _path in _PRESENTATION_READ_PATHS:
+    _endpoint = (
+        read_integrated_catalog
+        if _path == "/api/catalog"
+        else _PRESENTATION_READ_HANDLERS[_path]
+    )
+    app.add_api_route(
+        _path,
+        _endpoint,
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
+    )
 
 # Mount coordinator routes
 app.mount("/api", coordinator_app)
@@ -110,14 +295,6 @@ class ApprovalCallbackRequest(BaseModel):
     decision: str = Field(min_length=1)
     approved_by: str = ""
     reason: str = ""
-
-
-@app.get("/", response_class=HTMLResponse)
-def root():
-    index = static_dir / "index.html"
-    if index.exists():
-        return HTMLResponse(index.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>AtlasOps</h1><p>Static files not found.</p>")
 
 
 @app.post("/inject", dependencies=[Security(_require_api_key)])
@@ -533,6 +710,9 @@ def slack_feed():
             except json.JSONDecodeError:
                 pass
     return JSONResponse({"posts": list(posts)})
+
+
+_register_frontend_routes(app, FRONTEND_DIST)
 
 
 if __name__ == "__main__":

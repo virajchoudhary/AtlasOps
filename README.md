@@ -139,6 +139,11 @@ verification. Every output is SYNTHETIC / NON-LIVE / NON-EMPIRICAL, not agent in
 or live incident proof. The [presentation runbook](docs/project/DEMO_RUNBOOK.md) gives
 the click path and restart command.
 
+The `Dockerfile` is a separate integrated app entrypoint: it builds the React console
+and starts `app.py` with the existing operational API routes. It is not the
+loopback-only read-only launcher above; operator and webhook authentication remain
+required for their existing protected actions.
+
 An opt-in local operator mode adds a fixed governed-run launcher, live agent activity
 metadata, exact-action approval controls and separate verifier/cleanup results.
 It preserves the default read-only mode and rejects dirty source, mismatched profiles,

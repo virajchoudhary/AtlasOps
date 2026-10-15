@@ -133,14 +133,74 @@ function SecondaryPattern() {
   );
 }
 
-function PageFrame({ children, className = "" }: {
+function SecondaryFooter({ onNavigate }: { onNavigate: (href: string) => void }) {
+  return (
+    <footer className="reference-footer secondary-footer">
+      <div className="reference-footer-main">
+        <div className="reference-footer-newsletter">
+          <InternalLink
+            className="reference-footer-logo"
+            href="/reference"
+            onNavigate={onNavigate}
+            ariaLabel="The Content Architecture home"
+          >
+            <img
+              src="/reference/assets/content-architecture-mark.svg"
+              width="36"
+              height="36"
+              alt=""
+            />
+          </InternalLink>
+          <p>One short email when the repo changes or a discount goes live.</p>
+          <div
+            className="secondary-footer-email-preview"
+            aria-label="Newsletter signup preview"
+          >
+            <span>your@email.com</span>
+            <span>STAY UPDATED</span>
+          </div>
+        </div>
+        <nav className="reference-footer-links" aria-label="Footer">
+          <div>
+            <h3>Resources</h3>
+            <InternalLink href="/blog" onNavigate={onNavigate}>
+              Blog <ArrowUpRight size={11} aria-hidden="true" />
+            </InternalLink>
+            <InternalLink href="/roadmap" onNavigate={onNavigate}>
+              Roadmap <ArrowUpRight size={11} aria-hidden="true" />
+            </InternalLink>
+          </div>
+          <div>
+            <h3>Legal</h3>
+            <InternalLink href="/legal/privacy-policy" onNavigate={onNavigate}>
+              Privacy policy <ArrowUpRight size={11} aria-hidden="true" />
+            </InternalLink>
+            <InternalLink href="/legal/terms-of-service" onNavigate={onNavigate}>
+              Terms of service <ArrowUpRight size={11} aria-hidden="true" />
+            </InternalLink>
+          </div>
+        </nav>
+      </div>
+      <div className="reference-footer-bottom">
+        <span>© 2026 The Content Architecture</span>
+        <a href="https://edoardolunardi.dev/" target="_blank" rel="noreferrer">
+          Built by edoardolunardi.dev <ArrowUpRight size={11} aria-hidden="true" />
+        </a>
+      </div>
+    </footer>
+  );
+}
+
+function PageFrame({ children, className = "", onNavigate }: {
   children: ReactNode;
   className?: string;
+  onNavigate: (href: string) => void;
 }) {
   return (
     <div className={`reference-secondary-page ${className}`}>
       <SecondaryPattern />
       {children}
+      <SecondaryFooter onNavigate={onNavigate} />
     </div>
   );
 }
@@ -174,7 +234,7 @@ function ArticleCard({ article, index, onNavigate }: {
 
 function BlogIndex({ onNavigate }: { onNavigate: (href: string) => void }) {
   return (
-    <PageFrame className="secondary-blog-index">
+    <PageFrame className="secondary-blog-index" onNavigate={onNavigate}>
       <main className="secondary-container">
         <header className="secondary-index-heading">
           <h1>Knowledge Hub</h1>
@@ -240,7 +300,7 @@ function ArticlePage({ article, onNavigate }: {
   onNavigate: (href: string) => void;
 }) {
   return (
-    <PageFrame className="secondary-article-page">
+    <PageFrame className="secondary-article-page" onNavigate={onNavigate}>
       <main className="secondary-article-container">
         <InternalLink
           className="secondary-back-link"
@@ -291,23 +351,25 @@ function RoadmapCard({ item }: {
       </header>
       <h3>{item.title}</h3>
       <p>{item.summary}</p>
-      <button
-        className="secondary-roadmap-votes"
-        type="button"
-        disabled
-        aria-label={`${item.votes} votes. Voting is not available in this local reproduction.`}
-        title="Voting is not connected in this local reproduction."
-      >
-        <ArrowUp size={12} aria-hidden="true" />
-        <span>{String(item.votes).padStart(2, "0")}</span>
-      </button>
+      <div className="secondary-roadmap-card-footer">
+        <button
+          className="secondary-roadmap-votes"
+          type="button"
+          disabled
+          aria-label={`${item.votes} votes. Voting is not available in this local reproduction.`}
+          title="Voting is not connected in this local reproduction."
+        >
+          <ArrowUp size={12} aria-hidden="true" />
+          <span>{String(item.votes).padStart(2, "0")}</span>
+        </button>
+      </div>
     </article>
   );
 }
 
 function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
   return (
-    <PageFrame className="secondary-roadmap-page">
+    <PageFrame className="secondary-roadmap-page" onNavigate={onNavigate}>
       <main className="secondary-container">
         <header className="secondary-roadmap-heading">
           <h1>Roadmap</h1>
@@ -340,14 +402,17 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
   );
 }
 
-function LegalPage({ path }: { path: string }) {
+function LegalPage({ path, onNavigate }: {
+  path: string;
+  onNavigate: (href: string) => void;
+}) {
   const page = legalPages.find((candidate) => candidate.title === (
     path === "/legal/privacy-policy" ? "Privacy Policy" : "Terms of Service"
   ));
   if (!page) return null;
 
   return (
-    <PageFrame className="secondary-legal-page">
+    <PageFrame className="secondary-legal-page" onNavigate={onNavigate}>
       <main className="secondary-legal-container">
         <header className="secondary-legal-header">
           <h1>{page.title}</h1>
@@ -397,7 +462,7 @@ export function ReferenceSecondaryPages({
   }
   if (path === "/roadmap") return <RoadmapPage onNavigate={onNavigate} />;
   if (path === "/legal/privacy-policy" || path === "/legal/terms-of-service") {
-    return <LegalPage path={path} />;
+    return <LegalPage path={path} onNavigate={onNavigate} />;
   }
   if (article) return <ArticlePage article={article} onNavigate={onNavigate} />;
   return null;

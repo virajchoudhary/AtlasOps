@@ -137,6 +137,35 @@ test("maps every initial phrase glyph to its own flipped GPU atlas tile", async 
   );
 });
 
+test("preserves top-to-bottom orientation for atlas cells and rendered font glyphs", async ({ page }, testInfo) => {
+  await page.goto("/glyph-atlas-fixture.html");
+  const orientation = page.locator("#glyph-atlas-orientation");
+  await expect(orientation).toHaveAttribute("data-orientation-state", /^(ready|error)$/, {
+    timeout: 10_000,
+  });
+  const metrics = await orientation.evaluate((element) => ({
+    error: element.getAttribute("data-error"),
+    sentinelTopAlpha: Number(element.getAttribute("data-sentinel-top-alpha")),
+    sentinelBottomAlpha: Number(element.getAttribute("data-sentinel-bottom-alpha")),
+    glyphPixels: Number(element.getAttribute("data-glyph-pixels")),
+    glyphDirectMismatches: Number(element.getAttribute("data-glyph-direct-mismatches")),
+    glyphMirroredMismatches: Number(element.getAttribute("data-glyph-mirrored-mismatches")),
+  }));
+  await testInfo.attach("glyph-orientation-metrics.json", {
+    body: JSON.stringify(metrics, null, 2),
+    contentType: "application/json",
+  });
+
+  expect(metrics.error).toBeNull();
+  expect(metrics.glyphPixels).toBeGreaterThan(0);
+  expect(
+    metrics.glyphDirectMismatches,
+    `GPU orientation metrics: ${JSON.stringify(metrics)}`,
+  ).toBeLessThanOrEqual(32);
+  expect(metrics.glyphDirectMismatches).toBeLessThan(metrics.glyphMirroredMismatches);
+  expect(metrics.sentinelTopAlpha).toBeGreaterThan(metrics.sentinelBottomAlpha);
+});
+
 test("stops drawing outside the viewport and resumes only after it re-enters", async ({ page }) => {
   await page.goto("/fixture.html?offscreen");
 

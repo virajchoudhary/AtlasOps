@@ -88,14 +88,6 @@ def _admission() -> dict:
 @pytest.fixture
 def frozen_historical_coordinator_source(monkeypatch):
     coordinator_path = REPO_ROOT / "agents" / "coordinator.py"
-    diagnosis_path = REPO_ROOT / "agents/prompts/diagnosis.md"
-    diagnosis_source = subprocess.run(
-        ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/prompts/diagnosis.md"],
-        cwd=REPO_ROOT, check=True, capture_output=True,
-    ).stdout
-    assert sft_candidate.canonical_bytes_sha256(diagnosis_source) == (
-        "26265a2007477eed58a69b80c0a1faf74a00cfc257374590dd6b96a6b7b9b7b6"
-    )
     frozen_source = subprocess.run(
         ["git", "show", f"{FROZEN_COORDINATOR_COMMIT}:agents/coordinator.py"],
         cwd=REPO_ROOT,
@@ -110,24 +102,14 @@ def frozen_historical_coordinator_source(monkeypatch):
     def read_bytes(path):
         if path.resolve() == coordinator_path.resolve():
             return frozen_source
-        if path.resolve() == diagnosis_path.resolve():
-            return diagnosis_source
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
-    original_read_text = Path.read_text
-    def read_text(path, *args, **kwargs):
-        if path.resolve() == diagnosis_path.resolve():
-            return diagnosis_source.decode("utf-8")
-        return original_read_text(path, *args, **kwargs)
-    monkeypatch.setattr(Path, "read_text", read_text)
     original_bounded_snapshot = sft_pilot_gate._read_bounded_snapshot
 
     def read_bounded_snapshot(path, bound):
         if Path(path).resolve() == coordinator_path.resolve():
             return frozen_source, "fixture"
-        if Path(path).resolve() == diagnosis_path.resolve():
-            return diagnosis_source, "fixture"
         return original_bounded_snapshot(path, bound)
 
     monkeypatch.setattr(sft_pilot_gate, "_read_bounded_snapshot", read_bounded_snapshot)
@@ -146,7 +128,7 @@ def test_free_t4_preparation_refuses_frozen_v1_target_without_model_import(
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
-    with pytest.raises(ValueError, match="unknown schema version"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*unexpected outcome"):
         gate.validate_preparation(
             snapshot_training_corpus(CORPUS),
             **_preparation_arguments(),

@@ -107,21 +107,39 @@ class IncidentDispatcher:
 
             if admission.admission_token is None:
                 raise RuntimeError("admitted occurrences have no admission token")
-            admitted_keys = set(admission.admitted_keys)
-            first_admitted_ref = next(
-                ref
-                for ref in candidate_batch.occurrence_refs
-                if ref.occurrence_key in admitted_keys
-            )
-            incident_anchors = (
-                anchor_builder(
-                    candidate_batch.original_payload,
-                    first_admitted_ref.original_alert_index or 0,
+            try:
+                admitted_keys = set(admission.admitted_keys)
+                first_admitted_ref = next(
+                    ref
+                    for ref in candidate_batch.occurrence_refs
+                    if ref.occurrence_key in admitted_keys
                 )
-                if anchor_builder is not None
-                else None
-            )
-            payload_snapshot = self._filtered_payload(candidate_batch, admitted_keys)
+                incident_anchors = (
+                    anchor_builder(
+                        candidate_batch.original_payload,
+                        first_admitted_ref.original_alert_index or 0,
+                    )
+                    if anchor_builder is not None
+                    else None
+                )
+                payload_snapshot = self._filtered_payload(
+                    candidate_batch,
+                    admitted_keys,
+                )
+                incident_anchors_snapshot = deepcopy(incident_anchors)
+            except Exception as preparation_error:
+                if not completion.done():
+                    completion.cancel()
+                try:
+                    admission_store.rollback_queued(admission.admission_token)
+                except Exception as rollback_error:
+                    log.exception(
+                        "could not roll back queued incident admission for %s",
+                        candidate_batch.incident_id,
+                    )
+                    raise rollback_error from preparation_error
+                raise
+
             incident_id = candidate_batch.incident_id
             incident_queue = self._queues.get(incident_id)
             if incident_queue is None:
@@ -133,7 +151,7 @@ class IncidentDispatcher:
                 admission_token=admission.admission_token,
                 occurrence_keys=admission.admitted_keys,
                 payload=payload_snapshot,
-                incident_anchors=deepcopy(incident_anchors),
+                incident_anchors=incident_anchors_snapshot,
                 handler=handler,
                 completion=completion,
             )

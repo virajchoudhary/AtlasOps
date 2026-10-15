@@ -1186,6 +1186,181 @@ async def test_worker_creation_failure_rolls_back_queued_admission(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_anchor_preparation_failure_rolls_back_only_new_occurrence_and_can_replay(
+    monkeypatch,
+    tmp_path,
+):
+    database_path = tmp_path / "admissions.sqlite3"
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator, database_path)
+    duplicate_alert = {
+        "status": "firing",
+        "fingerprint": "duplicate-fingerprint",
+        "startsAt": "2026-10-15T10:00:00Z",
+        "labels": {"alertname": "DuplicateAlert", "namespace": "default", "service": "paymentservice"},
+        "annotations": {"summary": "original first-alert context"},
+    }
+    new_alert = {
+        "status": "firing",
+        "fingerprint": "new-fingerprint",
+        "startsAt": "2026-10-15T10:01:00Z",
+        "labels": {"alertname": "NewAlert", "namespace": "default", "service": "checkoutservice"},
+        "annotations": {"summary": "new admitted-alert context"},
+    }
+    batch_payload = {
+        "status": "resolved",
+        "commonLabels": {
+            "alertname": "CombinedEnvelope",
+            "namespace": "default",
+            "region": "west",
+        },
+        "alerts": [duplicate_alert, new_alert],
+    }
+    candidate = incident_correlator.ingest(batch_payload)
+    existing_key, new_key = (
+        ref.occurrence_key for ref in candidate.occurrence_refs
+    )
+    store = IncidentAdmissionStore(database_path)
+    existing_admission = store.admit(candidate.incident_id, (existing_key,))
+    assert existing_admission.admission_token is not None
+    store.mark_attempted(
+        existing_admission.admission_token,
+        existing_admission.admitted_keys,
+    )
+    received = []
+
+    async def handler(alert_payload, *, incident_id, incident_anchors=None):
+        received.append((alert_payload["alerts"], incident_anchors))
+        return {"incident_id": incident_id}
+
+    loop = asyncio.get_running_loop()
+    create_future = loop.create_future
+    completions = []
+
+    def capture_future():
+        completion = create_future()
+        completions.append(completion)
+        return completion
+
+    def fail_anchor_builder(_payload, _original_alert_index):
+        raise RuntimeError("synthetic anchor preparation failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(loop, "create_future", capture_future)
+        with pytest.raises(
+            RuntimeError,
+            match="synthetic anchor preparation failure",
+        ):
+            dispatcher.submit(
+                candidate,
+                handler,
+                anchor_builder=fail_anchor_builder,
+            )
+
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT occurrence_key, state
+            FROM incident_occurrence_admissions
+            WHERE occurrence_key IN (?, ?)
+            """,
+            (existing_key, new_key),
+        ).fetchall()
+    assert dict(rows) == {existing_key: "attempted"}
+    assert received == []
+    assert len(completions) == 1
+    assert completions[0].cancelled()
+
+    replay_correlator = IncidentCorrelator()
+    replay_candidate = replay_correlator.ingest(batch_payload)
+    replay_dispatcher = IncidentDispatcher(replay_correlator, database_path)
+    replay_submission = replay_dispatcher.submit(
+        replay_candidate,
+        handler,
+        anchor_builder=lambda _payload, index: {"original_alert_index": index},
+    )
+
+    assert replay_submission.state == "started"
+    assert await asyncio.wait_for(replay_submission.wait(), timeout=5) == {
+        "incident_id": replay_candidate.incident_id
+    }
+    assert received == [([new_alert], {"original_alert_index": 1})]
+
+
+@pytest.mark.asyncio
+async def test_anchor_preparation_rollback_failure_fails_closed_with_cause(
+    monkeypatch,
+    tmp_path,
+):
+    database_path = tmp_path / "admissions.sqlite3"
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator, database_path)
+    payload = _webhook_payload(
+        "HighCPU",
+        "anchor-rollback-fingerprint",
+        "2026-10-15T10:00:00Z",
+    )
+    candidate = incident_correlator.ingest(payload)
+    calls = []
+
+    async def handler(_payload, *, incident_id):
+        calls.append(incident_id)
+        return {"incident_id": incident_id}
+
+    loop = asyncio.get_running_loop()
+    create_future = loop.create_future
+    completions = []
+
+    def capture_future():
+        completion = create_future()
+        completions.append(completion)
+        return completion
+
+    def fail_anchor_builder(_payload, _original_alert_index):
+        raise RuntimeError("synthetic anchor preparation failure")
+
+    def fail_rollback(_store, _admission_token):
+        raise OSError("synthetic admission rollback failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(loop, "create_future", capture_future)
+        patch.setattr(IncidentAdmissionStore, "rollback_queued", fail_rollback)
+        with pytest.raises(
+            OSError,
+            match="synthetic admission rollback failure",
+        ) as error:
+            dispatcher.submit(
+                candidate,
+                handler,
+                anchor_builder=fail_anchor_builder,
+            )
+
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert str(error.value.__cause__) == "synthetic anchor preparation failure"
+    assert len(completions) == 1
+    assert completions[0].cancelled()
+    assert calls == []
+
+    with sqlite3.connect(database_path) as connection:
+        state = connection.execute(
+            """
+            SELECT state
+            FROM incident_occurrence_admissions
+            WHERE occurrence_key = ?
+            """,
+            (candidate.occurrence_refs[0].occurrence_key,),
+        ).fetchone()[0]
+    assert state == "queued"
+
+    replay_correlator = IncidentCorrelator()
+    replay_candidate = replay_correlator.ingest(payload)
+    replay_dispatcher = IncidentDispatcher(replay_correlator, database_path)
+    replay = replay_dispatcher.submit(replay_candidate, handler)
+    assert replay.state == "duplicate"
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     monkeypatch,
     tmp_path,

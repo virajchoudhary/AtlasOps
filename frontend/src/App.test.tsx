@@ -22,10 +22,16 @@ afterEach(() => {
 });
 
 describe("read-only research console routes", () => {
-  it("renders all eight hash-routed pages from a minimal API response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ source: "test snapshot" }),
+  it("renders all nine hash-routed pages from read-only API responses", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = url.endsWith("/api/rehearsal")
+        ? { classification: "SYNTHETIC", agent_output: "fixture", scenarios: [] }
+        : { source: "test snapshot" };
+      return Promise.resolve({
+        ok: true,
+        json: async () => json,
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -33,6 +39,7 @@ describe("read-only research console routes", () => {
 
     const routes = [
       ["Overview", "AtlasOps"],
+      ["Rehearsal", "Incident workflow"],
       ["Agents", "Four roles. Clear authority boundaries."],
       ["Models", "Model lineage"],
       ["Evaluations", "Evaluations"],

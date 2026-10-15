@@ -57,3 +57,22 @@ packages:
 - Testing Library packages - MIT.
 - TypeScript - Apache-2.0.
 - jsdom - MIT.
+
+## Geist fonts
+
+`public/assets/fonts/GeistSans-VF.woff2` and
+`public/assets/fonts/GeistMono-VF.woff2` are
+unchanged variable fonts observed on the publicly accessible
+`https://www.contentarchitecture.dev/` site, which the project lead authorized
+for visual reproduction. Their SHA-256 digests are
+`a369fcf5628ea2aa4e1b9e2ec6a5b3624e365bda588e1f0f2f12b564f728fbb8` and
+`fba8f577f38a2bbcbe818efa6348dd58f36303a10b8737c42fefad275be563ab`,
+respectively. The fonts are from The Geist Project and are licensed under the
+SIL Open Font License 1.1; a copy is included at `public/assets/fonts/OFL.txt`.
+The public source font URLs are:
+
+- `https://www.contentarchitecture.dev/_next/static/immutable/media/Geist_Variable-s.p.2-i4fw5gbtlb7.woff2`
+- `https://www.contentarchitecture.dev/_next/static/immutable/media/GeistMono_Variable.p.0b02cdm7g7y6h.woff2`
+
+The reference site's public mark was reviewed but is not embedded in the
+console; AtlasOps keeps its own identity.

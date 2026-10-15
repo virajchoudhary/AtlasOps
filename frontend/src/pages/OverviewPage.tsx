@@ -1,98 +1,149 @@
-import { ArrowUpRight, CheckCircle2, Play, ShieldCheck, UsersRound, Wrench } from "lucide-react";
+import { ArrowUpRight, Play } from "lucide-react";
 import { Link } from "react-router-dom";
-import { motion } from "motion/react";
+import type { Catalog } from "../api/types";
 import { ArchitectureDiagram } from "../components/ArchitectureDiagram";
-import { MetricTile } from "../components/MetricTile";
-import { PageHeading } from "../components/SectionHeading";
+import { DataUnavailable } from "../components/SectionHeading";
+import { OverviewEvidenceLedger, OverviewGateLedger, statusTone } from "../components/overview/OverviewReadouts";
 import { Badge } from "../components/ui/badge";
 import type { CatalogPageProps } from "./types";
-import { displayNumber, displayText } from "../lib/format";
+import { displayNumber, displayText, shortDigest, UNAVAILABLE } from "../lib/format";
 
-export function OverviewPage({ catalog }: CatalogPageProps) {
+export function OverviewPage({ catalog, loading }: CatalogPageProps) {
   const product = catalog?.product;
+  const g4 = catalog?.gates?.find((gate) => gate.gate === "G4");
+  const operatorState = product
+    ? product.operator_enabled ? "GOVERNED OPERATOR" : "READ-ONLY"
+    : UNAVAILABLE;
 
   return (
     <div className="page-stack overview-page">
-      <section className="overview-hero">
-        <PageHeading
-          eyebrow="Governed incident response"
-          title={displayText(product?.name ?? "AtlasOps")}
-          description={displayText(product?.description)}
-          actions={
-            <div className="hero-status">
-              <Link to="/demo" className="button button--primary button--md">
-                <Play size={16} aria-hidden="true" /> Open workflow rehearsal
-              </Link>
-              <Badge tone="mint"><span className="badge-dot" /> Read-only research demo</Badge>
-              <div className="hero-certification">
-                <span>Scientific certification</span>
-                <strong>{displayText(product?.certification)}</strong>
-              </div>
-            </div>
-          }
-        />
-        <p className="hero-source">{displayText(catalog?.source)}</p>
+      <section className="overview-intro" aria-labelledby="overview-title">
+        <div className="overview-intro-main">
+          <p className="eyebrow">Repository view / governed incident response</p>
+          <h1 id="overview-title">{displayText(product?.name ?? "AtlasOps")}</h1>
+          <p className="overview-intro-description">{displayText(product?.description)}</p>
+          <p className="overview-source">{displayText(catalog?.source)}</p>
+        </div>
+        <div className="overview-intro-side">
+          <div className="overview-source-stamp">
+            <span>Source revision</span>
+            <code>{shortDigest(catalog?.source_sha)}</code>
+          </div>
+          <Link to="/demo" className="button button--primary button--md">
+            <Play size={15} aria-hidden="true" />
+            Open workflow rehearsal
+            <ArrowUpRight size={14} aria-hidden="true" />
+          </Link>
+          <Badge tone="neutral">Read-only research demo</Badge>
+        </div>
       </section>
 
-      <section className="overview-metrics" aria-label="System inventory">
-        <motion.div className="metric-grid" initial="hidden" animate="show" variants={{
-          hidden: {},
-          show: { transition: { staggerChildren: 0.045 } },
-        }}>
-          <MetricTile
-            label="Specialized agents"
-            value={displayNumber(product?.agent_count)}
-            note="Coordinated incident roles"
-            icon={<UsersRound size={16} />}
-            tone="mint"
+      {!catalog && (
+        <DataUnavailable
+          loading={loading}
+          message="Repository snapshot unavailable. No status values are substituted."
+        />
+      )}
+
+      <section className="overview-posture" aria-label="Current program posture">
+        <div className="overview-posture-heading">
+          <div>
+            <p className="eyebrow">00 / Current posture</p>
+            <h2>Package readiness and science are separate.</h2>
+          </div>
+          <span>Repository evidence, not live health</span>
+        </div>
+        <div className="overview-posture-grid">
+          <PostureRow
+            label="Presentation package"
+            value={product?.presentation_status}
+            note="Review packaging only."
           />
-          <MetricTile
-            label="Registered tool wrappers"
-            value={displayNumber(product?.tool_count)}
-            note={`Role-exposed: ${displayNumber(product?.agent_exposed_tool_count)}`}
-            icon={<Wrench size={16} />}
-            tone="graphite"
+          <PostureRow
+            label="Scientific certification"
+            value={product?.certification}
+            note="Empirical completion is not established."
           />
-          <MetricTile
-            label="Frozen scenarios"
-            value={displayNumber(product?.scenario_count)}
-            note="Catalog inventory"
-            icon={<CheckCircle2 size={16} />}
-            tone="amber"
+          <PostureRow
+            label="G4 incident recovery"
+            value={g4?.status}
+            note={g4?.status_note || "Current G4 disposition."}
           />
-        </motion.div>
+          <PostureRow
+            label="Operational access"
+            value={operatorState}
+            note={product?.operator_enabled
+              ? "Governed controls are confined to the rehearsal route."
+              : "Mutation controls are unavailable in this view."}
+          />
+        </div>
       </section>
 
       <ArchitectureDiagram />
 
-      <section className="capability-strip" aria-label="Project capabilities">
-        <div className="capability-intro">
-          <p className="eyebrow">Built around the boundary</p>
-          <h2>Reasoning is not authority.</h2>
-        </div>
-        <div className="capability-items">
-          <Capability icon={<UsersRound size={18} />} label="Multi-agent reasoning" />
-          <Capability icon={<ShieldCheck size={18} />} label="Explicit approval gate" />
-          <Capability icon={<CheckCircle2 size={18} />} label="Objective verification" />
-          <Capability icon={<ArrowUpRight size={18} />} label="Traceable evidence" />
-        </div>
-      </section>
-
-      <div className="overview-footer-note">
-        <span className="footer-note-icon"><ShieldCheck size={15} aria-hidden="true" /></span>
-        <span>Presentation package: <strong>{displayText(product?.presentation_status)}</strong></span>
-        <span className="footer-note-divider" aria-hidden="true">·</span>
-        <span>Research status is distinct from scientific certification.</span>
+      <div className="overview-readout-grid">
+        <OverviewGateLedger catalog={catalog} loading={loading} />
+        <OverviewEvidenceLedger catalog={catalog} loading={loading} />
       </div>
+
+      <InventoryReadout catalog={catalog} />
+
+      <footer className="overview-footer">
+        <span>Source</span>
+        <strong>{displayText(catalog?.source)}</strong>
+        <span aria-hidden="true">/</span>
+        <span>Certification</span>
+        <strong>{displayText(product?.certification)}</strong>
+      </footer>
     </div>
   );
 }
 
-function Capability({ icon, label }: { icon: React.ReactNode; label: string }) {
+function PostureRow({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string | null | undefined;
+  note: string;
+}) {
+  const visibleValue = displayText(value);
   return (
-    <div className="capability-item">
-      <span className="capability-icon" aria-hidden="true">{icon}</span>
-      <strong>{label}</strong>
+    <div className="overview-posture-row">
+      <span className="overview-posture-label">{label}</span>
+      <Badge tone={statusTone(visibleValue)}>{visibleValue}</Badge>
+      <span className="overview-posture-note">{note}</span>
     </div>
+  );
+}
+
+function InventoryReadout({ catalog }: { catalog: Catalog | null }) {
+  const product = catalog?.product;
+  const inventory = [
+    ["Specialized agents", displayNumber(product?.agent_count)],
+    ["Registered tool wrappers", displayNumber(product?.tool_count)],
+    ["Role-exposed tools", displayNumber(product?.agent_exposed_tool_count)],
+    ["Unexposed tools", displayNumber(product?.unexposed_tool_count)],
+    ["Frozen scenarios", displayNumber(product?.scenario_count)],
+  ] as const;
+
+  return (
+    <section className="overview-inventory" aria-labelledby="overview-inventory-title">
+      <div className="overview-section-heading">
+        <div>
+          <p className="eyebrow">03 / Catalog inventory</p>
+          <h2 id="overview-inventory-title">Registered components</h2>
+        </div>
+      </div>
+      <dl className="overview-inventory-list">
+        {inventory.map(([label, value]) => (
+          <div className="overview-inventory-row" key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

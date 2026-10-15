@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 const routes = [
@@ -19,14 +20,18 @@ test("overview shows API inventory and stays distinct from certification", async
   await expect(page.getByText("Read-only research demo")).toBeVisible();
   await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
 
-  const tools = page.locator(".metric-tile").filter({ hasText: "Registered tool wrappers" });
-  await expect(tools.locator(".metric-value")).toHaveText("24");
-  await expect(tools).toContainText("Role-exposed: 19");
+  const tools = page.locator(".overview-inventory-row").filter({ hasText: "Registered tool wrappers" });
+  await expect(tools.locator("dd")).toHaveText("24");
+  const roleExposed = page.locator(".overview-inventory-row").filter({ hasText: "Role-exposed tools" });
+  await expect(roleExposed.locator("dd")).toHaveText("19");
 
-  const scenarios = page.locator(".metric-tile").filter({ hasText: "Frozen scenarios" });
-  await expect(scenarios.locator(".metric-value")).toHaveText("28");
-  await expect(page.getByText("NOT_CERTIFIED")).toBeVisible();
-  await expect(page.getByText("READY_FOR_REVIEW")).toBeVisible();
+  const scenarios = page.locator(".overview-inventory-row").filter({ hasText: "Frozen scenarios" });
+  await expect(scenarios.locator("dd")).toHaveText("28");
+  await expect(page.locator(".overview-posture")).toContainText("NOT_CERTIFIED");
+  await expect(page.locator(".overview-posture")).toContainText("READY_FOR_REVIEW");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("No diagnostic improvement observed");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("0 / 8");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("Accepted SFT+GRPO checkpoint");
 });
 
 test("every primary route is reachable through the hash router", async ({ page }) => {
@@ -35,6 +40,155 @@ test("every primary route is reachable through the hash router", async ({ page }
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
   }
+});
+
+test("refresh and catalog search remain available in the redesigned shell", async ({ page }) => {
+  const methods: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) methods.push(request.method());
+  });
+  await page.goto("/");
+  const apiStatus = page.locator(".api-indicator");
+  await expect(apiStatus).toContainText("Snapshot available");
+  await page.getByRole("button", { name: "Refresh repository snapshot" }).click();
+  await expect(apiStatus).toContainText("Snapshot available");
+
+  await page.goto("/#/runbooks");
+  const search = page.getByPlaceholder("Search catalog");
+  await expect(page.locator(".runbook-row")).not.toHaveCount(0);
+  await search.fill("zz-no-matching-runbook-zz");
+  await expect(page.locator(".runbook-row")).toHaveCount(0);
+  await expect(page.getByText("No runbooks match this search.")).toBeVisible();
+  await search.fill("");
+  await expect(page.locator(".runbook-row").first()).toBeVisible();
+
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+});
+
+test("nine routes render at the five reference viewports without overlap or overflow", async ({ page }, testInfo) => {
+  const viewports = [
+    { name: "1920x1080", width: 1920, height: 1080 },
+    { name: "1440x900", width: 1440, height: 900 },
+    { name: "1280x800", width: 1280, height: 800 },
+    { name: "768x1024", width: 768, height: 1024 },
+    { name: "390x844", width: 390, height: 844 },
+  ] as const;
+  const methods: string[] = [];
+  const apiRequests: string[] = [];
+  const runtimeErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const records: {
+    route: string;
+    viewport: string;
+    apiMethods: string[];
+    apiRequests: string[];
+    documentWidth: number;
+    viewportWidth: number;
+    overlapCount: number;
+  }[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/")) {
+      methods.push(request.method());
+      apiRequests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const [, path, heading] of routes) {
+      const requestOffset = methods.length;
+      const apiRequestOffset = apiRequests.length;
+      await page.goto(`/#${path}`);
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      await page.evaluate(async () => { await document.fonts.ready; });
+      const layout = await page.evaluate(() => {
+        const children = [...document.querySelectorAll<HTMLElement>(".page-stack > *")]
+          .filter((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.width > 0 && bounds.height > 0;
+          })
+          .map((element) => element.getBoundingClientRect());
+        let overlapCount = 0;
+        for (let left = 0; left < children.length; left++) {
+          for (let right = left + 1; right < children.length; right++) {
+            const first = children[left];
+            const second = children[right];
+            if (
+              first.left < second.right
+              && first.right > second.left
+              && first.top < second.bottom - 1
+              && first.bottom > second.top + 1
+            ) overlapCount += 1;
+          }
+        }
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: window.innerWidth,
+          overlapCount,
+        };
+      });
+      const apiMethods = methods.slice(requestOffset);
+      const routeApiRequests = apiRequests.slice(apiRequestOffset);
+      expect(layout.documentWidth, `${path} at ${viewport.name}`).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.overlapCount, `${path} at ${viewport.name}`).toBe(0);
+      expect(apiMethods.every((method) => method === "GET"), `${path} API methods`).toBe(true);
+      records.push({ route: path, viewport: viewport.name, apiMethods, apiRequests: routeApiRequests, ...layout });
+      await page.screenshot({
+        path: testInfo.outputPath(`atlasops-${path === "/" ? "overview" : path.slice(1)}-${viewport.name}.png`),
+        fullPage: true,
+      });
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileMenuRequestOffset = methods.length;
+  const mobileMenuApiRequestOffset = apiRequests.length;
+  await page.goto("/");
+  const more = page.getByRole("button", { name: "More" });
+  await more.click();
+  const additionalNavigation = page.getByRole("region", { name: "Additional navigation" });
+  await expect(additionalNavigation).toBeVisible();
+  const mobileMenuLayout = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(mobileMenuLayout.documentWidth).toBeLessThanOrEqual(mobileMenuLayout.viewportWidth);
+  await page.screenshot({
+    path: testInfo.outputPath("atlasops-mobile-more-menu-390x844.png"),
+    fullPage: true,
+  });
+  records.push({
+    route: "mobile-more-menu",
+    viewport: "390x844",
+    apiMethods: methods.slice(mobileMenuRequestOffset),
+    apiRequests: apiRequests.slice(mobileMenuApiRequestOffset),
+    ...mobileMenuLayout,
+    overlapCount: 0,
+  });
+
+  expect(runtimeErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(methods.length).toBeGreaterThan(0);
+  const matrix = {
+    captures: records.length,
+    records,
+    apiMethods: methods,
+    uniqueApiRequests: [...new Set(apiRequests)],
+    pageErrors: runtimeErrors,
+    consoleErrors,
+  };
+  const matrixJson = JSON.stringify(matrix, null, 2);
+  await writeFile(testInfo.outputPath("route-viewport-matrix.json"), matrixJson);
+  await testInfo.attach("route-viewport-matrix.json", {
+    body: Buffer.from(matrixJson),
+    contentType: "application/json",
+  });
 });
 
 test("matched comparison and controlled RL findings display canonical API values", async ({ page }) => {

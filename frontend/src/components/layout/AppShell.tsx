@@ -64,12 +64,26 @@ function ShellContent({
     : status === "refreshing" ? "Refreshing snapshot"
       : status === "loading" ? "Reading snapshot" : "API unavailable";
   const apiTone = refreshFailed ? "unavailable" : status;
+  const g4Status = catalog?.gates?.find((gate) => gate.gate === "G4")?.status;
+  const tickerMessage = [
+    status === "ready"
+      ? refreshFailed ? "Refresh failed; showing previous snapshot" : displayText(catalog?.source)
+      : apiLabel,
+    `G4 ${displayText(g4Status)}`,
+    `Research ${displayText(catalog?.product?.certification)}`,
+    `Package ${displayText(catalog?.product?.presentation_status)}`,
+    catalog?.product?.operator_enabled ? "Governed operator" : "Read-only demo",
+  ].join("   /   ");
 
   const pageProps = { catalog, loading: status === "loading" || status === "refreshing" };
 
   useEffect(() => {
     const main = document.querySelector(".main-content");
     if (main) main.scrollTop = 0;
+  }, [location.pathname]);
+
+  useEffect(() => {
+    setMoreOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -94,75 +108,74 @@ function ShellContent({
     <MotionConfig reducedMotion="user">
       <div className="app-frame">
         <a className="skip-link" href="#main-content">Skip to content</a>
-        <aside className="sidebar" aria-label="Primary navigation">
-          <NavLink to="/" className="brand-lockup" aria-label={`${productName} overview`}>
-            <span className="brand-mark" aria-hidden="true"><Network size={19} /></span>
-            <span className="brand-wordmark">
-              <strong>{productName}</strong>
-              <small>RESEARCH CONSOLE</small>
-            </span>
-          </NavLink>
+        <header className="topbar">
+          <div className="topbar-context">
+            <NavLink to="/" className="brand-lockup" aria-label={`${productName} overview`}>
+              <span className="brand-mark" aria-hidden="true"><Network size={19} /></span>
+              <span className="brand-wordmark">
+                <strong>{productName}</strong>
+                <small>RESEARCH CONSOLE</small>
+              </span>
+            </NavLink>
+            <span className="topbar-separator" aria-hidden="true">/</span>
+            <span className="topbar-current">{currentHeading}</span>
+          </div>
 
-          <nav className="sidebar-nav">
-            {["Workspace", "Reference"].map((group) => (
-              <div className="nav-group" key={group}>
-                <p className="nav-group-label">{group}</p>
-                {navigation.filter((item) => item.group === group).map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.to === "/"}
-                      title={item.label}
-                      aria-label={item.label}
-                      className={({ isActive }) => `nav-link ${isActive ? "is-active" : ""}`}
-                    >
-                      <Icon size={17} aria-hidden="true" />
-                      <span>{item.label}</span>
-                    </NavLink>
-                  );
-                })}
-              </div>
-            ))}
+          <nav className="console-primary-nav" aria-label="Primary navigation">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  title={item.label}
+                  aria-label={item.label}
+                  className={({ isActive }) => `console-nav-link ${isActive ? "is-active" : ""}`}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
           </nav>
 
-          <div className="sidebar-foot">
-            <div className="sidebar-foot-icon" aria-hidden="true"><ShieldCheck size={17} /></div>
-            <div>
-              <strong>{catalog?.product?.operator_enabled ? "Governed operator" : "Read-only demo"}</strong>
-              <span>{catalog?.product?.operator_enabled ? "Exact-action approval" : "Local evidence snapshot"}</span>
+          <div className="topbar-actions">
+            <span className={`api-indicator api-indicator--${apiTone}`} role="status" title={apiLabel}>
+              <i aria-hidden="true" />
+              <span className="api-indicator-label">{apiLabel}</span>
+            </span>
+            <Button
+              variant="quiet"
+              size="icon"
+              className={`refresh-button ${status === "refreshing" ? "is-refreshing" : ""}`}
+              aria-label="Refresh repository snapshot"
+              title="Refresh snapshot"
+              onClick={reload}
+              disabled={status === "loading" || status === "refreshing"}
+            >
+              <RefreshCw size={16} aria-hidden="true" />
+            </Button>
+          </div>
+        </header>
+
+        <div className="snapshot-ticker" role="region" aria-label="Repository snapshot status">
+          <span className="snapshot-ticker-label" aria-hidden="true">SNAPSHOT / STATUS</span>
+          <span className="sr-only">{tickerMessage}</span>
+          <div className="snapshot-ticker-window" aria-hidden="true">
+            <div className="snapshot-ticker-track">
+              <span>{tickerMessage}</span>
+              <span>{tickerMessage}</span>
             </div>
           </div>
-        </aside>
+        </div>
 
         <div className="main-shell">
-          <header className="topbar">
-            <div className="topbar-context">
-              <span className="topbar-root">AtlasOps</span>
-              <span className="topbar-separator" aria-hidden="true">/</span>
-              <span className="topbar-current">{currentHeading}</span>
-            </div>
-            <div className="topbar-actions">
-              <span className={`api-indicator api-indicator--${apiTone}`} role="status">
-                <i aria-hidden="true" />
-                {apiLabel}
-              </span>
-              <Button
-                variant="quiet"
-                size="icon"
-                className={`refresh-button ${status === "refreshing" ? "is-refreshing" : ""}`}
-                aria-label="Refresh repository snapshot"
-                title="Refresh snapshot"
-                onClick={reload}
-                disabled={status === "loading" || status === "refreshing"}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-              </Button>
-            </div>
-          </header>
-
-          <main id="main-content" className="main-content" tabIndex={-1}>
+          <main
+            id="main-content"
+            className={`main-content ${location.pathname === "/" ? "main-content--overview" : "main-content--workspace"}`}
+            tabIndex={-1}
+          >
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={location.pathname}

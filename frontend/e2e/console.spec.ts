@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
@@ -12,6 +13,25 @@ const routes = [
   ["Runbooks", "/runbooks", "Runbook catalog"],
   ["System", "/system", "A local, read-only presentation surface."],
 ] as const;
+
+async function inspectLoadedFonts(page: import("@playwright/test").Page) {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    const normalizeFamily = (family: string) =>
+      family.replace(/^["']|["']$/g, "").trim().toLowerCase();
+    const fontFaces = [...document.fonts]
+      .map((fontFace) => ({
+        family: normalizeFamily(fontFace.family),
+        status: fontFace.status,
+      }))
+      .filter(({ family }) => family === "geist" || family === "geist mono");
+    return {
+      geist: fontFaces.some((fontFace) => fontFace.family === "geist" && fontFace.status === "loaded"),
+      geistMono: fontFaces.some((fontFace) => fontFace.family === "geist mono" && fontFace.status === "loaded"),
+      fontFaces,
+    };
+  });
+}
 
 test("overview shows API inventory and stays distinct from certification", async ({ page }) => {
   await page.goto("/");
@@ -83,16 +103,32 @@ test("nine routes render at the five reference viewports without overlap or over
     viewport: string;
     apiMethods: string[];
     apiRequests: string[];
-    fontsLoaded: { geist: boolean; geistMono: boolean };
+    fontsLoaded: {
+      geist: boolean;
+      geistMono: boolean;
+      fontFaces: { family: string; status: string }[];
+    };
     documentWidth: number;
     viewportWidth: number;
-    overlapCount: number;
+    overlapCount: number | null;
   }[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname.startsWith("/api/")) {
       methods.push(request.method());
       apiRequests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  const getErrors: string[] = [];
+  page.on("response", (response) => {
+    const request = response.request();
+    if (request.method() === "GET" && response.status() >= 400) {
+      getErrors.push(`GET ${new URL(response.url()).pathname} ${response.status()}`);
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (request.method() === "GET") {
+      getErrors.push(`GET ${new URL(request.url()).pathname} ${request.failure()?.errorText ?? "request failed"}`);
     }
   });
   page.on("pageerror", (error) => runtimeErrors.push(error.message));
@@ -107,11 +143,7 @@ test("nine routes render at the five reference viewports without overlap or over
       const apiRequestOffset = apiRequests.length;
       await page.goto(`/#${path}`);
       await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
-      await page.evaluate(async () => { await document.fonts.ready; });
-      const fontsLoaded = await page.evaluate(() => ({
-        geist: document.fonts.check("14px Geist"),
-        geistMono: document.fonts.check('12px "Geist Mono"'),
-      }));
+      const fontsLoaded = await inspectLoadedFonts(page);
       expect(fontsLoaded.geist, `${path} Geist Sans`).toBe(true);
       expect(fontsLoaded.geistMono, `${path} Geist Mono`).toBe(true);
       const layout = await page.evaluate(() => {
@@ -168,11 +200,7 @@ test("nine routes render at the five reference viewports without overlap or over
   await more.click();
   const additionalNavigation = page.getByRole("region", { name: "Additional navigation" });
   await expect(additionalNavigation).toBeVisible();
-  await page.evaluate(async () => { await document.fonts.ready; });
-  const mobileMenuFontsLoaded = await page.evaluate(() => ({
-    geist: document.fonts.check("14px Geist"),
-    geistMono: document.fonts.check('12px "Geist Mono"'),
-  }));
+  const mobileMenuFontsLoaded = await inspectLoadedFonts(page);
   expect(mobileMenuFontsLoaded.geist, "mobile menu Geist Sans").toBe(true);
   expect(mobileMenuFontsLoaded.geistMono, "mobile menu Geist Mono").toBe(true);
   const mobileMenuLayout = await page.evaluate(() => ({
@@ -191,17 +219,24 @@ test("nine routes render at the five reference viewports without overlap or over
     apiRequests: apiRequests.slice(mobileMenuApiRequestOffset),
     fontsLoaded: mobileMenuFontsLoaded,
     ...mobileMenuLayout,
-    overlapCount: 0,
+    overlapCount: null,
   });
 
   expect(runtimeErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+  expect(getErrors).toEqual([]);
   expect(methods.length).toBeGreaterThan(0);
+  const gitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: testInfo.config.rootDir,
+    encoding: "utf8",
+  }).trim();
   const matrix = {
+    gitSha,
     captures: records.length,
     records,
     apiMethods: methods,
     uniqueApiRequests: [...new Set(apiRequests)],
+    getErrors,
     pageErrors: runtimeErrors,
     consoleErrors,
   };

@@ -68,6 +68,7 @@ def _write_export(
     changed_groups: set[int] | None = None,
     optimizer_before_rewards: bool = False,
     include_reward_gradient_evidence: bool = False,
+    reward_gradient_component: str = "reward_policy",
 ) -> dict[str, object]:
     from training import grpo_reload_isolation, sft_provenance
 
@@ -101,10 +102,10 @@ def _write_export(
             "step": index,
             "group": index + 1,
             "finite": True,
-            "norm": 1.0,
-            "component": "reward_only_policy_loss",
+            "norm": float(any(value != 0 for value in advantages)),
+            "component": reward_gradient_component,
         }
-        for index in range(2)
+        for index, (_completions, advantages) in enumerate(groups)
     ]
     optimizer_steps = [
         {
@@ -259,6 +260,24 @@ def test_export_does_not_count_equal_reward_optimizer_step_as_reward_learning(
             changed_groups={2},
             include_reward_gradient_evidence=True,
         )
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "episodes.jsonl").read_text().splitlines()
+    ]
+    equal_reward_gradient = next(
+        row
+        for row in rows
+        if row.get("event") == "reward_gradient_observed" and row.get("group") == 2
+    )
+    kl_only_update = next(
+        row
+        for row in rows
+        if row.get("event") == "optimizer_step_observed" and row.get("group") == 2
+    )
+    assert equal_reward_gradient["component"] == "reward_policy"
+    assert equal_reward_gradient["finite"] is True
+    assert equal_reward_gradient["norm"] == 0.0
+    assert kl_only_update["changed_trainable_tensors"] > 0
 
 
 def test_export_fails_closed_without_separate_reward_only_gradient_evidence(
@@ -275,6 +294,20 @@ def test_export_fails_closed_without_separate_reward_only_gradient_evidence(
                 _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
             ],
             monkeypatch,
+        )
+
+
+def test_export_rejects_legacy_reward_gradient_component_name(tmp_path, monkeypatch):
+    varied_rewards = [_scale_action(3), "malformed"]
+    advantages = _trl_0191_advantages([1.0, -1.0])
+
+    with pytest.raises(ValueError, match="separate reward-only policy gradient"):
+        _write_export(
+            tmp_path,
+            [_group(varied_rewards, advantages), _group(varied_rewards, advantages)],
+            monkeypatch,
+            include_reward_gradient_evidence=True,
+            reward_gradient_component="reward_only_policy_loss",
         )
 
 

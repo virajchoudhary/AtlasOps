@@ -312,10 +312,11 @@ def test_installed_trl_evaluation_refuses_before_observation_or_generation(
     assert trainer._step == 0
 
 
-def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
-    _runtime, tmp_path
+@pytest.mark.parametrize("mode", ["rewarded", "equal-reward-kl-only"])
+def test_installed_controlled_hook_measures_reward_policy_gradient(
+    _runtime, tmp_path, mode
 ):
-    """Actual TRL optimization on a random tiny fixture, NOT pretrained evidence."""
+    """Actual TRL optimization on random tiny CPU fixtures; synthetic, non-empirical."""
     from tests.test_grpo_controlled import action
     from training.grpo_controlled import (
         SCENARIO,
@@ -326,6 +327,7 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
 
     runtime = _runtime
     runtime.torch.manual_seed(2026)
+    max_steps = 1 if mode == "rewarded" else 2
     ledger = EpisodeLedger(tmp_path / "episodes.jsonl")
     environment = CapacityEnvironment(ledger)
     preview = environment.begin(SCENARIO)["state"]
@@ -333,8 +335,9 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
     preview["instruction"] = ACTION_INSTRUCTION
     prompt = json.dumps(preview, sort_keys=True, separators=(",", ":"))
     valid = action()
+    equal_reward = action(replicas=1)
     vocab = {"[UNK]": 0, "[PAD]": 1, "[BOS]": 2, "[EOS]": 3,
-             prompt: 4, valid: 5, "malformed": 6}
+             prompt: 4, valid: 5, "malformed": 6, equal_reward: 7}
     backend = runtime.Tokenizer(runtime.models.WordLevel(vocab, unk_token="[UNK]"))
     backend.decoder = runtime.decoders.Fuse()
     tokenizer = runtime.PreTrainedTokenizerFast(
@@ -346,6 +349,9 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
         bos_token_id=2, eos_token_id=3, pad_token_id=1,
     ))
     base_model.config._name_or_path = "controlled-random-cpu-fixture"
+    base_model.config.use_cache = False
+    base_model.enable_input_require_grads()
+    base_model.gradient_checkpointing_enable()
     base_checkpoint = tmp_path / "base"
     base_model.save_pretrained(base_checkpoint)
     from peft import LoraConfig, get_peft_model
@@ -353,6 +359,11 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
     model = get_peft_model(base_model, LoraConfig(
         r=2, lora_alpha=4, target_modules=["c_attn"], task_type="CAUSAL_LM",
     ))
+    if mode == "equal-reward-kl-only":
+        with runtime.torch.no_grad():
+            for name, parameter in model.named_parameters():
+                if "lora_A" in name or "lora_B" in name:
+                    parameter.fill_(0.05)
     before = {
         name: parameter.detach().clone()
         for name, parameter in model.named_parameters()
@@ -361,8 +372,13 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
     assert before and all("lora_" in name for name in before)
 
     def fixture_generate(_model, input_ids, **kwargs):
+        token_rows = (
+            [[5, 3], [6, 3]]
+            if mode == "rewarded"
+            else [[7, 3], [7, 3]]
+        )
         tokens = runtime.torch.tensor(
-            [[5, 3], [6, 3]], device=input_ids.device, dtype=input_ids.dtype
+            token_rows, device=input_ids.device, dtype=input_ids.dtype
         )
         assert input_ids.shape[0] == 2
         return runtime.torch.cat((input_ids, tokens), dim=1)
@@ -388,9 +404,36 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
             )
             return result
 
+        def compute_loss(
+            self, model, inputs, return_outputs=False, num_items_in_batch=None
+        ):
+            previous_gradients = {
+                name: (
+                    None if parameter.grad is None else parameter.grad.detach().clone()
+                )
+                for name, parameter in model.named_parameters()
+                if parameter.requires_grad
+            }
+            loss = super().compute_loss(
+                model, inputs, return_outputs, num_items_in_batch
+            )
+            for name, parameter in model.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                previous = previous_gradients[name]
+                if previous is None:
+                    assert parameter.grad is None
+                else:
+                    assert runtime.torch.equal(previous, parameter.grad)
+            return loss
+
     from transformers import TrainerCallback
 
     gradient_records = []
+    optimizer_steps = []
+    previous_parameters = {
+        name: parameter.detach().clone() for name, parameter in before.items()
+    }
 
     class GradientProbe(TrainerCallback):
         def on_pre_optimizer_step(self, args, state, control, **kwargs):
@@ -406,12 +449,33 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
             norm = sum(
                 float(gradient.float().norm().item()) for gradient in gradients
             )
-            gradient_records.append({"finite": finite, "norm": norm})
+            gradient_records.append(
+                {
+                    "step": state.global_step,
+                    "group": state.global_step + 1,
+                    "finite": finite,
+                    "norm": norm,
+                }
+            )
+
+        def on_step_end(self, args, state, control, **kwargs):
+            group = state.global_step
+            parameters_after_step = dict(model.named_parameters())
+            changed = 0
+            for name, previous in previous_parameters.items():
+                current = parameters_after_step[name].detach()
+                if not runtime.torch.equal(previous, current):
+                    changed += 1
+                    previous_parameters[name] = current.clone()
+            optimizer_steps.append(
+                {"step": group, "group": group, "changed_trainable_tensors": changed}
+            )
 
     args = runtime.GRPOConfig(
         output_dir=str(tmp_path / "trainer"), use_cpu=True, bf16=False, fp16=False,
         seed=2026,
-        max_steps=1, per_device_train_batch_size=2, gradient_accumulation_steps=1,
+        max_steps=max_steps, per_device_train_batch_size=2,
+        gradient_accumulation_steps=1,
         num_generations=2, max_prompt_length=None, max_completion_length=2,
         beta=0.04, use_vllm=False, report_to=[], save_strategy="no",
         remove_unused_columns=False, disable_tqdm=True, learning_rate=0.001,
@@ -425,22 +489,61 @@ def test_installed_controlled_hook_runs_real_cpu_optimizer_with_fixture_tokens(
         )
         model.train()
         trainer.train()
-        assert trainer.state.global_step == 1
+        assert trainer.state.global_step == max_steps
         assert trainer.optimizer is not None
-        assert len(gradient_records) == 1
-        assert gradient_records[0]["finite"]
-        assert gradient_records[0]["norm"] > 0
-        assert any(
-            len({r["reward"] for r in group["records"]}) > 1
-            for group in trainer.observation_evidence
+        assert len(gradient_records) == max_steps
+        assert all(record["finite"] and record["norm"] > 0 for record in gradient_records)
+        assert len(optimizer_steps) == max_steps
+        assert all(record["changed_trainable_tensors"] > 0 for record in optimizer_steps)
+        reward_gradients = list(trainer.reward_gradient_evidence)
+        assert len(reward_gradients) == max_steps
+        assert all(
+            record["step"] == index and record["group"] == index + 1
+            and record["component"] == "reward_policy" and record["finite"]
+            for index, record in enumerate(reward_gradients)
         )
-        assert trainer.reward_mechanics_groups == [True]
-        parameters_after = dict(model.named_parameters())
+        assert trainer.beta == 0.04
+        assert trainer.args.beta == 0.04
+        assert model.is_gradient_checkpointing is True
+        assert trainer.reward_mechanics_groups == [mode == "rewarded"] * max_steps
         assert any(
-            not runtime.torch.equal(before[name], parameters_after[name].detach())
+            not runtime.torch.equal(before[name], dict(model.named_parameters())[name].detach())
             for name in before
         )
-        assert environment.steps == 2
+        assert environment.steps == max_steps * 2
+
+        if mode == "rewarded":
+            assert reward_gradients[0]["norm"] > 0
+            assert [
+                record["reward"] for record in trainer.observation_evidence[0]["records"]
+            ] == [1.0, -1.0]
+        else:
+            assert all(record["norm"] == 0.0 for record in reward_gradients)
+            assert all(
+                [record["reward"] for record in group["records"]] == [0.125, 0.125]
+                for group in trainer.observation_evidence
+            )
+            from scripts.accept_grpo_controlled import _has_matched_optimizer_update
+
+            rows = [
+                {"event": "reward_gradient_observed", **record}
+                for record in reward_gradients
+            ] + [
+                {"event": "gradient_observed", **record}
+                for record in gradient_records
+            ] + [
+                {"event": "optimizer_step_observed", **record}
+                for record in optimizer_steps
+            ]
+            assert not _has_matched_optimizer_update(
+                rows,
+                {
+                    "reward_gradients": reward_gradients,
+                    "gradients": gradient_records,
+                    "optimizer_steps": optimizer_steps,
+                },
+                {1: False, 2: False},
+            )
 
         adapter = tmp_path / "adapter"
         model.save_pretrained(adapter, safe_serialization=True)
@@ -497,12 +600,17 @@ print("ADAPTER_SHA256=" + digest.hexdigest())
         ledger.close()
 
 
-def test_admitted_controlled_run_fails_closed_without_reward_only_gradient_diagnostic(
-    tmp_path,
+def test_admitted_controlled_run_fails_closed_until_diagnostic_validation(
+    tmp_path, monkeypatch
 ):
-    from training.grpo_controlled import _run_admitted_pilot
+    from training import grpo_controlled
 
+    monkeypatch.setattr(
+        grpo_controlled, "REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE", False
+    )
+    output = tmp_path / "controlled-output"
     with pytest.raises(RuntimeError, match="separate reward-only policy gradient"):
-        _run_admitted_pilot({})
+        grpo_controlled._run_admitted_pilot({"output_path": str(output)})
 
+    assert not output.exists()
     assert list(tmp_path.iterdir()) == []

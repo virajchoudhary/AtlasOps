@@ -16,7 +16,7 @@ from config.hf_space_env import apply_hf_space_inference_defaults
 
 apply_hf_space_inference_defaults()
 
-from fastapi import FastAPI, HTTPException, Request, Security
+from fastapi import FastAPI, HTTPException, Query, Request, Security
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -60,6 +60,8 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
 # Import coordinator internals
+import agents.coordinator as coordinator_module
+from agents import incident_history
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
@@ -344,6 +346,35 @@ async def circuit_breaker_reset():
 @app.get("/incidents/active")
 async def incidents_active():
     return JSONResponse({"incidents": correlator.get_active()})
+
+
+@app.get("/incidents/history", dependencies=[Security(_require_api_key)])
+def incidents_history(
+    limit: int = Query(default=50, ge=1, le=incident_history.MAX_HISTORY_LIMIT),
+    offset: int = Query(default=0, ge=0, le=incident_history.MAX_HISTORY_OFFSET),
+):
+    try:
+        return incident_history.list_incident_history(
+            limit=limit,
+            offset=offset,
+            directory=coordinator_module.TRAJECTORIES_DIR,
+        )
+    except incident_history.HistoryUnavailable:
+        raise HTTPException(status_code=503, detail="Incident history is unavailable") from None
+
+
+@app.get("/incidents/{incident_id}", dependencies=[Security(_require_api_key)])
+def incident_history_detail(incident_id: str, execution_id: str | None = None):
+    try:
+        return incident_history.read_incident_history(
+            incident_id,
+            execution_id=execution_id,
+            directory=coordinator_module.TRAJECTORIES_DIR,
+        )
+    except incident_history.RecordNotFound:
+        raise HTTPException(status_code=404, detail="Incident record not found") from None
+    except incident_history.HistoryUnavailable:
+        raise HTTPException(status_code=503, detail="Incident history is unavailable") from None
 
 
 @app.get("/audit/log")

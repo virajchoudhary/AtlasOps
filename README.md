@@ -80,6 +80,33 @@ Additional implementation includes:
 - HMAC-chained audit records and evidence manifests with source and artifact hashes.
 - A read-only repository-evidence demo for local review.
 
+## Persisted incident history API
+
+The operator API reads persisted records from `TRAJECTORIES_DIR`. The default path is
+`data/trajectories`. Send the `X-AtlasOps-Key` header. Missing API-key configuration
+returns `503`; a missing or incorrect header returns `401`.
+
+| Route | Behavior |
+|---|---|
+| `GET /incidents/history?limit=50&offset=0` | Returns `items`, `total`, `limit`, and `offset`. `limit` is 1-100 and `offset` is 0-10,000. Items are ordered by filename, not by event time. |
+| `GET /incidents/{incident_id}` | Reads only `{incident_id}.json`, the first saved record for that incident. |
+| `GET /incidents/{incident_id}?execution_id={uuid}` | Reads only `{incident_id}.execution-{uuid}.json`. The UUID must be 32 lowercase hexadecimal characters. The API does not select a latest execution. |
+
+History items keep canonical and execution files separate. The API omits `.partial-*`
+provider-failure files. Missing records return `404`. Malformed, identity-mismatched,
+or oversized records return `503`.
+
+Legacy canonical records without an `execution_id` return `null`. The API never
+synthesizes an execution ID. Explicit execution files still require a matching 32-character
+lowercase hexadecimal ID.
+
+Responses retain triage, diagnosis, remediation, approval, objective verification, and
+communications fields through an allowlist. The API keeps `agent_claimed_resolved`,
+`env_resolved`, and `resolved` as separate recorded values. It does not recompute
+verification or infer an outcome from a missing record. It omits raw alerts, model
+trajectories, raw verifier evidence, and the configured storage path. Persisted JSON is
+capped at 1 MiB, and returned text fields are capped at 2,000 characters.
+
 The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
 defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for

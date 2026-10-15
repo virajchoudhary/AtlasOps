@@ -1,0 +1,4 @@
+*.avif binary !eol
+*.jpg binary !eol
+*.png binary !eol
+*.woff2 binary !eol

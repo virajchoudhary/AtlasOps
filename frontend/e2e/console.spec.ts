@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 
 const routes = [
   ["Overview", "/", "AtlasOps"],
@@ -118,15 +119,77 @@ test("reference public routes deep-link on desktop and mobile using GET requests
 test("reference logo, image, and font assets load on desktop and mobile", async ({ page }, testInfo) => {
   const failedGets: string[] = [];
   const referenceAssetFailures: string[] = [];
-  const getResponses: { path: string; status: number }[] = [];
+  const getResponses: { path: string; status: number; contentType: string | null }[] = [];
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
   const viewportProofs: {
     viewport: string;
     routeStatus: number | null;
     logoNaturalWidth: number;
-    fontStates: { family: string; loaded: boolean; error: string | null }[];
+    fontStates: {
+      family: string;
+      loaded: boolean;
+      statuses: string[];
+      error: string | null;
+    }[];
     imageNaturalWidth: number;
   }[] = [];
+  const fs = await import("node:fs/promises");
+  const crypto = await import("node:crypto");
+  const path = await import("node:path");
+  const gitSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const worktreeRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  }).trim();
+  const frontendDist = path.resolve(worktreeRoot, "frontend", "dist");
+  const catalogText = await fs.readFile(
+    new URL("../src/reference/ASSET_CATALOG.md", import.meta.url),
+    "utf8",
+  );
+  const catalogAssets = catalogText.split(/\r?\n/u).flatMap((line) => {
+    const cells = line.split("|");
+    const catalogPath = cells[1]?.match(/`([^`]+)`/u)?.[1];
+    const expectedSha256 = cells.at(-2)?.match(/\b[0-9a-f]{64}\b/iu)?.[0]?.toLowerCase();
+    const filename = catalogPath?.split("/").pop();
+    if (!filename || !expectedSha256) return [];
+    return [{ filename, expectedSha256 }];
+  });
+  const assetByteProof: {
+    filename: string;
+    expectedSha256: string;
+    sourceSha256: string;
+    distSha256: string;
+    status: number;
+    contentType: string | null;
+    byteLength: number;
+    servedSha256: string;
+    matchesCatalog: boolean;
+    sourceMatchesServed: boolean;
+    distMatchesServed: boolean;
+    svgXmlValid: boolean | null;
+  }[] = [];
+  const writeProof = () => fs.writeFile(
+    testInfo.outputPath("reference-asset-proof.json"),
+    JSON.stringify({
+      gitSha,
+      worktreeRoot,
+      frontendDist,
+      serverOrigin: page.url() ? new URL(page.url()).origin : null,
+      viewportProofs,
+      getResponses,
+      assetByteProof,
+      failedGets,
+      referenceAssetFailures,
+      pageErrors,
+      consoleErrors,
+    }, null, 2),
+    "utf8",
+  );
   const isReferenceAsset = (url: string) => new URL(url).pathname.startsWith("/reference/assets/");
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
   page.on("requestfailed", (request) => {
     if (request.method() === "GET") {
       const failure = `failed GET ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`;
@@ -138,7 +201,11 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
     if (response.request().method() === "GET") {
       const path = new URL(response.url()).pathname;
       if (path === "/favicon.ico" || path.startsWith("/reference/assets/")) {
-        getResponses.push({ path, status: response.status() });
+        getResponses.push({
+          path,
+          status: response.status(),
+          contentType: response.headers()["content-type"] ?? null,
+        });
       }
       if (response.status() >= 400) {
         const failure = `${response.status()} GET ${response.url()}`;
@@ -157,18 +224,59 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
     expect(response?.status(), `/reference at ${viewport.name}`).toBe(200);
     await expect(page.getByRole("heading", { level: 1, name: /The stack agents/ })).toBeVisible();
 
+    if (viewport.name === "desktop") {
+      for (const asset of catalogAssets) {
+        const sourcePath = path.resolve(
+          worktreeRoot,
+          "frontend",
+          "public",
+          "reference",
+          "assets",
+          asset.filename,
+        );
+        const distPath = path.resolve(frontendDist, "reference", "assets", asset.filename);
+        const sourceBytes = await fs.readFile(sourcePath);
+        const distBytes = await fs.readFile(distPath);
+        const sourceSha256 = crypto.createHash("sha256").update(sourceBytes).digest("hex");
+        const distSha256 = crypto.createHash("sha256").update(distBytes).digest("hex");
+        const assetUrl = new URL(
+          `/reference/assets/${encodeURIComponent(asset.filename)}`,
+          page.url(),
+        );
+        const assetResponse = await page.request.get(assetUrl.toString());
+        const body = await assetResponse.body();
+        const servedSha256 = crypto.createHash("sha256").update(body).digest("hex");
+        const svgXmlValid = asset.filename.toLowerCase().endsWith(".svg")
+          ? await page.evaluate((source) => {
+            const document = new DOMParser().parseFromString(source, "image/svg+xml");
+            return document.documentElement.localName === "svg"
+              && document.querySelector("parsererror") === null;
+          }, body.toString("utf8"))
+          : null;
+        assetByteProof.push({
+          filename: asset.filename,
+          expectedSha256: asset.expectedSha256,
+          sourceSha256,
+          distSha256,
+          status: assetResponse.status(),
+          contentType: assetResponse.headers()["content-type"] ?? null,
+          byteLength: body.byteLength,
+          servedSha256,
+          matchesCatalog: servedSha256 === asset.expectedSha256,
+          sourceMatchesServed: sourceSha256 === servedSha256,
+          distMatchesServed: distSha256 === servedSha256,
+          svgXmlValid,
+        });
+      }
+      await writeProof();
+    }
+
     const logo = page.locator(
       viewport.name === "desktop"
         ? ".reference-brand-desktop img"
         : ".reference-footer-logo img",
     );
     await expect(logo).toBeVisible();
-    await expect.poll(() => logo.evaluate((element) =>
-      element instanceof HTMLImageElement ? element.naturalWidth : 0,
-    )).toBeGreaterThan(0);
-    const logoNaturalWidth = await logo.evaluate((element) =>
-      element instanceof HTMLImageElement ? element.naturalWidth : 0,
-    );
 
     const fontStates = await page.evaluate(async () => Promise.all(
       ["Geist Sans", "Geist Mono"].map(async (family) => {
@@ -177,44 +285,90 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
           return {
             family,
             loaded: faces.some((face) => face.status === "loaded"),
+            statuses: faces.map((face) => face.status),
             error: null,
           };
         } catch (error) {
           return {
             family,
             loaded: false,
+            statuses: [],
             error: error instanceof Error ? error.message : String(error),
           };
         }
       }),
     ));
-    expect(fontStates.some((font) => font.family === "Geist Mono" && font.loaded)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-top.png`) });
+    const viewportProof = {
+      viewport: viewport.name,
+      routeStatus: response?.status() ?? null,
+      logoNaturalWidth: 0,
+      fontStates,
+      imageNaturalWidth: 0,
+    };
+    viewportProofs.push(viewportProof);
+    await writeProof();
+    await logo.scrollIntoViewIfNeeded();
+    await expect.poll(() => getResponses.find(
+      ({ path: assetPath }) => assetPath === "/reference/assets/content-architecture-symbol.svg",
+    )?.status ?? 0).toBe(200);
+    await expect.poll(() => logo.evaluate((element) =>
+      element instanceof HTMLImageElement && element.complete ? element.naturalWidth : 0,
+    )).toBeGreaterThan(0);
+    viewportProof.logoNaturalWidth = await logo.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    );
 
     const image = page.locator('img[src="/reference/assets/good-fella.avif"]');
     await image.scrollIntoViewIfNeeded();
     await expect.poll(() => image.evaluate((element) =>
-      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+      element instanceof HTMLImageElement && element.complete ? element.naturalWidth : 0,
     )).toBeGreaterThan(0);
-    const imageNaturalWidth = await image.evaluate((element) =>
+    viewportProof.imageNaturalWidth = await image.evaluate((element) =>
       element instanceof HTMLImageElement ? element.naturalWidth : 0,
     );
-    viewportProofs.push({
-      viewport: viewport.name,
-      routeStatus: response?.status() ?? null,
-      logoNaturalWidth,
-      fontStates,
-      imageNaturalWidth,
-    });
     await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-image.png`) });
   }
 
-  const fs = await import("node:fs/promises");
-  await fs.writeFile(
-    testInfo.outputPath("reference-asset-proof.json"),
-    JSON.stringify({ viewportProofs, getResponses, failedGets }, null, 2),
-    "utf8",
-  );
+  await writeProof();
+
+  expect(catalogAssets, "catalogued reference assets").toHaveLength(23);
+  expect(new Set(catalogAssets.map(({ filename }) => filename)).size,
+    "unique catalogued reference assets").toBe(23);
+  expect(assetByteProof, "served reference assets").toHaveLength(23);
+  for (const asset of assetByteProof) {
+    expect(asset.status, `${asset.filename} response status`).toBe(200);
+    expect(asset.sourceSha256, `${asset.filename} source SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.distSha256, `${asset.filename} dist SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.servedSha256, `${asset.filename} served SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.matchesCatalog, `${asset.filename} matches the catalog`).toBe(true);
+    expect(asset.sourceMatchesServed, `${asset.filename} source matches served bytes`).toBe(true);
+    expect(asset.distMatchesServed, `${asset.filename} dist matches served bytes`).toBe(true);
+    if (asset.filename.toLowerCase().endsWith(".svg")) {
+      expect(asset.svgXmlValid, `${asset.filename} is valid SVG XML`).toBe(true);
+    }
+  }
+
+  for (const proof of viewportProofs) {
+    for (const family of ["Geist Sans", "Geist Mono"]) {
+      const font = proof.fontStates.find((state) => state.family === family);
+      expect(font, `${proof.viewport}: ${family} face is present`).toBeDefined();
+      expect(font?.error, `${proof.viewport}: ${family} load error`).toBeNull();
+      expect(font?.statuses, `${proof.viewport}: ${family} FontFace statuses`).not.toHaveLength(0);
+      expect(font?.statuses.every((status) => status === "loaded"),
+        `${proof.viewport}: every ${family} face is loaded`).toBe(true);
+      expect(font?.loaded, `${proof.viewport}: ${family} is loaded`).toBe(true);
+    }
+  }
+
+  for (const filename of ["GeistSans-VF.woff2", "GeistMono-VF.woff2"]) {
+    const response = getResponses.find(({ path }) => path === `/reference/assets/${filename}`);
+    expect(response?.status, `${filename} response status`).toBe(200);
+    expect(response?.contentType, `${filename} response content type`).toMatch(/woff2/i);
+  }
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
   expect(referenceAssetFailures).toEqual([]);
   expect(failedGets).toEqual([]);
 });

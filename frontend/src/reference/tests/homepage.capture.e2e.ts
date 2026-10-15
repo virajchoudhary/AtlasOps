@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,49 @@ const viewports = [
   { name: "390x844", width: 390, height: 844 },
 ] as const;
 
+async function readMotionLayout(page: Page) {
+  return page.evaluate(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      const styles = getComputedStyle(element);
+      return {
+        height: bounds.height,
+        position: styles.position,
+        marginBottom: Number.parseFloat(styles.marginBottom),
+      };
+    };
+
+    return {
+      motionPreference: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "reduce"
+        : "no-preference",
+      pageHeight: document.documentElement.scrollHeight,
+      runningAnimations: document.getAnimations().filter((animation) => animation.playState === "running").length,
+      diveTrack: rect(".reference-dive-track"),
+      hero: rect(".reference-hero"),
+      costStory: rect(".reference-cost-story"),
+      costCopy: rect(".reference-cost-copy"),
+      faqHeading: rect(".reference-faq-heading"),
+      contentSections: ["time-cost", "features", "the-repo", "showcase", "pricing", "faq"].map((id) => {
+        const section = document.getElementById(id);
+        return { id, height: section?.getBoundingClientRect().height ?? 0 };
+      }),
+      canvas: {
+        renderer: document.querySelector<HTMLElement>(".reference-hero-artwork .ring-canvas")?.dataset.renderer ?? "missing",
+        animationState:
+          document.querySelector<HTMLElement>(".reference-hero-artwork .ring-canvas")?.dataset.animationState ?? "missing",
+        frame: Number(
+          document.querySelector<HTMLElement>(".reference-hero-artwork .ring-canvas")?.dataset.frame ?? "0",
+        ),
+        width: document.querySelector<HTMLCanvasElement>(".reference-hero-artwork .ring-canvas__webgl")?.width ?? 0,
+        height: document.querySelector<HTMLCanvasElement>(".reference-hero-artwork .ring-canvas__webgl")?.height ?? 0,
+      },
+    };
+  });
+}
+
 test.beforeAll(async () => {
   await mkdir(outputDirectory, { recursive: true });
 });
@@ -25,7 +68,7 @@ for (const viewport of viewports) {
   test(`captures the homepage at ${viewport.name}`, async ({ browser }) => {
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
-      reducedMotion: "reduce",
+      reducedMotion: "no-preference",
     });
     await context.addInitScript(() => {
       try {
@@ -50,7 +93,7 @@ for (const viewport of viewports) {
     const ringCanvas = page.locator(".reference-hero-artwork .ring-canvas");
     await expect(ringCanvas).toHaveAttribute("data-renderer", "webgl2");
     await expect(ringCanvas).toHaveAttribute("data-ring-count", "30");
-    await expect(ringCanvas).toHaveAttribute("data-animation-state", "reduced-motion");
+    await expect(ringCanvas).toHaveAttribute("data-animation-state", "running");
     const expectedHeadingBreak =
       viewport.width >= 1200 && viewport.width <= 1535 ? "block" : "none";
     await expect(page.locator(".reference-hero-heading-break")).toHaveCSS("display", expectedHeadingBreak);
@@ -74,6 +117,7 @@ for (const viewport of viewports) {
           display: styles.display,
           position: styles.position,
           margin: styles.margin,
+          marginBottom: styles.marginBottom,
           padding: styles.padding,
           gap: styles.gap,
           gridTemplateColumns: styles.gridTemplateColumns,
@@ -82,6 +126,7 @@ for (const viewport of viewports) {
 
       return {
         viewport: { width: innerWidth, height: innerHeight },
+        prefersReducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
         pageHeight: document.documentElement.scrollHeight,
         hero: rect(".reference-hero"),
         heroTrack: rect(".reference-dive-track"),
@@ -137,6 +182,7 @@ for (const viewport of viewports) {
     if (viewport.width === 1920) {
       for (const scrollY of [1200, 2500]) {
         await page.evaluate((top) => window.scrollTo(0, top), scrollY);
+        await page.waitForFunction((top) => Math.abs(window.scrollY - top) <= 1, scrollY);
         scrollStates[String(scrollY)] = await page.evaluate(() => {
           const hero = document.querySelector(".reference-hero");
           const costStory = document.querySelector(".reference-cost-story");
@@ -184,6 +230,7 @@ for (const viewport of viewports) {
     );
 
     expect(geometry.viewport).toEqual({ width: viewport.width, height: viewport.height });
+    expect(geometry.prefersReducedMotion).toBe(false);
     expect(geometry.faqCount).toBe(17);
     if (viewport.width === 1920) {
       const referenceSectionTops = [
@@ -204,6 +251,7 @@ for (const viewport of viewports) {
         expect(Math.abs((section?.height ?? Number.NaN) - expected.height)).toBeLessThanOrEqual(8);
       }
       expect(geometry.heroTrack?.height).toBe(3240);
+      expect(geometry.heroTrack?.marginBottom).toBe("-2376px");
       expect(geometry.hero?.position).toBe("sticky");
       expect(geometry.hero?.height).toBe(1080);
       expect(geometry.costStory?.position).toBe("sticky");
@@ -227,6 +275,119 @@ for (const viewport of viewports) {
     await context.close();
   });
 }
+
+test("reduced motion removes desktop pinning and preserves the active canvas", async ({ browser }) => {
+  const viewport = { width: 1920, height: 1080 };
+  const normalContext = await browser.newContext({ viewport, reducedMotion: "no-preference" });
+  await normalContext.addInitScript(() => {
+    try {
+      sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    } catch {
+      // The footer can still open the newsletter if storage is unavailable.
+    }
+  });
+  const normalPage = await normalContext.newPage();
+  await normalPage.goto("/reference.html", { waitUntil: "networkidle" });
+  await normalPage.evaluate(() => document.fonts.ready);
+  await expect(normalPage.locator(".reference-hero-artwork .ring-canvas"))
+    .toHaveAttribute("data-animation-state", "running");
+  const normalLayout = await readMotionLayout(normalPage);
+
+  const reducedContext = await browser.newContext({ viewport, reducedMotion: "reduce" });
+  await reducedContext.addInitScript(() => {
+    try {
+      sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    } catch {
+      // The footer can still open the newsletter if storage is unavailable.
+    }
+  });
+  const reducedPage = await reducedContext.newPage();
+  await reducedPage.goto("/reference.html", { waitUntil: "networkidle" });
+  await reducedPage.evaluate(() => document.fonts.ready);
+  const ringCanvas = reducedPage.locator(".reference-hero-artwork .ring-canvas");
+  await expect(ringCanvas).toHaveAttribute("data-renderer", "webgl2");
+  await expect(ringCanvas).toHaveAttribute("data-animation-state", "reduced-motion");
+  await expect(reducedPage.locator(".reference-hero-artwork .ring-canvas__webgl")).toBeVisible();
+  const frameBeforeWait = await ringCanvas.getAttribute("data-frame");
+  expect(Number(frameBeforeWait)).toBeGreaterThan(0);
+  const reducedLayout = await readMotionLayout(reducedPage);
+  await writeFile(
+    resolve(outputDirectory, "homepage-motion-layouts-1920x1080.json"),
+    `${JSON.stringify({ normalMotion: normalLayout, reducedMotion: reducedLayout }, null, 2)}\n`,
+    "utf8",
+  );
+
+  expect(normalLayout.motionPreference).toBe("no-preference");
+  expect(normalLayout.diveTrack?.height).toBe(3240);
+  expect(normalLayout.diveTrack?.marginBottom).toBe(-2376);
+  expect(normalLayout.hero?.position).toBe("sticky");
+  expect(normalLayout.costStory?.position).toBe("sticky");
+  expect(normalLayout.costCopy?.position).toBe("sticky");
+  expect(normalLayout.faqHeading?.position).toBe("sticky");
+  expect(reducedLayout.motionPreference).toBe("reduce");
+  expect(reducedLayout.runningAnimations).toBe(0);
+  expect(reducedLayout.diveTrack?.marginBottom).not.toBe(-2376);
+  expect(reducedLayout.hero?.position).not.toBe("sticky");
+  expect(reducedLayout.costStory?.position).not.toBe("sticky");
+  expect(reducedLayout.costCopy?.position).not.toBe("sticky");
+  expect(reducedLayout.faqHeading?.position).not.toBe("sticky");
+  expect(reducedLayout.pageHeight).toBeLessThan(normalLayout.pageHeight);
+  expect(reducedLayout.contentSections.map(({ id }) => id)).toEqual([
+    "time-cost",
+    "features",
+    "the-repo",
+    "showcase",
+    "pricing",
+    "faq",
+  ]);
+  expect(reducedLayout.contentSections.every(({ height }) => height > 0)).toBe(true);
+  expect(reducedLayout.canvas.renderer).toBe("webgl2");
+  expect(reducedLayout.canvas.animationState).toBe("reduced-motion");
+  expect(reducedLayout.canvas.frame).toBeGreaterThan(0);
+  expect(reducedLayout.canvas.width).toBeGreaterThan(0);
+  expect(reducedLayout.canvas.height).toBeGreaterThan(0);
+  await reducedPage.waitForTimeout(100);
+  await expect(ringCanvas).toHaveAttribute("data-frame", frameBeforeWait ?? "");
+
+  const heroAccess = reducedPage.locator(".reference-hero-actions .reference-access-link");
+  await expect(heroAccess).toHaveAttribute("href", "#pricing");
+  await heroAccess.click();
+  await expect(reducedPage).toHaveURL(/#pricing$/);
+  await expect(reducedPage.locator("#pricing")).toBeVisible();
+
+  await reducedContext.close();
+  await normalContext.close();
+});
+
+test("reduced motion preserves mobile content navigation", async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: "reduce",
+  });
+  await context.addInitScript(() => {
+    try {
+      sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    } catch {
+      // The footer can still open the newsletter if storage is unavailable.
+    }
+  });
+  const page = await context.newPage();
+  await page.goto("/reference.html", { waitUntil: "networkidle" });
+  await page.evaluate(() => document.fonts.ready);
+
+  const ringCanvas = page.locator(".reference-hero-artwork .ring-canvas");
+  await expect(ringCanvas).toHaveAttribute("data-animation-state", "reduced-motion");
+  await expect(page.locator(".reference-hero-artwork .ring-canvas__webgl")).toBeVisible();
+  await expect(page.locator(".reference-mobile-ticker")).toBeVisible();
+  await page.getByRole("button", { name: /menu/i }).click();
+  const mobileNavigation = page.getByRole("navigation", { name: "Page navigation" });
+  await expect(mobileNavigation).toBeVisible();
+  await mobileNavigation.getByRole("link", { name: "Features" }).click();
+  await expect(page).toHaveURL(/#features$/);
+  await expect(page.locator("#features")).toBeVisible();
+
+  await context.close();
+});
 
 test("keeps reference controls local and interactive", async ({ browser, baseURL }) => {
   const errors: string[] = [];

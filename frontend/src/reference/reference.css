@@ -25,7 +25,7 @@ html:has(.content-architecture-reference) {
   min-width: 320px;
   height: auto;
   overflow-x: clip;
-  overflow-y: auto;
+  overflow-y: visible;
   scroll-behavior: smooth;
   scrollbar-color: #777 #232323;
 }
@@ -36,7 +36,7 @@ body.content-architecture-reference-body {
   min-height: 100vh;
   height: auto;
   overflow-x: clip;
-  overflow-y: auto;
+  overflow-y: visible;
   background: #f1eee7;
   color: #232323;
   font-family: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
@@ -56,6 +56,10 @@ body.content-architecture-reference-body #root {
 }
 
 .content-architecture-reference {
+  --reference-dive-distance: 200svh;
+  --reference-dive-hold: calc(var(--reference-dive-distance) * 0.6);
+  --reference-cost-travel: calc(100svh + var(--reference-dive-distance));
+  --reference-repo-distance: 60svh;
   --reference-paper: #f1eee7;
   --reference-ink: #232323;
   --reference-charcoal: #232323;
@@ -497,6 +501,10 @@ body.content-architecture-reference-body #root {
   background: var(--reference-charcoal);
 }
 
+.reference-hero-track {
+  position: relative;
+}
+
 .reference-hero-copy {
   display: flex;
   min-width: 0;
@@ -634,6 +642,10 @@ body.content-architecture-reference-body #root {
   overflow: hidden;
   background: var(--reference-paper);
   color: var(--reference-ink);
+}
+
+.reference-cost-stage {
+  display: contents;
 }
 
 .reference-cost-copy {
@@ -867,6 +879,13 @@ body.content-architecture-reference-body #root {
   padding: 80px;
   background: var(--reference-paper);
   color: var(--reference-ink);
+}
+
+.reference-repo-scroll-frame {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .reference-repo-heading {
@@ -2313,6 +2332,76 @@ body.content-architecture-reference-body #root {
   }
 }
 
+@media (min-width: 1200px) and (prefers-reduced-motion: no-preference) {
+  .reference-hero-track {
+    height: calc(100svh + var(--reference-dive-distance));
+    margin-bottom: calc(-100svh - var(--reference-dive-hold));
+  }
+
+  .reference-hero {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    height: 100svh;
+    min-height: 100svh;
+  }
+
+  .reference-hero-track[data-hero-handed-off="true"] .reference-hero {
+    visibility: hidden;
+  }
+
+  .reference-cost-section {
+    display: block;
+    min-height: 0;
+    padding: 0 80px;
+    overflow: visible;
+    scroll-margin-top: calc(-1 * var(--reference-dive-hold));
+  }
+
+  .reference-cost-stage {
+    position: sticky;
+    top: 0;
+    display: grid;
+    min-height: calc(var(--reference-cost-travel) + 12px);
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+    padding: 12vh 0 15vh;
+  }
+
+  .reference-cost-section::after {
+    display: block;
+    height: var(--reference-dive-hold);
+    content: "";
+  }
+
+  .reference-cost-table {
+    position: sticky;
+    top: 12vh;
+  }
+
+  .reference-cost-copy {
+    top: 12vh;
+  }
+
+  .reference-repo-section {
+    height: auto;
+    min-height: 0;
+    padding: 80px;
+  }
+
+  .reference-repo-scroll-frame {
+    height: calc(100svh + var(--reference-repo-distance));
+    flex: 0 0 auto;
+  }
+
+  .reference-repo-window {
+    position: sticky;
+    top: -8px;
+    height: calc(100svh + 16px);
+    flex: 0 0 auto;
+  }
+}
+
 @media (min-width: 1200px) and (max-width: 1535px) {
   .reference-hero-copy {
     padding-bottom: 102px;
@@ -2600,6 +2689,10 @@ body.content-architecture-reference-body #root {
     height: 100svh;
     min-height: 100svh;
     padding: 52px 12px;
+  }
+
+  .reference-repo-scroll-frame {
+    min-height: 0;
   }
 
   .reference-repo-window {
@@ -2922,6 +3015,10 @@ body.content-architecture-reference-body #root {
     height: 100svh;
     min-height: 100svh;
     padding: 48px 12px;
+  }
+
+  .reference-repo-scroll-frame {
+    min-height: 0;
   }
 
   .reference-repo-heading {

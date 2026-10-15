@@ -169,93 +169,95 @@ export function RepoExplorer() {
 
   return (
     <section className="reference-repo-section" id="the-repo">
-      <div className="reference-repo-window" aria-label="Public repository preview">
-        <div className="reference-repo-toolbar">
-          <div className="reference-edition-switch" role="group" aria-label="Repository edition">
-            <button
-              type="button"
-              aria-pressed={edition === "next"}
-              onClick={() => chooseEdition("next")}
-            >
-              Next.js
-            </button>
-            <button
-              type="button"
-              aria-pressed={edition === "astro"}
-              onClick={() => chooseEdition("astro")}
-            >
-              Astro
-            </button>
-          </div>
-          <span className="reference-repo-caption">This is the actual repo.</span>
-          <div className="reference-repo-actions">
-            <button
-              type="button"
-              aria-label={terminalVisible ? "Hide terminal" : "Show terminal"}
-              onClick={() => setTerminalVisible((visible) => !visible)}
-            >
-              <TerminalSquare size={13} aria-hidden="true" />
-              <span>Ctrl J</span>
-            </button>
-            <button type="button" aria-label="Search files" onClick={() => setSearchOpen(true)}>
-              <Search size={13} aria-hidden="true" />
-              <span>Ctrl K</span>
-            </button>
-          </div>
-        </div>
-        <div className={`reference-repo-body ${terminalVisible ? "" : "terminal-hidden"}`}>
-          <aside className="reference-file-explorer" aria-label="File explorer">
-            <div className="reference-file-explorer-title">Explorer</div>
-            <FileTree
-              entries={REPO_TREES[edition]}
-              path=""
-              expanded={expanded}
-              onToggle={toggleFolder}
-              onOpenFile={openFile}
-              activeFile={activeFile}
-            />
-          </aside>
-          <div className="reference-editor">
-            <div className="reference-editor-tab">{activeFile}</div>
-            <pre aria-label={`${activeFile} contents`}>
-              <code>{content}</code>
-            </pre>
-          </div>
-          <aside className="reference-code-minimap" aria-hidden="true">
-            {Array.from({ length: 24 }, (_, index) => (
-              <i key={index} />
-            ))}
-          </aside>
-        </div>
-        {terminalVisible && (
-          <section className="reference-terminal" aria-label="Terminal preview">
-            <div className="reference-terminal-heading">Terminal</div>
-            <div className="reference-terminal-history" aria-live="polite">
-              <p>
-                <span>~/the-content-architecture-{edition === "next" ? "next-js" : "astro"}</span>
-                <b>&gt;</b> get-access <i># €549 · one-time</i>
-              </p>
-              <p>
-                <span>~/the-content-architecture-{edition === "next" ? "next-js" : "astro"}</span>
-                <b>&gt;</b> try: git, ls, tree, find, cat README.md
-              </p>
-              {terminalNotice && <p className="reference-terminal-notice">{terminalNotice}</p>}
+      <div className="reference-repo-scroll-frame">
+        <div className="reference-repo-window" aria-label="Public repository preview">
+          <div className="reference-repo-toolbar">
+            <div className="reference-edition-switch" role="group" aria-label="Repository edition">
+              <button
+                type="button"
+                aria-pressed={edition === "next"}
+                onClick={() => chooseEdition("next")}
+              >
+                Next.js
+              </button>
+              <button
+                type="button"
+                aria-pressed={edition === "astro"}
+                onClick={() => chooseEdition("astro")}
+              >
+                Astro
+              </button>
             </div>
-            <form className="reference-terminal-input" onSubmit={submitTerminal}>
-              <label className="reference-sr-only" htmlFor="reference-terminal-command">
-                Terminal input
-              </label>
-              <span aria-hidden="true">&gt;</span>
-              <input
-                id="reference-terminal-command"
-                value={terminalInput}
-                onChange={(event) => setTerminalInput(event.currentTarget.value)}
-                autoComplete="off"
-                spellCheck={false}
+            <span className="reference-repo-caption">This is the actual repo.</span>
+            <div className="reference-repo-actions">
+              <button
+                type="button"
+                aria-label={terminalVisible ? "Hide terminal" : "Show terminal"}
+                onClick={() => setTerminalVisible((visible) => !visible)}
+              >
+                <TerminalSquare size={13} aria-hidden="true" />
+                <span>Ctrl J</span>
+              </button>
+              <button type="button" aria-label="Search files" onClick={() => setSearchOpen(true)}>
+                <Search size={13} aria-hidden="true" />
+                <span>Ctrl K</span>
+              </button>
+            </div>
+          </div>
+          <div className={`reference-repo-body ${terminalVisible ? "" : "terminal-hidden"}`}>
+            <aside className="reference-file-explorer" aria-label="File explorer">
+              <div className="reference-file-explorer-title">Explorer</div>
+              <FileTree
+                entries={REPO_TREES[edition]}
+                path=""
+                expanded={expanded}
+                onToggle={toggleFolder}
+                onOpenFile={openFile}
+                activeFile={activeFile}
               />
-            </form>
-          </section>
-        )}
+            </aside>
+            <div className="reference-editor">
+              <div className="reference-editor-tab">{activeFile}</div>
+              <pre aria-label={`${activeFile} contents`}>
+                <code>{content}</code>
+              </pre>
+            </div>
+            <aside className="reference-code-minimap" aria-hidden="true">
+              {Array.from({ length: 24 }, (_, index) => (
+                <i key={index} />
+              ))}
+            </aside>
+          </div>
+          {terminalVisible && (
+            <section className="reference-terminal" aria-label="Terminal preview">
+              <div className="reference-terminal-heading">Terminal</div>
+              <div className="reference-terminal-history" aria-live="polite">
+                <p>
+                  <span>~/the-content-architecture-{edition === "next" ? "next-js" : "astro"}</span>
+                  <b>&gt;</b> get-access <i># €549 · one-time</i>
+                </p>
+                <p>
+                  <span>~/the-content-architecture-{edition === "next" ? "next-js" : "astro"}</span>
+                  <b>&gt;</b> try: git, ls, tree, find, cat README.md
+                </p>
+                {terminalNotice && <p className="reference-terminal-notice">{terminalNotice}</p>}
+              </div>
+              <form className="reference-terminal-input" onSubmit={submitTerminal}>
+                <label className="reference-sr-only" htmlFor="reference-terminal-command">
+                  Terminal input
+                </label>
+                <span aria-hidden="true">&gt;</span>
+                <input
+                  id="reference-terminal-command"
+                  value={terminalInput}
+                  onChange={(event) => setTerminalInput(event.currentTarget.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </form>
+            </section>
+          )}
+        </div>
       </div>
       {searchOpen && (
         <div className="reference-search-backdrop" role="presentation">

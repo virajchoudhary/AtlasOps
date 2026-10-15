@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const frontendRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)), "frontend");
-const auditRoot = resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-reconstruction-local");
+const auditRoot = resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-geometry-final-20261015");
 
 export default defineConfig({
   testDir: ".",

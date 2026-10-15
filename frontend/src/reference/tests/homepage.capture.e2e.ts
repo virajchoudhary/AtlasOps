@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const frontendRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)), "frontend");
-const outputDirectory = resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-reconstruction-local");
+const outputDirectory = resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-geometry-final-20261015");
 
 const viewports = [
   { name: "1920x1080", width: 1920, height: 1080 },
@@ -107,6 +107,158 @@ for (const viewport of viewports) {
     await context.close();
   });
 }
+
+test("matches the live desktop cost and repository scroll geometry", async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 1904, height: 881 },
+    reducedMotion: "no-preference",
+  });
+  await context.addInitScript(() => {
+    try {
+      sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    } catch {
+      // The footer can still open the newsletter if storage is unavailable.
+    }
+  });
+
+  const page = await context.newPage();
+  const pageErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.goto("/reference.html", { waitUntil: "networkidle" });
+  await page.evaluate(() => document.fonts.ready);
+
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+  });
+
+  const geometry = await page.evaluate(() => {
+    const section = (id: string) => {
+      const element = document.getElementById(id);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return { top: bounds.top + scrollY, height: bounds.height };
+    };
+
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      heroTrack: (() => {
+        const element = document.querySelector(".reference-hero-track");
+        if (!element) return null;
+        const bounds = element.getBoundingClientRect();
+        return { top: bounds.top + scrollY, height: bounds.height };
+      })(),
+      features: section("features"),
+      repository: section("the-repo"),
+      showcase: section("showcase"),
+    };
+  });
+
+  const within = (
+    actual: number | undefined,
+    expected: number | undefined,
+    tolerance: number,
+  ) => actual !== undefined && expected !== undefined && Math.abs(actual - expected) <= tolerance;
+
+  await page.screenshot({ path: resolve(outputDirectory, "homepage-1904x881-no-preference.png") });
+  await page.locator(".reference-scroll-cue").click();
+  const costScrollY = await page.evaluate(() => scrollY);
+  const expectedCostScrollY = geometry.heroTrack
+    ? geometry.heroTrack.height - geometry.viewport.height
+    : undefined;
+  expect(within(costScrollY, expectedCostScrollY, 2)).toBe(true);
+  await expect(page.locator(".reference-hero")).toHaveCSS("visibility", "hidden", {
+    timeout: 1_000,
+  });
+  const costHeading = page.locator(".reference-cost-copy .reference-reveal");
+  await expect(costHeading).toHaveClass(/is-visible/, { timeout: 1_000 });
+  await expect(costHeading).toHaveCSS("opacity", "1", { timeout: 2_000 });
+  const costAnchor = await page.evaluate(() => {
+    const selectors = [
+      ".reference-hero-track",
+      ".reference-hero",
+      "#time-cost",
+      ".reference-cost-stage",
+      ".reference-cost-copy",
+      ".reference-cost-copy .reference-reveal",
+      ".reference-cost-table",
+      "#features",
+    ];
+    return Object.fromEntries(
+      selectors.map((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return [selector, null];
+        const bounds = element.getBoundingClientRect();
+        const styles = getComputedStyle(element);
+        return [
+          selector,
+          {
+            top: Math.round(bounds.top * 100) / 100,
+            height: Math.round(bounds.height * 100) / 100,
+            position: styles.position,
+            visibility: styles.visibility,
+            opacity: styles.opacity,
+            zIndex: styles.zIndex,
+            className: element.className,
+          },
+        ];
+      }),
+    );
+  });
+  await writeFile(
+    resolve(outputDirectory, "cost-anchor-diagnostic.json"),
+    `${JSON.stringify({ costScrollY, costAnchor }, null, 2)}\n`,
+    "utf8",
+  );
+  const costCopyTop = costAnchor[".reference-cost-copy"]?.top;
+  const costHeadingTop = costAnchor[".reference-cost-copy .reference-reveal"]?.top;
+  const costTableTop = costAnchor[".reference-cost-table"]?.top;
+  await page.screenshot({
+    path: resolve(outputDirectory, "section-cost-1904x881-no-preference.png"),
+  });
+
+  for (const [id, name] of [
+    ["the-repo", "repo"],
+    ["showcase", "showcase"],
+  ] as const) {
+    await page.evaluate((sectionId) => {
+      const element = document.getElementById(sectionId);
+      if (!element) return;
+      window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY);
+    }, id);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolveFrame) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+        }),
+    );
+    await page.screenshot({
+      path: resolve(outputDirectory, `section-${name}-1904x881-no-preference.png`),
+    });
+  }
+  await writeFile(
+    resolve(outputDirectory, "desktop-no-preference-geometry.json"),
+    `${JSON.stringify({ geometry, pageErrors, failedResponses }, null, 2)}\n`,
+    "utf8",
+  );
+
+  expect(geometry.viewport).toEqual({ width: 1904, height: 881 });
+  expect(within(geometry.features?.top, 4416, 20)).toBe(true);
+  expect(within(geometry.repository?.top, 7816, 20)).toBe(true);
+  expect(within(geometry.repository?.height, 1570, 20)).toBe(true);
+  expect(within(geometry.showcase?.top, 9386, 25)).toBe(true);
+  expect(within(costCopyTop, 106, 3)).toBe(true);
+  expect(within(costHeadingTop, 167, 3)).toBe(true);
+  expect(within(costTableTop, 106, 3)).toBe(true);
+  expect(pageErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+
+  await context.close();
+});
 
 test("keeps reference controls local and interactive", async ({ browser, baseURL }) => {
   const errors: string[] = [];

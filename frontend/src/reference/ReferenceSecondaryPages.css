@@ -36,6 +36,11 @@ body:has(.reference-secondary-page) #root {
 }
 
 .reference-secondary-page {
+  --reference-paper: #f1eee7;
+  --reference-ink: #232323;
+  --reference-line-light: rgb(35 35 35 / 20%);
+  --reference-mono: GeistMono, "SFMono-Regular", Consolas, monospace;
+  --reference-sans: GeistSans, "GeistSans Fallback", ui-sans-serif, system-ui, sans-serif;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -45,6 +50,14 @@ body:has(.reference-secondary-page) #root {
   background: #232323;
   color: #f1eee7;
   font-family: GeistSans, "GeistSans Fallback", ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.reference-secondary-page .reference-navigation :is(a, button):focus-visible {
+  outline: 2px solid #f0aa13;
+  outline-offset: 2px;
 }
 
 .secondary-container,

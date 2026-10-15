@@ -11,6 +11,7 @@ import {
   type SecondaryBlock,
   type SecondaryTextSegment,
 } from "./ReferenceSecondaryContent";
+import { ReferenceNavigation } from "./components/ReferenceNavigation";
 import "./ReferenceSecondaryPages.css";
 
 export type ReferenceSecondaryPagesProps = {
@@ -219,13 +220,15 @@ function SecondaryFooter({ onNavigate }: { onNavigate: (href: string) => void })
   );
 }
 
-function PageFrame({ children, className = "", onNavigate }: {
+function PageFrame({ children, className = "", pathname, onNavigate }: {
   children: ReactNode;
   className?: string;
+  pathname: string;
   onNavigate: (href: string) => void;
 }) {
   return (
     <div className={`reference-secondary-page ${className}`}>
+      <ReferenceNavigation mode="secondary" pathname={pathname} onNavigate={onNavigate} />
       <SecondaryPattern />
       {children}
       <SecondaryFooter onNavigate={onNavigate} />
@@ -260,9 +263,12 @@ function ArticleCard({ article, index, onNavigate }: {
   );
 }
 
-function BlogIndex({ onNavigate }: { onNavigate: (href: string) => void }) {
+function BlogIndex({ pathname, onNavigate }: {
+  pathname: string;
+  onNavigate: (href: string) => void;
+}) {
   return (
-    <PageFrame className="secondary-blog-index" onNavigate={onNavigate}>
+    <PageFrame className="secondary-blog-index" pathname={pathname} onNavigate={onNavigate}>
       <main className="secondary-container">
         <header className="secondary-index-heading">
           <h1>Knowledge Hub</h1>
@@ -323,12 +329,13 @@ function ArticleBlock({ block, onNavigate }: {
   }
 }
 
-function ArticlePage({ article, onNavigate }: {
+function ArticlePage({ article, pathname, onNavigate }: {
   article: PublicArticle;
+  pathname: string;
   onNavigate: (href: string) => void;
 }) {
   return (
-    <PageFrame className="secondary-article-page" onNavigate={onNavigate}>
+    <PageFrame className="secondary-article-page" pathname={pathname} onNavigate={onNavigate}>
       <main className="secondary-article-container">
         <InternalLink
           className="secondary-back-link"
@@ -400,7 +407,10 @@ function RoadmapCard({ item, selected, inProgress, onToggleVote }: {
   );
 }
 
-function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
+function RoadmapPage({ pathname, onNavigate }: {
+  pathname: string;
+  onNavigate: (href: string) => void;
+}) {
   const [localVotePreview, setLocalVotePreview] = useState({
     selected: new Set<string>(),
     status: "",
@@ -423,7 +433,7 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
   };
 
   return (
-    <PageFrame className="secondary-roadmap-page" onNavigate={onNavigate}>
+    <PageFrame className="secondary-roadmap-page" pathname={pathname} onNavigate={onNavigate}>
       <main className="secondary-container">
         <header className="secondary-roadmap-heading">
           <h1>Roadmap</h1>
@@ -479,8 +489,9 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
   );
 }
 
-function LegalPage({ path, onNavigate }: {
+function LegalPage({ path, pathname, onNavigate }: {
   path: string;
+  pathname: string;
   onNavigate: (href: string) => void;
 }) {
   const page = legalPages.find((candidate) => candidate.title === (
@@ -489,7 +500,7 @@ function LegalPage({ path, onNavigate }: {
   if (!page) return null;
 
   return (
-    <PageFrame className="secondary-legal-page" onNavigate={onNavigate}>
+    <PageFrame className="secondary-legal-page" pathname={pathname} onNavigate={onNavigate}>
       <main className="secondary-legal-container">
         <header className="secondary-legal-header">
           <h1>{page.title}</h1>
@@ -535,12 +546,12 @@ export function ReferenceSecondaryPages({
   }, [title]);
 
   if (path === "/blog" || path === "/blog/articles") {
-    return <BlogIndex onNavigate={onNavigate} />;
+    return <BlogIndex pathname={path} onNavigate={onNavigate} />;
   }
-  if (path === "/roadmap") return <RoadmapPage onNavigate={onNavigate} />;
+  if (path === "/roadmap") return <RoadmapPage pathname={path} onNavigate={onNavigate} />;
   if (path === "/legal/privacy-policy" || path === "/legal/terms-of-service") {
-    return <LegalPage path={path} onNavigate={onNavigate} />;
+    return <LegalPage path={path} pathname={path} onNavigate={onNavigate} />;
   }
-  if (article) return <ArticlePage article={article} onNavigate={onNavigate} />;
+  if (article) return <ArticlePage article={article} pathname={path} onNavigate={onNavigate} />;
   return null;
 }

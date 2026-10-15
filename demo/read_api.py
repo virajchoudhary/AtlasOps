@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import ast
 import ipaddress
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -351,6 +352,29 @@ def create_app(
 
     if (dist / "assets").is_dir():
         application.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+    reference_assets_dir = dist / "reference" / "assets"
+    if reference_assets_dir.is_dir():
+        # Windows may otherwise label WOFF2 as octet-stream, rejected under nosniff.
+        mimetypes.add_type("font/woff2", ".woff2")
+        application.mount(
+            "/reference/assets",
+            StaticFiles(directory=reference_assets_dir),
+            name="reference_assets",
+        )
+        if (reference_assets_dir / "content-architecture-symbol.svg").is_file():
+            def reference_favicon():
+                return RedirectResponse(
+                    "/reference/assets/content-architecture-symbol.svg",
+                    status_code=307,
+                )
+
+            application.add_api_route(
+                "/favicon.ico",
+                reference_favicon,
+                methods=["GET", "HEAD"],
+                include_in_schema=False,
+                name="favicon",
+            )
 
     @application.get("/")
     def index():

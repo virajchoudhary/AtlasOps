@@ -58,7 +58,7 @@ def test_exact_current_results_and_g4_chronology(client):
 @pytest.mark.parametrize("path", [
     "/api/catalog", "/inject", "/reset", "/webhook", "/approve",
     "/api/recommender/recommend",
-    "/api/rehearsal",
+    "/api/rehearsal", "/reference/assets/test.svg", "/favicon.ico",
 ])
 def test_all_mutations_are_rejected(client, method, path):
     response = getattr(client, method)(path)
@@ -131,6 +131,44 @@ def test_built_assets_and_index_are_served_without_execution(tmp_path):
     assert client.get("/health").json()["frontend_built"] is True
 
 
+def test_reference_public_assets_are_served_from_the_built_output(tmp_path):
+    public_assets = tmp_path / "reference" / "assets"
+    public_assets.mkdir(parents=True)
+    asset_bytes = {
+        "content-architecture-symbol.svg": b"<svg xmlns='http://www.w3.org/2000/svg'></svg>",
+        "GeistSans-VF.woff2": b"synthetic font bytes",
+        "GeistMono-VF.woff2": b"synthetic mono font bytes",
+        "good-fella.avif": b"synthetic image bytes",
+    }
+    for filename, contents in asset_bytes.items():
+        (public_assets / filename).write_bytes(contents)
+
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    responses = {
+        filename: client.get(f"/reference/assets/{filename}")
+        for filename in asset_bytes
+    }
+
+    assert {filename: response.status_code for filename, response in responses.items()} == {
+        filename: 200 for filename in asset_bytes
+    }
+    assert {
+        filename: response.content for filename, response in responses.items()
+    } == asset_bytes
+    assert {
+        filename: responses[filename].headers["content-type"].split(";", 1)[0]
+        for filename in ("GeistSans-VF.woff2", "GeistMono-VF.woff2")
+    } == {
+        "GeistSans-VF.woff2": "font/woff2",
+        "GeistMono-VF.woff2": "font/woff2",
+    }
+    favicon = client.get("/favicon.ico", follow_redirects=False)
+    assert favicon.status_code == 307
+    assert favicon.headers["location"] == "/reference/assets/content-architecture-symbol.svg"
+
+
 def test_only_allowlisted_reference_paths_receive_the_frontend_shell(tmp_path):
     (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")
     client = TestClient(
@@ -165,6 +203,7 @@ def test_only_allowlisted_reference_paths_receive_the_frontend_shell(tmp_path):
     "/legal/missing",
     "/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
     "/%2e%2e/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/reference/assets/%2e%2e/%2e%2e/artifacts/secret.txt",
 ])
 def test_unknown_paths_never_receive_the_frontend_shell_or_file_contents(tmp_path, path):
     (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")

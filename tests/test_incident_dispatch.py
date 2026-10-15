@@ -187,7 +187,7 @@ def test_separate_dispatcher_instances_race_at_durable_admission(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp_path):
+async def test_mixed_batch_filters_new_alerts_and_binds_their_original_anchor(tmp_path):
     from agents.coordinator import build_incident_anchors
 
     database_path = tmp_path / "admissions.sqlite3"
@@ -202,7 +202,7 @@ async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp
     }
     initial_payload = {
         "status": "firing",
-        "commonLabels": {"alertname": "BatchAlert", "namespace": "default", "service": "frontend"},
+        "commonLabels": {"alertname": "BatchAlert", "namespace": "default"},
         "alerts": [duplicate_alert],
     }
     received: list[dict] = []
@@ -221,7 +221,7 @@ async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp
     first_submission = dispatcher.submit(
         first_candidate,
         handler,
-        incident_anchors=build_incident_anchors(first_candidate.original_payload),
+        anchor_builder=build_incident_anchors,
     )
     await first_submission.wait()
 
@@ -230,23 +230,23 @@ async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp
         "fingerprint": "new-fingerprint",
         "startsAt": "2026-10-15T10:01:00Z",
         "labels": {"alertname": "NewAlert", "namespace": "default", "service": "checkoutservice"},
+        "annotations": {"summary": "new admitted-alert context"},
     }
     batch_payload = {
         "status": "resolved",
         "commonLabels": {
             "alertname": "CombinedEnvelope",
             "namespace": "default",
-            "service": "frontend",
             "region": "west",
         },
         "alerts": [duplicate_alert, new_alert],
     }
-    expected_anchors = build_incident_anchors(batch_payload)
+    expected_anchors = build_incident_anchors(batch_payload, original_alert_index=1)
     batch_candidate = incident_correlator.ingest(batch_payload)
     batch_submission = dispatcher.submit(
         batch_candidate,
         handler,
-        incident_anchors=expected_anchors,
+        anchor_builder=build_incident_anchors,
     )
     await batch_submission.wait()
 
@@ -255,8 +255,15 @@ async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp
     assert filtered["payload"]["alerts"] == [new_alert]
     assert filtered["payload"]["commonLabels"] == batch_payload["commonLabels"]
     assert filtered["payload"]["status"] == batch_payload["status"]
-    assert filtered["incident_anchors"] == expected_anchors
-    assert expected_anchors["original_description"] == "original first-alert context"
+    expected_primary = ("checkoutservice", "new admitted-alert context")
+    assert (
+        expected_anchors["primary_service"],
+        expected_anchors["original_description"],
+    ) == expected_primary
+    assert (
+        filtered["incident_anchors"]["primary_service"],
+        filtered["incident_anchors"]["original_description"],
+    ) == expected_primary
 
 
 @pytest.mark.parametrize("failure_point", ["admit", "mark_attempted"])
@@ -618,6 +625,7 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
     active_handlers = 0
     maximum_active_handlers = 0
     handled_fingerprints: list[str] = []
+    anchors_by_fingerprint: dict[str, dict | None] = {}
 
     async def controlled_handler(payload, *, incident_id, incident_anchors=None):
         nonlocal active_handlers, maximum_active_handlers
@@ -625,6 +633,7 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
         active_handlers += 1
         maximum_active_handlers = max(maximum_active_handlers, active_handlers)
         handled_fingerprints.append(fingerprint)
+        anchors_by_fingerprint[fingerprint] = incident_anchors
         try:
             if fingerprint == "fingerprint-a":
                 handler_started.set()
@@ -725,6 +734,10 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
     assert all(response.status_code == 200 for response in responses)
     assert handled_fingerprints == ["fingerprint-a", "fingerprint-b"]
     assert maximum_active_handlers == 1
+    assert [
+        anchors_by_fingerprint[fingerprint]["primary_service"]
+        for fingerprint in ("fingerprint-a", "fingerprint-b")
+    ] == ["frontend", "frontend"]
 
     if route == "coordinator":
         assert responses[0].json()["dispatched"] is True
@@ -1294,7 +1307,7 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     submission = dispatcher.submit(
         candidate,
         coordinator.handle_incident,
-        incident_anchors=coordinator.build_incident_anchors(candidate.original_payload),
+        anchor_builder=coordinator.build_incident_anchors,
     )
     result = await submission.wait()
 

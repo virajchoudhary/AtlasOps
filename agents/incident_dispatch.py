@@ -100,7 +100,7 @@ class IncidentDispatcher:
             self._correlator.mark_processing(incident_id, True)
             worker_coroutine = self._drain(incident_id, incident_queue)
             try:
-                incident_queue.worker = loop.create_task(
+                worker = loop.create_task(
                     worker_coroutine,
                     name=f"incident-dispatch-{incident_id}",
                 )
@@ -110,10 +110,19 @@ class IncidentDispatcher:
                 for key in new_keys:
                     incident_queue.occurrence_states.pop(key, None)
                 self._queues.pop(incident_id, None)
-                self._correlator.mark_processing(incident_id, False)
+                self._correlator.rollback_unadmitted_claims(incident_id, new_keys)
                 if not completion.done():
                     completion.cancel()
                 raise
+            incident_queue.worker = worker
+            # A task cancelled before its first step skips _drain's finally block.
+            worker.add_done_callback(
+                lambda completed: self._finish_worker(
+                    incident_id,
+                    incident_queue,
+                    completed,
+                )
+            )
             return DispatchSubmission("started", completion)
 
     async def _drain(self, incident_id: str, incident_queue: _IncidentQueue) -> None:
@@ -153,14 +162,27 @@ class IncidentDispatcher:
             with self._lock:
                 if pending is not None and not pending.completion.done():
                     pending.completion.cancel()
-                for abandoned in incident_queue.pending:
-                    if not abandoned.completion.done():
-                        abandoned.completion.cancel()
-                incident_queue.pending.clear()
-                incident_queue.worker = None
-                if self._queues.get(incident_id) is incident_queue:
-                    self._queues.pop(incident_id, None)
-                    self._correlator.mark_processing(incident_id, False)
+            worker = asyncio.current_task()
+            if worker is not None:
+                self._finish_worker(incident_id, incident_queue, worker)
+
+    def _finish_worker(
+        self,
+        incident_id: str,
+        incident_queue: _IncidentQueue,
+        worker: asyncio.Task[None],
+    ) -> None:
+        with self._lock:
+            if incident_queue.worker is not worker:
+                return
+            for abandoned in incident_queue.pending:
+                if not abandoned.completion.done():
+                    abandoned.completion.cancel()
+            incident_queue.pending.clear()
+            incident_queue.worker = None
+            if self._queues.get(incident_id) is incident_queue:
+                self._queues.pop(incident_id, None)
+                self._correlator.mark_processing(incident_id, False)
 
     @staticmethod
     def _consume_completion_exception(completion: asyncio.Future[Any]) -> None:

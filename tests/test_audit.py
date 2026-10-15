@@ -84,10 +84,30 @@ def test_audit_tail_limit_and_offset(tmp_path):
     log = AuditLog(secret_key="test-placeholder-audit-secret", log_path=path)
     for idx in range(5):
         log.record(f"inc-{idx}", "coordinator", "incident_start", result_summary=f"r{idx}")
-    entries = log.tail(limit=2)
-    assert len(entries) == 2
-    shifted = log.tail(limit=10, offset=3)
-    assert len(shifted) == 2
+    entries = log.tail(limit=2, offset=0)
+    assert [entry["incident_id"] for entry in entries] == ["inc-3", "inc-4"]
+    assert log.tail(limit=2) == entries
+
+    previous_page = log.tail(limit=2, offset=2)
+    assert [entry["incident_id"] for entry in previous_page] == ["inc-1", "inc-2"]
+
+    oldest_entries = log.tail(limit=10, offset=3)
+    assert [entry["incident_id"] for entry in oldest_entries] == ["inc-0", "inc-1"]
+
+
+def test_audit_tail_normalizes_direct_api_bounds(tmp_path):
+    from agents.audit import AuditLog
+
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(secret_key="test-placeholder-audit-secret", log_path=path)
+    for idx in range(3):
+        log.record(f"inc-{idx}", "coordinator", "incident_start")
+
+    assert log.tail(limit=0) == []
+    assert log.tail(limit=-1) == []
+    assert log.tail(limit=2, offset=-1) == log.tail(limit=2)
+    assert log.tail(limit=2, offset=3) == []
+    assert log.tail(limit=2, offset=4) == []
 
 
 def test_require_audit_log_initializes_once_when_called_concurrently(

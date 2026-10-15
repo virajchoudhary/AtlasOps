@@ -88,13 +88,20 @@ class AuditLog:
             return entry
 
     def tail(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        """Return a chronological page, excluding offset newest records.
+
+        Negative offsets act as zero; nonpositive limits return no records.
+        """
+        if limit <= 0:
+            return []
         lines = self._read_lines_snapshot()
         if not lines:
             return []
         entries = [json.loads(line) for line in lines]
-        if offset:
-            entries = entries[offset:]
-        return entries[-limit:]
+        page_end = len(entries) - max(0, offset)
+        if page_end <= 0:
+            return []
+        return entries[max(0, page_end - limit) : page_end]
 
     def verify_integrity(self) -> dict[str, Any]:
         lines = self._read_lines_snapshot()

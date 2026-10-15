@@ -16,6 +16,14 @@ function response(payload: unknown, status = 200) {
   };
 }
 
+function rawResponse(body: string, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => body,
+  };
+}
+
 function canonicalSummary(): IncidentHistorySummary {
   return {
     incident_id: "incident-legacy",
@@ -201,6 +209,115 @@ describe("persisted incident history API", () => {
         status: "reported",
       },
     ]);
+  });
+
+  it("rejects an unsafe integer in raw JSON action arguments", async () => {
+    const record = canonicalSummary();
+    const fetchMock = vi.fn().mockResolvedValue(
+      rawResponse(`{
+        "incident_id":"incident-legacy",
+        "execution_id":null,
+        "record_type":"canonical",
+        "triage":null,
+        "diagnosis":null,
+        "remediation":{"proposed_actions":[{"args":{"count":9007199254740993}}]},
+        "approval":null,
+        "verification":null,
+        "comms":null
+      }`),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchIncidentHistoryDetail({ apiKey: TEST_KEY, record })).rejects.toMatchObject({
+      kind: "malformed_response",
+    });
+  });
+
+  it("rejects a negative unsafe integer in raw JSON observed metrics", async () => {
+    const record = canonicalSummary();
+    const fetchMock = vi.fn().mockResolvedValue(
+      rawResponse(`{
+        "incident_id":"incident-legacy",
+        "execution_id":null,
+        "record_type":"canonical",
+        "triage":null,
+        "diagnosis":null,
+        "remediation":null,
+        "approval":null,
+        "verification":{"observed_metrics":{"count":-9007199254740993}},
+        "comms":null
+      }`),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchIncidentHistoryDetail({ apiKey: TEST_KEY, record })).rejects.toMatchObject({
+      kind: "malformed_response",
+    });
+  });
+
+  it("rejects an unsafe integer pagination total from raw JSON", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      rawResponse(`{"items":[],"total":9007199254740993,"limit":25,"offset":0}`),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fetchIncidentHistoryPage({ apiKey: TEST_KEY, limit: 25, offset: 0 }),
+    ).rejects.toMatchObject({ kind: "malformed_response" });
+  });
+
+  it("preserves safe integers and finite fractional values in history data", async () => {
+    const pageFetch = vi.fn().mockResolvedValue(
+      rawResponse(`{"items":[],"total":9007199254740991,"limit":25,"offset":0}`),
+    );
+    vi.stubGlobal("fetch", pageFetch);
+
+    const page = await fetchIncidentHistoryPage({ apiKey: TEST_KEY, limit: 25, offset: 0 });
+
+    expect(page.total).toBe(Number.MAX_SAFE_INTEGER);
+
+    const record = canonicalSummary();
+    const detailFetch = vi.fn().mockResolvedValue(
+      rawResponse(`{
+        "incident_id":"incident-legacy",
+        "execution_id":null,
+        "record_type":"canonical",
+        "triage":null,
+        "diagnosis":null,
+        "remediation":{"proposed_actions":[{"args":{
+          "positive":9007199254740991,
+          "negative":-9007199254740991,
+          "fractional":1.25,
+          "negative_fractional":-0.5
+        }}]},
+        "approval":null,
+        "verification":{"observed_metrics":{
+          "positive":9007199254740991,
+          "negative":-9007199254740991,
+          "fractional":0.125
+        }},
+        "comms":null
+      }`),
+    );
+    vi.stubGlobal("fetch", detailFetch);
+
+    const detail = await fetchIncidentHistoryDetail({ apiKey: TEST_KEY, record });
+
+    expect(detail.remediation?.proposed_actions).toEqual([
+      {
+        args: {
+          positive: Number.MAX_SAFE_INTEGER,
+          negative: -Number.MAX_SAFE_INTEGER,
+          fractional: 1.25,
+          negative_fractional: -0.5,
+        },
+      },
+    ]);
+    expect(detail.verification?.observed_metrics).toEqual({
+      positive: Number.MAX_SAFE_INTEGER,
+      negative: -Number.MAX_SAFE_INTEGER,
+      fractional: 0.125,
+    });
   });
 
   it("distinguishes authentication, missing server configuration, unavailable history, and not-found errors", async () => {

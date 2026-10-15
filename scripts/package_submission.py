@@ -114,11 +114,14 @@ _FRONTEND_EXCLUDED_DIRECTORIES = frozenset(
         ".vite",
         "build",
         "coverage",
+        "credentials",
         "dist",
         "node_modules",
         "playwright-report",
         "private",
         "results",
+        "secret",
+        "secrets",
         "test-results",
     }
 )

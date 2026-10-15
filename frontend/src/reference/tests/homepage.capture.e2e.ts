@@ -4,12 +4,14 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const frontendRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)), "frontend");
-const outputDirectory = resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-reconstruction-local");
+const outputDirectory = resolve(
+  process.env.REFERENCE_CAPTURE_OUTPUT_DIR ??
+    resolve(frontendRoot, "..", "..", "..", ".audit", "completion-20261015", "reference-reconstruction-local"),
+);
 
 const viewports = [
   { name: "1920x1080", width: 1920, height: 1080 },
   { name: "1440x900", width: 1440, height: 900 },
-  { name: "1904x881-live-measurement", width: 1904, height: 881 },
   { name: "1280x800", width: 1280, height: 800 },
   { name: "768x1024", width: 768, height: 1024 },
   { name: "390x844", width: 390, height: 844 },
@@ -69,6 +71,12 @@ for (const viewport of viewports) {
           width: bounds.width,
           height: bounds.height,
           font: styles.font,
+          display: styles.display,
+          position: styles.position,
+          margin: styles.margin,
+          padding: styles.padding,
+          gap: styles.gap,
+          gridTemplateColumns: styles.gridTemplateColumns,
         };
       };
 
@@ -80,6 +88,32 @@ for (const viewport of viewports) {
         navigation: rect(".reference-navigation"),
         mobileTicker: rect(".reference-mobile-ticker"),
         canvas: rect(".reference-hero-artwork canvas"),
+        showcase: {
+          intro: rect(".reference-showcase-intro"),
+          grid: rect(".reference-showcase-grid"),
+          projects: Array.from(document.querySelectorAll(".reference-project"), (project) => {
+            const bounds = project.getBoundingClientRect();
+            const styles = getComputedStyle(project);
+            return {
+              name: project.querySelector("h3")?.textContent?.trim() ?? "",
+              x: bounds.x,
+              y: bounds.y,
+              width: bounds.width,
+              height: bounds.height,
+              marginTop: styles.marginTop,
+              gridColumn: styles.gridColumn,
+            };
+          }),
+          testimonial: rect(".reference-testimonial"),
+        },
+        pricing: {
+          heading: rect(".reference-pricing-heading"),
+          ticket: rect(".reference-pricing-ticket"),
+        },
+        faq: {
+          heading: rect(".reference-faq-heading"),
+          list: rect(".reference-faq-list"),
+        },
         sectionPositions: ["time-cost", "features", "the-repo", "showcase", "pricing", "faq"].map((id) => {
           const section = document.getElementById(id);
           if (!section) return { id, top: null, height: null };
@@ -93,14 +127,41 @@ for (const viewport of viewports) {
     await page.screenshot({
       path: resolve(outputDirectory, `homepage-${viewport.name}.png`),
     });
+
+    const sectionStates: Record<string, { scrollY: number; top: number; height: number }> = {};
+    for (const id of ["showcase", "pricing", "faq"]) {
+      const section = page.locator(`#${id}`);
+      await section.scrollIntoViewIfNeeded();
+      sectionStates[id] = await section.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { scrollY, top: bounds.top, height: bounds.height };
+      });
+      await page.screenshot({
+        path: resolve(outputDirectory, `homepage-${viewport.name}-${id}.png`),
+      });
+    }
     await writeFile(
       resolve(outputDirectory, `homepage-${viewport.name}.json`),
-      `${JSON.stringify({ geometry, pageErrors, failedResponses }, null, 2)}\n`,
+      `${JSON.stringify({ geometry, sectionStates, pageErrors, failedResponses }, null, 2)}\n`,
       "utf8",
     );
 
     expect(geometry.viewport).toEqual({ width: viewport.width, height: viewport.height });
     expect(geometry.faqCount).toBe(17);
+    if (viewport.width === 1920) {
+      expect(geometry.showcase.grid).toMatchObject({
+        x: 80,
+        width: 1760,
+        gap: "64px 24px",
+        gridTemplateColumns: "868px 868px",
+      });
+      expect(geometry.showcase.projects.slice(0, 2)).toMatchObject([
+        { x: 80, width: 868, marginTop: "0px", gridColumn: "auto" },
+        { x: 972, width: 868, marginTop: "0px", gridColumn: "auto" },
+      ]);
+      expect(geometry.showcase.projects[0].height).toBeCloseTo(520.25, 0);
+      expect(geometry.showcase.projects[1].height).toBeCloseTo(520.25, 0);
+    }
     expect(pageErrors).toEqual([]);
     expect(failedResponses).toEqual([]);
 

@@ -196,7 +196,7 @@ def _has_matched_optimizer_update(
             or type(record.get("step")) is not int
             or record.get("step") != group - 1
             or type(record.get("finite")) is not bool
-            or record.get("component") != "reward_only_policy_loss"
+            or record.get("component") != "reward_policy"
             or not isinstance(norm, int | float)
             or isinstance(norm, bool) or not math.isfinite(float(norm))
             or norm < 0

@@ -3322,7 +3322,7 @@ body.content-architecture-reference-body #root {
   }
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
   .reference-dive-track {
     height: 300svh;
     margin-bottom: -220svh;
@@ -3366,6 +3366,12 @@ body.content-architecture-reference-body #root {
 @media (prefers-reduced-motion: reduce) {
   html:has(.content-architecture-reference) {
     scroll-behavior: auto;
+  }
+
+  .content-architecture-reference .reference-cost-copy,
+  .content-architecture-reference .reference-faq-heading {
+    position: static;
+    top: auto;
   }
 
   .content-architecture-reference *,

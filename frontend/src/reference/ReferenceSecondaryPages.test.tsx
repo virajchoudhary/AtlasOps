@@ -27,6 +27,38 @@ describe("public secondary reference pages", () => {
     );
   });
 
+  it("supports the articles deep-link alias and keeps the roadmap home link local", async () => {
+    const onNavigate = vi.fn();
+    render(<ReferenceSecondaryPages pathname="/blog/articles" onNavigate={onNavigate} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Knowledge Hub" })).toBeInTheDocument();
+    expect(document.title).toBe("Content Architecture Blog | Next.js + Sanity Engineering");
+
+    cleanup();
+    render(<ReferenceSecondaryPages pathname="/roadmap" onNavigate={onNavigate} />);
+    await userEvent.click(screen.getAllByRole("link", { name: /LEARN MORE/i })[0]);
+    expect(onNavigate).toHaveBeenCalledWith("/reference");
+  });
+
+  it("supports article links under both observed and articles-prefixed paths", () => {
+    const onNavigate = () => {};
+    const articleTitle = "Your Site Is Invisible to AI Agents (and Your CMS Can Fix It)";
+    const { rerender } = render(
+      <ReferenceSecondaryPages
+        pathname="/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity"
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 1, name: articleTitle })).toBeInTheDocument();
+
+    rerender(
+      <ReferenceSecondaryPages
+        pathname="/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity"
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 1, name: articleTitle })).toBeInTheDocument();
+  });
+
   it("renders the captured long-form article structure, images, code and article index navigation", async () => {
     const onNavigate = vi.fn();
     const user = userEvent.setup();

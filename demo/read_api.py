@@ -22,6 +22,24 @@ from demo.rehearsal import rehearsal_catalog
 from ui_read_model import ROOT, attempt_detail, catalog
 
 
+REFERENCE_ARTICLE_SLUGS = (
+    "the-content-architecture-four-months-in",
+    "serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    "stale-sanity-content-nextjs-caching-revalidation",
+)
+FRONTEND_PATHS = (
+    "/",
+    "/reference",
+    "/blog",
+    "/blog/articles",
+    *(f"/blog/{slug}" for slug in REFERENCE_ARTICLE_SLUGS),
+    *(f"/blog/articles/{slug}" for slug in REFERENCE_ARTICLE_SLUGS),
+    "/roadmap",
+    "/legal/privacy-policy",
+    "/legal/terms-of-service",
+)
+
+
 def is_loopback_host(host: str) -> bool:
     if host.casefold() == "localhost":
         return True
@@ -342,5 +360,16 @@ def create_app(
                 detail="Frontend not built. Run npm ci and npm run build in frontend/.",
             )
         return FileResponse(dist / "index.html")
+
+    for frontend_path in FRONTEND_PATHS:
+        if frontend_path == "/":
+            continue
+        application.add_api_route(
+            frontend_path,
+            index,
+            methods=["GET"],
+            include_in_schema=False,
+            name=f"frontend_{frontend_path.strip('/').replace('/', '_')}",
+        )
 
     return application

@@ -3508,7 +3508,6 @@ select:focus-visible {
   }
 }
 
-/* Editorial console shell */
 .app-frame {
   min-height: 100vh;
   background: #f1eee7;

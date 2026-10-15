@@ -83,6 +83,7 @@ test("nine routes render at the five reference viewports without overlap or over
     viewport: string;
     apiMethods: string[];
     apiRequests: string[];
+    fontsLoaded: { geist: boolean; geistMono: boolean };
     documentWidth: number;
     viewportWidth: number;
     overlapCount: number;
@@ -107,6 +108,12 @@ test("nine routes render at the five reference viewports without overlap or over
       await page.goto(`/#${path}`);
       await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
       await page.evaluate(async () => { await document.fonts.ready; });
+      const fontsLoaded = await page.evaluate(() => ({
+        geist: document.fonts.check("14px Geist"),
+        geistMono: document.fonts.check('12px "Geist Mono"'),
+      }));
+      expect(fontsLoaded.geist, `${path} Geist Sans`).toBe(true);
+      expect(fontsLoaded.geistMono, `${path} Geist Mono`).toBe(true);
       const layout = await page.evaluate(() => {
         const children = [...document.querySelectorAll<HTMLElement>(".page-stack > *")]
           .filter((element) => {
@@ -138,7 +145,14 @@ test("nine routes render at the five reference viewports without overlap or over
       expect(layout.documentWidth, `${path} at ${viewport.name}`).toBeLessThanOrEqual(layout.viewportWidth);
       expect(layout.overlapCount, `${path} at ${viewport.name}`).toBe(0);
       expect(apiMethods.every((method) => method === "GET"), `${path} API methods`).toBe(true);
-      records.push({ route: path, viewport: viewport.name, apiMethods, apiRequests: routeApiRequests, ...layout });
+      records.push({
+        route: path,
+        viewport: viewport.name,
+        apiMethods,
+        apiRequests: routeApiRequests,
+        fontsLoaded,
+        ...layout,
+      });
       await page.screenshot({
         path: testInfo.outputPath(`atlasops-${path === "/" ? "overview" : path.slice(1)}-${viewport.name}.png`),
         fullPage: true,
@@ -168,6 +182,7 @@ test("nine routes render at the five reference viewports without overlap or over
     viewport: "390x844",
     apiMethods: methods.slice(mobileMenuRequestOffset),
     apiRequests: apiRequests.slice(mobileMenuApiRequestOffset),
+    fontsLoaded: { geist: true, geistMono: true },
     ...mobileMenuLayout,
     overlapCount: 0,
   });

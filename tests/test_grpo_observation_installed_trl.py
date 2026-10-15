@@ -236,6 +236,116 @@ def _build_trainer(runtime, tmp_path):
     return trainer, model, tokenizer, lifecycle, generated_inputs, forward_devices
 
 
+def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
+    from functools import partial
+
+    torch = pytest.importorskip("torch")
+    from training.grpo_controlled import ControlledGRPOMixin
+
+    def unused_checkpoint(*args, **kwargs):
+        raise AssertionError("The fixture does not run checkpoint recomputation")
+
+    class RewardLossBackend:
+        def compute_loss(self, model, inputs, *args, **kwargs):
+            return model(inputs).square().mean()
+
+    class RewardProbeTrainer(ControlledGRPOMixin, RewardLossBackend):
+        def __init__(self):
+            self._reward_gradient_evidence = []
+            self.state = SimpleNamespace(global_step=0)
+            self.use_liger_loss = False
+            self._metrics = {}
+            self.beta = 0.04
+            self.accelerator = SimpleNamespace(unwrap_model=lambda model: model)
+
+    class CheckpointedPolicy(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dropout = torch.nn.Dropout(0.5)
+            self.projection = torch.nn.Linear(8, 1, bias=False)
+            self.gradient_checkpointing = True
+            self._gradient_checkpointing_func = partial(
+                unused_checkpoint, use_reentrant=False, preserve_rng_state=False
+            )
+            self.projection.gradient_checkpointing = False
+            self.projection._gradient_checkpointing_func = partial(
+                unused_checkpoint, use_reentrant=False, determinism_check="none"
+            )
+
+        @property
+        def is_gradient_checkpointing(self):
+            return any(
+                getattr(module, "gradient_checkpointing", False)
+                for module in self.modules()
+            )
+
+        def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+            kwargs = (
+                {"use_reentrant": True}
+                if gradient_checkpointing_kwargs is None
+                else gradient_checkpointing_kwargs
+            )
+            checkpoint_function = partial(unused_checkpoint, **kwargs)
+            for module in self.modules():
+                if hasattr(module, "gradient_checkpointing"):
+                    module.gradient_checkpointing = True
+                    module._gradient_checkpointing_func = checkpoint_function
+
+        def forward(self, inputs):
+            return self.projection(self.dropout(inputs))
+
+    def run_step(with_probe):
+        torch.manual_seed(101)
+        model = CheckpointedPolicy()
+        original_settings = [
+            (
+                module,
+                module.gradient_checkpointing,
+                module._gradient_checkpointing_func,
+            )
+            for module in model.modules()
+            if hasattr(module, "gradient_checkpointing")
+        ]
+        torch.manual_seed(2026)
+        trainer = RewardProbeTrainer()
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+        inputs = torch.ones((64, 8))
+        loss = (
+            trainer.compute_loss(model, inputs)
+            if with_probe
+            else RewardLossBackend.compute_loss(trainer, model, inputs)
+        )
+        loss_value = loss.detach().clone()
+        loss.backward()
+        optimizer.step()
+        updated_parameters = [
+            parameter.detach().clone() for parameter in model.parameters()
+        ]
+        next_random_values = torch.rand(8)
+        restored_checkpointing = all(
+            module.gradient_checkpointing is enabled
+            and module._gradient_checkpointing_func is checkpoint_function
+            for module, enabled, checkpoint_function in original_settings
+        )
+        return (
+            loss_value,
+            updated_parameters,
+            next_random_values,
+            restored_checkpointing,
+        )
+
+    without_probe = run_step(with_probe=False)
+    with_probe = run_step(with_probe=True)
+
+    assert torch.equal(without_probe[0], with_probe[0])
+    assert all(
+        torch.equal(expected, actual)
+        for expected, actual in zip(without_probe[1], with_probe[1], strict=True)
+    )
+    assert torch.equal(without_probe[2], with_probe[2])
+    assert with_probe[3]
+
+
 def test_installed_trl_uses_observed_tokens_and_scores_the_exact_generated_action(
     _runtime, tmp_path
 ):

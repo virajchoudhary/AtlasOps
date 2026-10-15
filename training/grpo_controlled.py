@@ -373,30 +373,66 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
                 "Cannot measure reward-policy gradient with reentrant checkpointing"
             )
 
-        try:
-            if checkpointing_enabled:
-                # Reentrant checkpointing rejects autograd.grad; restore the profile
-                # before the real loss is computed.
-                enable_gradient_checkpointing(
-                    gradient_checkpointing_kwargs={"use_reentrant": False}
+        checkpointing_state = []
+        if checkpointing_enabled:
+            checkpointing_state = [
+                (
+                    module,
+                    hasattr(module, "gradient_checkpointing"),
+                    getattr(module, "gradient_checkpointing", None),
+                    hasattr(module, "_gradient_checkpointing_func"),
+                    getattr(module, "_gradient_checkpointing_func", None),
                 )
-            reward_only_loss = super(
-                ControlledGRPOMixin, diagnostic
-            ).compute_loss(model, inputs)
-            if (
-                not torch.is_tensor(reward_only_loss)
-                or reward_only_loss.numel() != 1
-                or not reward_only_loss.requires_grad
-            ):
-                raise RuntimeError(
-                    "Pinned TRL reward-only loss is not a differentiable scalar"
+                for module in checkpointing_model.modules()
+            ]
+
+        cuda_devices = {
+            tensor.device.index
+            if tensor.device.index is not None
+            else torch.cuda.current_device()
+            for tensor in (*model.parameters(), *model.buffers())
+            if tensor.device.type == "cuda"
+        }
+        with torch.random.fork_rng(devices=sorted(cuda_devices)):
+            try:
+                if checkpointing_enabled:
+                    # Reentrant checkpointing rejects autograd.grad. Restore the exact
+                    # module profile before the actual training loss is computed.
+                    enable_gradient_checkpointing(
+                        gradient_checkpointing_kwargs={"use_reentrant": False}
+                    )
+                reward_only_loss = super(
+                    ControlledGRPOMixin, diagnostic
+                ).compute_loss(model, inputs)
+                if (
+                    not torch.is_tensor(reward_only_loss)
+                    or reward_only_loss.numel() != 1
+                    or not reward_only_loss.requires_grad
+                ):
+                    raise RuntimeError(
+                        "Pinned TRL reward-only loss is not a differentiable scalar"
+                    )
+                gradients = torch.autograd.grad(
+                    reward_only_loss, parameters, allow_unused=True
                 )
-            gradients = torch.autograd.grad(
-                reward_only_loss, parameters, allow_unused=True
-            )
-        finally:
-            if checkpointing_enabled:
-                enable_gradient_checkpointing()
+            finally:
+                if checkpointing_enabled:
+                    for (
+                        module,
+                        had_checkpointing_flag,
+                        checkpointing_flag,
+                        had_checkpointing_func,
+                        checkpointing_func,
+                    ) in checkpointing_state:
+                        if had_checkpointing_flag:
+                            module.gradient_checkpointing = checkpointing_flag
+                        elif hasattr(module, "gradient_checkpointing"):
+                            delattr(module, "gradient_checkpointing")
+
+                        if had_checkpointing_func:
+                            module._gradient_checkpointing_func = checkpointing_func
+                        elif hasattr(module, "_gradient_checkpointing_func"):
+                            delattr(module, "_gradient_checkpointing_func")
 
         present_gradients = [gradient for gradient in gradients if gradient is not None]
         finite = bool(present_gradients) and all(

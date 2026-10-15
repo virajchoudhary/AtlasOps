@@ -3043,6 +3043,15 @@ async def webhook(request: Request):
 
     payload = parse_alert_webhook_payload(body)
     log.info("received alertmanager webhook: %d alerts", len(payload.get("alerts", [])))
+    if not payload["alerts"]:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": None,
+                "correlated": False,
+                "dispatched": False,
+            }
+        )
     correlation = correlator.ingest(payload)
     if not correlation.new_occurrence_keys:
         return JSONResponse(

@@ -12,7 +12,7 @@ def test_frozen_candidate_source_drift_fails_closed_without_activation():
     before = copy.deepcopy(active.APPROVED_G4_PROTOCOL_PROFILE)
     report = candidate.inspect_candidate()
     assert report["status"] == "SOURCE_MISMATCH"
-    assert report["source_mismatches"] == ["agents/coordinator.py"]
+    assert report["source_mismatches"] == ["demo/read_api.py"]
     assert report["historical_profile_unchanged"]
     assert report["active"] is report["runtime_qualified"] is False
     assert report["launch_authorized_by_this_report"] is report["empirical_pass"] is False

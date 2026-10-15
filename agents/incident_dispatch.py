@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 
 DispatchState = Literal["started", "queued", "duplicate"]
 IncidentHandler = Callable[..., Awaitable[Any]]
+IncidentAnchorBuilder = Callable[[dict[str, Any], int], dict[str, Any]]
 _ADMISSION_DATABASE_NAME = "incident-admissions.sqlite3"
 
 
@@ -77,7 +78,7 @@ class IncidentDispatcher:
         candidate_batch: CorrelatorCandidateBatch,
         handler: IncidentHandler,
         *,
-        incident_anchors: dict[str, Any] | None = None,
+        anchor_builder: IncidentAnchorBuilder | None = None,
     ) -> DispatchSubmission:
         """Durably admit new occurrences before placing them on the in-process queue."""
         keys = tuple(dict.fromkeys(ref.occurrence_key for ref in candidate_batch.occurrence_refs))
@@ -107,6 +108,19 @@ class IncidentDispatcher:
             if admission.admission_token is None:
                 raise RuntimeError("admitted occurrences have no admission token")
             admitted_keys = set(admission.admitted_keys)
+            first_admitted_ref = next(
+                ref
+                for ref in candidate_batch.occurrence_refs
+                if ref.occurrence_key in admitted_keys
+            )
+            incident_anchors = (
+                anchor_builder(
+                    candidate_batch.original_payload,
+                    first_admitted_ref.original_alert_index or 0,
+                )
+                if anchor_builder is not None
+                else None
+            )
             payload_snapshot = self._filtered_payload(candidate_batch, admitted_keys)
             incident_id = candidate_batch.incident_id
             incident_queue = self._queues.get(incident_id)

@@ -384,7 +384,10 @@ def model_visible_alert(alert: dict[str, Any] | None) -> dict[str, Any]:
     return visible if isinstance(visible, dict) else {}
 
 
-def build_incident_anchors(alert: dict[str, Any] | None) -> dict[str, Any]:
+def build_incident_anchors(
+    alert: dict[str, Any] | None,
+    original_alert_index: int = 0,
+) -> dict[str, Any]:
     """Derive immutable primary identity from the incoming operational alert."""
     model_alert = model_visible_alert(alert)
     common_labels = model_alert.get("commonLabels") or {}
@@ -393,7 +396,12 @@ def build_incident_anchors(alert: dict[str, Any] | None) -> dict[str, Any]:
     alert_items = model_alert.get("alerts") or []
     if not isinstance(alert_items, list):
         alert_items = []
-    first = alert_items[0] if alert_items and isinstance(alert_items[0], dict) else {}
+    first = (
+        alert_items[original_alert_index]
+        if 0 <= original_alert_index < len(alert_items)
+        and isinstance(alert_items[original_alert_index], dict)
+        else {}
+    )
     labels = first.get("labels") or {}
     annotations = first.get("annotations") or {}
     if not isinstance(labels, dict):
@@ -3061,7 +3069,7 @@ async def webhook(request: Request):
     submission = incident_dispatcher.submit(
         candidate_batch,
         handle_incident,
-        incident_anchors=build_incident_anchors(candidate_batch.original_payload),
+        anchor_builder=build_incident_anchors,
     )
     if submission.state == "duplicate":
         return JSONResponse(

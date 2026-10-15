@@ -460,7 +460,7 @@ async def webhook_proxy(request: Request):
     submission = incident_dispatcher.submit(
         candidate_batch,
         handler=_dispatch_incident,
-        incident_anchors=build_incident_anchors(candidate_batch.original_payload),
+        anchor_builder=build_incident_anchors,
     )
     return JSONResponse(
         {

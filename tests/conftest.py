@@ -5,7 +5,6 @@ import pytest
 
 @pytest.fixture
 def prepared_g4_candidate_source_pins(monkeypatch):
-    """Model the reviewed source hashes for explicit candidate-contract tests."""
     from config import g4_demo_candidate as candidate
 
     pinned_sources = candidate.candidate_profile()["causal_evidence_policy"]["source_sha256"]

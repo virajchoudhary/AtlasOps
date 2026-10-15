@@ -816,11 +816,21 @@ def _journal_explicit_provider_failure(
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis": (
-        "Based on the tool results above, output ONLY a JSON object with keys: "
-        "root_cause (non-empty text, not an object), confidence (finite number from 0 to 1), "
-        "evidence (actual tool observations), recommended_fix (list). "
-        "If observations are insufficient, report an unknown cause; no_series is not "
-        "positive metric evidence. No prose outside the JSON."
+        "Based only on the tool results above, output ONLY one JSON object matching the "
+        "canonical Diagnosis schema, with exactly these top-level keys: incident_id, "
+        "root_cause, category, confidence, evidence, blast_radius_update, next_agent, "
+        "recommended_fix. root_cause must be non-empty text supported by actual tool "
+        "outputs; category must be deploy, resource, network, dependency, config, "
+        "external, or unknown; confidence must be a finite number from 0 to 1; evidence "
+        "must contain only actual tool observations, with the exact executed query when "
+        "applicable, or be empty when there is no supporting tool output. Every causal "
+        "claim must cite a tool result. blast_radius_update must describe only observed "
+        "scope or state that it is not established. If the observations do not establish "
+        "a cause, use category unknown, confidence 0, and state that the cause is unknown. "
+        "A successful no_series result is absence of metric evidence, not positive proof "
+        "of CPU, latency, or recovery. Set next_agent to remediation; recommended_fix "
+        "must be an evidence-supported list and may be empty. Do not include outcome or "
+        "training-label metadata. No prose outside the JSON."
     ),
     "remediation": (
         "Based on the actions taken above, output ONLY a JSON object with keys: "

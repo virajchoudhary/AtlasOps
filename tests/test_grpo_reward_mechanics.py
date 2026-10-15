@@ -117,9 +117,9 @@ def _write_export(
     ]
 
     def _append_optimizer_evidence(index: int) -> None:
-        ledger.append("gradient_observed", gradients[index])
         if include_reward_gradient_evidence:
             ledger.append("reward_gradient_observed", reward_gradients[index])
+        ledger.append("gradient_observed", gradients[index])
         ledger.append("optimizer_step_observed", optimizer_steps[index])
 
     try:
@@ -328,6 +328,27 @@ def test_export_rejects_optimizer_records_that_precede_their_reward_groups(
             optimizer_before_rewards=True,
             include_reward_gradient_evidence=True,
         )
+
+
+def test_export_accepts_complete_reward_driven_synthetic_fixture(
+    tmp_path, monkeypatch
+):
+    varied_group = _group(
+        [_scale_action(3), "malformed"],
+        _trl_0191_advantages([1.0, -1.0]),
+    )
+
+    report = _write_export(
+        tmp_path,
+        [varied_group, varied_group],
+        monkeypatch,
+        include_reward_gradient_evidence=True,
+    )
+
+    assert report["status"] == "CONTROLLED_CHECKPOINT_TRAINED_RELOADED_AND_EXPORTED"
+    assert report["classification"] == CLASSIFICATION
+    assert report["certification_status"] == "NOT_CERTIFIED"
+    assert report["G4"] == "NOT_PASSED"
 
 
 @pytest.mark.parametrize(

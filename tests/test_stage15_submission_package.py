@@ -627,6 +627,10 @@ class TestStage15SubmissionPackage:
             "frontend/public/node_modules/package/icon.svg",
             "frontend/public/build/bundle.js",
             "frontend/public/private/credentials.html",
+            "frontend/src/secrets/runtime.ts",
+            "frontend/public/secrets/runtime.json",
+            "frontend/src/SeCrEt/runtime.ts",
+            "frontend/public/CREDENTIALS/runtime.json",
         }
         untracked = "frontend/src/reference/tests/fixtures/deep/untracked.tsx"
 

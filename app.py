@@ -133,6 +133,24 @@ _APP_PRESENTATION_BOUNDARIES = (
     },
 )
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+_FRONTEND_SECURITY_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; font-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+}
+
+
+def _is_frontend_request_path(path: str) -> bool:
+    return (
+        path in _FRONTEND_PATHS
+        or path in {"/assets", "/reference"}
+        or path.startswith(("/assets/", "/reference/"))
+    )
 
 
 def _presentation_read_handlers():
@@ -186,6 +204,14 @@ async def presentation_read_boundary(request: Request, call_next):
 def _register_frontend_routes(application: FastAPI, dist: Path) -> None:
     asset_dir = dist / "assets"
     reference_asset_dir = dist / "reference" / "assets"
+
+    @application.middleware("http")
+    async def frontend_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        if _is_frontend_request_path(request.url.path):
+            response.headers.update(_FRONTEND_SECURITY_HEADERS)
+        return response
+
     if asset_dir.is_dir():
         application.mount("/assets", StaticFiles(directory=str(asset_dir)), name="frontend-assets")
     if reference_asset_dir.is_dir():

@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any
@@ -19,7 +20,7 @@ class CorrelatedIncident:
     services: set[str] = field(default_factory=set)
     alert_names: set[str] = field(default_factory=set)
     alerts: list[dict[str, Any]] = field(default_factory=list)
-    dispatch_claims: set[str] = field(default_factory=set)
+    observed_occurrence_keys: set[str] = field(default_factory=set)
     active_processing: bool = False
     last_alert_at: float = field(default_factory=time.time)
 
@@ -37,10 +38,17 @@ class CorrelatedIncident:
 
 
 @dataclass(frozen=True)
-class CorrelationResult:
+class OccurrenceRef:
+    occurrence_key: str
+    original_alert_index: int | None
+
+
+@dataclass(frozen=True)
+class CorrelatorCandidateBatch:
     incident_id: str
     is_new_incident: bool
-    new_occurrence_keys: tuple[str, ...]
+    original_payload: dict[str, Any]
+    occurrence_refs: tuple[OccurrenceRef, ...]
 
 
 class IncidentCorrelator:
@@ -50,15 +58,17 @@ class IncidentCorrelator:
         self._lock = RLock()
         self._incidents: dict[str, CorrelatedIncident] = {}
 
-    def ingest(self, alert: dict[str, Any]) -> CorrelationResult:
-        """Atomically correlate an alert and claim any previously unseen occurrences."""
+    def ingest(self, alert: dict[str, Any]) -> CorrelatorCandidateBatch:
+        """Correlate an envelope and return its original occurrence references."""
         with self._lock:
             return self._ingest_locked(alert)
 
-    def _ingest_locked(self, alert: dict[str, Any]) -> CorrelationResult:
+    def _ingest_locked(self, alert: dict[str, Any]) -> CorrelatorCandidateBatch:
         now = time.time()
         self._expire_old(now)
-        alert_keys = self._alert_keys(alert)
+        payload_snapshot = deepcopy(alert)
+        occurrence_refs = self._occurrence_refs(payload_snapshot)
+        occurrence_keys = {ref.occurrence_key for ref in occurrence_refs}
 
         # UI chaos inject carries `correlation_id=inj-...` (see app._handle_after_delay).
         # Do not correlate with overlapping Alertmanager fingerprints or in-flight webhook
@@ -77,16 +87,16 @@ class IncidentCorrelator:
                     namespace=namespace,
                     services=set(services),
                     alert_names=set(alert_names),
-                    alerts=[alert],
-                    dispatch_claims=set(alert_keys),
-                    active_processing=True,
+                    alerts=[payload_snapshot],
+                    observed_occurrence_keys=occurrence_keys,
                     last_alert_at=now,
                 )
                 self._incidents[incident_id] = inc
-                return CorrelationResult(
+                return CorrelatorCandidateBatch(
                     incident_id=incident_id,
                     is_new_incident=True,
-                    new_occurrence_keys=tuple(sorted(alert_keys)),
+                    original_payload=payload_snapshot,
+                    occurrence_refs=occurrence_refs,
                 )
 
         namespace = self._extract_namespace(alert)
@@ -95,24 +105,18 @@ class IncidentCorrelator:
 
         for inc in self._incidents.values():
             if self._should_correlate(now, namespace, services, alert_names, inc):
-                new_alert_keys = alert_keys - inc.dispatch_claims
-                if not new_alert_keys:
-                    inc.last_alert_at = now
-                    return CorrelationResult(
-                        incident_id=inc.incident_id,
-                        is_new_incident=False,
-                        new_occurrence_keys=(),
-                    )
-                inc.alerts.append(alert)
-                inc.alert_names.update(alert_names)
-                inc.services.update(services)
                 inc.last_alert_at = now
-                inc.dispatch_claims.update(new_alert_keys)
-                inc.active_processing = True
-                return CorrelationResult(
+                new_observations = occurrence_keys - inc.observed_occurrence_keys
+                if new_observations:
+                    inc.alerts.append(payload_snapshot)
+                    inc.alert_names.update(alert_names)
+                    inc.services.update(services)
+                inc.observed_occurrence_keys.update(occurrence_keys)
+                return CorrelatorCandidateBatch(
                     incident_id=inc.incident_id,
                     is_new_incident=False,
-                    new_occurrence_keys=tuple(sorted(new_alert_keys)),
+                    original_payload=payload_snapshot,
+                    occurrence_refs=occurrence_refs,
                 )
 
         incident_id = f"inc-{int(now)}-{uuid.uuid4().hex[:6]}"
@@ -122,16 +126,16 @@ class IncidentCorrelator:
             namespace=namespace,
             services=set(services),
             alert_names=set(alert_names),
-            alerts=[alert],
-            dispatch_claims=set(alert_keys),
-            active_processing=True,
+            alerts=[payload_snapshot],
+            observed_occurrence_keys=occurrence_keys,
             last_alert_at=now,
         )
         self._incidents[incident_id] = inc
-        return CorrelationResult(
+        return CorrelatorCandidateBatch(
             incident_id=incident_id,
             is_new_incident=True,
-            new_occurrence_keys=tuple(sorted(alert_keys)),
+            original_payload=payload_snapshot,
+            occurrence_refs=occurrence_refs,
         )
 
     def mark_processing(self, incident_id: str, active: bool) -> None:
@@ -139,21 +143,6 @@ class IncidentCorrelator:
             inc = self._incidents.get(incident_id)
             if inc:
                 inc.active_processing = active
-
-    def rollback_unadmitted_claims(
-        self,
-        incident_id: str,
-        occurrence_keys: tuple[str, ...],
-    ) -> None:
-        """Release claims when dispatch fails before a worker is created."""
-        with self._lock:
-            inc = self._incidents.get(incident_id)
-            if inc is None:
-                return
-            claimed_keys = inc.dispatch_claims.intersection(occurrence_keys)
-            if claimed_keys:
-                inc.dispatch_claims.difference_update(claimed_keys)
-                inc.active_processing = False
 
     def get_active(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -179,19 +168,21 @@ class IncidentCorrelator:
         return f"payload:{digest}"
 
     @classmethod
-    def _alert_keys(cls, alert: dict[str, Any]) -> set[str]:
-        if not isinstance(alert, dict):
-            return {cls._payload_key(alert)}
-        alerts = alert.get("alerts")
+    def _occurrence_refs(cls, payload: dict[str, Any]) -> tuple[OccurrenceRef, ...]:
+        alerts = payload.get("alerts")
         if isinstance(alerts, list):
-            keys: set[str] = set()
-            for item in alerts:
+            refs: list[OccurrenceRef] = []
+            seen: set[str] = set()
+            for index, item in enumerate(alerts):
                 if not isinstance(item, dict):
                     continue
-                keys.add(cls._alert_occurrence_key(item, alert))
-            if keys:
-                return keys
-        return {cls._alert_occurrence_key(alert, alert)}
+                key = cls._alert_occurrence_key(item, payload)
+                if key not in seen:
+                    refs.append(OccurrenceRef(key, index))
+                    seen.add(key)
+            if refs:
+                return tuple(refs)
+        return (OccurrenceRef(cls._alert_occurrence_key(payload, payload), None),)
 
     @classmethod
     def _alert_occurrence_key(

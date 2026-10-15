@@ -2181,6 +2181,7 @@ async def handle_incident(
     scenario_id: str | None = None,
     remediation_policy: Any | None = None,
     *,
+    incident_anchors: dict[str, Any] | None = None,
     completion_provider: CompletionProvider | None = None,
     policy_seed: int | None = None,
     policy_generation_config: dict[str, Any] | None = None,
@@ -2241,7 +2242,11 @@ async def handle_incident(
     approval_record: dict[str, Any] | None = None
     approval_blocked = False
     remediation_blocked = False
-    incident_anchors = build_incident_anchors(alert)
+    incident_anchors = (
+        deepcopy(incident_anchors)
+        if incident_anchors is not None
+        else build_incident_anchors(alert)
+    )
     model_alert = model_visible_alert(alert)
     target_consistency: dict[str, Any] = {
         "status": "not_validated",
@@ -3062,27 +3067,17 @@ async def webhook(request: Request):
                 "dispatched": False,
             }
         )
-    correlation = correlator.ingest(payload)
-    if not correlation.new_occurrence_keys:
-        return JSONResponse(
-            {
-                "ok": True,
-                "incident_id": correlation.incident_id,
-                "correlated": True,
-                "dispatched": False,
-            }
-        )
+    candidate_batch = correlator.ingest(payload)
     submission = incident_dispatcher.submit(
-        incident_id=correlation.incident_id,
-        occurrence_keys=correlation.new_occurrence_keys,
-        payload=payload,
-        handler=handle_incident,
+        candidate_batch,
+        handle_incident,
+        incident_anchors=build_incident_anchors(candidate_batch.original_payload),
     )
     if submission.state == "duplicate":
         return JSONResponse(
             {
                 "ok": True,
-                "incident_id": correlation.incident_id,
+                "incident_id": submission.incident_id,
                 "correlated": True,
                 "dispatched": False,
             }

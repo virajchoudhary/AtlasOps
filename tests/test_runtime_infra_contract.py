@@ -240,13 +240,6 @@ def test_healthz_is_side_effect_free_without_runtime_secrets(monkeypatch) -> Non
 
 def test_coordinator_webhook_requires_and_accepts_bearer_secret(monkeypatch) -> None:
     import agents.coordinator as coordinator
-    from agents.correlator import CorrelationResult
-
-    monkeypatch.setattr(
-        coordinator.correlator,
-        "ingest",
-        lambda payload: CorrelationResult("inc-test", False, ()),
-    )
     monkeypatch.setattr(coordinator, "handle_incident", AsyncMock())
     client = TestClient(coordinator.app)
     payload = {"alerts": [], "commonLabels": {}, "status": "firing"}

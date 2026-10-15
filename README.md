@@ -107,6 +107,14 @@ verification or infer an outcome from a missing record. It omits raw alerts, mod
 trajectories, raw verifier evidence, and the configured storage path. Persisted JSON is
 capped at 1 MiB, and returned text fields are capped at 2,000 characters.
 
+## Durable webhook occurrence admission
+
+Webhook occurrence admission is persisted in
+`ATLASOPS_RUNTIME_DATA_DIR/incident-admissions.sqlite3` (default
+`data/incident-admissions.sqlite3`). Workers share deduplication only when they use the
+same on-disk SQLite file. Reset does not clear records, and queued or attempted
+occurrences are never automatically replayed or reclaimed.
+
 The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
 defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for

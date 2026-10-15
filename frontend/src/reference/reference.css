@@ -36,7 +36,7 @@ body.content-architecture-reference-body {
   min-height: 100vh;
   height: auto;
   overflow-x: clip;
-  overflow-y: auto;
+  overflow-y: visible;
   background: #f1eee7;
   color: #232323;
   font-family: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
@@ -68,7 +68,8 @@ body.content-architecture-reference-body #root {
   --reference-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
   width: 100%;
   min-height: 100vh;
-  overflow: clip;
+  overflow-x: clip;
+  overflow-y: visible;
   background: var(--reference-paper);
   color: var(--reference-ink);
   font-family: var(--reference-sans);
@@ -166,7 +167,6 @@ body.content-architecture-reference-body #root {
   transform: translateY(0);
 }
 
-/* The live page keeps its compact floating site nav above all scroll sections. */
 .reference-navigation {
   position: fixed;
   z-index: 10000;
@@ -489,7 +489,6 @@ body.content-architecture-reference-body #root {
   border-radius: 50%;
 }
 
-/* Top composition: split paper copy and live ring canvas, stacked on mobile. */
 .reference-hero {
   display: grid;
   min-height: 100svh;
@@ -623,7 +622,6 @@ body.content-architecture-reference-body #root {
   height: 100%;
 }
 
-/* The cost breakdown bridges the hero into the long feature scroll. */
 .reference-cost-section {
   position: relative;
   display: grid;
@@ -634,6 +632,10 @@ body.content-architecture-reference-body #root {
   overflow: hidden;
   background: var(--reference-paper);
   color: var(--reference-ink);
+}
+
+.reference-cost-story {
+  display: contents;
 }
 
 .reference-cost-copy {
@@ -757,7 +759,6 @@ body.content-architecture-reference-body #root {
   font-size: 28px;
 }
 
-/* The numbered feature copy is deliberately staggered like the live list. */
 .reference-features-section {
   position: relative;
   min-height: 3400px;
@@ -857,7 +858,6 @@ body.content-architecture-reference-body #root {
   line-height: 1.65;
 }
 
-/* Repository preview: a contained, functional read-only file browser. */
 .reference-repo-section {
   position: relative;
   display: flex;
@@ -1263,7 +1263,6 @@ body.content-architecture-reference-body #root {
   font-size: 10px;
 }
 
-/* Projects reproduce the source's ASCII-first image reveal and long reel layout. */
 .reference-showcase-section {
   position: relative;
   padding: 680px 80px 160px;
@@ -1500,7 +1499,6 @@ body.content-architecture-reference-body #root {
   }
 }
 
-/* Pricing and FAQ stay information-dense and restrained like the source. */
 .reference-pricing-section {
   position: relative;
   min-height: 1005px;
@@ -1808,7 +1806,6 @@ body.content-architecture-reference-body #root {
   display: none;
 }
 
-/* Closing pitch, newsletter and resource columns. */
 .reference-footer {
   position: relative;
   padding: 0 80px 23px;
@@ -2017,7 +2014,6 @@ body.content-architecture-reference-body #root {
   text-transform: uppercase;
 }
 
-/* Delayed newsletter uses the same surface and copy as the live prompt. */
 .reference-dialog-layer {
   z-index: 10020;
   place-items: end start;
@@ -2090,7 +2086,6 @@ body.content-architecture-reference-body #root {
   background: #deddd8;
 }
 
-/* Native dialogs match the source's top-layer overlays. */
 .reference-reel-dialog,
 .reference-about-dialog {
   position: fixed;
@@ -2325,7 +2320,6 @@ body.content-architecture-reference-body #root {
   --controls: none;
 }
 
-/* On narrow screens the floating desktop furniture gives way to the compact bar. */
 @media (min-width: 1536px) {
   .reference-hero {
     grid-template-columns: 44% 56%;
@@ -3325,6 +3319,47 @@ body.content-architecture-reference-body #root {
   .reference-reel-close {
     top: 9px;
     right: 8px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .reference-dive-track {
+    height: 300svh;
+    margin-bottom: -220svh;
+  }
+
+  .reference-hero {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 100svh;
+  }
+
+  .reference-cost-section {
+    --reference-cost-story-run: 1772.609375px;
+
+    display: block;
+    height: calc(220svh + var(--reference-cost-story-run));
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .reference-cost-story {
+    position: sticky;
+    top: 0;
+    display: grid;
+    height: calc(100svh + var(--reference-cost-story-run));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+    padding: 19.1851851852svh 80px;
+    background: var(--reference-paper);
+    color: var(--reference-ink);
+  }
+
+  .reference-repo-section {
+    height: calc(160svh + 160px);
+    min-height: calc(160svh + 160px);
   }
 }
 

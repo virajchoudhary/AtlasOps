@@ -148,51 +148,53 @@ function NewsletterDialog({ onClose }: { onClose: () => void }) {
 function TimeCostSection() {
   return (
     <section className="reference-cost-section" id="time-cost">
-      <div className="reference-cost-copy">
-        <Reveal>
-          <h2>The page builder alone costs you days. Every single time.</h2>
-          <p className="reference-cost-intro">
-            This is the part nobody quotes for and everybody rebuilds. Days gone
-            before the real work starts.
-          </p>
-          <p className="reference-cost-total">
-            <span>~24</span>
-          </p>
-          <div className="reference-cost-legend">
-            <span>Hours lost per project</span>
-            <span>3 full days</span>
-          </div>
-        </Reveal>
-      </div>
-      <div className="reference-cost-table">
-        <div className="reference-cost-table-heading">
-          <span>Estimate</span>
-          <span>Never quoted</span>
-        </div>
-        {COST_DAYS.map((day) => (
-          <div className="reference-cost-day" key={day.day}>
-            <div className="reference-cost-day-heading">
-              <span>{day.day}</span>
-              <span>{day.total}</span>
+      <div className="reference-cost-story">
+        <div className="reference-cost-copy">
+          <Reveal>
+            <h2>The page builder alone costs you days. Every single time.</h2>
+            <p className="reference-cost-intro">
+              This is the part nobody quotes for and everybody rebuilds. Days gone
+              before the real work starts.
+            </p>
+            <p className="reference-cost-total">
+              <span>~24</span>
+            </p>
+            <div className="reference-cost-legend">
+              <span>Hours lost per project</span>
+              <span>3 full days</span>
             </div>
-            {day.tasks.map((task) => (
-              <div className="reference-cost-task" key={task.label}>
-                <span>{task.label}</span>
-                <i aria-hidden="true" />
-                <span>{task.hours}</span>
+          </Reveal>
+        </div>
+        <div className="reference-cost-table">
+          <div className="reference-cost-table-heading">
+            <span>Estimate</span>
+            <span>Never quoted</span>
+          </div>
+          {COST_DAYS.map((day) => (
+            <div className="reference-cost-day" key={day.day}>
+              <div className="reference-cost-day-heading">
+                <span>{day.day}</span>
+                <span>{day.total}</span>
               </div>
-            ))}
-          </div>
-        ))}
-        <div className="reference-cost-day reference-cost-infinity">
-          <div className="reference-cost-day-heading">
-            <span>Every prompt</span>
-            <span>∞</span>
-          </div>
-          <div className="reference-cost-task">
-            <span>Agent redesigns the architecture</span>
-            <i aria-hidden="true" />
-            <span>again</span>
+              {day.tasks.map((task) => (
+                <div className="reference-cost-task" key={task.label}>
+                  <span>{task.label}</span>
+                  <i aria-hidden="true" />
+                  <span>{task.hours}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          <div className="reference-cost-day reference-cost-infinity">
+            <div className="reference-cost-day-heading">
+              <span>Every prompt</span>
+              <span>∞</span>
+            </div>
+            <div className="reference-cost-task">
+              <span>Agent redesigns the architecture</span>
+              <i aria-hidden="true" />
+              <span>again</span>
+            </div>
           </div>
         </div>
       </div>
@@ -639,36 +641,38 @@ export function ReferencePage({
         onLearnMore={() => setAboutOpen(true)}
       />
       <main id="reference-main">
-        <section className="reference-hero" aria-labelledby="reference-title">
-          <div className="reference-hero-copy">
-            <div>
-              <p className="reference-eyebrow">Full-stack kit for Next.js and Astro.</p>
-              <h1 id="reference-title">
-                The stack agents
-                <br className="reference-hero-heading-break" /> don&apos;t reinvent.
-              </h1>
-              <p className="reference-hero-description">
-                Frontend, Sanity schema, fetch layer, SEO, redirects, forms: six years of
-                decisions, committed. AGENTS.md and a dozen skills load them before your
-                first prompt, and two MCP servers let the agent check its own work.
-              </p>
-              <div className="reference-hero-actions">
-                <AccessLink toPricing />
-                <button
-                  className="reference-watch-button"
-                  type="button"
-                  aria-haspopup="dialog"
-                  onClick={() => setReelOpen(true)}
-                >
-                  Watch reel <ArrowUpRight size={12} aria-hidden="true" />
-                </button>
+        <div className="reference-dive-track">
+          <section className="reference-hero" aria-labelledby="reference-title">
+            <div className="reference-hero-copy">
+              <div>
+                <p className="reference-eyebrow">Full-stack kit for Next.js and Astro.</p>
+                <h1 id="reference-title">
+                  The stack agents
+                  <br className="reference-hero-heading-break" /> don&apos;t reinvent.
+                </h1>
+                <p className="reference-hero-description">
+                  Frontend, Sanity schema, fetch layer, SEO, redirects, forms: six years of
+                  decisions, committed. AGENTS.md and a dozen skills load them before your
+                  first prompt, and two MCP servers let the agent check its own work.
+                </p>
+                <div className="reference-hero-actions">
+                  <AccessLink toPricing />
+                  <button
+                    className="reference-watch-button"
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={() => setReelOpen(true)}
+                  >
+                    Watch reel <ArrowUpRight size={12} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="reference-hero-artwork" aria-label="Rotating typographic ring artwork">
-            {heroArtwork}
-          </div>
-        </section>
+            <div className="reference-hero-artwork" aria-label="Rotating typographic ring artwork">
+              {heroArtwork}
+            </div>
+          </section>
+        </div>
 
         <TimeCostSection />
         <FeatureSection />

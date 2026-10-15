@@ -84,10 +84,12 @@ for (const viewport of viewports) {
         viewport: { width: innerWidth, height: innerHeight },
         pageHeight: document.documentElement.scrollHeight,
         hero: rect(".reference-hero"),
+        heroTrack: rect(".reference-dive-track"),
         heading: rect(".reference-hero h1"),
         navigation: rect(".reference-navigation"),
         mobileTicker: rect(".reference-mobile-ticker"),
         canvas: rect(".reference-hero-artwork canvas"),
+        costStory: rect(".reference-cost-story"),
         showcase: {
           intro: rect(".reference-showcase-intro"),
           grid: rect(".reference-showcase-grid"),
@@ -128,6 +130,41 @@ for (const viewport of viewports) {
       path: resolve(outputDirectory, `homepage-${viewport.name}.png`),
     });
 
+    const scrollStates: Record<
+      string,
+      { scrollY: number; heroTop: number; heroBottom: number; costStoryTop: number }
+    > = {};
+    if (viewport.width === 1920) {
+      for (const scrollY of [1200, 2500]) {
+        await page.evaluate((top) => window.scrollTo(0, top), scrollY);
+        scrollStates[String(scrollY)] = await page.evaluate(() => {
+          const hero = document.querySelector(".reference-hero");
+          const costStory = document.querySelector(".reference-cost-story");
+          if (!hero || !costStory) {
+            return {
+              scrollY: window.scrollY,
+              heroTop: Number.NaN,
+              heroBottom: Number.NaN,
+              costStoryTop: Number.NaN,
+            };
+          }
+          const heroBounds = hero.getBoundingClientRect();
+          return {
+            scrollY: window.scrollY,
+            heroTop: heroBounds.top,
+            heroBottom: heroBounds.bottom,
+            costStoryTop: costStory.getBoundingClientRect().top,
+          };
+        });
+      }
+      expect(scrollStates["1200"].scrollY).toBe(1200);
+      expect(scrollStates["1200"].heroTop).toBe(0);
+      expect(scrollStates["1200"].costStoryTop).toBe(0);
+      expect(scrollStates["2500"].scrollY).toBe(2500);
+      expect(Math.abs(scrollStates["2500"].heroTop + 340)).toBeLessThanOrEqual(1);
+      expect(Math.abs(scrollStates["2500"].costStoryTop + 340)).toBeLessThanOrEqual(1);
+    }
+
     const sectionStates: Record<string, { scrollY: number; top: number; height: number }> = {};
     for (const id of ["showcase", "pricing", "faq"]) {
       const section = page.locator(`#${id}`);
@@ -142,13 +179,35 @@ for (const viewport of viewports) {
     }
     await writeFile(
       resolve(outputDirectory, `homepage-${viewport.name}.json`),
-      `${JSON.stringify({ geometry, sectionStates, pageErrors, failedResponses }, null, 2)}\n`,
+      `${JSON.stringify({ geometry, sectionStates, scrollStates, pageErrors, failedResponses }, null, 2)}\n`,
       "utf8",
     );
 
     expect(geometry.viewport).toEqual({ width: viewport.width, height: viewport.height });
     expect(geometry.faqCount).toBe(17);
     if (viewport.width === 1920) {
+      const referenceSectionTops = [
+        { id: "features", top: 5012.609375 },
+        { id: "the-repo", top: 8413 },
+        { id: "showcase", top: 10301 },
+      ];
+      for (const expected of referenceSectionTops) {
+        const section = geometry.sectionPositions.find(({ id }) => id === expected.id);
+        expect(Math.abs((section?.top ?? Number.NaN) - expected.top)).toBeLessThanOrEqual(8);
+      }
+      const referenceSectionHeights = [
+        { id: "features", height: 3400.390625 },
+        { id: "the-repo", height: 1888 },
+      ];
+      for (const expected of referenceSectionHeights) {
+        const section = geometry.sectionPositions.find(({ id }) => id === expected.id);
+        expect(Math.abs((section?.height ?? Number.NaN) - expected.height)).toBeLessThanOrEqual(8);
+      }
+      expect(geometry.heroTrack?.height).toBe(3240);
+      expect(geometry.hero?.position).toBe("sticky");
+      expect(geometry.hero?.height).toBe(1080);
+      expect(geometry.costStory?.position).toBe("sticky");
+      expect(geometry.costStory?.height).toBeCloseTo(2852.609375, 0);
       expect(geometry.showcase.grid).toMatchObject({
         x: 80,
         width: 1760,

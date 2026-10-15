@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from statistics import mean, stdev
 
 import pytest
 
+import scripts.accept_grpo_controlled as controlled_acceptance
 from scripts.accept_grpo_controlled import accept_export
 from training.grpo_controlled import (
     CLASSIFICATION,
@@ -16,6 +18,7 @@ from training.grpo_controlled import (
     CapacityEnvironment,
     EpisodeLedger,
 )
+from training.grpo_reward import has_reward_driven_advantages
 
 
 def _scale_action(replicas: int) -> str:
@@ -51,12 +54,20 @@ def _record_group(
     )
 
 
+def _trl_0191_advantages(rewards: list[float]) -> list[float]:
+    center = mean(rewards)
+    scale = stdev(rewards) + 1e-4
+    return [(reward - center) / scale for reward in rewards]
+
+
 def _write_export(
     tmp_path: Path,
     groups: list[tuple[list[str], list[float]]],
     monkeypatch,
     *,
     changed_groups: set[int] | None = None,
+    optimizer_before_rewards: bool = False,
+    include_reward_gradient_evidence: bool = False,
 ) -> dict[str, object]:
     from training import grpo_reload_isolation, sft_provenance
 
@@ -76,35 +87,54 @@ def _write_export(
 
     ledger = EpisodeLedger(run / "episodes.jsonl")
     environment = CapacityEnvironment(ledger)
+    gradients = [
+        {
+            "step": index,
+            "group": index + 1,
+            "finite": True,
+            "norm": 1.0,
+        }
+        for index in range(2)
+    ]
+    reward_gradients = [
+        {
+            "step": index,
+            "group": index + 1,
+            "finite": True,
+            "norm": 1.0,
+            "component": "reward_only_policy_loss",
+        }
+        for index in range(2)
+    ]
+    optimizer_steps = [
+        {
+            "step": index + 1,
+            "group": index + 1,
+            "changed_trainable_tensors": int(index + 1 in optimizer_changed_groups),
+        }
+        for index in range(2)
+    ]
+
+    def _append_optimizer_evidence(index: int) -> None:
+        ledger.append("gradient_observed", gradients[index])
+        if include_reward_gradient_evidence:
+            ledger.append("reward_gradient_observed", reward_gradients[index])
+        ledger.append("optimizer_step_observed", optimizer_steps[index])
+
     try:
-        for completions, advantages in groups:
+        ledger.append("initial_adapter_tensors", {"synthetic_fixture": True})
+        if optimizer_before_rewards:
+            for index in range(2):
+                _append_optimizer_evidence(index)
+        for index, (completions, advantages) in enumerate(groups):
             _record_group(
                 environment,
                 ledger,
                 completions,
                 advantages,
             )
-        gradients = [
-            {
-                "step": index,
-                "group": index + 1,
-                "finite": True,
-                "norm": 1.0,
-            }
-            for index in range(2)
-        ]
-        optimizer_steps = [
-            {
-                "step": index + 1,
-                "group": index + 1,
-                "changed_trainable_tensors": int(index + 1 in optimizer_changed_groups),
-            }
-            for index in range(2)
-        ]
-        for gradient in gradients:
-            ledger.append("gradient_observed", gradient)
-        for step in optimizer_steps:
-            ledger.append("optimizer_step_observed", step)
+            if not optimizer_before_rewards:
+                _append_optimizer_evidence(index)
         ledger.append(
             "training_finished",
             {
@@ -112,6 +142,11 @@ def _write_export(
                 "changed_tensors": 1,
                 "gradients": gradients,
                 "optimizer_steps": optimizer_steps,
+                **(
+                    {"reward_gradients": reward_gradients}
+                    if include_reward_gradient_evidence
+                    else {}
+                ),
             },
         )
     finally:
@@ -178,7 +213,7 @@ def test_export_rejects_advantages_from_a_different_equal_reward_group(
         _write_export(
             tmp_path,
             [
-                _group(varied_rewards, [0.0, 0.0]),
+                _group(varied_rewards, _trl_0191_advantages([1.0, -1.0])),
                 _group(equal_rewards, [1.0, -1.0]),
             ],
             monkeypatch,
@@ -197,7 +232,10 @@ def test_export_rejects_advantages_not_ordered_by_objective_rewards(
         _write_export(
             tmp_path,
             [
-                _group([_scale_action(3), "malformed"], advantages),
+                _group(
+                    [_scale_action(3), "malformed"],
+                    advantages,
+                ),
                 _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
             ],
             monkeypatch,
@@ -207,31 +245,141 @@ def test_export_rejects_advantages_not_ordered_by_objective_rewards(
 def test_export_does_not_count_equal_reward_optimizer_step_as_reward_learning(
     tmp_path, monkeypatch
 ):
-    with pytest.raises(ValueError, match="reward-driven|reward and parameter update"):
+    with pytest.raises(ValueError, match="reward-only|reward-driven"):
         _write_export(
             tmp_path,
             [
-                _group([_scale_action(3), "malformed"], [1.0, -1.0]),
+                _group(
+                    [_scale_action(3), "malformed"],
+                    _trl_0191_advantages([1.0, -1.0]),
+                ),
                 _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
             ],
             monkeypatch,
             changed_groups={2},
+            include_reward_gradient_evidence=True,
         )
 
 
-def test_export_accepts_same_group_reward_advantages_gradient_and_update(
+def test_export_fails_closed_without_separate_reward_only_gradient_evidence(
     tmp_path, monkeypatch
 ):
-    report = _write_export(
-        tmp_path,
-        [
-            _group([_scale_action(3), "malformed"], [1.0, -1.0]),
-            _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
-        ],
-        monkeypatch,
-    )
+    with pytest.raises(ValueError, match="separate reward-only policy gradient"):
+        _write_export(
+            tmp_path,
+            [
+                _group(
+                    [_scale_action(3), "malformed"],
+                    _trl_0191_advantages([1.0, -1.0]),
+                ),
+                _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
+            ],
+            monkeypatch,
+        )
 
-    assert report["status"] == "CONTROLLED_CHECKPOINT_TRAINED_RELOADED_AND_EXPORTED"
+
+def test_export_rejects_optimizer_records_that_precede_their_reward_groups(
+    tmp_path, monkeypatch
+):
+    with pytest.raises(ValueError, match="chronology"):
+        _write_export(
+            tmp_path,
+            [
+                _group(
+                    [_scale_action(3), "malformed"],
+                    _trl_0191_advantages([1.0, -1.0]),
+                ),
+                _group([_scale_action(1), _scale_action(1)], [0.0, 0.0]),
+            ],
+            monkeypatch,
+            optimizer_before_rewards=True,
+            include_reward_gradient_evidence=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("rewards", "incorrect_advantages"),
+    [
+        ([1.0, -1.0], [100.0, 99.0]),
+        ([1.0, 0.0], [5.0, 4.0]),
+    ],
+    ids=["rank-preserving-offset", "wrong-scale-and-offset"],
+)
+def test_reward_driven_advantages_match_pinned_trl_group_normalization(
+    rewards, incorrect_advantages
+):
+    expected = _trl_0191_advantages(rewards)
+    near_expected = [expected[0] + 1e-7, expected[1] - 1e-7]
+
+    assert has_reward_driven_advantages(rewards, expected)
+    assert has_reward_driven_advantages(rewards, near_expected)
+    with pytest.raises(ValueError, match="advantage"):
+        has_reward_driven_advantages(rewards, incorrect_advantages)
+
+
+def test_reward_driven_advantages_reject_wrong_sign_scale_and_group_offset():
+    rewards = [1.0, -1.0]
+    expected = _trl_0191_advantages(rewards)
+
+    for incorrect in (
+        [-value for value in expected],
+        [2.0 * value for value in expected],
+        [value + 2.0 for value in expected],
+    ):
+        with pytest.raises(ValueError, match="advantage"):
+            has_reward_driven_advantages(rewards, incorrect)
+
+
+def test_ledger_chronology_requires_reward_and_update_events_to_interleave():
+    events = [("initial_adapter_tensors", {})]
+    for group in range(1, 3):
+        events.append(("state_observed", {"group": group}))
+        for sample in range(2):
+            events.extend(
+                (event, {"group": group, "sample": sample})
+                for event in ("branch_reset", "action_proposed", "transition_verified")
+            )
+        events.extend(
+            (event, {"group": group, "step": step} if step is not None else {"group": group})
+            for event, step in (
+                ("group_finished", None),
+                ("generation_tokens", None),
+                ("reward_gradient_observed", group - 1),
+                ("gradient_observed", group - 1),
+                ("optimizer_step_observed", group),
+            )
+        )
+    events.append(("training_finished", {}))
+    valid_rows = [
+        {"sequence": sequence, "event": event, **data}
+        for sequence, (event, data) in enumerate(events, start=1)
+    ]
+    reward_gradient_index = next(
+        index for index, row in enumerate(valid_rows)
+        if row.get("event") == "reward_gradient_observed" and row.get("group") == 1
+    )
+    optimizer_index = next(
+        index for index, row in enumerate(valid_rows)
+        if row.get("event") == "optimizer_step_observed" and row.get("group") == 1
+    )
+    optimizer_first_rows = [
+        *valid_rows[:1],
+        *valid_rows[reward_gradient_index:optimizer_index + 1],
+        *valid_rows[1:reward_gradient_index],
+        *valid_rows[optimizer_index + 1:],
+    ]
+    optimizer_first_rows = [
+        {**row, "sequence": sequence}
+        for sequence, row in enumerate(optimizer_first_rows, start=1)
+    ]
+    sequence_gap_rows = [dict(row) for row in valid_rows]
+    sequence_gap_rows[4]["sequence"] = 99
+
+    controlled_acceptance._validate_ledger_chronology(valid_rows)
+    with pytest.raises(ValueError, match="chronology"):
+        controlled_acceptance._validate_ledger_chronology(optimizer_first_rows)
+    with pytest.raises(ValueError, match="sequence"):
+        controlled_acceptance._validate_ledger_chronology(sequence_gap_rows)
 
 
 def test_equal_reward_groups_cannot_support_a_reward_learning_claim(

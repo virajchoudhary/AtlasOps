@@ -33,6 +33,7 @@ REVISION = "a09a35458c702b33eeacc393d103063234e8bc28"
 PARENT_MANIFEST_SHA256 = "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440"
 PARENT_WEIGHT_SHA256 = "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff"
 CLASSIFICATION = "CONTROLLED_SYNTHETIC_TRAINING"
+REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE = False
 HYPERPARAMETERS = {
     "seed": 2026,
     "max_steps": 2,
@@ -464,9 +465,19 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
     return receipt
 
 
+def _require_reward_gradient_diagnostic() -> None:
+    if not REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE:
+        raise RuntimeError(
+            "Controlled GRPO is fail-closed: a separate reward-only policy "
+            "gradient diagnostic is not implemented; the beta=0.04 total "
+            "gradient may include KL."
+        )
+
+
 def run_pilot(receipt_path: Path, receipt_sha256: str) -> None:
     """Actual GRPO updates; never called by ordinary unit tests or CI."""
     receipt = admit_execution(receipt_path, receipt_sha256)
+    _require_reward_gradient_diagnostic()
     remaining = (
         datetime.fromisoformat(receipt["not_after"]) - datetime.now(UTC)
     ).total_seconds()
@@ -486,6 +497,7 @@ def run_pilot(receipt_path: Path, receipt_sha256: str) -> None:
 
 
 def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
+    _require_reward_gradient_diagnostic()
     import torch
     from datasets import Dataset
     from peft import PeftModel, prepare_model_for_kbit_training

@@ -1266,7 +1266,6 @@ body.content-architecture-reference-body #root {
 /* Projects reproduce the source's ASCII-first image reveal and long reel layout. */
 .reference-showcase-section {
   position: relative;
-  min-height: 5878px;
   padding: 680px 80px 160px;
   overflow: hidden;
   background: #232323;
@@ -1471,6 +1470,34 @@ body.content-architecture-reference-body #root {
 .reference-testimonial-controls button:disabled {
   cursor: default;
   opacity: 0.32;
+}
+
+@media (min-width: 851px) {
+  .reference-project-meta p {
+    display: none;
+  }
+
+  .reference-project-meta {
+    padding-top: 10px;
+  }
+
+  .reference-project-meta h3 {
+    font-size: 18px;
+    line-height: 1.25;
+  }
+
+  .reference-showcase-grid {
+    row-gap: 64px;
+  }
+
+  .reference-project:nth-child(2n),
+  .reference-project:nth-child(3n) {
+    margin-top: 0;
+  }
+
+  .reference-project:nth-child(6n + 1) {
+    grid-column: auto;
+  }
 }
 
 /* Pricing and FAQ stay information-dense and restrained like the source. */

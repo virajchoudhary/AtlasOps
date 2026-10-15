@@ -46,6 +46,12 @@ def _webhook_payload(alertname: str, fingerprint: str, starts_at: str) -> dict:
             "Invalid Alertmanager webhook payload",
             "untrusted-body-marker",
         ),
+        (
+            b'{"alerts":[{"labels":{}}],"commonLabels":[],"marker":"untrusted-body-marker"}',
+            422,
+            "Invalid Alertmanager webhook payload",
+            "untrusted-body-marker",
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -94,6 +100,65 @@ async def test_webhook_uses_shared_json_and_schema_boundary_without_dispatch(
 
 @pytest.mark.parametrize("route", ["root", "coordinator"])
 @pytest.mark.asyncio
+async def test_empty_alertmanager_heartbeats_are_noops_without_mutating_correlation(
+    monkeypatch,
+    route,
+):
+    from unittest.mock import AsyncMock
+
+    import agents.correlator as correlator_module
+    import app as app_module
+    from agents import coordinator
+
+    incident_correlator = IncidentCorrelator()
+    existing = incident_correlator.ingest(
+        _webhook_payload(
+            "ExistingAlert",
+            "existing-fingerprint",
+            "2026-10-15T10:00:00Z",
+        )
+    )
+    incident_correlator.mark_processing(existing.incident_id, False)
+    before_heartbeats = incident_correlator.get_active()
+    incident_dispatcher = IncidentDispatcher(incident_correlator)
+    handler = AsyncMock(return_value={"incident_id": existing.incident_id})
+    monkeypatch.setattr(correlator_module, "correlator", incident_correlator)
+    monkeypatch.setattr(app_module, "correlator", incident_correlator)
+    monkeypatch.setattr(coordinator, "correlator", incident_correlator)
+    monkeypatch.setattr(app_module, "incident_dispatcher", incident_dispatcher)
+    monkeypatch.setattr(coordinator, "incident_dispatcher", incident_dispatcher)
+    monkeypatch.setattr(coordinator, "handle_incident", handler)
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "test-webhook-secret")
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "test-webhook-secret")
+    application = app_module.app if route == "root" else coordinator.app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application),
+        base_url="http://test",
+    ) as client:
+        for payload in ({}, {"alerts": []}, {}):
+            response = await client.post(
+                "/webhook",
+                json=payload,
+                headers={"Authorization": "Bearer test-webhook-secret"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["ok"] is True
+            assert body["incident_id"] is None
+            assert body["dispatched"] is False
+            if route == "root":
+                assert body["queued"] is False
+                assert body["dispatch_state"] == "noop"
+            else:
+                assert body["correlated"] is False
+            assert incident_correlator.get_active() == before_heartbeats
+            await asyncio.sleep(0)
+            handler.assert_not_awaited()
+
+
+@pytest.mark.parametrize("route", ["root", "coordinator"])
+@pytest.mark.asyncio
 async def test_webhook_authentication_still_precedes_json_validation(monkeypatch, route):
     import app as app_module
     from agents import coordinator
@@ -116,6 +181,33 @@ async def test_webhook_authentication_still_precedes_json_validation(monkeypatch
     assert "untrusted-body-marker" not in response.text
     assert "wrong-secret" not in response.text
     assert "test-webhook-secret" not in response.text
+
+
+@pytest.mark.parametrize("route", ["root", "coordinator"])
+@pytest.mark.asyncio
+async def test_unconfigured_webhook_still_returns_503_before_payload_validation(
+    monkeypatch,
+    route,
+):
+    import app as app_module
+    from agents import coordinator
+
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "")
+    application = app_module.app if route == "root" else coordinator.app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/webhook",
+            content=b'{"alerts":[123],',
+            headers={"Authorization": "Bearer unused"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "ALERTMANAGER_WEBHOOK_SECRET is required"
 
 
 @pytest.mark.parametrize("route", ["root", "coordinator"])

@@ -445,6 +445,16 @@ async def webhook_proxy(request: Request):
     body = await read_alert_webhook_body(request)
     _verify_webhook_signature(body, request.headers.get("Authorization"))
     payload = parse_alert_webhook_payload(body)
+    if not payload["alerts"]:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": None,
+                "dispatched": False,
+                "queued": False,
+                "dispatch_state": "noop",
+            }
+        )
     correlation = correlator.ingest(payload)
     if not correlation.new_occurrence_keys:
         return JSONResponse(

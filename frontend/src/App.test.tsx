@@ -48,4 +48,16 @@ describe("read-only research console routes", () => {
       expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeInTheDocument();
     }
   }, 15000);
+
+  it("renders an explicit 404 for unknown paths without reading the console API", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.replaceState({}, "", "/unknown/path");
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
+    expect(screen.getByText("404", { exact: true })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

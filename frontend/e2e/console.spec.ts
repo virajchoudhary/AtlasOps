@@ -12,10 +12,50 @@ const routes = [
   ["System", "/system", "A local, read-only presentation surface."],
 ] as const;
 
+const referenceRoutes = [
+  { id: "home", path: "/reference", heading: /The stack agents/ },
+  { id: "blog", path: "/blog", heading: "Knowledge Hub" },
+  { id: "articles", path: "/blog/articles", heading: "Knowledge Hub" },
+  {
+    id: "projects",
+    path: "/blog/the-content-architecture-four-months-in",
+    heading: "What Four Months of Real Projects Changed in The Content Architecture",
+  },
+  {
+    id: "agents",
+    path: "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    heading: "Your Site Is Invisible to AI Agents (and Your CMS Can Fix It)",
+  },
+  {
+    id: "caching",
+    path: "/blog/stale-sanity-content-nextjs-caching-revalidation",
+    heading: "Stale Sanity Content in Next.js and Astro: The Two Caches and How to Fix Them",
+  },
+  {
+    id: "projects-alias",
+    path: "/blog/articles/the-content-architecture-four-months-in",
+    heading: "What Four Months of Real Projects Changed in The Content Architecture",
+  },
+  {
+    id: "agents-alias",
+    path: "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    heading: "Your Site Is Invisible to AI Agents (and Your CMS Can Fix It)",
+  },
+  {
+    id: "caching-alias",
+    path: "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+    heading: "Stale Sanity Content in Next.js and Astro: The Two Caches and How to Fix Them",
+  },
+  { id: "roadmap", path: "/roadmap", heading: "Roadmap" },
+  { id: "privacy", path: "/legal/privacy-policy", heading: "Privacy Policy" },
+  { id: "terms", path: "/legal/terms-of-service", heading: "Terms of Service" },
+] as const;
+
 test("overview shows API inventory and stays distinct from certification", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "AtlasOps" })).toBeVisible();
   await expect(page.getByText("Governed Multi-Agent SRE Intelligence")).toHaveCount(0);
+  await expect(page.getByText("This is the actual repo.", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Read-only research demo")).toBeVisible();
   await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
 
@@ -34,6 +74,90 @@ test("every primary route is reachable through the hash router", async ({ page }
     await page.goto(`/#${path}`);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
+  }
+});
+
+test("reference public routes deep-link on desktop and mobile using GET requests only", async ({ page }, testInfo) => {
+  const methods: string[] = [];
+  const errors: string[] = [];
+  page.on("request", (request) => methods.push(request.method()));
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const route of referenceRoutes) {
+      const response = await page.goto(route.path);
+      expect(response?.status(), route.path).toBe(200);
+      await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
+      await expect(page.locator(".app-frame")).toHaveCount(0);
+      if (route.id === "home") {
+        await expect(page.locator(".content-architecture-reference")).toBeVisible();
+      } else {
+        await expect(page.locator(".reference-secondary-page")).toBeVisible();
+      }
+
+      const overflows = await page.evaluate(() =>
+        document.documentElement.scrollWidth > window.innerWidth
+        || document.body.scrollWidth > window.innerWidth
+      );
+      expect(overflows, `${route.path} overflows at ${viewport.width}px`).toBe(false);
+      await page.screenshot({
+        path: testInfo.outputPath(`reference-${viewport.name}-${route.id}.png`),
+      });
+    }
+  }
+
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("reference home keeps local links, pricing anchor, newsletter dialog and route navigation", async ({ page }) => {
+  const methods: string[] = [];
+  page.on("request", (request) => methods.push(request.method()));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/reference");
+
+  await expect(page.getByRole("heading", { level: 1, name: /The stack agents/ })).toBeVisible();
+  const homeLinks = page.locator('a[aria-label="Home"]');
+  await expect(homeLinks).toHaveCount(2);
+  expect(await homeLinks.evaluateAll((links) => links.every(
+    (link) => link.getAttribute("href") === "/reference",
+  ))).toBe(true);
+  await expect(page.locator(".reference-footer-logo")).toHaveAttribute("href", "/reference");
+
+  await page.getByRole("link", { name: "The repo", exact: true }).click();
+  await expect(page).toHaveURL(/\/reference#the-repo$/);
+  await expect(page.getByText("This is the actual repo.", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Pricing", exact: true }).click();
+  await expect(page).toHaveURL(/\/reference#pricing$/);
+  await expect(page.locator("#pricing")).toBeInViewport();
+
+  const newsletterDialog = page.getByRole("dialog", { name: "Not buying today? Stay close." });
+  await expect(newsletterDialog).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.press("Escape");
+  await expect(newsletterDialog).toHaveCount(0);
+
+  await page.getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Blog", exact: true }).click();
+  await expect(page).toHaveURL(/\/blog$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Knowledge Hub" })).toBeVisible();
+  expect(methods.every((method) => method === "GET")).toBe(true);
+});
+
+test("unknown server paths return 404 instead of the frontend shell", async ({ page }) => {
+  for (const path of [
+    "/blog/not-an-article",
+    "/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/%2e%2e/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+  ]) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(404);
+    await expect(page.locator("#root")).toHaveCount(0);
   }
 });
 

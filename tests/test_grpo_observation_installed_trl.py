@@ -495,3 +495,14 @@ print("ADAPTER_SHA256=" + digest.hexdigest())
         assert f"ADAPTER_SHA256={expected_sha256}" in reload_result.stdout
     finally:
         ledger.close()
+
+
+def test_admitted_controlled_run_fails_closed_without_reward_only_gradient_diagnostic(
+    tmp_path,
+):
+    from training.grpo_controlled import _run_admitted_pilot
+
+    with pytest.raises(RuntimeError, match="separate reward-only policy gradient"):
+        _run_admitted_pilot({})
+
+    assert list(tmp_path.iterdir()) == []

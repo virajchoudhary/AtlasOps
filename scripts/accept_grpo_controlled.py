@@ -68,6 +68,61 @@ def _reward_driven_groups(rows: list[dict[str, Any]]) -> dict[int, bool]:
     return signals
 
 
+def _validate_ledger_chronology(rows: list[dict[str, Any]]) -> None:
+    from training.grpo_controlled import HYPERPARAMETERS
+
+    expected_events: list[tuple[str, int | None, int | None, int | None]] = [
+        ("initial_adapter_tensors", None, None, None)
+    ]
+    for group in range(1, HYPERPARAMETERS["max_steps"] + 1):
+        expected_events.append(("state_observed", group, None, None))
+        for sample in range(HYPERPARAMETERS["num_generations"]):
+            expected_events.extend(
+                (
+                    ("branch_reset", group, sample, None),
+                    ("action_proposed", group, sample, None),
+                    ("transition_verified", group, sample, None),
+                )
+            )
+        expected_events.extend(
+            (
+                ("group_finished", group, None, None),
+                ("generation_tokens", group, None, None),
+                ("reward_gradient_observed", group, None, group - 1),
+                ("gradient_observed", group, None, group - 1),
+                ("optimizer_step_observed", group, None, group),
+            )
+        )
+    expected_events.append(("training_finished", None, None, None))
+    if len(rows) != len(expected_events):
+        raise ValueError("Controlled export ledger chronology is incomplete")
+
+    for sequence, (row, expected) in enumerate(
+        zip(rows, expected_events, strict=True), start=1
+    ):
+        event, group, sample, step = expected
+        if type(row.get("sequence")) is not int or row["sequence"] != sequence:
+            raise ValueError(
+                "Controlled export ledger sequence is missing, duplicated, or reordered"
+            )
+        if row.get("event") != event:
+            raise ValueError(
+                f"Controlled export ledger chronology expected {event}"
+            )
+        if group is not None and (
+            type(row.get("group")) is not int or row["group"] != group
+        ):
+            raise ValueError("Controlled export ledger chronology has a group mismatch")
+        if sample is not None and (
+            type(row.get("sample")) is not int or row["sample"] != sample
+        ):
+            raise ValueError("Controlled export ledger chronology has a sample mismatch")
+        if step is not None and (
+            type(row.get("step")) is not int or row["step"] != step
+        ):
+            raise ValueError("Controlled export ledger chronology has a step mismatch")
+
+
 def _has_matched_optimizer_update(
     rows: list[dict[str, Any]],
     finished: dict[str, Any],
@@ -78,15 +133,25 @@ def _has_matched_optimizer_update(
     group_count = HYPERPARAMETERS["max_steps"]
     expected_groups = set(range(1, group_count + 1))
     gradients = finished.get("gradients")
+    reward_gradients = finished.get("reward_gradients")
     optimizer_steps = finished.get("optimizer_steps")
-    if not isinstance(gradients, list) or not isinstance(optimizer_steps, list):
+    if (
+        not isinstance(gradients, list)
+        or not isinstance(reward_gradients, list)
+        or not isinstance(optimizer_steps, list)
+    ):
         return False
 
     gradient_fields = ("step", "group", "finite", "norm")
+    reward_gradient_fields = ("step", "group", "finite", "norm", "component")
     optimizer_fields = ("step", "group", "changed_trainable_tensors")
     raw_gradients = [
         {field: row.get(field) for field in gradient_fields}
         for row in rows if row.get("event") == "gradient_observed"
+    ]
+    raw_reward_gradients = [
+        {field: row.get(field) for field in reward_gradient_fields}
+        for row in rows if row.get("event") == "reward_gradient_observed"
     ]
     raw_optimizer_steps = [
         {field: row.get(field) for field in optimizer_fields}
@@ -94,13 +159,16 @@ def _has_matched_optimizer_update(
     ]
     if (
         len(gradients) != group_count
+        or len(reward_gradients) != group_count
         or len(optimizer_steps) != group_count
         or raw_gradients != gradients
+        or raw_reward_gradients != reward_gradients
         or raw_optimizer_steps != optimizer_steps
     ):
         return False
 
     gradients_by_group = {}
+    reward_gradients_by_group = {}
     optimizer_steps_by_group = {}
     for record in gradients:
         if not isinstance(record, dict):
@@ -118,6 +186,24 @@ def _has_matched_optimizer_update(
         ):
             return False
         gradients_by_group[group] = record
+    for record in reward_gradients:
+        if not isinstance(record, dict):
+            return False
+        group = record.get("group")
+        norm = record.get("norm")
+        if (
+            type(group) is not int or group not in expected_groups
+            or type(record.get("step")) is not int
+            or record.get("step") != group - 1
+            or type(record.get("finite")) is not bool
+            or record.get("component") != "reward_only_policy_loss"
+            or not isinstance(norm, int | float)
+            or isinstance(norm, bool) or not math.isfinite(float(norm))
+            or norm < 0
+            or group in reward_gradients_by_group
+        ):
+            return False
+        reward_gradients_by_group[group] = record
     for record in optimizer_steps:
         if not isinstance(record, dict):
             return False
@@ -135,11 +221,14 @@ def _has_matched_optimizer_update(
 
     if (
         set(gradients_by_group) != expected_groups
+        or set(reward_gradients_by_group) != expected_groups
         or set(optimizer_steps_by_group) != expected_groups
     ):
         return False
     return any(
         reward_signals[group]
+        and reward_gradients_by_group[group]["finite"]
+        and reward_gradients_by_group[group]["norm"] > 0
         and gradients_by_group[group]["finite"]
         and gradients_by_group[group]["norm"] > 0
         and optimizer_steps_by_group[group]["changed_trainable_tensors"] > 0
@@ -221,8 +310,10 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
         or not _has_matched_optimizer_update(rows, finished[0], reward_signals)
     ):
         raise ValueError(
-            "Controlled export lacks a same-group reward-driven gradient and parameter update"
+            "Controlled export lacks a separate reward-only policy gradient "
+            "and same-group total gradient and parameter update"
         )
+    _validate_ledger_chronology(rows)
     inventory = [
         {"path": path.relative_to(run).as_posix(), "bytes": path.stat().st_size,
          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}

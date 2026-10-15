@@ -214,9 +214,7 @@ class IncidentDispatcher:
                     failed = tuple(incident_queue.pending)
                     incident_queue.pending.clear()
                     failed_keys = tuple(
-                        key
-                        for dispatch in failed
-                        for key in dispatch.occurrence_keys
+                        key for dispatch in failed for key in dispatch.occurrence_keys
                     )
                     for key in failed_keys:
                         incident_queue.occurrence_states.pop(key, None)

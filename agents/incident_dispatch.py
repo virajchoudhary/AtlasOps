@@ -4,25 +4,34 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import deque
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
+from os import PathLike
+from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
 
-from agents.correlator import IncidentCorrelator, correlator
+from agents.correlator import CorrelatorCandidateBatch, IncidentCorrelator, correlator
+from agents.incident_admission import IncidentAdmissionStore
 
 log = logging.getLogger(__name__)
 
 DispatchState = Literal["started", "queued", "duplicate"]
-OccurrenceState = Literal["queued", "attempted"]
 IncidentHandler = Callable[..., Awaitable[Any]]
+_ADMISSION_DATABASE_NAME = "incident-admissions.sqlite3"
+
+
+class _WorkerTaskCreationError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
 class DispatchSubmission:
     state: DispatchState
+    incident_id: str | None = None
     completion: asyncio.Future[Any] | None = None
 
     async def wait(self) -> Any:
@@ -34,8 +43,10 @@ class DispatchSubmission:
 @dataclass(frozen=True)
 class _PendingDispatch:
     incident_id: str
+    admission_token: str
     occurrence_keys: tuple[str, ...]
     payload: dict[str, Any]
+    incident_anchors: dict[str, Any] | None
     handler: IncidentHandler
     completion: asyncio.Future[Any]
 
@@ -44,77 +55,145 @@ class _PendingDispatch:
 class _IncidentQueue:
     pending: deque[_PendingDispatch] = field(default_factory=deque)
     deferred: deque[_PendingDispatch] = field(default_factory=deque)
-    occurrence_states: dict[str, OccurrenceState] = field(default_factory=dict)
     worker: asyncio.Task[None] | None = None
 
 
 class IncidentDispatcher:
-    def __init__(self, incident_correlator: IncidentCorrelator):
+    def __init__(
+        self,
+        incident_correlator: IncidentCorrelator,
+        database_path: str | PathLike[str] | None = None,
+    ):
+        if database_path is not None and str(database_path) in {"", ":memory:"}:
+            raise ValueError("incident admission requires an on-disk SQLite path")
         self._correlator = incident_correlator
+        self._database_path = Path(database_path) if database_path is not None else None
+        self._admission_store: IncidentAdmissionStore | None = None
         self._lock = RLock()
         self._queues: dict[str, _IncidentQueue] = {}
 
     def submit(
         self,
-        incident_id: str,
-        occurrence_keys: tuple[str, ...],
-        payload: dict[str, Any],
+        candidate_batch: CorrelatorCandidateBatch,
         handler: IncidentHandler,
+        *,
+        incident_anchors: dict[str, Any] | None = None,
     ) -> DispatchSubmission:
-        """Admit each claimed occurrence without yielding between correlation and queueing."""
-        keys = tuple(dict.fromkeys(occurrence_keys))
+        """Durably admit new occurrences before placing them on the in-process queue."""
+        keys = tuple(dict.fromkeys(ref.occurrence_key for ref in candidate_batch.occurrence_refs))
         if not keys:
             return DispatchSubmission("duplicate")
 
-        payload_snapshot = deepcopy(payload)
         loop = asyncio.get_running_loop()
         completion = loop.create_future()
         completion.add_done_callback(self._consume_completion_exception)
 
         with self._lock:
+            admission_store = self._get_admission_store()
+            try:
+                admission = admission_store.admit(candidate_batch.incident_id, keys)
+            except Exception:
+                if not completion.done():
+                    completion.cancel()
+                raise
+            if not admission.admitted_keys:
+                persisted_ids = {incident_id for _, incident_id in admission.duplicates}
+                persisted_incident_id = next(iter(persisted_ids)) if len(persisted_ids) == 1 else None
+                return DispatchSubmission(
+                    "duplicate",
+                    incident_id=persisted_incident_id,
+                )
+
+            if admission.admission_token is None:
+                raise RuntimeError("admitted occurrences have no admission token")
+            admitted_keys = set(admission.admitted_keys)
+            payload_snapshot = self._filtered_payload(candidate_batch, admitted_keys)
+            incident_id = candidate_batch.incident_id
             incident_queue = self._queues.get(incident_id)
             if incident_queue is None:
                 incident_queue = _IncidentQueue()
                 self._queues[incident_id] = incident_queue
 
-            new_keys = tuple(
-                key for key in keys if key not in incident_queue.occurrence_states
-            )
-            if not new_keys:
-                return DispatchSubmission("duplicate")
-
-            incident_queue.occurrence_states.update(
-                {key: "queued" for key in new_keys}
-            )
             dispatch = _PendingDispatch(
                 incident_id=incident_id,
-                occurrence_keys=new_keys,
+                admission_token=admission.admission_token,
+                occurrence_keys=admission.admitted_keys,
                 payload=payload_snapshot,
+                incident_anchors=deepcopy(incident_anchors),
                 handler=handler,
                 completion=completion,
             )
             worker = incident_queue.worker
             if worker is not None and (worker.done() or worker.cancelling()):
                 incident_queue.deferred.append(dispatch)
-                return DispatchSubmission("queued", completion)
+                return DispatchSubmission(
+                    "queued",
+                    incident_id=incident_id,
+                    completion=completion,
+                )
 
             incident_queue.pending.append(dispatch)
             if worker is not None:
-                return DispatchSubmission("queued", completion)
+                return DispatchSubmission(
+                    "queued",
+                    incident_id=incident_id,
+                    completion=completion,
+                )
 
             self._correlator.mark_processing(incident_id, True)
             try:
                 self._start_worker(incident_id, incident_queue, loop)
-            except Exception:
+            except _WorkerTaskCreationError as start_error:
                 incident_queue.pending.pop()
-                for key in new_keys:
-                    incident_queue.occurrence_states.pop(key, None)
                 self._queues.pop(incident_id, None)
-                self._correlator.rollback_unadmitted_claims(incident_id, new_keys)
+                self._correlator.mark_processing(incident_id, False)
                 if not completion.done():
                     completion.cancel()
+                try:
+                    admission_store.rollback_queued(admission.admission_token)
+                except Exception as rollback_error:
+                    log.exception(
+                        "could not roll back queued incident admission for %s",
+                        incident_id,
+                    )
+                    raise rollback_error from start_error
                 raise
-            return DispatchSubmission("started", completion)
+            return DispatchSubmission(
+                "started",
+                incident_id=incident_id,
+                completion=completion,
+            )
+
+    def _get_admission_store(self) -> IncidentAdmissionStore:
+        if self._admission_store is None:
+            database_path = self._database_path
+            if database_path is None:
+                runtime_data_dir = Path(os.getenv("ATLASOPS_RUNTIME_DATA_DIR", "data"))
+                database_path = runtime_data_dir / _ADMISSION_DATABASE_NAME
+            self._admission_store = IncidentAdmissionStore(database_path)
+        return self._admission_store
+
+    @staticmethod
+    def _filtered_payload(
+        candidate_batch: CorrelatorCandidateBatch,
+        admitted_keys: set[str],
+    ) -> dict[str, Any]:
+        payload = deepcopy(candidate_batch.original_payload)
+        alerts = payload.get("alerts")
+        if not isinstance(alerts, list):
+            return payload
+
+        indices = sorted(
+            {
+                ref.original_alert_index
+                for ref in candidate_batch.occurrence_refs
+                if ref.occurrence_key in admitted_keys
+                and ref.original_alert_index is not None
+            }
+        )
+        if indices:
+            payload["alerts"] = [alerts[index] for index in indices if index < len(alerts)]
+        return payload
 
     def _start_worker(
         self,
@@ -128,9 +207,9 @@ class IncidentDispatcher:
                 worker_coroutine,
                 name=f"incident-dispatch-{incident_id}",
             )
-        except Exception:
+        except Exception as exc:
             worker_coroutine.close()
-            raise
+            raise _WorkerTaskCreationError(str(exc)) from exc
         incident_queue.worker = worker
         # A task cancelled before its first step skips _drain's finally block.
         worker.add_done_callback(
@@ -151,21 +230,34 @@ class IncidentDispatcher:
                     if not incident_queue.pending:
                         return
                     pending = incident_queue.pending.popleft()
-                    for key in pending.occurrence_keys:
-                        incident_queue.occurrence_states[key] = "attempted"
 
                 try:
-                    result = await pending.handler(
-                        pending.payload,
-                        incident_id=incident_id,
+                    self._get_admission_store().mark_attempted(
+                        pending.admission_token,
+                        pending.occurrence_keys,
                     )
+                except Exception as exc:
+                    log.exception(
+                        "could not mark incident admission attempted for %s; handler was not invoked",
+                        incident_id,
+                    )
+                    if not pending.completion.done():
+                        pending.completion.set_exception(exc)
+                    pending = None
+                    continue
+
+                try:
+                    handler_kwargs = {"incident_id": incident_id}
+                    if pending.incident_anchors is not None:
+                        handler_kwargs["incident_anchors"] = pending.incident_anchors
+                    result = await pending.handler(pending.payload, **handler_kwargs)
                 except asyncio.CancelledError:
                     if not pending.completion.done():
                         pending.completion.cancel()
                     raise
                 except Exception as exc:
                     log.exception(
-                        "incident handler failed for %s; claimed occurrences will not be retried",
+                        "incident handler failed for %s; attempted occurrences will not be replayed",
                         incident_id,
                     )
                     if not pending.completion.done():
@@ -210,25 +302,37 @@ class IncidentDispatcher:
                         incident_queue,
                         worker.get_loop(),
                     )
+                except _WorkerTaskCreationError as exc:
+                    failed = tuple(incident_queue.pending)
+                    incident_queue.pending.clear()
+                    self._queues.pop(incident_id, None)
+                    self._correlator.mark_processing(incident_id, False)
+                    for dispatch in failed:
+                        try:
+                            self._get_admission_store().rollback_queued(
+                                dispatch.admission_token
+                            )
+                        except Exception:
+                            log.exception(
+                                "could not roll back queued incident admission for %s",
+                                incident_id,
+                            )
+                        if not dispatch.completion.done():
+                            dispatch.completion.set_exception(exc)
+                    log.exception(
+                        "failed to start deferred incident dispatch for %s",
+                        incident_id,
+                    )
                 except Exception as exc:
                     failed = tuple(incident_queue.pending)
                     incident_queue.pending.clear()
-                    failed_keys = tuple(
-                        key for dispatch in failed for key in dispatch.occurrence_keys
-                    )
-                    for key in failed_keys:
-                        incident_queue.occurrence_states.pop(key, None)
                     self._queues.pop(incident_id, None)
-                    self._correlator.rollback_unadmitted_claims(
-                        incident_id,
-                        failed_keys,
-                    )
                     self._correlator.mark_processing(incident_id, False)
                     for dispatch in failed:
                         if not dispatch.completion.done():
                             dispatch.completion.set_exception(exc)
                     log.exception(
-                        "failed to start deferred incident dispatch for %s",
+                        "failed to register deferred incident dispatch for %s",
                         incident_id,
                     )
                 return

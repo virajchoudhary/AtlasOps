@@ -47,7 +47,7 @@ def test_ingest_creates_new_incident():
     result = c.ingest(_alert("HighCPU"))
     assert result.incident_id.startswith("inc-")
     assert result.is_new_incident is True
-    assert result.new_occurrence_keys
+    assert result.occurrence_refs
 
 
 def test_ingest_correlates_similar_alerts():
@@ -56,10 +56,10 @@ def test_ingest_correlates_similar_alerts():
     second = c.ingest(_alert("HighLatency", service="frontend"))
     assert first.incident_id == second.incident_id
     assert second.is_new_incident is False
-    assert second.new_occurrence_keys
+    assert second.occurrence_refs
 
 
-def test_novel_correlated_alert_is_claimed_once_while_processing():
+def test_correlator_returns_candidates_without_claiming_dispatch():
     c = IncidentCorrelator()
     first = c.ingest(_alert("HighCPU", service="frontend"))
     c.mark_processing(first.incident_id, True)
@@ -68,23 +68,23 @@ def test_novel_correlated_alert_is_claimed_once_while_processing():
     result = c.ingest(follow_up)
     assert result.incident_id == first.incident_id
     assert result.is_new_incident is False
-    assert result.new_occurrence_keys
+    assert result.occurrence_refs
 
     replay = c.ingest(follow_up)
     assert replay.incident_id == first.incident_id
     assert replay.is_new_incident is False
-    assert not replay.new_occurrence_keys
+    assert replay.occurrence_refs == result.occurrence_refs
     assert c.get_active()[0]["alert_count"] == 2
 
 
-def test_replayed_alert_is_not_redispatched_after_processing_completes():
+def test_replayed_alert_keeps_candidate_refs_after_processing_completes():
     c = IncidentCorrelator()
     alert = _alertmanager_alert(fingerprint="alert-high-cpu")
 
     first = c.ingest(alert)
     incident_id = first.incident_id
     assert first.is_new_incident is True
-    assert first.new_occurrence_keys
+    assert first.occurrence_refs
 
     c.mark_processing(incident_id, True)
     replay = _alertmanager_alert(
@@ -94,13 +94,13 @@ def test_replayed_alert_is_not_redispatched_after_processing_completes():
     )
     during_processing = c.ingest(replay)
     assert during_processing.incident_id == incident_id
-    assert not during_processing.new_occurrence_keys
+    assert during_processing.occurrence_refs == first.occurrence_refs
     c.mark_processing(incident_id, False)
 
     replay_result = c.ingest(replay)
     assert replay_result.incident_id == incident_id
     assert replay_result.is_new_incident is False
-    assert not replay_result.new_occurrence_keys
+    assert replay_result.occurrence_refs == first.occurrence_refs
 
     follow_up = _alertmanager_alert(
         alertname="HighLatency",
@@ -110,7 +110,7 @@ def test_replayed_alert_is_not_redispatched_after_processing_completes():
     follow_up_result = c.ingest(follow_up)
     assert follow_up_result.incident_id == incident_id
     assert follow_up_result.is_new_incident is False
-    assert follow_up_result.new_occurrence_keys
+    assert follow_up_result.occurrence_refs
 
 
 def test_same_fingerprint_with_new_starts_at_is_a_new_occurrence():
@@ -118,7 +118,7 @@ def test_same_fingerprint_with_new_starts_at_is_a_new_occurrence():
     first = _alertmanager_alert(fingerprint="alert-high-cpu")
     first_result = c.ingest(first)
     incident_id = first_result.incident_id
-    assert first_result.new_occurrence_keys
+    assert first_result.occurrence_refs
     c.mark_processing(incident_id, False)
 
     next_occurrence = _alertmanager_alert(
@@ -128,7 +128,7 @@ def test_same_fingerprint_with_new_starts_at_is_a_new_occurrence():
     next_result = c.ingest(next_occurrence)
     assert next_result.incident_id == incident_id
     assert next_result.is_new_incident is False
-    assert next_result.new_occurrence_keys
+    assert next_result.occurrence_refs
 
 
 def test_status_transition_is_distinct_from_firing_occurrence():
@@ -147,7 +147,7 @@ def test_status_transition_is_distinct_from_firing_occurrence():
     result = c.ingest(resolved)
     assert result.incident_id == incident_id
     assert result.is_new_incident is False
-    assert result.new_occurrence_keys
+    assert result.occurrence_refs
 
 
 def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
@@ -155,7 +155,7 @@ def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
     first = _alertmanager_alert(fingerprint=None)
     first_result = c.ingest(first)
     incident_id = first_result.incident_id
-    assert first_result.new_occurrence_keys
+    assert first_result.occurrence_refs
     c.mark_processing(incident_id, False)
 
     replay = _alertmanager_alert(
@@ -166,7 +166,7 @@ def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
     replay_result = c.ingest(replay)
     assert replay_result.incident_id == incident_id
     assert replay_result.is_new_incident is False
-    assert not replay_result.new_occurrence_keys
+    assert replay_result.occurrence_refs == first_result.occurrence_refs
 
     next_occurrence = _alertmanager_alert(
         fingerprint=None,
@@ -175,7 +175,7 @@ def test_missing_fingerprint_fallback_ignores_annotation_and_ends_at_churn():
     next_result = c.ingest(next_occurrence)
     assert next_result.incident_id == incident_id
     assert next_result.is_new_incident is False
-    assert next_result.new_occurrence_keys
+    assert next_result.occurrence_refs
 
 
 def test_missing_starts_at_uses_stable_fallback():
@@ -183,7 +183,7 @@ def test_missing_starts_at_uses_stable_fallback():
     first = _alertmanager_alert(fingerprint=None, starts_at=None)
     first_result = c.ingest(first)
     incident_id = first_result.incident_id
-    assert first_result.new_occurrence_keys
+    assert first_result.occurrence_refs
     c.mark_processing(incident_id, False)
 
     replay = _alertmanager_alert(
@@ -195,10 +195,10 @@ def test_missing_starts_at_uses_stable_fallback():
     replay_result = c.ingest(replay)
     assert replay_result.incident_id == incident_id
     assert replay_result.is_new_incident is False
-    assert not replay_result.new_occurrence_keys
+    assert replay_result.occurrence_refs == first_result.occurrence_refs
 
 
-def test_concurrent_same_episode_ingest_dispatches_once():
+def test_concurrent_same_episode_correlates_once():
     c = IncidentCorrelator()
     alert = _alertmanager_alert(fingerprint="alert-high-cpu")
     workers = 24
@@ -213,10 +213,10 @@ def test_concurrent_same_episode_ingest_dispatches_once():
 
     assert len({result.incident_id for result in results}) == 1
     assert sum(result.is_new_incident for result in results) == 1
-    assert sum(bool(result.new_occurrence_keys) for result in results) == 1
+    assert all(result.occurrence_refs == results[0].occurrence_refs for result in results)
 
 
-def test_concurrent_distinct_related_occurrences_are_claimed_once():
+def test_concurrent_related_occurrences_share_one_incident():
     c = IncidentCorrelator()
     workers = 24
     alerts = [
@@ -238,7 +238,7 @@ def test_concurrent_distinct_related_occurrences_are_claimed_once():
 
     assert len({result.incident_id for result in results}) == 1
     assert sum(result.is_new_incident for result in results) == 1
-    assert sum(len(result.new_occurrence_keys) for result in results) == workers
+    assert sum(len(result.occurrence_refs) for result in results) == workers
 
 
 def test_different_namespace_does_not_correlate():
@@ -263,4 +263,4 @@ def test_ui_inject_correlation_id_always_dispatches():
     result2 = c.ingest(a2)
     assert result1.incident_id != result2.incident_id
     assert result1.is_new_incident is True and result2.is_new_incident is True
-    assert result1.new_occurrence_keys and result2.new_occurrence_keys
+    assert result1.occurrence_refs and result2.occurrence_refs

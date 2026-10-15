@@ -80,6 +80,12 @@ Additional implementation includes:
 - HMAC-chained audit records and evidence manifests with source and artifact hashes.
 - A read-only repository-evidence demo for local review.
 
+Webhook occurrence admission is persisted in
+`ATLASOPS_RUNTIME_DATA_DIR/incident-admissions.sqlite3` (default
+`data/incident-admissions.sqlite3`). Workers share deduplication only when they use the
+same on-disk SQLite file. Reset does not clear records, and queued or attempted
+occurrences are never automatically replayed or reclaimed.
+
 The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
 defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for

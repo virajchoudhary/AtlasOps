@@ -1,12 +1,17 @@
 import asyncio
 import gc
-import inspect
 import json
+import sqlite3
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from agents.correlator import IncidentCorrelator
+from agents.incident_admission import IncidentAdmissionStore
 from agents.incident_dispatch import IncidentDispatcher
 
 
@@ -28,6 +33,337 @@ def _webhook_payload(alertname: str, fingerprint: str, starts_at: str) -> dict:
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_completed_occurrence_is_not_replayed_after_fresh_instances(tmp_path):
+    payload = _webhook_payload(
+        "HighCPU",
+        "restart-fingerprint",
+        "2026-10-15T10:00:00Z",
+    )
+    calls: list[str] = []
+
+    async def handler(_payload, *, incident_id):
+        calls.append(incident_id)
+        return {"incident_id": incident_id}
+
+    first_correlator = IncidentCorrelator()
+    first_candidate = first_correlator.ingest(payload)
+    database_path = tmp_path / "admissions.sqlite3"
+    first_dispatcher = IncidentDispatcher(first_correlator, database_path)
+    first_submission = first_dispatcher.submit(first_candidate, handler)
+    assert await first_submission.wait() == {"incident_id": first_candidate.incident_id}
+    first_correlator.reset()
+
+    replay_correlator = IncidentCorrelator()
+    replay_candidate = replay_correlator.ingest(payload)
+    replay_dispatcher = IncidentDispatcher(replay_correlator, database_path)
+    replay_submission = replay_dispatcher.submit(replay_candidate, handler)
+
+    assert replay_submission.state == "duplicate"
+    assert replay_candidate.incident_id != first_candidate.incident_id
+    assert replay_submission.incident_id == first_candidate.incident_id
+    assert replay_correlator.get_active()[0]["active_processing"] is False
+    assert calls == [first_candidate.incident_id]
+
+
+@pytest.mark.parametrize("outcome", ["completed", "failed", "prestart-cancelled"])
+def test_occurrence_admission_survives_fresh_subprocesses(tmp_path, outcome):
+    database_path = tmp_path / "admissions.sqlite3"
+    calls_path = tmp_path / "handler-calls.txt"
+    payload = _webhook_payload(
+        "HighCPU",
+        "subprocess-fingerprint",
+        "2026-10-15T10:00:00Z",
+    )
+    script = """
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from agents.correlator import IncidentCorrelator
+from agents.incident_dispatch import IncidentDispatcher
+
+database_path, payload_text, calls_path, outcome = sys.argv[1:]
+payload = json.loads(payload_text)
+async def handler(_payload, *, incident_id):
+    with Path(calls_path).open("a", encoding="utf-8") as output:
+        output.write(incident_id + chr(10))
+    if outcome == "failed":
+        raise RuntimeError("synthetic subprocess handler failure")
+    return {"incident_id": incident_id}
+
+async def main():
+    correlator = IncidentCorrelator()
+    candidate = correlator.ingest(payload)
+    dispatcher = IncidentDispatcher(correlator, database_path)
+    submission = dispatcher.submit(candidate, handler)
+    result = "duplicate" if submission.state == "duplicate" else "completed"
+    if submission.state != "duplicate" and outcome == "prestart-cancelled":
+        worker = dispatcher._queues[candidate.incident_id].worker
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            result = "cancelled"
+    elif submission.completion is not None:
+        try:
+            await submission.wait()
+        except RuntimeError:
+            result = "failed"
+    print(json.dumps({"state": submission.state, "incident_id": submission.incident_id, "outcome": result}))
+
+asyncio.run(main())
+"""
+
+    def run_worker() -> dict:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                script,
+                str(database_path),
+                json.dumps(payload),
+                str(calls_path),
+                outcome,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return json.loads(result.stdout.strip())
+
+    first = run_worker()
+    replay = run_worker()
+
+    assert first["state"] == "started"
+    assert replay["state"] == "duplicate"
+    assert replay["incident_id"] == first["incident_id"]
+    expected_calls = [] if outcome == "prestart-cancelled" else [first["incident_id"]]
+    actual_calls = calls_path.read_text(encoding="utf-8").splitlines() if calls_path.exists() else []
+    assert actual_calls == expected_calls
+
+
+def test_separate_dispatcher_instances_race_at_durable_admission(tmp_path):
+    database_path = tmp_path / "admissions.sqlite3"
+    payload = _webhook_payload(
+        "HighCPU",
+        "race-fingerprint",
+        "2026-10-15T10:00:00Z",
+    )
+    correlators = [IncidentCorrelator() for _ in range(2)]
+    candidates = [correlator.ingest(payload) for correlator in correlators]
+    dispatchers = [
+        IncidentDispatcher(correlator, database_path) for correlator in correlators
+    ]
+    barrier = Barrier(2)
+    calls: list[str] = []
+
+    async def handler(_payload, *, incident_id):
+        calls.append(incident_id)
+        return {"incident_id": incident_id}
+
+    def submit(index: int) -> tuple[str, str | None]:
+        async def run():
+            barrier.wait(timeout=10)
+            submission = dispatchers[index].submit(candidates[index], handler)
+            if submission.completion is not None:
+                await submission.wait()
+            return submission.state, submission.incident_id
+
+        return asyncio.run(run())
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(submit, range(2)))
+
+    started_ids = [incident_id for state, incident_id in results if state == "started"]
+    duplicate_ids = [incident_id for state, incident_id in results if state == "duplicate"]
+    assert len(started_ids) == len(duplicate_ids) == 1
+    assert duplicate_ids == started_ids
+    assert calls == started_ids
+
+
+@pytest.mark.asyncio
+async def test_mixed_batch_filters_new_alerts_and_preserves_original_context(tmp_path):
+    from agents.coordinator import build_incident_anchors
+
+    database_path = tmp_path / "admissions.sqlite3"
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator, database_path)
+    duplicate_alert = {
+        "status": "firing",
+        "fingerprint": "duplicate-fingerprint",
+        "startsAt": "2026-10-15T10:00:00Z",
+        "labels": {"alertname": "DuplicateAlert", "namespace": "default", "service": "paymentservice"},
+        "annotations": {"summary": "original first-alert context"},
+    }
+    initial_payload = {
+        "status": "firing",
+        "commonLabels": {"alertname": "BatchAlert", "namespace": "default", "service": "frontend"},
+        "alerts": [duplicate_alert],
+    }
+    received: list[dict] = []
+
+    async def handler(alert_payload, *, incident_id, incident_anchors=None):
+        received.append(
+            {
+                "payload": alert_payload,
+                "incident_id": incident_id,
+                "incident_anchors": incident_anchors,
+            }
+        )
+        return {"incident_id": incident_id}
+
+    first_candidate = incident_correlator.ingest(initial_payload)
+    first_submission = dispatcher.submit(
+        first_candidate,
+        handler,
+        incident_anchors=build_incident_anchors(first_candidate.original_payload),
+    )
+    await first_submission.wait()
+
+    new_alert = {
+        "status": "firing",
+        "fingerprint": "new-fingerprint",
+        "startsAt": "2026-10-15T10:01:00Z",
+        "labels": {"alertname": "NewAlert", "namespace": "default", "service": "checkoutservice"},
+    }
+    batch_payload = {
+        "status": "resolved",
+        "commonLabels": {
+            "alertname": "CombinedEnvelope",
+            "namespace": "default",
+            "service": "frontend",
+            "region": "west",
+        },
+        "alerts": [duplicate_alert, new_alert],
+    }
+    expected_anchors = build_incident_anchors(batch_payload)
+    batch_candidate = incident_correlator.ingest(batch_payload)
+    batch_submission = dispatcher.submit(
+        batch_candidate,
+        handler,
+        incident_anchors=expected_anchors,
+    )
+    await batch_submission.wait()
+
+    assert len(received) == 2
+    filtered = received[1]
+    assert filtered["payload"]["alerts"] == [new_alert]
+    assert filtered["payload"]["commonLabels"] == batch_payload["commonLabels"]
+    assert filtered["payload"]["status"] == batch_payload["status"]
+    assert filtered["incident_anchors"] == expected_anchors
+    assert expected_anchors["original_description"] == "original first-alert context"
+
+
+@pytest.mark.parametrize("failure_point", ["admit", "mark_attempted"])
+@pytest.mark.asyncio
+async def test_storage_failure_fails_closed_before_handler(failure_point, monkeypatch, tmp_path):
+    database_path = tmp_path / "admissions.sqlite3"
+    incident_correlator = IncidentCorrelator()
+    candidate = incident_correlator.ingest(
+        _webhook_payload(
+            "HighCPU",
+            f"storage-{failure_point}",
+            "2026-10-15T10:00:00Z",
+        )
+    )
+    dispatcher = IncidentDispatcher(incident_correlator, database_path)
+    calls = []
+
+    async def handler(_payload, *, incident_id):
+        calls.append(incident_id)
+
+    def fail(*_args, **_kwargs):
+        raise OSError("synthetic admission storage failure")
+
+    monkeypatch.setattr(IncidentAdmissionStore, failure_point, fail)
+    if failure_point == "admit":
+        with pytest.raises(OSError, match="synthetic admission storage failure"):
+            dispatcher.submit(candidate, handler)
+    else:
+        submission = dispatcher.submit(candidate, handler)
+        with pytest.raises(OSError, match="synthetic admission storage failure"):
+            await submission.wait()
+        await asyncio.sleep(0)
+        with sqlite3.connect(database_path) as connection:
+            state = connection.execute(
+                "SELECT state FROM incident_occurrence_admissions"
+            ).fetchone()[0]
+        assert state == "queued"
+
+    assert calls == []
+    assert incident_correlator.get_active()[0]["active_processing"] is False
+
+
+def test_admission_rejects_memory_database_and_token_rollback_is_state_scoped(tmp_path):
+    with pytest.raises(ValueError, match="on-disk SQLite path"):
+        IncidentDispatcher(IncidentCorrelator(), ":memory:")
+
+    database_path = tmp_path / "admissions.sqlite3"
+    store = IncidentAdmissionStore(database_path)
+    admission = store.admit("inc-test", ("queued-key", "attempted-key"))
+    assert admission.admission_token is not None
+    store.mark_attempted(admission.admission_token, ("attempted-key",))
+    store.rollback_queued("different-token")
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT occurrence_key, state
+            FROM incident_occurrence_admissions
+            ORDER BY occurrence_key
+            """
+        ).fetchall()
+    assert rows == [("attempted-key", "attempted"), ("queued-key", "queued")]
+
+    store.rollback_queued(admission.admission_token)
+    with sqlite3.connect(database_path) as connection:
+        remaining = connection.execute(
+            "SELECT occurrence_key, state FROM incident_occurrence_admissions"
+        ).fetchall()
+    assert remaining == [("attempted-key", "attempted")]
+
+
+@pytest.mark.asyncio
+async def test_default_admission_path_is_lazy_and_pinned(monkeypatch, tmp_path):
+    runtime_data_dir = "runtime-data"
+    monkeypatch.setenv("ATLASOPS_RUNTIME_DATA_DIR", runtime_data_dir)
+    monkeypatch.chdir(tmp_path)
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator)
+    assert dispatcher._admission_store is None
+    assert not (tmp_path / runtime_data_dir).exists()
+
+    async def handler(_payload, *, incident_id):
+        return {"incident_id": incident_id}
+
+    payload = _webhook_payload(
+        "HighCPU",
+        "lazy-path-first",
+        "2026-10-15T10:00:00Z",
+    )
+    first_candidate = incident_correlator.ingest(payload)
+    first_submission = dispatcher.submit(first_candidate, handler)
+    await first_submission.wait()
+    database_path = tmp_path / runtime_data_dir / "incident-admissions.sqlite3"
+    assert database_path.is_file()
+    assert dispatcher._admission_store._path == database_path.absolute()
+
+    other_cwd = tmp_path / "other-cwd"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    replay_correlator = IncidentCorrelator()
+    replay_candidate = replay_correlator.ingest(payload)
+    replay = dispatcher.submit(replay_candidate, handler)
+
+    assert replay.state == "duplicate"
+    assert replay.incident_id == first_submission.incident_id
+    assert replay_correlator.get_active()[0]["active_processing"] is False
+    assert not (other_cwd / runtime_data_dir).exists()
+    assert dispatcher._admission_store._path == database_path.absolute()
 
 
 @pytest.mark.parametrize("route", ["root", "coordinator"])
@@ -103,6 +439,7 @@ async def test_webhook_uses_shared_json_and_schema_boundary_without_dispatch(
 async def test_empty_alertmanager_heartbeats_are_noops_without_mutating_correlation(
     monkeypatch,
     route,
+    tmp_path,
 ):
     from unittest.mock import AsyncMock
 
@@ -120,7 +457,10 @@ async def test_empty_alertmanager_heartbeats_are_noops_without_mutating_correlat
     )
     incident_correlator.mark_processing(existing.incident_id, False)
     before_heartbeats = incident_correlator.get_active()
-    incident_dispatcher = IncidentDispatcher(incident_correlator)
+    incident_dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     handler = AsyncMock(return_value={"incident_id": existing.incident_id})
     monkeypatch.setattr(correlator_module, "correlator", incident_correlator)
     monkeypatch.setattr(app_module, "correlator", incident_correlator)
@@ -244,13 +584,16 @@ async def test_webhook_rejects_body_over_limit_before_dispatch(monkeypatch, rout
 
 @pytest.mark.parametrize("route", ["root", "coordinator"])
 @pytest.mark.asyncio
-async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, route):
+async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, route, tmp_path):
     import agents.correlator as correlator_module
     import app as app_module
     from agents import coordinator
 
     incident_correlator = IncidentCorrelator()
-    incident_dispatcher = IncidentDispatcher(incident_correlator)
+    incident_dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     monkeypatch.setattr(correlator_module, "correlator", incident_correlator)
     monkeypatch.setattr(app_module, "correlator", incident_correlator)
     monkeypatch.setattr(coordinator, "correlator", incident_correlator)
@@ -276,7 +619,7 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
     maximum_active_handlers = 0
     handled_fingerprints: list[str] = []
 
-    async def controlled_handler(payload, *, incident_id):
+    async def controlled_handler(payload, *, incident_id, incident_anchors=None):
         nonlocal active_handlers, maximum_active_handlers
         fingerprint = payload["alerts"][0]["fingerprint"]
         active_handlers += 1
@@ -348,6 +691,7 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
             duplicate_response = await asyncio.wait_for(duplicate_task, timeout=5)
             assert duplicate_response.status_code == 200
             assert incident_correlator.get_active()[0]["alert_count"] == 2
+            assert incident_correlator.get_active()[0]["active_processing"] is True
             assert handled_fingerprints == ["fingerprint-a"]
             assert maximum_active_handlers == 1
 
@@ -388,12 +732,78 @@ async def test_webhook_queues_each_new_related_occurrence_once(monkeypatch, rout
         assert responses[2].json()["dispatched"] is False
 
 
+@pytest.mark.parametrize("route", ["root", "coordinator"])
 @pytest.mark.asyncio
-async def test_cancelled_request_wait_does_not_cancel_owned_worker():
+async def test_webhook_fresh_route_replay_returns_original_incident_id(
+    monkeypatch,
+    route,
+    tmp_path,
+):
+    import agents.correlator as correlator_module
+    import app as app_module
+    from agents import coordinator
+
+    database_path = tmp_path / "admissions.sqlite3"
+    calls: list[str] = []
+    handler_finished = asyncio.Event()
+
+    async def handler(_payload, *, incident_id, incident_anchors=None):
+        calls.append(incident_id)
+        handler_finished.set()
+        return {"incident_id": incident_id}
+
+    def install_runtime():
+        incident_correlator = IncidentCorrelator()
+        incident_dispatcher = IncidentDispatcher(incident_correlator, database_path)
+        monkeypatch.setattr(correlator_module, "correlator", incident_correlator)
+        monkeypatch.setattr(app_module, "correlator", incident_correlator)
+        monkeypatch.setattr(coordinator, "correlator", incident_correlator)
+        monkeypatch.setattr(app_module, "incident_dispatcher", incident_dispatcher)
+        monkeypatch.setattr(coordinator, "incident_dispatcher", incident_dispatcher)
+
+    install_runtime()
+    monkeypatch.setattr(coordinator, "handle_incident", handler)
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "test-webhook-secret")
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "test-webhook-secret")
+    application = app_module.app if route == "root" else coordinator.app
+    payload = _webhook_payload(
+        "HighCPU",
+        "route-replay-fingerprint",
+        "2026-10-15T10:00:00Z",
+    )
+    headers = {"Authorization": "Bearer test-webhook-secret"}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=application),
+        base_url="http://test",
+    ) as client:
+        first = await client.post("/webhook", json=payload, headers=headers)
+        assert first.status_code == 200
+        if route == "root":
+            assert first.json()["dispatch_state"] == "started"
+            await handler_finished.wait()
+        first_incident_id = first.json()["incident_id"]
+
+        install_runtime()
+        replay = await client.post("/webhook", json=payload, headers=headers)
+
+    assert replay.status_code == 200
+    assert replay.json()["incident_id"] == first_incident_id
+    assert replay.json()["dispatched"] is False
+    if route == "root":
+        assert replay.json()["dispatch_state"] == "duplicate"
+    assert calls == [first_incident_id]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_request_wait_does_not_cancel_owned_worker(tmp_path):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     payload = {"commonLabels": {"service": "frontend"}}
-    correlation = incident_correlator.ingest(payload)
+    candidate = incident_correlator.ingest(payload)
     handler_started = asyncio.Event()
     release_handler = asyncio.Event()
 
@@ -402,12 +812,7 @@ async def test_cancelled_request_wait_does_not_cancel_owned_worker():
         await release_handler.wait()
         return {"incident_id": incident_id}
 
-    submission = dispatcher.submit(
-        incident_id=correlation.incident_id,
-        occurrence_keys=correlation.new_occurrence_keys,
-        payload=payload,
-        handler=controlled_handler,
-    )
+    submission = dispatcher.submit(candidate, controlled_handler)
     request_wait = asyncio.create_task(submission.wait())
     await handler_started.wait()
 
@@ -417,13 +822,16 @@ async def test_cancelled_request_wait_does_not_cancel_owned_worker():
     assert not submission.completion.cancelled()
 
     release_handler.set()
-    assert await submission.wait() == {"incident_id": correlation.incident_id}
+    assert await submission.wait() == {"incident_id": candidate.incident_id}
 
 
 @pytest.mark.asyncio
-async def test_cancelled_admission_does_not_lose_claimed_follow_up_occurrence():
+async def test_cancelled_admission_does_not_lose_follow_up_occurrence(tmp_path):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     first_payload = _webhook_payload(
         "HighCPU",
         "fingerprint-a",
@@ -443,12 +851,7 @@ async def test_cancelled_admission_does_not_lose_claimed_follow_up_occurrence():
             await release_first.wait()
         return {"incident_id": incident_id, "fingerprint": fingerprint}
 
-    first_submission = dispatcher.submit(
-        incident_id=first_correlation.incident_id,
-        occurrence_keys=first_correlation.new_occurrence_keys,
-        payload=first_payload,
-        handler=handler,
-    )
+    first_submission = dispatcher.submit(first_correlation, handler)
     await first_started.wait()
 
     follow_up_payload = _webhook_payload(
@@ -461,14 +864,7 @@ async def test_cancelled_admission_does_not_lose_claimed_follow_up_occurrence():
     async def submit_follow_up():
         correlation = incident_correlator.ingest(follow_up_payload)
         follow_up_ingested.set()
-        submission = dispatcher.submit(
-            incident_id=correlation.incident_id,
-            occurrence_keys=correlation.new_occurrence_keys,
-            payload=follow_up_payload,
-            handler=handler,
-        )
-        if inspect.isawaitable(submission):
-            submission = await submission
+        submission = dispatcher.submit(correlation, handler)
         submitted.append(submission)
         return await submission.wait()
 
@@ -501,15 +897,18 @@ async def test_cancelled_admission_does_not_lose_claimed_follow_up_occurrence():
         "fingerprint": "fingerprint-b",
     }
     replay = incident_correlator.ingest(follow_up_payload)
-    assert not replay.new_occurrence_keys
+    assert replay.occurrence_refs
     assert calls == ["fingerprint-a", "fingerprint-b"]
     assert incident_correlator.get_active()[0]["active_processing"] is False
 
 
 @pytest.mark.asyncio
-async def test_cancelled_worker_settles_all_claimed_completions_and_releases_queue():
+async def test_cancelled_worker_settles_queued_completions_and_releases_queue(tmp_path):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     first_payload = _webhook_payload(
         "HighCPU",
         "fingerprint-a",
@@ -527,12 +926,7 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
             await asyncio.Event().wait()
         return {"incident_id": incident_id, "fingerprint": fingerprint}
 
-    first_submission = dispatcher.submit(
-        incident_id=first_correlation.incident_id,
-        occurrence_keys=first_correlation.new_occurrence_keys,
-        payload=first_payload,
-        handler=handler,
-    )
+    first_submission = dispatcher.submit(first_correlation, handler)
     await first_started.wait()
 
     queued_payload = _webhook_payload(
@@ -541,12 +935,7 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
         "2026-10-15T10:01:00Z",
     )
     queued_correlation = incident_correlator.ingest(queued_payload)
-    queued_submission = dispatcher.submit(
-        incident_id=queued_correlation.incident_id,
-        occurrence_keys=queued_correlation.new_occurrence_keys,
-        payload=queued_payload,
-        handler=handler,
-    )
+    queued_submission = dispatcher.submit(queued_correlation, handler)
     worker = dispatcher._queues[first_correlation.incident_id].worker
 
     worker.cancel()
@@ -557,8 +946,22 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
     assert queued_submission.completion.cancelled()
     assert first_correlation.incident_id not in dispatcher._queues
     assert incident_correlator.get_active()[0]["active_processing"] is False
-    assert not incident_correlator.ingest(queued_payload).new_occurrence_keys
+    assert incident_correlator.ingest(queued_payload).occurrence_refs
     assert calls == ["fingerprint-a"]
+
+    replay_correlator = IncidentCorrelator()
+    replay_dispatcher = IncidentDispatcher(
+        replay_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
+    first_replay = replay_correlator.ingest(first_payload)
+    queued_replay = replay_correlator.ingest(queued_payload)
+    first_duplicate = replay_dispatcher.submit(first_replay, handler)
+    queued_duplicate = replay_dispatcher.submit(queued_replay, handler)
+    assert first_duplicate.state == "duplicate"
+    assert first_duplicate.incident_id == first_correlation.incident_id
+    assert queued_duplicate.state == "duplicate"
+    assert queued_duplicate.incident_id == first_correlation.incident_id
 
     next_payload = _webhook_payload(
         "HighLatency",
@@ -566,12 +969,7 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
         "2026-10-15T10:02:00Z",
     )
     next_correlation = incident_correlator.ingest(next_payload)
-    next_submission = dispatcher.submit(
-        incident_id=next_correlation.incident_id,
-        occurrence_keys=next_correlation.new_occurrence_keys,
-        payload=next_payload,
-        handler=handler,
-    )
+    next_submission = dispatcher.submit(next_correlation, handler)
     assert await next_submission.wait() == {
         "incident_id": first_correlation.incident_id,
         "fingerprint": "fingerprint-c",
@@ -583,9 +981,13 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
 @pytest.mark.asyncio
 async def test_worker_cancelled_before_first_step_settles_and_allows_later_occurrences(
     monkeypatch,
+    tmp_path,
 ):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     payload = _webhook_payload(
         "HighCPU",
         "fingerprint-a",
@@ -610,12 +1012,7 @@ async def test_worker_cancelled_before_first_step_settles_and_allows_later_occur
         return task
 
     monkeypatch.setattr(loop, "create_task", capture_worker)
-    submission = dispatcher.submit(
-        incident_id=correlation.incident_id,
-        occurrence_keys=correlation.new_occurrence_keys,
-        payload=payload,
-        handler=handler,
-    )
+    submission = dispatcher.submit(correlation, handler)
 
     assert submission.state == "started"
     assert len(worker_tasks) == 1
@@ -627,7 +1024,11 @@ async def test_worker_cancelled_before_first_step_settles_and_allows_later_occur
     assert submission.completion.done()
     assert submission.completion.cancelled()
     assert incident_correlator.get_active()[0]["active_processing"] is False
-    assert not incident_correlator.ingest(payload).new_occurrence_keys
+    replay_candidate = incident_correlator.ingest(payload)
+    assert replay_candidate.occurrence_refs
+    replay_submission = dispatcher.submit(replay_candidate, handler)
+    assert replay_submission.state == "duplicate"
+    assert replay_submission.incident_id == correlation.incident_id
 
     follow_up = _webhook_payload(
         "High5xx",
@@ -636,12 +1037,7 @@ async def test_worker_cancelled_before_first_step_settles_and_allows_later_occur
     )
     follow_up_correlation = incident_correlator.ingest(follow_up)
     assert follow_up_correlation.incident_id == correlation.incident_id
-    follow_up_submission = dispatcher.submit(
-        incident_id=follow_up_correlation.incident_id,
-        occurrence_keys=follow_up_correlation.new_occurrence_keys,
-        payload=follow_up,
-        handler=handler,
-    )
+    follow_up_submission = dispatcher.submit(follow_up_correlation, handler)
 
     assert await asyncio.wait_for(follow_up_submission.wait(), timeout=5) == {
         "incident_id": correlation.incident_id,
@@ -654,9 +1050,13 @@ async def test_worker_cancelled_before_first_step_settles_and_allows_later_occur
 @pytest.mark.asyncio
 async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callback(
     monkeypatch,
+    tmp_path,
 ):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     cancelled_payload = _webhook_payload(
         "HighCPU",
         "race-a",
@@ -681,12 +1081,7 @@ async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callba
         return task
 
     monkeypatch.setattr(loop, "create_task", capture_worker)
-    cancelled_submission = dispatcher.submit(
-        incident_id=cancelled_correlation.incident_id,
-        occurrence_keys=cancelled_correlation.new_occurrence_keys,
-        payload=cancelled_payload,
-        handler=handler,
-    )
+    cancelled_submission = dispatcher.submit(cancelled_correlation, handler)
     assert cancelled_submission.state == "started"
     assert len(worker_tasks) == 1
 
@@ -699,12 +1094,7 @@ async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callba
     )
     follow_up_correlation = incident_correlator.ingest(follow_up_payload)
     assert follow_up_correlation.incident_id == cancelled_correlation.incident_id
-    follow_up_submission = dispatcher.submit(
-        incident_id=follow_up_correlation.incident_id,
-        occurrence_keys=follow_up_correlation.new_occurrence_keys,
-        payload=follow_up_payload,
-        handler=handler,
-    )
+    follow_up_submission = dispatcher.submit(follow_up_correlation, handler)
     assert follow_up_submission.state == "queued"
 
     with pytest.raises(asyncio.CancelledError):
@@ -715,8 +1105,10 @@ async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callba
         "incident_id": cancelled_correlation.incident_id,
         "fingerprint": "race-b",
     }
-    assert incident_correlator.ingest(cancelled_payload).new_occurrence_keys == ()
-    assert incident_correlator.ingest(follow_up_payload).new_occurrence_keys == ()
+    cancelled_replay = incident_correlator.ingest(cancelled_payload)
+    follow_up_replay = incident_correlator.ingest(follow_up_payload)
+    assert dispatcher.submit(cancelled_replay, handler).state == "duplicate"
+    assert dispatcher.submit(follow_up_replay, handler).state == "duplicate"
 
     later_payload = _webhook_payload(
         "HighLatency",
@@ -724,12 +1116,7 @@ async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callba
         "2026-10-15T10:02:00Z",
     )
     later_correlation = incident_correlator.ingest(later_payload)
-    later_submission = dispatcher.submit(
-        incident_id=later_correlation.incident_id,
-        occurrence_keys=later_correlation.new_occurrence_keys,
-        payload=later_payload,
-        handler=handler,
-    )
+    later_submission = dispatcher.submit(later_correlation, handler)
     assert await asyncio.wait_for(later_submission.wait(), timeout=5) == {
         "incident_id": cancelled_correlation.incident_id,
         "fingerprint": "race-c",
@@ -739,9 +1126,12 @@ async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callba
 
 
 @pytest.mark.asyncio
-async def test_worker_creation_failure_releases_unadmitted_occurrence_claim(monkeypatch):
+async def test_worker_creation_failure_rolls_back_queued_admission(monkeypatch, tmp_path):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     payload = _webhook_payload(
         "HighCPU",
         "fingerprint-a",
@@ -767,24 +1157,14 @@ async def test_worker_creation_failure_releases_unadmitted_occurrence_claim(monk
     with monkeypatch.context() as patch:
         patch.setattr(loop, "create_task", reject_worker)
         with pytest.raises(RuntimeError, match="synthetic task creation failure"):
-            dispatcher.submit(
-                incident_id=correlation.incident_id,
-                occurrence_keys=correlation.new_occurrence_keys,
-                payload=payload,
-                handler=handler,
-            )
+            dispatcher.submit(correlation, handler)
 
     assert incident_correlator.get_active()[0]["active_processing"] is False
     retry_correlation = incident_correlator.ingest(payload)
     assert retry_correlation.incident_id == correlation.incident_id
-    assert retry_correlation.new_occurrence_keys == correlation.new_occurrence_keys
+    assert retry_correlation.occurrence_refs == correlation.occurrence_refs
 
-    retry_submission = dispatcher.submit(
-        incident_id=retry_correlation.incident_id,
-        occurrence_keys=retry_correlation.new_occurrence_keys,
-        payload=payload,
-        handler=handler,
-    )
+    retry_submission = dispatcher.submit(retry_correlation, handler)
     assert await asyncio.wait_for(retry_submission.wait(), timeout=5) == {
         "incident_id": correlation.incident_id,
         "fingerprint": "fingerprint-a",
@@ -901,18 +1281,20 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     )
 
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     payload = _webhook_payload(
         "SyntheticAlert",
         "synthetic-fingerprint",
         "2026-10-15T10:00:00Z",
     )
-    correlation = incident_correlator.ingest(payload)
+    candidate = incident_correlator.ingest(payload)
     submission = dispatcher.submit(
-        incident_id=correlation.incident_id,
-        occurrence_keys=correlation.new_occurrence_keys,
-        payload=payload,
-        handler=coordinator.handle_incident,
+        candidate,
+        coordinator.handle_incident,
+        incident_anchors=coordinator.build_incident_anchors(candidate.original_payload),
     )
     result = await submission.wait()
 
@@ -934,7 +1316,7 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     assert result["diagnosis"] == diagnosis
 
     persisted = json.loads(
-        (trajectory_dir / f"{correlation.incident_id}.json").read_text(encoding="utf-8")
+        (trajectory_dir / f"{candidate.incident_id}.json").read_text(encoding="utf-8")
     )
     assert persisted == result
     assert persisted["alert"] == payload
@@ -943,15 +1325,18 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
 
 
 @pytest.mark.asyncio
-async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog):
+async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog, tmp_path):
     incident_correlator = IncidentCorrelator()
-    dispatcher = IncidentDispatcher(incident_correlator)
+    dispatcher = IncidentDispatcher(
+        incident_correlator,
+        tmp_path / "admissions.sqlite3",
+    )
     payload = _webhook_payload(
         "HighCPU",
         "failed-fingerprint",
         "2026-10-15T10:00:00Z",
     )
-    correlation = incident_correlator.ingest(payload)
+    candidate = incident_correlator.ingest(payload)
     handler_finished = asyncio.Event()
     calls = 0
 
@@ -970,10 +1355,8 @@ async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog):
     try:
         with caplog.at_level("ERROR", logger="agents.incident_dispatch"):
             submission = dispatcher.submit(
-                incident_id=correlation.incident_id,
-                occurrence_keys=correlation.new_occurrence_keys,
-                payload=payload,
-                handler=failing_handler,
+                candidate,
+                failing_handler,
             )
             completion_observed = asyncio.Event()
             submission.completion.add_done_callback(
@@ -983,15 +1366,16 @@ async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog):
             await completion_observed.wait()
             assert submission.completion.done()
 
-            replay = incident_correlator.ingest(payload)
-            assert not replay.new_occurrence_keys
-            duplicate = dispatcher.submit(
-                incident_id=replay.incident_id,
-                occurrence_keys=replay.new_occurrence_keys,
-                payload=payload,
-                handler=failing_handler,
+            replay_correlator = IncidentCorrelator()
+            replay = replay_correlator.ingest(payload)
+            assert replay.occurrence_refs
+            replay_dispatcher = IncidentDispatcher(
+                replay_correlator,
+                tmp_path / "admissions.sqlite3",
             )
+            duplicate = replay_dispatcher.submit(replay, failing_handler)
             assert duplicate.state == "duplicate"
+            assert duplicate.incident_id == candidate.incident_id
             await asyncio.sleep(0)
             del submission
             gc.collect()
@@ -1000,5 +1384,5 @@ async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog):
         loop.set_exception_handler(previous_handler)
 
     assert calls == 1
-    assert "claimed occurrences will not be retried" in caplog.text
+    assert "attempted occurrences will not be replayed" in caplog.text
     assert not unhandled_contexts

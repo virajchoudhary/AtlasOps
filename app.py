@@ -67,6 +67,7 @@ from agents.coordinator import (
     app as coordinator_app,
 )
 from agents.coordinator import (
+    build_incident_anchors,
     parse_alert_webhook_payload,
     read_alert_webhook_body,
 )
@@ -455,27 +456,16 @@ async def webhook_proxy(request: Request):
                 "dispatch_state": "noop",
             }
         )
-    correlation = correlator.ingest(payload)
-    if not correlation.new_occurrence_keys:
-        return JSONResponse(
-            {
-                "ok": True,
-                "incident_id": correlation.incident_id,
-                "dispatched": False,
-                "queued": False,
-                "dispatch_state": "duplicate",
-            }
-        )
+    candidate_batch = correlator.ingest(payload)
     submission = incident_dispatcher.submit(
-        incident_id=correlation.incident_id,
-        occurrence_keys=correlation.new_occurrence_keys,
-        payload=payload,
+        candidate_batch,
         handler=_dispatch_incident,
+        incident_anchors=build_incident_anchors(candidate_batch.original_payload),
     )
     return JSONResponse(
         {
             "ok": True,
-            "incident_id": correlation.incident_id,
+            "incident_id": submission.incident_id,
             "dispatched": submission.state == "started",
             "queued": submission.state == "queued",
             "dispatch_state": submission.state,
@@ -483,9 +473,18 @@ async def webhook_proxy(request: Request):
     )
 
 
-async def _dispatch_incident(payload: dict, incident_id: str):
+async def _dispatch_incident(
+    payload: dict,
+    incident_id: str,
+    *,
+    incident_anchors: dict | None = None,
+):
     from agents.coordinator import handle_incident
-    return await handle_incident(payload, incident_id=incident_id)
+    return await handle_incident(
+        payload,
+        incident_id=incident_id,
+        incident_anchors=incident_anchors,
+    )
 
 
 @app.get("/slack/feed")

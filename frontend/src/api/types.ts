@@ -227,3 +227,82 @@ export interface AttemptDetail {
   };
   warnings: string[];
 }
+
+export type IncidentHistoryRecordType = "canonical" | "execution";
+
+export type IncidentHistoryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | IncidentHistoryValue[]
+  | { readonly [key: string]: IncidentHistoryValue };
+
+export type IncidentHistorySection = Readonly<Record<string, IncidentHistoryValue>>;
+
+export interface IncidentHistorySummaryFields {
+  incident_id: string;
+  severity: string | null;
+  title: string | null;
+  status: string | null;
+  resolved: boolean | null;
+  env_resolved: boolean | null;
+  verification_status: string | null;
+  summary: string | null;
+  scenario_id?: IncidentHistoryValue;
+}
+
+export type IncidentHistorySummary =
+  | (IncidentHistorySummaryFields & {
+      record_type: "canonical";
+      execution_id: string | null;
+    })
+  | (IncidentHistorySummaryFields & {
+      record_type: "execution";
+      execution_id: string;
+    });
+
+export interface IncidentHistoryPage {
+  items: IncidentHistorySummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface IncidentHistoryDetailFields {
+  incident_id: string;
+  scenario_id?: IncidentHistoryValue;
+  episode_status?: IncidentHistoryValue;
+  execution_mode?: IncidentHistoryValue;
+  evidence_class?: IncidentHistoryValue;
+  certification_status?: IncidentHistoryValue;
+  agent_claimed_resolved?: boolean | null;
+  env_resolved?: boolean | null;
+  resolved?: boolean | null;
+  triage: IncidentHistorySection | null;
+  diagnosis: IncidentHistorySection | null;
+  remediation: IncidentHistorySection | null;
+  approval: IncidentHistorySection | null;
+  verification: IncidentHistorySection | null;
+  comms: IncidentHistorySection | null;
+}
+
+export type IncidentHistoryDetail =
+  | (IncidentHistoryDetailFields & {
+      record_type: "canonical";
+      execution_id: string | null;
+    })
+  | (IncidentHistoryDetailFields & {
+      record_type: "execution";
+      execution_id: string;
+    });
+
+export type IncidentHistoryErrorKind =
+  | "unauthorized"
+  | "configuration_unavailable"
+  | "service_unavailable"
+  | "not_found"
+  | "malformed_response"
+  | "network_error"
+  | "http_error"
+  | "invalid_request";

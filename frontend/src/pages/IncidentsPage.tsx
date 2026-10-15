@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import type { CatalogPageProps } from "./types";
 import { displayBoolean, displayNumber, displayNumberWithUnit, displayText, shortDigest } from "../lib/format";
+import { PersistedIncidentHistory } from "./PersistedIncidentHistory";
 
 type AttemptLoad =
   | { status: "loading" }
@@ -124,6 +125,8 @@ export function IncidentsPage({ catalog, loading }: CatalogPageProps) {
           </AccordionItem>
         </Accordion>
       </section>
+
+      <PersistedIncidentHistory />
     </div>
   );
 }

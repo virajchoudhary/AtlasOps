@@ -38,7 +38,9 @@ function titleForPath(path: string, article: PublicArticle | undefined) {
   if (article?.slug === "stale-sanity-content-nextjs-caching-revalidation") {
     return "Sanity Content Not Updating in Next.js or Astro: The Fix";
   }
-  if (path === "/blog") return "Content Architecture Blog | Next.js + Sanity Engineering";
+  if (path === "/blog" || path === "/blog/articles") {
+    return "Content Architecture Blog | Next.js + Sanity Engineering";
+  }
   if (path === "/roadmap") return "Roadmap, What's Shipped and What's Next | The Content Architecture";
   if (path === "/legal/privacy-policy") return "Privacy Policy | The Content Architecture";
   if (path === "/legal/terms-of-service") return "Terms of Service & License | The Content Architecture";
@@ -325,7 +327,7 @@ function RoadmapPage({ onNavigate }: { onNavigate: (href: string) => void }) {
               ) : (
                 <div className="secondary-roadmap-empty">
                   <span>NOTHING HERE YET</span>
-                  <InternalLink href="/" onNavigate={onNavigate} className="secondary-roadmap-learn">
+                  <InternalLink href="/reference" onNavigate={onNavigate} className="secondary-roadmap-learn">
                     LEARN MORE <ArrowUpRight size={13} aria-hidden="true" />
                   </InternalLink>
                 </div>
@@ -375,7 +377,10 @@ export function ReferenceSecondaryPages({
   onNavigate,
 }: ReferenceSecondaryPagesProps) {
   const path = normalizePath(pathname);
-  const article = publicArticles.find((candidate) => `/blog/${candidate.slug}` === path);
+  const article = publicArticles.find((candidate) => (
+    `/blog/${candidate.slug}` === path
+    || `/blog/articles/${candidate.slug}` === path
+  ));
   const title = titleForPath(path, article);
 
   useEffect(() => {
@@ -387,7 +392,9 @@ export function ReferenceSecondaryPages({
     };
   }, [title]);
 
-  if (path === "/blog") return <BlogIndex onNavigate={onNavigate} />;
+  if (path === "/blog" || path === "/blog/articles") {
+    return <BlogIndex onNavigate={onNavigate} />;
+  }
   if (path === "/roadmap") return <RoadmapPage onNavigate={onNavigate} />;
   if (path === "/legal/privacy-policy" || path === "/legal/terms-of-service") {
     return <LegalPage path={path} />;

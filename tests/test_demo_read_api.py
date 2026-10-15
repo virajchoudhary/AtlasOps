@@ -139,6 +139,53 @@ def test_built_assets_and_index_are_served_without_execution(tmp_path):
     assert client.get("/health").json()["frontend_built"] is True
 
 
+def test_only_allowlisted_reference_paths_receive_the_frontend_shell(tmp_path):
+    (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    allowed_paths = [
+        "/",
+        "/reference",
+        "/blog",
+        "/blog/articles",
+        "/blog/the-content-architecture-four-months-in",
+        "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+        "/blog/stale-sanity-content-nextjs-caching-revalidation",
+        "/blog/articles/the-content-architecture-four-months-in",
+        "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+        "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+        "/roadmap",
+        "/legal/privacy-policy",
+        "/legal/terms-of-service",
+    ]
+    for path in allowed_paths:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.text == "<title>AtlasOps</title>", path
+
+
+@pytest.mark.parametrize("path", [
+    "/missing",
+    "/reference/missing",
+    "/blog/missing",
+    "/blog/articles/missing",
+    "/legal/missing",
+    "/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/%2e%2e/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+])
+def test_unknown_paths_never_receive_the_frontend_shell_or_file_contents(tmp_path, path):
+    (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts/secret.txt").write_text("not served", encoding="utf-8")
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    response = client.get(path)
+    assert response.status_code == 404
+    assert "not served" not in response.text
+
+
 def test_rehearsal_is_synthetic_and_uses_frozen_scenario_and_role_policy(client):
     from agents.approval import approval_mode_for_severity
     from agents.tool_policy import ROLE_ALLOWED_TOOLS

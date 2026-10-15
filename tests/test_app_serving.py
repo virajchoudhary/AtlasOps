@@ -4,6 +4,23 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 
+_FRONTEND_SECURITY_HEADERS = {
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "content-security-policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; font-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+}
+
+
+def _assert_frontend_security_headers(response):
+    for name, value in _FRONTEND_SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+
+
 def _write_frontend_dist(root):
     assets = root / "assets"
     reference_assets = root / "reference" / "assets"
@@ -33,6 +50,26 @@ def _integrated_app(monkeypatch):
     from app import app
 
     return app
+
+
+def _integrated_test_app(frontend_dist):
+    from fastapi import FastAPI
+
+    from app import _register_frontend_routes
+
+    application = FastAPI()
+
+    @application.post("/api/operation")
+    def operation():
+        return {"status": "accepted"}
+
+    application.add_api_route(
+        "/api/status",
+        lambda: {"status": "ready"},
+        methods=["GET"],
+    )
+    _register_frontend_routes(application, frontend_dist)
+    return application
 
 
 @pytest.mark.asyncio
@@ -69,17 +106,108 @@ async def test_built_frontend_serves_index_assets_and_nested_routes(tmp_path):
             assert "AtlasOps HF Space entry point" not in traversal.text
 
 
+@pytest.mark.parametrize("mode", ["isolated", "integrated"])
+@pytest.mark.asyncio
+async def test_frontend_routes_have_browser_security_headers(tmp_path, mode):
+    from app import create_frontend_app
+
+    dist = _write_frontend_dist(tmp_path)
+    application = (
+        create_frontend_app(dist)
+        if mode == "isolated"
+        else _integrated_test_app(dist)
+    )
+    async with _client(application) as client:
+        for method in ("GET", "HEAD"):
+            response = await client.request(
+                method,
+                "/",
+                headers={"accept": "text/html"},
+            )
+            assert response.status_code == 200
+            _assert_frontend_security_headers(response)
+            assert bool(response.content) is (method == "GET")
+
+        for path, expected in (
+            ("/assets/app.js", "window.atlasops = true;"),
+            ("/assets/app.css", "body { color: black; }"),
+            ("/reference/assets/mark.svg", "<svg></svg>"),
+        ):
+            for method in ("GET", "HEAD"):
+                response = await client.request(method, path)
+                assert response.status_code == 200
+                assert response.text == (expected if method == "GET" else "")
+                _assert_frontend_security_headers(response)
+
+        for method, path in (
+            ("GET", "/reference/not-a-route"),
+            ("HEAD", "/reference/not-a-route"),
+            ("GET", "/assets/missing.js"),
+            ("HEAD", "/assets/missing.js"),
+        ):
+            response = await client.request(method, path)
+            assert response.status_code == 404
+            _assert_frontend_security_headers(response)
+
+        if mode == "integrated":
+            status = await client.get("/api/status")
+            operation = await client.post("/api/operation")
+            assert status.status_code == 200
+            assert status.json() == {"status": "ready"}
+            assert operation.status_code == 200
+            assert operation.json() == {"status": "accepted"}
+            assert "content-security-policy" not in status.headers
+            assert "content-security-policy" not in operation.headers
+
+
+@pytest.mark.asyncio
+async def test_real_integrated_app_frontend_responses_have_security_headers(monkeypatch):
+    application = _integrated_app(monkeypatch)
+    from app import FRONTEND_DIST
+
+    expected_index_status = 200 if (FRONTEND_DIST / "index.html").is_file() else 503
+    async with _client(application) as client:
+        for method in ("GET", "HEAD"):
+            response = await client.request(
+                method,
+                "/",
+                headers={"accept": "text/html"},
+            )
+            assert response.status_code == expected_index_status
+            _assert_frontend_security_headers(response)
+            if method == "HEAD":
+                assert response.content == b""
+
+        for method, path in (
+            ("GET", "/reference/not-a-route"),
+            ("HEAD", "/reference/not-a-route"),
+            ("GET", "/assets/missing.js"),
+            ("HEAD", "/assets/missing.js"),
+        ):
+            response = await client.request(method, path)
+            assert response.status_code == 404
+            _assert_frontend_security_headers(response)
+
+        catalog = await client.get("/api/catalog")
+        assert catalog.status_code == 200
+        assert "content-security-policy" not in catalog.headers
+
+
 @pytest.mark.asyncio
 async def test_missing_build_and_traversal_fail_closed(tmp_path, monkeypatch):
     from app import create_frontend_app
 
     async with _client(create_frontend_app(tmp_path / "missing")) as client:
-        response = await client.get(
-            "/legal/privacy-policy",
-            headers={"accept": "text/html"},
-        )
-        assert response.status_code == 503
-        assert "frontend build" in response.json()["detail"].lower()
+        for method in ("GET", "HEAD"):
+            response = await client.request(
+                method,
+                "/legal/privacy-policy",
+                headers={"accept": "text/html"},
+            )
+            assert response.status_code == 503
+            if method == "GET":
+                assert "frontend build" in response.json()["detail"].lower()
+            _assert_frontend_security_headers(response)
 
     async with _client(_integrated_app(monkeypatch)) as client:
         missing_api = await client.get(
@@ -89,6 +217,7 @@ async def test_missing_build_and_traversal_fail_closed(tmp_path, monkeypatch):
         assert missing_api.status_code == 404
         assert missing_api.headers["content-type"].startswith("application/json")
         assert "<!doctype html>" not in missing_api.text.lower()
+        assert "content-security-policy" not in missing_api.headers
 
 
 @pytest.mark.asyncio

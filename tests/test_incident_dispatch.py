@@ -560,6 +560,93 @@ async def test_worker_cancelled_before_first_step_settles_and_allows_later_occur
 
 
 @pytest.mark.asyncio
+async def test_prestart_cancel_preserves_occurrence_submitted_before_done_callback(
+    monkeypatch,
+):
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator)
+    cancelled_payload = _webhook_payload(
+        "HighCPU",
+        "race-a",
+        "2026-10-15T10:00:00Z",
+    )
+    cancelled_correlation = incident_correlator.ingest(cancelled_payload)
+    calls: list[str] = []
+
+    async def handler(payload, *, incident_id):
+        fingerprint = payload["alerts"][0]["fingerprint"]
+        calls.append(fingerprint)
+        return {"incident_id": incident_id, "fingerprint": fingerprint}
+
+    loop = asyncio.get_running_loop()
+    create_task = loop.create_task
+    worker_tasks = []
+
+    def capture_worker(coro, *, name=None, context=None):
+        task = create_task(coro, name=name, context=context)
+        if name == f"incident-dispatch-{cancelled_correlation.incident_id}":
+            worker_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(loop, "create_task", capture_worker)
+    cancelled_submission = dispatcher.submit(
+        incident_id=cancelled_correlation.incident_id,
+        occurrence_keys=cancelled_correlation.new_occurrence_keys,
+        payload=cancelled_payload,
+        handler=handler,
+    )
+    assert cancelled_submission.state == "started"
+    assert len(worker_tasks) == 1
+
+    worker_tasks[0].cancel()
+    assert not worker_tasks[0].done()
+    follow_up_payload = _webhook_payload(
+        "High5xx",
+        "race-b",
+        "2026-10-15T10:01:00Z",
+    )
+    follow_up_correlation = incident_correlator.ingest(follow_up_payload)
+    assert follow_up_correlation.incident_id == cancelled_correlation.incident_id
+    follow_up_submission = dispatcher.submit(
+        incident_id=follow_up_correlation.incident_id,
+        occurrence_keys=follow_up_correlation.new_occurrence_keys,
+        payload=follow_up_payload,
+        handler=handler,
+    )
+    assert follow_up_submission.state == "queued"
+
+    with pytest.raises(asyncio.CancelledError):
+        await worker_tasks[0]
+
+    assert cancelled_submission.completion.cancelled()
+    assert await asyncio.wait_for(follow_up_submission.wait(), timeout=5) == {
+        "incident_id": cancelled_correlation.incident_id,
+        "fingerprint": "race-b",
+    }
+    assert incident_correlator.ingest(cancelled_payload).new_occurrence_keys == ()
+    assert incident_correlator.ingest(follow_up_payload).new_occurrence_keys == ()
+
+    later_payload = _webhook_payload(
+        "HighLatency",
+        "race-c",
+        "2026-10-15T10:02:00Z",
+    )
+    later_correlation = incident_correlator.ingest(later_payload)
+    later_submission = dispatcher.submit(
+        incident_id=later_correlation.incident_id,
+        occurrence_keys=later_correlation.new_occurrence_keys,
+        payload=later_payload,
+        handler=handler,
+    )
+    assert await asyncio.wait_for(later_submission.wait(), timeout=5) == {
+        "incident_id": cancelled_correlation.incident_id,
+        "fingerprint": "race-c",
+    }
+    assert calls == ["race-b", "race-c"]
+    assert incident_correlator.get_active()[0]["active_processing"] is False
+
+
+@pytest.mark.asyncio
 async def test_worker_creation_failure_releases_unadmitted_occurrence_claim(monkeypatch):
     incident_correlator = IncidentCorrelator()
     dispatcher = IncidentDispatcher(incident_correlator)

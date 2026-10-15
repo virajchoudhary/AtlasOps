@@ -323,6 +323,110 @@ test("reference public routes deep-link on desktop and mobile using GET requests
   expect(errors).toEqual([]);
 });
 
+test("reference logo, image, and font assets load on desktop and mobile", async ({ page }, testInfo) => {
+  const failedGets: string[] = [];
+  const referenceAssetFailures: string[] = [];
+  const getResponses: { path: string; status: number }[] = [];
+  const viewportProofs: {
+    viewport: string;
+    routeStatus: number | null;
+    logoNaturalWidth: number;
+    fontStates: { family: string; loaded: boolean; error: string | null }[];
+    imageNaturalWidth: number;
+  }[] = [];
+  const isReferenceAsset = (url: string) => new URL(url).pathname.startsWith("/reference/assets/");
+  page.on("requestfailed", (request) => {
+    if (request.method() === "GET") {
+      const failure = `failed GET ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`;
+      failedGets.push(failure);
+      if (isReferenceAsset(request.url())) referenceAssetFailures.push(failure);
+    }
+  });
+  page.on("response", (response) => {
+    if (response.request().method() === "GET") {
+      const path = new URL(response.url()).pathname;
+      if (path === "/favicon.ico" || path.startsWith("/reference/assets/")) {
+        getResponses.push({ path, status: response.status() });
+      }
+      if (response.status() >= 400) {
+        const failure = `${response.status()} GET ${response.url()}`;
+        failedGets.push(failure);
+        if (isReferenceAsset(response.url())) referenceAssetFailures.push(failure);
+      }
+    }
+  });
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 390, height: 844 },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const response = await page.goto("/reference");
+    expect(response?.status(), `/reference at ${viewport.name}`).toBe(200);
+    await expect(page.getByRole("heading", { level: 1, name: /The stack agents/ })).toBeVisible();
+
+    const logo = page.locator(
+      viewport.name === "desktop"
+        ? ".reference-brand-desktop img"
+        : ".reference-footer-logo img",
+    );
+    await expect(logo).toBeVisible();
+    await expect.poll(() => logo.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    )).toBeGreaterThan(0);
+    const logoNaturalWidth = await logo.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    );
+
+    const fontStates = await page.evaluate(async () => Promise.all(
+      ["Geist Sans", "Geist Mono"].map(async (family) => {
+        try {
+          const faces = await document.fonts.load(`400 16px "${family}"`);
+          return {
+            family,
+            loaded: faces.some((face) => face.status === "loaded"),
+            error: null,
+          };
+        } catch (error) {
+          return {
+            family,
+            loaded: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    ));
+    expect(fontStates.some((font) => font.family === "Geist Mono" && font.loaded)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-top.png`) });
+
+    const image = page.locator('img[src="/reference/assets/good-fella.avif"]');
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    )).toBeGreaterThan(0);
+    const imageNaturalWidth = await image.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    );
+    viewportProofs.push({
+      viewport: viewport.name,
+      routeStatus: response?.status() ?? null,
+      logoNaturalWidth,
+      fontStates,
+      imageNaturalWidth,
+    });
+    await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-image.png`) });
+  }
+
+  const fs = await import("node:fs/promises");
+  await fs.writeFile(
+    testInfo.outputPath("reference-asset-proof.json"),
+    JSON.stringify({ viewportProofs, getResponses, failedGets }, null, 2),
+    "utf8",
+  );
+  expect(referenceAssetFailures).toEqual([]);
+  expect(failedGets).toEqual([]);
+});
+
 test("reference home keeps local links, pricing anchor, newsletter dialog and route navigation", async ({ page }) => {
   const methods: string[] = [];
   page.on("request", (request) => methods.push(request.method()));

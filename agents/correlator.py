@@ -140,6 +140,21 @@ class IncidentCorrelator:
             if inc:
                 inc.active_processing = active
 
+    def rollback_unadmitted_claims(
+        self,
+        incident_id: str,
+        occurrence_keys: tuple[str, ...],
+    ) -> None:
+        """Release claims when dispatch fails before a worker is created."""
+        with self._lock:
+            inc = self._incidents.get(incident_id)
+            if inc is None:
+                return
+            claimed_keys = inc.dispatch_claims.intersection(occurrence_keys)
+            if claimed_keys:
+                inc.dispatch_claims.difference_update(claimed_keys)
+                inc.active_processing = False
+
     def get_active(self) -> list[dict[str, Any]]:
         with self._lock:
             now = time.time()

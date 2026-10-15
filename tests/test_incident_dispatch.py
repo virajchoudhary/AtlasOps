@@ -489,6 +489,131 @@ async def test_cancelled_worker_settles_all_claimed_completions_and_releases_que
 
 
 @pytest.mark.asyncio
+async def test_worker_cancelled_before_first_step_settles_and_allows_later_occurrences(
+    monkeypatch,
+):
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator)
+    payload = _webhook_payload(
+        "HighCPU",
+        "fingerprint-a",
+        "2026-10-15T10:00:00Z",
+    )
+    correlation = incident_correlator.ingest(payload)
+    calls: list[str] = []
+
+    async def handler(alert_payload, *, incident_id):
+        fingerprint = alert_payload["alerts"][0]["fingerprint"]
+        calls.append(fingerprint)
+        return {"incident_id": incident_id, "fingerprint": fingerprint}
+
+    loop = asyncio.get_running_loop()
+    create_task = loop.create_task
+    worker_tasks = []
+
+    def capture_worker(coro, *, name=None, context=None):
+        task = create_task(coro, name=name, context=context)
+        if name == f"incident-dispatch-{correlation.incident_id}":
+            worker_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(loop, "create_task", capture_worker)
+    submission = dispatcher.submit(
+        incident_id=correlation.incident_id,
+        occurrence_keys=correlation.new_occurrence_keys,
+        payload=payload,
+        handler=handler,
+    )
+
+    assert submission.state == "started"
+    assert len(worker_tasks) == 1
+    worker_tasks[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker_tasks[0]
+    await asyncio.sleep(0)
+
+    assert submission.completion.done()
+    assert submission.completion.cancelled()
+    assert incident_correlator.get_active()[0]["active_processing"] is False
+    assert not incident_correlator.ingest(payload).new_occurrence_keys
+
+    follow_up = _webhook_payload(
+        "High5xx",
+        "fingerprint-b",
+        "2026-10-15T10:01:00Z",
+    )
+    follow_up_correlation = incident_correlator.ingest(follow_up)
+    assert follow_up_correlation.incident_id == correlation.incident_id
+    follow_up_submission = dispatcher.submit(
+        incident_id=follow_up_correlation.incident_id,
+        occurrence_keys=follow_up_correlation.new_occurrence_keys,
+        payload=follow_up,
+        handler=handler,
+    )
+
+    assert await asyncio.wait_for(follow_up_submission.wait(), timeout=5) == {
+        "incident_id": correlation.incident_id,
+        "fingerprint": "fingerprint-b",
+    }
+    assert calls == ["fingerprint-b"]
+    assert incident_correlator.get_active()[0]["active_processing"] is False
+
+
+@pytest.mark.asyncio
+async def test_worker_creation_failure_releases_unadmitted_occurrence_claim(monkeypatch):
+    incident_correlator = IncidentCorrelator()
+    dispatcher = IncidentDispatcher(incident_correlator)
+    payload = _webhook_payload(
+        "HighCPU",
+        "fingerprint-a",
+        "2026-10-15T10:00:00Z",
+    )
+    correlation = incident_correlator.ingest(payload)
+    calls: list[str] = []
+
+    async def handler(alert_payload, *, incident_id):
+        fingerprint = alert_payload["alerts"][0]["fingerprint"]
+        calls.append(fingerprint)
+        return {"incident_id": incident_id, "fingerprint": fingerprint}
+
+    loop = asyncio.get_running_loop()
+    create_task = loop.create_task
+
+    def reject_worker(coro, *, name=None, context=None):
+        if name == f"incident-dispatch-{correlation.incident_id}":
+            coro.close()
+            raise RuntimeError("synthetic task creation failure")
+        return create_task(coro, name=name, context=context)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(loop, "create_task", reject_worker)
+        with pytest.raises(RuntimeError, match="synthetic task creation failure"):
+            dispatcher.submit(
+                incident_id=correlation.incident_id,
+                occurrence_keys=correlation.new_occurrence_keys,
+                payload=payload,
+                handler=handler,
+            )
+
+    assert incident_correlator.get_active()[0]["active_processing"] is False
+    retry_correlation = incident_correlator.ingest(payload)
+    assert retry_correlation.incident_id == correlation.incident_id
+    assert retry_correlation.new_occurrence_keys == correlation.new_occurrence_keys
+
+    retry_submission = dispatcher.submit(
+        incident_id=retry_correlation.incident_id,
+        occurrence_keys=retry_correlation.new_occurrence_keys,
+        payload=payload,
+        handler=handler,
+    )
+    assert await asyncio.wait_for(retry_submission.wait(), timeout=5) == {
+        "incident_id": correlation.incident_id,
+        "fingerprint": "fingerprint-a",
+    }
+    assert calls == ["fingerprint-a"]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     monkeypatch,
     tmp_path,

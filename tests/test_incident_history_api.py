@@ -423,6 +423,91 @@ def test_read_projection_keeps_operational_truth_and_omits_raw_secrets(
         assert secret not in response.text
 
 
+def test_action_projection_redacts_nested_credentials_and_sanitizes_keys(
+    tmp_path,
+    monkeypatch,
+):
+    import app as app_module
+
+    incident_id = "inc-nested-credentials"
+    execution_id = "12121212121212121212121212121212"
+    monkeypatch.setattr(app_module.coordinator_module, "TRAJECTORIES_DIR", tmp_path)
+    record = _record(incident_id, execution_id, "summary")
+    record["remediation"]["final"]["proposed_actions"][0]["args"] = {
+        "resource": "pods",
+        "metadata": {
+            "phase": "Running",
+            "token": "synthetic-proposed-token",
+            "session_token": "synthetic-proposed-session-token",
+            "bearer": "synthetic-proposed-bearer",
+            r"C:\synthetic\private\argument.json": "preserved argument data",
+        },
+    }
+    record["remediation"]["final"]["executed_actions"] = [
+        {
+            "tool": "kubectl_get",
+            "args": {"resource": "pods"},
+            "result": {
+                "status": "observed",
+                "data": {
+                    "phase": "Running",
+                    "token": "synthetic-result-token",
+                    "session_token": "synthetic-result-session-token",
+                    "bearer": "synthetic-result-bearer",
+                    r"C:\synthetic\private\result.json": "preserved result data",
+                },
+            },
+        }
+    ]
+    record["remediation"]["final"]["summary"] = (
+        "Action completed; token=synthetic-remediation-summary-token"
+    )
+    record["comms"]["final"]["summary"] = (
+        "Report ready; session_token=synthetic-comms-summary-token"
+    )
+    (tmp_path / f"{incident_id}.json").write_text(
+        json.dumps(record),
+        encoding="utf-8",
+    )
+
+    response = _client().get(f"/incidents/{incident_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    for sentinel in (
+        "synthetic-proposed-token",
+        "synthetic-proposed-session-token",
+        "synthetic-proposed-bearer",
+        "synthetic-result-token",
+        "synthetic-result-session-token",
+        "synthetic-result-bearer",
+        "synthetic-remediation-summary-token",
+        "synthetic-comms-summary-token",
+        r"C:\synthetic\private\argument.json",
+        r"C:\synthetic\private\result.json",
+    ):
+        assert sentinel not in response.text
+
+    proposed_args = body["remediation"]["proposed_actions"][0]["args"]
+    assert proposed_args == {
+        "resource": "pods",
+        "metadata": {
+            "phase": "Running",
+            "[PATH]": "preserved argument data",
+        },
+    }
+    executed_result = body["remediation"]["executed_actions"][0]["result"]
+    assert executed_result == {
+        "status": "observed",
+        "data": {
+            "phase": "Running",
+            "[PATH]": "preserved result data",
+        },
+    }
+    assert body["remediation"]["summary"] == "Action completed; [REDACTED]"
+    assert body["comms"]["summary"] == "Report ready; [REDACTED]"
+
+
 def test_history_reader_is_import_safe_in_a_fresh_process(tmp_path):
     root = tmp_path / "fresh-store"
     incident_id = "inc-fresh-process"

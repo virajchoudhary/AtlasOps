@@ -35,12 +35,14 @@ _EXECUTION_FILE = re.compile(
 _PARTIAL_FILE = re.compile(r".+\.partial-[0-9a-f]{32}\.json")
 _SECRET_KEY = re.compile(
     r"(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|"
-    r"password|passwd|secret|credential|private[_-]?key)"
+    r"session[_-]?token|token|bearer|password|passwd|secret|credential|"
+    r"private[_-]?key)"
 )
 _SECRET_TEXT = (
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
     re.compile(
         r"""(?ix)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"""
+        r"""session[_-]?token|token|bearer|"""
         r"""authorization|password|passwd|secret|credential|private[_-]?key)"""
         r"""["']?\s*[:=]\s*["']?[^,\s"'}`\]]+"""
     ),
@@ -270,9 +272,12 @@ def _safe_value(value: Any, *, depth: int = 0) -> Any:
         for key, item in list(value.items())[:MAX_OBJECT_FIELDS]:
             if not isinstance(key, str) or _SECRET_KEY.search(key):
                 continue
+            safe_key = _safe_text(key)
+            if safe_key is _OMIT:
+                continue
             safe_item = _safe_value(item, depth=depth + 1)
             if safe_item is not _OMIT:
-                result[key] = safe_item
+                result[safe_key] = safe_item
         return result
     return _OMIT
 

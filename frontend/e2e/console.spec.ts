@@ -168,6 +168,13 @@ test("nine routes render at the five reference viewports without overlap or over
   await more.click();
   const additionalNavigation = page.getByRole("region", { name: "Additional navigation" });
   await expect(additionalNavigation).toBeVisible();
+  await page.evaluate(async () => { await document.fonts.ready; });
+  const mobileMenuFontsLoaded = await page.evaluate(() => ({
+    geist: document.fonts.check("14px Geist"),
+    geistMono: document.fonts.check('12px "Geist Mono"'),
+  }));
+  expect(mobileMenuFontsLoaded.geist, "mobile menu Geist Sans").toBe(true);
+  expect(mobileMenuFontsLoaded.geistMono, "mobile menu Geist Mono").toBe(true);
   const mobileMenuLayout = await page.evaluate(() => ({
     documentWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
@@ -182,7 +189,7 @@ test("nine routes render at the five reference viewports without overlap or over
     viewport: "390x844",
     apiMethods: methods.slice(mobileMenuRequestOffset),
     apiRequests: apiRequests.slice(mobileMenuApiRequestOffset),
-    fontsLoaded: { geist: true, geistMono: true },
+    fontsLoaded: mobileMenuFontsLoaded,
     ...mobileMenuLayout,
     overlapCount: 0,
   });

@@ -396,8 +396,7 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
         with torch.random.fork_rng(devices=sorted(cuda_devices)):
             try:
                 if checkpointing_enabled:
-                    # Reentrant checkpointing rejects autograd.grad. Restore the exact
-                    # module profile before the actual training loss is computed.
+                    # Reentrant checkpointing rejects autograd.grad.
                     enable_gradient_checkpointing(
                         gradient_checkpointing_kwargs={"use_reentrant": False}
                     )

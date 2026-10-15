@@ -426,7 +426,6 @@ def test_installed_trl_evaluation_refuses_before_observation_or_generation(
 def test_installed_controlled_hook_measures_reward_policy_gradient(
     _runtime, tmp_path, mode
 ):
-    """Actual TRL optimization on random tiny CPU fixtures; synthetic, non-empirical."""
     from tests.test_grpo_controlled import action
     from training.grpo_controlled import (
         SCENARIO,

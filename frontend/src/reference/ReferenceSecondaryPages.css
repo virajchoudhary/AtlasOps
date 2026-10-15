@@ -808,6 +808,28 @@ body:has(.reference-secondary-page) #root {
   min-height: 43px;
 }
 
+.secondary-footer .secondary-footer-email-form--submitted {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.secondary-footer .secondary-footer-email-form .secondary-footer-form-status--visible {
+  position: static;
+  display: block;
+  grid-column: 1 / -1;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  color: #514f49;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .secondary-footer .secondary-footer-email-form input:focus-visible {
   outline: 2px solid #f0aa13;
   outline-offset: 2px;

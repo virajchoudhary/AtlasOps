@@ -201,11 +201,22 @@ describe("public secondary reference pages", () => {
     const email = within(footer).getByRole("textbox", { name: "Email" });
     expect(email).toHaveAttribute("type", "email");
     expect(email).toBeRequired();
+    const submit = within(footer).getByRole("button", { name: /stay updated/i });
+    const status = within(footer).getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+
+    await user.type(email, "not-an-email");
+    await user.click(submit);
+    expect(email).toBeInvalid();
+    expect(status).toBeEmptyDOMElement();
+
+    await user.clear(email);
     await user.type(email, "person@example.test");
-    await user.click(within(footer).getByRole("button", { name: /stay updated/i }));
-    expect(within(footer).getByRole("status")).toHaveTextContent(
+    await user.click(submit);
+    expect(status).toHaveTextContent(
       "This local reproduction does not submit or save email addresses.",
     );
+    expect(status).toHaveClass("secondary-footer-form-status--visible");
     expect(email).toHaveValue("person@example.test");
 
     await userEvent.click(within(footer).getByRole("link", { name: /Blog/ }));

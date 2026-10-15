@@ -133,7 +133,7 @@ function FooterEmailSignup() {
 
   return (
     <form
-      className="reference-email-form secondary-footer-email-form"
+      className={`reference-email-form secondary-footer-email-form${result ? " secondary-footer-email-form--submitted" : ""}`}
       aria-label="Newsletter signup (local preview)"
       onSubmit={onSubmit}
     >
@@ -152,7 +152,12 @@ function FooterEmailSignup() {
         <span>Stay updated</span>
         <ArrowUpRight size={12} aria-hidden="true" />
       </button>
-      <span className="reference-form-status" role="status">{result}</span>
+      <span
+        className={`reference-form-status${result ? " secondary-footer-form-status--visible" : ""}`}
+        role="status"
+      >
+        {result}
+      </span>
     </form>
   );
 }

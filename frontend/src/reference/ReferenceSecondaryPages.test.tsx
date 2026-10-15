@@ -109,6 +109,33 @@ describe("public secondary reference pages", () => {
     expect(screen.getByText(/These terms govern your purchase and use/)).toBeInTheDocument();
   });
 
+  it("keeps secondary-page footer links local and the signup preview inert", async () => {
+    const onNavigate = vi.fn();
+    render(
+      <ReferenceSecondaryPages
+        pathname="/legal/privacy-policy"
+        onNavigate={onNavigate}
+      />,
+    );
+
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByRole("navigation", { name: "Footer" })).toBeInTheDocument();
+    expect(within(footer).getByRole("link", { name: /Blog/ })).toHaveAttribute("href", "/blog");
+    expect(within(footer).getByRole("link", { name: /Privacy policy/ })).toHaveAttribute(
+      "href",
+      "/legal/privacy-policy",
+    );
+    expect(within(footer).getByRole("link", { name: /Terms of service/ })).toHaveAttribute(
+      "href",
+      "/legal/terms-of-service",
+    );
+
+    const preview = within(footer).getByLabelText("Newsletter signup preview");
+    expect(preview.querySelector("form, input, button")).toBeNull();
+    await userEvent.click(within(footer).getByRole("link", { name: /Blog/ }));
+    expect(onNavigate).toHaveBeenCalledWith("/blog");
+  });
+
   it("preserves roadmap sections while leaving public vote controls disabled", () => {
     render(<ReferenceSecondaryPages pathname="/roadmap" onNavigate={() => {}} />);
 
@@ -119,6 +146,7 @@ describe("public secondary reference pages", () => {
     const shipped = screen.getByRole("region", { name: "SHIPPED" });
     expect(within(shipped).getByRole("heading", { name: "Sanity + Astro version" })).toBeInTheDocument();
     expect(within(shipped).getByRole("heading", { name: "AI-generated llms.txt" })).toBeInTheDocument();
+    expect(shipped.querySelectorAll(".secondary-roadmap-card-footer")).toHaveLength(3);
     expect(screen.getAllByRole("button", { name: /Voting is not available/ })).toHaveLength(4);
     expect(screen.getAllByRole("button", { name: /Voting is not available/ }).every((button) => (
       button.hasAttribute("disabled")
@@ -152,8 +180,9 @@ describe("public secondary reference pages", () => {
         onNavigate={onNavigate}
       />,
     );
-    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(10);
-    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(6);
+    const article = screen.getByRole("article");
+    expect(within(article).getAllByRole("heading", { level: 2 })).toHaveLength(10);
+    expect(within(article).getAllByRole("heading", { level: 3 })).toHaveLength(6);
     expect(container.querySelectorAll("pre")).toHaveLength(2);
     expect(screen.getByRole("img", { name: /Sanity GROQ-powered webhooks/ })).toBeInTheDocument();
     expect(container.textContent).toMatch(/The Sanity CDN, controlled by the useCdn flag/);

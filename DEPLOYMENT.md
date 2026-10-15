@@ -39,6 +39,20 @@
 - AMD MI300X or compatible GPU (for self-hosted inference)
   - OR: Fireworks AI API key (managed AMD GPU inference)
 
+## Integrated App Container
+
+The repository `Dockerfile` builds the React frontend in a Node 22 stage with
+`frontend/package-lock.json`, then copies `frontend/dist` into the Python app
+image and starts `app.py` on port 7860. The root serves only that built output;
+without it, UI requests return 503 rather than falling back to the legacy static page.
+
+This is the integrated operational app, not the loopback-only
+`demo.launcher` described in the README. The console's catalog, attempt,
+rehearsal, live-status, incident-monitor, and operator reads are GET/HEAD-only.
+Live observations remain disabled by default, and incident-monitor/operator
+status remain unavailable unless explicitly configured. Existing operator API
+key and Alertmanager webhook authentication remain in force.
+
 ## Guarded development infrastructure entry point
 
 The infrastructure scripts no longer provision or delete resources on ordinary

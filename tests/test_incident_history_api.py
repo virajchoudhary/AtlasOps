@@ -508,6 +508,182 @@ def test_action_projection_redacts_nested_credentials_and_sanitizes_keys(
     assert body["comms"]["summary"] == "Report ready; [REDACTED]"
 
 
+def test_authenticated_history_routes_redact_auth_headers_and_preserve_action_data(
+    tmp_path,
+    monkeypatch,
+):
+    import app as app_module
+
+    incident_id = "inc-auth-header-redaction"
+    execution_id = "13131313131313131313131313131313"
+    basic_secret = "synthetic-basic-auth-base64"
+    cookie_secret = "synthetic-cookie-session"
+    set_cookie_secret = "synthetic-set-cookie-session"
+    json_basic_secret = "synthetic-json-basic-auth-base64"
+    json_cookie_preference = "synthetic-json-cookie-preference"
+    monkeypatch.setattr(app_module.coordinator_module, "TRAJECTORIES_DIR", tmp_path)
+    record = _record(incident_id, execution_id, "summary")
+    record["remediation"]["final"]["proposed_actions"][0]["args"] = {
+        "namespace": "default",
+        "headers": {
+            "Accept": "application/json",
+            "Authorization": f"Basic {basic_secret}",
+            "Cookie": f"session={cookie_secret}; preference=dark",
+            "Set-Cookie": f"session={set_cookie_secret}; HttpOnly",
+        },
+    }
+    record["remediation"]["final"]["executed_actions"] = [
+        {
+            "tool": "http_get",
+            "args": {"path": "/ready"},
+            "result": {
+                "status": "observed",
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Set-Cookie": f"session={set_cookie_secret}; HttpOnly",
+                },
+            },
+            "status": "completed",
+        }
+    ]
+    record["comms"]["final"]["summary"] = (
+        "Request failed:\n"
+        f"Authorization: Basic {basic_secret}\n"
+        f"Cookie: session={cookie_secret}; preference=dark\n"
+        f"Set-Cookie: session={set_cookie_secret}; HttpOnly; Secure\n"
+        "Automatic retries remain disabled.\n"
+        f'{{"Authorization": "Basic {json_basic_secret}"}}\n'
+        f'{{"Cookie": "session={cookie_secret}; '
+        f'preference={json_cookie_preference}"}}\n'
+        f'{{"Set-Cookie": "session={set_cookie_secret}; HttpOnly"}}'
+    )
+    (tmp_path / f"{incident_id}.json").write_text(
+        json.dumps(record),
+        encoding="utf-8",
+    )
+
+    client = _client()
+    history = client.get("/incidents/history")
+    detail = client.get(f"/incidents/{incident_id}")
+
+    assert history.status_code == detail.status_code == 200
+    for sentinel in (
+        basic_secret,
+        cookie_secret,
+        set_cookie_secret,
+        json_basic_secret,
+        json_cookie_preference,
+    ):
+        assert sentinel not in history.text + detail.text
+    assert "Automatic retries remain disabled." in history.text + detail.text
+    body = detail.json()
+    assert body["remediation"]["proposed_actions"][0]["args"] == {
+        "namespace": "default",
+        "headers": {"Accept": "application/json"},
+    }
+    assert body["remediation"]["executed_actions"][0]["result"] == {
+        "status": "observed",
+        "headers": {"Content-Type": "application/json"},
+    }
+
+
+def test_history_lists_legacy_canonical_execution_shaped_filename_and_neighbors(
+    tmp_path,
+    monkeypatch,
+):
+    import app as app_module
+
+    incident_id = "inc-canonical-shape"
+    canonical_execution_id = "14141414141414141414141414141414"
+    real_execution_id = "15151515151515151515151515151515"
+    canonical_id = f"{incident_id}.execution-{canonical_execution_id}"
+    monkeypatch.setattr(app_module.coordinator_module, "TRAJECTORIES_DIR", tmp_path)
+
+    canonical = _record(canonical_id, canonical_execution_id, "legacy canonical")
+    canonical.pop("execution_id")
+    (tmp_path / f"{canonical_id}.json").write_text(
+        json.dumps(canonical),
+        encoding="utf-8",
+    )
+    _write_record(
+        tmp_path,
+        incident_id,
+        real_execution_id,
+        "neighboring execution",
+        filename=f"{incident_id}.execution-{real_execution_id}.json",
+    )
+
+    client = _client()
+    canonical_detail = client.get(f"/incidents/{canonical_id}")
+    listing = client.get("/incidents/history")
+    real_detail = client.get(
+        f"/incidents/{incident_id}?execution_id={real_execution_id}"
+    )
+
+    assert canonical_detail.status_code == 200
+    assert canonical_detail.json()["record_type"] == "canonical"
+    assert canonical_detail.json()["execution_id"] is None
+    assert listing.status_code == 200
+    assert {
+        (item["incident_id"], item["execution_id"], item["record_type"])
+        for item in listing.json()["items"]
+    } == {
+        (canonical_id, None, "canonical"),
+        (incident_id, real_execution_id, "execution"),
+    }
+    assert real_detail.status_code == 200
+    assert real_detail.json()["record_type"] == "execution"
+    assert real_detail.json()["triage"]["title"] == "neighboring execution"
+
+    malformed_execution_id = "16161616161616161616161616161616"
+    malformed = _record(
+        incident_id,
+        "17171717171717171717171717171717",
+        "mismatched execution identity",
+    )
+    (tmp_path / f"{incident_id}.execution-{malformed_execution_id}.json").write_text(
+        json.dumps(malformed),
+        encoding="utf-8",
+    )
+    assert client.get("/incidents/history").status_code == 503
+    assert (
+        client.get(
+            f"/incidents/{incident_id}?execution_id={malformed_execution_id}"
+        ).status_code
+        == 503
+    )
+    assert client.get(f"/incidents/{canonical_id}").status_code == 200
+
+
+def test_history_lists_legacy_partial_shaped_canonical(tmp_path, monkeypatch):
+    import app as app_module
+
+    incident_id = "inc-partial-shape"
+    partial_execution_id = "18181818181818181818181818181818"
+    canonical_id = f"{incident_id}.partial-{partial_execution_id}"
+    monkeypatch.setattr(
+        app_module.coordinator_module,
+        "TRAJECTORIES_DIR",
+        tmp_path,
+    )
+
+    canonical = _record(canonical_id, partial_execution_id, "legacy canonical")
+    canonical.pop("execution_id")
+    (tmp_path / f"{canonical_id}.json").write_text(
+        json.dumps(canonical),
+        encoding="utf-8",
+    )
+    client = _client()
+    detail = client.get(f"/incidents/{canonical_id}")
+    listing = client.get("/incidents/history")
+
+    assert detail.status_code == 200
+    assert detail.json()["record_type"] == "canonical"
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["incident_id"] == canonical_id
+
+
 def test_history_reader_is_import_safe_in_a_fresh_process(tmp_path):
     root = tmp_path / "fresh-store"
     incident_id = "inc-fresh-process"

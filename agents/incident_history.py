@@ -32,18 +32,30 @@ _WINDOWS_RESERVED_INCIDENT_NAMES = frozenset(
 _EXECUTION_FILE = re.compile(
     r"(?P<incident_id>.+)\.execution-(?P<execution_id>[0-9a-f]{32})\.json"
 )
-_PARTIAL_FILE = re.compile(r".+\.partial-[0-9a-f]{32}\.json")
+_PARTIAL_FILE = re.compile(
+    r"(?P<incident_id>.+)\.partial-(?P<execution_id>[0-9a-f]{32})\.json"
+)
 _SECRET_KEY = re.compile(
-    r"(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|"
+    r"(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"proxy[_-]?authorization|authorization|set[_-]?cookie|cookie|"
     r"session[_-]?token|token|bearer|password|passwd|secret|credential|"
     r"private[_-]?key)"
 )
 _SECRET_TEXT = (
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
     re.compile(
+        r"""(?ix)\b(?:proxy-)?authorization\s*["']?\s*[:=]\s*["']?"""
+        r"""(?:basic|bearer)\s+[^\s,"'}`\]]+"""
+    ),
+    re.compile(
+        r"""(?im)\b(?:set-cookie|cookie)\s*["']?\s*[:=]\s*"""
+        r"""(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\r\n]*)"""
+    ),
+    re.compile(
         r"""(?ix)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"""
-        r"""session[_-]?token|token|bearer|"""
-        r"""authorization|password|passwd|secret|credential|private[_-]?key)"""
+        r"""session[_-]?token|token|bearer|proxy[_-]?authorization|"""
+        r"""authorization|set[_-]?cookie|cookie|password|passwd|secret|"""
+        r"""credential|private[_-]?key)"""
         r"""["']?\s*[:=]\s*["']?[^,\s"'}`\]]+"""
     ),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -75,6 +87,7 @@ class _Identity:
 class _Candidate:
     filename: str
     identities: tuple[_Identity, ...]
+    is_partial: bool = False
 
 
 def _valid_incident_id(value: Any) -> bool:
@@ -148,8 +161,24 @@ def _safe_file(root: Path, filename: str) -> Path | None:
 
 
 def _candidate_for_filename(filename: str) -> _Candidate | None:
-    if not filename.endswith(".json") or _PARTIAL_FILE.fullmatch(filename):
+    if not filename.endswith(".json"):
         return None
+
+    partial_match = _PARTIAL_FILE.fullmatch(filename)
+    if partial_match:
+        canonical_id = filename[:-5]
+        if not _valid_incident_id(canonical_id):
+            return None
+        incident_id = partial_match.group("incident_id")
+        execution_id = partial_match.group("execution_id")
+        identities = [_Identity("canonical", canonical_id)]
+        if _valid_incident_id(incident_id) and _valid_execution_id(execution_id):
+            identities.append(_Identity("partial", incident_id, execution_id))
+        return _Candidate(
+            filename,
+            tuple(identities),
+            is_partial=True,
+        )
 
     identities: list[_Identity] = []
     execution_match = _EXECUTION_FILE.fullmatch(filename)
@@ -223,16 +252,21 @@ def _load_candidate(root: Path, candidate: _Candidate) -> tuple[_Identity, dict[
     if path is None:
         raise RecordNotFound
     allow_missing_execution_id = (
-        len(candidate.identities) == 1
-        and candidate.identities[0].record_type == "canonical"
+        any(identity.record_type == "canonical" for identity in candidate.identities)
     )
     record = _read_json(path, allow_missing_execution_id=allow_missing_execution_id)
-    for identity in candidate.identities:
-        if record["incident_id"] != identity.incident_id:
-            continue
-        if identity.execution_id is None or record.get("execution_id") == identity.execution_id:
-            return identity, record
-    raise HistoryUnavailable
+    matches = [
+        identity
+        for identity in candidate.identities
+        if record["incident_id"] == identity.incident_id
+        and (
+            identity.execution_id is None
+            or record.get("execution_id") == identity.execution_id
+        )
+    ]
+    if len(matches) != 1:
+        raise HistoryUnavailable
+    return matches[0], record
 
 
 def _safe_text(value: Any, *, maximum: int = MAX_TEXT_CHARS) -> Any:
@@ -579,6 +613,13 @@ def list_incident_history(
                 candidate = _candidate_for_filename(entry.name)
                 if candidate is None or _safe_file(root, candidate.filename) is None:
                     continue
+                if candidate.is_partial:
+                    try:
+                        identity, _ = _load_candidate(root, candidate)
+                    except (HistoryUnavailable, RecordNotFound):
+                        continue
+                    if identity.record_type != "canonical":
+                        continue
                 candidates.append(candidate)
                 if len(candidates) > MAX_HISTORY_RECORDS:
                     raise HistoryUnavailable

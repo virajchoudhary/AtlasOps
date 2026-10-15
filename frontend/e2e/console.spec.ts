@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 
 const routes = [
   ["Overview", "/", "AtlasOps"],

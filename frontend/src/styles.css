@@ -2299,6 +2299,7 @@ select:focus-visible {
 
 .persisted-history__table-scroll {
   overflow-x: auto;
+  contain: paint;
   border-top: 1px solid #343d39;
   border-bottom: 1px solid #343d39;
 }

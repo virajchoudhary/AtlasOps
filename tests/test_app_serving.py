@@ -73,6 +73,32 @@ def _integrated_test_app(frontend_dist):
 
 
 @pytest.mark.asyncio
+async def test_frontend_file_read_runs_outside_the_request_event_loop(tmp_path, monkeypatch):
+    import asyncio
+    from pathlib import Path
+
+    from app import create_frontend_app
+
+    dist = _write_frontend_dist(tmp_path)
+    original_read = Path.read_text
+    reads = []
+
+    def checked_read(path, *args, **kwargs):
+        if path == dist / "index.html":
+            with pytest.raises(RuntimeError, match="no running event loop"):
+                asyncio.get_running_loop()
+            reads.append(path)
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", checked_read)
+    async with _client(create_frontend_app(dist)) as client:
+        response = await client.get("/")
+    assert response.status_code == 200
+    assert '<div id="root"></div>' in response.text
+    assert reads == [dist / "index.html"]
+
+
+@pytest.mark.asyncio
 async def test_built_frontend_serves_index_assets_and_nested_routes(tmp_path):
     from app import create_frontend_app
 

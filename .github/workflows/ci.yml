@@ -251,6 +251,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]" build
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build frontend for integrated application tests
+        run: npm run build --prefix frontend
+
       - name: Compile Python sources
         run: |
           python -m compileall -q \

@@ -8,6 +8,7 @@ import threading
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.routing import APIRoute
 
 
 @pytest.mark.parametrize(
@@ -65,8 +66,17 @@ def test_slow_console_reads_do_not_block_health(monkeypatch, path, target):
 def test_blocking_console_handlers_use_the_fastapi_worker_pool():
     import app as module
 
+    frontend_routes = {
+        route.path: route
+        for route in module.app.routes
+        if isinstance(route, APIRoute) and route.path in module._FRONTEND_PATHS
+    }
+    assert set(frontend_routes) == set(module._FRONTEND_PATHS)
+    for route in frontend_routes.values():
+        assert not inspect.iscoroutinefunction(route.endpoint), route.path
+
     for name in (
-        "root", "comparison_table_markdown", "query_recommender_endpoint",
+        "comparison_table_markdown", "query_recommender_endpoint",
         "get_ablation_matrix_endpoint", "ui_catalog", "ui_attempt",
         "audit_log_entries", "audit_verify", "slack_feed",
     ):

@@ -307,6 +307,33 @@ def test_ci_runs_react_build_unit_and_read_only_browser_e2e():
     assert "${{ github.run_attempt }}" in artifact["with"]["name"]
 
 
+def test_python_ci_builds_the_frontend_before_application_tests():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    quality = workflow["jobs"]["quality"]
+    assert quality["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    steps = quality["steps"]
+    node_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("uses") == "actions/setup-node@v4"
+    )
+    assert steps[node_index]["with"]["node-version"] == "22"
+    install_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "npm ci --prefix frontend"
+    )
+    build_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "npm run build --prefix frontend"
+    )
+    test_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "python -m pytest tests/"
+    )
+    assert node_index < install_index < build_index < test_index
+
+
 @pytest.mark.parametrize(
     "filename",
     [

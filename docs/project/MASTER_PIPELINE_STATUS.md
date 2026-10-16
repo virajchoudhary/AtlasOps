@@ -31,7 +31,11 @@ This governance document records the repository's alignment with the adopted non
 
 ---
 
-The current non-experimental finalization is based on freshly fetched remote main
+Current consolidated software acceptance is maintained in the single
+[project closure checklist](COMPLETION_CHECKLIST.md), based on PR 204.
+It does not change the scientific statuses or preserved evidence below.
+
+The prior non-experimental finalization was based on freshly fetched remote main
 `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, verified on 5 October 2026.
 G4/G9 are frozen and further model/live experiments are deferred. The
 [evidence index](../EVIDENCE_INDEX.md) distinguishes current results from
@@ -284,7 +288,11 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
   finalization. The original/current deployment contract also requires
   peer-host/operator and security acceptance; local startup and tests alone
   do not justify a formal G14 PASS or public/live deployment claim.
-- The local Gradio demo in `dashboard.py` and `demo/launcher.py` is read-only. Scenario selection and cleanup guidance execute no kubectl command, inject no fault, and claim no simulated incident outcome. It displays the checked-in G0-G15 status and selected preserved G4 negative/interrupted attempts with source hashes.
+- The current React presentation in `frontend/` and `demo/launcher.py` is
+  read-only by default; `dashboard.py` retains the older Gradio interface.
+  Checked-in evidence and labelled rehearsal outputs remain separate from
+  operational outcomes. The integrated `app.py` also serves protected backend
+  APIs and does not inherit the standalone launcher's no-execution boundary.
 - This console does not certify the separate FastAPI/coordinator entrypoints, an actual safe deployment, or universal zero risk. SAFETY-01 fixes P1 timeout continuation with mock/unit coverage; this does not close an empirical gate. Demo displays of Stage 6/8/9/13 outputs must not be presented as empirical performance.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]

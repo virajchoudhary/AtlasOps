@@ -861,8 +861,8 @@ body.content-architecture-reference-body #root {
 .reference-repo-section {
   position: relative;
   display: flex;
-  height: 100svh;
-  min-height: 100svh;
+  height: auto;
+  min-height: 0;
   flex-direction: column;
   padding: 80px;
   background: var(--reference-paper);
@@ -1489,6 +1489,15 @@ body.content-architecture-reference-body #root {
     row-gap: 64px;
   }
 
+  .reference-showcase-section {
+    padding-bottom: max(160px, 76svh);
+  }
+
+  .reference-testimonial {
+    min-height: 64svh;
+    margin-top: 26svh;
+  }
+
   .reference-project:nth-child(2n),
   .reference-project:nth-child(3n) {
     margin-top: 0;
@@ -2112,9 +2121,23 @@ body.content-architecture-reference-body #root {
   display: block;
   width: 100%;
   height: 100%;
-  --media-object-fit: contain;
-  --media-background-color: #080808;
-  --controls: none;
+  background: #080808;
+  object-fit: contain;
+}
+
+.reference-reel-status {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  max-width: calc(100vw - 48px);
+  margin: 0;
+  transform: translate(-50%, -50%);
+  color: #f1eee7;
+  font: 9px var(--reference-mono);
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 .reference-reel-close,
@@ -2310,14 +2333,28 @@ body.content-architecture-reference-body #root {
   background: #232323;
 }
 
-.reference-about-video mux-player {
+.reference-about-video video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  --media-object-fit: cover;
-  --media-background-color: #232323;
-  --controls: none;
+  background: #232323;
+  object-fit: cover;
+}
+
+.reference-about-video-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 12px;
+  background: rgb(8 8 8 / 76%);
+  color: #f1eee7;
+  font: 8px var(--reference-mono);
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 @media (min-width: 1536px) {
@@ -2618,9 +2655,9 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-repo-section {
-    height: 100svh;
-    min-height: 100svh;
-    padding: 52px 12px;
+    height: auto;
+    min-height: 0;
+    padding: 72px 12px;
   }
 
   .reference-repo-window {
@@ -2636,7 +2673,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-showcase-section {
-    min-height: 5200px;
+    min-height: 0;
     padding: 432px 5vw 120px;
   }
 
@@ -2708,9 +2745,14 @@ body.content-architecture-reference-body #root {
     position: relative;
     top: auto;
     min-height: 0;
+    grid-column: 1 / -1;
     flex-direction: row;
     align-items: flex-end;
     gap: 20px;
+  }
+
+  .reference-faq-list {
+    grid-column: 1 / -1;
   }
 
   .reference-faq-heading h2 {
@@ -2940,9 +2982,9 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-repo-section {
-    height: 100svh;
-    min-height: 100svh;
-    padding: 48px 12px;
+    height: auto;
+    min-height: 0;
+    padding: 72px 0;
   }
 
   .reference-repo-heading {
@@ -2954,6 +2996,8 @@ body.content-architecture-reference-body #root {
 
   .reference-repo-window {
     min-height: 0;
+    height: 160svh;
+    flex: 0 0 auto;
   }
 
   .reference-repo-toolbar {
@@ -3029,7 +3073,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-showcase-section {
-    min-height: 4527px;
+    min-height: 0;
     padding: 432px 16px 95px;
   }
 
@@ -3045,7 +3089,7 @@ body.content-architecture-reference-body #root {
 
   .reference-showcase-grid {
     grid-template-columns: minmax(0, 1fr);
-    row-gap: 42px;
+    row-gap: 20px;
   }
 
   .reference-project:nth-child(2n),
@@ -3080,12 +3124,12 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-pricing-section {
-    padding: 75px 16px;
+    padding: 75px 16px calc(75px + 6svh);
   }
 
   .reference-pricing-heading {
     gap: 17px;
-    margin-bottom: 28px;
+    margin-bottom: 36px;
   }
 
   .reference-pricing-heading h2 {
@@ -3098,12 +3142,12 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-pricing-ticket {
-    padding: 16px 13px 14px;
+    padding: 22px 16px 20px;
   }
 
   .reference-pricing-facts {
     gap: 12px;
-    padding-bottom: 16px;
+    padding-bottom: 20px;
   }
 
   .reference-pricing-facts h3 {
@@ -3116,7 +3160,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-pricing-facts strong {
-    font-size: 38px;
+    font-size: 104px;
   }
 
   .reference-pricing-benefits {
@@ -3125,7 +3169,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-pricing-benefits li {
-    min-height: 38px;
+    min-height: 42px;
     font-size: 10px;
   }
 
@@ -3133,7 +3177,7 @@ body.content-architecture-reference-body #root {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
-    padding-top: 13px;
+    padding-top: 16px;
   }
 
   .reference-edition-picker legend,
@@ -3147,14 +3191,18 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-faq-section {
-    gap: 31px;
-    padding: 75px 16px 85px;
+    gap: 64px;
+    padding: calc(50svh + 10px) 16px 72px;
   }
 
   .reference-faq-heading {
     align-items: flex-start;
-    flex-direction: column;
-    gap: 18px;
+    display: contents;
+  }
+
+  .reference-faq-heading > .reference-reveal {
+    grid-column: 1 / -1;
+    grid-row: 1;
   }
 
   .reference-faq-heading h2 {
@@ -3163,22 +3211,30 @@ body.content-architecture-reference-body #root {
 
   .reference-faq-heading > .reference-access-link {
     min-height: 37px;
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .reference-faq-list {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .reference-faq-trigger {
-    min-height: 68px;
-    gap: 9px;
-    padding: 15px 0;
+    min-height: 72px;
+    gap: 20px;
+    padding: 24px 0;
   }
 
   .reference-faq-trigger > span:first-child {
-    gap: 9px;
-    font-size: 8px;
+    gap: 15px;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .reference-faq-trigger small {
-    flex-basis: 34px;
-    font-size: 8px;
+    flex-basis: 40px;
+    font-size: 10px;
   }
 
   .reference-faq-icon {
@@ -3188,7 +3244,7 @@ body.content-architecture-reference-body #root {
 
   .reference-faq-answer {
     padding: 0 8px 18px 43px;
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .reference-footer {
@@ -3360,6 +3416,23 @@ body.content-architecture-reference-body #root {
   .reference-repo-section {
     height: calc(160svh + 160px);
     min-height: calc(160svh + 160px);
+  }
+
+  .reference-repo-window {
+    height: 160svh;
+    flex: 0 0 auto;
+  }
+}
+
+@media (min-width: 851px) and (prefers-reduced-motion: reduce) {
+  .reference-repo-section {
+    height: 100svh;
+    min-height: 100svh;
+  }
+
+  .reference-repo-window {
+    height: auto;
+    flex: 1;
   }
 }
 

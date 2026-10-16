@@ -342,7 +342,7 @@ async def reset_chaos(_body: ResetRequest):
     )
 
 
-@app.get("/stream")
+@app.get("/stream", dependencies=[Security(_require_api_key)])
 async def stream():
     return StreamingResponse(
         subscribe(),
@@ -351,7 +351,7 @@ async def stream():
     )
 
 
-@app.get("/thoughts")
+@app.get("/thoughts", dependencies=[Security(_require_api_key)])
 async def thoughts():
     return JSONResponse({"thoughts": get_history()})
 
@@ -525,7 +525,7 @@ async def approve_public(payload: ApprovalCallbackRequest):
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by or "human-operator",
+        approved_by=payload.approved_by,
         reason=payload.reason,
     )
     status = 200 if result.get("ok") else 400

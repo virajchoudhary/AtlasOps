@@ -185,7 +185,11 @@ vllm serve Qwen/Qwen2.5-72B-Instruct \
 
 ---
 
-## Business Value
+## Historical business-value proposal
+
+The following figures and market claims were proposed upstream. They were not
+measured or established by the university continuation and are not acceptance
+criteria or deployment evidence.
 
 | Metric | Before AtlasOps | After AtlasOps |
 |---|---|---|
@@ -194,7 +198,9 @@ vllm serve Qwen/Qwen2.5-72B-Instruct \
 | Postmortem drafting time | 2 hrs/incident | **< 30 sec** |
 | Cost per incident (P2/P3) | $500–750 | **~$0.50** (API cost) |
 
-**Market context:** PagerDuty ($3.7B), Datadog ($25B), and OpsRamp ($2B+) all sell products in this space. None of them close the loop automatically — they alert humans and wait. AtlasOps is the first system that closes the loop end-to-end using real SRE tool chains trained on real incident history.
+**Historical market narrative:** the upstream proposal compared AtlasOps with
+PagerDuty, Datadog and OpsRamp and claimed unique end-to-end automation. This
+continuation has not established that market comparison or uniqueness claim.
 
 **Revenue model (if productized):**
 - SaaS: $500/month per cluster (vs. $8K/month in SRE on-call cost)

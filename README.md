@@ -115,6 +115,12 @@ Webhook occurrence admission is persisted in
 same on-disk SQLite file. Reset does not clear records, and queued or attempted
 occurrences are never automatically replayed or reclaimed.
 
+Live workflow events at `/thoughts`, `/stream`, `/api/thoughts` and `/api/stream`
+also require `X-AtlasOps-Key`. Keys in query parameters are not authentication.
+Repository catalog/evidence reads remain separate from protected live events.
+Approval decisions require both valid authentication and an explicit
+`approved_by` identity; omission does not create a default human identity.
+
 The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
 defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for
@@ -123,8 +129,14 @@ operator feedback or incident improvement.
 
 ## Quick Start
 
-The safe local entry point is the React/TypeScript research console. With Python 3.11+
-and Node.js 22+, install the small presentation dependencies and build once:
+The [project closure checklist](docs/project/COMPLETION_CHECKLIST.md) records the
+consolidated application's implementation, verification and acceptance status.
+It separates release work from the
+[unapproved research execution proposal](docs/project/PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md).
+Neither document authorizes a merge, deployment, model run or live incident.
+
+The safe local entry point is the React/TypeScript research console. With Python
+3.11 or 3.12 and Node.js 22.12+, install the small presentation dependencies and build once:
 
 ```powershell
 python -m pip install fastapi uvicorn
@@ -147,6 +159,8 @@ verification. Every output is SYNTHETIC / NON-LIVE / NON-EMPIRICAL, not agent in
 or live incident proof. The [presentation runbook](docs/project/DEMO_RUNBOOK.md) gives
 the click path and restart command.
 
+The [presentation runbook](docs/project/DEMO_RUNBOOK.md#start-the-integrated-application)
+also gives exact loopback startup commands for the integrated application.
 The `Dockerfile` is a separate integrated app entrypoint: it builds the React console
 and starts `app.py` with the existing operational API routes. It is not the
 loopback-only read-only launcher above; operator and webhook authentication remain

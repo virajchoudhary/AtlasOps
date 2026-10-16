@@ -709,6 +709,27 @@ class TestStage15SubmissionPackage:
         recovery_attributes = _git_attributes({recovery_commands})[recovery_commands]
         assert recovery_attributes == {"text": "set", "eol": "lf"}
 
+    def test_frontend_source_keeps_explicit_lf_checkout(self):
+        path = "frontend/src/reference/components/ReelDialog.tsx"
+        assert _git_attributes({path})[path] == {"text": "set", "eol": "lf"}
+
+    @pytest.mark.parametrize("filename", [
+        "content-architecture-reel.mp4",
+        "edoardo-founder-video.mp4",
+    ])
+    def test_reference_video_git_filter_preserves_raw_bytes(self, filename):
+        path = f"frontend/public/reference/assets/{filename}"
+        assert _git_attributes({path})[path]["text"] == "unset"
+        filtered_blob = subprocess.check_output(
+            ["git", "hash-object", "--", path], text=True,
+        ).strip()
+        raw_blob = subprocess.check_output(
+            ["git", "hash-object", "--no-filters", "--", path], text=True,
+        ).strip()
+        assert filtered_blob == raw_blob
+        indexed_bytes = subprocess.check_output(["git", "show", f":{path}"])
+        assert indexed_bytes == Path(path).read_bytes()
+
     def test_all_assets_match_clean_linux_checkout_simulation(self):
         assets = collect_submission_assets()
         attributes = _git_attributes(set(assets))
@@ -797,6 +818,7 @@ class TestStage15SubmissionPackage:
             "frontend/public/fonts/nested/GeistMono.woff2",
             "frontend/public/fixtures/nested/index.html",
             "frontend/public/fixtures/nested/OFL.txt",
+            "frontend/public/reference/assets/reel.mp4",
         }
         excluded = {
             "frontend/src/reference/tests/results/captured.tsx",
@@ -807,6 +829,7 @@ class TestStage15SubmissionPackage:
             "frontend/public/node_modules/package/icon.svg",
             "frontend/public/build/bundle.js",
             "frontend/public/private/credentials.html",
+            "frontend/public/private/recording.mp4",
             "frontend/src/secrets/runtime.ts",
             "frontend/public/secrets/runtime.json",
             "frontend/src/SeCrEt/runtime.ts",

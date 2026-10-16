@@ -1,29 +1,14 @@
 import { X } from "lucide-react";
-import { useEffect, useRef } from "react";
-
-const REEL_PLAYBACK_ID = "DK00HHX701aluFidRzbGHE5uEqyhWfB00Gsqv02JfSzYQL4";
+import { useEffect, useRef, useState } from "react";
 
 export function ReelDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [mediaState, setMediaState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-
-    if (!customElements.get("mux-player")) {
-      const existingScript = document.querySelector<HTMLScriptElement>(
-        "script[data-reference-mux-player]",
-      );
-      if (!existingScript) {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/npm/@mux/mux-player@3.13.3/dist/mux-player.js";
-        script.type = "module";
-        script.async = true;
-        script.dataset.referenceMuxPlayer = "true";
-        document.head.append(script);
-      }
-    }
 
     dialog.showModal();
     closeButtonRef.current?.focus();
@@ -47,16 +32,27 @@ export function ReelDialog({ onClose }: { onClose: () => void }) {
         close();
       }}
     >
-      <mux-player
+      <video
         className="reference-reel-player"
-        playback-id={REEL_PLAYBACK_ID}
-        thumbnail-time="1"
+        src="/reference/assets/content-architecture-reel.mp4"
+        autoPlay
+        controls
+        playsInline
         preload="auto"
-        autoplay="any"
-        disable-cookies=""
-        disable-tracking=""
         aria-label="The Content Architecture product reel"
+        onCanPlay={() => setMediaState("ready")}
+        onError={() => setMediaState("error")}
       />
+      {mediaState === "loading" && (
+        <p className="reference-reel-status" role="status">
+          Loading reel...
+        </p>
+      )}
+      {mediaState === "error" && (
+        <p className="reference-reel-status" role="alert">
+          The reel could not be loaded.
+        </p>
+      )}
       <button
         ref={closeButtonRef}
         className="reference-reel-close"

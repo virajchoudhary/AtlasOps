@@ -1,35 +1,34 @@
 import { ArrowUpRight, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ABOUT_SECTIONS } from "../content";
 
 function FounderVideo() {
-  useEffect(() => {
-    if (customElements.get("mux-player")) return;
-
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/@mux/mux-player@3.13.3/dist/mux-player.js";
-    script.type = "module";
-    script.async = true;
-    script.dataset.referenceMuxPlayer = "true";
-    document.head.append(script);
-    return () => {
-      script.remove();
-    };
-  }, []);
+  const [mediaState, setMediaState] = useState<"loading" | "ready" | "error">("loading");
 
   return (
     <div className="reference-about-video">
-      <mux-player
-        playback-id="MTxcyyeb3G2Nms7mL00HNlpdh4UEc7Uk019pYk3zWovbU"
-        thumbnail-time="1"
-        autoplay="any"
+      <video
+        src="/reference/assets/edoardo-founder-video.mp4"
+        autoPlay
+        controls
+        playsInline
         preload="metadata"
-        muted=""
-        loop=""
-        disable-cookies=""
-        disable-tracking=""
+        muted
+        loop
         aria-label="Edoardo Lunardi profile video"
+        onCanPlay={() => setMediaState("ready")}
+        onError={() => setMediaState("error")}
       />
+      {mediaState === "loading" && (
+        <p className="reference-about-video-status" role="status">
+          Loading founder video...
+        </p>
+      )}
+      {mediaState === "error" && (
+        <p className="reference-about-video-status" role="alert">
+          The founder video could not be loaded.
+        </p>
+      )}
     </div>
   );
 }

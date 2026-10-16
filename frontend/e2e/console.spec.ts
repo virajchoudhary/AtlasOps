@@ -539,10 +539,10 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
 
   await writeProof();
 
-  expect(catalogAssets, "catalogued reference assets").toHaveLength(23);
+  expect(catalogAssets, "catalogued reference assets").toHaveLength(25);
   expect(new Set(catalogAssets.map(({ filename }) => filename)).size,
-    "unique catalogued reference assets").toBe(23);
-  expect(assetByteProof, "served reference assets").toHaveLength(23);
+    "unique catalogued reference assets").toBe(25);
+  expect(assetByteProof, "served reference assets").toHaveLength(25);
   for (const asset of assetByteProof) {
     expect(asset.status, `${asset.filename} response status`).toBe(200);
     expect(asset.sourceSha256, `${asset.filename} source SHA-256`).toBe(asset.expectedSha256);

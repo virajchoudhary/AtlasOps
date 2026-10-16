@@ -12,9 +12,12 @@ NOT_PASSED; scientific certification remains NOT_CERTIFIED.
 
 ## Start On This Windows Machine
 
-From `C:\AtlasOps\.codex-worktrees\demo-readiness-20261007`:
+Use the consolidated PR 204 checkout on this machine:
 
 ```powershell
+Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
+npm ci --prefix frontend
+npm run build --prefix frontend
 .\scripts\start-demo.ps1 -Check
 .\scripts\start-demo.ps1
 ```
@@ -41,7 +44,37 @@ and matching rehearsal fixtures without starting services or contacting infrastr
 It is not a live model, cluster, HTTP, or hosted-deployment verdict. Startup also runs
 these checks and refuses an incomplete local build.
 
-## Optional Live Observations
+## Start the integrated application
+
+The same checkout also runs the built frontend and operational backend together.
+Use a separate port from any existing read-only presentation:
+
+```powershell
+Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
+python -m pip install -e ".[demo]"
+npm ci --prefix frontend
+npm run build --prefix frontend
+$env:ATLASOPS_AUTO_HF_INFERENCE = "0"
+$env:ATLASOPS_USE_HF_INFERENCE = "0"
+$env:ATLASOPS_LIVE_JUDGE = "0"
+python -m uvicorn app:app --host 127.0.0.1 --port 7866
+```
+
+Open `http://127.0.0.1:7866/`. All nine console views and `/reference` use
+this origin. `/health` is a process check, not evidence of a working model.
+Protected history returns 503 without configured operator authentication and
+401 for a missing or wrong key. An empty history is not a fabricated incident.
+Only separately configured, newly rotated credentials may unlock protected
+records. Do not enable webhook/model execution for an ordinary presentation.
+The password field keeps its key only in the current view and clears on reload.
+The read-only launcher above remains the recommended credential-free demo.
+
+The integrated API enforces exact-action approval and objective-verifier truth.
+The rehearsal uses labelled scripted outputs and cannot approve a real action.
+The [closure checklist](COMPLETION_CHECKLIST.md) records actual final-head
+acceptance, remaining visual limitations and unresolved scientific gates.
+
+## Historical optional live observations
 
 Start with `--live-observations` to show current health responses alongside the
 clearly separate rehearsal. This permits fixed localhost GETs only:
@@ -58,7 +91,9 @@ deployment provenance, incident resolution, or SFT/GRPO execution.
 This option starts no Docker container, loads no model, calls no Kubernetes tool,
 and executes no incident. The default launcher remains offline/read-only.
 
-For the current existing Kind services, keep each forward running in a separate
+The following historical Kind forwarding commands require a separately verified
+target and operator authorization. Do not start them for the offline demo. Keep
+an authorized forward running in a separate
 terminal; reconnect a forward if its pod restarts:
 
 ```powershell
@@ -73,8 +108,9 @@ Then start the presentation from this checkout with:
 & C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --live-observations
 ```
 
-The deployed coordinator reports `qwen2.5:1.5b` and uses an older `g3-local`
-image. Its process health is not acceptance of the current source or trained
+The historically observed coordinator reported `qwen2.5:1.5b` and used an older
+`g3-local` image. That observation is not current service verification. Its
+process health is not acceptance of the current source or trained
 adapter. The separately started cached server's model inventory does not prove
 generation. The live research freeze in `CONTROLLED_G9_ADMISSION_V1.md` remains
 historical. The owner explicitly superseded it in this chat for one controlled
@@ -279,6 +315,7 @@ model-backed demonstration is not yet established.
 
 Local demo acceptance covers production build, browser interactions, responsive layout,
 GET-only traffic, no execution imports, and preserved evidence. It is not a hosted-site
-or deployment-safety verdict. The repository's historical Space Dockerfile starts the
-operational `app.py`, not this React presentation, and is not changed by this work.
+or deployment-safety verdict. The repository's Dockerfile builds the React
+frontend and starts the integrated operational `app.py`. It is not the
+loopback-only read-only launcher.
 Hosted deployment requires a confirmed target and explicit authorization.

@@ -49,3 +49,14 @@ The browser requested an AVIF representation with `auto=format`.
 | `avatar-elliott-github.png` | Public GitHub profile image for Elliott Mangham, collected from the page DOM; not referenced by the current homepage component | `cf37aee9d049032eea309a847e3ff2b67cde0fe3ce60d40beeec812360327981` |
 | `avatar-studioboldest.png` | Public GitHub profile image for Studio Boldest, collected from the page DOM | `f72ada3b42e477cd654d374afe3002b868572638cefbc2b6ac16990f297fb8d0` |
 | `avatar-minh.jpg` | Public GitHub profile image for Minh Chanh, collected from the page DOM | `f4ad507817977521f1c1e79796c772da1163c4e43f085edd99617cf497fee26e` |
+
+## Videos
+
+These local MP4s are remuxed with VLC 3.0.20 from the exact public Mux HLS
+playback IDs used by the reference. Each source rendition is capped at 720p.
+Byte counts below are the final local MP4 sizes.
+
+| Local asset | Public source and local bytes | SHA-256 |
+| --- | --- | --- |
+| `content-architecture-reel.mp4` | `https://stream.mux.com/DK00HHX701aluFidRzbGHE5uEqyhWfB00Gsqv02JfSzYQL4.m3u8` (720p; 6,295,486 bytes) | `6f5d768ad646a0f1a39c9ae45a0c8a79ab38c5f0f8e0801fc726933275197663` |
+| `edoardo-founder-video.mp4` | `https://stream.mux.com/MTxcyyeb3G2Nms7mL00HNlpdh4UEc7Uk019pYk3zWovbU.m3u8` (720p; 13,037,212 bytes) | `801bd393597143bbb049dd1fae4854f36dfe655cebbeff1ce3afcc887f0308cf` |

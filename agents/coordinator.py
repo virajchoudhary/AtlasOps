@@ -3123,7 +3123,7 @@ async def approval_pending():
     return JSONResponse({"pending": approval_gate.pending()})
 
 
-@app.get("/stream")
+@app.get("/stream", dependencies=[Security(_require_runtime_api_key)])
 async def stream_thoughts():
     """SSE endpoint — dashboard subscribes here for live agent thoughts."""
     from agents.stream import subscribe
@@ -3134,7 +3134,7 @@ async def stream_thoughts():
     )
 
 
-@app.get("/thoughts")
+@app.get("/thoughts", dependencies=[Security(_require_runtime_api_key)])
 async def get_thoughts():
     """Return full thought history for the timeline tab."""
     from agents.stream import get_history

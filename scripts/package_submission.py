@@ -106,6 +106,7 @@ _FRONTEND_PUBLIC_SUFFIXES = _FRONTEND_ASSET_SUFFIXES | {
     ".webmanifest",
     ".xml",
     ".txt",
+    ".mp4",
 }
 _FRONTEND_LICENSE_NAMES = frozenset({"ofl", "ofl.txt", "license", "license.txt"})
 _FRONTEND_EXCLUDED_DIRECTORIES = frozenset(
@@ -296,6 +297,9 @@ def _matching_tracked_files(
 def collect_submission_assets() -> dict[str, dict[str, Any]]:
     """Catalog selected Git-index assets with raw-byte hashes and sizes."""
     tracked_patterns = [
+        "frontend/.gitattributes",
+        "docs/project/COMPLETION_CHECKLIST.md",
+        "docs/project/PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md",
         "AGENTS.md",
         ".dockerignore",
         ".gitignore",

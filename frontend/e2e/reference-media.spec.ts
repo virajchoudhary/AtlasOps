@@ -37,6 +37,9 @@ for (const viewport of mediaViewports) {
     });
 
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.addInitScript(() => {
+      sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    });
     const response = await page.goto("/reference");
     expect(response?.status()).toBe(200);
     expect(response?.headers()["content-security-policy"]).toBe(strictFrontendCsp);

@@ -13,9 +13,13 @@ def test_frozen_candidate_source_drift_fails_closed_without_activation():
     report = candidate.inspect_candidate()
     assert report["status"] == "SOURCE_MISMATCH"
     assert report["source_mismatches"] == [
+        "agents/tools/chaos.py",
+        "scripts/run_stage4_golden_incident.py",
         "agents/coordinator.py",
         "demo/read_api.py",
         "demo/incident_monitor.py",
+        "training/grpo_environment.py",
+        "agents/verifier.py",
     ]
     assert report["historical_profile_unchanged"]
     assert report["active"] is report["runtime_qualified"] is False

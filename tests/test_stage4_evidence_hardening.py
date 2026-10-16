@@ -868,12 +868,143 @@ def test_failed_chaos_list_query_is_not_an_empty_preflight():
     assert observation == {"count": 0, "verified_zero": False}
 
 
+def _cleanup_target_get_args() -> list[str]:
+    return [
+        "get",
+        runner.TARGET_CHAOS_KIND.lower(),
+        runner.TARGET_CHAOS_NAME,
+        "-n",
+        runner.TARGET_CHAOS_NAMESPACE,
+        "-o",
+        "json",
+    ]
+
+
+def _cleanup_target_payload(uid: str, resource_version: str) -> dict:
+    return {
+        "kind": runner.TARGET_CHAOS_KIND,
+        "metadata": {
+            "name": runner.TARGET_CHAOS_NAME,
+            "namespace": runner.TARGET_CHAOS_NAMESPACE,
+            "uid": uid,
+            "resourceVersion": resource_version,
+        },
+    }
+
+
+def _install_fake_cleanup_api(monkeypatch):
+    from agents.tools import chaos
+
+    api = MagicMock()
+    api.delete_namespaced_custom_object.return_value = {"status": "Success"}
+    contexts = []
+
+    def new_api_client(context):
+        contexts.append(context)
+        return api, SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(chaos, "_new_chaos_api_client", new_api_client)
+    return api, contexts
+
+
+def test_postflight_cleanup_deletes_explicit_uid_with_fresh_resource_version(
+    monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    api, contexts = _install_fake_cleanup_api(monkeypatch)
+    calls = []
+
+    def kubectl(args):
+        calls.append(list(args))
+        if args == _cleanup_target_get_args():
+            return {
+                "success": True,
+                "stdout": json.dumps(_cleanup_target_payload("fault-uid", "42")),
+                "returncode": 0,
+            }
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        return {"success": True, "stdout": json.dumps({"items": []}), "returncode": 0}
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    cleanup = reconcile_stage4_postflight_cleanup(
+        "EXP-STAGE4-UID-CLEANUP",
+        root=str(tmp_path),
+        fault_uid="fault-uid",
+    )
+
+    assert cleanup["verified_zero_chaos"] is True
+    assert cleanup["fault_uid"] == "fault-uid"
+    assert cleanup["attempts"][0]["delete_result"]["success"] is True
+    assert calls == [
+        _cleanup_target_get_args(),
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+    ]
+    assert contexts == [runner.KIND_CONTEXT]
+    api.delete_namespaced_custom_object.assert_called_once_with(
+        group="chaos-mesh.org",
+        version="v1alpha1",
+        namespace=runner.TARGET_CHAOS_NAMESPACE,
+        plural=runner.TARGET_CHAOS_KIND.lower(),
+        name=runner.TARGET_CHAOS_NAME,
+        body={
+            "apiVersion": "v1",
+            "kind": "DeleteOptions",
+            "preconditions": {
+                "uid": "fault-uid",
+                "resourceVersion": "42",
+            },
+        },
+        _request_timeout=30,
+    )
+
+
+def test_postflight_cleanup_never_deletes_replacement_uid(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    api, _contexts = _install_fake_cleanup_api(monkeypatch)
+    calls = []
+    replacement = _cleanup_target_payload("replacement-uid", "43")
+
+    def kubectl(args):
+        calls.append(list(args))
+        if args == _cleanup_target_get_args():
+            return {
+                "success": True,
+                "stdout": json.dumps(replacement),
+                "returncode": 0,
+            }
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        return {
+            "success": True,
+            "stdout": json.dumps({"items": [replacement]}),
+            "returncode": 0,
+        }
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
+    cleanup = reconcile_stage4_postflight_cleanup(
+        "EXP-STAGE4-REPLACEMENT-CLEANUP",
+        root=str(tmp_path),
+        max_attempts=1,
+        fault_uid="fault-uid",
+    )
+
+    assert cleanup["verified_zero_chaos"] is False
+    assert cleanup["attempts"][0]["delete_result"]["error"] == (
+        "cleanup_identity_not_proven"
+    )
+    assert calls == [
+        _cleanup_target_get_args(),
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+    ]
+    api.delete_namespaced_custom_object.assert_not_called()
+
+
 def test_postflight_cleanup_persists_verified_zero_without_poison(monkeypatch, tmp_path):
     monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
 
     def kubectl(args):
-        if args[0] == "delete":
-            return {"success": True, "stdout": "deleted", "returncode": 0}
+        if args == _cleanup_target_get_args():
+            return {"success": False, "stderr": "NotFound", "returncode": 1}
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         return {"success": True, "stdout": json.dumps({"items": []}), "returncode": 0}
 
     monkeypatch.setattr(runner, "run_kubectl", kubectl)
@@ -892,9 +1023,10 @@ def test_postflight_cleanup_retries_then_poisons_environment(monkeypatch, tmp_pa
     calls = []
 
     def kubectl(args):
-        calls.append(args)
-        if args[0] == "delete":
-            return {"success": True, "stdout": "deleted", "returncode": 0}
+        calls.append(list(args))
+        if args == _cleanup_target_get_args():
+            return {"success": False, "stderr": "NotFound", "returncode": 1}
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         return {"success": True, "stdout": chaos_json, "returncode": 0}
 
     monkeypatch.setattr(runner, "run_kubectl", kubectl)
@@ -905,6 +1037,14 @@ def test_postflight_cleanup_retries_then_poisons_environment(monkeypatch, tmp_pa
     assert cleanup["poisoned_environment"] is True
     assert len(cleanup["attempts"]) == MAX_POSTFLIGHT_CLEANUP_ATTEMPTS
     assert len(calls) == 2 * MAX_POSTFLIGHT_CLEANUP_ATTEMPTS
+    assert calls == [
+        command
+        for _attempt in range(MAX_POSTFLIGHT_CLEANUP_ATTEMPTS)
+        for command in (
+            _cleanup_target_get_args(),
+            ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+        )
+    ]
     assert pathlib.Path(_poisoned_environment_path(str(tmp_path))).exists()
     with pytest.raises(RuntimeError, match="environment is poisoned"):
         reserve_experiment_attempt(
@@ -917,14 +1057,17 @@ def test_postflight_cleanup_retries_then_poisons_environment(monkeypatch, tmp_pa
 
 def test_postflight_cleanup_requires_successful_zero_chaos_observation(monkeypatch, tmp_path):
     monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+
+    def kubectl(args):
+        if args == _cleanup_target_get_args():
+            return {"success": False, "stderr": "NotFound", "returncode": 1}
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        return {"success": False, "stdout": json.dumps({"items": []})}
+
     monkeypatch.setattr(
         runner,
         "run_kubectl",
-        lambda args: (
-            {"success": True, "stdout": "deleted"}
-            if args[0] == "delete"
-            else {"success": False, "stdout": json.dumps({"items": []})}
-        ),
+        kubectl,
     )
     cleanup = reconcile_stage4_postflight_cleanup(
         "EXP-STAGE4-FAILED-POSTFLIGHT", root=str(tmp_path)

@@ -804,6 +804,24 @@ def _extract_prometheus_cpu_cores(result: dict[str, Any]) -> list[float]:
 
 def collect_sf002_cpu_telemetry(time_unix: float | None = None) -> dict[str, Any]:
     from agents.tools.prometheus import promql_query
+    from agents.stage_a import current_run
+
+    stage_a = current_run()
+    if stage_a is not None and stage_a.target:
+        from scripts.stage_a_telemetry import cpu_observation
+        from agents.stage_a import bind_cpu_identity
+
+        selector = (
+            'container_cpu_usage_seconds_total{namespace="default",'
+            f'pod="{stage_a.target["pod"]}",container="server"' + "}"
+        )
+        query = f"rate({selector}[2m])"
+        time_unix = time.time() if time_unix is None else time_unix
+        result = promql_query(query, time_unix=time_unix)
+        return bind_cpu_identity(cpu_observation(
+            result, query, observed_at=time.time(), target_pod=stage_a.target["pod"],
+            source_timestamps_result=promql_query(f"timestamp({selector})", time_unix=time_unix),
+        ), stage_a.target)
 
     started_at = datetime.now(UTC).isoformat()
     result = promql_query(DEGRADATION_QUERY, time_unix=time_unix)
@@ -815,6 +833,7 @@ def collect_sf002_cpu_telemetry(time_unix: float | None = None) -> dict[str, Any
         "query_error": result.get("error"),
         "samples_cores": samples,
         "max_cores": max(samples, default=None),
+        "raw_result": result,
     }
 
 
@@ -827,7 +846,25 @@ def sf002_degradation_decision(
     numeric = (
         isinstance(baseline_max, (int, float))
         and isinstance(post_max, (int, float))
+        and not isinstance(baseline_max, bool)
+        and not isinstance(post_max, bool)
+        and math.isfinite(baseline_max)
+        and math.isfinite(post_max)
+        and baseline_max >= 0
+        and post_max >= 0
     )
+    from agents.stage_a import current_run
+
+    if current_run() is not None:
+        numeric = bool(
+            numeric and baseline.get("fresh") is True and post_fault.get("fresh") is True
+            and baseline.get("query_success") is True and post_fault.get("query_success") is True
+            and all(
+                sample.get("source_timestamp", 0) > current_run().apply_started_epoch
+                for sample in post_fault.get("series", [])
+            )
+            and post_fault.get("series")
+        )
     absolute_increase = post_max - baseline_max if numeric else None
     ratio = post_max / baseline_max if numeric and baseline_max > 0 else None
     passed = bool(
@@ -991,8 +1028,52 @@ def wait_for_telemetry_readiness(
     attempts = 0
     stable = 0
     last_failures: list[str] = []
+    previous_probe = None
     while (monotonic_fn() - started) < timeout_seconds:
         attempts += 1
+        from agents.stage_a import current_run
+
+        stage_a = current_run()
+        if stage_a is not None and stage_a.target:
+            from agents.tools.prometheus import promql_query
+            from scripts.stage_a_telemetry import readiness_decision
+
+            query_fn = run_query_fn or promql_query
+            selector = (
+                'container_cpu_usage_seconds_total{namespace="default",'
+                f'pod="{stage_a.target["pod"]}",container="server"' + "}"
+            )
+            rate_query = f"rate({selector}[2m])"
+            if fetch_targets_fn is not None:
+                targets = fetch_targets_fn()
+            else:
+                status, body = http_get_fn("/api/v1/targets")
+                targets = json.loads(body) if status == 200 else {}
+            probe = readiness_decision(
+                targets, query_fn(selector), query_fn(rate_query),
+                observed_at=time.time(), previous=previous_probe,
+                target_pod=stage_a.target["pod"],
+                sample_timestamps_result=query_fn(f"timestamp({selector})"),
+            )
+            ok_endpoint, endpoint_failures = _endpoint_ready(http_get_fn=http_get_fn)
+            last_failures = endpoint_failures + probe["failures"]
+            if ok_endpoint and probe["fresh"]:
+                stable += 1
+                if stable >= TELEMETRY_REQUIRED_STABLE_PROBES and probe["ready"]:
+                    return True, {
+                        "attempts": attempts, "stable_probes": stable,
+                        "required_stable_probes": TELEMETRY_REQUIRED_STABLE_PROBES,
+                        "observations": [previous_probe, probe],
+                    }
+                previous_probe = probe
+            else:
+                stable = 0
+                previous_probe = None
+            remaining = timeout_seconds - (monotonic_fn() - started)
+            if remaining <= 0:
+                break
+            sleep_fn(min(TELEMETRY_SCRAPE_INTERVAL_SECONDS, remaining))
+            continue
         ok_endpoint, endpoint_failures = _endpoint_ready(http_get_fn=http_get_fn)
         ok_target, target_failures = _cadvisor_target_healthy(fetch_targets_fn=fetch_targets_fn)
         ok_query, query_failures = _telemetry_query_valid(run_query_fn=run_query_fn)
@@ -1234,7 +1315,12 @@ def _comms_evidence_satisfied(incident_result: dict[str, Any], *, env_resolved: 
     if not isinstance(final, dict):
         return False
     incident_id = str(incident_result.get("incident_id") or "")
-    summary = final.get("summary")
+    summary = final.get("summary_for_dashboard", final.get("summary"))
+    if (
+        "summary_for_dashboard" in final and "summary" in final
+        and final["summary_for_dashboard"] != final["summary"]
+    ):
+        return False
     postmortem_path = final.get("postmortem_path")
     if (
         not incident_id
@@ -1400,6 +1486,13 @@ def evaluate_causal_g4_predicate(
     if settling_completed is False:
         settling_satisfied = False
     c13 = env_resolved is True and settling_satisfied
+    from agents.stage_a import current_run
+
+    stage_a = current_run()
+    if stage_a is not None:
+        c13 = bool(c13 and stage_a.cpu_recovery and stage_a.cpu_recovery["passed"])
+        if c9:
+            c11 = c11 and executed_tool_calls[0].get("output", {}).get("uid") == stage_a.created_uid
 
     # 14. Comms and its postmortem contain the incident and verified outcome.
     c14 = _comms_evidence_satisfied(incident_result, env_resolved=env_resolved)
@@ -1462,7 +1555,38 @@ def _paymentservice_baseline_check() -> tuple[bool, dict[str, Any]]:
         workloads.get("success") is True
         and _paymentservice_baseline_healthy(workloads.get("stdout", ""))
     )
+    from agents.stage_a import current_run
+
+    if healthy and current_run() is not None and current_run().target:
+        healthy = _stage_a_target_unchanged()
     return healthy, workloads
+
+
+def _stage_a_target_unchanged() -> bool:
+    from agents.stage_a import current_run, target_identity
+
+    run = current_run()
+    if run is None:
+        return True
+    pods = run_kubectl([
+        "get", "pods", "-n", TARGET_NAMESPACE, "-l", "app=paymentservice", "-o", "json",
+    ])
+    try:
+        return pods.get("success") is True and target_identity(
+            json.loads(pods.get("stdout", ""))
+        ) == run.target
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def _stage_a_before_delete() -> None:
+    from agents.stage_a import current_run
+
+    run = current_run()
+    run.require_action_window()
+    if not _stage_a_target_unchanged():
+        raise RuntimeError("Stage A target pod or container changed before deletion")
+    run.require_action_window()
 
 
 def _active_chaos_count(kubectl_stdout: str) -> int:
@@ -1928,6 +2052,7 @@ def reconcile_stage4_postflight_cleanup(
     max_attempts: int = MAX_POSTFLIGHT_CLEANUP_ATTEMPTS,
     timing: str = "after_verdict_persisted",
     observed_leftover_chaos_sha256: str | None = None,
+    fault_uid: str | None = None,
 ) -> dict[str, Any]:
     """Boundedly remove the injected Chaos object and verify cluster-wide zero."""
     if not 1 <= max_attempts <= MAX_POSTFLIGHT_CLEANUP_ATTEMPTS:
@@ -1941,19 +2066,36 @@ def reconcile_stage4_postflight_cleanup(
 
     attempts: list[dict[str, Any]] = []
     verified_zero = False
+    from agents.stage_a import current_run
+    from agents.tools.chaos import delete_chaos_with_preconditions
+
+    stage_a = current_run()
+    if fault_uid is None and stage_a is not None:
+        fault_uid = stage_a.created_uid
     for attempt_number in range(1, max_attempts + 1):
         started_at = datetime.now(UTC).isoformat()
         try:
-            delete_result = run_kubectl(
+            current = run_kubectl(
                 [
-                    "delete",
-                    TARGET_CHAOS_KIND.lower(),
-                    TARGET_CHAOS_NAME,
-                    "-n",
-                    TARGET_CHAOS_NAMESPACE,
-                    "--ignore-not-found=true",
+                    "get", TARGET_CHAOS_KIND.lower(), TARGET_CHAOS_NAME,
+                    "-n", TARGET_CHAOS_NAMESPACE, "-o", "json",
                 ]
             )
+            payload = json.loads(current.get("stdout", "")) if current.get("success") else {}
+            metadata = payload.get("metadata", {})
+            if (
+                not fault_uid or metadata.get("uid") != fault_uid
+                or payload.get("kind") != TARGET_CHAOS_KIND
+                or metadata.get("name") != TARGET_CHAOS_NAME
+                or metadata.get("namespace") != TARGET_CHAOS_NAMESPACE
+            ):
+                delete_result = {"success": False, "error": "cleanup_identity_not_proven"}
+            else:
+                delete_result = delete_chaos_with_preconditions(
+                    TARGET_CHAOS_KIND, TARGET_CHAOS_NAME, TARGET_CHAOS_NAMESPACE,
+                    uid=fault_uid, resource_version=metadata.get("resourceVersion"),
+                    kube_context=KIND_CONTEXT,
+                )
         except Exception as exc:  # noqa: BLE001
             delete_result = {"success": False, "error": f"{type(exc).__name__}: {exc}"}
         time.sleep(POSTFLIGHT_CLEANUP_RETRY_INTERVAL_SECONDS)
@@ -1986,6 +2128,7 @@ def reconcile_stage4_postflight_cleanup(
         "affects_env_resolved": False,
         "verdict_preserved": True,
         "max_attempts": max_attempts,
+        "fault_uid": fault_uid,
         "attempts": attempts,
         "result": attempts[-1]["delete_result"] if attempts else None,
         "observed_leftover_chaos_sha256": observed_leftover_chaos_sha256,
@@ -2326,6 +2469,13 @@ def _configure_stage4_runtime() -> None:
 
 
 async def _run_experiment() -> dict[str, Any]:
+    from agents.stage_a import StageARun, stage_a_scope
+
+    with stage_a_scope(StageARun(target={})):
+        return await _run_experiment_impl()
+
+
+async def _run_experiment_impl() -> dict[str, Any]:
     global EXPERIMENT_ID, _RUN_OWNED_PREFLIGHT_BINDING
 
     EXPERIMENT_ID = _require_fresh_experiment_id()
@@ -2386,6 +2536,23 @@ async def _run_experiment() -> dict[str, Any]:
         raise
 
     try:
+        from agents.stage_a import current_run, target_identity
+
+        stage_a = current_run()
+        target_read = run_kubectl([
+            "get", "pods", "-n", TARGET_NAMESPACE, "-l", "app=paymentservice", "-o", "json",
+        ])
+        try:
+            if target_read.get("success") is not True:
+                raise ValueError("Target identity read failed")
+            stage_a.target = target_identity(json.loads(target_read.get("stdout", "")))
+        except (ValueError, TypeError, KeyError):
+            evidence.update(
+                attempt_state="NOT_RESERVED", outcome="PREFLIGHT_ABORT",
+                failure_phase="target_identity", completed_at=datetime.now(UTC).isoformat(),
+            )
+            return evidence
+        evidence["phases"]["target_identity"] = dict(stage_a.target)
         # Phase 0: Telemetry readiness gate — strictly BEFORE any reservation.
         # No attempt marker, no RESERVED state, no chaos object, and no T0 may
         # exist unless the exact F1 measurement path is demonstrably usable.
@@ -2422,6 +2589,11 @@ async def _run_experiment() -> dict[str, Any]:
             base_workloads,
         ) = wait_for_baseline_readiness()
         baseline_telemetry = collect_sf002_cpu_telemetry()
+        stage_a.baseline = baseline_telemetry
+        baseline_ready = bool(
+            baseline_ready and baseline_telemetry.get("fresh") is True
+            and baseline_telemetry.get("query_success") is True
+        )
         evidence["phases"]["baseline"] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "target_deployments": base_workloads.get("stdout")[:500],
@@ -2528,10 +2700,15 @@ async def _run_experiment() -> dict[str, Any]:
         }
         if not immediate_observation["verified_zero"]:
             return abort_before_fault("immediate_pre_apply_chaos_not_zero")
+        if not _stage_a_target_unchanged():
+            return abort_before_fault("immediate_pre_apply_target_changed")
+        if not stage_a.baseline_valid_at(time.time()):
+            return abort_before_fault("immediate_pre_apply_baseline_stale")
         reservation = consume_experiment_attempt(reservation)
         evidence["attempt_state"] = ATTEMPT_STATE_CONSUMED
         fault_crossed = True
-        inject_res = run_kubectl(["apply", "-f", manifest_path])
+        stage_a.begin_apply()
+        inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])
         injection_success = inject_res.get("success") is True
         evidence["phases"]["injection"] = {
             "timestamp": datetime.now(UTC).isoformat(),
@@ -2556,17 +2733,26 @@ async def _run_experiment() -> dict[str, Any]:
                 f"{cleanup_record['verified_zero_chaos']}"
             )
             return evidence
+        stage_a.bind_created_resource(json.loads(inject_res.get("stdout", "")))
         print(f"  Chaos Mesh injection: {inject_res.get('stdout')}")
 
         # Phase 3: Observable Fault Verification
         print("\n>>> Phase 3: Verifying Observable Fault in Cluster...")
         time.sleep(4)  # noqa: ASYNC251
         chaos_check = run_kubectl(["get", TARGET_CHAOS_KIND.lower(), "-n", TARGET_CHAOS_NAMESPACE, TARGET_CHAOS_NAME, "-o", "json"])
-        fault_observable = chaos_check.get("success") is True
+        fault_observable = False
+        if chaos_check.get("success") is True and _stage_a_target_unchanged():
+            try:
+                stage_a.bind_fault(json.loads(chaos_check.get("stdout", "")))
+                fault_observable = True
+            except (ValueError, KeyError, TypeError):
+                pass
         evidence["phases"]["observable_fault"] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "stresschaos_observed": fault_observable,
-            "chaos_status": chaos_check.get("stdout")[:500],
+            "chaos_observation": chaos_check,
+            "target_identity": dict(stage_a.target),
+            "fault_identity": stage_a.fault,
         }
         print(f"  Observable in cluster: {fault_observable}")
 
@@ -2576,13 +2762,28 @@ async def _run_experiment() -> dict[str, Any]:
         degradation_decision: dict[str, Any] | None = None
         degradation_deadline = time.monotonic() + DEGRADATION_OBSERVATION_TIMEOUT_SECONDS
         while time.monotonic() < degradation_deadline:
+            if not fault_observable:
+                active_read = run_kubectl([
+                    "get", TARGET_CHAOS_KIND.lower(), "-n", TARGET_CHAOS_NAMESPACE,
+                    TARGET_CHAOS_NAME, "-o", "json",
+                ])
+                if active_read.get("success") is True and _stage_a_target_unchanged():
+                    try:
+                        stage_a.bind_fault(json.loads(active_read.get("stdout", "")))
+                        fault_observable = True
+                        evidence["phases"]["observable_fault"].update(
+                            stresschaos_observed=True, chaos_observation=active_read,
+                            fault_identity=stage_a.fault,
+                        )
+                    except (ValueError, KeyError, TypeError):
+                        pass
             post_fault_telemetry = collect_sf002_cpu_telemetry()
             post_fault_observations.append(post_fault_telemetry)
             degradation_decision = sf002_degradation_decision(
                 baseline_telemetry,
                 post_fault_telemetry,
             )
-            if degradation_decision["passed"]:
+            if degradation_decision["passed"] and fault_observable:
                 break
             await asyncio.sleep(DEGRADATION_POLL_INTERVAL_SECONDS)
         if degradation_decision is None:
@@ -2636,7 +2837,10 @@ async def _run_experiment() -> dict[str, Any]:
                     },
                     "annotations": {
                         "summary": f"High CPU usage on {TARGET_SERVICE}",
-                        "description": f"{TARGET_SERVICE} CPU utilization is at 90% load across 4 workers.",
+                        "description": (
+                            f"Observed application CPU rate {degradation_decision['post_fault_max_cores']} cores; "
+                            f"healthy baseline {degradation_decision['baseline_max_cores']} cores."
+                        ),
                     },
                     "startsAt": datetime.now(UTC).isoformat(),
                 }
@@ -2667,16 +2871,19 @@ async def _run_experiment() -> dict[str, Any]:
             DirectActionCompletionPolicy,
         )
 
-        incident_result = await handle_incident(
-            alert_payload, incident_id=incident_id, scenario_id=SCENARIO_ID,
-            completion_provider=provider,
-            remediation_policy=DirectActionCompletionPolicy(provider),
-            policy_seed=EFFECTIVE_GENERATION_CONFIG["seed"],
-            policy_generation_config={
-                key: EFFECTIVE_GENERATION_CONFIG[key]
-                for key in ("max_new_tokens", "temperature", "top_p")
-            },
-        )
+        from agents.tools.chaos import stage_a_chaos_scope
+
+        with stage_a_chaos_scope(stage_a.fault, before_delete=_stage_a_before_delete):
+            incident_result = await handle_incident(
+                alert_payload, incident_id=incident_id, scenario_id=SCENARIO_ID,
+                completion_provider=provider,
+                remediation_policy=DirectActionCompletionPolicy(provider),
+                policy_seed=EFFECTIVE_GENERATION_CONFIG["seed"],
+                policy_generation_config={
+                    key: EFFECTIVE_GENERATION_CONFIG[key]
+                    for key in ("max_new_tokens", "temperature", "top_p")
+                },
+            )
         triage_res = incident_result.get("triage", {})
         diagnosis_res = incident_result.get("diagnosis", {})
         remediation_res = incident_result.get("remediation", {})
@@ -2753,11 +2960,22 @@ async def _run_experiment() -> dict[str, Any]:
 
         evidence["duration_seconds"] = duration_s
         evidence["completed_at"] = datetime.now(UTC).isoformat()
-        evidence["gate_g4_pass"] = gate_g4_pass
+        evidence["causal_recovery_pass"] = gate_g4_pass
+        evidence["gate_g4_pass"] = False
         evidence["causal_criteria"] = eval_result["criteria"]
+        evidence["stage_a_causal"] = incident_result.get("stage_a_causal", stage_a.evidence())
+        evidence["incident_result"] = incident_result
+        evidence["causal_inputs"] = {
+            "baseline_healthy": baseline_healthy,
+            "injection_success": injection_success,
+            "fault_observed": fault_observable,
+            "harness_repaired_pre_verification": harness_repaired_pre_verification,
+            "degradation_proven": bool(degradation_decision["passed"]),
+            "primary_evidence_persisted": primary_evidence_persisted,
+        }
 
         print("\n" + "=" * 80)
-        print(f" STAGE 4 GOLDEN INCIDENT RESULT: {'PASS' if gate_g4_pass else 'FAIL'} ")
+        print(f" STAGE 4 CAUSAL RECOVERY RESULT: {'PASS' if gate_g4_pass else 'FAIL'}; cleanup acceptance pending ")
         print(f" Objective Env Resolved: {env_resolved} | Total Duration: {duration_s}s ")
         for crit_name, crit_val in eval_result["criteria"].items():
             print(f"   [{'PASS' if crit_val else 'FAIL'}] {crit_name}")
@@ -2789,6 +3007,24 @@ async def _run_experiment() -> dict[str, Any]:
         print("\n>>> Phase 6: Post-Verdict Cluster Safety Cleanup...")
         cleanup_record = reconcile_stage4_postflight_cleanup(EXPERIMENT_ID)
         evidence["postflight_cleanup"] = cleanup_record
+        from agents.stage_a import evaluate_acceptance
+
+        cleanup_path = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.cleanup.json")
+        acceptance = evaluate_acceptance(
+            _read_json_file(per_run_file) or {},
+            _read_json_file(cleanup_path) or {},
+        )
+        acceptance_path = os.path.join(evidence_dir, f"{EXPERIMENT_ID}.acceptance.json")
+        if os.path.lexists(acceptance_path):
+            raise RuntimeError("Refusing to overwrite Stage A acceptance evidence")
+        _write_json_atomic(acceptance_path, {
+            **acceptance, "experiment_id": EXPERIMENT_ID,
+            "primary_raw_sha256": hashlib.sha256(Path(per_run_file).read_bytes()).hexdigest(),
+            "cleanup_raw_sha256": hashlib.sha256(Path(cleanup_path).read_bytes()).hexdigest(),
+            "accepted_at": datetime.now(UTC).isoformat(),
+        })
+        evidence["gate_g4_pass"] = acceptance["gate_g4_pass"]
+        evidence["acceptance"] = acceptance
         print(
             "  Verified zero-Chaos postflight: "
             f"{cleanup_record['verified_zero_chaos']} "

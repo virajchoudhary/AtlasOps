@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from agents.tools.kubectl import _run
@@ -42,6 +45,318 @@ _CHAOS_RESOURCE_TYPES = (
     "iochaos",
     "timechaos",
 )
+_CHAOS_RESOURCE_PLURALS = {
+    "podchaos": "podchaos",
+    "stresschaos": "stresschaos",
+    "networkchaos": "networkchaos",
+    "dnschaos": "dnschaos",
+    "iochaos": "iochaos",
+    "timechaos": "timechaos",
+}
+_CHAOS_API_GROUP = "chaos-mesh.org"
+_CHAOS_API_VERSION = "v1alpha1"
+_KUBERNETES_REQUEST_TIMEOUT = 30
+_STAGE_A_CHAOS_SCOPE: ContextVar[dict[str, Any] | None] = ContextVar(
+    "stage_a_chaos_scope",
+    default=None,
+)
+
+
+def _validated_chaos_target(
+    kind: Any,
+    name: Any,
+    namespace: Any,
+    kube_context: Any,
+) -> tuple[str, str, str] | str:
+    if not isinstance(kind, str) or kind.strip().casefold() not in ALLOWED_CHAOS_KINDS:
+        return "invalid_chaos_kind"
+    normalized_kind = kind.strip().casefold()
+    if (
+        not isinstance(name, str)
+        or name != name.strip()
+        or len(name) > 253
+        or not _SAFE_NAME_RE.fullmatch(name)
+    ):
+        return "invalid_chaos_name"
+    if not isinstance(namespace, str) or namespace not in ALLOWED_CHAOS_NAMESPACES:
+        return "unauthorized_chaos_namespace"
+    if kube_context is not None and (
+        not isinstance(kube_context, str)
+        or not kube_context
+        or kube_context != kube_context.strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in kube_context)
+    ):
+        return "invalid_kubernetes_context"
+    return normalized_kind, name, namespace
+
+
+def _valid_precondition(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and value == value.strip()
+
+
+def _new_chaos_api_client(kube_context: str | None):
+    from kubernetes import client, config
+
+    api_client = config.new_client_from_config(context=kube_context)
+    try:
+        return client.CustomObjectsApi(api_client=api_client), api_client
+    except Exception:
+        _close_chaos_api_client(api_client)
+        raise
+
+
+def _close_chaos_api_client(api_client: Any) -> None:
+    close = getattr(api_client, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+@contextmanager
+def _chaos_api_client(kube_context: str | None):
+    api, api_client = _new_chaos_api_client(kube_context)
+    try:
+        yield api
+    finally:
+        _close_chaos_api_client(api_client)
+
+
+def _kubernetes_error(error: Exception) -> str:
+    status = getattr(error, "status", None)
+    reason = getattr(error, "reason", None)
+    if status is not None:
+        suffix = f": {reason}" if isinstance(reason, str) and reason else ""
+        return f"Kubernetes API request failed ({status}){suffix}"
+    if isinstance(reason, str) and reason:
+        return f"Kubernetes API request failed: {reason}"
+    return f"Kubernetes API request failed ({type(error).__name__})"
+
+
+def _delete_chaos_resource(
+    api: Any,
+    kind: str,
+    name: str,
+    namespace: str,
+    *,
+    uid: str,
+    resource_version: str,
+) -> Any:
+    return api.delete_namespaced_custom_object(
+        group=_CHAOS_API_GROUP,
+        version=_CHAOS_API_VERSION,
+        namespace=namespace,
+        plural=_CHAOS_RESOURCE_PLURALS[kind],
+        name=name,
+        body={
+            "apiVersion": "v1",
+            "kind": "DeleteOptions",
+            "preconditions": {
+                "uid": uid,
+                "resourceVersion": resource_version,
+            },
+        },
+        _request_timeout=_KUBERNETES_REQUEST_TIMEOUT,
+    )
+
+
+def delete_chaos_with_preconditions(
+    kind: str,
+    name: str,
+    namespace: str,
+    *,
+    uid: str,
+    resource_version: str,
+    kube_context: str | None = None,
+) -> dict[str, Any]:
+    """Delete one allowlisted Chaos resource with API-enforced identity pins."""
+    target = _validated_chaos_target(kind, name, namespace, kube_context)
+    if isinstance(target, str):
+        return {"success": False, "error": target}
+    if not _valid_precondition(uid) or not _valid_precondition(resource_version):
+        return {
+            "success": False,
+            "error": "uid and resource_version are required deletion preconditions",
+        }
+
+    normalized_kind, clean_name, clean_namespace = target
+    try:
+        with _chaos_api_client(kube_context) as api:
+            _delete_chaos_resource(
+                api,
+                normalized_kind,
+                clean_name,
+                clean_namespace,
+                uid=uid,
+                resource_version=resource_version,
+            )
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": _kubernetes_error(exc),
+            "status_code": getattr(exc, "status", None),
+        }
+
+    return {
+        "success": True,
+        "action": "deleted_chaos_experiment",
+        "kind": _CANONICAL_KINDS[normalized_kind],
+        "name": clean_name,
+        "namespace": clean_namespace,
+        "uid": uid,
+        "resource_version": resource_version,
+    }
+
+
+@contextmanager
+def stage_a_chaos_scope(
+    identity: dict[str, Any],
+    before_delete: Callable[[], Any] | None = None,
+) -> Iterator[None]:
+    """Bind stop calls to one injected Chaos UID for the Stage A action window."""
+    if not isinstance(identity, dict):
+        raise ValueError("Stage A Chaos identity must be an object")
+    kube_context = identity.get("kube_context")
+    if not isinstance(kube_context, str) or not kube_context:
+        raise ValueError("Stage A Chaos identity requires an explicit kube_context")
+    target = _validated_chaos_target(
+        identity.get("kind"),
+        identity.get("name"),
+        identity.get("namespace"),
+        kube_context,
+    )
+    if isinstance(target, str):
+        raise ValueError(f"Invalid Stage A Chaos identity: {target}")
+    uid = identity.get("uid")
+    if not _valid_precondition(uid):
+        raise ValueError("Stage A Chaos identity requires a non-empty uid")
+    if before_delete is not None and not callable(before_delete):
+        raise ValueError("before_delete must be callable")
+
+    normalized_kind, name, namespace = target
+    binding = {
+        "kind": normalized_kind,
+        "name": name,
+        "namespace": namespace,
+        "uid": uid,
+        "kube_context": kube_context,
+        "before_delete": before_delete,
+        "container_records": identity.get("container_records"),
+    }
+    token = _STAGE_A_CHAOS_SCOPE.set(binding)
+    try:
+        yield
+    finally:
+        _STAGE_A_CHAOS_SCOPE.reset(token)
+
+
+def _chaos_activity_for_resource(resource: Any) -> str:
+    if not isinstance(resource, dict):
+        return "unknown"
+    status = resource.get("status")
+    if not isinstance(status, dict):
+        return "unknown"
+    conditions = status.get("conditions", [])
+    experiment = status.get("experiment", {})
+    if not isinstance(conditions, list) or not isinstance(experiment, dict):
+        return "unknown"
+    phase = experiment.get("phase")
+    if phase is not None and not isinstance(phase, str):
+        return "unknown"
+    for condition in conditions:
+        if (
+            not isinstance(condition, dict)
+            or not isinstance(condition.get("type"), str)
+            or not isinstance(condition.get("status"), str)
+        ):
+            return "unknown"
+    records = experiment.get("containerRecords")
+    if records is not None and (
+        not isinstance(records, list)
+        or any(
+            not isinstance(record, dict) or not isinstance(record.get("phase"), str)
+            for record in records
+        )
+    ):
+        return "unknown"
+    try:
+        return _chaos_activity_state(phase, conditions, experiment)
+    except (AttributeError, KeyError, TypeError):
+        return "unknown"
+
+
+def _stop_scoped_chaos_experiment(
+    scope: dict[str, Any],
+    kind: str,
+    name: str,
+    namespace: str,
+) -> dict[str, Any]:
+    result = {
+        "success": False,
+        "action": "stopped_chaos_experiment",
+        "kind": _CANONICAL_KINDS[kind],
+        "name": name,
+        "namespace": namespace,
+    }
+    if (kind, name, namespace) != (
+        scope["kind"],
+        scope["name"],
+        scope["namespace"],
+    ):
+        return {**result, "error": "Stage A scope forbids deleting a different Chaos resource"}
+
+    try:
+        with _chaos_api_client(scope["kube_context"]) as api:
+            resource = api.get_namespaced_custom_object(
+                group=_CHAOS_API_GROUP,
+                version=_CHAOS_API_VERSION,
+                namespace=namespace,
+                plural=_CHAOS_RESOURCE_PLURALS[kind],
+                name=name,
+                _request_timeout=_KUBERNETES_REQUEST_TIMEOUT,
+            )
+            metadata = resource.get("metadata") if isinstance(resource, dict) else None
+            if not isinstance(metadata, dict) or metadata.get("uid") != scope["uid"]:
+                return {**result, "error": "Stage A Chaos UID does not match the bound fault"}
+            resource_version = metadata.get("resourceVersion")
+            if not _valid_precondition(resource_version):
+                return {
+                    **result,
+                    "error": "Stage A Chaos object has no current resourceVersion",
+                }
+            if _chaos_activity_for_resource(resource) != "active":
+                return {
+                    **result,
+                    "error": "Stage A Chaos object is not positively active/injected",
+                }
+            bound_records = scope.get("container_records")
+            if bound_records is not None and (
+                resource.get("status", {}).get("experiment", {}).get("containerRecords")
+                != bound_records
+            ):
+                return {**result, "error": "Stage A injected container identity changed"}
+
+            before_delete = scope["before_delete"]
+            if before_delete is not None:
+                before_delete()
+            _delete_chaos_resource(
+                api,
+                kind,
+                name,
+                namespace,
+                uid=scope["uid"],
+                resource_version=resource_version,
+            )
+    except Exception as exc:
+        return {**result, "error": _kubernetes_error(exc)}
+
+    return {
+        **result,
+        "success": True,
+        "uid": scope["uid"],
+        "resource_version": resource_version,
+    }
 
 
 def _chaos_activity_state(
@@ -262,6 +577,8 @@ def chaos_list_experiments() -> dict[str, Any]:
             "kind": _CANONICAL_KINDS[kind.casefold()],
             "name": name.strip(),
             "namespace": namespace.strip(),
+            "uid": metadata.get("uid"),
+            "resource_version": metadata.get("resourceVersion"),
             "status": status_summary,
         }
         inventory.append(observed)
@@ -333,6 +650,15 @@ def chaos_stop_experiment(
                 f"{sorted(ALLOWED_CHAOS_NAMESPACES)}"
             ),
         }
+
+    scope = _STAGE_A_CHAOS_SCOPE.get()
+    if scope is not None:
+        return _stop_scoped_chaos_experiment(
+            scope,
+            normalized_kind,
+            clean_name,
+            clean_namespace,
+        )
 
     cmd = [
         "kubectl",

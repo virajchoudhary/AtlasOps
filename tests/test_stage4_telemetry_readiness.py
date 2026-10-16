@@ -129,10 +129,12 @@ def test_reservation_happens_after_telemetry_and_consumption_precedes_injection(
     src = _runner_src()
     gate = src.index("wait_for_telemetry_readiness()")
     reservation = src.index("reservation = reserve_experiment_attempt(")
-    injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
+    injection = src.index(
+        'inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])'
+    )
     consumed = src.index("consume_experiment_attempt(reservation)")
     assert gate < reservation < consumed < injection
-    # An apply error may still have side effects, so mark the fault boundary
+    # A create error may still have side effects, so mark the fault boundary
     # before issuing the mutation and reconcile through verified postflight.
     fault_boundary = src.rindex("fault_crossed = True", reservation, injection)
     assert reservation < consumed < fault_boundary < injection
@@ -166,7 +168,7 @@ def test_telemetry_gate_failure_creates_no_marker_chaos_or_consumed_state(tmp_pa
     abort_block = src[src.index("if not telemetry_ready:") : src.index("reservation = reserve_experiment_attempt(")]
     assert "ATTEMPT_STATE_CONSUMED" not in abort_block
     assert "consume_experiment_attempt" not in abort_block
-    assert 'run_kubectl(["apply"' not in abort_block
+    assert 'run_kubectl(["create"' not in abort_block
 
 
 # --- 4/5: endpoint readiness --------------------------------------------------

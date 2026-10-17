@@ -21,8 +21,6 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agents.coordinator import handle_incident
-from agents.judge import judge_trajectory
 from config.runtime import (
     FROZEN_SCENARIOS,
     evaluate_reward_contract,
@@ -69,126 +67,44 @@ def wait_for_alert(timeout_s: int = 300) -> dict | None:
 
 
 async def run_scenario(scenario_id: str, mock: bool = False) -> dict:
-    t0 = time.time()
+    if not mock:
+        raise RuntimeError("Legacy benchmark runner is mock-only; use the governed Stage 4 harness")
     tier = scenario_id.split("/", 1)[0] if "/" in scenario_id else "unknown"
-    is_mock = mock
 
-    if is_mock:
-        meta = SCENARIO_CATALOG.get(scenario_id)
-        expected_alert = meta.expected_alert if meta else f"Alert-{scenario_id}"
-        expected_root_cause = meta.expected_root_cause if meta else f"Root cause for {scenario_id}"
-        incident = {
-            "triage": {
-                "final": {
-                    "severity": "P1",
-                    "impact": "Service degradation",
-                    "affected_services": list(meta.target_services if meta else ["frontend"]),
-                },
-                "trajectory": [{"role": "triage", "content": f"Alert {expected_alert} triaged as P1"}],
-            },
-            "diagnosis": {
-                "final": {"root_cause": expected_root_cause, "confidence": 0.85},
-                "trajectory": [{"role": "diagnosis", "content": f"Investigated services, identified: {expected_root_cause}"}],
-            },
-            "remediation": {
-                "final": {
-                    "outcome": "unresolved",
-                    "actions_taken": [
-                        {"action": "restart_pod", "target": meta.target_services[0] if meta and meta.target_services else "frontend"}
-                    ],
-                },
-                "trajectory": [{"role": "remediation", "content": "Attempted unfinetuned baseline remediation"}],
-            },
-            "comms": {
-                "final": {"postmortem_path": None},
-                "trajectory": [{"role": "comms", "content": "Broadcasted incident update to stakeholders"}],
-            },
-            "verification": {
-                "env_resolved": False,
-                "agent_claimed_resolved": False,
-                "chaos_mesh_cleared": False,
-                "workload_checks": {
-                    wl: {"healthy": False} for wl in (meta.verification_workloads if meta else ["frontend"])
-                },
-            },
-        }
-        judge_score = {
-            "correctness": 0.5,
-            "efficiency": 0.5,
-            "reasoning": 0.5,
-            "red_herring_handling": 0.5,
-            "overall": 0.5,
-            "critique": "mock_baseline_judge",
-        }
-        episode = {
-            "scenario_id": scenario_id,
-            "tier": tier,
-            "status": "ok",
-            "evaluation_mode": "mock",
-            "non_empirical": True,
-            "outcome": "unresolved",
-            "agent_claimed_resolved": False,
-            "env_resolved": False,
-            "resolved": False,
-            "verification": incident["verification"],
-            "time_to_resolve_s": 45.0,
-            "severity": "P1",
-            "total_turns": 4,
-            "judge": judge_score,
-            "postmortem_path": None,
-        }
-        episode["reward_contract"] = evaluate_reward_contract(episode)
-        return episode
-
-    ok = apply_chaos(scenario_id)
-    if not ok:
-        return {"scenario_id": scenario_id, "status": "skip", "error": "manifest_apply_failed"}
-
-    alert = wait_for_alert()
-    alert["scenario_id"] = scenario_id
-
-    try:
-        incident = await handle_incident(alert)
-        judge_score = await judge_trajectory(incident, tier=tier)
-    except Exception as e:
-        log.exception("scenario %s failed", scenario_id)
-        reset_cluster()
-        return {"scenario_id": scenario_id, "status": "error", "error": str(e)}
-
-    reset_cluster()
-
-    remediation = incident.get("remediation", {}).get("final", {})
-    triage = incident.get("triage", {}).get("final", {})
-    verification = incident.get("verification", {})
-    agent_claimed_resolved = bool(
-        verification.get(
-            "agent_claimed_resolved",
-            remediation.get("outcome") == "resolved" or remediation.get("status") == "resolved",
-        )
-    )
-    # Fail-closed benchmark truth: env_resolved must come strictly from objective verifier evidence
-    env_resolved = bool(verification.get("env_resolved", False))
-    total_turns = sum(
-        len(incident.get(role, {}).get("trajectory", []))
-        for role in ("triage", "diagnosis", "remediation", "comms")
-    )
-
+    meta = SCENARIO_CATALOG.get(scenario_id)
+    verification = {
+        "env_resolved": False,
+        "agent_claimed_resolved": False,
+        "chaos_mesh_cleared": False,
+        "workload_checks": {
+            wl: {"healthy": False} for wl in (meta.verification_workloads if meta else ["frontend"])
+        },
+    }
+    judge_score = {
+        "correctness": 0.5,
+        "efficiency": 0.5,
+        "reasoning": 0.5,
+        "red_herring_handling": 0.5,
+        "overall": 0.5,
+        "critique": "mock_baseline_judge",
+    }
     episode = {
         "scenario_id": scenario_id,
         "tier": tier,
         "status": "ok",
-        "outcome": remediation.get("outcome", "unknown"),
-        "agent_claimed_resolved": agent_claimed_resolved,
-        "env_resolved": env_resolved,
-        "resolved": env_resolved and incident.get("resolved", True) is True,
+        "evaluation_mode": "mock",
+        "non_empirical": True,
+        "outcome": "unresolved",
+        "agent_claimed_resolved": False,
+        "env_resolved": False,
+        "resolved": False,
         "verification": verification,
-        "time_to_resolve_s": remediation.get("time_to_resolve_seconds", round(time.time() - t0)),
-        "severity": triage.get("severity", "unknown"),
-        "total_turns": total_turns,
+        "time_to_resolve_s": 45.0,
+        "severity": "P1",
+        "total_turns": 4,
         "judge": judge_score,
-        "postmortem_path": incident.get("comms", {}).get("final", {}).get("postmortem_path"),
+        "postmortem_path": None,
     }
-    # Keep reward evaluation centralized so train/eval/bench cannot drift.
     episode["reward_contract"] = evaluate_reward_contract(episode)
     return episode
 

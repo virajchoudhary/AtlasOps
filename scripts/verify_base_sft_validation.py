@@ -39,6 +39,8 @@ def reject_constant(value):
 
 
 def parse_response(raw):
+    if not isinstance(raw, str):
+        raise ValueError("Response must be text")
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text, count=1)

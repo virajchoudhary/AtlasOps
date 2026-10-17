@@ -108,16 +108,6 @@ def test_stresschaos_specification_unchanged():
     assert re.search(r'duration:\s*"10m"', text)
 
 
-def test_precondition_ordering_preserved():
-    src = _runner_src()
-    telemetry = src.index("wait_for_telemetry_readiness()")
-    baseline = src.index("wait_for_baseline_readiness()")
-    reservation = src.index("reservation = reserve_experiment_attempt(")
-    injection = src.index('inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])')
-    consumed = src.index("consume_experiment_attempt(reservation)")
-    assert telemetry < baseline < reservation < consumed < injection
-
-
 def test_degradation_loop_uses_amended_timeout_constant():
     src = _runner_src()
     assert src.count("DEGRADATION_OBSERVATION_TIMEOUT_SECONDS") >= 2

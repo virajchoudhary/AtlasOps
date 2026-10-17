@@ -494,7 +494,7 @@ class TestExecutableBootstrapLifecycle:
         namespaces = namespaces_file.read_text(encoding="utf-8").splitlines()
         assert "argocd" not in namespaces
 
-    def test_json_values_overlay_accepted_by_helm_template(self, tmp_path: Path) -> None:
+    def test_json_values_overlay_accepted_by_helm_template(self, tmp_path: Path, monkeypatch) -> None:
         """Proves JSON-formatted Argo values overlay renders with Helm without error."""
         import shutil
         import subprocess
@@ -504,7 +504,17 @@ class TestExecutableBootstrapLifecycle:
         if not helm_bin:
             pytest.skip("helm binary not installed locally")
 
-        # Check if argo repo is available or add it
+        for variable, relative in {
+            "HELM_CONFIG_HOME": "config",
+            "HELM_CACHE_HOME": "cache",
+            "HELM_DATA_HOME": "data",
+            "HELM_REPOSITORY_CONFIG": "config/repositories.yaml",
+            "HELM_REPOSITORY_CACHE": "cache/repository",
+            "HELM_REGISTRY_CONFIG": "config/registry/config.json",
+            "HELM_PLUGINS": "data/plugins",
+        }.items():
+            monkeypatch.setenv(variable, str(tmp_path / "helm" / relative))
+
         repo_list = subprocess.run([helm_bin, "repo", "list"], capture_output=True, text=True)
         if "argo" not in repo_list.stdout:
             add_repo = subprocess.run([helm_bin, "repo", "add", "argo", "https://argoproj.github.io/argo-helm"], capture_output=True, text=True)

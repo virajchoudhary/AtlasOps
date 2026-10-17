@@ -96,7 +96,7 @@ for (const viewport of mediaViewports) {
       "/reference/assets/edoardo-founder-video.mp4",
     );
     await expect(founderVideo).toHaveJSProperty("autoplay", true);
-    await expect(founderVideo).toHaveJSProperty("controls", true);
+    await expect(founderVideo).toHaveJSProperty("controls", false);
     await expect(founderVideo).toHaveJSProperty("muted", true);
     await expect(founderVideo).toHaveJSProperty("loop", true);
     await expect(founderVideo).toHaveJSProperty("playsInline", true);

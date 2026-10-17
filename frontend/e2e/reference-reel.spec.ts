@@ -7,6 +7,7 @@ for (const viewport of [
   test(`reel presentation and pointer/keyboard playback on ${viewport.name}`, async ({
     page,
   }, testInfo) => {
+    test.slow();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize(viewport);

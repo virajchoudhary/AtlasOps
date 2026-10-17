@@ -13,10 +13,10 @@ No new metric, checkpoint, incident result or cleanup result is claimed here.
 ## Environment and resources
 
 Use a dedicated, owner-controlled experiment checkout of the final reviewed
-source commit. The latest accepted software checkpoint is merged PR 211 at
-main commit `c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
-`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`, after accepted pricing PR 209 and
-FAQ layout PR 210.
+source commit. The recorded software checkpoint is merged PR 214 at
+main commit `539c4ae76a1955efb778b006f6414e69f04a3325`, tree
+`e94f6699c59e4cd9c202742cc847ecaada50eded`, after accepted corrections in
+PRs 209-213. Its verified source package does not authorize research execution.
 
 The original unapproved execution candidate remains pinned to merged PR 207 at
 `f13374f`. The software checkpoint does not repin research or authorize

@@ -5,11 +5,10 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PR [211](https://github.com/virajchoudhary/AtlasOps/pull/211),
-recorded main commit `c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
-`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`. It follows accepted pricing
-correction PR [209](https://github.com/virajchoudhary/AtlasOps/pull/209) and FAQ
-layout correction PR [210](https://github.com/virajchoudhary/AtlasOps/pull/210).
+Recorded software checkpoint: merged PR [214](https://github.com/virajchoudhary/AtlasOps/pull/214),
+main commit `539c4ae76a1955efb778b006f6414e69f04a3325`, tree
+`e94f6699c59e4cd9c202742cc847ecaada50eded`. Its drawer correction follows
+the accepted pricing, FAQ, documentation and reel corrections in PRs 209-213.
 The PR 207 suite and package results below are historical, not current-source
 acceptance.
 The accepted software merges do not authorize deployment, research execution, or
@@ -18,19 +17,19 @@ external submission.
 ## Application acceptance
 
 The table combines evidence from separate software checkpoints. PR 207's suite
-totals are historical; PRs 209 through 211 have scoped acceptance evidence.
+totals are historical; PRs 209 through 214 have scoped acceptance evidence.
 
 | Deliverable | Implementation | Verification and evidence | Acceptance |
 | --- | --- | --- | --- |
 | One integrated operational app | `app.py`, React console, reference routes, durable history | Guarded integrated app: 31 browser cases passed; 61 frontend unit tests passed; final build passed; independent correction review accepted after indexed-media repair | Local software PASS; exact-head CI result recorded in the closure report |
 | Nine operational views | Overview, Incidents, Agents, Models, Evaluations, Evidence, Runbooks, System, Rehearsal | Final integrated route matrix covers five requested viewports; no measured page overflow or overlap | Local browser PASS |
 | Authentication and approvals | Root approval no longer supplies an identity; root and mounted live-event routes authenticate before reads | `closure-security-final.xml`: 29 passed, including finite authenticated SSE, missing configuration, invalid headers and query-only rejection; independent review found no route-control issue | Local acceptance PASS |
-| Reference media | Native local MP4 reel and founder clip; unchanged strict CSP; public source/hash catalog | Desktop and mobile decoded dimensions and playback progress, dialog focus/close, no external requests or CSP errors | Browser PASS; native controls differ from the reference player |
+| Reference media | Native local MP4 reel and founder clip; unchanged strict CSP; public source/hash catalog | PR 213 accepts transport and stale-autoplay rejection handling; both strict-CSP desktop/mobile cases pass at PR 214's reviewed source | Browser PASS for the tested source; full player parity not certified |
 | Reference layout and animation | Integrated reconstruction, rings and responsive pages; bounded repo/showcase/pricing/FAQ correction | Paired 1904x881 and 390x844 section measurements; final browser interactions/reduced motion PASS | PARTIAL. Repaired section height gaps are at most 31.04px; full pixel and animation parity not established |
 | Local startup and container | React build plus `app.py`; separate read-only launcher | Guarded integrated startup and credential-free launcher health/root/reference passed; final-head UI container check passed in CI | Local and CI software PASS; current local cluster and peer-host acceptance not established |
 | Reproducible demo guide | Current checkout and both entrypoints documented | `start-demo.ps1 -Check` passed; `start-demo.ps1 -Port 7864` started the read-only app with built frontend | Local demo PASS; no live incident claim |
-| Release package | Frozen old inventory retained; explicit required reference HTML; public MP4 allowlist and additive binary override | The 637-asset/783-blob archive was verified for main `46cf5568` and tree `d36a9fc`, before PR 211; PR 207 package results are historical | Latest-source package UNVERIFIED/PENDING until a new package is generated after these documentation corrections; scientific certification remains NOT_CERTIFIED |
-| Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | PR 207 link/package checks are historical; no post-PR 211 full package check is recorded | Latest-source package UNVERIFIED/PENDING; scientific certification remains NOT_CERTIFIED |
+| Release package | Frozen old inventories retained; explicit required reference HTML; public MP4 allowlist and additive binary override | The 641-asset/787-blob archive for `539c4ae7` passed hashes, exact paths, CRC and independent reopening | READY_FOR_REVIEW for that exact source; scientific certification remains NOT_CERTIFIED; later source changes require a new package |
+| Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | Links resolved in all 22 current-facing documents extracted from the `539c4ae7` archive | Package content PASS for the cited source; scientific certification and external submission remain separate |
 
 ## Required scientific gates
 
@@ -65,22 +64,41 @@ software contracts do not require new experiments simply to produce activity.
 
 ## Current software checkpoint
 
-The latest accepted software checkpoint is merged PR 211 at main commit
-`c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
-`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`. It follows the bounded pricing
-acceptance in PR 209 and FAQ layout acceptance in PR 210. PR 211's nine
-exact-head checks passed in CI run
-[39052690646](https://github.com/virajchoudhary/AtlasOps/actions/runs/39052690646).
-Full-site reference pixel and animation parity remain PARTIAL.
+On 2026-10-18, PR 214 merged at
+`539c4ae76a1955efb778b006f6414e69f04a3325`, tree
+`e94f6699c59e4cd9c202742cc847ecaada50eded`.
+The reviewed candidate `43fe274207f104a59265e6a7ccea58beea7845f2` has the same
+tree. All nine checks passed in
+[CI run 39069422767](https://github.com/virajchoudhary/AtlasOps/actions/runs/39069422767).
+Fresh independent acceptance returned PASS+NOTES. The build, nine drawer cases
+and two strict-CSP media cases passed. The new touch tests failed before the
+44px-target correction. Full-site pixel and animation parity remain PARTIAL.
+
+The package for that source verifies 641 asset hashes and sizes, 787 exact Git
+blobs, ZIP paths and CRC, and links in 22 extracted review documents.
+Archive SHA-256:
+`340230fae3c70544a3ef27b9ebb40c362a15d0f1417f19d213517c640a3c5147`.
+Independent package acceptance returned PASS+NOTES. The retained local proofs
+are in `audit/project-closure/final-main-539c4ae7-package` under the coordinator
+workspace, not inside the source archive. Readiness is READY_FOR_REVIEW for
+`539c4ae7` only, with NOT_CERTIFIED and null empirical metrics.
+That archive excludes subsequent source changes, including this documentation.
+Package readiness for a different source is UNVERIFIED/PENDING unless supported
+by separate exact-source evidence. No full-project, deployment or
+external-submission acceptance follows.
+
+## Earlier software checkpoints
+
+PR 211 merged at `c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
+`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`, after pricing PR 209 and FAQ PR 210.
+Its nine checks passed in
+[CI run 39052690646](https://github.com/virajchoudhary/AtlasOps/actions/runs/39052690646).
 
 The 637-asset archive with SHA-256
 `ef86005c58a63cc2cb9689ddcfdfa096046cb4c55d9cfe2e776b9106b3ab1c16` was
 verified against 783 Git blobs for main `46cf5568`, tree
 `d36a9fc44f6edd1663908258e99cb5cdb1620edf`. That source predates PR 211, so its
-READY_FOR_REVIEW inventory and blob proof are historical for that source. No
-package has been generated for the latest software checkpoint plus these
-documentation corrections. Latest-source package readiness remains
-UNVERIFIED/PENDING until the root generates and verifies that package.
+READY_FOR_REVIEW inventory and blob proof remain historical for that source.
 
 ## Historical PR 207 checkpoint
 

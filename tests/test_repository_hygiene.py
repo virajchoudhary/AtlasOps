@@ -16,7 +16,7 @@ from packaging.requirements import Requirement
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_ci_correctness_check_rejects_unused_imports():
+def test_ci_correctness_check_rejects_unused_bindings():
     import shlex
 
     import yaml
@@ -31,7 +31,7 @@ def test_ci_correctness_check_rejects_unused_imports():
     assert len(commands) == 1
     command = commands[0]
     assert command[:5] == ["python", "-m", "ruff", "check", "."]
-    assert {"E9", "F63", "F7", "F821", "F401"} <= set(
+    assert {"E9", "F63", "F7", "F821", "F401", "F841"} <= set(
         command[command.index("--select") + 1].split(",")
     )
 
@@ -412,6 +412,8 @@ def test_source_distribution_excludes_local_records_and_credential_filenames():
         "/OVERNIGHT_STATE.md",
         "/artifacts/local-preflight",
         "/artifacts/overnight_diffs",
+        "/data",
+        "/scratch",
     } <= patterns
     local_filenames = [
         "scripts/run_stage4_golden_incident.py.bak-0918",

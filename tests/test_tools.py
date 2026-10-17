@@ -60,7 +60,7 @@ class TestKubectlRollout:
     def test_qualified_statefulset_and_daemonset_supported(self):
         from agents.tools.kubectl import kubectl_rollout
         mock_result = MagicMock(returncode=0, stdout="rollout status", stderr="")
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        with patch("subprocess.run", return_value=mock_result):
             res_sts = kubectl_rollout("status", "statefulset/redis-cart", namespace="default")
             res_ds = kubectl_rollout("history", "daemonset/fluentd", namespace="kube-system")
         assert res_sts["success"] is True

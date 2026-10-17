@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import urlsplit
 
 _log = logging.getLogger("atlasops.hf_space_env")
 
@@ -40,8 +41,17 @@ def _running_on_hf_space() -> bool:
 
 
 def _localhost_or_empty(url: str) -> bool:
-    u = (url or "").strip().lower()
-    return (not u) or ("localhost" in u) or ("127.0.0.1" in u)
+    u = (url or "").strip()
+    if not u:
+        return True
+    try:
+        host = urlsplit(u).hostname
+        if host is None:
+            return False
+        host = host.removesuffix(".")
+        return host.lower() in {"localhost", "127.0.0.1"}
+    except ValueError:
+        return False
 
 
 def apply_hf_space_inference_defaults() -> None:

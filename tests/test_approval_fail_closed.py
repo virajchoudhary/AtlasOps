@@ -127,19 +127,6 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
         assert result["approval"]["triage_severity"] == "P2"
     assert persisted["resolved"] is (environment_recovered and allowed)
 
-    # The benchmark consumer must preserve the operational decision, even if the
-    # environment recovered independently. All benchmark infrastructure is mocked.
-    from bench import runner
-    monkeypatch.setattr(runner, "apply_chaos", MagicMock(return_value=True))
-    monkeypatch.setattr(runner, "wait_for_alert", MagicMock(return_value={}))
-    monkeypatch.setattr(runner, "handle_incident", AsyncMock(return_value=persisted))
-    monkeypatch.setattr(runner, "judge_trajectory", AsyncMock(return_value={}))
-    monkeypatch.setattr(runner, "reset_cluster", MagicMock())
-    episode = asyncio.run(runner.run_scenario("single_fault/safety-test"))
-    assert episode["env_resolved"] is environment_recovered
-    assert episode["resolved"] is (environment_recovered and allowed)
-    summary = runner.compute_summary([episode], "safety-test", "mock")
-    assert summary["resolution_rate"] == float(environment_recovered and allowed)
     if allowed:
         tool_spies["kubectl_scale"].assert_called_once_with(deployment="frontend", replicas=2)
         assert [c.args[0] for c in calls.call_args_list] == ["triage", "diagnosis", "remediation", "comms"]

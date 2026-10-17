@@ -337,56 +337,6 @@ def mark_training_started(
     return manifest
 
 
-def require_started_grpo_run(
-    output_dir: Path,
-    *,
-    model_id: str,
-    model_revision: str,
-    tokenizer_id: str,
-    tokenizer_revision: str,
-    sft_parent: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Require an in-progress, one-shot run before a caller can start Optuna."""
-    output_dir = Path(os.path.abspath(Path(output_dir).expanduser()))
-    if has_redirecting_path_component(output_dir):
-        raise ValueError("GRPO output path must not contain redirects")
-    manifest_path = output_dir / MANIFEST_NAME
-    if has_redirecting_path_component(manifest_path) or not manifest_path.is_file():
-        raise FileNotFoundError("Optuna requires the claimed GRPO run manifest")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    training = manifest.get("training") if isinstance(manifest, dict) else None
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("status") != "running"
-        or not isinstance(training, dict)
-        or not training.get("execution_started_at")
-    ):
-        raise RuntimeError("Optuna requires a running, one-shot GRPO execution")
-    for key, expected_id, expected_revision in (
-        ("base_model", model_id, model_revision),
-        ("tokenizer", tokenizer_id, tokenizer_revision),
-    ):
-        record = manifest.get(key)
-        if (
-            not isinstance(record, dict)
-            or record.get("id") != expected_id
-            or record.get("requested_revision") != expected_revision
-        ):
-            raise ValueError(f"Optuna {key} identity differs from the run manifest")
-    if manifest.get("sft_parent") != dict(sft_parent):
-        raise ValueError("Optuna SFT parent changed after the run was planned")
-    unexpected = sorted(
-        entry.name
-        for entry in output_dir.iterdir()
-        if entry.name != MANIFEST_NAME
-    )
-    if unexpected:
-        raise FileExistsError(
-            "GRPO output contains prior Optuna artifacts; resume is disabled"
-        )
-    return manifest
-
-
 def validate_sft_parent_matches_run(
     manifest_path: Path,
     sft_parent: Mapping[str, Any],

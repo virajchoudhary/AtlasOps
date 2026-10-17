@@ -14,7 +14,6 @@ from pathlib import Path
 from agents.tool_policy import AGENT_EXPOSED_TOOLS
 
 EXPERIMENT = re.compile(r"EXP-STAGE4-SF002-\d{3}\Z")
-IDENTIFIER = re.compile(r"[A-Za-z0-9_.:/-]{1,160}\Z")
 FAILURES = {
     "bridge_transport_failure", "admission_failure", "model_load_failure",
     "load_timeout", "rpc_timeout", "worker_process_exit", "engine_poisoned",
@@ -61,10 +60,6 @@ def _object(root: Path, relative: str, limit: int = 2 * 1024**2) -> tuple[dict, 
     if not isinstance(value, dict):
         raise TypeError("Capture must be a JSON object")
     return value, hashlib.sha256(raw).hexdigest()
-
-
-def _identifier(value):
-    return value if isinstance(value, str) and IDENTIFIER.fullmatch(value) else None
 
 
 def _boolean(value):

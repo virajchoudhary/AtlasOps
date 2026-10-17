@@ -361,11 +361,14 @@ for (const viewport of pricingTicketViewports) {
       const benefits = element.querySelector<HTMLElement>(".reference-pricing-benefits");
       const price = element.querySelector<HTMLElement>(".reference-pricing-facts strong");
       const buy = element.querySelector<HTMLElement>(".reference-pricing-buy");
+      const editionLabel = element.querySelector<HTMLElement>(".reference-edition-picker label:last-child");
+      const accessLink = element.querySelector<HTMLElement>(".reference-pricing-buy .reference-access-link");
       const adopters = section?.querySelector<HTMLElement>(".reference-early-adopters");
       const avatars = adopters?.querySelector<HTMLElement>(".reference-avatar-stack");
       const adopterLabel = adopters?.querySelector<HTMLElement>("span");
       if (
-        !section || !heading || !facts || !details || !benefits || !price || !buy || !avatars || !adopterLabel
+        !section || !heading || !facts || !details || !benefits || !price || !buy ||
+        !editionLabel || !accessLink || !avatars || !adopterLabel
       ) {
         throw new Error("Pricing ticket content is incomplete");
       }
@@ -404,6 +407,9 @@ for (const viewport of pricingTicketViewports) {
         },
         benefits: bounds(benefits),
         buy: bounds(buy),
+        purchaseControlsFit:
+          accessLink.getBoundingClientRect().left >= editionLabel.getBoundingClientRect().right ||
+          accessLink.getBoundingClientRect().top >= editionLabel.getBoundingClientRect().bottom,
         priceFontSize: getComputedStyle(price).fontSize,
         priceFits:
           price.getBoundingClientRect().left >= facts.getBoundingClientRect().left &&
@@ -441,6 +447,7 @@ for (const viewport of pricingTicketViewports) {
       expect.soft(geometry.priceFontSize).toBe(viewport.priceFontSize);
     }
     expect.soft(geometry.priceFits).toBe(true);
+    expect.soft(geometry.purchaseControlsFit).toBe(true);
     expect.soft(geometry.headingText).toBe("Two editions.\nOne architecture.\nLifetime updates.");
     expect.soft(geometry.adopters.display).toBe("flex");
     expect.soft(geometry.adopters.avatarRight).toBeLessThanOrEqual(geometry.adopters.labelX + 1);
@@ -474,6 +481,10 @@ for (const viewport of pricingTicketViewports) {
 
     const nextEdition = page.getByRole("radio", { name: "Next.js" });
     const astroEdition = page.getByRole("radio", { name: "Astro" });
+    await page.locator(".reference-edition-picker label").filter({ hasText: "Astro" }).click();
+    await expect(astroEdition).toBeChecked();
+    await page.locator(".reference-edition-picker label").filter({ hasText: "Next.js" }).click();
+    await expect(nextEdition).toBeChecked();
     await nextEdition.focus();
     await page.keyboard.press("ArrowRight");
     await expect(astroEdition).toBeChecked();

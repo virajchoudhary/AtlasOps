@@ -2189,6 +2189,12 @@ body.content-architecture-reference-body #root {
   height: 100%;
   background: #080808;
   object-fit: contain;
+  cursor: pointer;
+}
+
+.reference-reel-player:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -6px;
 }
 
 .reference-reel-status {
@@ -2235,6 +2241,41 @@ body.content-architecture-reference-body #root {
   border-radius: 2px;
   background: #ecebe6;
   color: #242422;
+}
+
+.reference-reel-dialog,
+.reference-reel-dialog::backdrop,
+.reference-reel-player {
+  background: #000;
+}
+
+.content-architecture-reference .reference-reel-close {
+  right: 16px;
+  align-items: flex-end;
+  gap: 4px;
+  font: 13.5px/1.25 var(--reference-mono);
+}
+
+.reference-reel-close span {
+  height: 22px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #dedede;
+  color: #000;
+}
+
+.reference-reel-close svg {
+  width: 48px;
+  height: 48px;
+  padding: 18px;
+  border-radius: 4px;
+  background: #dedede;
+  color: #000;
+}
+
+.reference-reel-close:hover span,
+.reference-reel-close:hover svg {
+  background: #fff;
 }
 
 .reference-about-dialog {
@@ -3454,8 +3495,8 @@ body.content-architecture-reference-body #root {
     font-size: 11px;
   }
 
-  .reference-reel-close {
-    top: 9px;
+  .content-architecture-reference .reference-reel-close {
+    top: 8px;
     right: 8px;
   }
 }

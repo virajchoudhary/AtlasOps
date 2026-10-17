@@ -2531,6 +2531,9 @@ async def handle_incident(
                     )
 
                 async def _settle_policy_step() -> dict[str, Any]:
+                    from agents.stage_a import wait_for_cpu_recovery
+
+                    await wait_for_cpu_recovery()
                     return await settle_environment(
                         scenario_id=str(scenario_id or alert.get("scenario_id") or ""),
                         agent_claimed_resolved=False,
@@ -2896,7 +2899,7 @@ async def handle_incident(
                 if sev not in {"P0", "P1", "P2", "P3"}:
                     sev = "P1"
                 fin = comms.get("final") or {}
-                summ = fin.get("summary") or fin.get("postmortem_path") or (
+                summ = fin.get("summary_for_dashboard") or fin.get("summary") or fin.get("postmortem_path") or (
                     "Incident resolved and verified." if env_resolved else "Remediation attempted — incident remains unverified / unresolved."
                 )
                 if not isinstance(summ, str):
@@ -2960,6 +2963,11 @@ async def handle_incident(
                 certification_status="NOT_CERTIFIED",
                 provider_injected=True,
             )
+        from agents.stage_a import current_run
+
+        stage_a = current_run()
+        if stage_a is not None:
+            full_record["stage_a_causal"] = stage_a.evidence()
         _persist_incident_record(full_record)
         if _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory

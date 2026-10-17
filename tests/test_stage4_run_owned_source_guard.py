@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -21,6 +22,44 @@ def _git(cwd: Path, *args: str) -> str:
         timeout=20,
     )
     return result.stdout.strip()
+
+
+def _target_pods_args() -> list[str]:
+    return [
+        "get", "pods", "-n", runner.TARGET_NAMESPACE,
+        "-l", "app=paymentservice", "-o", "json",
+    ]
+
+
+def _target_pods_result() -> dict:
+    pod = {
+        "metadata": {
+            "name": "paymentservice-754c98b599-rjvxx",
+            "namespace": "default",
+            "uid": "synthetic-paymentservice-pod-uid",
+            "labels": {"app": "paymentservice"},
+        },
+        "spec": {
+            "containers": [{
+                "name": "server",
+                "resources": {"limits": {"cpu": "200m"}},
+            }],
+        },
+        "status": {
+            "phase": "Running",
+            "containerStatuses": [{
+                "name": "server",
+                "ready": True,
+                "state": {"running": {}},
+                "containerID": "containerd://synthetic-server-container",
+            }],
+        },
+    }
+    return {
+        "success": True,
+        "stdout": json.dumps({"items": [pod]}),
+        "returncode": 0,
+    }
 
 
 @pytest.fixture
@@ -251,12 +290,24 @@ def test_pre_fault_exception_is_journaled_after_reservation_release(
         "wait_for_baseline_readiness",
         lambda: (True, {"stable_probes": 2}, True, {"stdout": "healthy"}),
     )
-    monkeypatch.setattr(runner, "collect_sf002_cpu_telemetry", lambda: {"samples": 2})
     monkeypatch.setattr(
         runner,
-        "run_kubectl",
-        lambda _args: {"success": True, "stdout": '{"items":[]}', "returncode": 0},
+        "collect_sf002_cpu_telemetry",
+        lambda: {
+            "samples": 2,
+            "max_cores": 0.1,
+            "fresh": True,
+            "query_success": True,
+        },
     )
+
+    def kubectl(args):
+        if args == _target_pods_args():
+            return _target_pods_result()
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
+        return {"success": True, "stdout": '{"items":[]}', "returncode": 0}
+
+    monkeypatch.setattr(runner, "run_kubectl", kubectl)
     calls = []
 
     def source_guard(expected_sha=None, **_kwargs):

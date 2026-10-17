@@ -112,7 +112,9 @@ def test_baseline_gate_precedes_reservation_and_consumption_before_fault():
     telemetry = src.index("wait_for_telemetry_readiness()")
     baseline = src.index("wait_for_baseline_readiness()")
     reservation = src.index("reservation = reserve_experiment_attempt(")
-    injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
+    injection = src.index(
+        'inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])'
+    )
     consumed = src.index("consume_experiment_attempt(reservation)")
     assert telemetry < baseline < reservation < consumed < injection
 
@@ -122,14 +124,22 @@ def test_baseline_preflight_aborts_without_reservation_side_effects():
     abort_block = src[src.index("if not baseline_ready:") : src.index("reservation = reserve_experiment_attempt(")]
     assert "return evidence" in abort_block
     assert 'failure_phase"] = "unhealthy_baseline"' in abort_block
-    for forbidden in ("reserve_experiment_attempt", "release_experiment_reservation", "_persist", "_write_json_atomic", "run_kubectl([\"apply\""):
+    for forbidden in (
+        "reserve_experiment_attempt",
+        "release_experiment_reservation",
+        "_persist",
+        "_write_json_atomic",
+        'run_kubectl(["create"',
+    ):
         assert forbidden not in abort_block
 
 
 def test_old_post_reservation_baseline_block_removed():
     src = _runner_src()
     reservation = src.index("reservation = reserve_experiment_attempt(")
-    injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
+    injection = src.index(
+        'inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])'
+    )
     between = src[reservation:injection]
     assert "Baseline paymentservice status" not in src[reservation:]
     assert "abort_before_fault(\"unhealthy_baseline\")" not in src

@@ -443,7 +443,7 @@ async def wait_for_cpu_recovery() -> bool:
     run = current_run()
     if run is None:
         return True
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + RECOVERY_LIMIT_SECONDS
     while time.monotonic() < deadline:
         try:
             run.require_recovery_window()

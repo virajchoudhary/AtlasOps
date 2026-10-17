@@ -258,6 +258,28 @@ def test_audit_implementation_is_selected_when_tracked(monkeypatch):
     }
 
 
+def test_vite_reference_page_is_required_and_selected_when_tracked(monkeypatch):
+    path = "frontend/reference.html"
+    monkeypatch.setattr(
+        "scripts.package_submission.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=(path + "\0").encode()),
+    )
+    raw = Path(path).read_bytes()
+
+    assert collect_submission_assets() == {
+        path: {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
+    }
+    assert path in REQUIRED_REVIEW_ASSETS
+    assets_without_reference = {
+        required_path: {"sha256": "0" * 64, "size_bytes": 1}
+        for required_path in REQUIRED_REVIEW_ASSETS
+        if required_path != path
+    }
+    readiness = evaluate_package_readiness(assets_without_reference, [])
+    assert readiness["package_ready"] is False
+    assert readiness["package_readiness_missing_assets"] == [path]
+
+
 class TestStage15SubmissionPackage:
     def test_inventory_digest_is_stable_across_asset_mapping_order(self):
         assets = collect_submission_assets()

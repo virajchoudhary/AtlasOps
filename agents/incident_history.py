@@ -38,7 +38,7 @@ _PARTIAL_FILE = re.compile(
 _SECRET_KEY = re.compile(
     r"(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"
     r"proxy[_-]?authorization|authorization|set[_-]?cookie|cookie|"
-    r"session[_-]?token|token|bearer|password|passwd|secret|credential|"
+    r"session[_-]?(?:token|id)|token|bearer|password|passwd|secret|credential|"
     r"private[_-]?key)"
 )
 _SECRET_TEXT = (
@@ -53,7 +53,7 @@ _SECRET_TEXT = (
     ),
     re.compile(
         r"""(?ix)\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|"""
-        r"""session[_-]?token|token|bearer|proxy[_-]?authorization|"""
+        r"""session[_-]?(?:token|id)|token|bearer|proxy[_-]?authorization|"""
         r"""authorization|set[_-]?cookie|cookie|password|passwd|secret|"""
         r"""credential|private[_-]?key)"""
         r"""["']?\s*[:=]\s*["']?[^,\s"'}`\]]+"""

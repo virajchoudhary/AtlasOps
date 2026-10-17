@@ -508,6 +508,88 @@ def test_action_projection_redacts_nested_credentials_and_sanitizes_keys(
     assert body["comms"]["summary"] == "Report ready; [REDACTED]"
 
 
+def test_public_history_api_redacts_nested_session_ids_and_embedded_text(
+    tmp_path,
+    monkeypatch,
+):
+    import app as app_module
+
+    incident_id = "inc-session-id-redaction"
+    execution_id = "19191919191919191919191919191919"
+    nested_session_values = {
+        "session_id": "synthetic-nested-session-id-underscore",
+        "session-id": "synthetic-nested-session-id-hyphen",
+        "sessionId": "synthetic-nested-session-id-camel",
+    }
+    embedded_summary = (
+        "History detail: "
+        "session_id=synthetic-text-session-id-underscore "
+        "session-id=synthetic-text-session-id-hyphen "
+        "sessionId=synthetic-text-session-id-camel "
+        "Automatic retries remain disabled."
+    )
+    sanitized_summary = (
+        "History detail: "
+        "[REDACTED] "
+        "[REDACTED] "
+        "[REDACTED] "
+        "Automatic retries remain disabled."
+    )
+    monkeypatch.setattr(app_module.coordinator_module, "TRAJECTORIES_DIR", tmp_path)
+    record = _record(incident_id, execution_id, "summary")
+    record["remediation"]["final"]["proposed_actions"][0]["args"] = {
+        "resource": "pods",
+        "metadata": {
+            **nested_session_values,
+            "execution_id": execution_id,
+            "incident_id": incident_id,
+            "source": "persisted result",
+        },
+    }
+    record["comms"]["final"]["summary"] = embedded_summary
+    (tmp_path / f"{incident_id}.json").write_text(
+        json.dumps(record),
+        encoding="utf-8",
+    )
+
+    client = _client()
+    listing = client.get("/incidents/history")
+    detail = client.get(f"/incidents/{incident_id}")
+
+    assert listing.status_code == detail.status_code == 200
+    assert listing.json()["total"] == 1
+    listed = listing.json()["items"][0]
+    body = detail.json()
+    assert (listed["incident_id"], listed["execution_id"]) == (
+        incident_id,
+        execution_id,
+    )
+    assert (body["incident_id"], body["execution_id"]) == (
+        incident_id,
+        execution_id,
+    )
+    assert listed["summary"] == sanitized_summary
+    assert body["comms"]["summary"] == sanitized_summary
+    assert body["remediation"]["status"] == "skipped_execution"
+    assert body["remediation"]["outcome"] == "unresolved"
+    assert body["verification"]["verification_status"] == "failed"
+    assert body["remediation"]["proposed_actions"][0]["args"] == {
+        "resource": "pods",
+        "metadata": {
+            "execution_id": execution_id,
+            "incident_id": incident_id,
+            "source": "persisted result",
+        },
+    }
+    for sentinel in (
+        *nested_session_values.values(),
+        "synthetic-text-session-id-underscore",
+        "synthetic-text-session-id-hyphen",
+        "synthetic-text-session-id-camel",
+    ):
+        assert sentinel not in listing.text + detail.text
+
+
 def test_authenticated_history_routes_redact_auth_headers_and_preserve_action_data(
     tmp_path,
     monkeypatch,

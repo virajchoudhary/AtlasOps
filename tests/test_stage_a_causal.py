@@ -139,6 +139,47 @@ def test_cpu_recovery_uses_only_two_post_action_counter_samples(run):
     assert context.cpu_recovery["measured_cores"] == pytest.approx(0.01)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recovered", [True, False])
+async def test_cpu_recovery_wait_allows_scrape_latency_but_keeps_protocol_deadline(
+    run, monkeypatch, recovered,
+):
+    from agents.stage_a import wait_for_cpu_recovery
+
+    context, clock = run
+    context.action_completed_epoch = 1010
+    clock.epoch = 1010
+    clock.monotonic = 510
+    queried_at = []
+
+    def verify(*args):
+        queried_at.append(clock.epoch)
+        resolved = False
+        if recovered and clock.epoch >= 1042:
+            stamp, counter = (1070, 20.3) if clock.epoch >= 1072 else (1040, 20)
+            resolved = context.recovery_check(observation(stamp, counter))
+        return SimpleNamespace(env_resolved=resolved)
+
+    async def inline(function, *args):
+        return function(*args)
+
+    async def sleep(seconds):
+        clock.epoch += seconds
+        clock.monotonic += seconds
+
+    monkeypatch.setattr("agents.verifier.verify_environment", verify)
+    monkeypatch.setattr("asyncio.to_thread", inline)
+    monkeypatch.setattr("asyncio.sleep", sleep)
+    with stage_a_scope(context):
+        assert await wait_for_cpu_recovery() is recovered
+    assert max(queried_at) <= 1540
+    if recovered:
+        assert clock.epoch == 1072
+        assert context.cpu_recovery["passed"] is True
+    else:
+        assert clock.epoch <= 1542
+
+
 @pytest.mark.parametrize("first,last", [
     ((1000, 20), (1050, 20.3)),
     ((1020, 20), (1020, 20)),

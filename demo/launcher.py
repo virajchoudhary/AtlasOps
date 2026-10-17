@@ -24,6 +24,7 @@ def launch_demo(
     safe_mode: bool = True,
     share: bool = False,
     incident_capture_root: Path | None = None,
+    incident_execution_root: Path | None = None,
     incident_id: str = "EXP-STAGE4-SF002-018",
     incident_capture: str = "golden",
     operator=None,
@@ -45,6 +46,7 @@ def launch_demo(
 
     uvicorn.run(
         create_app(incident_capture_root=incident_capture_root, incident_id=incident_id,
+                   incident_execution_root=incident_execution_root,
                    incident_capture=incident_capture, operator=operator),
         host=host, port=port, access_log=False,
     )
@@ -57,6 +59,7 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="Check local presentation files without starting a server")
     parser.add_argument("--live-observations", action="store_true", help="Enable fixed localhost service health reads, never incident execution")
     parser.add_argument("--incident-capture-root", type=Path, help="Opt-in read-only capture directory for one governed run")
+    parser.add_argument("--incident-execution-root", type=Path, help="Opt-in read-only execution evidence root for one governed run")
     parser.add_argument("--incident-id", default="EXP-STAGE4-SF002-018")
     parser.add_argument("--incident-capture", choices=("golden", "golden-v3", "golden-v3b"), default="golden")
     parser.add_argument("--operator-config", type=Path, help="Opt-in absolute configuration for one governed website launch")
@@ -79,6 +82,7 @@ def main() -> None:
         safe_mode=True,
         share=False,
         incident_capture_root=args.incident_capture_root,
+        incident_execution_root=args.incident_execution_root,
         incident_id=args.incident_id,
         incident_capture=args.incident_capture,
         operator=operator,

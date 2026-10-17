@@ -17,6 +17,8 @@ def test_coordinator_import_does_not_create_trajectory_directory(
     repo_root = Path(__file__).resolve().parents[1]
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(repo_root)
+    runtime_data_dir = tmp_path / "runtime-data"
+    environment["ATLASOPS_RUNTIME_DATA_DIR"] = str(runtime_data_dir)
     trajectory_dir = (
         tmp_path / "configured-trajectories"
         if configured_path else tmp_path / "data" / "trajectories"
@@ -38,3 +40,4 @@ def test_coordinator_import_does_not_create_trajectory_directory(
 
     assert process.returncode == 0
     assert not trajectory_dir.exists()
+    assert not (runtime_data_dir / "incident-admissions.sqlite3").exists()

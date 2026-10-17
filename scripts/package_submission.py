@@ -71,6 +71,7 @@ REQUIRED_REVIEW_ASSETS = (
     "dashboard.py",
     "ui_read_model.py",
     "demo/launcher.py",
+    "frontend/reference.html",
     "static/index.html",
     "static/console.css",
     "static/console.js",
@@ -79,6 +80,52 @@ REQUIRED_REVIEW_ASSETS = (
     "tests/test_stage14_demo_safety.py",
     "tests/test_stage15_submission_package.py",
     "tests/test_current_project_truth.py",
+)
+_FRONTEND_SOURCE_SUFFIXES = frozenset({".ts", ".tsx", ".js", ".jsx", ".css", ".json"})
+_FRONTEND_ASSET_SUFFIXES = frozenset(
+    {
+        ".html",
+        ".svg",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".avif",
+        ".ico",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+    }
+)
+_FRONTEND_SOURCE_ASSET_SUFFIXES = _FRONTEND_SOURCE_SUFFIXES | _FRONTEND_ASSET_SUFFIXES
+_FRONTEND_PUBLIC_SUFFIXES = _FRONTEND_ASSET_SUFFIXES | {
+    ".js",
+    ".css",
+    ".json",
+    ".webmanifest",
+    ".xml",
+    ".txt",
+    ".mp4",
+}
+_FRONTEND_LICENSE_NAMES = frozenset({"ofl", "ofl.txt", "license", "license.txt"})
+_FRONTEND_EXCLUDED_DIRECTORIES = frozenset(
+    {
+        ".cache",
+        ".vite",
+        "build",
+        "coverage",
+        "credentials",
+        "dist",
+        "node_modules",
+        "playwright-report",
+        "private",
+        "results",
+        "secret",
+        "secrets",
+        "test-results",
+    }
 )
 
 
@@ -164,7 +211,42 @@ def _is_link_or_reparse_point(path: Path) -> bool:
     return False
 
 
-def _matching_tracked_files(repo_root: Path, patterns: list[str]) -> dict[str, Path]:
+def _is_frontend_source_or_asset(relative_path: str) -> bool:
+    path = PurePosixPath(relative_path)
+    if (
+        len(path.parts) < 3
+        or path.parts[0] != "frontend"
+        or path.parts[1] not in {"src", "public"}
+    ):
+        return False
+    if any(
+        part.casefold() in _FRONTEND_EXCLUDED_DIRECTORIES
+        for part in path.parts[2:-1]
+    ):
+        return False
+
+    filename = path.name.casefold()
+    if filename.startswith((".env", "credentials.", "secrets.", "secret.")):
+        return False
+    if filename in _FRONTEND_LICENSE_NAMES:
+        return True
+    if path.as_posix() == "frontend/src/reference/ASSET_PROVENANCE.md":
+        return True
+
+    allowed_suffixes = (
+        _FRONTEND_SOURCE_ASSET_SUFFIXES
+        if path.parts[1] == "src"
+        else _FRONTEND_PUBLIC_SUFFIXES
+    )
+    return path.suffix.casefold() in allowed_suffixes
+
+
+def _matching_tracked_files(
+    repo_root: Path,
+    patterns: list[str],
+    *,
+    include_frontend_assets: bool = False,
+) -> dict[str, Path]:
     """Select indexed files matching the package allowlist and reject escaping links."""
     repo_root = repo_root.resolve()
     listing = subprocess.run(
@@ -178,31 +260,37 @@ def _matching_tracked_files(repo_root: Path, patterns: list[str]) -> dict[str, P
     }
 
     selected: dict[str, Path] = {}
-    for pattern in patterns:
-        for relative_path in sorted(tracked_paths):
-            if "/" not in pattern and "/" in relative_path:
-                continue
-            if not PurePosixPath(relative_path).match(pattern):
-                continue
-            candidate = repo_root.joinpath(*PurePosixPath(relative_path).parts)
-            component = repo_root
-            for part in PurePosixPath(relative_path).parts:
-                component = component / part
-                if _is_link_or_reparse_point(component):
-                    raise ValueError(
-                        f"Tracked asset path traverses a symbolic link or reparse point: {relative_path}"
-                    )
-            try:
-                resolved_path = candidate.resolve(strict=True)
-            except (OSError, RuntimeError) as error:
-                raise ValueError(f"Tracked asset cannot be resolved: {relative_path}") from error
-            try:
-                resolved_path.relative_to(repo_root)
-            except ValueError as error:
-                raise ValueError(f"Tracked asset escapes repository root: {relative_path}") from error
-            if not resolved_path.is_file():
-                continue
-            selected[relative_path] = candidate
+    for relative_path in sorted(tracked_paths):
+        selected_by_frontend = (
+            include_frontend_assets
+            and _is_frontend_source_or_asset(relative_path)
+        )
+        selected_by_pattern = not selected_by_frontend and any(
+            ("/" in pattern or "/" not in relative_path)
+            and PurePosixPath(relative_path).match(pattern)
+            for pattern in patterns
+        )
+        if not selected_by_frontend and not selected_by_pattern:
+            continue
+        candidate = repo_root.joinpath(*PurePosixPath(relative_path).parts)
+        component = repo_root
+        for part in PurePosixPath(relative_path).parts:
+            component = component / part
+            if _is_link_or_reparse_point(component):
+                raise ValueError(
+                    f"Tracked asset path traverses a symbolic link or reparse point: {relative_path}"
+                )
+        try:
+            resolved_path = candidate.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise ValueError(f"Tracked asset cannot be resolved: {relative_path}") from error
+        try:
+            resolved_path.relative_to(repo_root)
+        except ValueError as error:
+            raise ValueError(f"Tracked asset escapes repository root: {relative_path}") from error
+        if not resolved_path.is_file():
+            continue
+        selected[relative_path] = candidate
 
     return selected
 
@@ -210,6 +298,9 @@ def _matching_tracked_files(repo_root: Path, patterns: list[str]) -> dict[str, P
 def collect_submission_assets() -> dict[str, dict[str, Any]]:
     """Catalog selected Git-index assets with raw-byte hashes and sizes."""
     tracked_patterns = [
+        "frontend/.gitattributes",
+        "docs/project/COMPLETION_CHECKLIST.md",
+        "docs/project/PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md",
         "AGENTS.md",
         ".dockerignore",
         ".gitignore",
@@ -241,19 +332,13 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "frontend/.gitattributes",
         "frontend/.npmrc",
         "frontend/index.html",
+        "frontend/reference.html",
         "frontend/package.json",
         "frontend/package-lock.json",
         "frontend/tsconfig.json",
         "frontend/vite.config.ts",
         "frontend/playwright.config.ts",
         "frontend/THIRD_PARTY_NOTICES.md",
-        "frontend/src/*.ts",
-        "frontend/src/*.tsx",
-        "frontend/src/*/*.ts",
-        "frontend/src/*/*.tsx",
-        "frontend/src/components/*/*.tsx",
-        "frontend/src/*.css",
-        "frontend/src/demo/*.css",
         "frontend/e2e/*.ts",
         "docs/project/UI_SOURCE_REVIEW.md",
         "docs/media/research-console-20261006/*.jpg",
@@ -471,7 +556,11 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
 
     repo_root = Path.cwd().resolve()
     assets: dict[str, dict[str, Any]] = {}
-    for rel, path in _matching_tracked_files(repo_root, tracked_patterns).items():
+    for rel, path in _matching_tracked_files(
+        repo_root,
+        tracked_patterns,
+        include_frontend_assets=True,
+    ).items():
         assets[rel] = {
             "sha256": compute_sha256(path),
             "size_bytes": path.stat().st_size,
@@ -482,6 +571,26 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
 
 def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
     """Assemble an integrity inventory without inventing gate or model metrics."""
+    if output_dir is None:
+        raise ValueError("output_dir is required; choose a separate directory")
+
+    destination = output_dir.resolve()
+    if destination == ARTIFACTS_DIR.resolve():
+        raise ValueError(
+            "output_dir resolves to the canonical artifacts directory; "
+            "choose a separate directory"
+        )
+    existing_outputs = [
+        name
+        for name in ("SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md")
+        if (destination / name).exists() or (destination / name).is_symlink()
+    ]
+    if existing_outputs:
+        raise ValueError(
+            "output_dir contains existing submission output(s): "
+            + ", ".join(existing_outputs)
+        )
+
     assets = collect_submission_assets()
     gates = declared_gate_statuses()
     from scripts.check_submission_links import check_current_markdown_links
@@ -523,16 +632,17 @@ def build_submission_package(output_dir: Path | None = None) -> dict[str, Any]:
         **readiness,
     }
 
-    destination = output_dir or ARTIFACTS_DIR
     destination.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / "SUBMISSION_MANIFEST.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
+    with manifest_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(manifest, indent=2))
     log.info("Wrote %s", manifest_path)
 
     # Generate Markdown Summary
     summary_path = destination / "SUBMISSION_SUMMARY.md"
     summary_md = generate_submission_summary_md(manifest)
-    summary_path.write_text(summary_md, encoding="utf-8", newline="\n")
+    with summary_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(summary_md)
     log.info("Wrote %s", summary_path)
 
     return manifest
@@ -615,8 +725,18 @@ def generate_submission_summary_md(manifest: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AtlasOps Submission Package Generator")
-    parser.parse_args()
-    build_submission_package()
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Write a fresh manifest and summary into a separate directory",
+    )
+    args = parser.parse_args()
+
+    try:
+        build_submission_package(output_dir=args.output_dir)
+    except (ValueError, FileExistsError) as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

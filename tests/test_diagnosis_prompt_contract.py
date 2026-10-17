@@ -1,11 +1,10 @@
 """Model-visible Diagnosis contract checks for scenario-neutral discovery."""
 
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 from scripts.run_stage4_golden_incident import evaluate_causal_g4_predicate
-
 
 _PROMPT = Path(__file__).resolve().parents[1] / "agents" / "prompts" / "diagnosis.md"
 
@@ -52,3 +51,68 @@ def test_prompt_example_matches_runtime_diagnosis_shape_without_claiming_pass():
     assert type(diagnosis["confidence"]) in (int, float)
     assert 0 <= diagnosis["confidence"] <= 1
     assert "no_series" in prompt
+
+
+def test_sft_contract_allows_empty_evidence_when_prompt_allows_it():
+    from training.sft import validate_diagnosis_target_contracts
+
+    prompt = _PROMPT.read_text(encoding="utf-8")
+    example = re.search(r"```json\s*(.*?)\s*```", prompt, re.DOTALL)
+    assert example is not None
+    target = json.loads(example.group(1))
+    target["category"] = "unknown"
+    target["root_cause"] = "The available observations do not establish a cause."
+    target["evidence"] = []
+    target["blast_radius_update"] = "Scope is not established."
+    validate_diagnosis_target_contracts(
+        [
+            {
+                "scenario_id": "synthetic-no-support",
+                "role": "diagnosis",
+                "messages": [
+                    {"role": "assistant", "content": json.dumps(target)},
+                ],
+            }
+        ]
+    )
+
+
+def test_synthetic_candidate_builder_emits_renderable_canonical_diagnosis_target():
+    from agents.coordinator import _remediation_plan_summary, _try_parse_json
+    from training import build_sft_candidate
+    from training.sft import validate_diagnosis_target_contracts
+    from training.sft_rendering import (
+        prepare_example_for_training,
+        render_messages,
+    )
+
+    prompt = _PROMPT.read_text(encoding="utf-8")
+    examples = [
+        row
+        for row in build_sft_candidate.build_candidate_rows()
+        if row["role"] == "diagnosis"
+    ]
+    originals = [json.dumps(example, sort_keys=True) for example in examples]
+
+    validate_diagnosis_target_contracts(examples)
+    prepared = prepare_example_for_training(examples[0])
+    rendered, generation_spans = render_messages(
+        prepared["messages"],
+        prepared["tools"],
+        track_generation=True,
+    )
+
+    assert prepared["messages"][0]["content"] == prompt
+    assert [json.dumps(example, sort_keys=True) for example in examples] == originals
+    assert prepared["provenance"]["role"] == "diagnosis"
+    target = json.loads(examples[0]["messages"][-1]["content"])
+    parsed = _try_parse_json(examples[0]["messages"][-1]["content"])
+    summary = _remediation_plan_summary({"severity": "P1"}, parsed)
+    assert parsed == target
+    assert isinstance(target["root_cause"], str)
+    assert target["root_cause"] in summary
+    assert str(target["recommended_fix"]) in summary
+    assert "apply safe rollback/scale" not in summary
+    assert any(examples[0]["messages"][-1]["content"] in span for span in generation_spans)
+    assert "<tool_response>" not in "\n".join(generation_spans)
+    assert target["root_cause"] in rendered

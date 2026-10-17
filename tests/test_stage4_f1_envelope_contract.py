@@ -113,7 +113,7 @@ def test_precondition_ordering_preserved():
     telemetry = src.index("wait_for_telemetry_readiness()")
     baseline = src.index("wait_for_baseline_readiness()")
     reservation = src.index("reservation = reserve_experiment_attempt(")
-    injection = src.index('inject_res = run_kubectl(["apply", "-f", manifest_path])')
+    injection = src.index('inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])')
     consumed = src.index("consume_experiment_attempt(reservation)")
     assert telemetry < baseline < reservation < consumed < injection
 

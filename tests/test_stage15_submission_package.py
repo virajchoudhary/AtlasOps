@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +31,184 @@ from scripts.package_submission import (
     compute_sha256,
     evaluate_package_readiness,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FROZEN_SUBMISSION_MANIFEST_REVISION = "d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4"
+
+
+def _stub_package_inputs(monkeypatch):
+    import scripts.package_submission as packaging
+
+    monkeypatch.setattr(packaging, "collect_submission_assets", dict)
+    monkeypatch.setattr(packaging, "declared_gate_statuses", dict)
+    monkeypatch.setattr(
+        "scripts.check_submission_links.check_current_markdown_links",
+        lambda _: [],
+    )
+
+
+@pytest.mark.parametrize("destination", ["default", "canonical", "manifest", "summary"])
+def test_submission_builder_refuses_to_replace_existing_outputs(
+    tmp_path,
+    monkeypatch,
+    destination,
+):
+    import scripts.package_submission as packaging
+
+    _stub_package_inputs(monkeypatch)
+    canonical = tmp_path / "frozen"
+    canonical.mkdir()
+    monkeypatch.setattr(packaging, "ARTIFACTS_DIR", canonical)
+    output = canonical if destination in {"default", "canonical"} else tmp_path
+    name = "SUBMISSION_SUMMARY.md" if destination == "summary" else "SUBMISSION_MANIFEST.json"
+    preserved = output / name
+    preserved.write_bytes(b"preserved evidence")
+
+    with pytest.raises(
+        ValueError,
+        match="output_dir|canonical artifacts|existing submission",
+    ):
+        if destination == "default":
+            build_submission_package()
+        else:
+            build_submission_package(output_dir=output)
+
+    assert preserved.read_bytes() == b"preserved evidence"
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md"],
+)
+def test_submission_builder_does_not_overwrite_output_created_after_validation(
+    tmp_path,
+    monkeypatch,
+    filename,
+):
+    _stub_package_inputs(monkeypatch)
+    output_path = tmp_path / filename
+    previous_bytes = b"created concurrently"
+    original_open = Path.open
+    competing_writer_created_file = False
+
+    def race_at_file_creation(path, mode="r", *args, **kwargs):
+        nonlocal competing_writer_created_file
+        if (
+            path == output_path
+            and mode in {"x", "w"}
+            and not competing_writer_created_file
+        ):
+            competing_writer_created_file = True
+            output_path.write_bytes(previous_bytes)
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", race_at_file_creation)
+
+    with pytest.raises(FileExistsError):
+        build_submission_package(output_dir=tmp_path)
+
+    assert competing_writer_created_file
+    assert output_path.read_bytes() == previous_bytes
+
+
+def _run_submission_package_cli(*arguments: str, cwd: Path = REPO_ROOT):
+    env = os.environ.copy()
+    env["ATLASOPS_AUTO_HF_INFERENCE"] = "0"
+    env["PYTHONPATH"] = os.pathsep.join(
+        path for path in (str(REPO_ROOT), env.get("PYTHONPATH")) if path
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.package_submission", *arguments],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_submission_package_cli_requires_explicit_output_dir(tmp_path):
+    result = _run_submission_package_cli(cwd=tmp_path)
+
+    assert result.returncode == 2
+    assert "the following arguments are required: --output-dir" in result.stderr
+    assert not (tmp_path / "artifacts").exists()
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    [
+        "artifacts",
+        str(REPO_ROOT / "artifacts" / ".." / "artifacts"),
+    ],
+)
+def test_submission_package_cli_rejects_canonical_artifacts_output(output_dir):
+    manifest_path = REPO_ROOT / "artifacts/SUBMISSION_MANIFEST.json"
+    summary_path = REPO_ROOT / "artifacts/SUBMISSION_SUMMARY.md"
+    frozen_manifest = manifest_path.read_bytes()
+    frozen_summary = summary_path.read_bytes()
+
+    result = _run_submission_package_cli("--output-dir", output_dir)
+
+    assert result.returncode == 2
+    assert "canonical artifacts directory" in result.stderr
+    assert manifest_path.read_bytes() == frozen_manifest
+    assert summary_path.read_bytes() == frozen_summary
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["SUBMISSION_MANIFEST.json", "SUBMISSION_SUMMARY.md"],
+)
+def test_submission_package_cli_refuses_to_overwrite_existing_outputs(
+    tmp_path,
+    filename,
+):
+    output_dir = tmp_path / "existing-package"
+    output_dir.mkdir()
+    destination = output_dir / filename
+    previous_bytes = b"preserved prior submission evidence\r\n"
+    destination.write_bytes(previous_bytes)
+
+    result = _run_submission_package_cli("--output-dir", str(output_dir))
+
+    assert result.returncode == 2
+    assert "existing submission output" in result.stderr
+    assert destination.read_bytes() == previous_bytes
+
+
+def test_submission_package_cli_writes_isolated_output_and_preserves_frozen_manifest(
+    tmp_path,
+):
+    frozen_manifest_path = REPO_ROOT / "artifacts/SUBMISSION_MANIFEST.json"
+    frozen_manifest_before = frozen_manifest_path.read_bytes()
+    pinned_manifest = subprocess.check_output(
+        [
+            "git",
+            "show",
+            (
+                f"{FROZEN_SUBMISSION_MANIFEST_REVISION}:"
+                "artifacts/SUBMISSION_MANIFEST.json"
+            ),
+        ],
+        cwd=REPO_ROOT,
+    )
+    assert frozen_manifest_before == pinned_manifest
+
+    output_dir = tmp_path / "fresh-package"
+    result = _run_submission_package_cli("--output-dir", str(output_dir))
+
+    assert result.returncode == 0, result.stderr
+    manifest_path = output_dir / "SUBMISSION_MANIFEST.json"
+    summary_path = output_dir / "SUBMISSION_SUMMARY.md"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["status"] == "NOT_CERTIFIED"
+    assert manifest["gate_statuses_declared"]["G4"] == "NOT_PASSED"
+    assert manifest["gate_statuses_declared"]["G9"] == "NOT_PASSED"
+    assert manifest["empirical_metrics"] is None
+    assert "NOT_CERTIFIED" in summary_path.read_text(encoding="utf-8")
+    assert frozen_manifest_path.read_bytes() == frozen_manifest_before
+    assert frozen_manifest_path.read_bytes() == pinned_manifest
 
 
 def _git_attributes(paths: set[str] | list[str]) -> dict[str, dict[str, str]]:
@@ -76,6 +256,28 @@ def test_audit_implementation_is_selected_when_tracked(monkeypatch):
     assert collect_submission_assets() == {
         path: {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
     }
+
+
+def test_vite_reference_page_is_required_and_selected_when_tracked(monkeypatch):
+    path = "frontend/reference.html"
+    monkeypatch.setattr(
+        "scripts.package_submission.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=(path + "\0").encode()),
+    )
+    raw = Path(path).read_bytes()
+
+    assert collect_submission_assets() == {
+        path: {"sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
+    }
+    assert path in REQUIRED_REVIEW_ASSETS
+    assets_without_reference = {
+        required_path: {"sha256": "0" * 64, "size_bytes": 1}
+        for required_path in REQUIRED_REVIEW_ASSETS
+        if required_path != path
+    }
+    readiness = evaluate_package_readiness(assets_without_reference, [])
+    assert readiness["package_ready"] is False
+    assert readiness["package_readiness_missing_assets"] == [path]
 
 
 class TestStage15SubmissionPackage:
@@ -529,6 +731,27 @@ class TestStage15SubmissionPackage:
         recovery_attributes = _git_attributes({recovery_commands})[recovery_commands]
         assert recovery_attributes == {"text": "set", "eol": "lf"}
 
+    def test_frontend_source_keeps_explicit_lf_checkout(self):
+        path = "frontend/src/reference/components/ReelDialog.tsx"
+        assert _git_attributes({path})[path] == {"text": "set", "eol": "lf"}
+
+    @pytest.mark.parametrize("filename", [
+        "content-architecture-reel.mp4",
+        "edoardo-founder-video.mp4",
+    ])
+    def test_reference_video_git_filter_preserves_raw_bytes(self, filename):
+        path = f"frontend/public/reference/assets/{filename}"
+        assert _git_attributes({path})[path]["text"] == "unset"
+        filtered_blob = subprocess.check_output(
+            ["git", "hash-object", "--", path], text=True,
+        ).strip()
+        raw_blob = subprocess.check_output(
+            ["git", "hash-object", "--no-filters", "--", path], text=True,
+        ).strip()
+        assert filtered_blob == raw_blob
+        indexed_bytes = subprocess.check_output(["git", "show", f":{path}"])
+        assert indexed_bytes == Path(path).read_bytes()
+
     def test_all_assets_match_clean_linux_checkout_simulation(self):
         assets = collect_submission_assets()
         attributes = _git_attributes(set(assets))
@@ -538,7 +761,9 @@ class TestStage15SubmissionPackage:
             asset_path = Path(path)
             raw_bytes = asset_path.read_bytes()
             attr = attributes[path]
-            if attr["eol"] == "crlf":
+            if attr["text"] == "unset":
+                linux_checkout_bytes = raw_bytes
+            elif attr["eol"] == "crlf":
                 assert attr["text"] == "set"
                 linux_checkout_bytes = raw_bytes.replace(b"\r\n", b"\n").replace(
                     b"\n", b"\r\n"
@@ -546,8 +771,6 @@ class TestStage15SubmissionPackage:
             elif attr["eol"] == "lf":
                 assert attr["text"] == "set"
                 linux_checkout_bytes = raw_bytes.replace(b"\r\n", b"\n")
-            elif attr["text"] == "unset":
-                linux_checkout_bytes = raw_bytes
             elif attr["text"] == "unspecified":
                 worktree_blob = subprocess.check_output(
                     ["git", "hash-object", "--no-filters", "--", path],
@@ -593,6 +816,69 @@ class TestStage15SubmissionPackage:
 
         selected = _matching_tracked_files(repo_root, ["tests/test_*.py"])
         assert set(selected) == {"tests/test_tracked_asset.py"}
+
+    def test_recursive_frontend_assets_are_tracked_and_exclude_generated_paths(
+        self,
+        tmp_path,
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        included = {
+            "frontend/src/App.tsx",
+            "frontend/src/reference/tests/fixtures/deep/fixture.tsx",
+            "frontend/src/reference/tests/fixtures/deep/fixture.html",
+            "frontend/src/reference/resources/GeistMono-Variable.woff2",
+            "frontend/src/reference/resources/OFL.txt",
+            "frontend/public/images/nested/diagram.webp",
+            "frontend/public/fonts/nested/GeistMono.woff2",
+            "frontend/public/fixtures/nested/index.html",
+            "frontend/public/fixtures/nested/OFL.txt",
+            "frontend/public/reference/assets/reel.mp4",
+        }
+        excluded = {
+            "frontend/src/reference/tests/results/captured.tsx",
+            "frontend/src/node_modules/package/index.ts",
+            "frontend/src/dist/generated.css",
+            "frontend/src/private/config.ts",
+            "frontend/public/test-results/screenshot.webp",
+            "frontend/public/node_modules/package/icon.svg",
+            "frontend/public/build/bundle.js",
+            "frontend/public/private/credentials.html",
+            "frontend/public/private/recording.mp4",
+            "frontend/src/secrets/runtime.ts",
+            "frontend/public/secrets/runtime.json",
+            "frontend/src/SeCrEt/runtime.ts",
+            "frontend/public/CREDENTIALS/runtime.json",
+        }
+        untracked = "frontend/src/reference/tests/fixtures/deep/untracked.tsx"
+
+        for relative_path in included | excluded | {untracked}:
+            file_path = repo_root / relative_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(b"tracked frontend fixture\n")
+        subprocess.run(
+            ["git", "add", "--", *sorted(included | excluded)],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        selected = _matching_tracked_files(
+            repo_root,
+            [],
+            include_frontend_assets=True,
+        )
+        assert included <= selected.keys()
+        assert excluded.isdisjoint(selected)
+        assert set(selected) <= included
+        assert untracked not in selected
 
     def test_tracked_asset_selection_rejects_symlink_escapes(self, tmp_path):
         repo_root = tmp_path / "repo"

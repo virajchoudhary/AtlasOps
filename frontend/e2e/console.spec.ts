@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 const routes = [
@@ -12,21 +14,83 @@ const routes = [
   ["System", "/system", "A local, read-only presentation surface."],
 ] as const;
 
+async function inspectLoadedFonts(page: import("@playwright/test").Page) {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    const normalizeFamily = (family: string) =>
+      family.replace(/^["']|["']$/g, "").trim().toLowerCase();
+    const fontFaces = [...document.fonts]
+      .map((fontFace) => ({
+        family: normalizeFamily(fontFace.family),
+        status: fontFace.status,
+      }))
+      .filter(({ family }) => family === "geist" || family === "geist mono");
+    return {
+      geist: fontFaces.some((fontFace) => fontFace.family === "geist" && fontFace.status === "loaded"),
+      geistMono: fontFaces.some((fontFace) => fontFace.family === "geist mono" && fontFace.status === "loaded"),
+      fontFaces,
+    };
+  });
+}
+const referenceRoutes = [
+  { id: "home", path: "/reference", heading: /The stack agents/ },
+  { id: "blog", path: "/blog", heading: "Knowledge Hub" },
+  { id: "articles", path: "/blog/articles", heading: "Knowledge Hub" },
+  {
+    id: "projects",
+    path: "/blog/the-content-architecture-four-months-in",
+    heading: "What Four Months of Real Projects Changed in The Content Architecture",
+  },
+  {
+    id: "agents",
+    path: "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    heading: "Your Site Is Invisible to AI Agents (and Your CMS Can Fix It)",
+  },
+  {
+    id: "caching",
+    path: "/blog/stale-sanity-content-nextjs-caching-revalidation",
+    heading: "Stale Sanity Content in Next.js and Astro: The Two Caches and How to Fix Them",
+  },
+  {
+    id: "projects-alias",
+    path: "/blog/articles/the-content-architecture-four-months-in",
+    heading: "What Four Months of Real Projects Changed in The Content Architecture",
+  },
+  {
+    id: "agents-alias",
+    path: "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    heading: "Your Site Is Invisible to AI Agents (and Your CMS Can Fix It)",
+  },
+  {
+    id: "caching-alias",
+    path: "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+    heading: "Stale Sanity Content in Next.js and Astro: The Two Caches and How to Fix Them",
+  },
+  { id: "roadmap", path: "/roadmap", heading: "Roadmap" },
+  { id: "privacy", path: "/legal/privacy-policy", heading: "Privacy Policy" },
+  { id: "terms", path: "/legal/terms-of-service", heading: "Terms of Service" },
+] as const;
+
 test("overview shows API inventory and stays distinct from certification", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "AtlasOps" })).toBeVisible();
   await expect(page.getByText("Governed Multi-Agent SRE Intelligence")).toHaveCount(0);
+  await expect(page.getByText("This is the actual repo.", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Read-only research demo")).toBeVisible();
   await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
 
-  const tools = page.locator(".metric-tile").filter({ hasText: "Registered tool wrappers" });
-  await expect(tools.locator(".metric-value")).toHaveText("24");
-  await expect(tools).toContainText("Role-exposed: 19");
+  const tools = page.locator(".overview-inventory-row").filter({ hasText: "Registered tool wrappers" });
+  await expect(tools.locator("dd")).toHaveText("24");
+  const roleExposed = page.locator(".overview-inventory-row").filter({ hasText: "Role-exposed tools" });
+  await expect(roleExposed.locator("dd")).toHaveText("19");
 
-  const scenarios = page.locator(".metric-tile").filter({ hasText: "Frozen scenarios" });
-  await expect(scenarios.locator(".metric-value")).toHaveText("28");
-  await expect(page.getByText("NOT_CERTIFIED")).toBeVisible();
-  await expect(page.getByText("READY_FOR_REVIEW")).toBeVisible();
+  const scenarios = page.locator(".overview-inventory-row").filter({ hasText: "Frozen scenarios" });
+  await expect(scenarios.locator("dd")).toHaveText("28");
+  await expect(page.locator(".overview-posture")).toContainText("NOT_CERTIFIED");
+  await expect(page.locator(".overview-posture")).toContainText("READY_FOR_REVIEW");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("No diagnostic improvement observed");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("0 / 8");
+  await expect(page.locator(".overview-evidence-ledger")).toContainText("Accepted SFT+GRPO checkpoint");
 });
 
 test("every primary route is reachable through the hash router", async ({ page }) => {
@@ -34,6 +98,531 @@ test("every primary route is reachable through the hash router", async ({ page }
     await page.goto(`/#${path}`);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     await expect(page.getByText(/GAI\s*\+\s*RL/i)).toHaveCount(0);
+  }
+});
+
+test("refresh and catalog search remain available in the redesigned shell", async ({ page }) => {
+  const methods: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/")) methods.push(request.method());
+  });
+  await page.goto("/");
+  const apiStatus = page.locator(".api-indicator");
+  await expect(apiStatus).toContainText("Snapshot available");
+  await page.getByRole("button", { name: "Refresh repository snapshot" }).click();
+  await expect(apiStatus).toContainText("Snapshot available");
+
+  await page.goto("/#/runbooks");
+  const search = page.getByPlaceholder("Search catalog");
+  await expect(page.locator(".runbook-row")).not.toHaveCount(0);
+  await search.fill("zz-no-matching-runbook-zz");
+  await expect(page.locator(".runbook-row")).toHaveCount(0);
+  await expect(page.getByText("No runbooks match this search.")).toBeVisible();
+  await search.fill("");
+  await expect(page.locator(".runbook-row").first()).toBeVisible();
+
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+});
+
+test("nine routes render at the five reference viewports without overlap or overflow", async ({ page }, testInfo) => {
+  const viewports = [
+    { name: "1920x1080", width: 1920, height: 1080 },
+    { name: "1440x900", width: 1440, height: 900 },
+    { name: "1280x800", width: 1280, height: 800 },
+    { name: "768x1024", width: 768, height: 1024 },
+    { name: "390x844", width: 390, height: 844 },
+  ] as const;
+  const methods: string[] = [];
+  const apiRequests: string[] = [];
+  const runtimeErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const records: {
+    route: string;
+    viewport: string;
+    apiMethods: string[];
+    apiRequests: string[];
+    fontsLoaded: {
+      geist: boolean;
+      geistMono: boolean;
+      fontFaces: { family: string; status: string }[];
+    };
+    documentWidth: number;
+    viewportWidth: number;
+    overlapCount: number | null;
+  }[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/")) {
+      methods.push(request.method());
+      apiRequests.push(`${request.method()} ${url.pathname}`);
+    }
+  });
+  const getErrors: string[] = [];
+  page.on("response", (response) => {
+    const request = response.request();
+    if (request.method() === "GET" && response.status() >= 400) {
+      getErrors.push(`GET ${new URL(response.url()).pathname} ${response.status()}`);
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (request.method() === "GET") {
+      getErrors.push(`GET ${new URL(request.url()).pathname} ${request.failure()?.errorText ?? "request failed"}`);
+    }
+  });
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const [, path, heading] of routes) {
+      const requestOffset = methods.length;
+      const apiRequestOffset = apiRequests.length;
+      await page.goto(`/#${path}`);
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      const fontsLoaded = await inspectLoadedFonts(page);
+      expect(fontsLoaded.geist, `${path} Geist Sans`).toBe(true);
+      expect(fontsLoaded.geistMono, `${path} Geist Mono`).toBe(true);
+      const layout = await page.evaluate(() => {
+        const children = [...document.querySelectorAll<HTMLElement>(".page-stack > *")]
+          .filter((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.width > 0 && bounds.height > 0;
+          })
+          .map((element) => element.getBoundingClientRect());
+        let overlapCount = 0;
+        for (let left = 0; left < children.length; left++) {
+          for (let right = left + 1; right < children.length; right++) {
+            const first = children[left];
+            const second = children[right];
+            if (
+              first.left < second.right
+              && first.right > second.left
+              && first.top < second.bottom - 1
+              && first.bottom > second.top + 1
+            ) overlapCount += 1;
+          }
+        }
+        return {
+          documentWidth: document.documentElement.scrollWidth,
+          viewportWidth: window.innerWidth,
+          overlapCount,
+        };
+      });
+      const apiMethods = methods.slice(requestOffset);
+      const routeApiRequests = apiRequests.slice(apiRequestOffset);
+      expect(layout.documentWidth, `${path} at ${viewport.name}`).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.overlapCount, `${path} at ${viewport.name}`).toBe(0);
+      expect(apiMethods.every((method) => method === "GET"), `${path} API methods`).toBe(true);
+      records.push({
+        route: path,
+        viewport: viewport.name,
+        apiMethods,
+        apiRequests: routeApiRequests,
+        fontsLoaded,
+        ...layout,
+      });
+      await page.screenshot({
+        path: testInfo.outputPath(`atlasops-${path === "/" ? "overview" : path.slice(1)}-${viewport.name}.png`),
+        fullPage: true,
+      });
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileMenuRequestOffset = methods.length;
+  const mobileMenuApiRequestOffset = apiRequests.length;
+  await page.goto("/");
+  const more = page.getByRole("button", { name: "More" });
+  await more.click();
+  const additionalNavigation = page.getByRole("region", { name: "Additional navigation" });
+  await expect(additionalNavigation).toBeVisible();
+  const mobileMenuFontsLoaded = await inspectLoadedFonts(page);
+  expect(mobileMenuFontsLoaded.geist, "mobile menu Geist Sans").toBe(true);
+  expect(mobileMenuFontsLoaded.geistMono, "mobile menu Geist Mono").toBe(true);
+  const mobileMenuLayout = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(mobileMenuLayout.documentWidth).toBeLessThanOrEqual(mobileMenuLayout.viewportWidth);
+  await page.screenshot({
+    path: testInfo.outputPath("atlasops-mobile-more-menu-390x844.png"),
+    fullPage: true,
+  });
+  records.push({
+    route: "mobile-more-menu",
+    viewport: "390x844",
+    apiMethods: methods.slice(mobileMenuRequestOffset),
+    apiRequests: apiRequests.slice(mobileMenuApiRequestOffset),
+    fontsLoaded: mobileMenuFontsLoaded,
+    ...mobileMenuLayout,
+    overlapCount: null,
+  });
+
+  expect(runtimeErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(getErrors).toEqual([]);
+  expect(methods.length).toBeGreaterThan(0);
+  const gitSha = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: testInfo.config.rootDir,
+    encoding: "utf8",
+  }).trim();
+  const matrix = {
+    gitSha,
+    captures: records.length,
+    records,
+    apiMethods: methods,
+    uniqueApiRequests: [...new Set(apiRequests)],
+    getErrors,
+    pageErrors: runtimeErrors,
+    consoleErrors,
+  };
+  const matrixJson = JSON.stringify(matrix, null, 2);
+  await writeFile(testInfo.outputPath("route-viewport-matrix.json"), matrixJson);
+  await testInfo.attach("route-viewport-matrix.json", {
+    body: Buffer.from(matrixJson),
+    contentType: "application/json",
+  });
+});
+
+test("reference public routes deep-link on desktop and mobile using GET requests only", async ({ page }, testInfo) => {
+  const methods: string[] = [];
+  const errors: string[] = [];
+  page.on("request", (request) => methods.push(request.method()));
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const route of referenceRoutes) {
+      const response = await page.goto(route.path);
+      expect(response?.status(), route.path).toBe(200);
+      await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
+      await expect(page.locator(".app-frame")).toHaveCount(0);
+      if (route.id === "home") {
+        await expect(page.locator(".content-architecture-reference")).toBeVisible();
+      } else {
+        await expect(page.locator(".reference-secondary-page")).toBeVisible();
+      }
+      const overflows = await page.evaluate(() =>
+        document.documentElement.scrollWidth > window.innerWidth
+        || document.body.scrollWidth > window.innerWidth
+      );
+      expect(overflows, `${route.path} overflows at ${viewport.width}px`).toBe(false);
+      await page.screenshot({
+        path: testInfo.outputPath(`reference-${viewport.name}-${route.id}.png`),
+      });
+    }
+  }
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("reference logo, image, and font assets load on desktop and mobile", async ({ page }, testInfo) => {
+  const failedGets: string[] = [];
+  const referenceAssetFailures: string[] = [];
+  const getResponses: { path: string; status: number; contentType: string | null }[] = [];
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const viewportProofs: {
+    viewport: string;
+    routeStatus: number | null;
+    logoNaturalWidth: number;
+    fontStates: {
+      family: string;
+      loaded: boolean;
+      statuses: string[];
+      error: string | null;
+    }[];
+    imageNaturalWidth: number;
+  }[] = [];
+  const fs = await import("node:fs/promises");
+  const crypto = await import("node:crypto");
+  const path = await import("node:path");
+  const gitSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const worktreeRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  }).trim();
+  const frontendDist = path.resolve(worktreeRoot, "frontend", "dist");
+  const catalogText = await fs.readFile(
+    new URL("../src/reference/ASSET_CATALOG.md", import.meta.url),
+    "utf8",
+  );
+  const catalogAssets = catalogText.split(/\r?\n/u).flatMap((line) => {
+    const cells = line.split("|");
+    const catalogPath = cells[1]?.match(/`([^`]+)`/u)?.[1];
+    const expectedSha256 = cells.at(-2)?.match(/\b[0-9a-f]{64}\b/iu)?.[0]?.toLowerCase();
+    const filename = catalogPath?.split("/").pop();
+    if (!filename || !expectedSha256) return [];
+    return [{ filename, expectedSha256 }];
+  });
+  const assetByteProof: {
+    filename: string;
+    expectedSha256: string;
+    sourceSha256: string;
+    distSha256: string;
+    status: number;
+    contentType: string | null;
+    byteLength: number;
+    servedSha256: string;
+    matchesCatalog: boolean;
+    sourceMatchesServed: boolean;
+    distMatchesServed: boolean;
+    svgXmlValid: boolean | null;
+  }[] = [];
+  const writeProof = () => fs.writeFile(
+    testInfo.outputPath("reference-asset-proof.json"),
+    JSON.stringify({
+      gitSha,
+      worktreeRoot,
+      frontendDist,
+      serverOrigin: page.url() ? new URL(page.url()).origin : null,
+      viewportProofs,
+      getResponses,
+      assetByteProof,
+      failedGets,
+      referenceAssetFailures,
+      pageErrors,
+      consoleErrors,
+    }, null, 2),
+    "utf8",
+  );
+  const isReferenceAsset = (url: string) => new URL(url).pathname.startsWith("/reference/assets/");
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("requestfailed", (request) => {
+    if (request.method() === "GET") {
+      const failure = `failed GET ${request.url()}: ${request.failure()?.errorText ?? "unknown"}`;
+      failedGets.push(failure);
+      if (isReferenceAsset(request.url())) referenceAssetFailures.push(failure);
+    }
+  });
+  page.on("response", (response) => {
+    if (response.request().method() === "GET") {
+      const path = new URL(response.url()).pathname;
+      if (path === "/favicon.ico" || path.startsWith("/reference/assets/")) {
+        getResponses.push({
+          path,
+          status: response.status(),
+          contentType: response.headers()["content-type"] ?? null,
+        });
+      }
+      if (response.status() >= 400) {
+        const failure = `${response.status()} GET ${response.url()}`;
+        failedGets.push(failure);
+        if (isReferenceAsset(response.url())) referenceAssetFailures.push(failure);
+      }
+    }
+  });
+
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "mobile", width: 390, height: 844 },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const response = await page.goto("/reference");
+    expect(response?.status(), `/reference at ${viewport.name}`).toBe(200);
+    await expect(page.getByRole("heading", { level: 1, name: /The stack agents/ })).toBeVisible();
+
+    if (viewport.name === "desktop") {
+      for (const asset of catalogAssets) {
+        const sourcePath = path.resolve(
+          worktreeRoot,
+          "frontend",
+          "public",
+          "reference",
+          "assets",
+          asset.filename,
+        );
+        const distPath = path.resolve(frontendDist, "reference", "assets", asset.filename);
+        const sourceBytes = await fs.readFile(sourcePath);
+        const distBytes = await fs.readFile(distPath);
+        const sourceSha256 = crypto.createHash("sha256").update(sourceBytes).digest("hex");
+        const distSha256 = crypto.createHash("sha256").update(distBytes).digest("hex");
+        const assetUrl = new URL(
+          `/reference/assets/${encodeURIComponent(asset.filename)}`,
+          page.url(),
+        );
+        const assetResponse = await page.request.get(assetUrl.toString());
+        const body = await assetResponse.body();
+        const servedSha256 = crypto.createHash("sha256").update(body).digest("hex");
+        const svgXmlValid = asset.filename.toLowerCase().endsWith(".svg")
+          ? await page.evaluate((source) => {
+            const document = new DOMParser().parseFromString(source, "image/svg+xml");
+            return document.documentElement.localName === "svg"
+              && document.querySelector("parsererror") === null;
+          }, body.toString("utf8"))
+          : null;
+        assetByteProof.push({
+          filename: asset.filename,
+          expectedSha256: asset.expectedSha256,
+          sourceSha256,
+          distSha256,
+          status: assetResponse.status(),
+          contentType: assetResponse.headers()["content-type"] ?? null,
+          byteLength: body.byteLength,
+          servedSha256,
+          matchesCatalog: servedSha256 === asset.expectedSha256,
+          sourceMatchesServed: sourceSha256 === servedSha256,
+          distMatchesServed: distSha256 === servedSha256,
+          svgXmlValid,
+        });
+      }
+      await writeProof();
+    }
+
+    const logo = page.locator(
+      viewport.name === "desktop"
+        ? ".reference-brand-desktop img"
+        : ".reference-footer-logo img",
+    );
+    await expect(logo).toBeVisible();
+
+    const fontStates = await page.evaluate(async () => Promise.all(
+      ["Geist Sans", "Geist Mono"].map(async (family) => {
+        try {
+          const faces = await document.fonts.load(`400 16px "${family}"`);
+          return {
+            family,
+            loaded: faces.some((face) => face.status === "loaded"),
+            statuses: faces.map((face) => face.status),
+            error: null,
+          };
+        } catch (error) {
+          return {
+            family,
+            loaded: false,
+            statuses: [],
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    ));
+    await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-top.png`) });
+    const viewportProof = {
+      viewport: viewport.name,
+      routeStatus: response?.status() ?? null,
+      logoNaturalWidth: 0,
+      fontStates,
+      imageNaturalWidth: 0,
+    };
+    viewportProofs.push(viewportProof);
+    await writeProof();
+    await logo.scrollIntoViewIfNeeded();
+    await expect.poll(() => getResponses.find(
+      ({ path: assetPath }) => assetPath === "/reference/assets/content-architecture-symbol.svg",
+    )?.status ?? 0).toBe(200);
+    await expect.poll(() => logo.evaluate((element) =>
+      element instanceof HTMLImageElement && element.complete ? element.naturalWidth : 0,
+    )).toBeGreaterThan(0);
+    viewportProof.logoNaturalWidth = await logo.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    );
+
+    const image = page.locator('img[src="/reference/assets/good-fella.avif"]');
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate((element) =>
+      element instanceof HTMLImageElement && element.complete ? element.naturalWidth : 0,
+    )).toBeGreaterThan(0);
+    viewportProof.imageNaturalWidth = await image.evaluate((element) =>
+      element instanceof HTMLImageElement ? element.naturalWidth : 0,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`reference-${viewport.name}-image.png`) });
+  }
+
+  await writeProof();
+
+  expect(catalogAssets, "catalogued reference assets").toHaveLength(25);
+  expect(new Set(catalogAssets.map(({ filename }) => filename)).size,
+    "unique catalogued reference assets").toBe(25);
+  expect(assetByteProof, "served reference assets").toHaveLength(25);
+  for (const asset of assetByteProof) {
+    expect(asset.status, `${asset.filename} response status`).toBe(200);
+    expect(asset.sourceSha256, `${asset.filename} source SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.distSha256, `${asset.filename} dist SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.servedSha256, `${asset.filename} served SHA-256`).toBe(asset.expectedSha256);
+    expect(asset.matchesCatalog, `${asset.filename} matches the catalog`).toBe(true);
+    expect(asset.sourceMatchesServed, `${asset.filename} source matches served bytes`).toBe(true);
+    expect(asset.distMatchesServed, `${asset.filename} dist matches served bytes`).toBe(true);
+    if (asset.filename.toLowerCase().endsWith(".svg")) {
+      expect(asset.svgXmlValid, `${asset.filename} is valid SVG XML`).toBe(true);
+    }
+  }
+
+  for (const proof of viewportProofs) {
+    for (const family of ["Geist Sans", "Geist Mono"]) {
+      const font = proof.fontStates.find((state) => state.family === family);
+      expect(font, `${proof.viewport}: ${family} face is present`).toBeDefined();
+      expect(font?.error, `${proof.viewport}: ${family} load error`).toBeNull();
+      expect(font?.statuses, `${proof.viewport}: ${family} FontFace statuses`).not.toHaveLength(0);
+      expect(font?.statuses.every((status) => status === "loaded"),
+        `${proof.viewport}: every ${family} face is loaded`).toBe(true);
+      expect(font?.loaded, `${proof.viewport}: ${family} is loaded`).toBe(true);
+    }
+  }
+
+  for (const filename of ["GeistSans-VF.woff2", "GeistMono-VF.woff2"]) {
+    const response = getResponses.find(({ path }) => path === `/reference/assets/${filename}`);
+    expect(response?.status, `${filename} response status`).toBe(200);
+    expect(response?.contentType, `${filename} response content type`).toMatch(/woff2/i);
+  }
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(referenceAssetFailures).toEqual([]);
+  expect(failedGets).toEqual([]);
+});
+
+test("reference home keeps local links, pricing anchor, newsletter dialog and route navigation", async ({ page }) => {
+  const methods: string[] = [];
+  page.on("request", (request) => methods.push(request.method()));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/reference");
+
+  await expect(page.getByRole("heading", { level: 1, name: /The stack agents/ })).toBeVisible();
+  const homeLinks = page.locator('a[aria-label="Home"]');
+  await expect(homeLinks).toHaveCount(2);
+  expect(await homeLinks.evaluateAll((links) => links.every(
+    (link) => link.getAttribute("href") === "/reference",
+  ))).toBe(true);
+  await expect(page.locator(".reference-footer-logo")).toHaveAttribute("href", "/reference");
+
+  await page.getByRole("link", { name: "The repo", exact: true }).click();
+  await expect(page).toHaveURL(/\/reference#the-repo$/);
+  await expect(page.getByText("This is the actual repo.", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Pricing", exact: true }).click();
+  await expect(page).toHaveURL(/\/reference#pricing$/);
+  await expect(page.locator("#pricing")).toBeInViewport();
+
+  const newsletterDialog = page.getByRole("dialog", { name: "Not buying today? Stay close." });
+  await expect(newsletterDialog).toBeVisible({ timeout: 20_000 });
+  await page.keyboard.press("Escape");
+  await expect(newsletterDialog).toHaveCount(0);
+
+  await page.getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Blog", exact: true }).click();
+  await expect(page).toHaveURL(/\/blog$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Knowledge Hub" })).toBeVisible();
+  expect(methods.every((method) => method === "GET")).toBe(true);
+});
+
+test("unknown server paths return 404 instead of the frontend shell", async ({ page }) => {
+  for (const path of [
+    "/blog/not-an-article",
+    "/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/%2e%2e/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+  ]) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(404);
+    await expect(page.locator("#root")).toHaveCount(0);
   }
 });
 
@@ -68,10 +657,10 @@ test("matched comparison and controlled RL findings display canonical API values
   await expect(aligned).toContainText("does not estimate population probability");
 });
 
-test("G4 shows 015 through the latest completed negative 017", async ({ page }) => {
+test("G4 chronology separates the 018 marker from the latest completed negative 017", async ({ page }) => {
   await page.goto("/#/incidents");
   const rows = page.locator(".timeline-item");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText("015");
   await expect(rows.nth(0)).toContainText("INCONCLUSIVE");
   await expect(rows.nth(1)).toContainText("016");
@@ -79,8 +668,17 @@ test("G4 shows 015 through the latest completed negative 017", async ({ page }) 
   await expect(rows.nth(2)).toContainText("017");
   await expect(rows.nth(2)).toContainText("COMPLETED NEGATIVE");
   await expect(rows.nth(2)).toContainText("Last completed attempt");
+  await expect(rows.nth(3)).toContainText("018");
+  await expect(rows.nth(3)).toContainText("COMPLETED MARKER / OUTCOME UNAVAILABLE");
+  await expect(rows.nth(3)).toContainText("Attempt marker only; not an incident outcome");
+  await expect(rows.nth(3)).not.toContainText("Last completed attempt");
+  await rows.nth(3).getByRole("button", { name: "Source and scoring details" }).click();
+  await expect(rows.nth(3)).toContainText(
+    "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+  );
+  await expect(rows.nth(3)).toContainText("docs/EVIDENCE_INDEX.md");
   await expect(page.locator(".gate-status")).toContainText("NOT_PASSED");
-  await expect(page.getByText("Time to resolve: Unavailable", { exact: true })).toHaveCount(3);
+  await expect(page.getByText("Time to resolve: Unavailable", { exact: true })).toHaveCount(4);
   await expect(page.getByText("Time to resolve: Unavailable s", { exact: true })).toHaveCount(0);
 });
 
@@ -347,9 +945,9 @@ test("governed capture displays unreserved startup failure without a recovery cl
   await expect(monitor.getByText("STARTUP_FAILED / NOT_RESERVED", { exact: true })).toHaveCount(0);
 });
 
-test("governed negative result remains negative despite tool success and cleanup", async ({ page }) => {
+test("synthetic governed negative remains negative despite tool success and cleanup", async ({ page }) => {
   await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
-    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-999",
     observed_at: "2026-10-07T06:00:00Z", status: "RECORDED_NEGATIVE",
     process_running: false, reserved: true, attempt_state: "COMPLETED",
     failure: null, gate_g4_pass: false, env_resolved: false,
@@ -367,6 +965,40 @@ test("governed negative result remains negative despite tool success and cleanup
   await expect(monitor.locator("dl div").filter({ hasText: "Cleanup verified zero Chaos" }).locator("dd")).toHaveText("Yes");
   await expect(monitor.locator("dl div").filter({ hasText: "Recorded P1 decision" }).locator("dd")).toHaveText("timeout");
   await expect(monitor.getByRole("region", { name: "Recorded tool outcomes" })).toContainText("Tool success: Yes");
+});
+
+test("completed attempt marker is visible without inferring incident outcome", async ({ page }) => {
+  await page.route("**/api/incident-monitor", (route) => route.fulfill({ json: {
+    enabled: true, available: true, experiment_id: "EXP-STAGE4-SF002-018",
+    observed_at: "2026-10-07T06:00:00Z",
+    status: "COMPLETED MARKER / OUTCOME UNAVAILABLE",
+    process_running: false, reserved: true, attempt_state: "COMPLETED",
+    failure: null, gate_g4_pass: null, env_resolved: null,
+    cleanup_verified_zero: null, approval: null, severity: null, services: [],
+    phases: [], actions: [], proposal: null,
+    sources: [{
+      name: "Attempt marker (accounting only; not an outcome)",
+      sha256: "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+    }],
+  } }));
+  await page.goto("/#/demo");
+  const monitor = page.getByRole("region", { name: "Governed incident monitor" });
+  await expect(monitor).toContainText("COMPLETED MARKER / OUTCOME UNAVAILABLE");
+  await expect(monitor).toContainText("ATTEMPT MARKER ONLY");
+  await expect(monitor.getByText("RECORDED / NOT A SIMULATION", { exact: true })).toHaveCount(0);
+  await expect(monitor).not.toContainText("RECORDED_NEGATIVE");
+  await expect(monitor).not.toContainText("RECORDED_PASS");
+  await expect(monitor.locator("dl div").filter({ hasText: "Attempt reserved" }).locator("dd"))
+    .toHaveText("Yes");
+  await expect(monitor.locator("dl div").filter({ hasText: "Environment resolved" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor.locator("dl div").filter({ hasText: "Recorded G4 pass" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor.locator("dl div").filter({ hasText: "Cleanup verified zero Chaos" }).locator("dd"))
+    .toHaveText("Unavailable");
+  await expect(monitor).toContainText(
+    "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208",
+  );
 });
 
 test("operator blocks exhausted launches and submits only the displayed exact action", async ({ page }, testInfo) => {

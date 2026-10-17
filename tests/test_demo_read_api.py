@@ -38,7 +38,15 @@ def test_exact_current_results_and_g4_chronology(client):
     assert diagnostic["optimizer_steps"] == 0
     assert diagnostic["tensor_hash_count"] == 392
     assert diagnostic["tensor_hashes_unchanged"] is True
-    assert [row["attempt"] for row in data["current_results"]["g4_attempts"]] == ["015", "016", "017"]
+    g4_attempts = data["current_results"]["g4_attempts"]
+    assert [row["attempt"] for row in g4_attempts] == ["015", "016", "017", "018"]
+    assert g4_attempts[3]["state"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert g4_attempts[3]["marker_sha256"] == (
+        "50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208"
+    )
+    assert g4_attempts[3]["gate_g4_pass"] is None
+    assert g4_attempts[3]["env_resolved"] is None
+    assert g4_attempts[3]["cleanup_verified_zero"] is None
     assert data["gates"][4]["status"] == "NOT_PASSED"
     assert all("mock_archive" not in row["path"] for row in data["evidence"])
     assert "NON-EMPIRICAL" in data["historical_archive"][0]["classification"]
@@ -58,7 +66,7 @@ def test_exact_current_results_and_g4_chronology(client):
 @pytest.mark.parametrize("path", [
     "/api/catalog", "/inject", "/reset", "/webhook", "/approve",
     "/api/recommender/recommend",
-    "/api/rehearsal",
+    "/api/rehearsal", "/reference/assets/test.svg", "/favicon.ico",
 ])
 def test_all_mutations_are_rejected(client, method, path):
     response = getattr(client, method)(path)
@@ -129,6 +137,92 @@ def test_built_assets_and_index_are_served_without_execution(tmp_path):
     assert client.get("/").text == "<title>AtlasOps</title>"
     assert client.get("/assets/test.js").status_code == 200
     assert client.get("/health").json()["frontend_built"] is True
+
+
+def test_reference_public_assets_are_served_from_the_built_output(tmp_path):
+    public_assets = tmp_path / "reference" / "assets"
+    public_assets.mkdir(parents=True)
+    asset_bytes = {
+        "content-architecture-symbol.svg": b"<svg xmlns='http://www.w3.org/2000/svg'></svg>",
+        "GeistSans-VF.woff2": b"synthetic font bytes",
+        "GeistMono-VF.woff2": b"synthetic mono font bytes",
+        "good-fella.avif": b"synthetic image bytes",
+    }
+    for filename, contents in asset_bytes.items():
+        (public_assets / filename).write_bytes(contents)
+
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    responses = {
+        filename: client.get(f"/reference/assets/{filename}")
+        for filename in asset_bytes
+    }
+
+    assert {filename: response.status_code for filename, response in responses.items()} == {
+        filename: 200 for filename in asset_bytes
+    }
+    assert {
+        filename: response.content for filename, response in responses.items()
+    } == asset_bytes
+    assert {
+        filename: responses[filename].headers["content-type"].split(";", 1)[0]
+        for filename in ("GeistSans-VF.woff2", "GeistMono-VF.woff2")
+    } == {
+        "GeistSans-VF.woff2": "font/woff2",
+        "GeistMono-VF.woff2": "font/woff2",
+    }
+    favicon = client.get("/favicon.ico", follow_redirects=False)
+    assert favicon.status_code == 307
+    assert favicon.headers["location"] == "/reference/assets/content-architecture-symbol.svg"
+
+
+def test_only_allowlisted_reference_paths_receive_the_frontend_shell(tmp_path):
+    (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    allowed_paths = [
+        "/",
+        "/reference",
+        "/blog",
+        "/blog/articles",
+        "/blog/the-content-architecture-four-months-in",
+        "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+        "/blog/stale-sanity-content-nextjs-caching-revalidation",
+        "/blog/articles/the-content-architecture-four-months-in",
+        "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+        "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+        "/roadmap",
+        "/legal/privacy-policy",
+        "/legal/terms-of-service",
+    ]
+    for path in allowed_paths:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.text == "<title>AtlasOps</title>", path
+
+
+@pytest.mark.parametrize("path", [
+    "/missing",
+    "/reference/missing",
+    "/blog/missing",
+    "/blog/articles/missing",
+    "/legal/missing",
+    "/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/%2e%2e/artifacts/evidence/stage7/free-t4-v17/RESULT.json",
+    "/reference/assets/%2e%2e/%2e%2e/artifacts/secret.txt",
+])
+def test_unknown_paths_never_receive_the_frontend_shell_or_file_contents(tmp_path, path):
+    (tmp_path / "index.html").write_text("<title>AtlasOps</title>", encoding="utf-8")
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts/secret.txt").write_text("not served", encoding="utf-8")
+    client = TestClient(
+        create_app(tmp_path), base_url="http://localhost", client=("127.0.0.1", 50000),
+    )
+    response = client.get(path)
+    assert response.status_code == 404
+    assert "not served" not in response.text
 
 
 def test_rehearsal_is_synthetic_and_uses_frozen_scenario_and_role_policy(client):

@@ -20,6 +20,17 @@ The new [D3 review candidate](G7_D3_CANDIDATE_REVIEW_V1.md) is separate from
 the historical fixture below. Its versioned corpus, provenance and independent
 quality review are review inputs; they do not themselves constitute run approval
 or adapter evidence.
+
+**Current-source qualification (15 October 2026).** The dated
+`train-candidate-v1` preparation decision and preflight acceptance are
+historical, preparation-only results; they do not establish current-source
+acceptance. On this source, `training.sft --preflight-only` rejects the frozen
+v1 rows at the Diagnosis prompt contract (`root_cause` is nested) before any
+model/tokenizer loader and creates no output. The v1 corpus, manifest, approval,
+plan and recorded source pins remain unchanged. The current v2 candidate has
+separate `D3 PENDING` status; v1 authority does not transfer. This does not
+alter the bounded v17 artifact/reload PASS or authorize training.
+
 Strict candidate admission rejects source drift. The pilot path accepts only
 the reviewed settling-only coordinator hash pair and verifies unchanged
 non-settling AST, corpus bytes, source inventory and row replay. It does not

@@ -24,6 +24,44 @@ SECRET_FILES = {
 }
 
 
+def _target_pods_args() -> list[str]:
+    return [
+        "get", "pods", "-n", runner.TARGET_NAMESPACE,
+        "-l", "app=paymentservice", "-o", "json",
+    ]
+
+
+def _target_pods_result() -> dict:
+    pod = {
+        "metadata": {
+            "name": "paymentservice-754c98b599-rjvxx",
+            "namespace": "default",
+            "uid": "synthetic-paymentservice-pod-uid",
+            "labels": {"app": "paymentservice"},
+        },
+        "spec": {
+            "containers": [{
+                "name": "server",
+                "resources": {"limits": {"cpu": "200m"}},
+            }],
+        },
+        "status": {
+            "phase": "Running",
+            "containerStatuses": [{
+                "name": "server",
+                "ready": True,
+                "state": {"running": {}},
+                "containerID": "containerd://synthetic-server-container",
+            }],
+        },
+    }
+    return {
+        "success": True,
+        "stdout": json.dumps({"items": [pod]}),
+        "returncode": 0,
+    }
+
+
 def test_import_does_not_override_host_runtime_or_create_output(tmp_path):
     repo_root = Path(__file__).resolve().parents[1]
     environment = os.environ.copy()
@@ -411,6 +449,9 @@ def test_zero_chaos_must_be_verified_before_attempt_reservation(
 
     def kubectl(args, timeout=20):
         calls.append(list(args))
+        if args == _target_pods_args():
+            return _target_pods_result()
+        assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         return chaos_result
 
     monkeypatch.setattr(runner, "run_kubectl", kubectl)
@@ -423,7 +464,10 @@ def test_zero_chaos_must_be_verified_before_attempt_reservation(
     assert result["outcome"] == "PREFLIGHT_ABORT"
     assert result["attempt_state"] == "NOT_RESERVED"
     assert result["failure_phase"] == "pre_reservation_chaos_not_zero"
-    assert calls == [["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]]
+    assert calls == [
+        _target_pods_args(),
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+    ]
     assert not Path(runner._attempt_marker_path(experiment_id)).exists()
 
 
@@ -436,8 +480,12 @@ def test_new_chaos_after_reservation_releases_marker_before_apply(
     monkeypatch.setattr(runner, "_current_main_sha", lambda **_kwargs: MAIN_SHA)
     _install_mocked_preflight_edges(monkeypatch)
     events = []
+    kubectl_calls = []
 
     def kubectl(args, timeout=20):
+        kubectl_calls.append(list(args))
+        if args == _target_pods_args():
+            return _target_pods_result()
         assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         events.append("chaos_read")
         items = [] if len(events) == 1 else [{"kind": "StressChaos"}]
@@ -470,6 +518,11 @@ def test_new_chaos_after_reservation_releases_marker_before_apply(
     result = asyncio.run(runner._run_experiment())
 
     assert events == ["chaos_read", "reserve", "chaos_read"]
+    assert kubectl_calls == [
+        _target_pods_args(),
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+    ]
     assert result["failure_phase"] == "pre_fault_chaos_not_zero"
     assert result["reservation_released"] is True
     assert result["attempt_state"] == "RELEASED_PRE_FAULT"
@@ -495,8 +548,12 @@ def test_final_chaos_read_after_source_check_blocks_apply(
         lambda **_kwargs: events.append("source") or MAIN_SHA,
     )
     _install_mocked_preflight_edges(monkeypatch)
+    kubectl_calls = []
 
     def kubectl(args, timeout=20):
+        kubectl_calls.append(list(args))
+        if args == _target_pods_args():
+            return _target_pods_result()
         assert args == ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"]
         events.append("chaos_read")
         if events.count("chaos_read") == 3:
@@ -536,6 +593,12 @@ def test_final_chaos_read_after_source_check_blocks_apply(
     assert events == [
         "source", "source", "chaos_read", "reserve", "chaos_read",
         "durable_preflight", "source", "chaos_read", "release", "prefault_evidence",
+    ]
+    assert kubectl_calls == [
+        _target_pods_args(),
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
+        ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
     ]
     assert result["failure_phase"] == "immediate_pre_apply_chaos_not_zero"
     assert result["reservation_released"] is True
@@ -690,7 +753,12 @@ def _install_mocked_preflight_edges(monkeypatch):
     monkeypatch.setattr(
         runner,
         "collect_sf002_cpu_telemetry",
-        lambda: {"success": True, "max_cores": 0.1},
+        lambda: {
+            "success": True,
+            "fresh": True,
+            "query_success": True,
+            "max_cores": 0.1,
+        },
     )
     return context_calls, port_forward_calls
 
@@ -715,6 +783,8 @@ def test_source_change_before_reservation_stops_without_marker_or_injection(
 
     def kubectl(args, timeout=20):
         kubectl_calls.append(list(args))
+        if args == _target_pods_args():
+            return _target_pods_result()
         pytest.fail("cluster readiness or mutation reached after source drift")
 
     monkeypatch.setattr(
@@ -728,7 +798,7 @@ def test_source_change_before_reservation_stops_without_marker_or_injection(
         asyncio.run(runner._run_experiment())
 
     assert source_checks == [None, MAIN_SHA]
-    assert kubectl_calls == []
+    assert kubectl_calls == [_target_pods_args()]
     assert not Path(runner._attempt_marker_path(experiment_id)).exists()
     assert not Path(runner._attempt_marker_path(experiment_id)).with_name(
         runner.ATTEMPT_BUDGET_LOCK_FILENAME
@@ -780,6 +850,8 @@ def test_source_change_before_t0_releases_reservation_without_apply(
 
     def kubectl(args, timeout=20):
         kubectl_calls.append(list(args))
+        if args == _target_pods_args():
+            return _target_pods_result()
         if args[0] == "get" and args[1] == runner.CHAOS_RESOURCE_KINDS:
             return {
                 "success": True,
@@ -799,11 +871,12 @@ def test_source_change_before_t0_releases_reservation_without_apply(
     assert source_checks == [None, MAIN_SHA, MAIN_SHA, MAIN_SHA]
     assert len(reserve_calls) == 1
     assert kubectl_calls == [
+        _target_pods_args(),
         ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
         ["get", runner.CHAOS_RESOURCE_KINDS, "-A", "-o", "json"],
     ]
     assert not marker_path.exists()
-    assert not any(args[0] == "apply" for args in kubectl_calls)
+    assert not any(args[0] in {"apply", "create"} for args in kubectl_calls)
 
 
 @pytest.mark.parametrize(

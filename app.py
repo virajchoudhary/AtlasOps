@@ -11,13 +11,15 @@ import os
 import subprocess
 from collections import deque
 from pathlib import Path
+from types import MappingProxyType
 
 from config.hf_space_env import apply_hf_space_inference_defaults
 
 apply_hf_space_inference_defaults()
 
-from fastapi import FastAPI, HTTPException, Request, Security
+from fastapi import FastAPI, HTTPException, Query, Request, Security
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.routing import APIRoute
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -60,16 +62,235 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
 # Import coordinator internals
+import agents.coordinator as coordinator_module
+from agents import incident_history
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
-from agents.coordinator import app as coordinator_app
+from agents.coordinator import (
+    app as coordinator_app,
+)
+from agents.coordinator import (
+    build_incident_anchors,
+    parse_alert_webhook_payload,
+    read_alert_webhook_body,
+)
 from agents.correlator import correlator
+from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import get_history, subscribe
+from demo import read_api as presentation_read_api
 from ui_read_model import attempt_detail, catalog
 
 app = FastAPI(title="AtlasOps", docs_url="/api/docs")
+
+_PRESENTATION_READ_PATHS = (
+    "/api/catalog",
+    "/api/attempts/{name}",
+    "/api/rehearsal",
+    "/api/live-status",
+    "/api/incident-monitor",
+    "/api/operator",
+)
+_FALLBACK_FRONTEND_PATHS = (
+    "/",
+    "/reference",
+    "/blog",
+    "/blog/articles",
+    "/blog/the-content-architecture-four-months-in",
+    "/blog/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    "/blog/stale-sanity-content-nextjs-caching-revalidation",
+    "/blog/articles/the-content-architecture-four-months-in",
+    "/blog/articles/serve-content-to-ai-agents-llms-txt-markdown-sanity",
+    "/blog/articles/stale-sanity-content-nextjs-caching-revalidation",
+    "/roadmap",
+    "/legal/privacy-policy",
+    "/legal/terms-of-service",
+)
+_FRONTEND_PATHS = tuple(
+    getattr(presentation_read_api, "FRONTEND_PATHS", _FALLBACK_FRONTEND_PATHS)
+)
+_APP_PRESENTATION_BOUNDARIES = (
+    {
+        "id": "read-api",
+        "label": "PRESENTATION READS GET/HEAD ONLY",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "approval-auth",
+        "label": "APPROVAL ENDPOINTS REQUIRE OPERATOR API KEY",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "webhook-auth",
+        "label": "ALERT WEBHOOK REQUIRES BEARER SECRET",
+        "state": "ENFORCED",
+    },
+    {
+        "id": "retired-fault-routes",
+        "label": "WEB INJECTION AND RESET ARE RETIRED",
+        "state": "ENFORCED",
+    },
+)
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+_FRONTEND_SECURITY_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; font-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+}
+
+
+def _is_frontend_request_path(path: str) -> bool:
+    return (
+        path in _FRONTEND_PATHS
+        or path in {"/assets", "/reference"}
+        or path.startswith(("/assets/", "/reference/"))
+    )
+
+
+def _presentation_read_handlers():
+    projection_app = presentation_read_api.create_app()
+    handlers = {
+        route.path: route.endpoint
+        for route in projection_app.routes
+        if isinstance(route, APIRoute)
+    }
+    missing = set(_PRESENTATION_READ_PATHS) - handlers.keys()
+    if missing:
+        raise RuntimeError(f"Presentation read API routes are unavailable: {sorted(missing)}")
+    return handlers
+
+
+_PRESENTATION_READ_HANDLERS = MappingProxyType(_presentation_read_handlers())
+
+
+def _is_presentation_read_path(path: str) -> bool:
+    return (
+        path
+        in {
+            "/api/catalog",
+            "/api/rehearsal",
+            "/api/live-status",
+            "/api/incident-monitor",
+            "/api/operator",
+        }
+        or path == "/api/attempts"
+        or path.startswith("/api/attempts/")
+    )
+
+
+@app.middleware("http")
+async def presentation_read_boundary(request: Request, call_next):
+    if _is_presentation_read_path(request.url.path):
+        if request.method not in {"GET", "HEAD"}:
+            return JSONResponse(
+                {"detail": "Read-only presentation; no execution endpoints"},
+                status_code=405,
+                headers={"Allow": "GET, HEAD"},
+            )
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    return await call_next(request)
+
+
+def _register_frontend_routes(application: FastAPI, dist: Path) -> None:
+    asset_dir = dist / "assets"
+    reference_asset_dir = dist / "reference" / "assets"
+
+    @application.middleware("http")
+    async def frontend_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        if _is_frontend_request_path(request.url.path):
+            response.headers.update(_FRONTEND_SECURITY_HEADERS)
+        return response
+
+    if asset_dir.is_dir():
+        application.mount("/assets", StaticFiles(directory=str(asset_dir)), name="frontend-assets")
+    if reference_asset_dir.is_dir():
+        application.mount(
+            "/reference/assets",
+            StaticFiles(directory=str(reference_asset_dir)),
+            name="reference-assets",
+        )
+
+    def index_response():
+        index_path = dist / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(
+                status_code=503,
+                detail="React frontend build missing. Run npm ci and npm run build in frontend/.",
+            )
+        try:
+            html = index_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="React frontend build is unavailable.",
+            ) from exc
+        html = html.replace('src="./assets/', 'src="/assets/')
+        html = html.replace('href="./assets/', 'href="/assets/')
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+    def index():
+        return index_response()
+
+    for frontend_path in _FRONTEND_PATHS:
+        application.add_api_route(
+            frontend_path,
+            index,
+            methods=["GET", "HEAD"],
+            include_in_schema=False,
+            name=f"frontend_{frontend_path.strip('/').replace('/', '_') or 'root'}",
+        )
+
+
+def create_frontend_app(frontend_dist: Path | None = None) -> FastAPI:
+    """Build a small HTTP app for exercising the built frontend routes."""
+    frontend = FastAPI(
+        title="AtlasOps frontend",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    dist = frontend_dist if frontend_dist is not None else FRONTEND_DIST
+    _register_frontend_routes(frontend, dist)
+    return frontend
+
+
+def read_integrated_catalog():
+    payload = _PRESENTATION_READ_HANDLERS["/api/catalog"]()
+    product = payload["product"]
+    product["serving_mode"] = "integrated-operational-app"
+    product["operator_enabled"] = False
+    product["boundaries"] = [dict(item) for item in _APP_PRESENTATION_BOUNDARIES]
+    for agent in product["agents"]:
+        if agent["id"] == "remediation":
+            agent["governance_boundary"] = (
+                "Role ACL and fail-closed exact-action P1 approval through the operator API."
+            )
+    return payload
+
+
+for _path in _PRESENTATION_READ_PATHS:
+    _endpoint = (
+        read_integrated_catalog
+        if _path == "/api/catalog"
+        else _PRESENTATION_READ_HANDLERS[_path]
+    )
+    app.add_api_route(
+        _path,
+        _endpoint,
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
+    )
 
 # Mount coordinator routes
 app.mount("/api", coordinator_app)
@@ -103,14 +324,6 @@ class ApprovalCallbackRequest(BaseModel):
     reason: str = ""
 
 
-@app.get("/", response_class=HTMLResponse)
-def root():
-    index = static_dir / "index.html"
-    if index.exists():
-        return HTMLResponse(index.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>AtlasOps</h1><p>Static files not found.</p>")
-
-
 @app.post("/inject", dependencies=[Security(_require_api_key)])
 async def inject_chaos(_body: InjectRequest):
     """Retire the web shortcut until it can meet the Stage 4 preflight contract."""
@@ -129,7 +342,7 @@ async def reset_chaos(_body: ResetRequest):
     )
 
 
-@app.get("/stream")
+@app.get("/stream", dependencies=[Security(_require_api_key)])
 async def stream():
     return StreamingResponse(
         subscribe(),
@@ -138,7 +351,7 @@ async def stream():
     )
 
 
-@app.get("/thoughts")
+@app.get("/thoughts", dependencies=[Security(_require_api_key)])
 async def thoughts():
     return JSONResponse({"thoughts": get_history()})
 
@@ -312,7 +525,7 @@ async def approve_public(payload: ApprovalCallbackRequest):
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by or "human-operator",
+        approved_by=payload.approved_by,
         reason=payload.reason,
     )
     status = 200 if result.get("ok") else 400
@@ -337,6 +550,35 @@ async def circuit_breaker_reset():
 @app.get("/incidents/active")
 async def incidents_active():
     return JSONResponse({"incidents": correlator.get_active()})
+
+
+@app.get("/incidents/history", dependencies=[Security(_require_api_key)])
+def incidents_history(
+    limit: int = Query(default=50, ge=1, le=incident_history.MAX_HISTORY_LIMIT),
+    offset: int = Query(default=0, ge=0, le=incident_history.MAX_HISTORY_OFFSET),
+):
+    try:
+        return incident_history.list_incident_history(
+            limit=limit,
+            offset=offset,
+            directory=coordinator_module.TRAJECTORIES_DIR,
+        )
+    except incident_history.HistoryUnavailable:
+        raise HTTPException(status_code=503, detail="Incident history is unavailable") from None
+
+
+@app.get("/incidents/{incident_id}", dependencies=[Security(_require_api_key)])
+def incident_history_detail(incident_id: str, execution_id: str | None = None):
+    try:
+        return incident_history.read_incident_history(
+            incident_id,
+            execution_id=execution_id,
+            directory=coordinator_module.TRAJECTORIES_DIR,
+        )
+    except incident_history.RecordNotFound:
+        raise HTTPException(status_code=404, detail="Incident record not found") from None
+    except incident_history.HistoryUnavailable:
+        raise HTTPException(status_code=503, detail="Incident history is unavailable") from None
 
 
 @app.get("/audit/log")
@@ -435,28 +677,48 @@ async def webhook_proxy(request: Request):
                   type: Bearer
                   credentials: <ALERTMANAGER_WEBHOOK_SECRET>
     """
-    body = await request.body()
+    body = await read_alert_webhook_body(request)
     _verify_webhook_signature(body, request.headers.get("Authorization"))
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
-    incident_id, _is_new, should_dispatch = correlator.ingest(payload)
-    if not should_dispatch:
-        return JSONResponse({"ok": True, "incident_id": incident_id, "dispatched": False})
-    correlator.mark_processing(incident_id, True)
-    import asyncio
-    asyncio.create_task(_dispatch_incident(payload, incident_id))
-    return JSONResponse({"ok": True, "incident_id": incident_id, "dispatched": True})
+    payload = parse_alert_webhook_payload(body)
+    if not payload["alerts"]:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": None,
+                "dispatched": False,
+                "queued": False,
+                "dispatch_state": "noop",
+            }
+        )
+    candidate_batch = correlator.ingest(payload)
+    submission = incident_dispatcher.submit(
+        candidate_batch,
+        handler=_dispatch_incident,
+        anchor_builder=build_incident_anchors,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "incident_id": submission.incident_id,
+            "dispatched": submission.state == "started",
+            "queued": submission.state == "queued",
+            "dispatch_state": submission.state,
+        }
+    )
 
 
-async def _dispatch_incident(payload: dict, incident_id: str) -> None:
+async def _dispatch_incident(
+    payload: dict,
+    incident_id: str,
+    *,
+    incident_anchors: dict | None = None,
+):
     from agents.coordinator import handle_incident
-    from agents.correlator import correlator
-    try:
-        await handle_incident(payload, incident_id=incident_id)
-    finally:
-        correlator.mark_processing(incident_id, False)
+    return await handle_incident(
+        payload,
+        incident_id=incident_id,
+        incident_anchors=incident_anchors,
+    )
 
 
 @app.get("/slack/feed")
@@ -473,6 +735,9 @@ def slack_feed():
             except json.JSONDecodeError:
                 pass
     return JSONResponse({"posts": list(posts)})
+
+
+_register_frontend_routes(app, FRONTEND_DIST)
 
 
 if __name__ == "__main__":

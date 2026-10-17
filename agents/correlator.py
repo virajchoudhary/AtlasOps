@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any
 
 
@@ -16,6 +20,7 @@ class CorrelatedIncident:
     services: set[str] = field(default_factory=set)
     alert_names: set[str] = field(default_factory=set)
     alerts: list[dict[str, Any]] = field(default_factory=list)
+    observed_occurrence_keys: set[str] = field(default_factory=set)
     active_processing: bool = False
     last_alert_at: float = field(default_factory=time.time)
 
@@ -32,16 +37,38 @@ class CorrelatedIncident:
         }
 
 
+@dataclass(frozen=True)
+class OccurrenceRef:
+    occurrence_key: str
+    original_alert_index: int | None
+
+
+@dataclass(frozen=True)
+class CorrelatorCandidateBatch:
+    incident_id: str
+    is_new_incident: bool
+    original_payload: dict[str, Any]
+    occurrence_refs: tuple[OccurrenceRef, ...]
+
+
 class IncidentCorrelator:
     CORRELATION_WINDOW_S = 300
 
     def __init__(self):
+        self._lock = RLock()
         self._incidents: dict[str, CorrelatedIncident] = {}
 
-    def ingest(self, alert: dict[str, Any]) -> tuple[str, bool, bool]:
-        """Return (incident_id, is_new_incident, should_dispatch_chain)."""
+    def ingest(self, alert: dict[str, Any]) -> CorrelatorCandidateBatch:
+        """Correlate an envelope and return its original occurrence references."""
+        with self._lock:
+            return self._ingest_locked(alert)
+
+    def _ingest_locked(self, alert: dict[str, Any]) -> CorrelatorCandidateBatch:
         now = time.time()
         self._expire_old(now)
+        payload_snapshot = deepcopy(alert)
+        occurrence_refs = self._occurrence_refs(payload_snapshot)
+        occurrence_keys = {ref.occurrence_key for ref in occurrence_refs}
 
         # UI chaos inject carries `correlation_id=inj-...` (see app._handle_after_delay).
         # Do not correlate with overlapping Alertmanager fingerprints or in-flight webhook
@@ -60,12 +87,17 @@ class IncidentCorrelator:
                     namespace=namespace,
                     services=set(services),
                     alert_names=set(alert_names),
-                    alerts=[alert],
-                    active_processing=False,
+                    alerts=[payload_snapshot],
+                    observed_occurrence_keys=occurrence_keys,
                     last_alert_at=now,
                 )
                 self._incidents[incident_id] = inc
-                return incident_id, True, True
+                return CorrelatorCandidateBatch(
+                    incident_id=incident_id,
+                    is_new_incident=True,
+                    original_payload=payload_snapshot,
+                    occurrence_refs=occurrence_refs,
+                )
 
         namespace = self._extract_namespace(alert)
         services = self._extract_services(alert)
@@ -73,12 +105,19 @@ class IncidentCorrelator:
 
         for inc in self._incidents.values():
             if self._should_correlate(now, namespace, services, alert_names, inc):
-                inc.alerts.append(alert)
-                inc.alert_names.update(alert_names)
-                inc.services.update(services)
                 inc.last_alert_at = now
-                should_dispatch = not inc.active_processing
-                return inc.incident_id, False, should_dispatch
+                new_observations = occurrence_keys - inc.observed_occurrence_keys
+                if new_observations:
+                    inc.alerts.append(payload_snapshot)
+                    inc.alert_names.update(alert_names)
+                    inc.services.update(services)
+                inc.observed_occurrence_keys.update(occurrence_keys)
+                return CorrelatorCandidateBatch(
+                    incident_id=inc.incident_id,
+                    is_new_incident=False,
+                    original_payload=payload_snapshot,
+                    occurrence_refs=occurrence_refs,
+                )
 
         incident_id = f"inc-{int(now)}-{uuid.uuid4().hex[:6]}"
         inc = CorrelatedIncident(
@@ -87,26 +126,99 @@ class IncidentCorrelator:
             namespace=namespace,
             services=set(services),
             alert_names=set(alert_names),
-            alerts=[alert],
-            active_processing=False,
+            alerts=[payload_snapshot],
+            observed_occurrence_keys=occurrence_keys,
             last_alert_at=now,
         )
         self._incidents[incident_id] = inc
-        return incident_id, True, True
+        return CorrelatorCandidateBatch(
+            incident_id=incident_id,
+            is_new_incident=True,
+            original_payload=payload_snapshot,
+            occurrence_refs=occurrence_refs,
+        )
 
     def mark_processing(self, incident_id: str, active: bool) -> None:
-        inc = self._incidents.get(incident_id)
-        if inc:
-            inc.active_processing = active
+        with self._lock:
+            inc = self._incidents.get(incident_id)
+            if inc:
+                inc.active_processing = active
 
     def get_active(self) -> list[dict[str, Any]]:
-        now = time.time()
-        self._expire_old(now)
-        return [inc.to_dict() for inc in self._incidents.values()]
+        with self._lock:
+            now = time.time()
+            self._expire_old(now)
+            return [inc.to_dict() for inc in self._incidents.values()]
 
     def reset(self) -> None:
         """Clear all tracked incidents (used by POST /reset)."""
-        self._incidents.clear()
+        with self._lock:
+            self._incidents.clear()
+
+    @staticmethod
+    def _payload_key(value: Any) -> str:
+        canonical = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return f"payload:{digest}"
+
+    @classmethod
+    def _occurrence_refs(cls, payload: dict[str, Any]) -> tuple[OccurrenceRef, ...]:
+        alerts = payload.get("alerts")
+        if isinstance(alerts, list):
+            refs: list[OccurrenceRef] = []
+            seen: set[str] = set()
+            for index, item in enumerate(alerts):
+                if not isinstance(item, dict):
+                    continue
+                key = cls._alert_occurrence_key(item, payload)
+                if key not in seen:
+                    refs.append(OccurrenceRef(key, index))
+                    seen.add(key)
+            if refs:
+                return tuple(refs)
+        return (OccurrenceRef(cls._alert_occurrence_key(payload, payload), None),)
+
+    @classmethod
+    def _alert_occurrence_key(
+        cls,
+        alert_item: dict[str, Any],
+        envelope: dict[str, Any],
+    ) -> str:
+        fingerprint = alert_item.get("fingerprint")
+        if isinstance(fingerprint, str) and fingerprint.strip():
+            identity = {"fingerprint": fingerprint.strip()}
+        else:
+            labels = alert_item.get("labels")
+            if not isinstance(labels, dict) or not labels:
+                labels = envelope.get("commonLabels")
+            if isinstance(labels, dict) and labels:
+                identity = {"labels": labels}
+            else:
+                stable_payload = {
+                    key: value
+                    for key, value in alert_item.items()
+                    if key not in {"annotations", "endsAt"}
+                }
+                identity = {"payload": stable_payload}
+
+        status = alert_item.get("status")
+        if status is None or (isinstance(status, str) and not status.strip()):
+            status = envelope.get("status")
+        starts_at = alert_item.get("startsAt")
+        if starts_at is None:
+            starts_at = envelope.get("startsAt")
+        occurrence = {
+            "identity": identity,
+            "status": str(status or "").strip().lower(),
+            "startsAt": starts_at,
+        }
+        return f"occurrence:{cls._payload_key(occurrence)}"
 
     def _should_correlate(
         self,

@@ -74,9 +74,21 @@ def _write_training_corpus(
                     },
                 ]
             )
-        messages.append(
-            {"role": "assistant", "content": "Investigate the service."}
-        )
+        if role == "diagnosis":
+            conclusion = {
+                "incident_id": f"inc-{scenario_id}",
+                "root_cause": "Synthetic dependency timeout supported by the observation.",
+                "category": "dependency",
+                "confidence": 0.75,
+                "evidence": [],
+                "blast_radius_update": "Keep the alert-anchored service in scope.",
+                "next_agent": "remediation",
+                "recommended_fix": [],
+            }
+            conclusion_content = json.dumps(conclusion, sort_keys=True)
+        else:
+            conclusion_content = "Investigate the service."
+        messages.append({"role": "assistant", "content": conclusion_content})
         row = {
             "format": SFT_EXAMPLE_FORMAT,
             "scenario_id": scenario_id,

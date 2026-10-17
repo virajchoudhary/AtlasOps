@@ -16,6 +16,16 @@ def _content(message: dict) -> dict:
     return json.loads(message["content"])
 
 
+def _contains_key(value: object, expected: str) -> bool:
+    if isinstance(value, dict):
+        return expected in value or any(
+            _contains_key(item, expected) for item in value.values()
+        )
+    if isinstance(value, list):
+        return any(_contains_key(item, expected) for item in value)
+    return False
+
+
 def _calls(row: dict) -> list[tuple[int, dict]]:
     return [
         (index, call)
@@ -27,6 +37,8 @@ def _calls(row: dict) -> list[tuple[int, dict]]:
 def test_builder_is_deterministic_train_only_and_admission_ready():
     rows = builder.build_candidate_rows()
     assert rows == builder.build_candidate_rows()
+    assert {row["schema_version"] for row in rows} == {"atlasops-sft-candidate-v2"}
+    assert {row["corpus_version"] for row in rows} == {"train-candidate-v2"}
 
     inventory = inspect_candidate_rows(rows)
     assert len(rows) == 68
@@ -79,6 +91,40 @@ def test_builder_is_deterministic_train_only_and_admission_ready():
     assert "must not be interpreted as zero errors" in (
         _content(no_series["messages"][1])["alert"]["alerts"][0]["annotations"]["description"]
     )
+
+
+def test_remediation_handoffs_match_canonical_diagnosis_without_outcome():
+    rows = builder.build_candidate_rows()
+    diagnoses = {
+        (row["scenario_id"], row["case_id"]): _content(row["messages"][-1])
+        for row in rows
+        if row["role"] == "diagnosis"
+    }
+    remediations = [row for row in rows if row["role"] == "remediation"]
+
+    assert len(remediations) == 17
+    for row in remediations:
+        diagnosis = diagnoses[(row["scenario_id"], row["case_id"])]
+        context = _content(row["messages"][1])
+        assert context["diagnosis"] == diagnosis
+        assert isinstance(context["diagnosis"]["root_cause"], str)
+        assert "recommended_fix" in context["diagnosis"]
+        assert "recommended_actions" not in context["diagnosis"]
+        if row.get("execution_stage") == "host_gate_not_invoked":
+            assert _content(row["messages"][-1])["proposed_actions"] == (
+                diagnosis["recommended_fix"]
+            )
+        for key in (
+            "outcome",
+            "diagnosis_outcome",
+            "synthetic_outcome",
+            "expected_root_cause",
+            "expected_remediation",
+            "ground_truth",
+            "reward",
+            "judge_score",
+        ):
+            assert not _contains_key(context["diagnosis"], key)
 
 
 def test_wire_calls_are_role_allowed_and_immediately_paired():

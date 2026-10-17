@@ -104,9 +104,11 @@ authorization. Estimate storage before any multi-GB operation.
 ## Known review items (do not fix without a scoped task)
 
 - G4 remains NOT_PASSED and frozen: 015 is terminal INCONCLUSIVE/unscored,
-  016 is a pre-fault abort/non-result, and 017 is the latest completed negative.
-  Earlier negative/interrupted evidence and cleanup failures remain recorded.
-  There is no attempt 018 in this finalization scope.
+  016 is a pre-fault abort/non-result, and 017 is the latest verifiable completed
+  negative. An owner-local attempt-018 marker reports `COMPLETED`, but its
+  primary result and cleanup sidecar are absent. The outcome and cleanup are
+  unverified, not a completed negative. Earlier negative/interrupted evidence
+  and cleanup failures remain recorded. No new G4 execution is authorized.
 - G9 is final negative and frozen. The genuine replacement pilot completed two
   optimizer steps and four malformed/blocked completions, all rewards -1 and both
   advantage groups zero. No reward-driven GRPO learning or acceptable checkpoint

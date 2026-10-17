@@ -174,14 +174,15 @@ eight does not establish an exactly zero population probability.
 
 Attempt 015: terminal INCONCLUSIVE and unscored<br>
 Attempt 016: pre-fault abort and non-result<br>
-Attempt 017: completed negative outcome
+Attempt 017: latest verified completed negative outcome<br>
+Attempt 018: surviving completion marker; outcome and cleanup unverified
 
-**G4 remains NOT_PASSED. No attempt 018 exists.**
+**G4 remains NOT_PASSED. A completion marker is not an incident result.**
 
 The original G8 live incident-resolution criterion remains unmet. The G4 raw bundles
 for 015 and 017 are preserved outside this repository.
 
-<!-- Evidence: docs/project/CONTROLLED_G9_ADMISSION_V1.md; artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json -->
+<!-- Evidence: docs/EVIDENCE_INDEX.md; docs/project/CONTROLLED_G9_ADMISSION_V1.md; artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json -->
 
 ---
 

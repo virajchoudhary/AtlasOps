@@ -16,6 +16,8 @@ import config.g4_protocol as protocol
 import scripts.run_stage4_golden_incident as runner
 from agents._http_retry import post_with_retry
 from agents.approval import approval_gate
+from agents.stage_a import StageARun, stage_a_scope
+from tests.test_stage_a_causal import observation, pod_payload
 from config.g4_protocol import (
     APPROVED_G4_MODEL,
     APPROVED_G4_PROTOCOL_PROFILE,
@@ -170,12 +172,22 @@ def test_post_t0_interruption_case_a_early_timeout_inconclusive(tmp_path):
         if cmd[0] == "get":
             if len(cmd) > 1 and cmd[1] == runner.CHAOS_RESOURCE_KINDS:
                 return {"success": True, "stdout": json.dumps({"items": []}), "returncode": 0}
+            if cmd[-1] == "json":
+                return {"success": True, "stdout": json.dumps({
+                    "kind": runner.TARGET_CHAOS_KIND,
+                    "metadata": {"name": runner.TARGET_CHAOS_NAME,
+                                 "namespace": runner.TARGET_CHAOS_NAMESPACE,
+                                 "uid": "timeout-fault", "resourceVersion": "42"},
+                })}
             return {"success": True, "stdout": fake_chaos_yaml, "returncode": 0}
         elif cmd[0] == "delete":
             return {"success": True, "stdout": "deleted", "returncode": 0}
         return {"success": True}
 
-    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+    with stage_a_scope(StageARun(target={}, created_uid="timeout-fault")), patch(
+        "agents.tools.chaos.delete_chaos_with_preconditions",
+        return_value={"success": True},
+    ) as delete, patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
         runner, "REPO_ROOT", str(tmp_path)
     ):
         runner._handle_post_t0_interruption(
@@ -185,6 +197,10 @@ def test_post_t0_interruption_case_a_early_timeout_inconclusive(tmp_path):
             fault_observable=True,
             evidence_dir=str(evidence_dir),
         )
+    delete.assert_called_once_with(
+        runner.TARGET_CHAOS_KIND, runner.TARGET_CHAOS_NAME, runner.TARGET_CHAOS_NAMESPACE,
+        uid="timeout-fault", resource_version="42", kube_context=runner.KIND_CONTEXT,
+    )
 
     # Interruption sidecar assertions
     intr_file = evidence_dir / f"{experiment_id}.interruption.json"
@@ -531,13 +547,25 @@ def test_post_t0_interruption_case_e_cleanup_order(tmp_path):
     intr_file = evidence_dir / f"{experiment_id}.interruption.json"
 
     def mock_run_kubectl(cmd):
-        if cmd[0] == "delete":
-            # Assert interruption file exists before kubectl delete executes
-            assert intr_file.exists(), "Interruption sidecar must be persisted before cleanup executes"
-            return {"success": True, "stdout": "deleted", "returncode": 0}
+        if cmd[0] == "get" and cmd[-1] == "json":
+            if cmd[1] == runner.CHAOS_RESOURCE_KINDS:
+                return {"success": True, "stdout": '{"items":[]}'}
+            return {"success": True, "stdout": json.dumps({
+                "kind": runner.TARGET_CHAOS_KIND,
+                "metadata": {"name": runner.TARGET_CHAOS_NAME,
+                             "namespace": runner.TARGET_CHAOS_NAMESPACE,
+                             "uid": "ordered-fault", "resourceVersion": "42"},
+            })}
         return {"success": True, "stdout": "", "returncode": 0}
 
-    with patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
+    def delete_after_journal(*args, **kwargs):
+        assert intr_file.exists(), "Interruption sidecar must precede cleanup"
+        assert kwargs["uid"] == "ordered-fault"
+        return {"success": True}
+
+    with stage_a_scope(StageARun(target={}, created_uid="ordered-fault")), patch(
+        "agents.tools.chaos.delete_chaos_with_preconditions", side_effect=delete_after_journal,
+    ) as delete, patch.object(runner, "run_kubectl", side_effect=mock_run_kubectl), patch.object(
         runner, "REPO_ROOT", str(tmp_path)
     ):
         runner._handle_post_t0_interruption(
@@ -548,6 +576,7 @@ def test_post_t0_interruption_case_e_cleanup_order(tmp_path):
             evidence_dir=str(evidence_dir),
         )
 
+    delete.assert_called_once()
     assert (evidence_dir / f"{experiment_id}.cleanup.json").exists()
 
 
@@ -639,9 +668,16 @@ def _install_mocked_host_runner_boundaries(
         "wait_for_baseline_readiness",
         lambda: (True, {"stable_probes": 2}, True, {"stdout": "{}"}),
     )
-    monkeypatch.setattr(runner, "collect_sf002_cpu_telemetry", lambda: {"max_cores": 0.1})
+    monkeypatch.setattr(runner, "collect_sf002_cpu_telemetry", lambda: {
+        **observation(runner.time.time(), 0.1), "max_cores": 0.1,
+    })
     monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(runner, "run_kubectl", run_kubectl)
+    def identity_bound_kubectl(command):
+        if command[:2] == ["get", "pods"]:
+            return {"success": True, "stdout": json.dumps(pod_payload())}
+        return run_kubectl(command)
+
+    monkeypatch.setattr(runner, "run_kubectl", identity_bound_kubectl)
     monkeypatch.setenv("STAGE4_EXPERIMENT_ID", experiment_id)
 
     return {
@@ -665,21 +701,19 @@ def test_host_runner_records_post_t0_baseexception_and_reraises(
 ):
     experiment_id = "EXP-STAGE4-TEST-POST-T0-INTERRUPTION"
     interruption = interruption_type("synthetic post-T0 interruption")
-    cleanup_started = False
     chaos_list_reads = 0
 
     def mocked_run_kubectl(command):
-        nonlocal cleanup_started, chaos_list_reads
-        if command[0] == "apply":
+        nonlocal chaos_list_reads
+        if command[0] == "create":
             raise interruption
         if command[0] == "delete":
-            cleanup_started = True
-            return {"success": cleanup_verified, "stdout": "deleted" if cleanup_verified else ""}
+            pytest.fail("Unbound create interruption must not delete by name")
         if command[0] == "get" and command[1] == runner.CHAOS_RESOURCE_KINDS:
             chaos_list_reads += 1
             if chaos_list_reads <= 3:
                 items = []
-            elif cleanup_verified or not cleanup_started:
+            elif cleanup_verified:
                 items = []
             else:
                 items = [
@@ -809,7 +843,7 @@ def test_host_runner_transition_interruption_preserves_pre_t0_truth(
 
     def mocked_run_kubectl(command):
         commands.append(list(command))
-        if command[0] == "apply":
+        if command[0] in {"apply", "create"}:
             pytest.fail("fault apply must not begin before consumption completes")
         if command[0] == "get" and command[1] == runner.CHAOS_RESOURCE_KINDS:
             return {"success": True, "stdout": json.dumps({"items": []})}
@@ -837,7 +871,7 @@ def test_host_runner_transition_interruption_preserves_pre_t0_truth(
         asyncio.run(runner._main_with_qualified_inference())
 
     assert raised.value is interruption
-    assert not any(command[0] == "apply" for command in commands)
+    assert not any(command[0] in {"apply", "create"} for command in commands)
     assert boundaries["stopped_port_forwards"] == [[boundaries["port_forward"]]]
     assert not (boundaries["evidence_dir"] / f"{experiment_id}.interruption.json").exists()
     assert not (boundaries["evidence_dir"] / f"{experiment_id}.cleanup.json").exists()

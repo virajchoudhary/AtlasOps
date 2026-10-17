@@ -22,10 +22,16 @@ afterEach(() => {
 });
 
 describe("read-only research console routes", () => {
-  it("renders all eight hash-routed pages from a minimal API response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ source: "test snapshot" }),
+  it("renders all nine hash-routed pages from read-only API responses", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = url.endsWith("/api/rehearsal")
+        ? { classification: "SYNTHETIC", agent_output: "fixture", scenarios: [] }
+        : { source: "test snapshot" };
+      return Promise.resolve({
+        ok: true,
+        json: async () => json,
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -33,6 +39,7 @@ describe("read-only research console routes", () => {
 
     const routes = [
       ["Overview", "AtlasOps"],
+      ["Rehearsal", "Incident workflow"],
       ["Agents", "Four roles. Clear authority boundaries."],
       ["Models", "Model lineage"],
       ["Evaluations", "Evaluations"],
@@ -48,4 +55,16 @@ describe("read-only research console routes", () => {
       expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeInTheDocument();
     }
   }, 15000);
+
+  it("renders an explicit 404 for unknown paths without reading the console API", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.replaceState({}, "", "/unknown/path");
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
+    expect(screen.getByText("404", { exact: true })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

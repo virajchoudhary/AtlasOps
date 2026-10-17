@@ -6,6 +6,8 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+_TRL_ADVANTAGE_EPSILON = 1e-4
+
 
 def score_direct_action_step(
     verification: Mapping[str, Any],
@@ -54,6 +56,67 @@ def score_direct_action_step(
             6,
         ),
     }
+
+
+def has_reward_driven_advantages(
+    rewards: Sequence[float],
+    advantages: Sequence[float],
+) -> bool:
+    """Validate the pinned TRL 0.19.1 group-normalized reward advantages."""
+    if (
+        isinstance(rewards, (str, bytes))
+        or not isinstance(rewards, Sequence)
+        or isinstance(advantages, (str, bytes))
+        or not isinstance(advantages, Sequence)
+    ):
+        raise TypeError("GRPO group rewards and advantages must be sequences")
+    if len(rewards) < 2 or not advantages:
+        raise ValueError("GRPO group evidence requires rewards and advantages")
+    if len(rewards) != len(advantages):
+        raise ValueError("GRPO group reward and advantage sample counts differ")
+
+    reward_values = []
+    for value in rewards:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            raise ValueError("GRPO group contains an invalid objective reward")
+        reward_values.append(float(value))
+
+    advantage_values = []
+    for value in advantages:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            raise ValueError("GRPO group contains an invalid advantage")
+        advantage_values.append(float(value))
+
+    reward_mean = sum(reward_values) / len(reward_values)
+    reward_std = math.sqrt(
+        sum((value - reward_mean) ** 2 for value in reward_values)
+        / (len(reward_values) - 1)
+    )
+    expected_advantages = [
+        (value - reward_mean) / (reward_std + _TRL_ADVANTAGE_EPSILON)
+        for value in reward_values
+    ]
+    for observed, expected in zip(
+        advantage_values, expected_advantages, strict=True
+    ):
+        if not math.isclose(observed, expected, rel_tol=1e-5, abs_tol=1e-6):
+            raise ValueError(
+                "GRPO advantages do not match pinned TRL group normalization"
+            )
+
+    rewards_varied = any(value != reward_values[0] for value in reward_values[1:])
+    advantages_nonzero = any(value != 0.0 for value in advantage_values)
+    if advantages_nonzero and not rewards_varied:
+        raise ValueError("Equal-reward groups cannot have reward-driven advantages")
+    return rewards_varied and advantages_nonzero
 
 
 def aggregate_direct_action_steps(

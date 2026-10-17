@@ -878,9 +878,64 @@ def verify_environment(
     incident_context: dict[str, Any] | None = None,
 ) -> EnvironmentVerificationResult:
     """Convenience functional interface to verify environment recovery."""
-    return environment_verifier.verify(
+    result = environment_verifier.verify(
         scenario_id=scenario_id,
         agent_claimed_resolved=agent_claimed_resolved,
         alert=alert,
         incident_context=incident_context,
     )
+    from agents.stage_a import bind_cpu_identity, current_run, target_identity
+
+    run = current_run()
+    if run is not None and scenario_id == "single_fault/sf-002":
+        passed = False
+        details = "Post-action CPU recovery not established"
+        try:
+            run.require_recovery_window()
+            pods = environment_verifier._kubectl_get("pods", namespace="default", output="json")
+            if pods.get("success") is not True:
+                raise ValueError("Stage A target identity read failed")
+            payload = pods.get("parsed") or json.loads(pods.get("stdout", ""))
+            selected = {
+                "items": [
+                    pod for pod in payload.get("items", [])
+                    if pod.get("metadata", {}).get("labels", {}).get("app") == "paymentservice"
+                ],
+            }
+            if target_identity(selected) != run.target:
+                raise ValueError("Stage A target pod or container identity changed")
+            from agents.tools.prometheus import promql_query
+            from scripts.stage_a_telemetry import cpu_observation
+
+            query = (
+                'container_cpu_usage_seconds_total{namespace="default",'
+                f'pod="{run.target["pod"]}",container="server"' + "}"
+            )
+            sample_at = time.time()
+            raw = promql_query(query, time_unix=sample_at)
+            source_times = promql_query(f"timestamp({query})", time_unix=sample_at)
+            observation = bind_cpu_identity(cpu_observation(
+                raw, query, observed_at=time.time(), target_pod=run.target["pod"],
+                source_timestamps_result=source_times,
+            ), run.target)
+            passed = run.recovery_check(observation)
+            run.require_recovery_window()
+            details = (
+                "Two fresh post-remediation CPU counter samples meet the recovery threshold"
+                if passed else "Post-remediation CPU counter samples do not establish recovery"
+            )
+        except (RuntimeError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            passed = False
+            details = f"Stage A CPU verification failed: {type(exc).__name__}"
+        result.checks.append(CheckResult(
+            name="stage_a_post_action_cpu", target=run.target["pod"],
+            passed=passed, details=details, observed=run.cpu_recovery,
+        ))
+        result.verification_timestamp = time.time()
+        if not passed:
+            result.env_resolved = False
+            result.verification_status = "failed"
+            result.failed_checks.append("stage_a_post_action_cpu")
+            result.is_false_resolution = bool(agent_claimed_resolved)
+            result.is_false_negative = False
+    return result

@@ -16,7 +16,8 @@ certify the full pipeline.
 | Matched Base/SFT Validation | Completed diagnostic-only result | [result](project/BASE_SFT_VALIDATION_RESULT_V1.md), [raw responses](../artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1/raw_episodes.jsonl), [independent recomputation](../artifacts/evidence/stage8/base-sft-validation-v1/local-independent-recompute-v1.json) | F1 0.16875 / 0.15935, delta -0.00940, schema 6/6 each. No diagnostic improvement observed. Resolution, reward and TTR unavailable. |
 | G4 attempt 015 | Terminal INCONCLUSIVE/unscored | [integrity index](../artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json) | Transport timeout, no retry or score. Full operational bundle remains external. |
 | G4 attempt 016 | Pre-fault abort/non-result | [run-owned preflight record](project/G4_V38_RUN_OWNED_PREFLIGHT_GUARD_V1.md), [final chronology](project/CONTROLLED_G9_ADMISSION_V1.md) | No model-resolution score. Raw operational records remain external. |
-| G4 attempt 017 | Completed negative | [audit/attempt archive anchors](project/CONTROLLED_G9_ADMISSION_V1.md) | Latest completed G4 negative, with prompt/evaluator and Comms caveats. No attempt 018. |
+| G4 attempt 017 | Latest verified completed negative | [audit/attempt archive anchors](project/CONTROLLED_G9_ADMISSION_V1.md) | Completed negative with prompt/evaluator and Comms caveats. The later 018 marker does not include an outcome. |
+| G4 attempt 018 | Completion marker only; outcome and cleanup unverified | Owner-local `.codex-tmp/website-execution-20261008-v4/artifacts/evidence/stage4/.attempts/EXP-STAGE4-SF002-018.attempt.json` | Marker state is `COMPLETED`; `main_sha` is `6e880d1c995b7abf4c43012e1b9c8f11e2a89260`. No primary result, interruption record, or cleanup sidecar exists at that execution path. The read-only monitor returns no outcome or cleanup values. The dated revised evaluation plan's negative-result and zero-Chaos claims cannot be verified from the surviving files at that execution root. |
 | Controlled G9 replacement v2 | Failed/frozen genuine pilot | [final result](project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md) | 2 optimizer steps, 4 malformed/blocked completions, rewards all -1, both advantage groups zero. No reward-driven learning or accepted checkpoint. Full pilot archive remains external. |
 | Final aligned G9 diagnostic | Completed negative diagnostic | [diagnostic](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json), [samples](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl), [independent review](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json) | 0/8 admissible actions, zero optimizer steps, all 392 tensor hashes unchanged. No population-zero or sole-cause conclusion. |
 
@@ -40,6 +41,14 @@ certify the full pipeline.
   `G4_PREFLIGHT_ABORT_V2.json`, and attempt 017 has `G4_ATTEMPT017_RESULT_V1.json`.
   Reviewers need a separately authorized evidence transfer; these paths
   are not portable package assets or an access grant.
+- Attempt-018 marker SHA-256: `50f708112e3f2155922f8aade75e3e30169652eb244f97d11196ebce176bc208`.
+  The marker records protocol marker `G4-V3.8-RUN-OWNED-PREFLIGHT-GUARD-V1`
+  and fingerprint `6547e83e4f765aaf86e1822c89aa7dba8429489d461bfcf7e3e3e2249c3dba58`.
+  Its `main_sha` resolves to commit `6e880d1c995b7abf4c43012e1b9c8f11e2a89260`.
+  The stored reserve, consume, and completion times are `07-10-2026 21:45:13`,
+  `07-10-2026 21:45:15`, and `07-10-2026 21:49:08`; the marker gives no timezone.
+  The marker is an owner-local ledger entry, not a result or cleanup record.
+  No raw trace or credential is copied into this index.
 - Controlled replacement archive SHA-256: `39834cc3911bf6e32deec509a1c139d905e17aee802563abcb2ce3802f23cd33`.
   Failed manifest SHA-256: `c8faa1afb8948c504a23fa45f57edf76fc4eb1f47a4074623aed4659ed1809cc`.
   Local preserved extraction: `C:/AtlasOps/controlled-g9-replacement-20261005-v2/`.

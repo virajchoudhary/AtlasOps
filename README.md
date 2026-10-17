@@ -55,7 +55,7 @@ continuation deployment or current team results.
 | SFT v17 | Real QLoRA adapter from 68 synthetic Train-only rows; 9 optimizer steps; fresh-process reload passed | Reloadable bounded artifact. This does not establish incident improvement. |
 | Controlled GRPO pilot | Two optimizer steps; four completions; all malformed or blocked with reward -1; both advantage groups zero | No reward-driven GRPO learning established. No acceptable SFT+GRPO checkpoint. |
 | Final aligned G9 diagnostic | 0/8 admissible actions; zero optimizer steps; all 392 LoRA tensor hashes unchanged | Negative under the tested parser contract. Zero of eight does not prove the population probability is exactly zero. |
-| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 and 018 completed negative | G4 remains NOT_PASSED. Attempt 018 is preserved externally; recovery failed and later cleanup verified zero Chaos. |
+| G4 live incident | 015 inconclusive and unscored; 016 pre-fault abort; 017 latest verified completed negative; 018 completion marker only | G4 remains NOT_PASSED. The 018 marker reports `COMPLETED`, but its primary result and cleanup sidecar are absent. Its outcome and cleanup are unverified. See the [evidence index](docs/EVIDENCE_INDEX.md). |
 | Certification | NOT_CERTIFIED | No full-pipeline scientific or deployment certification is claimed. |
 
 The [Base-vs-SFT result](docs/project/BASE_SFT_VALIDATION_RESULT_V1.md) includes
@@ -80,6 +80,47 @@ Additional implementation includes:
 - HMAC-chained audit records and evidence manifests with source and artifact hashes.
 - A read-only repository-evidence demo for local review.
 
+## Persisted incident history API
+
+The operator API reads persisted records from `TRAJECTORIES_DIR`. The default path is
+`data/trajectories`. Send the `X-AtlasOps-Key` header. Missing API-key configuration
+returns `503`; a missing or incorrect header returns `401`.
+
+| Route | Behavior |
+|---|---|
+| `GET /incidents/history?limit=50&offset=0` | Returns `items`, `total`, `limit`, and `offset`. `limit` is 1-100 and `offset` is 0-10,000. Items are ordered by filename, not by event time. |
+| `GET /incidents/{incident_id}` | Reads only `{incident_id}.json`, the first saved record for that incident. |
+| `GET /incidents/{incident_id}?execution_id={uuid}` | Reads only `{incident_id}.execution-{uuid}.json`. The UUID must be 32 lowercase hexadecimal characters. The API does not select a latest execution. |
+
+History items keep canonical and execution files separate. The API omits `.partial-*`
+provider-failure files. Missing records return `404`. Malformed, identity-mismatched,
+or oversized records return `503`.
+
+Legacy canonical records without an `execution_id` return `null`. The API never
+synthesizes an execution ID. Explicit execution files still require a matching 32-character
+lowercase hexadecimal ID.
+
+Responses retain triage, diagnosis, remediation, approval, objective verification, and
+communications fields through an allowlist. The API keeps `agent_claimed_resolved`,
+`env_resolved`, and `resolved` as separate recorded values. It does not recompute
+verification or infer an outcome from a missing record. It omits raw alerts, model
+trajectories, raw verifier evidence, and the configured storage path. Persisted JSON is
+capped at 1 MiB, and returned text fields are capped at 2,000 characters.
+
+## Durable webhook occurrence admission
+
+Webhook occurrence admission is persisted in
+`ATLASOPS_RUNTIME_DATA_DIR/incident-admissions.sqlite3` (default
+`data/incident-admissions.sqlite3`). Workers share deduplication only when they use the
+same on-disk SQLite file. Reset does not clear records, and queued or attempted
+occurrences are never automatically replayed or reclaimed.
+
+Live workflow events at `/thoughts`, `/stream`, `/api/thoughts` and `/api/stream`
+also require `X-AtlasOps-Key`. Keys in query parameters are not authentication.
+Repository catalog/evidence reads remain separate from protected live events.
+Approval decisions require both valid authentication and an explicit
+`approved_by` identity; omission does not create a default human identity.
+
 The project lead's [current scope revision](docs/project/GAI_RL_SCOPE_REVISION.md)
 defines the required academic workstreams.
 G10/G11 recommender work remains optional historical research and OUT_OF_SCOPE for
@@ -88,8 +129,14 @@ operator feedback or incident improvement.
 
 ## Quick Start
 
-The safe local entry point is the React/TypeScript research console. With Python 3.11+
-and Node.js 22+, install the small presentation dependencies and build once:
+The [project closure checklist](docs/project/COMPLETION_CHECKLIST.md) records the
+consolidated application's implementation, verification and acceptance status.
+It separates release work from the
+[unapproved research execution proposal](docs/project/PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md).
+Neither document authorizes a merge, deployment, model run or live incident.
+
+The safe local entry point is the React/TypeScript research console. With Python
+3.11 or 3.12 and Node.js 22.12+, install the small presentation dependencies and build once:
 
 ```powershell
 python -m pip install fastapi uvicorn
@@ -111,6 +158,13 @@ simulated P1 decision and demonstrates recovery, rejected/expired approval, and 
 verification. Every output is SYNTHETIC / NON-LIVE / NON-EMPIRICAL, not agent inference
 or live incident proof. The [presentation runbook](docs/project/DEMO_RUNBOOK.md) gives
 the click path and restart command.
+
+The [presentation runbook](docs/project/DEMO_RUNBOOK.md#start-the-integrated-application)
+also gives exact loopback startup commands for the integrated application.
+The `Dockerfile` is a separate integrated app entrypoint: it builds the React console
+and starts `app.py` with the existing operational API routes. It is not the
+loopback-only read-only launcher above; operator and webhook authentication remain
+required for their existing protected actions.
 
 An opt-in local operator mode adds a fixed governed-run launcher, live agent activity
 metadata, exact-action approval controls and separate verifier/cleanup results.

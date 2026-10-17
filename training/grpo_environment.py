@@ -706,9 +706,22 @@ class DirectPolicyEnvironment:
                     pre_action_observation=pre_action_observation,
                 )
 
+        from agents.stage_a import current_run
+
+        stage_a = current_run()
+        if stage_a is not None:
+            try:
+                stage_a.before_mutation(action, pre_action_observation or {})
+            except (RuntimeError, ValueError) as exc:
+                return self._blocked(
+                    "stage_a_causal_boundary", str(exc), completion_text, action,
+                    pre_action_observation=pre_action_observation,
+                )
         tool_result = await _maybe_await(
             self.invoke_tool(self.tool_registry[tool], **arguments)
         )
+        if stage_a is not None:
+            stage_a.action_completed_epoch = time.time()
         incident_context = {
             **state,
             "policy_action": action,

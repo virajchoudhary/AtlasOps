@@ -13,7 +13,9 @@ No new metric, checkpoint, incident result or cleanup result is claimed here.
 ## Environment and resources
 
 Use a dedicated, owner-controlled experiment checkout of the final reviewed
-PR 204 commit. Record the full SHA and an immutable source inventory before
+source commit. The current software baseline is merged PR 207 at `f13374f`;
+this proposal remains unapproved and does not update frozen execution pins.
+Record the full SHA and an immutable source inventory before
 approval. Do not execute from a dirty development checkout or silently accept
 source drift against an old protocol.
 

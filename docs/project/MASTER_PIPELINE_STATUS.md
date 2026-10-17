@@ -32,7 +32,7 @@ This governance document records the repository's alignment with the adopted non
 ---
 
 Current consolidated software acceptance is maintained in the single
-[project closure checklist](COMPLETION_CHECKLIST.md), based on PR 204.
+[project closure checklist](COMPLETION_CHECKLIST.md), updated for merged PR 207.
 It does not change the scientific statuses or preserved evidence below.
 
 The prior non-experimental finalization was based on freshly fetched remote main

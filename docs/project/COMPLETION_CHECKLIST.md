@@ -5,10 +5,12 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Baseline: PR [204](https://github.com/virajchoudhary/AtlasOps/pull/204),
-`598135afb0f039387fe941ac0e05ad1f7d24452f`. Its nine CI checks passed.
-Other overlapping drafts must not be merged again. No merge or deployment is
-authorized by this closure work.
+Software baseline: merged PR [207](https://github.com/virajchoudhary/AtlasOps/pull/207),
+main commit `f13374fe88bcd64097560a4e74a944f539a34dd3`.
+Its tree matches accepted candidate `36d9e8c93441cdb04193729e8c1f93539bae9b49`.
+All nine checks passed in [CI run 39036553871](https://github.com/virajchoudhary/AtlasOps/actions/runs/39036553871).
+Other overlapping drafts must not be merged again. The authorized software merge
+does not authorize deployment, research execution, or external submission.
 
 ## Application acceptance
 
@@ -19,9 +21,9 @@ authorized by this closure work.
 | Authentication and approvals | Root approval no longer supplies an identity; root and mounted live-event routes authenticate before reads | `closure-security-final.xml`: 29 passed, including finite authenticated SSE, missing configuration, invalid headers and query-only rejection; independent review found no route-control issue | Local acceptance PASS |
 | Reference media | Native local MP4 reel and founder clip; unchanged strict CSP; public source/hash catalog | Desktop and mobile decoded dimensions and playback progress, dialog focus/close, no external requests or CSP errors | Browser PASS; native controls differ from the reference player |
 | Reference layout and animation | Integrated reconstruction, rings and responsive pages; bounded repo/showcase/pricing/FAQ correction | Paired 1904x881 and 390x844 section measurements; final browser interactions/reduced motion PASS | PARTIAL. Repaired section height gaps are at most 31.04px; full pixel and animation parity not established |
-| Local startup and container | React build plus `app.py`; separate read-only launcher | Guarded integrated startup passed; credential-free launcher health/root/reference passed; local Docker daemon unavailable | Local startup PASS; new-head container CI pending; peer-host acceptance BLOCKED |
+| Local startup and container | React build plus `app.py`; separate read-only launcher | Guarded integrated startup and credential-free launcher health/root/reference passed; final-head UI container check passed in CI | Local and CI software PASS; current local cluster and peer-host acceptance not established |
 | Reproducible demo guide | Current checkout and both entrypoints documented | `start-demo.ps1 -Check` passed; `start-demo.ps1 -Port 7864` started the read-only app with built frontend | Local demo PASS; no live incident claim |
-| Release package | Frozen old inventory retained; public MP4 allowlist and additive binary override | Final affected Python modules 55 passed; raw Git video bytes and explicit LF source rules verified | Inventory regressions PASS; final archive pending |
+| Release package | Frozen old inventory retained; explicit required reference HTML; public MP4 allowlist and additive binary override | Final 637-asset inventory ready; all 783 raw-source ZIP files equal accepted-head Git blobs; final affected modules 167 passed | Review package PASS; scientific certification remains NOT_CERTIFIED |
 | Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | Link and package tests passed; strict release artifact checks PASS | Review materials ready; scientific certification remains NOT_CERTIFIED |
 
 ## Required scientific gates
@@ -54,7 +56,34 @@ software contracts do not require new experiments simply to produce activity.
 5. Stop when all authorized work is verified or has a specific external blocker.
    The full project is not closed while required accepted evidence is absent.
 
-## Current bounded checkpoint
+## Current software checkpoint
+
+PR 207 combines the reviewed application in PR 204, offline Stage A corrections
+in PR 205, and the Codex workflow safeguard merged in PR 206.
+Fresh independent Azure Luna Max reviews accepted the integration and correction
+waves. These are same-provider reviews, not provider-diverse certification.
+
+- The full local Python baseline returned 3271 passed and 26 skipped.
+  After the final review fixes, all 167 affected tests passed.
+- Final-head CI passed both Python matrices, frontend unit/build and browser
+  checks, UI container startup, locked runtime, CPU trainer, and security scan.
+- The mobile FAQ control passed built-app geometry and checkout checks.
+  Local-video tests passed with unchanged strict CSP and playback assertions.
+- All three final review findings were repaired and resolved: recovery scrape
+  timing, the required reference HTML inventory entry, and session-ID redaction.
+- The 637-asset inventory reports READY_FOR_REVIEW and NOT_CERTIFIED, with no
+  missing required assets or broken current-facing links.
+- The exact-source archive SHA-256 is
+  `9da83ab5ab18d9093e21ee5c991180846fd4630419aa7ac108678eddc5b157d4`.
+  It was reopened and compared with all 783 Git blobs at accepted head `36d9e8c`.
+- Failed local and CI runs remain preserved. Green software checks do not
+  resolve full reference pixel/animation parity, credential rotation, peer-host
+  acceptance, scientific gates, or actual external submission.
+
+## Historical PR 204 checkpoint
+
+The following records the earlier checkpoint. Its pending items and host
+observations are dated evidence, not the current software acceptance status.
 
 The resumed worktree is
 `C:/AtlasOps/.codex-worktrees/completion-app-consolidated-20261015`.

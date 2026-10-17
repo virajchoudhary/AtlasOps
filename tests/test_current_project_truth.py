@@ -198,3 +198,21 @@ def test_required_reviewer_surfaces_and_canonical_evidence_are_packaged():
         Path(path).suffix.lower() in {".pt", ".safetensors"}
         for path in assets
     )
+
+
+def test_current_demo_guides_reference_the_accepted_software_baseline():
+    checklist = _read("docs/project/COMPLETION_CHECKLIST.md")
+    baseline = re.search(
+        r"Software baseline: merged PR \[\d+\]\((https://github\.com/[^)]+)\)",
+        checklist,
+    )
+    assert baseline, "The checklist must identify the accepted software baseline"
+
+    for path in ("docs/project/DEMO_RUNBOOK.md", "docs/AtlasOps_Technical_Report.md"):
+        current = _read(path).split("## Historical", 1)[0]
+        assert baseline.group(1) in current, (
+            f"{path} must point readers to the checklist's accepted software baseline"
+        )
+        assert "completion-app-consolidated-20261015" not in current, (
+            f"{path} directs readers to the superseded PR 204 checkout"
+        )

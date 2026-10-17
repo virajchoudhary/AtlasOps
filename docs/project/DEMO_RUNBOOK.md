@@ -12,10 +12,16 @@ NOT_PASSED; scientific certification remains NOT_CERTIFIED.
 
 ## Start On This Windows Machine
 
-Use the consolidated PR 204 checkout on this machine:
+Use a fresh checkout of `main`, which includes merged
+[PR 207](https://github.com/virajchoudhary/AtlasOps/pull/207).
+Run the following from a directory without an `AtlasOps-reviewed` child.
+Keep existing dirty checkouts unchanged.
 
 ```powershell
-Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
+git clone --branch main https://github.com/virajchoudhary/AtlasOps.git AtlasOps-reviewed
+Set-Location .\AtlasOps-reviewed
+git merge-base --is-ancestor f13374fe88bcd64097560a4e74a944f539a34dd3 HEAD
+if ($LASTEXITCODE -ne 0) { throw "This checkout does not contain accepted PR 207." }
 npm ci --prefix frontend
 npm run build --prefix frontend
 .\scripts\start-demo.ps1 -Check
@@ -46,11 +52,10 @@ these checks and refuses an incomplete local build.
 
 ## Start the integrated application
 
-The same checkout also runs the built frontend and operational backend together.
+The same reviewed checkout also runs the built frontend and operational backend together.
 Use a separate port from any existing read-only presentation:
 
 ```powershell
-Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
 python -m pip install -e ".[demo]"
 npm ci --prefix frontend
 npm run build --prefix frontend

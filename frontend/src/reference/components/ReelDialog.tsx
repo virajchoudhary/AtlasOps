@@ -1,6 +1,10 @@
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+function isNotAllowedError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "NotAllowedError";
+}
+
 export function ReelDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -12,11 +16,15 @@ export function ReelDialog({ onClose }: { onClose: () => void }) {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
+    let effectIsCurrent = true;
     dialog.showModal();
     closeButtonRef.current?.focus();
     const video = videoRef.current;
-    void video?.play().catch(() => setTransport("blocked"));
+    void video?.play().catch((error: unknown) => {
+      if (effectIsCurrent && isNotAllowedError(error)) setTransport("blocked");
+    });
     return () => {
+      effectIsCurrent = false;
       video?.pause();
       if (dialog.open) dialog.close();
     };
@@ -30,7 +38,9 @@ export function ReelDialog({ onClose }: { onClose: () => void }) {
 
   const togglePlayback = (video: HTMLVideoElement) => {
     if (video.paused) {
-      void video.play().catch(() => setTransport("blocked"));
+      void video.play().catch((error: unknown) => {
+        if (isNotAllowedError(error)) setTransport("blocked");
+      });
     } else {
       video.pause();
     }

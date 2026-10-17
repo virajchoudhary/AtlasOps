@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AboutDrawer } from "./AboutDrawer";
 import { ReelDialog } from "./ReelDialog";
@@ -43,6 +44,60 @@ afterEach(() => {
 });
 
 describe("reference media", () => {
+  it("does not expose native controls when closing aborts pending autoplay", async () => {
+    let rejectPlay: (reason?: unknown) => void = () => undefined;
+    const playPromise = new Promise<void>((_resolve, reject) => {
+      rejectPlay = reject;
+    });
+    vi.mocked(HTMLMediaElement.prototype.play).mockReturnValue(playPromise);
+    const onClose = vi.fn();
+    render(<ReelDialog onClose={onClose} />);
+    const dialog = screen.getByRole("dialog", { name: "Watch reel" });
+    const player = screen.getByLabelText("The Content Architecture product reel");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await act(async () => {
+      rejectPlay(new DOMException("Playback was interrupted by pause.", "AbortError"));
+      await Promise.resolve();
+    });
+
+    expect(dialog).not.toHaveAttribute("open");
+    expect(player).not.toHaveAttribute("controls");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("ignores stale autoplay rejection after StrictMode cleanup", async () => {
+    let rejectStalePlay: (reason?: unknown) => void = () => undefined;
+    let rejectCurrentPlay: (reason?: unknown) => void = () => undefined;
+    const stalePlay = new Promise<void>((_resolve, reject) => {
+      rejectStalePlay = reject;
+    });
+    const currentPlay = new Promise<void>((_resolve, reject) => {
+      rejectCurrentPlay = reject;
+    });
+    vi.mocked(HTMLMediaElement.prototype.play)
+      .mockReturnValueOnce(stalePlay)
+      .mockReturnValueOnce(currentPlay);
+    render(
+      <StrictMode>
+        <ReelDialog onClose={vi.fn()} />
+      </StrictMode>,
+    );
+    const player = screen.getByLabelText("The Content Architecture product reel");
+
+    await act(async () => {
+      rejectStalePlay(new DOMException("Autoplay blocked.", "NotAllowedError"));
+      await Promise.resolve();
+    });
+    expect(player).not.toHaveAttribute("controls");
+
+    await act(async () => {
+      rejectCurrentPlay(new DOMException("Autoplay blocked.", "NotAllowedError"));
+      await Promise.resolve();
+    });
+    expect(player).toHaveAttribute("controls");
+  });
+
   it("plays the local product reel with accessible loading and failure states", () => {
     const onClose = vi.fn();
     const { container } = render(<ReelDialog onClose={onClose} />);

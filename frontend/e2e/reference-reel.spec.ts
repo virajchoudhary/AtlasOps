@@ -103,3 +103,50 @@ test("reel keeps native playback available when autoplay is rejected", async ({ 
   await reel.press("Enter");
   await expect(reel).toHaveJSProperty("paused", true);
 });
+
+test("a delayed autoplay denial from a closed reel cannot block a reopened reel", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+    const nativePlay = HTMLMediaElement.prototype.play;
+    let rejectPendingPlay: ((reason?: unknown) => void) | undefined;
+    let delayInitialReelPlay = true;
+    HTMLMediaElement.prototype.play = function () {
+      if (
+        delayInitialReelPlay
+        && this instanceof HTMLVideoElement
+        && this.getAttribute("src") === "/reference/assets/content-architecture-reel.mp4"
+      ) {
+        delayInitialReelPlay = false;
+        return new Promise<void>((_resolve, reject) => {
+          rejectPendingPlay = reject;
+        });
+      }
+      return nativePlay.call(this);
+    };
+    window.addEventListener("reject-closed-reel-play", () => {
+      rejectPendingPlay?.(new DOMException("Autoplay blocked", "NotAllowedError"));
+    }, { once: true });
+  });
+  await page.goto("/reference");
+  const watch = page.getByRole("button", { name: /watch reel/i });
+  await watch.click();
+  const dialog = page.getByRole("dialog", { name: "Watch reel", exact: true });
+  const closedReel = page.getByLabel("The Content Architecture product reel", { exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(closedReel).toHaveJSProperty("controls", false);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(watch).toBeFocused();
+
+  await watch.click();
+  const reopenedReel = page.getByLabel("The Content Architecture product reel", { exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(reopenedReel).toHaveJSProperty("controls", false);
+  await page.evaluate(() => window.dispatchEvent(new Event("reject-closed-reel-play")));
+  await expect(reopenedReel).toHaveJSProperty("controls", false);
+  expect(errors).toEqual([]);
+});

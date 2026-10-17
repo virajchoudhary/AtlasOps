@@ -5,7 +5,7 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Recorded software checkpoint: merged PR [214](https://github.com/virajchoudhary/AtlasOps/pull/214),
+Software baseline: merged PR [214](https://github.com/virajchoudhary/AtlasOps/pull/214),
 main commit `539c4ae76a1955efb778b006f6414e69f04a3325`, tree
 `e94f6699c59e4cd9c202742cc847ecaada50eded`. Its drawer correction follows
 the accepted pricing, FAQ, documentation and reel corrections in PRs 209-213.

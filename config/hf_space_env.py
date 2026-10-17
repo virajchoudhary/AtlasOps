@@ -45,7 +45,11 @@ def _localhost_or_empty(url: str) -> bool:
     if not u:
         return True
     try:
-        return urlsplit(u).hostname in {"localhost", "127.0.0.1"}
+        host = urlsplit(u).hostname
+        if host is None:
+            return False
+        host = host.removesuffix(".")
+        return host.lower() in {"localhost", "127.0.0.1"}
     except ValueError:
         return False
 

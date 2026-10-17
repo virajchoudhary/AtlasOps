@@ -498,6 +498,8 @@ def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[st
     except (OSError, ValueError):
         return {"success": False, "error": "postmortem could not be written"}
     saved_path = str(destination)
+    if Path(POSTMORTEM_DIR) == Path("docs/postmortems"):
+        saved_path = f"docs/postmortems/{destination.name}"
     return {
         "success": True,
         "path": saved_path,

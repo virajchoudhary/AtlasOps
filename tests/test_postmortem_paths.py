@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -213,3 +214,33 @@ def test_repeated_default_drafts_get_distinct_paths(postmortem_root):
     assert Path(second["path"]).parent == postmortem_root
     assert Path(first["path"]).read_bytes()
     assert Path(second["path"]).read_bytes()
+
+
+@pytest.mark.parametrize("output_path", ["", "named.md"])
+def test_default_postmortem_reference_survives_incident_history(
+    tmp_path, monkeypatch, output_path,
+):
+    from agents.incident_history import read_incident_history
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(comms, "POSTMORTEM_DIR", Path("docs/postmortems"))
+    result = comms.postmortem_draft(_incident(), output_path)
+    assert result["success"] is True
+    assert Path(result["path"]).read_text(encoding="utf-8").startswith("# Postmortem:")
+
+    record = {
+        "incident_id": "inc-postmortem-reference",
+        "comms": {"final": {
+            "summary": "Fixture summary",
+            "postmortem_path": result["postmortem_path"],
+        }},
+    }
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    (history_dir / "inc-postmortem-reference.json").write_text(
+        json.dumps(record), encoding="utf-8",
+    )
+    projected = read_incident_history("inc-postmortem-reference", directory=history_dir)
+    expected = f"docs/postmortems/{Path(result['path']).name}"
+    assert projected["comms"].get("postmortem_path") == expected
+    assert result["path"] == expected

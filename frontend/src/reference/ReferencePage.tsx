@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
-  Check,
   Mail,
   Minus,
   Plus,
@@ -340,7 +339,11 @@ function PricingSection({
     <section className="reference-pricing-section" id="pricing">
       <div className="reference-pricing-heading">
         <Reveal>
-          <h2>Two editions. One architecture. Lifetime updates.</h2>
+          <h2>
+            <span>Two editions.</span>
+            <span>One architecture.</span>
+            <span>Lifetime updates.</span>
+          </h2>
         </Reveal>
         <div className="reference-early-adopters" aria-label="Trusted by 50 plus engineers">
           <div className="reference-avatar-stack">
@@ -367,49 +370,52 @@ function PricingSection({
       </div>
       <div className="reference-pricing-ticket">
         <div className="reference-pricing-facts">
-          <div>
-            <h3>{edition === "next" ? "Next.js 16 + Sanity v6 repo" : "Astro 7 + Sanity v6 repo"}</h3>
-            <p>Full source. Perpetual license.</p>
-            <p>One-time, per edition</p>
-          </div>
+          <p>One-time, per edition</p>
           <strong>
             <span>€</span>549
           </strong>
         </div>
-        <ol className="reference-pricing-benefits">
-          {PRICING_BENEFITS.map((benefit, index) => (
-            <li key={benefit}>
-              <span className="reference-benefit-index">{String(index + 2).padStart(2, "0")}</span>
-              <span>{benefit}</span>
-              <Check size={13} aria-hidden="true" />
+        <div className="reference-pricing-details">
+          <ol className="reference-pricing-benefits">
+            <li className="reference-pricing-benefit--edition">
+              <span className="reference-benefit-index">01</span>
+              <span className="reference-benefit-text">
+                {edition === "next" ? "Next.js 16 + Sanity v6 repo" : "Astro 7 + Sanity v6 repo"}
+              </span>
             </li>
-          ))}
-        </ol>
-        <div className="reference-pricing-buy">
-          <fieldset className="reference-edition-picker">
-            <legend>Edition</legend>
-            <label>
-              <input
-                type="radio"
-                name="reference-edition"
-                value="next"
-                checked={edition === "next"}
-                onChange={() => onEditionChange("next")}
-              />
-              <span>Next.js</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="reference-edition"
-                value="astro"
-                checked={edition === "astro"}
-                onChange={() => onEditionChange("astro")}
-              />
-              <span>Astro</span>
-            </label>
-          </fieldset>
-          <AccessLink edition={edition} label="Get access" light />
+            {PRICING_BENEFITS.map((benefit, index) => (
+              <li key={benefit}>
+                <span className="reference-benefit-index">{String(index + 2).padStart(2, "0")}</span>
+                <span className="reference-benefit-text">{benefit}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="reference-pricing-buy">
+            <fieldset className="reference-edition-picker">
+              <legend>Edition</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="reference-edition"
+                  value="next"
+                  checked={edition === "next"}
+                  onChange={() => onEditionChange("next")}
+                />
+                <span>Next.js</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="reference-edition"
+                  value="astro"
+                  checked={edition === "astro"}
+                  onChange={() => onEditionChange("astro")}
+                />
+                <span>Astro</span>
+              </label>
+            </fieldset>
+            <AccessLink edition={edition} label="Get access" light />
+          </div>
         </div>
       </div>
       <p className="reference-pricing-fit">

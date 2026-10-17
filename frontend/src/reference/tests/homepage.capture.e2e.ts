@@ -276,6 +276,224 @@ for (const viewport of viewports) {
   });
 }
 
+const pricingTicketViewports = [
+  {
+    name: "1904x881",
+    width: 1904,
+    height: 881,
+    expectedX: 80,
+    expectedWidth: 1744,
+    padding: "40px",
+    priceFontSize: "280px",
+  },
+  {
+    name: "1024x900",
+    width: 1024,
+    height: 900,
+    expectedX: 56,
+    expectedWidth: 912,
+    padding: "40px",
+    priceFontSize: "180px",
+  },
+  {
+    name: "1200x900",
+    width: 1200,
+    height: 900,
+    expectedX: 80,
+    expectedWidth: 1040,
+    padding: "40px",
+    priceFontSize: null,
+  },
+  {
+    name: "851x900",
+    width: 851,
+    height: 900,
+    expectedX: 47,
+    expectedWidth: 757,
+    padding: "40px",
+    priceFontSize: null,
+  },
+  {
+    name: "320x900",
+    width: 320,
+    height: 900,
+    expectedX: 16,
+    expectedWidth: 288,
+    padding: "20px",
+    priceFontSize: null,
+  },
+  {
+    name: "390x844",
+    width: 390,
+    height: 844,
+    expectedX: 16,
+    expectedWidth: 358,
+    padding: "20px",
+    priceFontSize: "120px",
+  },
+] as const;
+
+for (const viewport of pricingTicketViewports) {
+  test(`renders the pricing ticket at ${viewport.name}`, async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+      reducedMotion: "reduce",
+    });
+    await context.addInitScript(() => {
+      try {
+        sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+      } catch {
+      }
+    });
+
+    const page = await context.newPage();
+    await page.goto("/reference.html", { waitUntil: "networkidle" });
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator("#pricing").scrollIntoViewIfNeeded();
+
+    const ticket = page.locator("#pricing .reference-pricing-ticket");
+    await expect(ticket).toBeVisible();
+    const geometry = await ticket.evaluate((element) => {
+      const section = element.closest<HTMLElement>("#pricing");
+      const heading = section?.querySelector<HTMLElement>(".reference-pricing-heading h2");
+      const facts = element.querySelector<HTMLElement>(".reference-pricing-facts");
+      const details = element.querySelector<HTMLElement>(".reference-pricing-details");
+      const benefits = element.querySelector<HTMLElement>(".reference-pricing-benefits");
+      const price = element.querySelector<HTMLElement>(".reference-pricing-facts strong");
+      const buy = element.querySelector<HTMLElement>(".reference-pricing-buy");
+      const adopters = section?.querySelector<HTMLElement>(".reference-early-adopters");
+      const avatars = adopters?.querySelector<HTMLElement>(".reference-avatar-stack");
+      const adopterLabel = adopters?.querySelector<HTMLElement>("span");
+      if (
+        !section || !heading || !facts || !details || !benefits || !price || !buy || !avatars || !adopterLabel
+      ) {
+        throw new Error("Pricing ticket content is incomplete");
+      }
+
+      const bounds = (node: Element) => {
+        const rect = node.getBoundingClientRect();
+        return { x: rect.x, right: rect.right, y: rect.y, bottom: rect.bottom, width: rect.width };
+      };
+      const rows = Array.from(benefits.querySelectorAll(":scope > li"), (row) => {
+        const index = row.querySelector(".reference-benefit-index");
+        const text = row.querySelector<HTMLElement>(".reference-benefit-text");
+        return {
+          index: index?.textContent?.trim() ?? "",
+          text: text?.textContent?.trim() ?? "",
+          textFits: Boolean(text && text.scrollWidth <= text.clientWidth),
+        };
+      });
+      const adopterBounds = bounds(adopters ?? section);
+      const avatarBounds = bounds(avatars);
+      const labelBounds = bounds(adopterLabel);
+      const ticketStyle = getComputedStyle(element);
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        ticket: {
+          ...bounds(element),
+          padding: ticketStyle.padding,
+          background: ticketStyle.backgroundColor,
+          color: ticketStyle.color,
+        },
+        facts: bounds(facts),
+        price: bounds(price),
+        details: {
+          ...bounds(details),
+          borderLeftStyle: getComputedStyle(details).borderLeftStyle,
+          borderTopStyle: getComputedStyle(details).borderTopStyle,
+        },
+        benefits: bounds(benefits),
+        buy: bounds(buy),
+        priceFontSize: getComputedStyle(price).fontSize,
+        priceFits:
+          price.getBoundingClientRect().left >= facts.getBoundingClientRect().left &&
+          price.getBoundingClientRect().right <=
+            facts.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(facts).paddingRight),
+        rows,
+        headingText: heading.innerText,
+        adopters: {
+          display: getComputedStyle(adopters ?? section).display,
+          ...adopterBounds,
+          avatarRight: avatarBounds.right,
+          labelX: labelBounds.x,
+        },
+        formCount: element.querySelectorAll("form").length,
+      };
+    });
+
+    await page.screenshot({
+      path: resolve(outputDirectory, `pricing-ticket-${viewport.name}.png`),
+    });
+    await writeFile(
+      resolve(outputDirectory, `pricing-ticket-${viewport.name}.json`),
+      `${JSON.stringify({ viewport, geometry }, null, 2)}\n`,
+      "utf8",
+    );
+
+    expect.soft(geometry.viewport).toEqual({ width: viewport.width, height: viewport.height });
+    expect.soft(Math.abs(geometry.ticket.x - viewport.expectedX)).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(geometry.ticket.width - viewport.expectedWidth)).toBeLessThanOrEqual(1);
+    expect.soft(geometry.ticket.right).toBeLessThanOrEqual(viewport.width);
+    expect.soft(geometry.ticket.padding).toBe(viewport.padding);
+    expect.soft(geometry.ticket.background).toBe("rgb(35, 35, 35)");
+    expect.soft(geometry.ticket.color).toBe("rgb(241, 238, 231)");
+    if (viewport.priceFontSize !== null) {
+      expect.soft(geometry.priceFontSize).toBe(viewport.priceFontSize);
+    }
+    expect.soft(geometry.priceFits).toBe(true);
+    expect.soft(geometry.headingText).toBe("Two editions.\nOne architecture.\nLifetime updates.");
+    expect.soft(geometry.adopters.display).toBe("flex");
+    expect.soft(geometry.adopters.avatarRight).toBeLessThanOrEqual(geometry.adopters.labelX + 1);
+    expect.soft(geometry.rows).toEqual([
+      { index: "01", text: "Next.js 16 + Sanity v6 repo", textFits: true },
+      { index: "02", text: "Unlimited commercial projects", textFits: true },
+      { index: "03", text: "Lifetime updates", textFits: true },
+      { index: "04", text: "Agent-ready: skills, MCP, llms.txt", textFits: true },
+      { index: "05", text: "Direct support from the maintainer", textFits: true },
+    ]);
+    expect.soft(geometry.formCount).toBe(0);
+
+    const accessLink = page.locator("#pricing .reference-pricing-buy .reference-access-link");
+    await expect(accessLink).toHaveAttribute(
+      "href",
+      "https://www.contentarchitecture.dev/checkout?plan=next",
+    );
+    await expect(accessLink).toHaveAttribute("target", "_blank");
+    if (viewport.width > 850) {
+      expect.soft(geometry.details.borderLeftStyle).toBe("dashed");
+      expect.soft(geometry.details.borderTopStyle).not.toBe("dashed");
+      const contentWidth = geometry.ticket.width - 2 * Number.parseFloat(viewport.padding) - 2;
+      expect.soft(Math.abs(geometry.facts.width / contentWidth - 7 / 12)).toBeLessThan(0.01);
+      expect.soft(Math.abs(geometry.details.width / contentWidth - 5 / 12)).toBeLessThan(0.01);
+    } else {
+      expect.soft(geometry.details.borderTopStyle).toBe("dashed");
+      expect.soft(geometry.details.borderLeftStyle).not.toBe("dashed");
+      expect.soft(geometry.facts.bottom).toBeLessThanOrEqual(geometry.details.y);
+      expect.soft(geometry.buy.y).toBeGreaterThanOrEqual(geometry.benefits.bottom);
+    }
+
+    const nextEdition = page.getByRole("radio", { name: "Next.js" });
+    const astroEdition = page.getByRole("radio", { name: "Astro" });
+    await nextEdition.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(astroEdition).toBeChecked();
+    await expect(page.locator(".reference-pricing-benefit--edition .reference-benefit-text"))
+      .toHaveText("Astro 7 + Sanity v6 repo");
+    await expect(accessLink).toHaveAttribute(
+      "href",
+      "https://www.contentarchitecture.dev/checkout?plan=astro",
+    );
+    await astroEdition.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(nextEdition).toBeChecked();
+    await expect(accessLink).toHaveAttribute(
+      "href",
+      "https://www.contentarchitecture.dev/checkout?plan=next",
+    );
+    await context.close();
+  });
+}
+
 const faqControlViewports = [
   { name: "390x844", width: 390, height: 844, minHeight: 48 },
   { name: "1440x900", width: 1440, height: 900, minHeight: 44 },
@@ -492,7 +710,8 @@ test("keeps reference controls local and interactive", async ({ browser, baseURL
 
   const edition = desktop.locator('input[name="reference-edition"][value="astro"]');
   await edition.check();
-  await expect(desktop.locator(".reference-pricing-facts h3")).toContainText("Astro 7");
+  await expect(desktop.locator(".reference-pricing-benefit--edition .reference-benefit-text"))
+    .toHaveText("Astro 7 + Sanity v6 repo");
   await expect(desktop.locator(".reference-faq-edition select")).toHaveValue("astro");
 
   await desktop.getByRole("button", { name: /what is this not/i }).click();

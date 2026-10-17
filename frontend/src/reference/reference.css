@@ -2485,7 +2485,6 @@ body.content-architecture-reference-body #root {
 }
 
 @container (max-width: 480px) {
-  .reference-founder-play,
   .reference-founder-time {
     display: none;
   }

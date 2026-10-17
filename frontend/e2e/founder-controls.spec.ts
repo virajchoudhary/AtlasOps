@@ -25,12 +25,12 @@ for (const viewport of [
 
     const bottomPlay = controller.locator(".reference-founder-play");
     const centerPlay = controller.locator(".reference-founder-center-play");
-    if (viewport.name === "desktop") {
-      await expect(bottomPlay).toBeVisible();
-      await bottomPlay.click();
-    } else {
-      await video.click();
-    }
+    await expect(bottomPlay).toBeVisible();
+    await expect(bottomPlay).toHaveRole("button");
+    await expect(bottomPlay).toHaveAccessibleName("pause");
+    await bottomPlay.focus();
+    await expect(bottomPlay).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(video).toHaveJSProperty("paused", true);
     if (viewport.name === "mobile") await expect(centerPlay).toBeVisible();
     const pausedTime = await video.evaluate((element: HTMLVideoElement) => element.currentTime);

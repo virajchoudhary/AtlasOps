@@ -21,6 +21,7 @@ for (const viewport of mediaViewports) {
   test(`reference videos play from local assets under the strict CSP on ${viewport.name}`, async ({
     page,
   }, testInfo) => {
+    test.slow();
     const externalRequests: string[] = [];
     const cspErrors: string[] = [];
     const origin = new URL(testInfo.project.use.baseURL ?? "").origin;

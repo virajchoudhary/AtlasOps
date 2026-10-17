@@ -53,14 +53,19 @@ Downstream implementation does not close an upstream empirical gate.
 
 ## Development orchestration
 
-Sol Advisor is a preferred development enhancement, not an AtlasOps runtime or
-development dependency. If a verified tooling or platform defect makes it unavailable,
-native Codex work may proceed when the user explicitly authorizes that fallback. Do not
-patch or weaken Sol Advisor to bypass its security checks.
+Use native Codex under the global model-routing policy. Sol owns integration and final
+acceptance; bounded independent workers use Azure Luna at Max when useful. Sol Advisor
+is not a prerequisite and must not be activated or patched to bypass security checks.
 
-During an authorized native fallback, inspect before editing, keep changes minimal and
-task-scoped, run relevant tests, perform an explicit self-review, use PR and CI review,
-and make only evidence-supported claims.
+For local console verification, use
+[verify-atlasops](.agents/skills/verify-atlasops/SKILL.md).
+It exercises the read-only presentation and labelled synthetic rehearsal, not a live incident.
+
+| Recurring constraint | Executable enforcement |
+| --- | --- |
+| Remove unused imports without deleting initialization imports | Ruff `F401` in the existing CI correctness check |
+| P1 rejection and timeout never permit remediation | `tests/test_approval_fail_closed.py` |
+| Presentation rehearsal cannot establish empirical recovery | `frontend/e2e/console.spec.ts` synthetic labels, blocked approval, and GET-only checks |
 
 ## Git and quality rules
 

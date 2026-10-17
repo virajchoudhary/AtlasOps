@@ -32,8 +32,10 @@ This governance document records the repository's alignment with the adopted non
 ---
 
 Current consolidated software acceptance is maintained in the single
-[project closure checklist](COMPLETION_CHECKLIST.md), updated for merged PR 207.
-It does not change the scientific statuses or preserved evidence below.
+[project closure checklist](COMPLETION_CHECKLIST.md), updated for merged PR 211
+at `c84b9f49c0938e2b95607c3fb72f4cec402b4d85` (tree
+`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`). It does not change the scientific
+statuses or preserved evidence below.
 
 The prior non-experimental finalization was based on freshly fetched remote main
 `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, verified on 5 October 2026.
@@ -104,7 +106,7 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 | **Stage 12** | Integrate GAI + RL | **G12** | Multi-agent safety/approval, direct policy action and objective verifier without an RS dependency. | **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (software deliverables complete; accepted policy checkpoint and live integrated evidence deferred) |
 | **Stage 13** | Final ablation and stress evaluation | **G13** | Matched base GAI, SFT and SFT + GRPO comparisons with independently recomputed raw evidence under a future frozen protocol. | **REOPENED** (unsupported historical PASS withdrawn; software review deliverables complete; empirical matrix deferred without an accepted GRPO arm or frozen measurement protocol) |
 | **Stage 14** | Deploy final demo safely | **G14** | Package and deploy reproducible demo with safety guardrails and read-only operator UI. | **PARTIAL** (local read-only presentation deliverable complete; peer-host/operator deployment acceptance not established) |
-| **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (presentation/review package complete; scientific certification and actual external submission unestablished) |
+| **Stage 15** | Report, package and submit | **G15** | Compile final academic thesis/report, artifacts, and reproducible submission package. | **PARTIAL** (the 637-asset/783-blob archive covers pre-PR 211 main `46cf5568` / tree `d36a9fc`; latest-source package readiness is UNVERIFIED/PENDING until a new package is generated after these documentation corrections; scientific certification and actual external submission remain unestablished) |
 
 ---
 
@@ -297,8 +299,12 @@ Reporting now uses the actual Base/v17 and preserved negative results only.
 
 ### Gate G15: Report, Package, and Submit — [PARTIAL]
 - The technical report now separates implementation, mock/historical evidence, and missing empirical results. `scripts/package_submission.py` derives the declared G0-G15 inventory and emits `NOT_CERTIFIED` with asset hashes and no invented performance figures.
-- The report, slides, reviewer entry point, deferred handoff and hash-verified
-  review package are the completed non-experimental deliverables.
+- The report, slides, reviewer entry point and deferred handoff are completed
+  non-experimental deliverables. The 637-asset/783-blob archive was verified
+  against pre-PR 211 main `46cf5568`, tree `d36a9fc44f6edd1663908258e99cb5cdb1620edf`.
+  It does not cover the latest software checkpoint or these documentation
+  corrections. Latest-source package readiness is UNVERIFIED/PENDING until the
+  root generates and verifies a new package.
   Presentation/submission-package readiness does not equal full scientific
   certification or an actual university submission. G15 remains PARTIAL
   and NOT_CERTIFIED under its full original contract.

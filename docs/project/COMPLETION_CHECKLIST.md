@@ -5,14 +5,20 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PR [207](https://github.com/virajchoudhary/AtlasOps/pull/207),
-main commit `f13374fe88bcd64097560a4e74a944f539a34dd3`.
-Its tree matches accepted candidate `36d9e8c93441cdb04193729e8c1f93539bae9b49`.
-All nine checks passed in [CI run 39036553871](https://github.com/virajchoudhary/AtlasOps/actions/runs/39036553871).
-Other overlapping drafts must not be merged again. The authorized software merge
-does not authorize deployment, research execution, or external submission.
+Software baseline: merged PR [211](https://github.com/virajchoudhary/AtlasOps/pull/211),
+recorded main commit `c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
+`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`. It follows accepted pricing
+correction PR [209](https://github.com/virajchoudhary/AtlasOps/pull/209) and FAQ
+layout correction PR [210](https://github.com/virajchoudhary/AtlasOps/pull/210).
+The PR 207 suite and package results below are historical, not current-source
+acceptance.
+The accepted software merges do not authorize deployment, research execution, or
+external submission.
 
 ## Application acceptance
+
+The table combines evidence from separate software checkpoints. PR 207's suite
+totals are historical; PRs 209 through 211 have scoped acceptance evidence.
 
 | Deliverable | Implementation | Verification and evidence | Acceptance |
 | --- | --- | --- | --- |
@@ -23,15 +29,16 @@ does not authorize deployment, research execution, or external submission.
 | Reference layout and animation | Integrated reconstruction, rings and responsive pages; bounded repo/showcase/pricing/FAQ correction | Paired 1904x881 and 390x844 section measurements; final browser interactions/reduced motion PASS | PARTIAL. Repaired section height gaps are at most 31.04px; full pixel and animation parity not established |
 | Local startup and container | React build plus `app.py`; separate read-only launcher | Guarded integrated startup and credential-free launcher health/root/reference passed; final-head UI container check passed in CI | Local and CI software PASS; current local cluster and peer-host acceptance not established |
 | Reproducible demo guide | Current checkout and both entrypoints documented | `start-demo.ps1 -Check` passed; `start-demo.ps1 -Port 7864` started the read-only app with built frontend | Local demo PASS; no live incident claim |
-| Release package | Frozen old inventory retained; explicit required reference HTML; public MP4 allowlist and additive binary override | Final 637-asset inventory ready; all 783 raw-source ZIP files equal accepted-head Git blobs; final affected modules 167 passed | Review package PASS; scientific certification remains NOT_CERTIFIED |
-| Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | Link and package tests passed; strict release artifact checks PASS | Review materials ready; scientific certification remains NOT_CERTIFIED |
+| Release package | Frozen old inventory retained; explicit required reference HTML; public MP4 allowlist and additive binary override | The 637-asset/783-blob archive was verified for main `46cf5568` and tree `d36a9fc`, before PR 211; PR 207 package results are historical | Latest-source package UNVERIFIED/PENDING until a new package is generated after these documentation corrections; scientific certification remains NOT_CERTIFIED |
+| Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | PR 207 link/package checks are historical; no post-PR 211 full package check is recorded | Latest-source package UNVERIFIED/PENDING; scientific certification remains NOT_CERTIFIED |
 
 ## Required scientific gates
 
 | Gate | Implementation | Tests and existing evidence | Accepted status and minimum remaining work |
 | --- | --- | --- | --- |
 | G4 | Governed incident workflow, authentication, approval, objective verifier and capture code | Negative 017; 018 marker has no outcome/cleanup; software regressions are non-empirical | NOT_PASSED. Newly approved causal incident protocol and independently accepted recovery/cleanup evidence |
-| G8 | Matched Base/SFT evaluation and canonical contracts | Genuine diagnostic F1 0.16875 / 0.15935; no improvement; resolution/TTR unavailable | EMPIRICAL EVIDENCE MISSING. Approved matched incident-level evaluation, not another alert-only diagnostic |
+| G6 | Zero-shot Base evaluation and real-inference provenance | Recovered summaries record `mock_eval=true`; the genuine pinned-base Validation diagnostic does not provide incident-resolution evidence | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING. G6 needs its approved zero-shot incident baseline. G8 is the distinct SFT-before-RL gate and retains the same Master status; its incident-resolution evidence is also missing. Neither result closes the other |
+| G8 | Matched Base/SFT evaluation and canonical contracts | Genuine diagnostic F1 0.16875 / 0.15935; no improvement; resolution/TTR unavailable | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING. Approved matched incident-level evaluation, not another alert-only diagnostic |
 | G9 | Controlled and observation-first policy/environment/reward software | Final negative: zero reward-driven advantages; aligned diagnostic 0/8 actions; synthetic optimizer tests do not certify learning | NOT_PASSED/FROZEN. New Train-only protocol, admissible actions/nonzero reward signal, approved execution, checkpoint inventory and independent reload |
 | G12 | Integrated GAI/RL action, approval and verifier path | Local injected-policy tests only; no accepted GRPO checkpoint | EMPIRICAL EVIDENCE MISSING. Accepted G9 artifact plus governed integrated environment episode |
 | G13 | Artifact-based matched evaluation and ablation/stress machinery | Historical five-arm profiles remain non-empirical; missing third arm must be rejected | REOPENED. Accepted variants and a newly frozen measurement/access protocol; independently recomputed raw outcomes |
@@ -58,10 +65,39 @@ software contracts do not require new experiments simply to produce activity.
 
 ## Current software checkpoint
 
-PR 207 combines the reviewed application in PR 204, offline Stage A corrections
+The latest accepted software checkpoint is merged PR 211 at main commit
+`c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
+`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`. It follows the bounded pricing
+acceptance in PR 209 and FAQ layout acceptance in PR 210. PR 211's nine
+exact-head checks passed in CI run
+[39052690646](https://github.com/virajchoudhary/AtlasOps/actions/runs/39052690646).
+Full-site reference pixel and animation parity remain PARTIAL.
+
+The 637-asset archive with SHA-256
+`ef86005c58a63cc2cb9689ddcfdfa096046cb4c55d9cfe2e776b9106b3ab1c16` was
+verified against 783 Git blobs for main `46cf5568`, tree
+`d36a9fc44f6edd1663908258e99cb5cdb1620edf`. That source predates PR 211, so its
+READY_FOR_REVIEW inventory and blob proof are historical for that source. No
+package has been generated for the latest software checkpoint plus these
+documentation corrections. Latest-source package readiness remains
+UNVERIFIED/PENDING until the root generates and verifies that package.
+
+## Historical PR 207 checkpoint
+
+The PR 207 suite and package results remain useful historical evidence for that
+accepted source. They do not establish current-source suite or package readiness.
+PR 207 merged at `f13374fe88bcd64097560a4e74a944f539a34dd3`; its tree matches
+accepted candidate `36d9e8c93441cdb04193729e8c1f93539bae9b49`. All nine checks
+passed in [CI run 39036553871](https://github.com/virajchoudhary/AtlasOps/actions/runs/39036553871).
+The 637-asset archive SHA-256 was
+`9da83ab5ab18d9093e21ee5c991180846fd4630419aa7ac108678eddc5b157d4`, compared
+with the 783 Git blobs at that accepted candidate.
+
+PR 207 combined the reviewed application in PR 204, offline Stage A corrections
 in PR 205, and the Codex workflow safeguard merged in PR 206.
 Fresh independent Azure Luna Max reviews accepted the integration and correction
 waves. These are same-provider reviews, not provider-diverse certification.
+At that checkpoint, other overlapping drafts were not to be merged again.
 
 - The full local Python baseline returned 3271 passed and 26 skipped.
   After the final review fixes, all 167 affected tests passed.
@@ -71,11 +107,8 @@ waves. These are same-provider reviews, not provider-diverse certification.
   Local-video tests passed with unchanged strict CSP and playback assertions.
 - All three final review findings were repaired and resolved: recovery scrape
   timing, the required reference HTML inventory entry, and session-ID redaction.
-- The 637-asset inventory reports READY_FOR_REVIEW and NOT_CERTIFIED, with no
-  missing required assets or broken current-facing links.
-- The exact-source archive SHA-256 is
-  `9da83ab5ab18d9093e21ee5c991180846fd4630419aa7ac108678eddc5b157d4`.
-  It was reopened and compared with all 783 Git blobs at accepted head `36d9e8c`.
+- The 637-asset inventory reported READY_FOR_REVIEW and NOT_CERTIFIED, with no
+  missing required assets or broken current-facing links at that source.
 - Failed local and CI runs remain preserved. Green software checks do not
   resolve full reference pixel/animation parity, credential rotation, peer-host
   acceptance, scientific gates, or actual external submission.

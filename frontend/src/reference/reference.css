@@ -3210,9 +3210,12 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-faq-heading > .reference-access-link {
-    min-height: 37px;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 48px;
     grid-column: 1 / -1;
     grid-row: 3;
+    justify-self: start;
   }
 
   .reference-faq-list {

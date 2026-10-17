@@ -276,6 +276,82 @@ for (const viewport of viewports) {
   });
 }
 
+const faqControlViewports = [
+  { name: "390x844", width: 390, height: 844, minHeight: 48 },
+  { name: "1440x900", width: 1440, height: 900, minHeight: 44 },
+] as const;
+
+for (const viewport of faqControlViewports) {
+  test(`keeps the FAQ access link compact and reachable at ${viewport.name}`, async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+      reducedMotion: "reduce",
+    });
+    await context.route(/^https:\/\/www\.contentarchitecture\.dev\/checkout/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<!doctype html><title>Checkout intercepted</title>",
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto("/reference", { waitUntil: "networkidle" });
+    await page.evaluate(() => document.fonts.ready);
+
+    const accessLink = page.locator("#faq .reference-faq-heading > .reference-access-link");
+    await expect(accessLink).toBeVisible();
+    await accessLink.scrollIntoViewIfNeeded();
+    const geometry = await accessLink.evaluate((element) => {
+      const faqList = document.querySelector(".reference-faq-list");
+      if (!faqList) throw new Error("FAQ list is missing");
+      const bounds = element.getBoundingClientRect();
+      const listBounds = faqList.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+        listX: listBounds.x,
+        href: element.getAttribute("href"),
+        target: element instanceof HTMLAnchorElement ? element.target : "",
+      };
+    });
+    await writeFile(
+      resolve(outputDirectory, `reference-faq-control-${viewport.name}.json`),
+      `${JSON.stringify({ viewport, geometry }, null, 2)}\n`,
+      "utf8",
+    );
+    await page.screenshot({
+      path: resolve(outputDirectory, `reference-faq-control-${viewport.name}.png`),
+    });
+
+    expect(geometry.width).toBeLessThan(180);
+    expect(geometry.height).toBeGreaterThanOrEqual(viewport.minHeight);
+    expect(geometry.x).toBeGreaterThanOrEqual(0);
+    expect(geometry.y).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(viewport.width);
+    expect(geometry.bottom).toBeLessThanOrEqual(viewport.height);
+    if (viewport.width === 390) {
+      expect(Math.abs(geometry.x - geometry.listX)).toBeLessThanOrEqual(1);
+    }
+    await expect(accessLink).toHaveAttribute(
+      "href",
+      "https://www.contentarchitecture.dev/checkout?plan=next",
+    );
+    await expect(accessLink).toHaveAttribute("target", "_blank");
+
+    const checkoutTabPromise = page.waitForEvent("popup");
+    await accessLink.click();
+    const checkoutTab = await checkoutTabPromise;
+    await expect(checkoutTab).toHaveURL("https://www.contentarchitecture.dev/checkout?plan=next");
+    await expect(checkoutTab).toHaveTitle("Checkout intercepted");
+    await checkoutTab.close();
+    await context.close();
+  });
+}
+
 test("reduced motion removes desktop pinning and preserves the active canvas", async ({ browser }) => {
   const viewport = { width: 1920, height: 1080 };
   const normalContext = await browser.newContext({ viewport, reducedMotion: "no-preference" });

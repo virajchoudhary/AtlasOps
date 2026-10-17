@@ -1775,7 +1775,7 @@ body.content-architecture-reference-body #root {
 }
 
 .reference-faq-heading h2 {
-  font-size: 56px;
+  font-size: 48px;
 }
 
 .reference-faq-heading > .reference-access-link {
@@ -1784,7 +1784,7 @@ body.content-architecture-reference-body #root {
 }
 
 .reference-faq-list {
-  grid-column: 5 / span 8;
+  grid-column: 6 / span 7;
   align-self: start;
   border-top: 1px solid var(--reference-line-dark);
 }
@@ -1808,35 +1808,36 @@ body.content-architecture-reference-body #root {
 }
 
 .reference-faq-trigger > span:first-child {
-  display: flex;
-  align-items: baseline;
-  gap: 15px;
-  font: 10px/1.45 var(--reference-mono);
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  font: 16px/20px var(--reference-mono);
   text-transform: uppercase;
 }
 
 .reference-faq-trigger small {
-  flex: 0 0 40px;
   color: #96948e;
-  font: 9px var(--reference-mono);
+  margin-right: 6px;
+  font: inherit;
+  white-space: nowrap;
 }
 
 .reference-faq-icon {
   display: grid;
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgb(241 238 231 / 26%);
-  border-radius: 50%;
+  border-radius: 2px;
+  background: rgb(241 238 231 / 10%);
   color: #d4d2cc;
 }
 
 .reference-faq-answer {
-  padding: 0 50px 22px 55px;
-  color: #aaa8a2;
-  font-size: 12px;
-  line-height: 1.7;
+  padding: 0 0 22px;
+  color: #dedede;
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .reference-faq-answer p {
@@ -3259,7 +3260,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-faq-heading h2 {
-    font-size: 39px;
+    font-size: 32px;
   }
 
   .reference-faq-heading > .reference-access-link {
@@ -3283,24 +3284,20 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-faq-trigger > span:first-child {
-    gap: 15px;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .reference-faq-trigger small {
-    flex-basis: 40px;
-    font-size: 10px;
+    column-gap: 12px;
+    font-size: 14px;
+    line-height: 1.25;
   }
 
   .reference-faq-icon {
-    width: 21px;
-    height: 21px;
+    width: 24px;
+    height: 24px;
   }
 
   .reference-faq-answer {
-    padding: 0 8px 18px 43px;
-    font-size: 12px;
+    padding: 0 0 18px;
+    font-size: 14px;
+    line-height: 1.25;
   }
 
   .reference-footer {

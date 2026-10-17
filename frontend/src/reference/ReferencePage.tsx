@@ -497,8 +497,8 @@ function FAQRow({
         onClick={onToggle}
       >
         <span>
-          <small>Q.{String(index + 1).padStart(3, "0")}</small>
-          {item.question}
+          <small>Q.{String(index + 1).padStart(3, "0")} /</small>{" "}
+          <span>{item.question}</span>
         </span>
         <span className="reference-faq-icon" aria-hidden="true">
           {expanded ? <Minus size={14} /> : <Plus size={14} />}

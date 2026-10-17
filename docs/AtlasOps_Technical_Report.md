@@ -7,7 +7,7 @@
 **Upstream baseline:** `Harikishanth/AtlasOps` at `bf9bd197c9f4a05ae55ade254802a9eef1a74356`
 
 **Research evidence state:** preserved 5 October 2026 results, with later marker-only chronology reconciliation
-**Software candidate:** consolidated [PR 204](https://github.com/virajchoudhary/AtlasOps/pull/204); current acceptance is in the [closure checklist](project/COMPLETION_CHECKLIST.md)
+**Software baseline:** merged [PR 207](https://github.com/virajchoudhary/AtlasOps/pull/207) at `f13374fe88bcd64097560a4e74a944f539a34dd3`; current acceptance is in the [closure checklist](project/COMPLETION_CHECKLIST.md)
 **Certification:** NOT_CERTIFIED
 
 ## Abstract

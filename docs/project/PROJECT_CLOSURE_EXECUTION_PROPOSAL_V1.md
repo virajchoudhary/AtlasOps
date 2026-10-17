@@ -26,6 +26,12 @@ permit. This proposal remains unapproved.
 Do not execute from a dirty development checkout or silently accept source
 drift against an old protocol.
 
+The original A-F plan is incomplete for G6. Stage B supplies G8 evidence only;
+completing that pilot cannot close G6. A revised proposal must define a
+separately reviewed G6 stage and execution permit, with its incident population,
+finite budget, raw workflow evidence, and independent resolution acceptance.
+This notice grants no execution authority and does not change the preserved plan.
+
 | Resource | Proposed use | Admission requirement |
 | --- | --- | --- |
 | Existing local Docker/Kind | Canonical `kind-atlasops-local`, isolated Online Boutique and observability | Fresh target/context identity, healthy workloads, independent cleanup baseline, usable fault-detection metrics and no unrelated workload exposure |

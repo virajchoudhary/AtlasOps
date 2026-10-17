@@ -59,7 +59,7 @@ for (const viewport of mediaViewports) {
       "/reference/assets/content-architecture-reel.mp4",
     );
     await expect(reel).toHaveJSProperty("autoplay", true);
-    await expect(reel).toHaveJSProperty("controls", true);
+    await expect(reel).toHaveJSProperty("controls", false);
     await expect(reel).toHaveJSProperty("playsInline", true);
     await expect(page.getByRole("button", { name: "Close" })).toBeFocused();
 

@@ -9,6 +9,8 @@ let originalShowModal: PropertyDescriptor | undefined;
 let originalClose: PropertyDescriptor | undefined;
 
 beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
   originalShowModal = Object.getOwnPropertyDescriptor(dialogPrototype, "showModal");
   originalClose = Object.getOwnPropertyDescriptor(dialogPrototype, "close");
   Object.defineProperty(dialogPrototype, "showModal", {
@@ -27,6 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   if (originalShowModal) {
     Object.defineProperty(dialogPrototype, "showModal", originalShowModal);
   } else {
@@ -50,7 +53,9 @@ describe("reference media", () => {
     expect(player.tagName).toBe("VIDEO");
     expect(player).toHaveAttribute("src", "/reference/assets/content-architecture-reel.mp4");
     expect(player).toHaveAttribute("autoplay");
-    expect(player).toHaveAttribute("controls");
+    expect(player).not.toHaveAttribute("controls");
+    expect(player).toHaveAttribute("role", "button");
+    expect(player).toHaveAttribute("tabindex", "0");
     expect(player).toHaveAttribute("playsinline");
     expect(closeButton).toHaveFocus();
     expect(screen.getByRole("status")).toHaveTextContent("Loading reel...");
@@ -58,6 +63,10 @@ describe("reference media", () => {
 
     fireEvent.canPlay(player);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.play(player);
+    expect(player).toHaveAttribute("aria-pressed", "true");
+    fireEvent.pause(player);
+    expect(player).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.error(player);
     expect(screen.getByRole("alert")).toHaveTextContent("The reel could not be loaded.");

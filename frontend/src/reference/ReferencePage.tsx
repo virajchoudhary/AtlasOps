@@ -22,6 +22,7 @@ import {
   type FAQItem,
 } from "./content";
 import { AsciiPreview } from "./components/AsciiPreview";
+import { FAQGlyphBackdrop } from "./components/FAQGlyphBackdrop";
 import { ReferenceFooterOrbit } from "./components/ReferenceFooterOrbit";
 import { ReferenceNavigation } from "./components/ReferenceNavigation";
 import { Reveal } from "./components/Reveal";
@@ -440,6 +441,7 @@ function FAQSection({
 
   return (
     <section className="reference-faq-section" id="faq">
+      <FAQGlyphBackdrop />
       <div className="reference-faq-heading">
         <Reveal>
           <h2>Before you buy</h2>

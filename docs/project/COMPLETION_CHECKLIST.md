@@ -78,9 +78,10 @@ The package for that source verifies 641 asset hashes and sizes, 787 exact Git
 blobs, ZIP paths and CRC, and links in 22 extracted review documents.
 Archive SHA-256:
 `340230fae3c70544a3ef27b9ebb40c362a15d0f1417f19d213517c640a3c5147`.
-Independent package acceptance returned PASS+NOTES. The retained local proofs
-are in `audit/project-closure/final-main-539c4ae7-package` under the coordinator
-workspace, not inside the source archive. Readiness is READY_FOR_REVIEW for
+Independent package acceptance returned PASS+NOTES.
+The [tracked software-package receipt](SOFTWARE_PACKAGE_RECEIPT_20261018.md)
+indexes the hashes, verification scope and retained owner-local proofs.
+Those proofs are not inside the source archive. Readiness is READY_FOR_REVIEW for
 `539c4ae7` only, with NOT_CERTIFIED and null empirical metrics.
 That archive excludes subsequent source changes, including this documentation.
 Package readiness for a different source is UNVERIFIED/PENDING unless supported

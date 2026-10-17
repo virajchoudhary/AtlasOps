@@ -1,6 +1,6 @@
 # AtlasOps Evidence Index
 
-Current review basis: freshly fetched main
+Scientific evidence basis: freshly fetched main
 `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, 5 October 2026.
 The [master inventory](project/MASTER_PIPELINE_STATUS.md) controls gate
 status. This index locates preserved results and records storage boundaries.
@@ -56,8 +56,12 @@ certify the full pipeline.
   Raw samples SHA-256: `84e30346b8948cca44b164f69106fbfbba8bb189f31e892aa0ff7f6d4034439b`.
   Compact evidence is tracked. The full local archive remains outside Git.
 
-The [submission manifest](../artifacts/SUBMISSION_MANIFEST.json) hashes
-selected checkout bytes, including this index and compact current evidence.
+The [frozen submission manifest](../artifacts/SUBMISSION_MANIFEST.json) records
+the historical 5 October 2026 inventory; it is not the current software package.
+The [18 October software-package receipt](project/SOFTWARE_PACKAGE_RECEIPT_20261018.md)
+indexes the accepted `539c4ae7` archive, exact hashes, verification scope,
+independent acceptance and owner-local proof location.
+Its READY_FOR_REVIEW status applies only to that source, not later revisions.
 Private archives and weights are references rather than bundled assets.
 Preserved EOL/hash semantics differ by evidence class. Never normalize a
 frozen file to make a checksum pass.

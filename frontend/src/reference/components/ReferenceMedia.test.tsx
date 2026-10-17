@@ -145,7 +145,12 @@ describe("reference media", () => {
     expect(player.tagName).toBe("VIDEO");
     expect(player).toHaveAttribute("src", "/reference/assets/edoardo-founder-video.mp4");
     expect(player).toHaveAttribute("autoplay");
-    expect(player).toHaveAttribute("controls");
+    expect(player).not.toHaveAttribute("controls");
+    expect(container.querySelector("media-controller")).toBeInTheDocument();
+    expect(container.querySelector("media-time-range")).toBeInTheDocument();
+    expect(container.querySelector("media-mute-button")).toBeInTheDocument();
+    expect(container.querySelector("media-volume-range")).toBeInTheDocument();
+    expect(container.querySelector("media-fullscreen-button")).toBeInTheDocument();
     expect(player).toBeInstanceOf(HTMLVideoElement);
     if (!(player instanceof HTMLVideoElement)) throw new Error("Expected a video element");
     expect(player.muted).toBe(true);

@@ -1,4 +1,14 @@
 import { ArrowUpRight, X } from "lucide-react";
+import {
+  MediaControlBar,
+  MediaController,
+  MediaFullscreenButton,
+  MediaMuteButton,
+  MediaPlayButton,
+  MediaTimeDisplay,
+  MediaTimeRange,
+  MediaVolumeRange,
+} from "media-chrome/react";
 import { useEffect, useRef, useState } from "react";
 import { ABOUT_SECTIONS } from "../content";
 
@@ -7,18 +17,30 @@ function FounderVideo() {
 
   return (
     <div className="reference-about-video">
-      <video
-        src="/reference/assets/edoardo-founder-video.mp4"
-        autoPlay
-        controls
-        playsInline
-        preload="metadata"
-        muted
-        loop
-        aria-label="Edoardo Lunardi profile video"
-        onCanPlay={() => setMediaState("ready")}
-        onError={() => setMediaState("error")}
-      />
+      <MediaController noVolumePref noMutedPref hotkeys="noarrowleft noarrowright">
+        <video
+          slot="media"
+          src="/reference/assets/edoardo-founder-video.mp4"
+          autoPlay
+          playsInline
+          preload="metadata"
+          muted
+          loop
+          aria-label="Edoardo Lunardi profile video"
+          onCanPlay={() => setMediaState("ready")}
+          onError={() => setMediaState("error")}
+        />
+        <MediaPlayButton slot="centered-chrome" className="reference-founder-center-play" />
+        <MediaTimeRange className="reference-founder-timeline" />
+        <MediaControlBar>
+          <MediaPlayButton className="reference-founder-play" />
+          <MediaTimeDisplay showDuration className="reference-founder-time" />
+          <MediaMuteButton />
+          <MediaVolumeRange />
+          <span className="reference-founder-control-spacer" />
+          <MediaFullscreenButton />
+        </MediaControlBar>
+      </MediaController>
       {mediaState === "loading" && (
         <p className="reference-about-video-status" role="status">
           Loading founder video...

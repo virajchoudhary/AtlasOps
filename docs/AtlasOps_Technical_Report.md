@@ -6,7 +6,8 @@
 
 **Upstream baseline:** `Harikishanth/AtlasOps` at `bf9bd197c9f4a05ae55ade254802a9eef1a74356`
 
-**Evidence state:** 5 October 2026
+**Research evidence state:** preserved 5 October 2026 results, with later marker-only chronology reconciliation
+**Software candidate:** consolidated [PR 204](https://github.com/virajchoudhary/AtlasOps/pull/204); current acceptance is in the [closure checklist](project/COMPLETION_CHECKLIST.md)
 **Certification:** NOT_CERTIFIED
 
 ## Abstract
@@ -221,8 +222,10 @@ aligned action diagnostic. It does not support claims of incident improvement,
 operational safety, or superiority.
 
 G4 remains NOT_PASSED. Attempt 015 was terminal INCONCLUSIVE and unscored, 016 was a
-pre-fault abort and non-result, and 017 completed with a negative outcome. No attempt
-018 exists. The 015 integrity index is tracked at
+pre-fault abort and non-result, and 017 completed with a negative outcome. Attempt
+018 has a surviving completion marker but no primary result or cleanup sidecar;
+its outcome and cleanup remain unverified. The [evidence index](EVIDENCE_INDEX.md)
+records that distinction and its integrity anchor. The 015 integrity index is tracked at
 [`EXP-STAGE4-SF002-015.integrity-index-v1.json`](../artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json).
 The 015 and 017 raw bundles are preserved outside this repository. The 017 archive
 SHA-256 is recorded in
@@ -237,9 +240,13 @@ historical research.
 
 ## 12. Read-Only Demonstration
 
-The repository's standalone Gradio demo provides a local evidence-browsing path:
+The consolidated React/TypeScript console provides a local evidence-browsing path
+through the separate read-only launcher. Build the frontend before launch:
 
 ```powershell
+python -m pip install fastapi uvicorn
+npm ci --prefix frontend
+npm run build --prefix frontend
 python -m demo.launcher --host 127.0.0.1 --port 7860
 ```
 
@@ -250,6 +257,13 @@ Docker, Kind cluster, GPU, or model endpoint. It is not a public deployment, liv
 remediation demonstration, or empirical gate result. The current read-only scope and
 acceptance boundary are described in
 [Stage 14](project/STAGE_14_DEPLOY_FINAL_DEMO.md).
+
+The integrated `app.py` entrypoint serves the same built frontend together with
+backend APIs, authenticated persisted history and operator approval boundaries.
+It is distinct from the read-only launcher. The operational API must not be
+presented as a successful live incident without accepted environment evidence.
+The [presentation runbook](project/DEMO_RUNBOOK.md) records current startup
+commands and the distinction between these modes.
 
 ## 13. Limitations
 

@@ -1,7 +1,10 @@
 """Candidate admission tests are entirely synthetic and non-executing."""
 
+import builtins
 import copy
+import hashlib
 import json
+import sys
 
 import pytest
 
@@ -31,7 +34,8 @@ def test_candidate_validates_without_mutation(rows):
     [
         "split", "duplicate", "tool_name", "pairing", "schema", "injected_label",
         "escaped_label", "normalized_label", "nonfinite", "falsey_calls", "delimiter", "approval",
-        "outcome", "unbound_verifier", "empty_executed",
+        "outcome", "unbound_verifier", "empty_executed", "diagnosis_handoff_outcome",
+        "diagnosis_handoff_mismatch", "diagnosis_handoff_nested_outcome",
     ],
 )
 def test_candidate_rejects_corruption(rows, change):
@@ -85,8 +89,130 @@ def test_candidate_rejects_corruption(rows, change):
         final = json.loads(row["messages"][-1]["content"])
         final["executed_actions"] = []
         row["messages"][-1]["content"] = json.dumps(final)
+    elif change == "diagnosis_handoff_outcome":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["outcome"] = "leaked-training-label"
+        row["messages"][1]["content"] = json.dumps(context)
+    elif change == "diagnosis_handoff_mismatch":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["root_cause"] = "A different but structurally valid diagnosis."
+        row["messages"][1]["content"] = json.dumps(context)
+    elif change == "diagnosis_handoff_nested_outcome":
+        row = next(r for r in rows if r["role"] == "remediation")
+        context = json.loads(row["messages"][1]["content"])
+        context["diagnosis"]["evidence"][0]["outcome"] = "leaked-training-label"
+        row["messages"][1]["content"] = json.dumps(context)
     with pytest.raises((ValueError, TypeError)):
         sft_candidate.inspect_candidate_rows(rows)
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        {},
+        {"tool": "promql_query"},
+        {"tool": "", "finding": "no metric claim made"},
+        {"tool": [], "finding": "observed result"},
+        {"tool": "promql_query", "finding": []},
+        {"tool": "promql_query", "finding": "  "},
+        {"tool": "promql_query", "query": 42, "finding": "observed result"},
+    ],
+)
+def test_candidate_rejects_invalid_paired_diagnosis_citations(rows, citation):
+    diagnosis_row = next(row for row in rows if row["role"] == "diagnosis")
+    case_key = (diagnosis_row["scenario_id"], diagnosis_row["case_id"])
+    handoff_row = next(
+        row
+        for row in rows
+        if row["role"] == "remediation"
+        and (row["scenario_id"], row["case_id"]) == case_key
+    )
+    target = json.loads(diagnosis_row["messages"][-1]["content"])
+    target["evidence"] = [copy.deepcopy(citation)]
+    diagnosis_row["messages"][-1]["content"] = json.dumps(target)
+    context = json.loads(handoff_row["messages"][1]["content"])
+    context["diagnosis"]["evidence"] = [copy.deepcopy(citation)]
+    handoff_row["messages"][1]["content"] = json.dumps(context)
+
+    with pytest.raises((ValueError, TypeError)):
+        sft_candidate.inspect_candidate_rows(rows)
+
+
+@pytest.mark.parametrize("role", ["diagnosis", "remediation"])
+def test_candidate_rejects_deeply_nested_outcome_metadata_in_diagnosis_citations(
+    rows, role
+):
+    row = next(row for row in rows if row["role"] == role)
+    if role == "diagnosis":
+        target = json.loads(row["messages"][-1]["content"])
+        evidence = target["evidence"]
+        evidence[0]["metadata"] = {"source": {"outcome": "unverified"}}
+        row["messages"][-1]["content"] = json.dumps(target)
+    else:
+        context = json.loads(row["messages"][1]["content"])
+        evidence = context["diagnosis"]["evidence"]
+        evidence[0]["metadata"] = {"source": {"outcome": "unverified"}}
+        row["messages"][1]["content"] = json.dumps(context)
+
+    with pytest.raises(
+        ValueError, match="outcome or training-label metadata is forbidden"
+    ):
+        sft_candidate.inspect_candidate_rows(rows)
+
+
+def test_training_rejects_malformed_diagnosis_handoff_before_loader(
+    tmp_path, monkeypatch
+):
+    from training import sft, sft_pilot_gate
+    from training.build_sft_candidate import build_candidate_rows, serialize_candidate_rows
+
+    rows = build_candidate_rows()
+    row = next(row for row in rows if row["role"] == "remediation")
+    context = json.loads(row["messages"][1]["content"])
+    context["diagnosis"]["evidence"] = [{}]
+    row["messages"][1]["content"] = json.dumps(context)
+
+    corpus = tmp_path / "malformed-handoff.jsonl"
+    corpus.write_bytes(serialize_candidate_rows(rows))
+    output = tmp_path / "checkpoint"
+    original_import = builtins.__import__
+
+    def guard_ml_imports(name, *args, **kwargs):
+        if name.split(".", 1)[0] in {"datasets", "transformers", "torch", "trl", "peft"}:
+            raise AssertionError("malformed handoff reached an ML loader")
+        return original_import(name, *args, **kwargs)
+
+    def guard_preparation_admission(*_args, **_kwargs):
+        raise AssertionError("malformed handoff reached preparation admission")
+
+    monkeypatch.setattr(builtins, "__import__", guard_ml_imports)
+    monkeypatch.setattr(
+        sft_pilot_gate, "validate_preparation", guard_preparation_admission
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "training.sft",
+            "--model",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "--model-revision",
+            "a09a35458c702b33eeacc393d103063234e8bc28",
+            "--data",
+            str(corpus),
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Remediation SFT diagnosis handoff.*evidence\[0\]",
+    ):
+        sft.main()
+    assert not output.exists()
 
 
 def test_nontrain_catalog_is_never_indexed(monkeypatch):
@@ -155,43 +281,58 @@ def test_source_revision_must_contain_generator_and_exact_hashes(monkeypatch):
         sft_candidate.validate_source_revision({"source_git_sha": "a" * 40})
 
 
-def test_stored_candidate_preserves_frozen_provenance_but_current_drift_blocks_admission():
-    from training.sft_provenance import REPO_ROOT
+def test_stored_candidate_remains_frozen_but_legacy_diagnosis_shape_is_refused():
     from training.build_sft_candidate import build_candidate_rows
+    from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
+    candidate_dir = corpus.parent
     assert corpus.is_file(), "required versioned review corpus is missing"
+    frozen_paths = (
+        corpus,
+        candidate_dir / "sft_corpus_manifest.json",
+        candidate_dir / "README.md",
+        candidate_dir / "quality_audit.md",
+        REPO_ROOT / "docs/project/G7_D3_PREPARATION_APPROVAL_V1.md",
+        REPO_ROOT / "docs/project/G7_D2_PINNED_MODEL_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_PREPARATION_REVIEW_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_ENVIRONMENT_V1.md",
+        REPO_ROOT / "docs/project/G7_PILOT_EXECUTION_RECORD_V1.md",
+        REPO_ROOT / "config/sft_pilot_v4.json",
+        REPO_ROOT / "artifacts/evidence/stage7/tokenizer_files_a09a354_v1.json",
+    )
+    frozen_hashes = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in frozen_paths
+    }
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
     sft_candidate.validate_source_revision(manifest)
     assert sft_candidate.canonical_bytes_sha256(snapshot.raw_bytes) == manifest["corpus_sha256_canonical_lf"]
-    assert sft_candidate.canonical_json_sha256(build_candidate_rows()) == manifest["rows_semantic_sha256"]
+    assert sft_candidate.canonical_json_sha256(list(snapshot.rows)) == manifest["rows_semantic_sha256"]
+    assert sft_candidate.canonical_json_sha256(build_candidate_rows()) != manifest["rows_semantic_sha256"]
     assert manifest["d3_approval"] == "PENDING"
     assert manifest["technical_admissibility"] == "PASS"
     assert (
         sft_candidate.canonical_bytes_sha256((REPO_ROOT / "agents/coordinator.py").read_bytes())
         != manifest["source_file_sha256_canonical_lf"]["agents/coordinator.py"]
     )
-    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         sft_candidate.validate_candidate_snapshot(snapshot, manifest)
-    with pytest.raises(ValueError, match="manifest/provenance/distribution hash mismatch"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         sft_candidate.refuse_unapproved_candidate(snapshot)
+    assert frozen_hashes == {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in frozen_paths
+    }
 
 
-def test_settling_compatibility_does_not_admit_other_source_hashes(monkeypatch):
+def test_settling_compatibility_cannot_bypass_legacy_diagnosis_shape():
     from training import sft_candidate_compatibility as compatibility
     from training.sft_provenance import REPO_ROOT
 
     corpus = REPO_ROOT / "artifacts/evidence/stage7/candidates/train-candidate-v1/sft_corpus_train.jsonl"
     snapshot = snapshot_training_corpus(corpus)
     manifest = sft_candidate.read_candidate_manifest(corpus)
-    original = compatibility.candidate_manifest
-
-    def changed(*args):
-        result = original(*args)
-        result["source_file_sha256_canonical_lf"]["agents/coordinator.py"] = "f" * 64
-        return result
-
-    monkeypatch.setattr(compatibility, "candidate_manifest", changed)
-    with pytest.raises(ValueError, match="manifest/provenance"):
+    with pytest.raises(ValueError, match=r"Diagnosis SFT target.*root_cause"):
         compatibility.validate_pilot_candidate(snapshot, manifest)

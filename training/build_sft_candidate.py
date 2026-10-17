@@ -1521,7 +1521,18 @@ def _diagnosis_row(
         }
         for observation in diagnosis_observations[2:]
     )
-    _final_message(messages, diagnosis)
+    root_cause = diagnosis["root_cause"]
+    diagnosis_target = {
+        "incident_id": diagnosis["incident_id"],
+        "root_cause": root_cause["specific"],
+        "category": root_cause["category"],
+        "confidence": 0.0 if root_cause["category"] == "unknown" else 0.75,
+        "evidence": root_cause["evidence"],
+        "blast_radius_update": diagnosis["blast_radius_update"],
+        "next_agent": diagnosis["next_agent"],
+        "recommended_fix": diagnosis["recommended_actions"],
+    }
+    _final_message(messages, diagnosis_target)
     row = _make_row(
         scenario_id=scenario_id,
         meta=meta,
@@ -1532,7 +1543,7 @@ def _diagnosis_row(
         safety=safety,
         messages=messages,
     )
-    return row, diagnosis, diagnosis_observations
+    return row, diagnosis_target, diagnosis_observations
 
 
 def _remediation_action(
@@ -1618,7 +1629,7 @@ def _remediation_row(
     if blocked:
         final = {
             "incident_id": alert["alerts"][0]["incident_id"],
-            "proposed_actions": diagnosis.get("recommended_actions", []),
+            "proposed_actions": diagnosis.get("recommended_fix", []),
             "executed_actions": [],
             "outcome": _runtime_outcome("blocked"),
             "time_to_resolve_seconds": None,

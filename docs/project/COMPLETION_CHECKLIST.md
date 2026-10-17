@@ -1,0 +1,108 @@
+# AtlasOps project closure checklist
+
+This is the single current completion checklist for the consolidated deliverable.
+The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status;
+the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
+Neither this checklist nor software tests can promote an empirical gate.
+
+Baseline: PR [204](https://github.com/virajchoudhary/AtlasOps/pull/204),
+`598135afb0f039387fe941ac0e05ad1f7d24452f`. Its nine CI checks passed.
+Other overlapping drafts must not be merged again. No merge or deployment is
+authorized by this closure work.
+
+## Application acceptance
+
+| Deliverable | Implementation | Verification and evidence | Acceptance |
+| --- | --- | --- | --- |
+| One integrated operational app | `app.py`, React console, reference routes, durable history | Guarded integrated app: 31 browser cases passed; 61 frontend unit tests passed; final build passed; independent correction review accepted after indexed-media repair | Local software PASS; exact-head CI result recorded in the closure report |
+| Nine operational views | Overview, Incidents, Agents, Models, Evaluations, Evidence, Runbooks, System, Rehearsal | Final integrated route matrix covers five requested viewports; no measured page overflow or overlap | Local browser PASS |
+| Authentication and approvals | Root approval no longer supplies an identity; root and mounted live-event routes authenticate before reads | `closure-security-final.xml`: 29 passed, including finite authenticated SSE, missing configuration, invalid headers and query-only rejection; independent review found no route-control issue | Local acceptance PASS |
+| Reference media | Native local MP4 reel and founder clip; unchanged strict CSP; public source/hash catalog | Desktop and mobile decoded dimensions and playback progress, dialog focus/close, no external requests or CSP errors | Browser PASS; native controls differ from the reference player |
+| Reference layout and animation | Integrated reconstruction, rings and responsive pages; bounded repo/showcase/pricing/FAQ correction | Paired 1904x881 and 390x844 section measurements; final browser interactions/reduced motion PASS | PARTIAL. Repaired section height gaps are at most 31.04px; full pixel and animation parity not established |
+| Local startup and container | React build plus `app.py`; separate read-only launcher | Guarded integrated startup passed; credential-free launcher health/root/reference passed; local Docker daemon unavailable | Local startup PASS; new-head container CI pending; peer-host acceptance BLOCKED |
+| Reproducible demo guide | Current checkout and both entrypoints documented | `start-demo.ps1 -Check` passed; `start-demo.ps1 -Port 7864` started the read-only app with built frontend | Local demo PASS; no live incident claim |
+| Release package | Frozen old inventory retained; public MP4 allowlist and additive binary override | Final affected Python modules 55 passed; raw Git video bytes and explicit LF source rules verified | Inventory regressions PASS; final archive pending |
+| Technical and academic materials | Report/slides corrected to marker-only 018; startup guide and unapproved research proposal included | Link and package tests passed; strict release artifact checks PASS | Review materials ready; scientific certification remains NOT_CERTIFIED |
+
+## Required scientific gates
+
+| Gate | Implementation | Tests and existing evidence | Accepted status and minimum remaining work |
+| --- | --- | --- | --- |
+| G4 | Governed incident workflow, authentication, approval, objective verifier and capture code | Negative 017; 018 marker has no outcome/cleanup; software regressions are non-empirical | NOT_PASSED. Newly approved causal incident protocol and independently accepted recovery/cleanup evidence |
+| G8 | Matched Base/SFT evaluation and canonical contracts | Genuine diagnostic F1 0.16875 / 0.15935; no improvement; resolution/TTR unavailable | EMPIRICAL EVIDENCE MISSING. Approved matched incident-level evaluation, not another alert-only diagnostic |
+| G9 | Controlled and observation-first policy/environment/reward software | Final negative: zero reward-driven advantages; aligned diagnostic 0/8 actions; synthetic optimizer tests do not certify learning | NOT_PASSED/FROZEN. New Train-only protocol, admissible actions/nonzero reward signal, approved execution, checkpoint inventory and independent reload |
+| G12 | Integrated GAI/RL action, approval and verifier path | Local injected-policy tests only; no accepted GRPO checkpoint | EMPIRICAL EVIDENCE MISSING. Accepted G9 artifact plus governed integrated environment episode |
+| G13 | Artifact-based matched evaluation and ablation/stress machinery | Historical five-arm profiles remain non-empirical; missing third arm must be rejected | REOPENED. Accepted variants and a newly frozen measurement/access protocol; independently recomputed raw outcomes |
+| G14 | Local presentation and integrated image | Local/container checks are software evidence, not peer-host/operator deployment acceptance | PARTIAL. Owner-approved target and independent peer-host/operator/security acceptance |
+| G15 | Technical report, slides, reproducibility and review package | Existing evidence is useful but not full scientific certification or submission | PARTIAL/NOT_CERTIFIED. Final verified package; research prerequisites and actual external submission remain separate |
+
+G7's accepted bounded v17 artifact/reload is retained and is not being repeated.
+G10/G11 remain historical optional research and OUT_OF_SCOPE.
+Safe offline repairs are allowed only for demonstrated defects. Existing green
+software contracts do not require new experiments simply to produce activity.
+
+## Closure rules
+
+1. Fix demonstrated release blockers on this consolidated candidate.
+2. Record implementation, test evidence and acceptance here after each bounded
+   deliverable; do not open a parallel backlog.
+3. Run one complete release verification after integration. Preserve failed runs
+   and distinguish local software, hosted deployment and scientific evidence.
+4. The [single staged execution proposal](PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md)
+   names resources, risks, immutable evidence and separate approval boundaries.
+   Do not consume old approvals, reopen frozen IDs or access Final-Test.
+5. Stop when all authorized work is verified or has a specific external blocker.
+   The full project is not closed while required accepted evidence is absent.
+
+## Current bounded checkpoint
+
+The resumed worktree is
+`C:/AtlasOps/.codex-worktrees/completion-app-consolidated-20261015`.
+The baseline is `598135a`; the completed correction proceeds on the same branch.
+The existing PR inventory and accepted deltas are retained in
+`C:/AtlasOps/.audit/completion-20261015/CONSOLIDATION_REPORT.md`.
+No overlapping draft is being integrated again.
+
+- Source review and 29 HTTP regressions verified the two security repairs.
+- The prior 65-test documentation/package run remains evidence for its unchanged
+  Python scope. No repeat was needed for the security result.
+- Both frontend workers finished and were released. Independent review accepted
+  the correction after a narrowly verified staged-media integrity repair.
+- The full offline Python run returned 3147 passed, 26 skipped and 12 failures.
+  Eleven failures came from an intended deletion not yet staged in the Git
+  inventory; one came from the runner's inference-off environment setting.
+  The final affected modules returned 55 passed after correcting the index,
+  isolated runner setting and additive video-byte rules. The initial failed
+  run is retained; it is not reported as a full green suite.
+- Final frontend build, all 61 component tests and all 31 browser cases passed.
+  Sandboxed Vitest could not load suites because temporary renames were denied;
+  the approved rerun supplied the actual 61-test result.
+- Local Docker Desktop is unavailable. Do not start it and risk resuming
+  unrelated containers; new-head container CI must be reported separately.
+- Research execution is not approved. The staged proposal does not reopen
+  frozen protocols or provide an accepted third model arm.
+- `closure-release-readiness.md` reports artifact checks PASS and scientific
+  readiness NOT_CERTIFIED. Its two critical research failures are preserved.
+- Current evidence is under `C:/AtlasOps/.audit/completion-20261015/`, including
+  `closure-security-final.xml`, `closure-python-final-correction.xml`,
+  `closure-frontend-unit.xml`, `closure-browser-results.json` and paired
+  captures in `closure-geometry-work/`. These are local/synthetic software
+  observations, not new experimental outcomes.
+- The first independent review rejected two normalized staged video blobs,
+  despite passing raw-file playback tests. Both paths were renormalized under
+  the additive `-text` rule; `closure-indexed-video-bytes.xml` verifies the
+  indexed bytes match the catalogued files. A bounded independent reviewer
+  verified both indexed blobs and catalog hashes and returned PASS. The initial
+  FAIL is retained.
+- A fresh review inventory reports READY_FOR_REVIEW with 632 hashed assets.
+  The final archive follows the corrected commit; private archives and model
+  weights remain external references, not bundled data.
+- The final exact-head CI, archive hash and publication state are recorded in
+  `C:/AtlasOps/.audit/completion-20261015/CLOSURE_REPORT.md` after publication.
+  This dated source checklist does not predict CI or mark research complete.
+
+## Security incident
+
+The earlier exposure of `AZURE_OPENAI_API_KEY` and `OPENROUTER_API_KEY` remains
+recorded. The values must not be displayed or used. Provider-console rotation is
+an owner action and remains unverified; green secret scans do not resolve it.

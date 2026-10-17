@@ -83,6 +83,7 @@ G9_ALIGNED_DIAGNOSTIC_PATH = (
     "artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json"
 )
 G4_015_INDEX_PATH = "artifacts/evidence/stage4/EXP-STAGE4-SF002-015.integrity-index-v1.json"
+G4_018_MARKER_REFERENCE_PATH = "docs/EVIDENCE_INDEX.md"
 
 
 def _text(value: Any, limit: int = 240) -> str:
@@ -200,6 +201,26 @@ def _g4_dispositions(report_text: str | None) -> dict[str, str]:
     }
 
 
+def _g4_018_marker_sha256(index_text: str | None) -> str | None:
+    text = index_text or ""
+    marker_row = re.search(
+        r"^\|\s*G4 attempt 018\s*\|\s*Completion marker only; outcome and cleanup unverified\s*\|",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    missing_records = re.search(
+        r"no primary result, interruption record, or cleanup sidecar exists at that execution path",
+        text,
+        flags=re.IGNORECASE,
+    )
+    marker_hash = re.search(
+        r"^\s*-\s*Attempt-018 marker SHA-256:\s*`([0-9a-f]{64})`\.\s*$",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    return marker_hash.group(1).lower() if marker_row and missing_records and marker_hash else None
+
+
 def final_g4_attempts() -> list[dict[str, Any]]:
     """Expose the final G4 chronology without implying missing raw records exist."""
     report_ref = _source_ref(
@@ -220,6 +241,14 @@ def final_g4_attempts() -> list[dict[str, Any]]:
         and index.get("resolution") is None
         and index.get("reward") is None
         and index.get("time_to_resolve_s") is None
+    )
+    marker_reference = _source_ref(
+        G4_018_MARKER_REFERENCE_PATH, "Attempt 018 marker provenance index",
+        "Checked-in provenance for an external completion marker", "G4",
+    )
+    marker_sha256 = (
+        _g4_018_marker_sha256(_read_text(G4_018_MARKER_REFERENCE_PATH))
+        if marker_reference["available"] else None
     )
     rows = []
     for number in ("015", "016", "017"):
@@ -249,6 +278,30 @@ def final_g4_attempts() -> list[dict[str, Any]]:
             "reward": None,
             "time_to_resolve_s": None,
         })
+    rows.append({
+        "attempt": "018",
+        "state": (
+            "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+            if marker_sha256 else "UNAVAILABLE"
+        ),
+        "classification": "Attempt marker only; not an incident outcome",
+        "raw_record_available": False,
+        "source": marker_reference,
+        "source_note": (
+            f"External attempt marker SHA-256: {marker_sha256}. "
+            "This marker is accounting evidence only, not an outcome. "
+            "No primary result, interruption record, or cleanup sidecar is available in this checkout."
+            if marker_sha256 else
+            "Marker-only status and hash could not be verified from the checked-in evidence index."
+        ),
+        "marker_sha256": marker_sha256,
+        "gate_g4_pass": None,
+        "env_resolved": None,
+        "cleanup_verified_zero": None,
+        "resolution": None,
+        "reward": None,
+        "time_to_resolve_s": None,
+    })
     return rows
 
 

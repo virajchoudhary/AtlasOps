@@ -273,6 +273,87 @@ def test_ci_builds_ui_image_and_checks_it_without_external_network():
     assert "docker container rm atlasops-ui-ci" in cleanup["run"]
 
 
+def test_ci_runs_react_build_unit_and_read_only_browser_e2e():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    frontend_commands = "\n".join(step.get("run", "") for step in jobs["frontend"]["steps"])
+    assert "node --check static/console.js" in frontend_commands
+    assert "node --test static/live-incident.test.js" in frontend_commands
+
+    unit = jobs["react-unit"]
+    unit_commands = "\n".join(step.get("run", "") for step in unit["steps"])
+    unit_node = next(step for step in unit["steps"] if step.get("uses") == "actions/setup-node@v4")
+    assert unit["timeout-minutes"] == 15
+    assert unit_node["with"]["node-version"] == "22"
+    assert "npm ci --prefix frontend" in unit_commands
+    assert "npm run build" in unit_commands
+    assert "npm test" in unit_commands
+
+    e2e = jobs["react-browser-e2e"]
+    e2e_commands = "\n".join(step.get("run", "") for step in e2e["steps"])
+    e2e_node = next(step for step in e2e["steps"] if step.get("uses") == "actions/setup-node@v4")
+    assert e2e["timeout-minutes"] == 15
+    assert e2e_node["with"]["node-version"] == "22"
+    assert e2e["env"] == {"ATLASOPS_AUTO_HF_INFERENCE": "0"}
+    assert "ATLASOPS_AUTO_HF_INFERENCE" not in workflow.get("env", {})
+    assert {
+        name for name, job in jobs.items()
+        if "ATLASOPS_AUTO_HF_INFERENCE" in job.get("env", {})
+    } == {"react-browser-e2e"}
+    assert "npm ci --prefix frontend" in e2e_commands
+    assert "npm run build" in e2e_commands
+    assert "npx playwright install --with-deps chromium" in e2e_commands
+    assert "npm run test:e2e" in e2e_commands
+    python_install = next(
+        step for step in e2e["steps"]
+        if step.get("name") == "Install Python development project"
+    )
+    assert 'python -m pip install -e ".[dev]"' in python_install["run"]
+    assert ".[train]" not in python_install["run"]
+    assert "trl" not in python_install["run"].lower()
+
+    playwright_config = (ROOT / "frontend/playwright.config.ts").read_text(encoding="utf-8")
+    assert 'baseURL: "http://127.0.0.1:7863"' in playwright_config
+    assert 'command: "python -m demo.launcher --port 7863"' in playwright_config
+    artifact = next(
+        step for step in e2e["steps"]
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert artifact["if"] == "failure()"
+    assert "frontend/test-results" in artifact["with"]["path"]
+    assert "${{ github.run_id }}" in artifact["with"]["name"]
+    assert "${{ github.run_attempt }}" in artifact["with"]["name"]
+
+
+def test_python_ci_builds_the_frontend_before_application_tests():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    quality = workflow["jobs"]["quality"]
+    assert quality["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    steps = quality["steps"]
+    node_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("uses") == "actions/setup-node@v4"
+    )
+    assert steps[node_index]["with"]["node-version"] == "22"
+    install_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "npm ci --prefix frontend"
+    )
+    build_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "npm run build --prefix frontend"
+    )
+    test_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("run") == "python -m pytest tests/"
+    )
+    assert node_index < install_index < build_index < test_index
+
+
 @pytest.mark.parametrize(
     "filename",
     [

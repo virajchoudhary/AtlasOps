@@ -1,3 +1,13 @@
+FROM node:22-bookworm-slim AS frontend-build
+
+WORKDIR /build/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ARG KUBECTL_VERSION=v1.31.10
@@ -16,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY . .
 RUN pip install --no-cache-dir . "uvicorn[standard]"
+COPY --from=frontend-build /build/frontend/dist ./frontend/dist
 
 # HF Spaces runs as user 1000 — ensure data dirs are writable
 RUN mkdir -p data docs/postmortems && chmod -R 777 data docs

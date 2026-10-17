@@ -12,9 +12,12 @@ NOT_PASSED; scientific certification remains NOT_CERTIFIED.
 
 ## Start On This Windows Machine
 
-From `C:\AtlasOps\.codex-worktrees\demo-readiness-20261007`:
+Use the consolidated PR 204 checkout on this machine:
 
 ```powershell
+Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
+npm ci --prefix frontend
+npm run build --prefix frontend
 .\scripts\start-demo.ps1 -Check
 .\scripts\start-demo.ps1
 ```
@@ -41,7 +44,37 @@ and matching rehearsal fixtures without starting services or contacting infrastr
 It is not a live model, cluster, HTTP, or hosted-deployment verdict. Startup also runs
 these checks and refuses an incomplete local build.
 
-## Optional Live Observations
+## Start the integrated application
+
+The same checkout also runs the built frontend and operational backend together.
+Use a separate port from any existing read-only presentation:
+
+```powershell
+Set-Location C:\AtlasOps\.codex-worktrees\completion-app-consolidated-20261015
+python -m pip install -e ".[demo]"
+npm ci --prefix frontend
+npm run build --prefix frontend
+$env:ATLASOPS_AUTO_HF_INFERENCE = "0"
+$env:ATLASOPS_USE_HF_INFERENCE = "0"
+$env:ATLASOPS_LIVE_JUDGE = "0"
+python -m uvicorn app:app --host 127.0.0.1 --port 7866
+```
+
+Open `http://127.0.0.1:7866/`. All nine console views and `/reference` use
+this origin. `/health` is a process check, not evidence of a working model.
+Protected history returns 503 without configured operator authentication and
+401 for a missing or wrong key. An empty history is not a fabricated incident.
+Only separately configured, newly rotated credentials may unlock protected
+records. Do not enable webhook/model execution for an ordinary presentation.
+The password field keeps its key only in the current view and clears on reload.
+The read-only launcher above remains the recommended credential-free demo.
+
+The integrated API enforces exact-action approval and objective-verifier truth.
+The rehearsal uses labelled scripted outputs and cannot approve a real action.
+The [closure checklist](COMPLETION_CHECKLIST.md) records actual final-head
+acceptance, remaining visual limitations and unresolved scientific gates.
+
+## Historical optional live observations
 
 Start with `--live-observations` to show current health responses alongside the
 clearly separate rehearsal. This permits fixed localhost GETs only:
@@ -58,7 +91,9 @@ deployment provenance, incident resolution, or SFT/GRPO execution.
 This option starts no Docker container, loads no model, calls no Kubernetes tool,
 and executes no incident. The default launcher remains offline/read-only.
 
-For the current existing Kind services, keep each forward running in a separate
+The following historical Kind forwarding commands require a separately verified
+target and operator authorization. Do not start them for the offline demo. Keep
+an authorized forward running in a separate
 terminal; reconnect a forward if its pod restarts:
 
 ```powershell
@@ -73,8 +108,9 @@ Then start the presentation from this checkout with:
 & C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --live-observations
 ```
 
-The deployed coordinator reports `qwen2.5:1.5b` and uses an older `g3-local`
-image. Its process health is not acceptance of the current source or trained
+The historically observed coordinator reported `qwen2.5:1.5b` and used an older
+`g3-local` image. That observation is not current service verification. Its
+process health is not acceptance of the current source or trained
 adapter. The separately started cached server's model inventory does not prove
 generation. The live research freeze in `CONTROLLED_G9_ADMISSION_V1.md` remains
 historical. The owner explicitly superseded it in this chat for one controlled
@@ -88,12 +124,18 @@ recorded triage/approval/tool outcomes, verifier result, and cleanup sidecar.
 It starts no run, approves no proposal, executes no tools, and loads no model.
 Missing results remain unavailable.
 
+`D:\Codex\AtlasOps-demo-20261007` is the historical golden capture root, not the
+execution root for the surviving attempt-018 marker. The marker is under
+`C:\AtlasOps\.codex-tmp\website-execution-20261008-v4`; the monitor does not scan
+for alternate roots, so select that execution root explicitly.
+
 ```powershell
-& C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --live-observations --incident-capture-root D:\Codex\AtlasOps-demo-20261007 --incident-id EXP-STAGE4-SF002-018
+& C:\AtlasOps\.venv\Scripts\python.exe -m demo.launcher --host 127.0.0.1 --port 7864 --incident-capture-root D:\Codex\AtlasOps-demo-20261007 --incident-execution-root C:\AtlasOps\.codex-tmp\website-execution-20261008-v4 --incident-id EXP-STAGE4-SF002-018 --incident-capture golden
 ```
 
-The preserved launch shows `STARTUP_FAILED / NOT_RESERVED` and
-`bridge_transport_failure`, separate from the scripted rehearsal.
+The October 7 launch record in the historical D: capture shows
+`STARTUP_FAILED / NOT_RESERVED` and `bridge_transport_failure`, separate from the
+scripted rehearsal.
 A second inference preparation completed its pinned transfer and checkpoint
 admission, but the notebook session was subsequently replaced: its process handle
 and preparation/source paths were absent on the fresh connection. No model load,
@@ -123,37 +165,36 @@ checks. Both results and cleanup are preserved separately under `.codex-tmp`.
 The temporary connections were subsequently stopped; this is recorded transport
 qualification, not a currently running model or incident-resolution result.
 The exact golden-v3 fault-injection launch was rejected by execution safety
-before process creation. Attempt 018 remains unreserved and no fault was injected.
+before process creation. That launch left attempt 018 unreserved and injected no
+fault.
 
-After explicit approval of the concrete SF002 injection, a golden-v3 launch
-failed remote-main freshness before reservation. Its capture remains preserved.
-A fresh clean execution checkout retained the byte-identical prior attempt ledger
-and completed attempt 018 with a negative verdict. Diagnosis was invalid and the
-direct-action completion used a tool-call envelope, which the strict policy parser
-rejected. No P1 proposal was approved or mutating remediation executed. The
-objective verifier reported unresolved before post-verdict harness cleanup.
-Cleanup then verified zero Chaos independently. Attempt 018 is COMPLETED; the
-two-attempt protocol budget is exhausted. G4 remains NOT_PASSED.
+The dated evaluation plan contains negative-result and zero-Chaos cleanup claims
+for attempt 018. The surviving G4 record under
+`C:\AtlasOps\.codex-tmp\website-execution-20261008-v4` is only a `COMPLETED`
+attempt marker. No primary result, interruption record, or cleanup sidecar exists
+there, so the dated claims are unverified. See the [evidence index](../EVIDENCE_INDEX.md).
 
-The current website selects that completed capture with
-`--incident-capture golden-v3b` and shows the negative outcome, policy block and cleanup separately
-from rehearsal. The local direct-action adapter has a focused offline-tested
-output-contract fix, but no new empirical evaluation of that fix was performed.
-Do not substitute those software tests for live recovery or rewrite this negative
-result.
+The current Rehearsal page at `/#/demo` includes the governed incident monitor.
+For attempt 018, it reports `COMPLETED MARKER / OUTCOME UNAVAILABLE` with the
+`ATTEMPT MARKER ONLY` badge. The `gate_g4_pass`, `env_resolved`, and
+`cleanup_verified_zero` fields are `null`, so the monitor displays them as
+unavailable. The marker proves attempt accounting only. It does not establish
+the incident outcome, environment recovery, or cleanup.
 
-To restart the presentation with this recorded result:
+The two-attempt protocol budget remains exhausted. Do not reuse an attempt ID or
+change the frozen protocol. G4 remains NOT_PASSED.
 
-```powershell
-.\scripts\start-demo.ps1 -LiveObservations -IncidentCaptureRoot D:\Codex\AtlasOps-demo-20261007 -IncidentCapture golden-v3b
-```
+The local direct-action adapter has a focused offline-tested output-contract
+fix, but no new empirical evaluation of that fix was performed. Do not present
+those software tests as live recovery evidence.
 
 Existing server options remain unchanged if a presentation is already running.
 The coordinator now distinguishes future policy-validation blocks from genuine
 target mismatches in its communications summary. Offline composition tests cover
 approved, rejected and timed-out exact P1 decisions with healthy and unhealthy
-verifier observations. None of these mock outcomes changes the completed live
-run or establishes that a new model completion will select a correct action.
+verifier observations. These mock outcomes are software tests, not incident
+results. They do not establish that a new model completion will select a correct
+action.
 
 The future diagnosis prompt now requests textual `root_cause` and top-level
 evidence, matching the unchanged G4 runtime shape check. Its example and nearby
@@ -203,11 +244,10 @@ The launcher is localhost-only and rejects public sharing.
 6. **Evaluations / Incidents / Evidence:** show actual preserved SFT and negative
    Base-vs-SFT/G9 findings, final G4 chronology, and source hashes. These are distinct
    from the rehearsal, whose outcomes are not stored in research evidence.
-
-The governed monitor can also show the actual completed attempt 018 as
-RECORDED_NEGATIVE with policy block invalid_action. Show that recovery remained
-false even though the post-verdict safety cleanup succeeded. This is a real
-recorded failure, not a successful live remediation demonstration.
+7. **Rehearsal / Governed incident monitor:** show attempt 018 as
+   `COMPLETED MARKER / OUTCOME UNAVAILABLE` with the `ATTEMPT MARKER ONLY` badge.
+   Point out that the environment, G4, and cleanup values are unavailable. Do not
+   present the marker as an incident result.
 
 The Rehearsal tab resets when leaving the page or reloading. Within a run, prior
 stages remain inspectable without repeating actions. Reset clears the rehearsal.
@@ -275,6 +315,7 @@ model-backed demonstration is not yet established.
 
 Local demo acceptance covers production build, browser interactions, responsive layout,
 GET-only traffic, no execution imports, and preserved evidence. It is not a hosted-site
-or deployment-safety verdict. The repository's historical Space Dockerfile starts the
-operational `app.py`, not this React presentation, and is not changed by this work.
+or deployment-safety verdict. The repository's Dockerfile builds the React
+frontend and starts the integrated operational `app.py`. It is not the
+loopback-only read-only launcher.
 Hosted deployment requires a confirmed target and explicit authorization.

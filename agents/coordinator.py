@@ -29,6 +29,7 @@ from agents.audit import audit_log, require_audit_log
 from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
 from agents.grounding import build_grounding_reports
+from agents.incident_dispatch import incident_dispatcher
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import emit as thought_emit
 from agents.tool_policy import (
@@ -81,11 +82,66 @@ LLM_BASE_BACKOFF_SECONDS: float = 1.5
 TOOL_OUTPUT_MAX_CHARS: int = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRAJECTORIES_DIR = Path(os.getenv("TRAJECTORIES_DIR", "data/trajectories"))
+_WINDOWS_RESERVED_INCIDENT_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {
+        f"{prefix}{digit}"
+        for prefix in ("COM", "LPT")
+        for digit in range(1, 10)
+    }
+)
 
 class AlertWebhookPayload(BaseModel):
     alerts: list[dict[str, Any]] = Field(default_factory=list)
     commonLabels: dict[str, Any] = Field(default_factory=dict)
     status: str | None = None
+
+
+MAX_ALERT_WEBHOOK_BODY_BYTES = 1_048_576
+
+
+async def read_alert_webhook_body(request: Request) -> bytes:
+    """Read an Alertmanager request with a fixed memory bound."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header") from exc
+        if declared_length < 0:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header")
+        if declared_length > MAX_ALERT_WEBHOOK_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Alertmanager webhook payload exceeds size limit",
+            )
+
+    chunks: list[bytes] = []
+    body_size = 0
+    async for chunk in request.stream():
+        body_size += len(chunk)
+        if body_size > MAX_ALERT_WEBHOOK_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Alertmanager webhook payload exceeds size limit",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def parse_alert_webhook_payload(body: bytes) -> dict[str, Any]:
+    """Decode and validate webhook data through the canonical Alertmanager schema."""
+    try:
+        decoded = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    try:
+        return AlertWebhookPayload.model_validate(decoded).model_dump()
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid Alertmanager webhook payload",
+        ) from exc
 
 
 class ApprovalCallbackPayload(BaseModel):
@@ -328,7 +384,10 @@ def model_visible_alert(alert: dict[str, Any] | None) -> dict[str, Any]:
     return visible if isinstance(visible, dict) else {}
 
 
-def build_incident_anchors(alert: dict[str, Any] | None) -> dict[str, Any]:
+def build_incident_anchors(
+    alert: dict[str, Any] | None,
+    original_alert_index: int = 0,
+) -> dict[str, Any]:
     """Derive immutable primary identity from the incoming operational alert."""
     model_alert = model_visible_alert(alert)
     common_labels = model_alert.get("commonLabels") or {}
@@ -337,7 +396,12 @@ def build_incident_anchors(alert: dict[str, Any] | None) -> dict[str, Any]:
     alert_items = model_alert.get("alerts") or []
     if not isinstance(alert_items, list):
         alert_items = []
-    first = alert_items[0] if alert_items and isinstance(alert_items[0], dict) else {}
+    first = (
+        alert_items[original_alert_index]
+        if 0 <= original_alert_index < len(alert_items)
+        and isinstance(alert_items[original_alert_index], dict)
+        else {}
+    )
     labels = first.get("labels") or {}
     annotations = first.get("annotations") or {}
     if not isinstance(labels, dict):
@@ -816,11 +880,21 @@ def _journal_explicit_provider_failure(
 _CONCLUSION_PROMPTS = {
     "triage":      "Based on the tool results above, output ONLY a JSON object with keys: incident_id, severity, title, blast_radius, affected_services. No prose.",
     "diagnosis": (
-        "Based on the tool results above, output ONLY a JSON object with keys: "
-        "root_cause (non-empty text, not an object), confidence (finite number from 0 to 1), "
-        "evidence (actual tool observations), recommended_fix (list). "
-        "If observations are insufficient, report an unknown cause; no_series is not "
-        "positive metric evidence. No prose outside the JSON."
+        "Based only on the tool results above, output ONLY one JSON object matching the "
+        "canonical Diagnosis schema, with exactly these top-level keys: incident_id, "
+        "root_cause, category, confidence, evidence, blast_radius_update, next_agent, "
+        "recommended_fix. root_cause must be non-empty text supported by actual tool "
+        "outputs; category must be deploy, resource, network, dependency, config, "
+        "external, or unknown; confidence must be a finite number from 0 to 1; evidence "
+        "must contain only actual tool observations, with the exact executed query when "
+        "applicable, or be empty when there is no supporting tool output. Every causal "
+        "claim must cite a tool result. blast_radius_update must describe only observed "
+        "scope or state that it is not established. If the observations do not establish "
+        "a cause, use category unknown, confidence 0, and state that the cause is unknown. "
+        "A successful no_series result is absence of metric evidence, not positive proof "
+        "of CPU, latency, or recovery. Set next_agent to remediation; recommended_fix "
+        "must be an evidence-supported list and may be empty. Do not include outcome or "
+        "training-label metadata. No prose outside the JSON."
     ),
     "remediation": (
         "Based on the actions taken above, output ONLY a JSON object with keys: "
@@ -2060,12 +2134,62 @@ def _live_judge_requested() -> bool:
     return os.getenv("ATLASOPS_USE_HF_INFERENCE", "").strip().lower() in ("1", "true", "yes")
 
 
+def _validate_incident_id(incident_id: Any) -> str:
+    if (
+        not isinstance(incident_id, str)
+        or not incident_id
+        or len(incident_id) > 128
+        or not incident_id[0].isascii()
+        or not incident_id[0].isalnum()
+        or incident_id.endswith(".")
+        or any(
+            not (char.isascii() and (char.isalnum() or char in "._-"))
+            for char in incident_id
+        )
+        or incident_id.split(".", 1)[0].upper() in _WINDOWS_RESERVED_INCIDENT_NAMES
+    ):
+        raise ValueError("incident_id must be a safe filename component")
+    return incident_id
+
+
+def _validate_execution_id(execution_id: Any) -> str:
+    if not isinstance(execution_id, str):
+        raise TypeError("execution_id must be 32-character lowercase UUID hex")
+    try:
+        normalized = uuid.UUID(hex=execution_id).hex
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError(
+            "execution_id must be 32-character lowercase UUID hex"
+        ) from None
+    if normalized != execution_id:
+        raise ValueError("execution_id must be 32-character lowercase UUID hex")
+    return execution_id
+
+
+def _persist_incident_record(record: dict[str, Any]) -> None:
+    incident_id = _validate_incident_id(record["incident_id"])
+    execution_id = _validate_execution_id(record["execution_id"])
+    serialized = json.dumps(record, indent=2)
+    TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
+    canonical_path = TRAJECTORIES_DIR / f"{incident_id}.json"
+    try:
+        with canonical_path.open("x", encoding="utf-8") as stream:
+            stream.write(serialized)
+    except FileExistsError:
+        followup_path = (
+            TRAJECTORIES_DIR / f"{incident_id}.execution-{execution_id}.json"
+        )
+        with followup_path.open("x", encoding="utf-8") as stream:
+            stream.write(serialized)
+
+
 async def handle_incident(
     alert: dict[str, Any],
     incident_id: str | None = None,
     scenario_id: str | None = None,
     remediation_policy: Any | None = None,
     *,
+    incident_anchors: dict[str, Any] | None = None,
     completion_provider: CompletionProvider | None = None,
     policy_seed: int | None = None,
     policy_generation_config: dict[str, Any] | None = None,
@@ -2075,6 +2199,8 @@ async def handle_incident(
     ``scenario_id`` is an evaluation-only channel: it selects the frozen
     verifier spec without ever being placed inside the model-visible alert.
     """
+    if incident_id is not None:
+        incident_id = _validate_incident_id(incident_id)
     if remediation_policy is None and (
         policy_seed is not None or policy_generation_config is not None
     ):
@@ -2107,6 +2233,7 @@ async def handle_incident(
         TRAJECTORIES_DIR / f"{incident_id}.json"
     ).exists():
         raise FileExistsError(f"trajectory already exists for incident {incident_id}")
+    execution_id = uuid.uuid4().hex
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
         incident_id=incident_id,
@@ -2123,7 +2250,11 @@ async def handle_incident(
     approval_record: dict[str, Any] | None = None
     approval_blocked = False
     remediation_blocked = False
-    incident_anchors = build_incident_anchors(alert)
+    incident_anchors = (
+        deepcopy(incident_anchors)
+        if incident_anchors is not None
+        else build_incident_anchors(alert)
+    )
     model_alert = model_visible_alert(alert)
     target_consistency: dict[str, Any] = {
         "status": "not_validated",
@@ -2187,6 +2318,7 @@ async def handle_incident(
         }
         partial = {
             "incident_id": incident_id,
+            "execution_id": execution_id,
             "alert": alert,
             "scenario_id": scenario_id if scenario_id is not None else alert.get("scenario_id"),
             "triage": triage,
@@ -2215,7 +2347,7 @@ async def handle_incident(
             partial["failed_role_trajectory"] = failed_trajectory
         try:
             TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-            path = TRAJECTORIES_DIR / f"{incident_id}.partial-{uuid.uuid4().hex}.json"
+            path = TRAJECTORIES_DIR / f"{incident_id}.partial-{execution_id}.json"
             with path.open("x", encoding="utf-8") as stream:
                 stream.write(json.dumps(partial, indent=2))
         except Exception as exc:  # noqa: BLE001 - preserve provider failure if capture fails
@@ -2802,6 +2934,7 @@ async def handle_incident(
         )
         full_record = {
             "incident_id": incident_id,
+            "execution_id": execution_id,
             "alert": alert,
             "scenario_id": scenario_id,
             "incident_anchors": incident_anchors,
@@ -2827,13 +2960,7 @@ async def handle_incident(
                 certification_status="NOT_CERTIFIED",
                 provider_injected=True,
             )
-        TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
-        trajectory_path = TRAJECTORIES_DIR / f"{incident_id}.json"
-        if completion_provider is not None:
-            with trajectory_path.open("x", encoding="utf-8") as stream:
-                stream.write(json.dumps(full_record, indent=2))
-        else:
-            trajectory_path.write_text(json.dumps(full_record, indent=2), encoding="utf-8")
+        _persist_incident_record(full_record)
         if _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory
 
@@ -2925,7 +3052,7 @@ _WEBHOOK_SECRET = os.getenv("ALERTMANAGER_WEBHOOK_SECRET", "")
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    body = await request.body()
+    body = await read_alert_webhook_body(request)
 
     if not _WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="ALERTMANAGER_WEBHOOK_SECRET is required")
@@ -2937,17 +3064,41 @@ async def webhook(request: Request):
     if not _hmac.compare_digest(token.encode(), _WEBHOOK_SECRET.encode()):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
-    payload = AlertWebhookPayload.model_validate(json.loads(body)).model_dump()
+    payload = parse_alert_webhook_payload(body)
     log.info("received alertmanager webhook: %d alerts", len(payload.get("alerts", [])))
-    incident_id, _is_new, should_dispatch = correlator.ingest(payload)
-    if not should_dispatch:
-        return JSONResponse({"ok": True, "incident_id": incident_id, "correlated": True, "dispatched": False})
-    correlator.mark_processing(incident_id, True)
-    try:
-        result = await handle_incident(payload, incident_id=incident_id)
-        return JSONResponse({"ok": True, "incident_id": result["incident_id"], "correlated": True, "dispatched": True})
-    finally:
-        correlator.mark_processing(incident_id, False)
+    if not payload["alerts"]:
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": None,
+                "correlated": False,
+                "dispatched": False,
+            }
+        )
+    candidate_batch = correlator.ingest(payload)
+    submission = incident_dispatcher.submit(
+        candidate_batch,
+        handle_incident,
+        anchor_builder=build_incident_anchors,
+    )
+    if submission.state == "duplicate":
+        return JSONResponse(
+            {
+                "ok": True,
+                "incident_id": submission.incident_id,
+                "correlated": True,
+                "dispatched": False,
+            }
+        )
+    result = await submission.wait()
+    return JSONResponse(
+        {
+            "ok": True,
+            "incident_id": result["incident_id"],
+            "correlated": True,
+            "dispatched": True,
+        }
+    )
 
 
 @app.post("/approve", dependencies=[Security(_require_runtime_api_key)])
@@ -2972,7 +3123,7 @@ async def approval_pending():
     return JSONResponse({"pending": approval_gate.pending()})
 
 
-@app.get("/stream")
+@app.get("/stream", dependencies=[Security(_require_runtime_api_key)])
 async def stream_thoughts():
     """SSE endpoint — dashboard subscribes here for live agent thoughts."""
     from agents.stream import subscribe
@@ -2983,7 +3134,7 @@ async def stream_thoughts():
     )
 
 
-@app.get("/thoughts")
+@app.get("/thoughts", dependencies=[Security(_require_runtime_api_key)])
 async def get_thoughts():
     """Return full thought history for the timeline tab."""
     from agents.stream import get_history

@@ -6,6 +6,66 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 
+def test_persist_incident_record_rejects_path_traversal_before_write(monkeypatch, tmp_path):
+    import agents.coordinator as coord
+
+    trajectories_dir = tmp_path / "trajectories"
+    monkeypatch.setattr(coord, "TRAJECTORIES_DIR", trajectories_dir)
+    escaped_path = tmp_path / "escaped.json"
+    record = {
+        "incident_id": "../escaped",
+        "execution_id": "00000000000000000000000000000001",
+    }
+
+    try:
+        with pytest.raises(ValueError, match="incident_id"):
+            coord._persist_incident_record(record)
+    finally:
+        assert not escaped_path.exists(), (
+            "incident record escaped TRAJECTORIES_DIR into the worktree-local test root"
+        )
+
+
+def test_persist_incident_record_requires_uuid_hex_for_followup(monkeypatch, tmp_path):
+    import agents.coordinator as coord
+
+    trajectories_dir = tmp_path / "trajectories"
+    trajectories_dir.mkdir()
+    monkeypatch.setattr(coord, "TRAJECTORIES_DIR", trajectories_dir)
+    canonical_path = trajectories_dir / "inc-safe.json"
+    canonical_path.write_text('{"incident_id":"inc-safe"}', encoding="utf-8")
+    followup_path = trajectories_dir / "inc-safe.execution-not-a-uuid.json"
+
+    try:
+        with pytest.raises(ValueError, match="execution_id"):
+            coord._persist_incident_record({
+                "incident_id": "inc-safe",
+                "execution_id": "not-a-uuid",
+            })
+    finally:
+        assert not followup_path.exists(), (
+            "follow-up record was written with an execution ID not minted as UUID hex"
+        )
+
+
+def test_persist_incident_record_rejects_non_string_execution_id(monkeypatch, tmp_path):
+    import agents.coordinator as coord
+
+    trajectories_dir = tmp_path / "trajectories"
+    trajectories_dir.mkdir()
+    monkeypatch.setattr(coord, "TRAJECTORIES_DIR", trajectories_dir)
+    canonical_path = trajectories_dir / "inc-safe.json"
+    canonical_path.write_text('{"incident_id":"inc-safe"}', encoding="utf-8")
+
+    with pytest.raises(TypeError, match="execution_id"):
+        coord._persist_incident_record({
+            "incident_id": "inc-safe",
+            "execution_id": None,
+        })
+
+    assert canonical_path.read_text(encoding="utf-8") == '{"incident_id":"inc-safe"}'
+
+
 class TestToolNarration:
     def test_narrate_kubectl_get(self):
         from agents.coordinator import _narrate_tool_call
@@ -210,6 +270,65 @@ class TestCoordinatorExecutionAndVerificationTruth:
             return {"status": "approved", "approved_by": "auto-test"}
         monkeypatch.setattr(coord.approval_gate, "wait_for_decision", fake_wait)
 
+    @pytest.mark.parametrize(
+        "incident_id",
+        [
+            "../escaped",
+            r"..\escaped",
+            "C:drive",
+            "inc:stream",
+            "CON",
+            "con.json",
+            "COM1.log",
+            "invalid.",
+        ],
+    )
+    def test_handle_incident_rejects_unsafe_identity_before_agent_work(
+        self, monkeypatch, incident_id,
+    ):
+        import agents.coordinator as coord
+
+        mock_call = AsyncMock(side_effect=RuntimeError("incident work began"))
+        audit_record = MagicMock()
+        start_incident = MagicMock()
+        finish_incident = MagicMock()
+        monkeypatch.setattr(coord, "call_agent", mock_call)
+        monkeypatch.setattr(coord.audit_log, "record", audit_record)
+        monkeypatch.setattr(coord.circuit_breaker, "start_incident", start_incident)
+        monkeypatch.setattr(coord.circuit_breaker, "finish_incident", finish_incident)
+
+        with pytest.raises(ValueError, match="incident_id"):
+            asyncio.run(coord.handle_incident({}, incident_id=incident_id))
+
+        mock_call.assert_not_awaited()
+        audit_record.assert_not_called()
+        start_incident.assert_not_called()
+        finish_incident.assert_not_called()
+
+    def test_handle_incident_rejects_path_traversal_before_provider_partial_capture(
+        self, monkeypatch, tmp_path,
+    ):
+        import agents.coordinator as coord
+        trajectories_dir = tmp_path / "provider-trajectories"
+        monkeypatch.setattr(coord, "TRAJECTORIES_DIR", trajectories_dir)
+        provider = AsyncMock()
+        mock_call = AsyncMock(side_effect=RuntimeError("provider episode failed"))
+        monkeypatch.setattr(coord, "call_agent", mock_call)
+
+        with pytest.raises(ValueError, match="incident_id"):
+            asyncio.run(
+                coord.handle_incident(
+                    {},
+                    incident_id="../escaped",
+                    completion_provider=provider,
+                )
+            )
+
+        mock_call.assert_not_awaited()
+        provider.assert_not_awaited()
+        assert not trajectories_dir.exists()
+        assert not list(tmp_path.glob("escaped.partial-*.json"))
+
     def test_canonical_execution_ordering_and_verifier_passed_to_comms(
         self, monkeypatch, tmp_path,
     ):
@@ -218,6 +337,7 @@ class TestCoordinatorExecutionAndVerificationTruth:
 
         traj_dir = tmp_path / "trajectories"
         monkeypatch.setattr(coord, "TRAJECTORIES_DIR", traj_dir)
+        monkeypatch.setenv("TRAJECTORIES_DIR", str(traj_dir))
         assert not traj_dir.exists()
 
         call_order = []
@@ -281,7 +401,9 @@ class TestCoordinatorExecutionAndVerificationTruth:
             "alerts": [{"labels": {"alertname": "OnlineBoutiqueCartServiceDown"}}],
         }
 
-        result = asyncio.run(coord.handle_incident(alert))
+        result = asyncio.run(
+            coord.handle_incident(alert, incident_id="inc-EXP-STAGE4-SF002-005")
+        )
 
         # 1. F4 uses a bounded settling observation before the authoritative
         # verifier; neither verifier invocation performs remediation.
@@ -348,6 +470,35 @@ class TestCoordinatorExecutionAndVerificationTruth:
         assert persisted_data["verification"]["verification_status"] == "authoritative-final"
         assert persisted_data["verification"]["evidence"] == ["authoritative_final"]
         assert persisted_data["comms"] == comms
+
+        first_bytes = persisted_file.read_bytes()
+        call_order.clear()
+        verifier_calls.clear()
+        followup_alert = {
+            **alert,
+            "commonLabels": {
+                **alert["commonLabels"],
+                "alertname": "RelatedEventFollowup",
+            },
+        }
+        followup = asyncio.run(
+            coord.handle_incident(
+                followup_alert,
+                incident_id=incident_id,
+                scenario_id="single_fault/sf-001",
+            )
+        )
+        assert persisted_file.read_bytes() == first_bytes
+        assert json.loads(first_bytes) == result
+        assert followup["incident_id"] == result["incident_id"]
+        assert followup["execution_id"] != result["execution_id"]
+        followup_path = traj_dir / f"{incident_id}.execution-{followup['execution_id']}.json"
+        assert json.loads(followup_path.read_text(encoding="utf-8")) == followup
+        from scripts.run_stage4_golden_incident import (
+            _primary_incident_evidence_persisted,
+        )
+
+        assert _primary_incident_evidence_persisted(result) is True
 
     def test_agent_claims_resolved_but_verifier_fails(self, monkeypatch, tmp_path):
         import agents.coordinator as coord

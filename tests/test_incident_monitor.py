@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -133,6 +134,164 @@ def test_recorded_negative_and_cleanup_do_not_become_pass(tmp_path):
     assert result["approval"] == "timeout"
     assert result["actions"][0]["success"] is True
     assert "hidden" not in str(result)
+
+
+def test_operator_capture_reads_completed_marker_from_execution_root_artifacts(tmp_path):
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    execution_root = tmp_path / "execution-checkout"
+    relative = (
+        "artifacts/evidence/stage4/.attempts/"
+        f"{EXPERIMENT}.attempt.json"
+    )
+    write(execution_root, relative, {
+        "experiment_id": EXPERIMENT, "scenario_id": "single_fault/sf-002",
+        "state": "COMPLETED",
+    })
+    marker = execution_root / relative
+
+    result = read_incident(
+        capture_root, EXPERIMENT, "operator", execution_root=execution_root,
+    )
+
+    assert result["status"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert result["attempt_state"] == "COMPLETED"
+    assert result["gate_g4_pass"] is None
+    assert result["env_resolved"] is None
+    assert result["cleanup_verified_zero"] is None
+    assert result["sources"] == [{
+        "name": "Attempt marker (accounting only; not an outcome)",
+        "sha256": hashlib.sha256(marker.read_bytes()).hexdigest(),
+    }]
+
+
+def test_launcher_parses_explicit_execution_root(monkeypatch, tmp_path):
+    from demo import launcher
+
+    captured = {}
+    execution_root = tmp_path / "execution-checkout"
+    monkeypatch.setattr(launcher, "launch_demo", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(sys, "argv", [
+        "demo.launcher", "--incident-execution-root", str(execution_root),
+    ])
+    monkeypatch.setenv("ATLASOPS_DEMO_LIVE_OBSERVATIONS", "0")
+
+    launcher.main()
+
+    assert captured["incident_execution_root"] == execution_root
+
+
+def test_api_projects_marker_only_from_explicit_execution_root(tmp_path):
+    capture_root = tmp_path / "historical-capture"
+    write(capture_root, "golden/launch.json", {"mode": "golden"})
+    write(capture_root, "golden/exit.json", {"exit_code": 0})
+    execution_root = tmp_path / "selected-execution"
+    relative = (
+        "artifacts/evidence/stage4/.attempts/"
+        f"{EXPERIMENT}.attempt.json"
+    )
+    write(execution_root, relative, {
+        "experiment_id": EXPERIMENT, "scenario_id": "single_fault/sf-002",
+        "state": "COMPLETED",
+    })
+    marker = execution_root / relative
+    client = TestClient(
+        create_app(
+            incident_capture_root=capture_root,
+            incident_execution_root=execution_root,
+            incident_id=EXPERIMENT,
+        ),
+        base_url="http://localhost", client=("127.0.0.1", 1),
+    )
+
+    response = client.get("/api/incident-monitor")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "COMPLETED MARKER / OUTCOME UNAVAILABLE"
+    assert result["attempt_state"] == "COMPLETED"
+    assert result["gate_g4_pass"] is None
+    assert result["env_resolved"] is None
+    assert result["cleanup_verified_zero"] is None
+    assert {source["name"] for source in result["sources"]} == {
+        "Process exit", "Attempt marker (accounting only; not an outcome)",
+    }
+    assert result["sources"][-1]["sha256"] == hashlib.sha256(marker.read_bytes()).hexdigest()
+
+
+def test_missing_execution_root_fails_closed_in_api(tmp_path):
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    client = TestClient(
+        create_app(
+            incident_capture_root=capture_root,
+            incident_execution_root=tmp_path / "missing-execution",
+            incident_id=EXPERIMENT,
+        ),
+        base_url="http://localhost", client=("127.0.0.1", 1),
+    )
+
+    response = client.get("/api/incident-monitor")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "enabled": True, "available": False, "status": "CAPTURE_UNAVAILABLE",
+    }
+
+
+def test_traversal_execution_root_fails_closed_in_api(tmp_path):
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    parent = tmp_path / "path-parent"
+    parent.mkdir()
+    (tmp_path / "execution").mkdir()
+    execution_root = parent / ".." / "execution"
+    assert execution_root.is_dir()
+    client = TestClient(
+        create_app(
+            incident_capture_root=capture_root,
+            incident_execution_root=execution_root,
+            incident_id=EXPERIMENT,
+        ),
+        base_url="http://localhost", client=("127.0.0.1", 1),
+    )
+
+    response = client.get("/api/incident-monitor")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "CAPTURE_UNAVAILABLE"
+
+
+def test_redirected_execution_root_fails_closed_in_api(tmp_path):
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    target = tmp_path / "execution"
+    relative = (
+        "artifacts/evidence/stage4/.attempts/"
+        f"{EXPERIMENT}.attempt.json"
+    )
+    write(target, relative, {
+        "experiment_id": EXPERIMENT, "scenario_id": "single_fault/sf-002",
+        "state": "COMPLETED",
+    })
+    execution_root = tmp_path / "execution-link"
+    try:
+        execution_root.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    client = TestClient(
+        create_app(
+            incident_capture_root=capture_root,
+            incident_execution_root=execution_root,
+            incident_id=EXPERIMENT,
+        ),
+        base_url="http://localhost", client=("127.0.0.1", 1),
+    )
+
+    response = client.get("/api/incident-monitor")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "CAPTURE_UNAVAILABLE"
 
 
 @pytest.mark.parametrize("relative,value", [

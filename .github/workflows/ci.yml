@@ -157,30 +157,73 @@ jobs:
       - name: Test live incident projection
         run: node --test static/live-incident.test.js
 
-      - name: Set up presentation-only Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
+  react-unit:
+    name: React build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
 
-      - name: Install presentation dependencies
-        run: |
-          python -m pip install fastapi uvicorn httpx
-          npm ci --prefix frontend
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked frontend dependencies
+        run: npm ci --prefix frontend
 
       - name: Build and test React presentation
         working-directory: frontend
         run: |
           npm run build
           npm test
-          npx playwright install --with-deps chromium
-          npm run test:e2e
 
-      - name: Preserve browser QA on failure
+  react-browser-e2e:
+    name: React browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ATLASOPS_AUTO_HF_INFERENCE: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Python development project
+        run: python -m pip install -e ".[dev]"
+
+      - name: Install locked frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build React presentation for the read-only demo launcher
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Chromium and its CI system dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser E2E against the read-only demo launcher
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Preserve Playwright screenshots and traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: presentation-browser-qa
+          name: react-browser-qa-${{ github.run_id }}-${{ github.run_attempt }}
           path: frontend/test-results
+          if-no-files-found: ignore
 
   quality:
     name: Python ${{ matrix.python-version }}
@@ -207,6 +250,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]" build
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build frontend for integrated application tests
+        run: npm run build --prefix frontend
 
       - name: Compile Python sources
         run: |

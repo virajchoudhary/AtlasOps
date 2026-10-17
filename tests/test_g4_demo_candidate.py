@@ -8,11 +8,15 @@ from config import g4_demo_candidate as candidate
 from config import g4_protocol as active
 
 
-def test_candidate_pins_current_source_without_activating_or_claiming_acceptance():
+def test_frozen_candidate_source_drift_fails_closed_without_activation():
     before = copy.deepcopy(active.APPROVED_G4_PROTOCOL_PROFILE)
     report = candidate.inspect_candidate()
-    assert report["status"] == "PREPARED"
-    assert report["source_mismatches"] == []
+    assert report["status"] == "SOURCE_MISMATCH"
+    assert report["source_mismatches"] == [
+        "agents/coordinator.py",
+        "demo/read_api.py",
+        "demo/incident_monitor.py",
+    ]
     assert report["historical_profile_unchanged"]
     assert report["active"] is report["runtime_qualified"] is False
     assert report["launch_authorized_by_this_report"] is report["empirical_pass"] is False
@@ -46,7 +50,9 @@ def test_candidate_is_independent_and_missing_source_fails_closed(tmp_path):
     assert report["active"] is False
 
 
-def test_candidate_observation_builder_matches_only_its_exact_declared_runtime():
+def test_candidate_observation_builder_matches_only_its_exact_declared_runtime(
+    prepared_g4_candidate_source_pins,
+):
     expected = candidate.candidate_profile()
     observed = candidate.observe_candidate_profile(expected["model"], expected["metrics_api"])
     assert candidate.validate_candidate_profile(observed) == expected
@@ -62,11 +68,13 @@ def test_candidate_observation_builder_matches_only_its_exact_declared_runtime()
     "agents/tool_policy.py", "agents/tools/__init__.py",
     "bench/chaos_manifests/single_fault/sf-002.yaml",
 ])
-def test_candidate_integrity_checks_inherited_acl_and_fault_inputs(monkeypatch, path):
+def test_candidate_integrity_checks_inherited_acl_and_fault_inputs(
+    monkeypatch, path, prepared_g4_candidate_source_pins,
+):
     actual = candidate.file_sha256
     monkeypatch.setattr(candidate, "file_sha256", lambda file: (
         "0" * 64 if file == candidate.REPO_ROOT / path else actual(file)
     ))
     report = candidate.inspect_candidate()
     assert report["status"] == "SOURCE_MISMATCH"
-    assert path in report["source_mismatches"]
+    assert report["source_mismatches"] == [path]

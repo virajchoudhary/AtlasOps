@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.metadata
 import json
@@ -21,7 +22,10 @@ from agents.coordinator import _TOOL_PARAMETER_SCHEMAS, _check_tool_policy
 from config.splits import get_split
 from training.grpo_environment import parse_policy_action
 from training.grpo_observation_first import ObservationFirstGRPOMixin, _column_values
-from training.grpo_reward import score_direct_action_step
+from training.grpo_reward import (
+    has_reward_driven_advantages,
+    score_direct_action_step,
+)
 
 PROFILE = "controlled-g9-capacity-v1"
 SCENARIO = "single_fault/sf-002"
@@ -30,6 +34,7 @@ REVISION = "a09a35458c702b33eeacc393d103063234e8bc28"
 PARENT_MANIFEST_SHA256 = "7dd921225fdf267bf32037c138cdc9c7ecd6cbc2686f32dc1d784ac1151d5440"
 PARENT_WEIGHT_SHA256 = "f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff"
 CLASSIFICATION = "CONTROLLED_SYNTHETIC_TRAINING"
+REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE = False
 HYPERPARAMETERS = {
     "seed": 2026,
     "max_steps": 2,
@@ -310,6 +315,144 @@ class CapacityEnvironment:
 class ControlledGRPOMixin(ObservationFirstGRPOMixin):
     """Reuse pinned observation-first routing, not its live-candidate scorer."""
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._reward_gradient_evidence: list[dict[str, Any]] = []
+        super().__init__(*args, **kwargs)
+
+    @property
+    def reward_gradient_evidence(self) -> tuple[dict[str, Any], ...]:
+        return tuple(copy.deepcopy(self._reward_gradient_evidence))
+
+    def compute_loss(
+        self,
+        model: Any,
+        inputs: Any,
+        return_outputs: bool = False,
+        num_items_in_batch: Any = None,
+    ) -> Any:
+        if getattr(model, "training", None) is True:
+            self._measure_reward_policy_gradient(model, inputs)
+        return super().compute_loss(
+            model,
+            inputs,
+            return_outputs=return_outputs,
+            num_items_in_batch=num_items_in_batch,
+        )
+
+    def _measure_reward_policy_gradient(
+        self, model: Any, inputs: Any
+    ) -> None:
+        import torch
+
+        step = self.state.global_step
+        if type(step) is not int or step != len(self._reward_gradient_evidence):
+            raise RuntimeError(
+                "Controlled reward-policy gradient is not aligned to one optimizer step"
+            )
+        if self.use_liger_loss:
+            raise RuntimeError(
+                "Controlled reward-policy diagnostics require pinned TRL's standard loss"
+            )
+
+        parameters = tuple(parameter for parameter in model.parameters() if parameter.requires_grad)
+        if not parameters:
+            raise RuntimeError("Controlled reward-policy gradient has no trainable parameters")
+
+        diagnostic = copy.copy(self)
+        diagnostic.beta = 0.0
+        diagnostic._metrics = copy.deepcopy(self._metrics)
+        checkpointing_model = self.accelerator.unwrap_model(model)
+        checkpointing_enabled = bool(
+            getattr(checkpointing_model, "is_gradient_checkpointing", False)
+        )
+        enable_gradient_checkpointing = getattr(
+            checkpointing_model, "gradient_checkpointing_enable", None
+        )
+        if checkpointing_enabled and not callable(enable_gradient_checkpointing):
+            raise RuntimeError(
+                "Cannot measure reward-policy gradient with reentrant checkpointing"
+            )
+
+        checkpointing_state = []
+        if checkpointing_enabled:
+            checkpointing_state = [
+                (
+                    module,
+                    hasattr(module, "gradient_checkpointing"),
+                    getattr(module, "gradient_checkpointing", None),
+                    hasattr(module, "_gradient_checkpointing_func"),
+                    getattr(module, "_gradient_checkpointing_func", None),
+                )
+                for module in checkpointing_model.modules()
+            ]
+
+        cuda_devices = {
+            tensor.device.index
+            if tensor.device.index is not None
+            else torch.cuda.current_device()
+            for tensor in (*model.parameters(), *model.buffers())
+            if tensor.device.type == "cuda"
+        }
+        with torch.random.fork_rng(devices=sorted(cuda_devices)):
+            try:
+                if checkpointing_enabled:
+                    # Reentrant checkpointing rejects autograd.grad.
+                    enable_gradient_checkpointing(
+                        gradient_checkpointing_kwargs={"use_reentrant": False}
+                    )
+                reward_only_loss = super(
+                    ControlledGRPOMixin, diagnostic
+                ).compute_loss(model, inputs)
+                if (
+                    not torch.is_tensor(reward_only_loss)
+                    or reward_only_loss.numel() != 1
+                    or not reward_only_loss.requires_grad
+                ):
+                    raise RuntimeError(
+                        "Pinned TRL reward-only loss is not a differentiable scalar"
+                    )
+                gradients = torch.autograd.grad(
+                    reward_only_loss, parameters, allow_unused=True
+                )
+            finally:
+                if checkpointing_enabled:
+                    for (
+                        module,
+                        had_checkpointing_flag,
+                        checkpointing_flag,
+                        had_checkpointing_func,
+                        checkpointing_func,
+                    ) in checkpointing_state:
+                        if had_checkpointing_flag:
+                            module.gradient_checkpointing = checkpointing_flag
+                        elif hasattr(module, "gradient_checkpointing"):
+                            delattr(module, "gradient_checkpointing")
+
+                        if had_checkpointing_func:
+                            module._gradient_checkpointing_func = checkpointing_func
+                        elif hasattr(module, "_gradient_checkpointing_func"):
+                            delattr(module, "_gradient_checkpointing_func")
+
+        present_gradients = [gradient for gradient in gradients if gradient is not None]
+        finite = bool(present_gradients) and all(
+            torch.isfinite(gradient).all().item()
+            for gradient in present_gradients
+        )
+        norm = (
+            sum(float(gradient.float().norm().item()) for gradient in present_gradients)
+            if finite
+            else None
+        )
+        self._reward_gradient_evidence.append(
+            {
+                "step": step,
+                "group": step + 1,
+                "finite": finite,
+                "norm": norm,
+                "component": "reward_policy",
+            }
+        )
+
     def _observation_reward(
         self, *, prompts: Any, completions: Any, **kwargs: Any
     ) -> list[float]:
@@ -461,9 +604,19 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
     return receipt
 
 
+def _require_reward_gradient_diagnostic() -> None:
+    if not REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE:
+        raise RuntimeError(
+            "Controlled GRPO is fail-closed: a separate reward-only policy "
+            "gradient diagnostic is implemented but has not been validated; "
+            "the beta=0.04 total gradient may include KL."
+        )
+
+
 def run_pilot(receipt_path: Path, receipt_sha256: str) -> None:
     """Actual GRPO updates; never called by ordinary unit tests or CI."""
     receipt = admit_execution(receipt_path, receipt_sha256)
+    _require_reward_gradient_diagnostic()
     remaining = (
         datetime.fromisoformat(receipt["not_after"]) - datetime.now(UTC)
     ).total_seconds()
@@ -483,13 +636,18 @@ def run_pilot(receipt_path: Path, receipt_sha256: str) -> None:
 
 
 def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
+    _require_reward_gradient_diagnostic()
     import torch
     from datasets import Dataset
     from peft import PeftModel, prepare_model_for_kbit_training
     from transformers import (
-        AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainerCallback,
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+        TrainerCallback,
     )
     from trl import GRPOConfig, GRPOTrainer
+
     from training.sft_free_t4_gate import _verify_model_inventory
     from training.sft_provenance import checkpoint_inventory, write_manifest_atomic
 
@@ -535,29 +693,132 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
         }
         ledger.append("initial_adapter_tensors", {"tensor_sha256": before_hashes})
         gradients = []
-        advantages = []
+        reward_gradients = []
+        optimizer_steps = []
+        reward_learning_groups = []
+        previous_step_parameters = {
+            name: parameter.detach().cpu().clone()
+            for name, parameter in parameters.items()
+        }
+        environment = CapacityEnvironment(ledger)
 
         class GradientEvidence(TrainerCallback):
             def on_pre_optimizer_step(self, args, state, control, **kwargs):
+                group_index = state.global_step + 1
+                if not 1 <= group_index <= len(reward_learning_groups):
+                    raise ValueError("GRPO optimizer step has no matched reward group")
+                if (
+                    len(reward_gradients) != group_index
+                    or reward_gradients[-1]["group"] != group_index
+                    or not reward_gradients[-1]["finite"]
+                ):
+                    raise ValueError(
+                        "GRPO optimizer step has no finite same-group reward-policy gradient"
+                    )
                 values = [p.grad for p in parameters.values() if p.grad is not None]
                 finite = bool(values) and all(torch.isfinite(v).all().item() for v in values)
                 norm = sum(float(v.float().norm().item()) for v in values)
-                gradients.append({"step": state.global_step, "finite": finite, "norm": norm})
+                gradients.append(
+                    {
+                        "step": state.global_step,
+                        "group": group_index,
+                        "finite": finite,
+                        "norm": norm,
+                    }
+                )
                 ledger.append("gradient_observed", gradients[-1])
                 if not finite:
                     raise ValueError("Missing/nonfinite GRPO gradients")
 
+            def on_step_end(self, args, state, control, **kwargs):
+                group_index = state.global_step
+                if not 1 <= group_index <= len(reward_learning_groups):
+                    raise ValueError("GRPO optimizer update has no matched reward group")
+                changed_trainable_tensors = 0
+                for name, parameter in parameters.items():
+                    current = parameter.detach().cpu()
+                    if not torch.equal(previous_step_parameters[name], current):
+                        changed_trainable_tensors += 1
+                        previous_step_parameters[name] = current.clone()
+                record = {
+                    "step": group_index,
+                    "group": group_index,
+                    "changed_trainable_tensors": changed_trainable_tensors,
+                }
+                optimizer_steps.append(record)
+                ledger.append("optimizer_step_observed", record)
+
         class RawGeneration(ControlledGRPOMixin, GRPOTrainer):
+            def compute_loss(
+                self,
+                model,
+                inputs,
+                return_outputs=False,
+                num_items_in_batch=None,
+            ):
+                loss = super().compute_loss(
+                    model,
+                    inputs,
+                    return_outputs=return_outputs,
+                    num_items_in_batch=num_items_in_batch,
+                )
+                if getattr(model, "training", None) is True:
+                    record = self.reward_gradient_evidence[-1]
+                    group_index = self.state.global_step + 1
+                    if (
+                        record["group"] != group_index
+                        or not reward_learning_groups
+                        or reward_learning_groups[-1]["group"] != group_index
+                        or len(reward_gradients) + 1 != group_index
+                    ):
+                        raise ValueError(
+                            "Reward-policy gradient does not match the active reward group"
+                        )
+                    reward_gradients.append(record)
+                    ledger.append("reward_gradient_observed", record)
+                return loss
+
             def _generate_and_score_completions(self, inputs):
                 result = super()._generate_and_score_completions(inputs)
                 observed_advantages = result["advantages"].detach().cpu()
                 if not torch.isfinite(observed_advantages).all().item():
                     raise ValueError("GRPO advantages must be finite")
-                advantages.append(bool(torch.any(observed_advantages != 0).item()))
+                groups = self.observation_evidence
+                if not groups:
+                    raise ValueError("GRPO generation has no completed reward group")
+                group = groups[-1]
+                group_index = len(groups)
+                records = group["records"]
+                if (
+                    group_index != environment.group
+                    or group["status"] != "completed"
+                    or len(records) != HYPERPARAMETERS["num_generations"]
+                ):
+                    raise ValueError("GRPO generation does not match its objective group")
+                objective_rewards = [record["reward"] for record in records]
+                advantage_values = [
+                    float(value)
+                    for value in observed_advantages.reshape(-1).tolist()
+                ]
+                reward_driven = has_reward_driven_advantages(
+                    objective_rewards, advantage_values
+                )
+                reward_learning_groups.append(
+                    {
+                        "group": group_index,
+                        "objective_rewards": objective_rewards,
+                        "reward_driven": reward_driven,
+                    }
+                )
                 ledger.append(
                     "generation_tokens",
-                    {key: result[key].detach().cpu().tolist()
-                     for key in ("prompt_ids", "completion_ids", "advantages")},
+                    {
+                        "group": group_index,
+                        "prompt_ids": result["prompt_ids"].detach().cpu().tolist(),
+                        "completion_ids": result["completion_ids"].detach().cpu().tolist(),
+                        "objective_rewards": objective_rewards,
+                        "advantages": advantage_values,
+                    },
                 )
                 return result
 
@@ -567,7 +828,6 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
             save_strategy="no", logging_steps=1, remove_unused_columns=False,
             dataloader_num_workers=0, optim="paged_adamw_8bit",
         )
-        environment = CapacityEnvironment(ledger)
         trainer = RawGeneration(
             model=model, args=config,
             train_dataset=Dataset.from_list([{"prompt": "", "scenario_id": SCENARIO}]),
@@ -579,18 +839,40 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
         changed = sum(
             not torch.equal(before[n], p.detach().cpu()) for n, p in parameters.items()
         )
+        expected_groups = set(range(1, HYPERPARAMETERS["max_steps"] + 1))
+        reward_signals = {
+            group["group"]: group["reward_driven"]
+            for group in reward_learning_groups
+        }
+        gradients_by_group = {record["group"]: record for record in gradients}
+        reward_gradients_by_group = {
+            record["group"]: record for record in reward_gradients
+        }
+        optimizer_steps_by_group = {record["group"]: record for record in optimizer_steps}
         if (
             trainer.state.global_step != HYPERPARAMETERS["max_steps"]
             or len(gradients) != HYPERPARAMETERS["max_steps"]
-            or not any(v["norm"] > 0 for v in gradients) or not changed
-            or not any(advantages)
+            or len(reward_gradients) != HYPERPARAMETERS["max_steps"]
+            or len(optimizer_steps) != HYPERPARAMETERS["max_steps"]
+            or set(reward_signals) != expected_groups
+            or set(gradients_by_group) != expected_groups
+            or set(reward_gradients_by_group) != expected_groups
+            or set(optimizer_steps_by_group) != expected_groups
             or not any(
-                len({r["reward"] for r in group["records"]}) > 1
-                for group in trainer.observation_evidence
+                reward_signals[group]
+                and reward_gradients_by_group[group]["finite"]
+                and reward_gradients_by_group[group]["norm"] > 0
+                and gradients_by_group[group]["finite"]
+                and gradients_by_group[group]["norm"] > 0
+                and optimizer_steps_by_group[group]["changed_trainable_tensors"] > 0
+                for group in expected_groups
             )
+            or not changed
             or not all(torch.isfinite(p).all().item() for p in parameters.values())
         ):
-            raise ValueError("GRPO did not establish finite changed adapter parameters")
+            raise ValueError(
+                "GRPO did not establish a same-group reward-driven gradient and parameter update"
+            )
         validate_v17_parent(parent)
         _verify_model_inventory(receipt)
         model.save_pretrained(output / "adapter", safe_serialization=True)
@@ -600,7 +882,9 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
         ledger.append(
             "training_finished",
             {"global_step": trainer.state.global_step, "changed_tensors": changed,
-             "gradients": gradients, "trainer_log_history": trainer.state.log_history,
+             "gradients": gradients, "reward_gradients": reward_gradients,
+             "optimizer_steps": optimizer_steps,
+             "trainer_log_history": trainer.state.log_history,
              "final_tensor_sha256": {
                  n: hashlib.sha256(p.detach().cpu().view(torch.uint8).numpy().tobytes()).hexdigest()
                  for n, p in parameters.items()

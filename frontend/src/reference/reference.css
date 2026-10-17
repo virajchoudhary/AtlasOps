@@ -2279,11 +2279,16 @@ body.content-architecture-reference-body #root {
 }
 
 .reference-about-dialog {
+  left: auto;
+  right: 0;
+  width: min(100%, 960px);
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) min(37.5vw, 640px);
+  grid-template-columns: 180px minmax(0, 1fr);
   gap: 0;
+  padding: 16px;
   overflow: hidden;
-  background: rgb(16 16 16 / 55%);
+  background: transparent;
 }
 
 .reference-about-dialog::backdrop {
@@ -2294,24 +2299,27 @@ body.content-architecture-reference-body #root {
 .reference-about-index {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-self: start;
+  align-items: stretch;
   justify-content: flex-start;
   gap: 0;
-  padding: 16px 4px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: #cbcbcb;
 }
 
 .reference-about-index a {
   display: grid;
-  width: 152px;
-  min-height: 31px;
-  grid-template-columns: 42px minmax(0, 1fr);
+  width: 100%;
+  min-height: 18px;
+  grid-template-columns: 29px minmax(0, 1fr);
   align-items: center;
   gap: 4px;
-  padding: 0 10px;
-  border-radius: 2px;
-  background: #e1dfd9;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   color: #373633;
-  font: 8px var(--reference-mono);
+  font: 13.5px/1.25 var(--reference-mono);
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -2336,8 +2344,9 @@ body.content-architecture-reference-body #root {
   height: 100%;
   flex-direction: column;
   overflow: hidden;
-  padding: 24px 28px 40px;
-  background: #d0cec8;
+  padding: 24px 16px 40px;
+  border-radius: 8px;
+  background: #cbcbcb;
   color: #282826;
 }
 
@@ -2355,14 +2364,14 @@ body.content-architecture-reference-body #root {
 
 .reference-about-header h2 {
   margin: 0;
-  font: 14px/1.4 var(--reference-mono);
+  font: 17px/1.4 var(--reference-mono);
   text-transform: uppercase;
 }
 
 .reference-about-header p {
   margin: 6px 0 0;
   color: #696761;
-  font: 9px var(--reference-mono);
+  font: 15.5px/1.25 var(--reference-mono);
   text-transform: uppercase;
 }
 
@@ -2406,15 +2415,15 @@ body.content-architecture-reference-body #root {
 
 .reference-about-section h3 {
   margin: 0 0 2px;
-  font: 9px var(--reference-mono);
+  font: 15.5px/1.25 var(--reference-mono);
   text-transform: uppercase;
 }
 
 .reference-about-section p {
   margin: 0;
   color: #4c4b47;
-  font-size: 12px;
-  line-height: 1.65;
+  font-size: 15.5px;
+  line-height: 1.25;
 }
 
 .reference-about-section a {
@@ -2437,6 +2446,7 @@ body.content-architecture-reference-body #root {
   width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
+  border-radius: 8px;
   background: #232323;
 }
 
@@ -2462,6 +2472,53 @@ body.content-architecture-reference-body #root {
   text-align: center;
   text-transform: uppercase;
   pointer-events: none;
+}
+
+@media (max-width: 1023px) {
+  .reference-about-dialog {
+    left: 0;
+    right: 0;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 90px minmax(0, 1fr);
+    padding: 8px;
+  }
+
+  .reference-about-index {
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0;
+    overflow: hidden;
+    padding: 16px;
+  }
+
+  .reference-about-index a {
+    width: 100%;
+    min-width: 0;
+    min-height: 17px;
+    grid-template-columns: 29px minmax(0, 1fr);
+    padding: 0;
+    font-size: 12px;
+  }
+
+  .reference-about-panel {
+    padding: 17px 16px 26px;
+  }
+
+  .reference-about-header {
+    min-height: 68px;
+    padding-right: 56px;
+  }
+
+  .reference-about-header h2,
+  .reference-about-header p,
+  .reference-about-section h3,
+  .reference-about-section p {
+    font-size: 14px;
+  }
 }
 
 @media (min-width: 1536px) {
@@ -3446,44 +3503,7 @@ body.content-architecture-reference-body #root {
   }
 
   .reference-about-dialog {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 51px minmax(0, 1fr);
-    padding: 8px;
-    background: transparent;
-  }
-
-  .reference-about-index {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 3px;
-    overflow: hidden;
-    padding: 0;
-  }
-
-  .reference-about-index a {
-    width: auto;
-    min-width: 0;
-    min-height: 33px;
-    grid-template-columns: 29px minmax(0, 1fr);
-    padding: 0 6px;
-    font-size: 7px;
-  }
-
-  .reference-about-panel {
-    padding: 17px 16px 26px;
-  }
-
-  .reference-about-header {
-    min-height: 68px;
-    padding-right: 45px;
-  }
-
-  .reference-about-header h2 {
-    font-size: 11px;
-  }
-
-  .reference-about-header p {
-    font-size: 8px;
+    grid-template-rows: 88px minmax(0, 1fr);
   }
 
   .reference-about-section {
@@ -3491,13 +3511,25 @@ body.content-architecture-reference-body #root {
     padding: 30px 0 39px;
   }
 
-  .reference-about-section p {
-    font-size: 11px;
-  }
-
   .content-architecture-reference .reference-reel-close {
     top: 8px;
     right: 8px;
+  }
+}
+
+@media (pointer: coarse) {
+  .reference-about-index a {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 1023px) and (pointer: coarse) {
+  .reference-about-dialog {
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+
+  .reference-about-index {
+    height: auto;
   }
 }
 

@@ -3517,6 +3517,22 @@ body.content-architecture-reference-body #root {
   }
 }
 
+@media (pointer: coarse) {
+  .reference-about-index a {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 1023px) and (pointer: coarse) {
+  .reference-about-dialog {
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+
+  .reference-about-index {
+    height: auto;
+  }
+}
+
 @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
   .reference-dive-track {
     height: 300svh;

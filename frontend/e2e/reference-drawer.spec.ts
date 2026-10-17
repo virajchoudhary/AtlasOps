@@ -250,3 +250,55 @@ test("About drawer section navigation, reduced motion, and keyboard close lifecy
   await expect(dialog).toBeHidden();
   await expect(opener).toBeFocused();
 });
+
+test.describe("Touch drawer navigation", () => {
+  test.use({ hasTouch: true });
+
+  for (const viewport of drawerViewports.filter(({ name }) =>
+    ["mobile-320", "tablet-851"].includes(name),
+  )) {
+    test(`About drawer touch targets at ${viewport.name}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => {
+        sessionStorage.setItem("content-architecture-newsletter-dismissed", "1");
+      });
+      await page.goto("/reference");
+      const opener = page.getByRole("button", { name: /learn more/i });
+      await opener.tap();
+      const dialog = page.getByRole("dialog", {
+        name: "README / The Content Architecture",
+      });
+      await expect(dialog).toBeVisible();
+      const metrics = await dialog.evaluate((element) => {
+        const index = element.querySelector(".reference-about-index");
+        if (!index) throw new Error("The drawer section index is missing");
+        const indexRect = index.getBoundingClientRect();
+        return {
+          coarsePointer: matchMedia("(pointer: coarse)").matches,
+          index: { height: indexRect.height, bottom: indexRect.bottom },
+          links: Array.from(index.querySelectorAll("a"), (link) => {
+            const rect = link.getBoundingClientRect();
+            return { height: rect.height, bottom: rect.bottom };
+          }),
+        };
+      });
+      expect(metrics.coarsePointer).toBe(true);
+      expect(metrics.links).toHaveLength(3);
+      expect(metrics.index.height).toBeGreaterThanOrEqual(3 * 44 + 32 + 4);
+      for (const link of metrics.links) {
+        expect(link.height).toBeGreaterThanOrEqual(44);
+        expect(link.bottom).toBeLessThanOrEqual(metrics.index.bottom);
+      }
+      await page.screenshot({
+        path: testInfo.outputPath(`drawer-touch-${viewport.name}.png`),
+      });
+      await dialog.getByRole("link", { name: /003\s+Who am I/i }).tap();
+      await expect(page).toHaveURL(/#who-am-i$/);
+      await expect(dialog.locator("#who-am-i h3")).toBeInViewport();
+      await dialog.getByRole("button", { name: "Close Learn More" }).tap();
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+    });
+  }
+});

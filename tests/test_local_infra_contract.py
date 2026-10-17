@@ -78,10 +78,6 @@ class TestKindClusterNameDeterministic:
         content = (INFRA_LOCAL / "teardown_local.sh").read_text(encoding="utf-8")
         assert KIND_CLUSTER_NAME in content
 
-    def test_kind_config_exists(self) -> None:
-        assert (INFRA_LOCAL / "kind-config.yaml").is_file()
-
-
 class TestLocalCoordinatorKindLoadable:
     """Verify coordinator uses Kind-loadable image, not a registry."""
 

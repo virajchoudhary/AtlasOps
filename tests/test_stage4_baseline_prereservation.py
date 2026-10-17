@@ -140,7 +140,6 @@ def test_old_post_reservation_baseline_block_removed():
     injection = src.index(
         'inject_res = run_kubectl(["create", "-f", manifest_path, "-o", "json"])'
     )
-    between = src[reservation:injection]
     assert "Baseline paymentservice status" not in src[reservation:]
     assert "abort_before_fault(\"unhealthy_baseline\")" not in src
     # The causal gate still receives the pre-reservation baseline verdict.

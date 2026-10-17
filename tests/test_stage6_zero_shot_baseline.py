@@ -105,26 +105,7 @@ class TestStage6ZeroShotBaseline:
         assert test_scenarios.isdisjoint(train_scenarios)
         assert test_scenarios.isdisjoint(val_scenarios)
 
-    def test_comparison_table_updates(self, tmp_path):
-        summary_val = {
-            "tag": "zero_shot_val_test",
-            "model": "qwen2.5:7b-instruct",
-            "run_date": "2026-08-31T05:00:00Z",
-            "total_scenarios": 6,
-            "resolution_rate": 0.0,
-            "avg_reward": 0.5,
-            "avg_reward_contract": 0.35,
-            "avg_penalty": 0.0,
-            "avg_turns": 4.0,
-            "cascade_resolution_rate": 0.0,
-            "named_replay_resolution_rate": 0.0,
-            "per_tier": {
-                "single_fault": {"count": 2, "resolution_rate": 0.0, "avg_time_to_resolve_s": 45.0, "avg_reward_contract": 0.35},
-                "cascade": {"count": 1, "resolution_rate": 0.0, "avg_time_to_resolve_s": 45.0, "avg_reward_contract": 0.35},
-                "multi_fault": {"count": 1, "resolution_rate": 0.0, "avg_time_to_resolve_s": 45.0, "avg_reward_contract": 0.35},
-                "named_replays": {"count": 2, "resolution_rate": 0.0, "avg_time_to_resolve_s": 45.0, "avg_reward_contract": 0.35},
-            },
-        }
+    def test_summary_uses_evaluated_episodes(self):
         summary_obj = compute_summary(
             [
                 {"status": "ok", "scenario_id": "single_fault/sf-001", "tier": "single_fault", "resolved": False, "env_resolved": False, "agent_claimed_resolved": False, "total_turns": 4, "time_to_resolve_s": 45.0, "judge": {"overall": 0.5}, "reward_contract": {"total": 0.35, "penalty_total": 0.0, "penalties": {}}}

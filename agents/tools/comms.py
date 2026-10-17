@@ -3,9 +3,11 @@
 import json
 import logging
 import os
+import re
+import stat
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import requests
@@ -21,6 +23,13 @@ RUNTIME_DATA_DIR = Path(os.getenv("ATLASOPS_RUNTIME_DATA_DIR", "data"))
 
 _SEV_COLOR_HEX = {"P0": "ff0000", "P1": "ff8800", "P2": "ffcc00"}
 _LOG_PATH = RUNTIME_DATA_DIR / "slack_posts.jsonl"
+_WINDOWS_RESERVED_FILENAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{number}" for number in range(1, 10)}
+    | {f"LPT{number}" for number in range(1, 10)}
+    | {f"COM{number}" for number in "¹²³"}
+    | {f"LPT{number}" for number in "¹²³"}
+)
 
 
 def _discord_webhook_post_with_retry(url: str, json_body: dict[str, Any], *, context: str) -> tuple[bool, str | None]:
@@ -283,6 +292,120 @@ POSTMORTEM_TEMPLATE = """# Postmortem: {{ title }}
 """
 
 
+def _is_safe_postmortem_filename(name: str) -> bool:
+    if (
+        not name
+        or not name.casefold().endswith(".md")
+        or name.endswith((".", " "))
+        or any(ord(character) < 32 or character in '<>:"/\\|?*' for character in name)
+    ):
+        return False
+    device_name = name.split(".", 1)[0].rstrip(" .").upper()
+    return device_name not in _WINDOWS_RESERVED_FILENAMES
+
+
+def _has_redirecting_path_component(path: Path) -> bool:
+    absolute_path = path if path.is_absolute() else Path.cwd() / path
+    current = Path(absolute_path.anchor)
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    for component in absolute_path.parts[1:]:
+        if component == "..":
+            current = current.parent
+            continue
+        if component == ".":
+            continue
+        current /= component
+        try:
+            details = current.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        if stat.S_ISLNK(details.st_mode):
+            return True
+        if getattr(details, "st_file_attributes", 0) & reparse_attribute:
+            return True
+    return False
+
+
+def _prepare_postmortem_destination(
+    output_path: str, title: Any, now: datetime
+) -> tuple[Path | None, str | None]:
+    if output_path:
+        windows_path = PureWindowsPath(output_path)
+        normalized_windows_path = output_path.replace("/", "\\")
+        if (
+            normalized_windows_path.startswith(("\\\\?\\", "\\\\.\\"))
+            or windows_path.drive.startswith("\\\\")
+            or ".." in windows_path.parts
+        ):
+            return None, "output_path must name a .md file directly inside POSTMORTEM_DIR"
+
+        if ":" in output_path[len(windows_path.drive):]:
+            return None, "output_path must name a .md file directly inside POSTMORTEM_DIR"
+
+        requested_path = Path(output_path)
+        if requested_path.is_absolute():
+            if not _is_safe_postmortem_filename(requested_path.name):
+                return None, "output_path must name a .md file directly inside POSTMORTEM_DIR"
+        elif (
+            windows_path.drive
+            or windows_path.root
+            or "/" in output_path
+            or "\\" in output_path
+            or not _is_safe_postmortem_filename(output_path)
+        ):
+            return None, "output_path must be a .md basename or an absolute direct child of POSTMORTEM_DIR"
+
+    try:
+        root_input = Path(POSTMORTEM_DIR).expanduser()
+        if not root_input.is_absolute():
+            root_input = Path.cwd() / root_input
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None, "postmortem directory is unavailable"
+
+    if _has_redirecting_path_component(root_input):
+        return None, "postmortem directory contains a redirect"
+    root = Path(os.path.abspath(root_input))
+
+    if output_path:
+        requested_path = Path(output_path)
+        if requested_path.is_absolute():
+            if os.name == "nt":
+                configured_drive = PureWindowsPath(str(root)).drive.casefold()
+                requested_drive = PureWindowsPath(output_path).drive.casefold()
+                if not configured_drive or requested_drive != configured_drive:
+                    return None, "output_path must be an absolute direct child of POSTMORTEM_DIR"
+            destination = Path(os.path.abspath(requested_path))
+            if destination.parent != root:
+                return None, "output_path must be an absolute direct child of POSTMORTEM_DIR"
+        else:
+            destination = root / output_path
+    else:
+        title_text = title if isinstance(title, str) else ""
+        slug = re.sub(r"[^a-z0-9]+", "-", title_text.lower()).strip("-")[:60].strip("-")
+        if not slug:
+            slug = "incident"
+        timestamp = now.strftime("%H%M%S%fZ")
+        destination = root / f"{now.date().isoformat()}-{timestamp}-{slug}.md"
+
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None, "postmortem directory is unavailable"
+    if _has_redirecting_path_component(root):
+        return None, "postmortem directory contains a redirect"
+    try:
+        root_details = root.lstat()
+    except OSError:
+        return None, "postmortem directory is unavailable"
+    if not stat.S_ISDIR(root_details.st_mode):
+        return None, "postmortem directory is unavailable"
+    if _has_redirecting_path_component(destination):
+        return None, "postmortem output path contains a redirect"
+    return destination, None
+
+
 def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[str, Any]:
     """Generate a Cloudflare-blog quality postmortem.
 
@@ -291,7 +414,14 @@ def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[st
       timeline: [{time, event}], root_cause, detection, resolution,
       went_well: [str], went_wrong: [str],
       action_items: [{action, owner, priority, due}]
+
+    output_path must be a .md basename or an absolute direct child of
+    POSTMORTEM_DIR. Existing files are never overwritten. The configured
+    directory and its ancestors must remain under trusted ownership while writing.
     """
+    if not isinstance(output_path, str):
+        return {"success": False, "error": "output_path must be a string"}
+
     now = datetime.now(timezone.utc)
 
     # Auto-fill missing fields from nested incident data
@@ -355,9 +485,22 @@ def postmortem_draft(incident: dict[str, Any], output_path: str = "") -> dict[st
 
     template = Template(POSTMORTEM_TEMPLATE)
     rendered = template.render(date=now.date().isoformat(), **data)
-    POSTMORTEM_DIR.mkdir(parents=True, exist_ok=True)
-    if not output_path:
-        slug = title.lower().replace(" ", "-")[:60]
-        output_path = str(POSTMORTEM_DIR / f"{now.date()}-{slug}.md")
-    Path(output_path).write_text(rendered, encoding="utf-8")
-    return {"success": True, "path": output_path, "postmortem_path": output_path, "bytes": len(rendered)}
+    destination, path_error = _prepare_postmortem_destination(output_path, title, now)
+    if path_error:
+        return {"success": False, "error": path_error}
+
+    rendered_bytes = rendered.encode("utf-8")
+    try:
+        with destination.open("xb") as stream:
+            stream.write(rendered_bytes)
+    except FileExistsError:
+        return {"success": False, "error": "postmortem output already exists"}
+    except (OSError, ValueError):
+        return {"success": False, "error": "postmortem could not be written"}
+    saved_path = str(destination)
+    return {
+        "success": True,
+        "path": saved_path,
+        "postmortem_path": saved_path,
+        "bytes": len(rendered_bytes),
+    }

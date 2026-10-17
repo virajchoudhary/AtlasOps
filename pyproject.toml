@@ -59,6 +59,8 @@ exclude = [
     "/OVERNIGHT_STATE.md",
     "/artifacts/local-preflight",
     "/artifacts/overnight_diffs",
+    "/data",
+    "/scratch",
     "**/*.bak*",
     "**/.env*",
     "**/credentials.json",

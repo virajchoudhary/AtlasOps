@@ -1832,14 +1832,11 @@ def _narrate_tool_result(tool: str, output: dict) -> str:
 
 
 def _summarise_conclusion(role: str, content: str) -> str:
-    _comms_close = (
-        f"Incident closed — {_comms_destination_phrase()} updated, postmortem saved."
-    )
     summaries = {
         "triage":      "Triage complete — severity assigned, blast radius mapped, handing to Diagnosis.",
         "diagnosis":   "Root cause identified — handing remediation plan to Remediation agent.",
         "remediation": "Remediation complete — verifying resolution with Prometheus.",
-        "comms":       _comms_close,
+        "comms":       "Communications stage finished. See delivery and postmortem results above.",
     }
     return summaries.get(role, f"{role} agent finished.")
 

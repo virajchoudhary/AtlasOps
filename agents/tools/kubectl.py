@@ -244,9 +244,27 @@ def kubectl_rollout(action: str, resource: str, namespace: str = "default") -> d
     return _run(["kubectl", "rollout", action, canonical_res, "-n", namespace.strip()], timeout=60)
 
 
+def _is_dns_subdomain(name: str) -> bool:
+    return (
+        len(name) <= 253
+        and all(
+            _K8S_NAME_RE.fullmatch(label)
+            for label in name.split(".")
+        )
+    )
+
+
 def kubectl_scale(deployment: str, replicas: int, namespace: str = "default") -> dict[str, Any]:
     """Scale a deployment to the given replica count."""
-    if not (0 <= replicas <= 20):
+    if not isinstance(deployment, str) or not _is_dns_subdomain(deployment):
+        return {"error": f"Invalid deployment name: {deployment!r}", "success": False}
+    if (
+        not isinstance(namespace, str)
+        or len(namespace) > 63
+        or not _K8S_NAME_RE.fullmatch(namespace)
+    ):
+        return {"error": f"Invalid namespace: {namespace!r}", "success": False}
+    if type(replicas) is not int or not 0 <= replicas <= 20:
         return {"error": "replicas must be 0–20", "success": False}
     return _run(
         ["kubectl", "scale", "deployment", deployment,

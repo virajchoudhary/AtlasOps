@@ -348,10 +348,16 @@ def test_stability_resets_after_intermittent_failure():
 
 
 def test_gate_never_sleeps_longer_than_remaining_budget():
-    exact_sequence = [_exact([])]  # always invalid
-    _result, clock = _run_gate(timeout_seconds=45)
-    assert all(seconds <= 45 for seconds in clock.sleeps)
-    assert clock.now <= 45
+    (ready, detail), clock = _run_gate(
+        timeout_seconds=45,
+        run_query_fn=_make_run_query(exact_sequence=[_exact([])]),
+    )
+    assert ready is False
+    assert detail["attempts"] == 2
+    assert detail["stable_probes"] == 0
+    assert detail["timeout_seconds"] == 45
+    assert clock.sleeps == [30, 15]
+    assert clock.now == 45
 
 
 # --- 17: frozen F1 scientific contract -------------------------------------------

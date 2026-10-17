@@ -62,11 +62,12 @@ def test_forged_score_rejected():
         recompute(rows, ["val-fixture"], {"val-fixture": "memory exhaustion"})
 
 
-def test_failure_keeps_null_scores_and_all_scheduled_denominator():
+@pytest.mark.parametrize("raw", ["malformed", 1, True, {"unexpected": True}, ["unexpected"]])
+def test_failure_keeps_null_scores_and_all_scheduled_denominator(raw):
     rows = pair()
     row = rows[1]
     row.update(
-        raw_model_response="malformed", prediction=None, status="error", format_compliant=False
+        raw_model_response=raw, prediction=None, status="error", format_compliant=False
     )
     for name in ("f1", "precision", "recall"):
         row[f"diagnostic_{name}"] = None
@@ -82,6 +83,11 @@ def test_failure_keeps_null_scores_and_all_scheduled_denominator():
 @pytest.mark.parametrize(
     "text",
     [
+        None,
+        1,
+        True,
+        {},
+        [],
         '{"severity":"P2","severity":"P1"}',
         '{"severity":"P2","affected_services":["x"],"root_cause":"x","confidence":true}',
         '{"severity":"P2","affected_services":["x"],"root_cause":"x","confidence":0.5,"other":1e999}',

@@ -23,7 +23,7 @@ for (const viewport of mediaViewports) {
   }, testInfo) => {
     const externalRequests: string[] = [];
     const cspErrors: string[] = [];
-    const origin = "http://127.0.0.1:7863";
+    const origin = new URL(testInfo.project.use.baseURL ?? "").origin;
 
     page.on("request", (request) => {
       if (new URL(request.url()).origin !== origin) {

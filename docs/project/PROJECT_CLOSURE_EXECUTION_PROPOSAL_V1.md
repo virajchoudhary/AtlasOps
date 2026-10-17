@@ -13,11 +13,18 @@ No new metric, checkpoint, incident result or cleanup result is claimed here.
 ## Environment and resources
 
 Use a dedicated, owner-controlled experiment checkout of the final reviewed
-source commit. The current software baseline is merged PR 207 at `f13374f`;
-this proposal remains unapproved and does not update frozen execution pins.
-Record the full SHA and an immutable source inventory before
-approval. Do not execute from a dirty development checkout or silently accept
-source drift against an old protocol.
+source commit. The latest accepted software checkpoint is merged PR 211 at
+main commit `c84b9f49c0938e2b95607c3fb72f4cec402b4d85`, tree
+`6fd925be5df6db0d5ba80ac4aab9f29871e1d527`, after accepted pricing PR 209 and
+FAQ layout PR 210.
+
+The original unapproved execution candidate remains pinned to merged PR 207 at
+`f13374f`. The software checkpoint does not repin research or authorize
+execution. Any future execution requires a new reviewed execution-source freeze
+with a full SHA and immutable source inventory, plus a separate execution
+permit. This proposal remains unapproved.
+Do not execute from a dirty development checkout or silently accept source
+drift against an old protocol.
 
 | Resource | Proposed use | Admission requirement |
 | --- | --- | --- |

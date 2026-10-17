@@ -581,6 +581,170 @@ for (const viewport of faqControlViewports) {
   });
 }
 
+const faqLayoutViewports = [
+  { name: "1904x881", width: 1904, height: 881, desktop: true },
+  { name: "390x844", width: 390, height: 844, desktop: false },
+  { name: "375x812", width: 375, height: 812, desktop: false },
+] as const;
+
+for (const viewport of faqLayoutViewports) {
+  test(`matches FAQ layout and keeps its questions usable at ${viewport.name}`, async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+      reducedMotion: "reduce",
+    });
+    const page = await context.newPage();
+    await page.goto("/reference.html", { waitUntil: "networkidle" });
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator("#faq").scrollIntoViewIfNeeded();
+
+    const triggers = page.locator("#faq .reference-faq-trigger");
+    await expect(triggers).toHaveCount(17);
+    await expect(triggers.first()).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#faq .reference-faq-trigger[aria-expanded='true']")).toHaveCount(1);
+
+    const geometry = await page.locator("#faq").evaluate((section) => {
+      const heading = section.querySelector<HTMLElement>(".reference-faq-heading h2");
+      const headingColumn = section.querySelector<HTMLElement>(".reference-faq-heading");
+      const list = section.querySelector<HTMLElement>(".reference-faq-list");
+      const trigger = section.querySelector<HTMLElement>(".reference-faq-trigger");
+      const question = trigger?.querySelector<HTMLElement>("span:first-child");
+      const prefix = question?.querySelector<HTMLElement>("small");
+      const answer = section.querySelector<HTMLElement>(".reference-faq-answer");
+      const answerText = answer?.querySelector<HTMLElement>("p");
+      const icon = trigger?.querySelector<HTMLElement>(".reference-faq-icon");
+      if (
+        !heading ||
+        !headingColumn ||
+        !list ||
+        !trigger ||
+        !question ||
+        !prefix ||
+        !answer ||
+        !answerText ||
+        !icon
+      ) {
+        throw new Error("FAQ content is incomplete");
+      }
+
+      const bounds = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, right: rect.right, width: rect.width, height: rect.height };
+      };
+      const typography = (element: Element) => {
+        const style = getComputedStyle(element);
+        return {
+          fontSize: Number.parseFloat(style.fontSize),
+          lineHeight: Number.parseFloat(style.lineHeight),
+          fontFamily: style.fontFamily,
+          color: style.color,
+        };
+      };
+
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        documentWidth: document.documentElement.scrollWidth,
+        faqWidth: section.clientWidth,
+        heading: { ...bounds(heading), ...typography(heading) },
+        headingColumn: {
+          ...bounds(headingColumn),
+          gridColumnStart: getComputedStyle(headingColumn).gridColumnStart,
+          gridColumnEnd: getComputedStyle(headingColumn).gridColumnEnd,
+        },
+        list: {
+          ...bounds(list),
+          gridColumnStart: getComputedStyle(list).gridColumnStart,
+          gridColumnEnd: getComputedStyle(list).gridColumnEnd,
+        },
+        question: {
+          ...typography(question),
+          text: trigger.innerText,
+          prefix: prefix.textContent?.trim() ?? "",
+          prefixFontSize: Number.parseFloat(getComputedStyle(prefix).fontSize),
+          fits: question.scrollWidth <= question.clientWidth,
+        },
+        answer: { ...bounds(answer), ...typography(answer) },
+        answerText: bounds(answerText),
+        icon: {
+          ...bounds(icon),
+          borderRadius: getComputedStyle(icon).borderRadius,
+          backgroundColor: getComputedStyle(icon).backgroundColor,
+        },
+        openCount: section.querySelectorAll(".reference-faq-trigger[aria-expanded='true']").length,
+      };
+    });
+
+    await page.screenshot({
+      path: resolve(outputDirectory, `reference-faq-layout-${viewport.name}.png`),
+    });
+    await writeFile(
+      resolve(outputDirectory, `reference-faq-layout-${viewport.name}.json`),
+      `${JSON.stringify({ viewport, geometry }, null, 2)}\n`,
+      "utf8",
+    );
+
+    expect(geometry.viewport).toEqual({ width: viewport.width, height: viewport.height });
+    expect(geometry.documentWidth).toBeLessThanOrEqual(viewport.width);
+    expect(geometry.openCount).toBe(1);
+    expect(geometry.question.prefix).toBe("Q.001 /");
+    expect(geometry.question.fontFamily).toContain("Geist Mono");
+    expect(geometry.question.prefixFontSize).toBe(geometry.question.fontSize);
+    expect(geometry.question.fits).toBe(true);
+    expect(geometry.icon.width).toBe(24);
+    expect(geometry.icon.height).toBe(24);
+    expect(geometry.icon.borderRadius).toBe("2px");
+    expect(geometry.icon.backgroundColor).toBe("rgba(241, 238, 231, 0.1)");
+    if (viewport.desktop) {
+      expect(geometry.heading.fontSize).toBe(48);
+      expect(Math.abs(geometry.heading.lineHeight - 52.8)).toBeLessThanOrEqual(0.1);
+      expect(geometry.headingColumn.x).toBe(80);
+      expect(geometry.headingColumn.gridColumnStart).toBe("1");
+      expect(geometry.headingColumn.gridColumnEnd).toBe("span 4");
+      expect(geometry.list.gridColumnStart).toBe("6");
+      expect(geometry.list.gridColumnEnd).toBe("span 7");
+      const desktopColumnStep = (geometry.faqWidth - 336) / 12 + 16;
+      expect(Math.abs(geometry.list.x - (80 + 5 * desktopColumnStep))).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.list.right - (geometry.faqWidth - 80))).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.list.width - (7 * ((geometry.faqWidth - 336) / 12) + 6 * 16)))
+        .toBeLessThanOrEqual(1);
+      expect(geometry.question.fontSize).toBe(16);
+      expect(Math.abs(geometry.question.lineHeight - 20)).toBeLessThanOrEqual(0.1);
+      expect(geometry.answer.fontSize).toBe(18);
+      expect(Math.abs(geometry.answer.lineHeight - 22.5)).toBeLessThanOrEqual(0.1);
+      expect(geometry.answer.color).toBe("rgb(222, 222, 222)");
+      expect(Math.abs(geometry.answerText.x - geometry.list.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.answerText.right - geometry.list.right)).toBeLessThanOrEqual(1);
+    } else {
+      expect(geometry.heading.fontSize).toBe(32);
+      expect(geometry.question.fontSize).toBe(14);
+      expect(Math.abs(geometry.question.lineHeight - 17.5)).toBeLessThanOrEqual(0.1);
+      expect(geometry.list.x).toBe(16);
+      expect(geometry.answer.x).toBe(16);
+      expect(geometry.answer.width).toBe(viewport.width - 32);
+      expect(geometry.answerText.x).toBe(16);
+      expect(geometry.answerText.right).toBe(viewport.width - 16);
+      expect(geometry.answer.fontSize).toBe(14);
+      expect(Math.abs(geometry.answer.lineHeight - 17.5)).toBeLessThanOrEqual(0.1);
+      expect(geometry.answer.color).toBe("rgb(222, 222, 222)");
+    }
+
+    await triggers.nth(1).click();
+    await expect(triggers.nth(1)).toHaveAttribute("aria-expanded", "true");
+    await expect(triggers).toHaveCount(17);
+    await expect(page.locator("#faq .reference-faq-trigger[aria-expanded='true']")).toHaveCount(1);
+
+    await triggers.nth(2).focus();
+    await page.keyboard.press("Enter");
+    await expect(triggers.nth(2)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#faq .reference-faq-trigger[aria-expanded='true']")).toHaveCount(1);
+    await page.keyboard.press("Space");
+    await expect(triggers.nth(2)).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#faq .reference-faq-trigger[aria-expanded='true']")).toHaveCount(0);
+
+    await context.close();
+  });
+}
+
 test("reduced motion removes desktop pinning and preserves the active canvas", async ({ browser }) => {
   const viewport = { width: 1920, height: 1080 };
   const normalContext = await browser.newContext({ viewport, reducedMotion: "no-preference" });

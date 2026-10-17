@@ -16,6 +16,26 @@ from packaging.requirements import Requirement
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_ci_correctness_check_rejects_unused_imports():
+    import shlex
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    commands = [
+        shlex.split(line)
+        for step in workflow["jobs"]["quality"]["steps"]
+        for line in step.get("run", "").splitlines()
+        if line.strip().startswith("python -m ruff check")
+    ]
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:5] == ["python", "-m", "ruff", "check", "."]
+    assert {"E9", "F63", "F7", "F821", "F401"} <= set(
+        command[command.index("--select") + 1].split(",")
+    )
+
+
 def test_pinned_trainer_ci_does_not_install_the_demo_development_stack():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     trainer = workflow.split("  trainer-contract:", 1)[1].split("  frontend:", 1)[0]
@@ -275,6 +295,8 @@ def test_credential_filename_globs_are_excluded_from_container_context(filename)
 
 def test_git_ignores_generated_clutter_but_not_research_evidence():
     generated = [
+        ".agents/private-session.json",
+        ".agents/skills/local-only/SKILL.md",
         ".codex-worktrees/fixture/app.py",
         ".codex-tmp/fixture/log.txt",
         ".tmp-pytest-fixture/output.json",
@@ -283,6 +305,8 @@ def test_git_ignores_generated_clutter_but_not_research_evidence():
         "artifacts/overnight_test_outputs/fixture/output.json",
     ]
     preserved = [
+        ".agents/skills/verify-atlasops/SKILL.md",
+        ".agents/skills/verify-atlasops/features/rehearsal.md",
         "artifacts/overnight_diffs/fixture.patch",
         "artifacts/local-preflight/fixture.json",
         "artifacts/evidence/stage4/EXP-STAGE4-SF002-010.json",

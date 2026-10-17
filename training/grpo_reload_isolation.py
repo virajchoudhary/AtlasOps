@@ -309,7 +309,7 @@ def initialize_gpu_runtime(runtime: dict[str, Any], guard: LoopbackGuard) -> dic
         import torch
         torch.cuda.init()
         import bitsandbytes
-        import triton
+        import triton  # noqa: F401 - initialize Triton before sealing the GPU runtime
         from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: F401 - initialize reload classes
         from peft import PeftModel  # noqa: F401 - initialize reload class
         if not torch.cuda.is_available() or not bitsandbytes.cextension.lib.compiled_with_cuda:

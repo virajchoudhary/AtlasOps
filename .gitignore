@@ -37,7 +37,10 @@ scratch/
 artifacts/trajectories/
 
 .codex/
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/verify-atlasops/
 
 # Runtime Stage4 attempt-lifecycle markers are internal-only; never publish.
 artifacts/evidence/stage4/.attempts/

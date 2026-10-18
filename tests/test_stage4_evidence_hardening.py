@@ -8,8 +8,9 @@ import os
 import pathlib
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1339,7 +1340,14 @@ def test_causal_predicate_requires_degradation_settling_and_primary_evidence():
     assert unpersisted["criteria"]["15_evidence_persisted"] is False
 
 
-def test_every_remediation_model_response_is_persisted_before_branching():
+def test_every_remediation_model_response_is_persisted_before_branching(monkeypatch):
+    import agents.coordinator as coordinator
+
+    monkeypatch.setattr(coordinator, "_ACTIVE_MUTATION_OBSERVER", ContextVar(
+        "persistence_test_observer", default=AsyncMock(return_value={
+            "env_resolved": False, "verification_status": "failed",
+        }),
+    ))
     prose = MagicMock()
     prose.json.return_value = {
         "choices": [{"message": {"role": "assistant", "content": "I will investigate."}, "finish_reason": "stop"}]

@@ -1598,6 +1598,14 @@ async def call_agent(
                     and fn is not None
                 ):
                     _mutation_in_response = True
+                    if mutation_observer is None:
+                        mutation_observation = {
+                            "env_resolved": False,
+                            "verification_status": "observation_error",
+                            "error": "Mutation observer is not installed",
+                        }
+                        action_record["verifier_observation"] = mutation_observation
+                        observation_unknown = True
                     if mutation_observer is not None:
                         try:
                             mutation_observation = await mutation_observer({

@@ -33,21 +33,52 @@ totals are historical; PRs 209 through 214 have scoped acceptance evidence.
 
 ## Required scientific gates
 
-| Gate | Implementation | Tests and existing evidence | Accepted status and minimum remaining work |
-| --- | --- | --- | --- |
-| G4 | Governed incident workflow, authentication, approval, objective verifier and capture code | Negative 017; 018 marker has no outcome/cleanup; software regressions are non-empirical | NOT_PASSED. Newly approved causal incident protocol and independently accepted recovery/cleanup evidence |
-| G6 | Zero-shot Base evaluation and real-inference provenance | Recovered summaries record `mock_eval=true`; the genuine pinned-base Validation diagnostic does not provide incident-resolution evidence | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING. G6 needs its approved zero-shot incident baseline. G8 is the distinct SFT-before-RL gate and retains the same Master status; its incident-resolution evidence is also missing. Neither result closes the other |
-| G8 | Matched Base/SFT evaluation and canonical contracts | Genuine diagnostic F1 0.16875 / 0.15935; no improvement; resolution/TTR unavailable | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING. Approved matched incident-level evaluation, not another alert-only diagnostic |
-| G9 | Controlled and observation-first policy/environment/reward software | Final negative: zero reward-driven advantages; aligned diagnostic 0/8 actions; synthetic optimizer tests do not certify learning | NOT_PASSED/FROZEN. New Train-only protocol, admissible actions/nonzero reward signal, approved execution, checkpoint inventory and independent reload |
-| G12 | Integrated GAI/RL action, approval and verifier path | Local injected-policy tests only; no accepted GRPO checkpoint | EMPIRICAL EVIDENCE MISSING. Accepted G9 artifact plus governed integrated environment episode |
-| G13 | Artifact-based matched evaluation and ablation/stress machinery | Historical five-arm profiles remain non-empirical; missing third arm must be rejected | REOPENED. Accepted variants and a newly frozen measurement/access protocol; independently recomputed raw outcomes |
-| G14 | Local presentation and integrated image | Local/container checks are software evidence, not peer-host/operator deployment acceptance | PARTIAL. Owner-approved target and independent peer-host/operator/security acceptance |
-| G15 | Technical report, slides, reproducibility and review package | Existing evidence is useful but not full scientific certification or submission | PARTIAL/NOT_CERTIFIED. Final verified package; research prerequisites and actual external submission remain separate |
+This is the authoritative completion matrix. The 18 October offline audit
+started from freshly fetched `d004140ee6dd1cc7cecb74813393ee958e01ef55`.
+PASS scope remains limited to the [Master Pipeline](MASTER_PIPELINE_STATUS.md)
+and preserved evidence. A historical PASS is not a fresh host-health claim.
+
+| Gate | Current status | Evidence | Blocker | Next action | Owner/authorization | Acceptance criteria |
+| --- | --- | --- | --- | --- | --- | --- |
+| G0 | PASS | Frozen upstream ancestor and MIT attribution | None in provenance scope | Preserve history/license | Maintainer; no rewrite authorized | Baseline remains an ancestor; attribution unchanged |
+| G1 | PASS, local software | Dependency locks and existing Python CI | Host-specific stacks still need qualification for experiments | Verify chosen interpreter/lock and resource fit before a run | Maintainer offline; owner for model resources | Source-specific tests/imports and dependency consistency, no empirical promotion |
+| G2 | PASS, local contracts | Approval, tool policy, verifier-before-Comms regressions | No live safety certification | Repair only demonstrated defects | Maintainer offline; exact-action operator for live work | Rejection/timeout fail closed; objective verifier controls recovery |
+| G3 | PASS, historical local Kind | Stage 3 acceptance with wrapper/tracing caveats | Current readiness not implied | GET-only context/workload/observability qualification | Owner-selected host; mutations require new authority | Fresh identity, usable metrics, no unrelated exposure; record failed probes |
+| G4 | NOT_PASSED/FROZEN | 017 verified negative; 018 marker only; 015/016 and earlier records retained | Missing causal recovery/cleanup; current candidate SOURCE_MISMATCH | Independently review new stage-A protocol and source freeze | Project lead reopens; operator approves exact action and cleanup limits | Actual alert admission, approved action, causal objective recovery before expiry/cleanup and independent cleanup acceptance |
+| G5 | PASS, split governance | Frozen Train/Validation/Test membership and scenario hashes | Consumer isolation still requires proof | Preserve partitions; inspect prospective Train-only inputs | Maintainer offline; Final-Test access separate | No overlap/leakage; unchanged frozen manifests; no held-out reads during preparation |
+| G6 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Real Base Validation diagnostic; old summaries are mock | No incident baseline or accepted evaluation-population rule | Prepare distinct A6 Base-only Validation incident pilot after G4 | Separate G6 source/population/inference/incident permit | Raw workflow and independent incident baseline; pilot does not automatically close full G6 |
+| G7 | PASS, bounded artifact/reload | Genuine v17 artifact and separate network-isolated reload | No incident-improvement claim | Retain artifact; do not repeat accepted G7 | No new training authorized | Frozen inventory and bounded artifact provenance; G8 owns performance acceptance |
+| G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Diagnostic F1 Base 0.16875, SFT 0.15935; no improvement; incident fields null | Missing matched incident results | Prepare B, matched six-scenario Base/v17 incident pilot after G4/G6 | Separate G8 permit; no reuse of A6 episodes | Comparable episodes/budgets, all failures retained, independent recovery/TTR; original G8 criterion separately adjudicated |
+| G9 | NOT_PASSED/FROZEN | Zero reward-driven advantages; 0/8 aligned actions; unchanged 392 tensors | No accepted policy; v2 envelope/config/reward diagnostic unresolved | Review Train-only v2 proposal; retain fail-closed production admission | Explicit reopening and new training/resource permit; G8 prerequisite unless new controlled-only exception approved | Admissible actions, varying objective rewards, reward-only gradients and matched updates; checkpoint inventory/reload; bounded pilot is not live effectiveness |
+| G10 | OUT_OF_SCOPE | Historical scenario-derived RS evidence | Not a required gate | Preserve historical classification | No new RS execution implied | Exclusion remains distinct from PASS and incident gains |
+| G11 | OUT_OF_SCOPE | Historical synthetic ranking results | Not a required gate | Preserve optional advisory implementation | No new RS execution implied | No RS dependency for required GAI/RL acceptance |
+| G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Injected-policy tests and governed capture wrapper | No accepted G9 policy or real integrated episode | Stage D after independent G9 artifact acceptance | Separate integrated episode permit | Exact accepted policy, authenticated approval, objective recovery and cleanup from raw evidence |
+| G13 | REOPENED | Nonclaimable raw-replay/lineage tooling; historical profiles not empirical | No accepted third arm, frozen formulas/access or final executor | Review three-arm denominators, invalidation, clocks, scorer and lineage before E | Separate measurement freeze, Final-Test/adversarial access and reattempt authority | Compatible arms and raw recomputation; nulls/failures retained; no summary-only certification |
+| G14 | PARTIAL | Local read-only console, synthetic rehearsal and CI container checks | No approved peer target/operator/security acceptance; visual parity remains partial | Select peer host/audience and bounded non-destructive acceptance | Owner deployment/access approval; independent peer reviewer | Actual peer startup/security/operator evidence at final source; local UI is not a live incident |
+| G15 | PARTIAL/NOT_CERTIFIED | Report/slides and historical exact-source review archive | New package required for later source; research and submission unverified | Verify new package bytes/dependencies/links, reconcile claims, retain final receipt externally | Maintainer offline package; project lead scientific acceptance; separate submission approval | Independently accepted exact-source package and claims; actual submission only with verified receipt |
 
 G7's accepted bounded v17 artifact/reload is retained and is not being repeated.
 G10/G11 remain historical optional research and OUT_OF_SCOPE.
 Safe offline repairs are allowed only for demonstrated defects. Existing green
 software contracts do not require new experiments simply to produce activity.
+
+The [execution proposal](PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md) revision v2
+adds distinct A6 preparation, the proposed Train-only G9 v2 contract and G13
+measurement directions. It changes no gate, execution profile or old approval.
+The current G4 candidate's seven mismatched pins remain a NO-GO observation;
+refreshing documentation or CI cannot qualify that profile.
+
+### G7 source discrepancy
+
+The session-supplied operating-contract snapshot says successful SFT training
+and checkpoint provenance are unverified. Current tracked `AGENTS.md`, the
+Master Pipeline, `free-t4-v17/RESULT.json` and its separate reload receipt
+record the later bounded artifact/reload acceptance. The operating contract
+itself gives preserved evidence precedence over prose status claims.
+This matrix therefore retains the evidence-supported bounded G7 PASS,
+not a new promotion or full incident-performance acceptance.
+The 18 October offline checks of `test_sft_v17_evidence.py` passed.
+Weights were not loaded, copied or re-reloaded in this audit.
 
 ## Closure rules
 
@@ -63,6 +94,31 @@ software contracts do not require new experiments simply to produce activity.
    The full project is not closed while required accepted evidence is absent.
 
 ## Current software checkpoint
+
+The offline closure review on 18 October starts from fetched main
+`d004140ee6dd1cc7cecb74813393ee958e01ef55`, tree
+`b91831518794b625704d967a4b1dd5e26828e778`.
+That tree matches PR 218's candidate `4415b296d1f26253358689e7a3ac037894e55673`;
+all nine checks in CI run `39083004829` passed for that candidate.
+This does not imply CI acceptance of the later offline changes.
+
+The offline delta adds four omitted linked package assets and an extracted
+review-link regression. It also makes remediation stop on missing, erroneous,
+inconclusive or contradictory post-mutation verification, preserving executed
+actions and an escalation reason. A conclusive negative may still continue
+under existing action limits; conclusive recovery stops the loop.
+Seven safety regressions failed before this repair.
+Source-specific verification and the new archive receipt are retained under
+`C:/AtlasOps/.audit/closure-offline-20261018/`.
+The complete local Python suite passed 3,361 tests with 25 skips after the
+controller repair. The focused coordinator/approval suite passed 74 tests.
+The built frontend passed 63 unit tests and nine affected browser cases;
+those browser paths are unchanged by the controller delta.
+The local wheel and source-distribution build passed.
+The strict release gate retains two scientific-readiness failures with
+artifact checks PASS and overall NOT_CERTIFIED.
+No empirical gate, historical evidence or execution-source pin changes.
+The following PR 214 checkpoint remains historical, not the new archive.
 
 On 2026-10-18, PR 214 merged at
 `539c4ae76a1955efb778b006f6414e69f04a3325`, tree

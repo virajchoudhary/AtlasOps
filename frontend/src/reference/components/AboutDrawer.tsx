@@ -14,9 +14,24 @@ import { ABOUT_SECTIONS } from "../content";
 
 function FounderVideo() {
   const [mediaState, setMediaState] = useState<"loading" | "ready" | "error">("loading");
+  const playerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const handleRangeTouch = (event: TouchEvent) => {
+      const touchesRange = event.composedPath().some((node) =>
+        node instanceof HTMLElement && node.matches("media-time-range, media-volume-range"),
+      );
+      // Media Chrome disables its native range during dragging, which can suppress the next tap.
+      if (touchesRange) event.preventDefault();
+    };
+    player.addEventListener("touchstart", handleRangeTouch, { capture: true, passive: false });
+    return () => player.removeEventListener("touchstart", handleRangeTouch, true);
+  }, []);
 
   return (
-    <div className="reference-about-video">
+    <div ref={playerRef} className="reference-about-video">
       <MediaController noVolumePref noMutedPref hotkeys="noarrowleft noarrowright">
         <video
           slot="media"

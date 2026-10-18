@@ -1591,6 +1591,7 @@ async def call_agent(
                     if terminal_error:
                         _terminal_actions[action_key] = terminal_error
                 mutation_observation: dict[str, Any] | None = None
+                observation_unknown = False
                 if (
                     role == "remediation"
                     and _is_mutating_action(fn_name, fn_args)
@@ -1603,6 +1604,8 @@ async def call_agent(
                                 **action_record,
                                 "incident_id": incident_id,
                             })
+                            if not isinstance(mutation_observation, dict):
+                                raise ValueError("Mutation observer must return a verification object")
                         except Exception as exc:
                             mutation_observation = {
                                 "env_resolved": False,
@@ -1610,8 +1613,17 @@ async def call_agent(
                                 "error": f"{type(exc).__name__}: {exc}",
                             }
                         action_record["verifier_observation"] = mutation_observation
-                        if mutation_observation.get("env_resolved") is True:
-                            _verifier_resolved = True
+                        _verifier_resolved = (
+                            mutation_observation.get("env_resolved") is True
+                            and mutation_observation.get("verification_status") == "passed"
+                        )
+                        observation_unknown = not (
+                            _verifier_resolved
+                            or (
+                                mutation_observation.get("env_resolved") is False
+                                and mutation_observation.get("verification_status") == "failed"
+                            )
+                        )
 
                 _executed_actions.append(action_record)
                 _runtime_context["observations"].append({
@@ -1661,25 +1673,33 @@ async def call_agent(
                     "content": json.dumps(tool_message)[:TOOL_OUTPUT_MAX_CHARS],
                 })
 
-                if _verifier_resolved:
+                if _verifier_resolved or observation_unknown:
                     controller_final = {
                         "incident_id": incident_id,
-                        "outcome": "resolved",
-                        "status": "resolved",
+                        "outcome": "escalated" if observation_unknown else "resolved",
+                        "status": "escalated" if observation_unknown else "resolved",
                         "proposed_actions": [{
                             "tool": fn_name,
                             "args": fn_args,
                         }],
                         "executed_actions": list(_executed_actions),
                         "actions_taken": list(_executed_actions),
-                        "verified_by": "environment_verifier",
                         "verification": mutation_observation,
                     }
+                    if observation_unknown:
+                        controller_final["terminal_block"] = {
+                            "reason": "post_mutation_observation_unknown",
+                        }
+                    else:
+                        controller_final["verified_by"] = "environment_verifier"
                     trajectory.append({
                         "role": role,
                         "turn": turn,
                         "controller_conclusion": True,
-                        "reason": "authoritative_verifier_resolved",
+                        "reason": (
+                            "post_mutation_observation_unknown"
+                            if observation_unknown else "authoritative_verifier_resolved"
+                        ),
                     })
                     return {
                         "role": role,

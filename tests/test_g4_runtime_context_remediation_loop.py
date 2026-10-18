@@ -12,9 +12,11 @@ import pytest
 @pytest.fixture(autouse=True)
 def _isolate_audit(monkeypatch):
     import agents.coordinator as coordinator
+    from agents.circuit_breaker import CircuitBreaker
 
     monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", "g4-02a-test-audit-secret")
     monkeypatch.setattr(coordinator, "audit_log", MagicMock())
+    monkeypatch.setattr(coordinator, "circuit_breaker", CircuitBreaker())
 
 
 def _response(message: dict, finish_reason: str = "stop") -> MagicMock:
@@ -451,6 +453,64 @@ def test_terminal_action_errors_block_revision_variants(monkeypatch, terminal_ou
         step.get("blocked_by_terminal_error")
         for step in result["trajectory"]
     )
+
+
+@pytest.mark.parametrize("observation", [
+    {"env_resolved": False, "verification_status": "inconclusive"},
+    {"env_resolved": False, "verification_status": "error"},
+    {"env_resolved": True, "verification_status": "inconclusive"},
+    {"env_resolved": False, "verification_status": "passed"},
+    {},
+    None,
+    RuntimeError("telemetry unavailable"),
+])
+def test_unknown_post_mutation_observation_stops_further_actions(monkeypatch, observation):
+    import agents.coordinator as coordinator
+
+    monkeypatch.setattr(coordinator, "require_audit_log", MagicMock())
+    stop = MagicMock(return_value={"success": True})
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "chaos_stop_experiment", stop)
+    action = _native_call(
+        "chaos_stop_experiment",
+        {"kind": "StressChaos", "name": "observed-experiment", "namespace": "chaos-mesh"},
+        "mutation",
+    )
+    post = AsyncMock(side_effect=[
+        _response({"role": "assistant", "content": "", "tool_calls": [action]},
+                  finish_reason="tool_calls"),
+        _response({"role": "assistant", "content": "", "tool_calls": [action]},
+                  finish_reason="tool_calls"),
+        _response({"role": "assistant", "content": json.dumps({"outcome": "resolved"})}),
+    ])
+    monkeypatch.setattr(coordinator, "post_with_retry", post)
+
+    async def observe(_action):
+        if isinstance(observation, Exception):
+            raise observation
+        return observation
+
+    token = coordinator._ACTIVE_MUTATION_OBSERVER.set(observe)
+    try:
+        result = asyncio.run(coordinator.call_agent("remediation", {
+            "incident_id": "inc-unknown-observation",
+            "environment_observation": {
+                "observation_status": "observed",
+                "active_experiments": [{
+                    "kind": "StressChaos", "name": "observed-experiment",
+                    "namespace": "chaos-mesh",
+                }],
+            },
+            "_runtime_control": {"enforce_action_preconditions": True},
+        }, max_turns=2))
+    finally:
+        coordinator._ACTIVE_MUTATION_OBSERVER.reset(token)
+
+    stop.assert_called_once()
+    assert post.await_count == 1
+    assert result["final"]["outcome"] == "escalated"
+    assert result["final"]["terminal_block"]["reason"] == "post_mutation_observation_unknown"
+    assert len(result["final"]["executed_actions"]) == 1
+    assert result["trajectory"][-1]["controller_conclusion"] is True
 
 
 def test_one_mutation_is_observed_before_next_and_resolved_stops_loop(monkeypatch):

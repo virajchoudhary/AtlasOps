@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextvars import ContextVar
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -399,6 +400,12 @@ def test_terminal_action_errors_block_revision_variants(monkeypatch, terminal_ou
     import agents.coordinator as coordinator
 
     monkeypatch.setattr(coordinator, "require_audit_log", MagicMock())
+    monkeypatch.setattr(coordinator, "_ACTIVE_MUTATION_OBSERVER", ContextVar(
+        "terminal_test_observer",
+        default=AsyncMock(return_value={
+            "env_resolved": False, "verification_status": "failed",
+        }),
+    ))
     rollback = MagicMock(return_value={
         "success": False,
         **terminal_output,
@@ -463,6 +470,7 @@ def test_terminal_action_errors_block_revision_variants(monkeypatch, terminal_ou
     {},
     None,
     RuntimeError("telemetry unavailable"),
+    "observer_not_installed",
 ])
 def test_unknown_post_mutation_observation_stops_further_actions(monkeypatch, observation):
     import agents.coordinator as coordinator
@@ -489,7 +497,9 @@ def test_unknown_post_mutation_observation_stops_further_actions(monkeypatch, ob
             raise observation
         return observation
 
-    token = coordinator._ACTIVE_MUTATION_OBSERVER.set(observe)
+    token = coordinator._ACTIVE_MUTATION_OBSERVER.set(
+        None if observation == "observer_not_installed" else observe
+    )
     try:
         result = asyncio.run(coordinator.call_agent("remediation", {
             "incident_id": "inc-unknown-observation",

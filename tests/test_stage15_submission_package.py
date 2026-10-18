@@ -280,6 +280,15 @@ def test_vite_reference_page_is_required_and_selected_when_tracked(monkeypatch):
     assert readiness["package_readiness_missing_assets"] == [path]
 
 
+def test_current_review_links_resolve_from_selected_package_assets(tmp_path):
+    for relative_path in collect_submission_assets():
+        destination = tmp_path / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((REPO_ROOT / relative_path).read_bytes())
+
+    assert check_current_markdown_links(tmp_path) == []
+
+
 class TestStage15SubmissionPackage:
     def test_inventory_digest_is_stable_across_asset_mapping_order(self):
         assets = collect_submission_assets()

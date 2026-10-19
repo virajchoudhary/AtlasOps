@@ -113,10 +113,14 @@ Container, locked model-free runtime, CPU trainer and package checks passed
 in CI, not on a live experimental cluster.
 
 At that same source, local frontend, build, lint, compilation, dependency and
-link checks passed. The full local Python suite reports 3,361 passed,
+link checks passed. The first full local Python run reports 3,361 passed,
 25 skipped and one callback-start wait failure in
 `test_caller_interruption_waits_for_callback_before_trainer_finish`.
 That failure remains preserved and is not a local full-suite PASS.
+An unchanged focused recheck passes all eight lifecycle tests.
+A subsequent serial full run reports 3,362 passed, 25 skipped and no failures.
+The callback-start failure did not reproduce; its root cause is not proved,
+and no test assertion, timeout or application source was changed.
 
 The exact-main source archive has SHA-256
 `c6c64a608bab9f97423adb68333a9dfa61d04f9e671cea86fa7a1b5a2fe27e2f`.

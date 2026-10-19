@@ -10,8 +10,8 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) and
 [deferred handoff](DEFERRED_RESEARCH_HANDOFF.md) define the remaining gates.
 No new metric, checkpoint, incident result or cleanup result is claimed here.
 
-Preparation revision: **v2, 18 October 2026**, reviewed against fetched main
-`d004140ee6dd1cc7cecb74813393ee958e01ef55`.
+Preparation revision: **v3, 19 October 2026**, reviewed against merged main
+`a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`.
 This extends the current proposal, not any frozen experiment.
 Every stage remains **PROPOSED / NOT APPROVED / NOT EXECUTED**.
 The source SHA is an audit basis, not a new execution-source freeze.
@@ -19,10 +19,12 @@ The source SHA is an audit basis, not a new execution-source freeze.
 ## Environment and resources
 
 Use a dedicated, owner-controlled experiment checkout of the final reviewed
-source commit. The recorded software checkpoint is merged PR 214 at
-main commit `539c4ae76a1955efb778b006f6414e69f04a3325`, tree
-`e94f6699c59e4cd9c202742cc847ecaada50eded`, after accepted corrections in
-PRs 209-213. Its verified source package does not authorize research execution.
+source commit. The recorded software checkpoint integrates PRs 221, 220 and
+219, in that order, at main commit
+`a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`, tree
+`5c07d3655c34ec681060233238d4181bf33467e7`.
+Its exact-main CI and source package do not authorize research execution.
+This later documentation amendment requires its own review and source freeze.
 
 The original unapproved execution candidate remains pinned to merged PR 207 at
 `f13374f`. The software checkpoint does not repin research or authorize
@@ -97,14 +99,14 @@ Stages B and E cannot proceed with unspecified trials or a missing GRPO arm.
 Retain the diagnostic Base/SFT result unchanged; do not classify another
 alert-only comparison as incident-resolution evidence.
 
-## Revision v2 incident preparation
+## Revision v3 incident preparation
 
 The following limits are proposed ceilings, not execution authority.
 No new run identity is reserved during preparation.
 
 | Contract | A: G4 | A6: G6 | B: G8 |
 | --- | --- | --- | --- |
-| Population | One new `single_fault/sf-002` episode | The six `VAL_SPLIT` scenarios in `config/scenario_catalog.py`, in declared order | The same six scenarios, paired Base then v17 for each scenario |
+| Population | One new `single_fault/sf-002` episode | The six `VAL_SPLIT` scenarios in `config/scenario_catalog.py`, in declared order | The same six scenarios, counterbalanced prospectively: pairs 1/3/5 Base then v17, pairs 2/4/6 v17 then Base; freeze and record this mapping, order and pre-arm reset/telemetry state before outcomes; do not infer physical reset equivalence |
 | Model | Pinned Base, adapters disabled for all roles | Pinned Base only, zero-shot, no fitting | Same Base/tokenizer and unchanged v17; adapter enabled only in SFT |
 | Sampling | Seed 1337; greedy; temperature 0; top_p 1; 512 new tokens per generation | Same proposed sampling and role contract | Same sampling, role prompts, tools, predicates and limits per arm |
 | Episode limit | One; 3,600 seconds after benign qualification | Six; 3,600 seconds each, 21,600 seconds total | Twelve; 3,600 seconds each, 43,200 seconds total |
@@ -156,8 +158,8 @@ exception and separate acceptance limits. The consumed v1 exception grants none.
 | Action | Exactly one JSON object with `tool`, `arguments`, and boolean `agent_claimed_resolved`; strict duplicates/nonfinite/extra-field rejection; schema and tool policy before execution | Independently demonstrate actual v17 tokenizer/chat-template and output-envelope compatibility; no assumption that its synthetic SFT corpus taught this direct-action format |
 | Admissible tools | Simulator-only `kubectl_get` and `kubectl_scale`, target `default/paymentservice`, replica bounds from the reviewed tool schema | No host/Kubernetes calls; disallowed tools/targets/types are retained blocked outcomes; P1 exact-action permits remain separate |
 | Reset and drift | Each group's four completions use the same immutable initial state; each simulated transition starts from an exact independent memory clone | Snapshot/branch-reset digests and serial execution order; no claim of equivalent physical cluster resets; next group uses a predeclared state, never a reward-selected branch |
-| Objective reward | Freeze one version of `score_direct_action_step` and its full raw decomposition; invalid/blocked actions remain -1 under the reviewed rule; missing verifier evidence is unscorable, not zero | Recompute from observed transitions and checks; include admissible unresolved and resolved transitions; no caller claim or handcrafted reward enters optimization |
-| Learning evidence | At least one group with admissible actions, different objective rewards and nonzero centered advantages; finite strictly positive same-group reward-only gradient norm and an update attributable to that reward component | Raw tokens/log-probabilities, masks, rewards, advantages, KL contribution, reward-only gradient and before/after tensor hashes; independently verify the update is reward-influenced, not KL-only or mere parameter change |
+| Objective reward | Freeze one version of `score_direct_action_step` and its full raw decomposition; invalid/blocked actions remain -1 under the reviewed rule; missing verifier evidence is unscorable, not zero; force `agent_claimed_resolved=False` at the controlled optimization scorer boundary | Recompute from independently observed transitions and checks; retain original model claims and claim-compliance scores outside the learning reward; no caller claim or handcrafted reward enters optimization |
+| Learning evidence | At least two admissible same-group actions produce different verifier-derived `r_verified_resolution` or `r_required_check_coverage` components; nonzero centered advantages, a finite strictly positive gradient from only those environmental components and an attributable update | Raw tokens/log-probabilities, masks, verifier components, rewards, advantages, separate KL/claim contributions and before/after tensor hashes; claim-only, syntax-only or invalid-penalty-only variation cannot establish environmental learning; the same-state claim-only counterexample must fail acceptance; independently verify the update is environmental-reward-influenced, not KL-only or mere parameter change |
 | Budgets | Two groups of four completions; at most 192 new tokens each; seed 2026; at most two optimizer steps; no extra warm-up or retry | New four-generation trainer configuration and installed-TRL lifecycle tests, exact sampling/optimizer/loss/runtime hashes, measured peak-memory fit and approved wall-clock/VRAM ceilings |
 | Negative stop | Stop on malformed bindings, absent reward-only diagnostic, verifier failure, no admissible actions or no reward variation in the first group | Preserve raw failures and null accepted checkpoint; no second group merely to rescue a failed first group; no automatic parser/corpus repair |
 | Artifact acceptance | Completed source/model/config/run manifest, full checkpoint inventory and fresh-process offline reload | Independent recomputation of the learning evidence and reload; a tiny pilot establishes only its bounded learning signal, not live G9 effectiveness or a G13-ready arm |
@@ -190,9 +192,12 @@ The following directions are proposed, not approved formulas:
   Only independently adjudicated infrastructure-invalid episodes may be
   excluded, with immutable reasons/raw references and counts shown separately.
 - Before-start readiness refusals are not incident trials. After-start
-  infrastructure exclusions need a preregistered taxonomy and independent
-  adjudication blind to arm reward. Uncertain attribution stays eligible and
-  inconclusive. Reattempts require separate authority and preserve originals.
+  infrastructure exclusions require preregistered criteria and independent
+  adjudication from an arm-, reward-, recovery- and TTR-blinded
+  infrastructure-only projection. Freeze its schema before the campaign.
+  If blinding is impossible, require deterministic outcome-independent
+  criteria. Uncertain attribution stays eligible and inconclusive.
+  Reattempts need separate authority and preserve originals.
 - Recovery needs authoritative `env_resolved=true`, conclusive verifier
   evidence and causal recovery before expiry/cleanup. Missing fields are null.
   Report cleanup failures separately and do not delete their episode rows.
@@ -200,9 +205,14 @@ The following directions are proposed, not approved formulas:
   rule and diagnosis taxonomy. Reward is independently recomputed using one
   hashed common scorer; specify per-step aggregation before any launch.
 - TTR starts at admitted Alertmanager delivery and ends at first conclusive
-  objective recovery before the deadline. Unresolved episodes are censored
-  at their finite deadline. Report resolved count, censored count and the
-  time origin; a resolved-only mean is not a population recovery-time claim.
+  objective recovery before the deadline. Censor unresolved trials at the last
+  comparable objective observation before cleanup. Nominal-deadline censoring
+  requires approved observation coverage through that deadline before cleanup.
+  Freeze observation coverage and clock comparability; missing or incomparable
+  origins/coverage make TTR null/unscorable, not deadline-censored.
+  Report resolved and censored counts, actual coverage end and terminal reason.
+  Preserve per-trial cleanup start and clock validity with the raw timestamps.
+  A resolved-only mean is not a population recovery-time claim.
 - Freeze the clock source, timestamp precision/offset, wall-to-monotonic
   correlation, maximum accepted skew and stale/out-of-order rejection policy.
   Missing or incomparable timestamps make TTR null/unscorable, not

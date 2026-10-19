@@ -943,7 +943,7 @@ def _summarize_episodes(
             raise ValueError("A1 resolution candidate must be zero, one, or null")
 
         seconds = ttr["seconds"]
-        if ttr["status"] == "observed":
+        if resolution == 1 and ttr["status"] == "observed":
             if (
                 isinstance(seconds, bool)
                 or not isinstance(seconds, (int, float))
@@ -966,24 +966,35 @@ def _summarize_episodes(
             ttr_reasons.append(f"{episode['scenario_id']}: A1 resolution candidate is unknown")
         elif ttr["status"] == "censored":
             right_censored_count += 1
+            ttr_reasons.append(
+                f"{episode['scenario_id']}: right-censored TTR is not a resolved population time"
+            )
         else:
             unavailable_unresolved_count += 1
+            ttr_reasons.append(
+                f"{episode['scenario_id']}: unresolved episode lacks comparable TTR coverage: "
+                f"{ttr.get('reason') or ttr['status']}"
+            )
 
-    if not resolved_values and resolved_without_ttr_count == 0 and not ttr_reasons:
+    if not eligible and not ttr_reasons:
+        ttr_reasons.append("no eligible attempted episodes")
+    if eligible and len(resolved_values) != len(eligible):
+        ttr_reasons.append(
+            "resolved-only TTR mean omitted; every eligible episode needs a comparable resolved TTR"
+        )
+    if not resolved_values and not ttr_reasons:
         ttr_reasons.append("no observed resolved episodes")
     if resolved_without_ttr_count:
         ttr_reasons.append(f"{resolved_without_ttr_count} resolved episode(s) lack observed TTR")
     ttr_value = (
-        None
-        if ttr_reasons
-        else sum(resolved_values) / len(resolved_values)
-        if resolved_values
+        sum(resolved_values) / len(eligible)
+        if eligible and len(resolved_values) == len(eligible) and not ttr_reasons
         else None
     )
     summaries["time_to_recovery_mean_seconds"] = _metric_summary(
         ttr_value,
         ttr_reasons,
-        denominator=len(resolved_values) + resolved_without_ttr_count,
+        denominator=len(eligible),
         scheduled_count=scheduled_count,
         observed_count=len(episodes),
         eligible_attempt_count=len(eligible),

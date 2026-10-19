@@ -40,10 +40,15 @@ The previously published PR #226 candidate is head
 validate offline safeguards and tiny random fixtures only; G9 remains frozen
 `NOT_PASSED` and scientific status remains `NOT_CERTIFIED`.
 
-The shuffle-permutation repair in the current worktree is a separate pending
-change and is not covered by that candidate or CI run. It requires its own
-reviewable commit and exact-head checks; no future commit hash or CI result is
-assumed here.
+The shuffle-permutation implementation was committed at
+`360fc8b3fc18157b5664606176e41301fdd67d93`.
+[Its exact-head CI run](https://github.com/virajchoudhary/AtlasOps/actions/runs/39273770959)
+passed all eight jobs, and independent code review returned PASS+NOTES.
+The reviewer accepted loss pairing and regression coverage, and required the
+stale handoff record to be corrected. These are source-specific software
+checkpoints, not a declaration that PR 226 is merged. Inspect
+[PR 226](https://github.com/virajchoudhary/AtlasOps/pull/226) and the external
+final receipt for subsequent heads, review findings, and integration state.
 
 ## Reproduce model-free checks
 
@@ -90,8 +95,9 @@ The installed-TRL suite reported 1 passed and 5 skipped for missing Torch and
 the pinned runtime packages. The controlled suite excluding its P1 permit/replay
 test reported 23 passed; the P1 test stalled in this run and was interrupted,
 while the parent had independently reported that unchanged regression passing.
-The tiny-tokenizer positive, prompt-lineage and coherently rehashed mismatch
-fixtures therefore still require the pinned CPU CI run.
+At that earlier local checkpoint, the tiny-tokenizer positive, prompt-lineage
+and coherently rehashed mismatch fixtures lacked pinned CPU CI evidence.
+The later exact-head CPU results below close that software-verification gap.
 
 The later root run used isolated pinned tokenizer libraries without installing
 training extras into the development lock. It passed 24 cases, with only the
@@ -102,8 +108,15 @@ binding mutations. That reviewer also independently ran four normalization and
 chronology cases; the Torch probe remained skipped. This accepts offline
 lineage behavior only. Exact-head run `39260177808` later passed the pinned CPU
 contract for the published `cfc5d833` candidate using tiny random fixtures.
-Those results are not real-model empirical evidence. The current shuffle repair
-is not covered by that run and still needs its own exact-head checks.
+Those results are not real-model empirical evidence. The separate
+`360fc8b3fc18157b5664606176e41301fdd67d93` run `39273770959` verifies the
+shuffle repair. It records nine installed-trainer tests and 25 tokenizer/reward
+mechanics tests passing, with no skips in those modules. Forced nonidentity
+permutations preserve completion/advantage pairing through both loss paths,
+while token tampering and an advantage-only swap are rejected. The retained
+red run `39271376325` at `0e9e6bfdf2abab7bc82269a5f7dfe1f99462d2d7`
+contains two actual shuffled-input binding failures and three distinct fixture
+signature errors. The corrected-head CPU run passes both categories.
 
 Before software acceptance, inspect the independent review, exact-head CI and
 raw test evidence. Verify the pinned runtime's concrete policy/reference

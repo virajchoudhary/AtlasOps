@@ -200,7 +200,7 @@ def test_export_rejects_missing_evidence_inventory(tmp_path):
         )
 
 
-class TrainerDouble:
+class RewardVectorTrainerDouble:
     def __init__(self, *, model, args, reward_funcs, train_dataset):
         self.model = model
         self.num_generations = args.num_generations
@@ -219,16 +219,15 @@ class TrainerDouble:
         )
 
 
-class Trainer(ControlledGRPOMixin, TrainerDouble):
+class ObservedRewardVectorTrainer(ControlledGRPOMixin, RewardVectorTrainerDouble):
     def _generate_and_score_completions(self, inputs):
-        # This double returns reward vectors, not the tensor batch returned by TRL.
         return ObservationFirstGRPOMixin._generate_and_score_completions(
             self, inputs
         )
 
 
 def test_observation_first_bound_reward_vector_with_invalid_sample(environment):
-    trainer = Trainer(
+    trainer = ObservedRewardVectorTrainer(
         model=SimpleNamespace(training=True),
         args=SimpleNamespace(max_prompt_length=None, num_generations=2),
         train_dataset=[], observation_lifecycle=environment,

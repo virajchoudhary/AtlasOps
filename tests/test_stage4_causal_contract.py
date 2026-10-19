@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -527,10 +528,16 @@ class TestCoordinatorRemediationContract:
         assert final["actions_taken"] == []
         assert "proposed_actions" in final
 
-    def test_remediation_executes_tool_on_retry_and_records_executed_actions(self) -> None:
+    def test_remediation_executes_tool_on_retry_and_records_executed_actions(self, monkeypatch) -> None:
         import asyncio
 
+        import agents.coordinator as coordinator
         from agents.coordinator import call_agent
+        monkeypatch.setattr(coordinator, "_ACTIVE_MUTATION_OBSERVER", ContextVar(
+            "retry_test_observer", default=AsyncMock(return_value={
+                "env_resolved": False, "verification_status": "failed",
+            }),
+        ))
 
         # Turn 0: LLM emits text proposal without tool_calls
         mock_response_turn0 = MagicMock()

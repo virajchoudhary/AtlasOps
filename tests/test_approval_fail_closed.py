@@ -48,7 +48,8 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     monkeypatch.setattr(coord, "settle_environment", AsyncMock(return_value={}))
     verify = MagicMock(return_value=verifier.EnvironmentVerificationResult(
         scenario_id="", agent_claimed_resolved=False,
-        env_resolved=environment_recovered, verification_status="mock",
+        env_resolved=environment_recovered,
+        verification_status="passed" if environment_recovered else "failed",
     ))
     monkeypatch.setattr(verifier, "verify_environment", verify)
 

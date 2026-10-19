@@ -5,11 +5,11 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PRs [221](https://github.com/virajchoudhary/AtlasOps/pull/221),
-[220](https://github.com/virajchoudhary/AtlasOps/pull/220) and
-[219](https://github.com/virajchoudhary/AtlasOps/pull/219), in that order,
+Software baseline: merged PR [219](https://github.com/virajchoudhary/AtlasOps/pull/219),
 main commit `a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`, tree
 `5c07d3655c34ec681060233238d4181bf33467e7`.
+It includes preceding merges [221](https://github.com/virajchoudhary/AtlasOps/pull/221)
+and [220](https://github.com/virajchoudhary/AtlasOps/pull/220), in that order.
 The current-source acceptance below supplements the historical PR 214 drawer,
 pricing, FAQ, documentation and reel evidence.
 The PR 207 suite and package results below are historical, not current-source

@@ -9,9 +9,11 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -23,6 +25,7 @@ from scripts.package_submission import (
     REQUIRED_REVIEW_ASSETS,
     build_submission_package,
     compute_asset_inventory_sha256,
+    generate_submission_summary_md,
 )
 
 UPSTREAM_BASELINE = "bf9bd197c9f4a05ae55ade254802a9eef1a74356"
@@ -137,6 +140,34 @@ def _within(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _resolve_safe_scratch_directory(repo_root: Path, output_dir: Path) -> Path:
+    output_root = output_dir.resolve(strict=False)
+    metadata_directories = _git_metadata_directories(repo_root)
+    candidates = (
+        [tempfile.tempdir]
+        if tempfile.tempdir is not None
+        else tempfile._candidate_tempdir_list()
+    )
+    for raw_candidate in candidates:
+        try:
+            candidate = Path(os.fsdecode(raw_candidate)).resolve(strict=False)
+        except (OSError, RuntimeError, TypeError) as error:
+            raise ValueError("Cannot resolve a system temporary directory") from error
+        if not candidate.is_dir() or not os.access(
+            candidate,
+            os.W_OK | os.X_OK,
+        ):
+            continue
+        if _within(candidate, output_root) or any(
+            _within(candidate, metadata_dir) for metadata_dir in metadata_directories
+        ):
+            raise ValueError(
+                "System temporary directory must be outside package output and Git metadata"
+            )
+        return candidate
+    raise ValueError("No writable system temporary directory is available")
 
 
 def _git_metadata_directories(repo_root: Path) -> tuple[Path, ...]:
@@ -425,7 +456,12 @@ def _snapshot_files(repo_root: Path, entries: list[GitFile]) -> list[dict[str, A
     return files
 
 
-def _verify_git_state(repo_root: Path, expected_source_sha: str) -> tuple[str, str, str]:
+def _verify_git_state(
+    repo_root: Path,
+    expected_source_sha: str,
+    *,
+    allow_origin_main_advance: bool = False,
+) -> tuple[str, str, str]:
     head = _decode_ascii(_git(repo_root, "rev-parse", "--verify", "HEAD^{commit}"), "HEAD")
     origin_main = _decode_ascii(
         _git(repo_root, "rev-parse", "--verify", "origin/main^{commit}"),
@@ -434,7 +470,27 @@ def _verify_git_state(repo_root: Path, expected_source_sha: str) -> tuple[str, s
     if head != expected_source_sha:
         raise ValueError("HEAD does not match expected_source_sha")
     if origin_main != expected_source_sha:
-        raise ValueError("The fetched local origin/main ref does not match expected_source_sha")
+        if not allow_origin_main_advance:
+            raise ValueError("The fetched local origin/main ref does not match expected_source_sha")
+        ancestry = subprocess.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                expected_source_sha,
+                origin_main,
+            ],
+            cwd=repo_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if ancestry.returncode == 1:
+            raise ValueError(
+                "expected_source_sha is not in the fetched local origin/main history"
+            )
+        if ancestry.returncode != 0:
+            raise ValueError("Could not verify expected_source_sha ancestry in origin/main")
     if _git(
         repo_root,
         "status",
@@ -448,6 +504,45 @@ def _verify_git_state(repo_root: Path, expected_source_sha: str) -> tuple[str, s
         "source tree",
     )
     return head, origin_main, tree
+
+
+def _source_timestamp(repo_root: Path, source_commit: str) -> datetime:
+    try:
+        timestamp = int(
+            _decode_ascii(
+                _git(repo_root, "show", "-s", "--format=%ct", source_commit),
+                "source commit timestamp",
+            )
+        )
+        return datetime.fromtimestamp(timestamp, UTC)
+    except (OSError, OverflowError, ValueError) as error:
+        raise ValueError("Git returned an invalid source commit timestamp") from error
+
+
+def _zip_datetime(timestamp: datetime) -> tuple[int, int, int, int, int, int]:
+    earliest = datetime(1980, 1, 1, tzinfo=UTC)
+    latest = datetime(2107, 12, 31, 23, 59, 58, tzinfo=UTC)
+    normalized = min(max(timestamp, earliest), latest)
+    second = normalized.second - normalized.second % 2
+    return (
+        normalized.year,
+        normalized.month,
+        normalized.day,
+        normalized.hour,
+        normalized.minute,
+        second,
+    )
+
+
+def _archive_member_info(
+    member: str,
+    mode: int,
+    source_timestamp: datetime,
+) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(member, date_time=_zip_datetime(source_timestamp))
+    info.create_system = 3
+    info.external_attr = mode << 16
+    return info
 
 
 def _validate_source_links(repo_root: Path) -> None:
@@ -506,6 +601,46 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _prepare_submission_artifacts(
+    repo_root: Path,
+    output_dir: Path,
+    source_commit: str,
+    source_timestamp: datetime,
+) -> tuple[dict[str, Any], bytes, bytes]:
+    if Path.cwd().resolve() == repo_root:
+        manifest = build_submission_package(output_dir=output_dir)
+    else:
+        command = (
+            "import sys; "
+            "from pathlib import Path; "
+            "from scripts.package_submission import build_submission_package; "
+            "build_submission_package(output_dir=Path(sys.argv[1]))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", command, os.fspath(output_dir)],
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise ValueError("Could not regenerate submission artifacts from the source tree")
+        manifest = _read_json(
+            output_dir / "SUBMISSION_MANIFEST.json",
+            "regenerated submission inventory",
+        )
+
+    manifest["generated_at"] = source_timestamp.isoformat()
+    manifest_bytes = json.dumps(
+        manifest,
+        indent=2,
+        ensure_ascii=True,
+    ).encode("utf-8")
+    summary_bytes = generate_submission_summary_md(manifest).encode("utf-8")
+    (output_dir / "SUBMISSION_MANIFEST.json").write_bytes(manifest_bytes)
+    (output_dir / "SUBMISSION_SUMMARY.md").write_bytes(summary_bytes)
+    return manifest, manifest_bytes, summary_bytes
+
+
 def _check_upstream_lineage(repo_root: Path, source_commit: str) -> dict[str, Any]:
     available = subprocess.run(
         ["git", "cat-file", "-e", f"{UPSTREAM_BASELINE}^{{commit}}"],
@@ -542,6 +677,7 @@ def _write_archive(
     output_dir: Path,
     source_commit: str,
     entries: list[GitFile],
+    source_timestamp: datetime,
 ) -> tuple[Path, list[dict[str, Any]]]:
     archive_path = output_dir / f"atlasops-source-{source_commit[:12]}.zip"
     files: list[dict[str, Any]] = []
@@ -559,16 +695,20 @@ def _write_archive(
                     "size_bytes": len(data),
                 }
             )
-            info = zipfile.ZipInfo.from_file(source_path, arcname=entry.path)
-            info.create_system = 3
-            info.external_attr = int(entry.mode, 8) << 16
+            info = _archive_member_info(
+                entry.path,
+                int(entry.mode, 8),
+                source_timestamp,
+            )
             bundle.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
 
         for archive_name, output_name in ARCHIVE_EXTRA_MEMBERS:
             data = (output_dir / output_name).read_bytes()
-            info = zipfile.ZipInfo(archive_name)
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
+            info = _archive_member_info(
+                archive_name,
+                0o100644,
+                source_timestamp,
+            )
             bundle.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
     return archive_path, files
 
@@ -603,11 +743,16 @@ def _verify_package_artifacts(
     output_dir: Path,
     expected_source_sha: str,
     *,
+    scratch_root: Path,
     persisted_proof: dict[str, Any] | None = None,
+    allow_origin_main_advance: bool = False,
 ) -> dict[str, Any]:
-    source_commit, origin_main, source_tree = _verify_git_state(
-        repo_root, expected_source_sha
+    source_commit, _, source_tree = _verify_git_state(
+        repo_root,
+        expected_source_sha,
+        allow_origin_main_advance=allow_origin_main_advance,
     )
+    source_timestamp = _source_timestamp(repo_root, source_commit)
     entries = _read_git_tree(repo_root, source_commit)
     tree_inventory = _snapshot_files(repo_root, entries)
     inventory_by_path = {item["path"]: item for item in tree_inventory}
@@ -623,8 +768,29 @@ def _verify_package_artifacts(
         raise ValueError("Source inventory does not match the pinned Git tree and checkout")
 
     manifest_path = _package_file(output_dir, MANIFEST_PATH)
+    summary_path = _package_file(output_dir, SUMMARY_PATH)
     manifest = _read_json(manifest_path, "selected submission inventory")
     assets = _validate_submission_manifest(manifest)
+    manifest_bytes = manifest_path.read_bytes()
+    summary_bytes = summary_path.read_bytes()
+    if persisted_proof is not None:
+        with tempfile.TemporaryDirectory(
+            prefix=".source-review-manifest-",
+            dir=scratch_root,
+        ) as generated_dir:
+            expected_manifest, expected_manifest_bytes, expected_summary_bytes = (
+                _prepare_submission_artifacts(
+                    repo_root,
+                    Path(generated_dir) / "inventory",
+                    source_commit,
+                    source_timestamp,
+                )
+            )
+        if manifest_bytes != expected_manifest_bytes:
+            raise ValueError("Selected submission manifest does not match the pinned source")
+        if summary_bytes != expected_summary_bytes:
+            raise ValueError("Selected submission summary does not match the pinned source")
+        manifest = expected_manifest
     missing_required = sorted(set(_required_asset_paths()) - inventory_by_path.keys())
     if missing_required:
         raise ValueError("Required review assets are untracked or missing: " + ", ".join(missing_required))
@@ -654,10 +820,35 @@ def _verify_package_artifacts(
         member for member, _ in ARCHIVE_EXTRA_MEMBERS
     ]
     _validate_member_set(expected_names)
+    sidecar_bytes = {
+        MANIFEST_PATH: manifest_bytes,
+        SUMMARY_PATH: summary_bytes,
+    }
+    expected_member_sizes = {
+        item["path"]: item["size_bytes"]
+        for item in tree_inventory
+    }
+    for archive_member, output_name in ARCHIVE_EXTRA_MEMBERS:
+        expected_member_sizes[archive_member] = len(sidecar_bytes[output_name])
+    expected_total_size = sum(expected_member_sizes.values())
+    expected_zip_datetime = _zip_datetime(source_timestamp)
     with zipfile.ZipFile(archive_path, "r") as bundle:
-        names = bundle.namelist()
+        infos = bundle.infolist()
+        names = [info.filename for info in infos]
         if len(names) != len(set(names)) or set(names) != set(expected_names):
             raise ValueError("Source ZIP members do not match tracked files plus review sidecars")
+        for info in infos:
+            if info.file_size != expected_member_sizes[info.filename]:
+                raise ValueError(
+                    f"Source ZIP member size does not match the source inventory: {info.filename}"
+                )
+            if info.date_time != expected_zip_datetime:
+                raise ValueError(
+                    f"Source ZIP timestamp does not match the source commit: {info.filename}"
+                )
+        if sum(info.file_size for info in infos) != expected_total_size:
+            raise ValueError("Source ZIP total uncompressed size does not match the source inventory")
+
         damaged_member = bundle.testzip()
         if damaged_member is not None:
             raise ValueError(f"Source ZIP CRC failed for {damaged_member}")
@@ -683,7 +874,7 @@ def _verify_package_artifacts(
 
         with tempfile.TemporaryDirectory(
             prefix=".source-review-verify-",
-            dir=output_dir,
+            dir=scratch_root,
         ) as extracted_dir:
             extracted_root = Path(extracted_dir)
             bundle.extractall(extracted_root)
@@ -720,7 +911,7 @@ def _verify_package_artifacts(
         "expected_source_sha": expected_source_sha,
         "source_commit": source_commit,
         "source_tree": source_tree,
-        "origin_main_commit": origin_main,
+        "origin_main_commit": source_commit,
         "archive": archive_name,
         "archive_sha256": archive_sha256,
         "archive_size_bytes": archive_size,
@@ -769,7 +960,9 @@ def build_source_review_package(
         raise ValueError("Run the package builder with the current directory set to repo_root")
     expected = _validate_expected_source_sha(expected_source_sha)
     source_commit, _, source_tree = _verify_git_state(root, expected)
+    source_timestamp = _source_timestamp(root, source_commit)
     destination = _resolve_new_output_path(root, output_dir)
+    scratch_root = _resolve_safe_scratch_directory(root, destination)
     entries = _read_git_tree(root, source_commit)
     _validate_member_set(
         [entry.path for entry in entries]
@@ -788,9 +981,20 @@ def build_source_review_package(
 
     _create_output_directory(destination)
 
-    manifest = build_submission_package(output_dir=destination / "inventory")
+    manifest, _, _ = _prepare_submission_artifacts(
+        root,
+        destination / "inventory",
+        source_commit,
+        source_timestamp,
+    )
     _validate_submission_manifest(manifest)
-    _, files = _write_archive(root, destination, source_commit, entries)
+    _, files = _write_archive(
+        root,
+        destination,
+        source_commit,
+        entries,
+        source_timestamp,
+    )
     by_path = {item["path"]: item for item in files}
     for path, selected in manifest["assets"].items():
         source_metadata = by_path.get(path)
@@ -812,7 +1016,12 @@ def build_source_review_package(
     final_state = _verify_git_state(root, expected)
     if final_state != (source_commit, source_commit, source_tree):
         raise ValueError("Git source state changed while building the package")
-    proof = _verify_package_artifacts(root, destination, expected)
+    proof = _verify_package_artifacts(
+        root,
+        destination,
+        expected,
+        scratch_root=scratch_root,
+    )
     _write_json_exclusive(destination / PROOF_PATH, proof)
     return proof
 
@@ -825,14 +1034,17 @@ def verify_source_review_package(
     """Recheck an existing package against the pinned clean Git checkout."""
     root = _resolve_repo_root(repo_root)
     expected = _validate_expected_source_sha(expected_source_sha)
-    _verify_git_state(root, expected)
     package_root = _resolve_package_location(root, package_dir, require_new=False)
+    scratch_root = _resolve_safe_scratch_directory(root, package_root)
+    _verify_git_state(root, expected, allow_origin_main_advance=True)
     proof = _read_json(_package_file(package_root, PROOF_PATH), "source package proof")
     result = _verify_package_artifacts(
         root,
         package_root,
         expected,
+        scratch_root=scratch_root,
         persisted_proof=proof,
+        allow_origin_main_advance=True,
     )
     return result
 

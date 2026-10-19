@@ -42,15 +42,29 @@ file's raw checkout bytes and Git mode, plus
 untracked and ignored files, including local caches, credentials, and model weights;
 it does not import models or run training.
 
+The manifest's `generated_at` field and each ZIP member timestamp use the source
+commit's UTC committer time. Wall-clock time and file mtimes do not change the archive
+hash when checkout bytes and Python and zlib versions stay the same. ZIP members still
+contain checkout bytes, so different Git line-ending or clean-filter policies across
+clones can change the archive hash. Different Python or zlib versions can also change
+the compressed bytes.
+
 `source_inventory.json` records each Git path, mode, blob ID, raw-byte SHA-256, and
 size. The blob ID is the Git clean-filter identity; it can differ from the raw-byte
 SHA-256 when checkout conversion such as CRLF applies. `proof.json` records the
 source commit and tree, package hash, archive/member checks, extracted-link result,
 and selected-inventory hash. When the upstream baseline object is present locally,
-the build also verifies ancestry and byte-identical MIT license text.
+the build also verifies ancestry and byte-identical MIT license text. Verification
+rebuilds the manifest and summary from the pinned source. It checks each declared
+ZIP member size and their total before CRC validation. It extracts files into the
+system temporary directory, outside the package output and Git metadata. Both
+temporary work directories use the same resolved scratch root; verification stops
+before scratch creation if no usable root outside those protected paths is available.
 
 Proof status is `NOT_CERTIFIED`; `empirical_metrics` is `null`, and execution remains
 unauthorized. Review readiness is a packaging result, not a scientific conclusion.
-To recheck an existing package against the same clean commit and local
-`origin/main` ref, run the build command with `--verify` and the same
-`--expected-source-sha` and `--output-dir` arguments.
+To verify an existing package, keep `HEAD` at its recorded source commit. Pass the
+same `--expected-source-sha` and `--output-dir` arguments with `--verify`. Tracked
+files and the index must be clean. The fetched `origin/main` may have advanced, but
+its history must contain the recorded source commit. Builds still require `HEAD` and
+`origin/main` to match the expected source SHA exactly.

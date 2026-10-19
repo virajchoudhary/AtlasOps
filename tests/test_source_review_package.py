@@ -161,6 +161,41 @@ def _run_cli(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _repack_package_and_refresh_proof(
+    output: Path,
+    replacements: dict[str, bytes],
+) -> None:
+    proof_path = output / source_review.PROOF_PATH
+    proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    archive_path = output / proof["archive"]
+    repacked_path = archive_path.with_name(f"{archive_path.stem}.repacked.zip")
+    with zipfile.ZipFile(archive_path, "r") as original, zipfile.ZipFile(
+        repacked_path,
+        "x",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as repacked:
+        for info in original.infolist():
+            data = (
+                replacements[info.filename]
+                if info.filename in replacements
+                else original.read(info.filename)
+            )
+            repacked.writestr(info, data, compress_type=info.compress_type)
+    repacked_path.replace(archive_path)
+
+    for archive_member, output_name in source_review.ARCHIVE_EXTRA_MEMBERS:
+        if archive_member in replacements:
+            (output / output_name).write_bytes(replacements[archive_member])
+
+    archive_bytes = archive_path.read_bytes()
+    proof["archive_sha256"] = hashlib.sha256(archive_bytes).hexdigest()
+    proof["archive_size_bytes"] = len(archive_bytes)
+    proof_path.write_text(
+        json.dumps(proof, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_cli_builds_exact_tracked_archive_and_verifies_clean_filter_identity(tmp_path):
     root = _make_git_fixture(tmp_path)
     source_sha = _head(root)
@@ -290,6 +325,218 @@ def test_cli_builds_exact_tracked_archive_and_verifies_clean_filter_identity(tmp
     archive_path.write_bytes(archive_path.read_bytes() + b"tampered")
     with pytest.raises(ValueError, match="Archive SHA-256"):
         source_review.verify_source_review_package(root, output, source_sha)
+
+
+def test_verifier_recomputes_submission_manifest_and_summary_from_source(tmp_path):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    _package(root, output, source_sha)
+
+    manifest_path = output / source_review.MANIFEST_PATH
+    summary_path = output / source_review.SUMMARY_PATH
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["gate_statuses_declared"]["G4"] = "PASS"
+    manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=True).encode("utf-8")
+    original_summary = summary_path.read_bytes()
+    expected_gate = b"| G4 | NOT_PASSED |"
+    assert original_summary.count(expected_gate) == 1
+    summary_bytes = original_summary.replace(expected_gate, b"| G4 | PASS |", 1)
+
+    _repack_package_and_refresh_proof(
+        output,
+        {
+            "review/SUBMISSION_MANIFEST.json": manifest_bytes,
+            "review/SUBMISSION_SUMMARY.md": summary_bytes,
+        },
+    )
+
+    with pytest.raises(ValueError, match="submission manifest|submission summary"):
+        source_review.verify_source_review_package(root, output, source_sha)
+
+
+def test_archive_is_deterministic_when_tracked_file_mtimes_change(tmp_path):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    readme = root / "README.md"
+    os.utime(readme, (1609459200, 1609459200))
+    first_output = tmp_path / "source-review-first"
+    first = _package(root, first_output, source_sha)
+
+    os.utime(readme, (1704067200, 1704067200))
+    second_output = tmp_path / "source-review-second"
+    second = _package(root, second_output, source_sha)
+
+    first_archive = (first_output / first["archive"]).read_bytes()
+    second_archive = (second_output / second["archive"]).read_bytes()
+    assert first_archive == second_archive
+    assert first["archive_sha256"] == second["archive_sha256"]
+
+
+def test_verifier_rejects_oversized_member_before_crc_check(tmp_path, monkeypatch):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    _package(root, output, source_sha)
+    archive_path = output / f"atlasops-source-{source_sha[:12]}.zip"
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        oversized_readme = archive.read("README.md") + b"x"
+    _repack_package_and_refresh_proof(output, {"README.md": oversized_readme})
+
+    def reject_crc_before_size_check(_archive):
+        raise AssertionError("CRC validation began before member-size validation")
+
+    monkeypatch.setattr(zipfile.ZipFile, "testzip", reject_crc_before_size_check)
+    with pytest.raises(ValueError, match="size"):
+        source_review.verify_source_review_package(root, output, source_sha)
+
+
+def test_verifier_keeps_scratch_outside_read_only_package_directory(tmp_path, monkeypatch):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    proof = _package(root, output, source_sha)
+    before = {
+        path.relative_to(output).as_posix(): path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file()
+    }
+
+    original_temporary_directory = source_review.tempfile.TemporaryDirectory
+    scratch_paths: list[Path] = []
+
+    def reject_package_writes(*, prefix=None, dir=None, **kwargs):
+        if dir is not None and Path(dir).resolve().is_relative_to(output.resolve()):
+            raise PermissionError("the package directory is read-only")
+        temporary_directory = original_temporary_directory(
+            prefix=prefix,
+            dir=dir,
+            **kwargs,
+        )
+        scratch_paths.append(Path(temporary_directory.name).resolve())
+        return temporary_directory
+
+    monkeypatch.setattr(
+        source_review.tempfile,
+        "TemporaryDirectory",
+        reject_package_writes,
+    )
+    assert source_review.verify_source_review_package(root, output, source_sha) == proof
+    assert scratch_paths
+    assert all(not path.is_relative_to(output.resolve()) for path in scratch_paths)
+    after = {
+        path.relative_to(output).as_posix(): path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+@pytest.mark.parametrize("scratch_location", ("package", "git-metadata"))
+def test_verifier_rejects_protected_temp_roots_before_scratch_io(
+    tmp_path,
+    monkeypatch,
+    scratch_location,
+):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    _package(root, output, source_sha)
+    git_metadata = source_review._git_metadata_directories(root)
+    scratch_root = output if scratch_location == "package" else git_metadata[0]
+    package_before = {
+        path.relative_to(output).as_posix(): path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file()
+    }
+    metadata_before = {
+        path.relative_to(metadata_dir).as_posix(): path.read_bytes()
+        for metadata_dir in git_metadata
+        for path in metadata_dir.rglob("*")
+        if path.is_file()
+    }
+
+    scratch_paths: list[Path] = []
+    default_tempdir_calls: list[bool] = []
+    original_temporary_directory = source_review.tempfile.TemporaryDirectory
+    original_get_default_tempdir = source_review.tempfile._get_default_tempdir
+
+    def track_temporary_directory(*, prefix=None, dir=None, **kwargs):
+        temporary_directory = original_temporary_directory(
+            prefix=prefix,
+            dir=dir,
+            **kwargs,
+        )
+        scratch_paths.append(Path(temporary_directory.name).resolve())
+        return temporary_directory
+
+    def track_default_tempdir():
+        default_tempdir_calls.append(True)
+        return original_get_default_tempdir()
+
+    for variable in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(variable, str(scratch_root))
+    monkeypatch.setattr(source_review.tempfile, "tempdir", None)
+    monkeypatch.setattr(
+        source_review.tempfile,
+        "_get_default_tempdir",
+        track_default_tempdir,
+    )
+    monkeypatch.setattr(
+        source_review.tempfile,
+        "TemporaryDirectory",
+        track_temporary_directory,
+    )
+
+    verification_error = None
+    try:
+        source_review.verify_source_review_package(root, output, source_sha)
+    except ValueError as error:
+        verification_error = error
+
+    package_after = {
+        path.relative_to(output).as_posix(): path.read_bytes()
+        for path in output.rglob("*")
+        if path.is_file()
+    }
+    metadata_after = {
+        path.relative_to(metadata_dir).as_posix(): path.read_bytes()
+        for metadata_dir in git_metadata
+        for path in metadata_dir.rglob("*")
+        if path.is_file()
+    }
+    assert package_after == package_before
+    assert metadata_after == metadata_before
+    assert not scratch_paths, (
+        "verification created scratch directories in a protected location: "
+        f"{scratch_paths!r}; default-temp probes: {len(default_tempdir_calls)}"
+    )
+    assert not default_tempdir_calls
+    assert verification_error is not None
+    assert "temporary" in str(verification_error).casefold()
+
+
+def test_verifier_accepts_recorded_commit_after_origin_main_advances(tmp_path):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    proof = _package(root, output, source_sha)
+    source_tree = _run_git(root, "rev-parse", f"{source_sha}^{{tree}}").decode(
+        "ascii"
+    ).strip()
+    advanced_main = _run_git(
+        root,
+        "commit-tree",
+        source_tree,
+        "-p",
+        source_sha,
+        input_data=b"advance origin/main\n",
+    ).decode("ascii").strip()
+    _run_git(root, "update-ref", "refs/remotes/origin/main", advanced_main)
+
+    assert _head(root) == source_sha
+    assert advanced_main != source_sha
+    assert source_review.verify_source_review_package(root, output, source_sha) == proof
 
 
 def test_builder_rejects_malformed_and_wrong_expected_source_without_output(tmp_path):

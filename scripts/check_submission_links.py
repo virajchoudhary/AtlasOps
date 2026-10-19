@@ -31,6 +31,12 @@ CURRENT_MARKDOWN_PATHS = (
     "docs/project/CONTROLLED_G9_ADMISSION_V1.md",
     "docs/project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md",
     "docs/project/DEFERRED_RESEARCH_HANDOFF.md",
+    "docs/project/PEER_HANDOFF.md",
+    "docs/project/PEER_ONBOARDING.md",
+    ".agents/skills/verify-atlasops/SKILL.md",
+    ".agents/skills/verify-atlasops/features/README.md",
+    ".agents/skills/verify-atlasops/features/rehearsal.md",
+    ".agents/skills/verify-atlasops/features/evidence-console.md",
 )
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")

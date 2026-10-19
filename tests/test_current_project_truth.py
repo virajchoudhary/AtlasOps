@@ -208,7 +208,11 @@ def test_current_demo_guides_reference_the_accepted_software_baseline():
     )
     assert baseline, "The checklist must identify the accepted software baseline"
 
-    for path in ("docs/project/DEMO_RUNBOOK.md", "docs/AtlasOps_Technical_Report.md"):
+    for path in (
+        "docs/project/DEMO_RUNBOOK.md",
+        "docs/AtlasOps_Technical_Report.md",
+        "docs/project/G13_OFFLINE_SAFEGUARDS_HANDOFF.md",
+    ):
         current = _read(path).split("## Historical", 1)[0]
         assert baseline.group(1) in current, (
             f"{path} must point readers to the checklist's accepted software baseline"

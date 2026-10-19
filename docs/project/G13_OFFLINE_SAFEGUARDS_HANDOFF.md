@@ -1,7 +1,10 @@
 # Continue G13 measurement preparation
 
-This handoff describes offline software safeguards based on accepted main
-`b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`. It does not reopen or certify G13.
+The accepted offline safeguards landed in merged
+[PR 224](https://github.com/virajchoudhary/AtlasOps/pull/224) at main commit
+`c90d95602762c5d9c79bec7ce76d805446422c39`. Use that checkpoint or the exact
+later source identified by the external final review receipt.
+This handoff does not reopen or certify G13.
 The [completion matrix](COMPLETION_CHECKLIST.md) remains authoritative.
 The current [measurement proposal](PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md)
 is not an approved clock, adjudication, or campaign contract.
@@ -23,7 +26,9 @@ Worker verification reports eight expected failing regressions before repair
 and 268 assigned tests passing after. Independent source review accepted the
 bounded safeguards and separately ran 177 measurement, replay and lineage tests.
 These are software/model-free results, not incident observations.
-Exact-head CI and published PR acceptance are separate prerequisites for landing.
+The merged checkpoint's [CI run](https://github.com/virajchoudhary/AtlasOps/actions/runs/39256571553)
+passed all eight workflow jobs. Later changes require their own exact-head CI
+and independent acceptance; the historical test counts above do not verify them.
 
 ## Reproduce the checks
 

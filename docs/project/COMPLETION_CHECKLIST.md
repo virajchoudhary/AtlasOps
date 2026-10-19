@@ -5,12 +5,14 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PR [222](https://github.com/virajchoudhary/AtlasOps/pull/222),
-main commit `b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`, tree
-`6a1a264916b37bd76bf307d70211f5ef8bad6e6a`.
+Software baseline: merged PR [224](https://github.com/virajchoudhary/AtlasOps/pull/224),
+main commit `c90d95602762c5d9c79bec7ce76d805446422c39`, tree
+`74676159516f422891305a2b0cafed2eee1315e8`.
 It includes preceding merges [221](https://github.com/virajchoudhary/AtlasOps/pull/221),
 [220](https://github.com/virajchoudhary/AtlasOps/pull/220), and
 [219](https://github.com/virajchoudhary/AtlasOps/pull/219), in that order.
+PRs 222 and 223 then added protocol corrections and peer onboarding.
+PR 224 adds accepted offline measurement safeguards without closing G13.
 The current-source acceptance below supplements the historical PR 214 drawer,
 pricing, FAQ, documentation and reel evidence.
 The PR 207 suite and package results below are historical, not current-source
@@ -60,7 +62,7 @@ and preserved evidence. A historical PASS is not a fresh host-health claim.
 | G10 | OUT_OF_SCOPE | Historical scenario-derived RS evidence | Not a required gate | Preserve historical classification | No new RS execution implied | Exclusion remains distinct from PASS and incident gains |
 | G11 | OUT_OF_SCOPE | Historical synthetic ranking results | Not a required gate | Preserve optional advisory implementation | No new RS execution implied | No RS dependency for required GAI/RL acceptance |
 | G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Injected-policy tests and governed capture wrapper | No accepted G9 policy or real integrated episode | Stage D after independent G9 artifact acceptance | Separate integrated episode permit | Exact accepted policy, authenticated approval, objective recovery and cleanup from raw evidence |
-| G13 | REOPENED | Nonclaimable raw-replay/lineage tooling; historical profiles not empirical | No accepted third arm, frozen formulas/access or final executor | Review three-arm denominators, invalidation, clocks, scorer and lineage before E | Separate measurement freeze, Final-Test/adversarial access and reattempt authority | Compatible arms and raw recomputation; nulls/failures retained; no summary-only certification |
+| G13 | REOPENED | [PR 224 offline safeguards](G13_OFFLINE_SAFEGUARDS_HANDOFF.md); nonclaimable raw replay; historical profiles not empirical | No accepted third arm, frozen formulas/access or final executor | Review three-arm denominators, invalidation, clocks, scorer and lineage before E | Separate measurement freeze, Final-Test/adversarial access and reattempt authority | Compatible arms and raw recomputation; nulls/failures retained; no summary-only certification |
 | G14 | PARTIAL | Local read-only console, synthetic rehearsal and CI container checks | No approved peer target/operator/security acceptance; visual parity remains partial | Select peer host/audience and bounded non-destructive acceptance | Owner deployment/access approval; independent peer reviewer | Actual peer startup/security/operator evidence at final source; local UI is not a live incident |
 | G15 | PARTIAL/NOT_CERTIFIED | Report/slides and independently checked exact-main archive for `a2be6c0f`; earlier packages retained | Later source amendments need a new package; research and submission unverified | Review the protocol amendment, freeze its final source and package, retain final receipt externally | Maintainer offline package; project lead scientific acceptance; separate submission approval | Independently accepted exact-source package and claims; actual submission only with verified receipt |
 
@@ -102,7 +104,19 @@ Weights were not loaded, copied or re-reloaded in this audit.
 5. Stop when all authorized work is verified or has a specific external blocker.
    The full project is not closed while required accepted evidence is absent.
 
-## Accepted PR 222 software checkpoint
+## Accepted PR 224 software checkpoint
+
+PR 224 merged the independently reviewed measurement, replay and lineage
+safeguards at `c90d95602762c5d9c79bec7ce76d805446422c39`.
+[Post-merge CI run 39256571553](https://github.com/virajchoudhary/AtlasOps/actions/runs/39256571553)
+passed all eight jobs. Both Python matrices report 3,387 passed and 15 skipped.
+The repaired four-module local suite passed 274 tests after the current-base
+update. Both demonstrated review findings were repaired and resolved.
+Unsupported clocks still produce null durations and means; G13 remains REOPENED.
+The final exact-source package must identify its own accepted commit and hash.
+Earlier source-specific archives and failures remain unchanged.
+
+## Historical PR 222 software checkpoint
 
 PR 222 merged the four-document protocol/baseline correction at
 `b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`.

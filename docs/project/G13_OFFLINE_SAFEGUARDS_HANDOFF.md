@@ -2,8 +2,11 @@
 
 The accepted offline safeguards landed in merged
 [PR 224](https://github.com/virajchoudhary/AtlasOps/pull/224) at main commit
-`c90d95602762c5d9c79bec7ce76d805446422c39`. Use that checkpoint or the exact
-later source identified by the external final review receipt.
+`c90d95602762c5d9c79bec7ce76d805446422c39`. The current software baseline is
+merged [PR 225](https://github.com/virajchoudhary/AtlasOps/pull/225) at
+`663b1959b885418b27af8463c0c7e88cb6fb87d8`, which includes those safeguards
+and their corrected guide. Use that baseline or the exact later source
+identified by the external final review receipt.
 This handoff does not reopen or certify G13.
 The [completion matrix](COMPLETION_CHECKLIST.md) remains authoritative.
 The current [measurement proposal](PROJECT_CLOSURE_EXECUTION_PROPOSAL_V1.md)

@@ -34,6 +34,7 @@ CURRENT_MARKDOWN_PATHS = (
     "docs/project/PEER_HANDOFF.md",
     "docs/project/PEER_ONBOARDING.md",
     "docs/project/G13_OFFLINE_SAFEGUARDS_HANDOFF.md",
+    "docs/project/G9_OFFLINE_SAFEGUARDS_HANDOFF.md",
     ".agents/skills/verify-atlasops/SKILL.md",
     ".agents/skills/verify-atlasops/features/README.md",
     ".agents/skills/verify-atlasops/features/rehearsal.md",

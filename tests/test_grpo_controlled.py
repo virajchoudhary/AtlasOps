@@ -9,9 +9,14 @@ import pytest
 
 from agents.approval import ApprovalGate
 from training.grpo_controlled import (
-    CLASSIFICATION, SCENARIO, CapacityEnvironment, ControlledGRPOMixin,
-    EpisodeLedger, admit_execution,
+    CLASSIFICATION,
+    SCENARIO,
+    CapacityEnvironment,
+    ControlledGRPOMixin,
+    EpisodeLedger,
+    admit_execution,
 )
+from training.grpo_observation_first import ObservationFirstGRPOMixin
 
 
 def action(replicas=3, claim=False, **arguments):
@@ -58,9 +63,14 @@ def test_objective_transition_and_claim_independence(environment):
     (action(3, namespace="kube-system"), "target_mismatch"),
     (action(3, extra="unexposed"), "invalid_action"),
     ('{"tool":"kubectl_exec","arguments":{},"agent_claimed_resolved":false}', "invalid_action"),
-    ('{"tool":"slack_post_update","arguments":'
-     '{"channel":"x","severity":"P2","title":"x","summary":"x"},'
-     '"agent_claimed_resolved":false}', "tool_unavailable"),
+    (
+        (
+            '{"tool":"slack_post_update","arguments":'
+            '{"channel":"x","severity":"P2","title":"x","summary":"x"},'
+            '"agent_claimed_resolved":false}'
+        ),
+        "tool_unavailable",
+    ),
 ])
 def test_invalid_or_blocked_actions_preserve_state(environment, raw, category):
     result = step(environment, raw)
@@ -174,6 +184,7 @@ def test_reload_requires_distinct_loopback_only_namespace(monkeypatch):
 
 def test_export_rejects_missing_evidence_inventory(tmp_path):
     import hashlib
+
     from scripts.accept_grpo_controlled import accept_export
 
     run = tmp_path / "run"
@@ -189,7 +200,7 @@ def test_export_rejects_missing_evidence_inventory(tmp_path):
         )
 
 
-class TrainerDouble:
+class RewardVectorTrainerDouble:
     def __init__(self, *, model, args, reward_funcs, train_dataset):
         self.model = model
         self.num_generations = args.num_generations
@@ -208,12 +219,15 @@ class TrainerDouble:
         )
 
 
-class Trainer(ControlledGRPOMixin, TrainerDouble):
-    pass
+class ObservedRewardVectorTrainer(ControlledGRPOMixin, RewardVectorTrainerDouble):
+    def _generate_and_score_completions(self, inputs):
+        return ObservationFirstGRPOMixin._generate_and_score_completions(
+            self, inputs
+        )
 
 
 def test_observation_first_bound_reward_vector_with_invalid_sample(environment):
-    trainer = Trainer(
+    trainer = ObservedRewardVectorTrainer(
         model=SimpleNamespace(training=True),
         args=SimpleNamespace(max_prompt_length=None, num_generations=2),
         train_dataset=[], observation_lifecycle=environment,
@@ -221,8 +235,13 @@ def test_observation_first_bound_reward_vector_with_invalid_sample(environment):
     result = trainer._generate_and_score_completions(
         [{"prompt": "catalogue placeholder", "scenario_id": SCENARIO}] * 2
     )
-    assert result == [1, -1]
+    assert result == [1, 0.125]
     assert environment.steps == 2
+    records = trainer.observation_evidence[-1]["records"]
+    assert [record["reward"] for record in records] == [1, -1]
+    assert [record["environmental_reward"] for record in records] == [1, 0.125]
+    assert [record["environmental_admissible"] for record in records] == [True, False]
+    assert all(record["scorable"] for record in records)
     trainer.model.training = False
     with pytest.raises(RuntimeError, match="training mode"):
         trainer._generate_and_score_completions(

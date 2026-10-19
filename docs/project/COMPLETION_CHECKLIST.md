@@ -5,14 +5,21 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PR [224](https://github.com/virajchoudhary/AtlasOps/pull/224),
-main commit `c90d95602762c5d9c79bec7ce76d805446422c39`, tree
-`74676159516f422891305a2b0cafed2eee1315e8`.
+Software baseline: merged PR [225](https://github.com/virajchoudhary/AtlasOps/pull/225),
+main commit `663b1959b885418b27af8463c0c7e88cb6fb87d8`, tree
+`523f849f1f0befd31aac73aa417ad08fd4f9e2b2`.
 It includes preceding merges [221](https://github.com/virajchoudhary/AtlasOps/pull/221),
 [220](https://github.com/virajchoudhary/AtlasOps/pull/220), and
 [219](https://github.com/virajchoudhary/AtlasOps/pull/219), in that order.
 PRs 222 and 223 then added protocol corrections and peer onboarding.
 PR 224 adds accepted offline measurement safeguards without closing G13.
+PRs 227 and 228 complete and correct the peer guides. PR 229 isolates the
+desktop and mobile browser checks without changing their assertions or timeout.
+PR 225 adds complete-source packaging with bounded sidecar reads, preserved
+upstream ancestry, and canonical ZIP verification.
+[Post-merge CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/39337658619)
+passed all eight jobs at this baseline. Later reviewed changes and the exact
+final-main archive are identified by their external review receipt.
 The current-source acceptance below supplements the historical PR 214 drawer,
 pricing, FAQ, documentation and reel evidence.
 The PR 207 suite and package results below are historical, not current-source
@@ -58,13 +65,13 @@ and preserved evidence. A historical PASS is not a fresh host-health claim.
 | G6 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Real Base Validation diagnostic; old summaries are mock | No incident baseline or accepted evaluation-population rule | Prepare distinct A6 Base-only Validation incident pilot after G4 | Separate G6 source/population/inference/incident permit | Raw workflow and independent incident baseline; pilot does not automatically close full G6 |
 | G7 | PASS, bounded artifact/reload | Genuine v17 artifact and separate network-isolated reload | No incident-improvement claim | Retain artifact; do not repeat accepted G7 | No new training authorized | Frozen inventory and bounded artifact provenance; G8 owns performance acceptance |
 | G8 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Diagnostic F1 Base 0.16875, SFT 0.15935; no improvement; incident fields null | Missing matched incident results | Prepare B, matched six-scenario Base/v17 incident pilot after G4/G6 | Separate G8 permit; no reuse of A6 episodes | Comparable episodes/budgets, all failures retained, independent recovery/TTR; original G8 criterion separately adjudicated |
-| G9 | NOT_PASSED/FROZEN | Zero reward-driven advantages; 0/8 aligned actions; unchanged 392 tensors | No accepted policy; v2 envelope/config/reward diagnostic unresolved | Review Train-only v2 proposal; retain fail-closed production admission | Explicit reopening and new training/resource permit; G8 prerequisite unless new controlled-only exception approved | Admissible same-group actions with varying verifier-derived components, isolated environmental-reward gradient and attributable update; claim-only variation must fail; checkpoint inventory/reload; bounded pilot is not live effectiveness |
+| G9 | NOT_PASSED/FROZEN | Zero reward-driven advantages; 0/8 aligned actions; unchanged 392 tensors; [offline safeguards and reproduction](G9_OFFLINE_SAFEGUARDS_HANDOFF.md) are software evidence only | No accepted policy; prospective four-generation envelope/configuration and empirical reward diagnostic remain unqualified | Verify the exact-source safeguards; review Train-only v2 proposal; retain fail-closed production admission | Explicit reopening and new training/resource permit; G8 prerequisite unless new controlled-only exception approved | Admissible same-group actions with varying verifier-derived components, isolated environmental-reward gradient and attributable update; claim-only variation must fail; checkpoint inventory/reload; bounded pilot is not live effectiveness |
 | G10 | OUT_OF_SCOPE | Historical scenario-derived RS evidence | Not a required gate | Preserve historical classification | No new RS execution implied | Exclusion remains distinct from PASS and incident gains |
 | G11 | OUT_OF_SCOPE | Historical synthetic ranking results | Not a required gate | Preserve optional advisory implementation | No new RS execution implied | No RS dependency for required GAI/RL acceptance |
 | G12 | IMPLEMENTED / EMPIRICAL EVIDENCE MISSING | Injected-policy tests and governed capture wrapper | No accepted G9 policy or real integrated episode | Stage D after independent G9 artifact acceptance | Separate integrated episode permit | Exact accepted policy, authenticated approval, objective recovery and cleanup from raw evidence |
 | G13 | REOPENED | [PR 224 offline safeguards](G13_OFFLINE_SAFEGUARDS_HANDOFF.md); nonclaimable raw replay; historical profiles not empirical | No accepted third arm, frozen formulas/access or final executor | Review three-arm denominators, invalidation, clocks, scorer and lineage before E | Separate measurement freeze, Final-Test/adversarial access and reattempt authority | Compatible arms and raw recomputation; nulls/failures retained; no summary-only certification |
 | G14 | PARTIAL | Local read-only console, synthetic rehearsal and CI container checks | No approved peer target/operator/security acceptance; visual parity remains partial | Select peer host/audience and bounded non-destructive acceptance | Owner deployment/access approval; independent peer reviewer | Actual peer startup/security/operator evidence at final source; local UI is not a live incident |
-| G15 | PARTIAL/NOT_CERTIFIED | Report/slides and independently checked exact-main archive for `a2be6c0f`; earlier packages retained | Later source amendments need a new package; research and submission unverified | Review the protocol amendment, freeze its final source and package, retain final receipt externally | Maintainer offline package; project lead scientific acceptance; separate submission approval | Independently accepted exact-source package and claims; actual submission only with verified receipt |
+| G15 | PARTIAL/NOT_CERTIFIED | Report/slides, complete-source package builder from PR 225, and independently checked historical exact-main archives retained | Final engineering needs a fresh exact-main package; research and submission unverified | Freeze the final merged source, verify its complete-source and review archives, retain final receipt externally | Maintainer offline package; project lead scientific acceptance; separate submission approval | Independently accepted exact-source package and claims; actual submission only with verified receipt |
 
 G7's accepted bounded v17 artifact/reload is retained and is not being repeated.
 G10/G11 remain historical optional research and OUT_OF_SCOPE.

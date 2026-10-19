@@ -50,6 +50,8 @@ INVENTORY_PATH = "source_inventory.json"
 PROOF_PATH = "proof.json"
 MANIFEST_PATH = "inventory/SUBMISSION_MANIFEST.json"
 SUMMARY_PATH = "inventory/SUBMISSION_SUMMARY.md"
+MAX_PROOF_BYTES = 64 * 1024
+MAX_SIDECAR_BYTES = 4 * 1024 * 1024
 ARCHIVE_EXTRA_MEMBERS = (
     ("review/SUBMISSION_MANIFEST.json", MANIFEST_PATH),
     ("review/SUBMISSION_SUMMARY.md", SUMMARY_PATH),
@@ -591,9 +593,25 @@ def _write_json_exclusive(path: Path, data: dict[str, Any]) -> None:
         stream.write("\n")
 
 
-def _read_json(path: Path, label: str) -> dict[str, Any]:
+def _read_bounded_bytes(
+    path: Path,
+    label: str,
+    max_bytes: int = MAX_SIDECAR_BYTES,
+) -> bytes:
+    with path.open("rb") as stream:
+        data = stream.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"{label} exceeds its {max_bytes}-byte limit")
+    return data
+
+
+def _read_json(
+    path: Path,
+    label: str,
+    max_bytes: int = MAX_SIDECAR_BYTES,
+) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(_read_bounded_bytes(path, label, max_bytes).decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ValueError(f"Cannot read {label}") from error
     if not isinstance(value, dict):
@@ -642,6 +660,8 @@ def _prepare_submission_artifacts(
 
 
 def _check_upstream_lineage(repo_root: Path, source_commit: str) -> dict[str, Any]:
+    if _git(repo_root, "rev-parse", "--is-shallow-repository").strip() == b"true":
+        raise ValueError("Source review requires a full-history Git checkout")
     available = subprocess.run(
         ["git", "cat-file", "-e", f"{UPSTREAM_BASELINE}^{{commit}}"],
         cwd=repo_root,
@@ -650,7 +670,9 @@ def _check_upstream_lineage(repo_root: Path, source_commit: str) -> dict[str, An
         check=False,
     )
     if available.returncode != 0:
-        return {"status": "NOT_APPLICABLE", "baseline": UPSTREAM_BASELINE}
+        raise ValueError(
+            "Required upstream baseline object is unavailable; use a full-history Git checkout"
+        )
 
     ancestor = subprocess.run(
         ["git", "merge-base", "--is-ancestor", UPSTREAM_BASELINE, source_commit],
@@ -771,8 +793,8 @@ def _verify_package_artifacts(
     summary_path = _package_file(output_dir, SUMMARY_PATH)
     manifest = _read_json(manifest_path, "selected submission inventory")
     assets = _validate_submission_manifest(manifest)
-    manifest_bytes = manifest_path.read_bytes()
-    summary_bytes = summary_path.read_bytes()
+    manifest_bytes = _read_bounded_bytes(manifest_path, "selected submission inventory")
+    summary_bytes = _read_bounded_bytes(summary_path, "selected submission summary")
     if persisted_proof is not None:
         with tempfile.TemporaryDirectory(
             prefix=".source-review-manifest-",
@@ -848,6 +870,25 @@ def _verify_package_artifacts(
                 )
         if sum(info.file_size for info in infos) != expected_total_size:
             raise ValueError("Source ZIP total uncompressed size does not match the source inventory")
+
+        with tempfile.TemporaryDirectory(
+            prefix=".source-review-canonical-",
+            dir=scratch_root,
+        ) as canonical_dir:
+            canonical_root = Path(canonical_dir)
+            (canonical_root / "inventory").mkdir()
+            (canonical_root / MANIFEST_PATH).write_bytes(manifest_bytes)
+            (canonical_root / SUMMARY_PATH).write_bytes(summary_bytes)
+            canonical_archive, _ = _write_archive(
+                repo_root,
+                canonical_root,
+                source_commit,
+                entries,
+                source_timestamp,
+            )
+            canonical_identity = _sha256_file(canonical_archive)
+        if canonical_identity != (archive_sha256, archive_size):
+            raise ValueError("Source ZIP bytes do not match the canonical source archive")
 
         damaged_member = bundle.testzip()
         if damaged_member is not None:
@@ -962,6 +1003,7 @@ def build_source_review_package(
     source_commit, _, source_tree = _verify_git_state(root, expected)
     source_timestamp = _source_timestamp(root, source_commit)
     destination = _resolve_new_output_path(root, output_dir)
+    _check_upstream_lineage(root, source_commit)
     scratch_root = _resolve_safe_scratch_directory(root, destination)
     entries = _read_git_tree(root, source_commit)
     _validate_member_set(
@@ -1035,9 +1077,14 @@ def verify_source_review_package(
     root = _resolve_repo_root(repo_root)
     expected = _validate_expected_source_sha(expected_source_sha)
     package_root = _resolve_package_location(root, package_dir, require_new=False)
-    scratch_root = _resolve_safe_scratch_directory(root, package_root)
     _verify_git_state(root, expected, allow_origin_main_advance=True)
-    proof = _read_json(_package_file(package_root, PROOF_PATH), "source package proof")
+    _check_upstream_lineage(root, expected)
+    scratch_root = _resolve_safe_scratch_directory(root, package_root)
+    proof = _read_json(
+        _package_file(package_root, PROOF_PATH),
+        "source package proof",
+        MAX_PROOF_BYTES,
+    )
     result = _verify_package_artifacts(
         root,
         package_root,

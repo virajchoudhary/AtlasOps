@@ -53,9 +53,15 @@ def _make_git_fixture(
     tmp_path: Path,
     *,
     readme: bytes | None = None,
+    include_upstream_baseline: bool = True,
 ) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
+    upstream_license = _run_git(
+        REPO_ROOT,
+        "show",
+        f"{source_review.UPSTREAM_BASELINE}:LICENSE",
+    )
 
     helper_files = (
         "scripts/package_source_review.py",
@@ -90,7 +96,7 @@ def _make_git_fixture(
                 b"crlf-review.txt text eol=crlf\n"
             )
         elif relative_path == "LICENSE":
-            content = b"MIT License\nFixture license text.\n"
+            content = upstream_license
         else:
             content = f"fixture:{relative_path}\n".encode()
         _write_fixture_file(root, relative_path, content)
@@ -103,8 +109,43 @@ def _make_git_fixture(
     _run_git(root, "config", "user.name", "Source Package Test")
     _run_git(root, "config", "user.email", "source-package-test@example.invalid")
     _run_git(root, "config", "core.autocrlf", "false")
+    if include_upstream_baseline:
+        common_dir = Path(
+            _run_git(
+                REPO_ROOT,
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-common-dir",
+            ).decode("utf-8").strip()
+        )
+        alternates = root / ".git" / "objects" / "info" / "alternates"
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text(
+            os.fspath(common_dir / "objects"),
+            encoding="utf-8",
+        )
+        baseline_ref = "refs/remotes/upstream/baseline"
+        _run_git(
+            root,
+            "fetch",
+            "--no-tags",
+            os.fspath(REPO_ROOT),
+            f"{source_review.UPSTREAM_BASELINE}:{baseline_ref}",
+        )
     _run_git(root, "add", "--all")
-    _run_git(root, "commit", "-m", "fixture source")
+    if include_upstream_baseline:
+        tree = _run_git(root, "write-tree").decode("ascii").strip()
+        commit = _run_git(
+            root,
+            "commit-tree",
+            tree,
+            "-p",
+            source_review.UPSTREAM_BASELINE,
+            input_data=b"fixture source\n",
+        ).decode("ascii").strip()
+        _run_git(root, "update-ref", "refs/heads/main", commit)
+    else:
+        _run_git(root, "commit", "-m", "fixture source")
     _run_git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
     return root
 
@@ -373,6 +414,107 @@ def test_archive_is_deterministic_when_tracked_file_mtimes_change(tmp_path):
     assert first["archive_sha256"] == second["archive_sha256"]
 
 
+@pytest.mark.parametrize(
+    ("relative_path", "max_bytes"),
+    [
+        ("proof.json", 64 * 1024),
+        ("source_inventory.json", 4 * 1024 * 1024),
+        ("inventory/SUBMISSION_MANIFEST.json", 4 * 1024 * 1024),
+        ("inventory/SUBMISSION_SUMMARY.md", 4 * 1024 * 1024),
+    ],
+    ids=["proof", "source-inventory", "submission-manifest", "submission-summary"],
+)
+def test_verifier_bounds_fixed_schema_sidecar_reads(
+    tmp_path,
+    monkeypatch,
+    relative_path,
+    max_bytes,
+):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    _package(root, output, source_sha)
+    sidecar_path = output / relative_path
+    with sidecar_path.open("wb") as stream:
+        stream.truncate(max_bytes + 1)
+
+    read_sizes: list[int] = []
+    original_open = Path.open
+
+    class ReadProbe:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            return self.stream.read(size)
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+    def observed_open(path: Path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        if path == sidecar_path:
+            return ReadProbe(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", observed_open)
+    with pytest.raises(ValueError, match="byte limit"):
+        source_review.verify_source_review_package(root, output, source_sha)
+    assert read_sizes == [max_bytes + 1]
+
+
+@pytest.mark.parametrize(
+    ("placement", "payload"),
+    [
+        ("preamble", b"hidden preamble payload\n"),
+        ("suffix", b"\nhidden suffix payload"),
+    ],
+    ids=["preamble", "suffix"],
+)
+def test_verifier_rejects_rehashed_zip_preamble_and_suffix_before_crc(
+    tmp_path,
+    monkeypatch,
+    placement,
+    payload,
+):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    output = tmp_path / "source-review"
+    proof = _package(root, output, source_sha)
+    archive_path = output / proof["archive"]
+    archive_bytes = archive_path.read_bytes()
+    changed_archive = (
+        payload + archive_bytes
+        if placement == "preamble"
+        else archive_bytes + payload
+    )
+    archive_path.write_bytes(changed_archive)
+
+    proof_path = output / source_review.PROOF_PATH
+    persisted_proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    persisted_proof["archive_sha256"] = hashlib.sha256(changed_archive).hexdigest()
+    persisted_proof["archive_size_bytes"] = len(changed_archive)
+    proof_path.write_text(
+        json.dumps(persisted_proof, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+
+    def reject_crc_before_canonical_check(_archive):
+        raise AssertionError("CRC validation ran before the canonical archive comparison")
+
+    monkeypatch.setattr(zipfile.ZipFile, "testzip", reject_crc_before_canonical_check)
+    with pytest.raises(ValueError, match="canonical"):
+        source_review.verify_source_review_package(root, output, source_sha)
+
+
 def test_verifier_rejects_oversized_member_before_crc_check(tmp_path, monkeypatch):
     root = _make_git_fixture(tmp_path)
     source_sha = _head(root)
@@ -549,6 +691,56 @@ def test_builder_rejects_malformed_and_wrong_expected_source_without_output(tmp_
 
     assert not (tmp_path / "malformed-output").exists()
     assert not (tmp_path / "wrong-source-output").exists()
+
+
+def test_builder_rejects_missing_upstream_baseline_before_creating_output(tmp_path):
+    root = _make_git_fixture(tmp_path, include_upstream_baseline=False)
+    output = tmp_path / "missing-baseline-output"
+
+    assert _run_git(root, "rev-parse", "--is-shallow-repository").strip() == b"false"
+    with pytest.raises(ValueError, match="Required upstream baseline object"):
+        _package(root, output)
+    assert not output.exists()
+
+
+def test_builder_and_verifier_reject_shallow_checkout_with_baseline_object(
+    tmp_path,
+    monkeypatch,
+):
+    root = _make_git_fixture(tmp_path)
+    source_sha = _head(root)
+    package = tmp_path / "full-history-package"
+    _package(root, package, source_sha)
+
+    shallow_file = Path(
+        _run_git(root, "rev-parse", "--absolute-git-dir").decode("utf-8").strip()
+    ) / "shallow"
+    shallow_file.write_text(f"{source_review.UPSTREAM_BASELINE}\n", encoding="ascii")
+    assert _run_git(root, "rev-parse", "--is-shallow-repository").strip() == b"true"
+    _run_git(root, "cat-file", "-e", f"{source_review.UPSTREAM_BASELINE}^{{commit}}")
+    _run_git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        source_review.UPSTREAM_BASELINE,
+        source_sha,
+    )
+
+    package_io_calls: list[str] = []
+
+    def reject_package_io(*args, **kwargs):
+        package_io_calls.append("package")
+        raise AssertionError("package I/O began before the shallow checkout was rejected")
+
+    monkeypatch.setattr(source_review, "_package_file", reject_package_io)
+    with pytest.raises(ValueError, match="full-history Git checkout"):
+        source_review.verify_source_review_package(root, package, source_sha)
+    assert not package_io_calls
+
+    build_output = tmp_path / "shallow-build-output"
+    with pytest.raises(ValueError, match="full-history Git checkout"):
+        _package(root, build_output, source_sha)
+    assert not build_output.exists()
 
 
 def test_builder_rejects_origin_main_that_does_not_match_expected_source(tmp_path):

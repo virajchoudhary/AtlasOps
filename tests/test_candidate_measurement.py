@@ -114,7 +114,7 @@ def test_scores_unresolved_one_of_two_checks_and_false_claim_as_minus_0125():
     assert raw_episode == before
 
 
-def test_computes_ttr_from_delivered_alert_to_post_action_success_before_cleanup():
+def test_records_recovery_endpoint_but_fails_closed_without_clock_comparability():
     events = [
         {
             "event": "episode_started",
@@ -165,11 +165,222 @@ def test_computes_ttr_from_delivered_alert_to_post_action_success_before_cleanup
         "reason": None,
     }
     assert measured["objective_score"]["value"] == 1.0
-    assert measured["time_to_recovery"] == {
-        "seconds": 3.0,
-        "status": "observed",
-        "reason": None,
-        "clock_source": "recorded_at",
+    assert measured["a1_resolution_candidate"]["value"] == 1
+    ttr = measured["time_to_recovery"]
+    assert ttr["seconds"] is None
+    assert ttr["censor_duration_seconds"] is None
+    assert ttr["status"] == "unavailable"
+    assert ttr["reason"] == "clock_comparability_not_verified"
+    assert ttr["clock_comparability"]["status"] == "NOT_VERIFIED"
+    assert ttr["recovery_endpoint"] == {
+        "event_index": 7,
+        "recorded_at": "2026-09-29T12:00:03Z",
+        "verification_status": "passed",
+        "env_resolved": True,
+        "reason": "first conclusive post-action success before cleanup",
+        "raw_ref": None,
+    }
+    assert ttr["coverage_endpoint"] is None
+
+
+@pytest.mark.parametrize(
+    ("event_name", "expected_failure_event"),
+    [
+        ("telemetry_loss", "telemetry_loss"),
+        ("future_lifecycle_event", "episode_unscorable"),
+    ],
+)
+def test_failure_or_unknown_event_after_recovery_blocks_favorable_scoring(
+    event_name,
+    expected_failure_event,
+):
+    raw_ref = {"artifact": "synthetic-events.jsonl", "line": 9}
+    events = [
+        *_admission_events(),
+        {
+            "event": "action_result",
+            "executed": True,
+            "agent_claimed_resolved": False,
+            "recorded_at": "2026-09-29T12:00:01Z",
+        },
+        {
+            "event": "post_action_verification",
+            "verification": _verification(
+                "passed",
+                True,
+                [
+                    {"check_id": REQUIRED_CHECK_IDS[0], "passed": True},
+                    {"check_id": REQUIRED_CHECK_IDS[1], "passed": True},
+                ],
+            ),
+            "recorded_at": "2026-09-29T12:00:02Z",
+        },
+        {"event": event_name, "reason": "synthetic observation loss", "raw_ref": raw_ref},
+        {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:03Z"},
+    ]
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+
+    assert measured["eligibility"]["status"] == "eligible"
+    assert measured["outcome_classification"] == "eligible_pending_independent_adjudication"
+    assert measured["a1_resolution_candidate"]["value"] is None
+    assert measured["objective_score"]["value"] is None
+    assert measured["failures"][0]["event"] == expected_failure_event
+    assert raw_ref in measured["raw_episode"]["raw_refs"]
+    if event_name == "future_lifecycle_event":
+        assert measured["raw_episode"]["events"][6]["source_event_name"] == event_name
+
+
+def test_ttr_without_a_post_action_observation_is_unavailable_not_censored():
+    events = [
+        *_admission_events(),
+        {
+            "event": "action_result",
+            "executed": True,
+            "agent_claimed_resolved": False,
+            "recorded_at": "2026-09-29T12:00:01Z",
+        },
+        {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:02Z"},
+    ]
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+
+    assert measured["time_to_recovery"]["status"] == "unavailable"
+    assert measured["time_to_recovery"]["coverage_endpoint"] is None
+    assert measured["time_to_recovery"]["censor_duration_seconds"] is None
+
+
+def test_ttr_does_not_use_post_cleanup_observation_as_coverage():
+    events = [
+        *_admission_events(),
+        {
+            "event": "action_result",
+            "executed": True,
+            "agent_claimed_resolved": False,
+            "recorded_at": "2026-09-29T12:00:01Z",
+        },
+        {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:02Z"},
+        {
+            "event": "post_action_verification",
+            "verification": _verification(
+                "failed",
+                False,
+                [
+                    {"check_id": REQUIRED_CHECK_IDS[0], "passed": False},
+                    {"check_id": REQUIRED_CHECK_IDS[1], "passed": False},
+                ],
+            ),
+            "recorded_at": "2026-09-29T12:00:03Z",
+        },
+    ]
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+    ttr = measured["time_to_recovery"]
+
+    assert ttr["status"] == "unavailable"
+    assert ttr["reason"] == "objective post-action observation missing before cleanup"
+    assert ttr["coverage_endpoint"] is None
+    assert ttr["censor_duration_seconds"] is None
+
+
+def test_ttr_preserves_last_negative_pre_cleanup_observation_but_fails_closed_on_clocks():
+    raw_ref = {"artifact": "synthetic-events.jsonl", "line": 8}
+    events = [
+        *_admission_events(),
+        {
+            "event": "action_result",
+            "executed": True,
+            "agent_claimed_resolved": False,
+            "recorded_at": "2026-09-29T12:00:01Z",
+        },
+        {
+            "event": "post_action_verification",
+            "verification": _verification(
+                "failed",
+                False,
+                [
+                    {"check_id": REQUIRED_CHECK_IDS[0], "passed": False},
+                    {"check_id": REQUIRED_CHECK_IDS[1], "passed": False},
+                ],
+            ),
+            "recorded_at": "2026-09-29T12:00:02Z",
+        },
+        {
+            "event": "post_action_verification",
+            "verification": _verification(
+                "failed",
+                False,
+                [
+                    {"check_id": REQUIRED_CHECK_IDS[0], "passed": False},
+                    {"check_id": REQUIRED_CHECK_IDS[1], "passed": False},
+                ],
+            ),
+            "recorded_at": "2026-09-29T12:00:03Z",
+            "raw_ref": raw_ref,
+        },
+        {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:04Z"},
+    ]
+    events[2]["clock_identity"] = "alertmanager-wall-clock"
+    events[6]["clock_identity"] = "verifier-wall-clock"
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+    ttr = measured["time_to_recovery"]
+
+    assert measured["a1_resolution_candidate"]["value"] == 0
+    assert ttr["status"] == "unavailable"
+    assert ttr["seconds"] is None
+    assert ttr["censor_duration_seconds"] is None
+    assert ttr["clock_comparability"]["status"] == "NOT_VERIFIED"
+    assert ttr["coverage_endpoint"] == {
+        "event_index": 6,
+        "recorded_at": "2026-09-29T12:00:03Z",
+        "verification_status": "failed",
+        "env_resolved": False,
+        "reason": "last conclusive unresolved post-action verifier before cleanup",
+        "raw_ref": raw_ref,
+    }
+
+
+def test_recovered_candidate_does_not_claim_ttr_without_clock_comparability():
+    events = [
+        *_admission_events(),
+        {
+            "event": "action_result",
+            "executed": True,
+            "agent_claimed_resolved": False,
+            "recorded_at": "2026-09-29T12:00:01Z",
+        },
+        {
+            "event": "post_action_verification",
+            "verification": _verification(
+                "passed",
+                True,
+                [
+                    {"check_id": REQUIRED_CHECK_IDS[0], "passed": True},
+                    {"check_id": REQUIRED_CHECK_IDS[1], "passed": True},
+                ],
+            ),
+            "recorded_at": "2026-09-29T12:00:03Z",
+        },
+        {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:04Z"},
+    ]
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+    ttr = measured["time_to_recovery"]
+
+    assert measured["outcome_classification"] == "eligible_recovered"
+    assert measured["a1_resolution_candidate"]["value"] == 1
+    assert measured["objective_score"]["value"] == 1.0
+    assert ttr["status"] == "unavailable"
+    assert ttr["seconds"] is None
+    assert ttr["clock_comparability"]["status"] == "NOT_VERIFIED"
+    assert ttr["recovery_endpoint"] == {
+        "event_index": 5,
+        "recorded_at": "2026-09-29T12:00:03Z",
+        "verification_status": "passed",
+        "env_resolved": True,
+        "reason": "first conclusive post-action success before cleanup",
+        "raw_ref": None,
     }
 
 
@@ -224,7 +435,8 @@ def test_cleanup_or_later_verifier_cannot_override_pre_cleanup_failure():
         "conclusive_verifier_no_recovery_before_cleanup"
     )
     assert measured["time_to_recovery"]["seconds"] is None
-    assert measured["time_to_recovery"]["status"] == "censored"
+    assert measured["time_to_recovery"]["status"] == "unavailable"
+    assert measured["time_to_recovery"]["coverage_endpoint"]["event_index"] == 5
 
 
 def test_missing_or_inconclusive_admission_is_undetermined_not_excluded():
@@ -535,7 +747,9 @@ def test_first_success_remains_a1_recovery_after_later_action_and_failed_check()
         "raw_ref": None,
     }
     assert measured["objective_score"]["value"] == 0.0
-    assert measured["time_to_recovery"]["seconds"] == 2.0
+    assert measured["time_to_recovery"]["seconds"] is None
+    assert measured["time_to_recovery"]["recovery_endpoint"]["event_index"] == 5
+    assert measured["time_to_recovery"]["clock_comparability"]["status"] == "NOT_VERIFIED"
     assert measured["outcome_classification"] == "eligible_recovered"
 
 
@@ -668,7 +882,10 @@ def test_inconclusive_post_action_verifier_keeps_score_null_with_reason():
         "post_action_verifier_missing_or_inconclusive"
     )
     assert measured["time_to_recovery"]["seconds"] is None
-    assert measured["time_to_recovery"]["status"] == "censored"
+    assert measured["time_to_recovery"]["status"] == "unavailable"
+    assert measured["time_to_recovery"]["reason"] == (
+        "no conclusive objective post-action verifier before cleanup"
+    )
 
 
 def test_missing_and_invalid_diagnosis_outputs_count_as_misses():
@@ -741,7 +958,7 @@ def test_multiple_diagnosis_outputs_are_ambiguous_and_all_raw_labels_are_retaine
     ] == ["database saturation", "packet loss"]
 
 
-def test_ttr_is_censored_when_no_post_action_success_occurs():
+def test_ttr_keeps_negative_coverage_endpoint_without_claiming_censor_duration():
     events = _admission_events()
     events.extend(
         [
@@ -773,8 +990,13 @@ def test_ttr_is_censored_when_no_post_action_success_occurs():
     measured = measure_candidate_episode(_episode(events), _contract())
 
     assert measured["time_to_recovery"]["seconds"] is None
-    assert measured["time_to_recovery"]["status"] == "censored"
-    assert "no conclusive" in measured["time_to_recovery"]["reason"]
+    assert measured["time_to_recovery"]["status"] == "unavailable"
+    assert measured["time_to_recovery"]["censor_duration_seconds"] is None
+    assert measured["time_to_recovery"]["clock_comparability"]["status"] == "NOT_VERIFIED"
+    assert measured["time_to_recovery"]["coverage_endpoint"]["event_index"] == 5
+    assert measured["time_to_recovery"]["coverage_endpoint"]["recorded_at"] == (
+        "2026-09-29T12:00:02Z"
+    )
 
 
 def test_ttr_is_unavailable_when_success_lacks_a_cleanup_boundary():

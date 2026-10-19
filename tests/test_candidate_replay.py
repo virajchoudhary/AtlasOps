@@ -533,7 +533,7 @@ def test_replays_all_three_arms_and_reports_supported_minus_0125_decomposition()
     )
 
 
-def test_computes_resolution_diagnosis_and_ttr_only_with_complete_raw_evidence():
+def test_computes_resolution_and_diagnosis_but_keeps_ttr_unverified_without_clock_evidence():
     _, _, pins, _, _ = _candidate_inputs()
     rows = _common_rows([(arm, _recovered_episode(arm, pins[arm])) for arm in ARM_ORDER])
 
@@ -544,11 +544,16 @@ def test_computes_resolution_diagnosis_and_ttr_only_with_complete_raw_evidence()
         assert summary["reward_mean"]["value"] == 1.0
         assert summary["resolution_rate"]["value"] == 1.0
         assert summary["diagnosis_accuracy"]["value"] == 1.0
-        assert summary["time_to_recovery_mean_seconds"]["value"] == 3.0
+        ttr = summary["time_to_recovery_mean_seconds"]
+        assert ttr["value"] is None
+        assert ttr["denominator"] == 1
+        assert ttr["resolved_episode_count"] == 1
+        assert ttr["resolved_without_observed_ttr_count"] == 1
+        assert any("clock_comparability_not_verified" in reason for reason in ttr["reasons"])
         assert summary["reward_mean"]["denominator"] == 1
 
 
-def test_mixed_resolved_and_right_censored_attempts_keep_resolved_ttr_mean():
+def test_mixed_resolved_and_unresolved_attempts_keep_population_ttr_null():
     second_id = "synthetic/replay-002"
     _, _, pins, _, _ = _candidate_inputs()
     rows = _common_rows(
@@ -565,9 +570,51 @@ def test_mixed_resolved_and_right_censored_attempts_keep_resolved_ttr_mean():
     assert summary["reward_mean"]["denominator"] == 2
     assert summary["resolution_rate"]["value"] == 0.5
     assert summary["diagnosis_accuracy"]["value"] == 1.0
-    assert summary["time_to_recovery_mean_seconds"]["value"] == 3.0
-    assert summary["time_to_recovery_mean_seconds"]["denominator"] == 1
-    assert summary["time_to_recovery_mean_seconds"]["right_censored_count"] == 1
+    assert summary["time_to_recovery_mean_seconds"]["value"] is None
+    assert summary["time_to_recovery_mean_seconds"]["denominator"] == 2
+    assert summary["time_to_recovery_mean_seconds"]["resolved_episode_count"] == 1
+    assert summary["time_to_recovery_mean_seconds"]["unavailable_unresolved_count"] == 1
+    assert any(
+        "resolved-only" in reason for reason in summary["time_to_recovery_mean_seconds"]["reasons"]
+    )
+
+
+def test_telemetry_loss_keeps_attempt_denominator_and_nulls_replay_summary():
+    _, _, pins, _, _ = _candidate_inputs()
+    recovered = _recovered_episode(ARM_ORDER[0], pins[ARM_ORDER[0]])
+    raw_ref = {"artifact": "synthetic-events.jsonl", "line": 9}
+    recovered["events"].insert(
+        7,
+        {
+            "event": "telemetry_loss",
+            "reason": "synthetic observation loss",
+            "raw_ref": raw_ref,
+        },
+    )
+    rows = _common_rows(
+        [
+            (ARM_ORDER[0], recovered),
+            (ARM_ORDER[1], _worked_episode(ARM_ORDER[1], pins[ARM_ORDER[1]])),
+            (ARM_ORDER[2], _worked_episode(ARM_ORDER[2], pins[ARM_ORDER[2]])),
+        ]
+    )
+
+    result = _replay_common(rows)
+    arm_result = result["arms"][ARM_ORDER[0]]
+    episode = arm_result["episodes"][0]
+
+    assert arm_result["eligibility_counts"]["eligible"] == 1
+    assert arm_result["pending_adjudication_count"] == 1
+    assert episode["outcome_classification"] == "eligible_pending_independent_adjudication"
+    assert episode["a1_resolution_candidate"]["value"] is None
+    assert episode["objective_score"]["value"] is None
+    assert raw_ref in episode["raw_episode"]["raw_refs"]
+    assert arm_result["summary"]["reward_mean"]["value"] is None
+    assert arm_result["summary"]["reward_mean"]["denominator"] == 1
+    assert any(
+        "pending independent adjudication" in reason
+        for reason in arm_result["summary"]["reward_mean"]["reasons"]
+    )
 
 
 def test_known_prestart_ineligible_episode_is_reported_outside_attempt_denominator():
@@ -597,7 +644,10 @@ def test_known_prestart_ineligible_episode_is_reported_outside_attempt_denominat
     assert arm_result["summary"]["reward_mean"]["excluded_pre_start_ineligible_count"] == 1
     assert arm_result["summary"]["reward_mean"]["ineligible_attempted_count"] == 0
     assert arm_result["summary"]["diagnosis_accuracy"]["value"] == 1.0
-    assert arm_result["summary"]["time_to_recovery_mean_seconds"]["value"] == 3.0
+    ttr = arm_result["summary"]["time_to_recovery_mean_seconds"]
+    assert ttr["value"] is None
+    assert ttr["denominator"] == 1
+    assert ttr["resolved_without_observed_ttr_count"] == 1
 
 
 def test_activity_after_known_ineligibility_blocks_denominator_exclusion():

@@ -5,9 +5,9 @@ The [completion matrix](COMPLETION_CHECKLIST.md) remains the only authoritative
 gate-status table. The [onboarding guide](PEER_ONBOARDING.md) is the safe entrypoint.
 Do not reuse a historical attempt, consumed approval, checkpoint claim, or source pin.
 
-Accepted starting software is merged [PR 222](https://github.com/virajchoudhary/AtlasOps/pull/222)
-at `b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`.
-[Post-merge CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/39237100600)
+The accepted software checkpoint is merged [PR 224](https://github.com/virajchoudhary/AtlasOps/pull/224)
+at `c90d95602762c5d9c79bec7ce76d805446422c39`.
+[Post-merge CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/39256571553)
 passed. Subsequent engineering and its exact source are identified by each
 reviewed PR and the external final package receipt, not by a guessed future SHA.
 
@@ -19,11 +19,11 @@ No peer name or approval is assumed.
 
 | Workstream | DONE | BLOCKED | OWNER/APPROVAL | NEXT ACTION |
 | --- | --- | --- | --- | --- |
-| Software and delivery | PRs 221, 220, 219 and 222 integrated; main CI passed; prior source archives independently checked | Later engineering requires its own review, CI and final archive | Maintainer may complete offline engineering; scientific claims need project-lead acceptance | Use reviewed main and regenerate the exact-source package after the final engineering merge |
+| Software and delivery | PRs 221, 220, 219, 222, 223 and 224 integrated; main CI passed; prior source archives independently checked | Later engineering requires its own review, CI and final archive | Maintainer may complete offline engineering; scientific claims need project-lead acceptance | Use reviewed main and regenerate the exact-source package after the final engineering merge |
 | A. Environment qualification and G4 | Fail-closed source, telemetry, approval and run-owned cleanup contracts exist; negative records preserved | Candidate source mismatch; real environment/model/operator/alert-origin qualification and G4 reopening absent | Host owner approves restoration and resources; project lead reopens protocol; operator approves exact action | Follow the source and host checks below, then independently freeze a fresh causal protocol before requesting one incident permit |
 | B. G6 Base baseline and matched G8 | Validation diagnostic and bounded v17 artifact/reload retained; counterbalanced campaign requirements prepared | No accepted causal incident baseline, matched incident results or population rule | Project lead approves population/scoring; host and operator approve each bounded campaign | After G4, use distinct six-episode G6 and twelve-arm G8 campaigns; never reuse G6 episodes as G8 arms |
 | C. G9 controlled GRPO | Direct-action simulator, observation journal and frozen negative evidence retained | Four-generation configuration, admissible environmental signal and isolated reward-gradient acceptance need current-source verification; no accepted policy | Project lead reopens G9; separate training/resource approval; fresh exception for any earlier simulator-only track | Prove the model-free safeguards first; then request only the reviewed finite Train-only pilot |
-| D. G12 policy and G13 measurement | Policy capture and nonclaimable three-arm replay/lineage tools exist | Accepted learned policy/third arm, integrated incident results, frozen measurement and held-out access absent | Project lead approves measurement and access; operator approves incidents; independent reviewer recomputes evidence | Verify offline lineage, denominator and coverage rules, then obtain separate policy/incident/measurement permits |
+| D. G12 policy and G13 measurement | Policy capture and [accepted fail-closed G13 safeguards](G13_OFFLINE_SAFEGUARDS_HANDOFF.md) retain denominators, provenance and pre-cleanup endpoints | Accepted learned policy/third arm, integrated incident results, frozen measurement and held-out access absent | Project lead approves measurement and access; operator approves incidents; independent reviewer recomputes evidence | Use the G13 reproduction guide, then obtain separate policy/incident/measurement permits |
 | E. G14 peer host and G15 delivery | Local read-only app, synthetic rehearsal, CI container and review materials accepted within software scope | No named peer host, live operator/security acceptance, complete scientific claims acceptance or submission receipt | Peer host owner approves target/audience; project lead approves claims; submission owner authorizes actual submission | Review the package and safe demo first; request peer-host acceptance separately from public deployment and academic submission |
 
 ## Read-only source and host qualification

@@ -5,17 +5,21 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
-Software baseline: merged PR [219](https://github.com/virajchoudhary/AtlasOps/pull/219),
-main commit `a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`, tree
-`5c07d3655c34ec681060233238d4181bf33467e7`.
-It includes preceding merges [221](https://github.com/virajchoudhary/AtlasOps/pull/221)
-and [220](https://github.com/virajchoudhary/AtlasOps/pull/220), in that order.
+Software baseline: merged PR [222](https://github.com/virajchoudhary/AtlasOps/pull/222),
+main commit `b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`, tree
+`6a1a264916b37bd76bf307d70211f5ef8bad6e6a`.
+It includes preceding merges [221](https://github.com/virajchoudhary/AtlasOps/pull/221),
+[220](https://github.com/virajchoudhary/AtlasOps/pull/220), and
+[219](https://github.com/virajchoudhary/AtlasOps/pull/219), in that order.
 The current-source acceptance below supplements the historical PR 214 drawer,
 pricing, FAQ, documentation and reel evidence.
 The PR 207 suite and package results below are historical, not current-source
 acceptance.
 The accepted software merges do not authorize deployment, research execution, or
 external submission.
+The [peer handoff tracker](PEER_HANDOFF.md) records completed preparation,
+external dependencies, owner decisions, and next actions without replacing
+this scientific gate matrix.
 
 ## Application acceptance
 
@@ -98,7 +102,17 @@ Weights were not loaded, copied or re-reloaded in this audit.
 5. Stop when all authorized work is verified or has a specific external blocker.
    The full project is not closed while required accepted evidence is absent.
 
-## Current software checkpoint
+## Accepted PR 222 software checkpoint
+
+PR 222 merged the four-document protocol/baseline correction at
+`b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`.
+[Post-merge CI run 39237100600](https://github.com/virajchoudhary/AtlasOps/actions/runs/39237100600)
+passed all eight jobs. Earlier source-specific archives below remain
+historical; a new final archive must match the latest accepted source.
+No scientific gate, source guard, raw result or consumed authorization changed.
+The [onboarding guide](PEER_ONBOARDING.md) defines the non-empirical review path.
+
+## Historical PR 219 software checkpoint
 
 On 19 October 2026, PRs 221, 220 and 219 merged in the requested order at
 `a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`, tree

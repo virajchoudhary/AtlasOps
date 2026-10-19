@@ -32,7 +32,9 @@ This governance document records the repository's alignment with the adopted non
 ---
 
 Current consolidated software acceptance is maintained in the single
-[project closure checklist](COMPLETION_CHECKLIST.md), with recorded merged PR 214
+[project closure checklist](COMPLETION_CHECKLIST.md).
+The following PR 214 software checkpoint is historical, not the current baseline.
+It records merged PR 214
 at `539c4ae76a1955efb778b006f6414e69f04a3325` (tree
 `e94f6699c59e4cd9c202742cc847ecaada50eded`). It does not change the scientific
 statuses or preserved evidence below.

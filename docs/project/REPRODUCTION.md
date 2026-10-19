@@ -1,5 +1,9 @@
 # Reproducing the AtlasOps local development baseline
 
+The [peer onboarding guide](PEER_ONBOARDING.md) describes the current safe
+source, frontend, test, troubleshooting and handoff workflow.
+The Stage 0D measurements below remain historical, not current acceptance.
+
 Current source/evidence basis: `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`,
 5 October 2026. The commands below validate software without model
 execution or live infrastructure. The Stage 0D figures are historical.

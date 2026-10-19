@@ -166,7 +166,32 @@ def _lora_state_sha256(model, torch) -> str:
 def _build_trainer(runtime, tmp_path, *, controlled=False):
     torch = runtime.torch
     torch.manual_seed(2026)
-    lifecycle = _Lifecycle()
+    if controlled:
+        from training.grpo_controlled import _observation_lineage
+
+        class ControlledFixtureLifecycle(_Lifecycle):
+            def before_action(self, snapshot, index, *, g9_group_token):
+                return super().before_action(snapshot, index)
+
+            def execute(self, raw_completion, state, index, *, g9_group_token):
+                result = super().execute(raw_completion, state, index)
+                return {
+                    **result,
+                    "reward": 0.125,
+                    "environmental_reward": 0.125,
+                    "environmental_components": {
+                        "r_verified_resolution": 0.0,
+                        "r_required_check_coverage": 0.125,
+                    },
+                    "environmental_admissible": True,
+                    "terminal_block": None,
+                    "g9_group_token": g9_group_token,
+                    **_observation_lineage(state),
+                }
+
+        lifecycle = ControlledFixtureLifecycle()
+    else:
+        lifecycle = _Lifecycle()
     completion_variant = COMPLETION.replace(",", ", ")
     tokenizer = _tiny_tokenizer(
         runtime,

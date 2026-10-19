@@ -16,6 +16,7 @@ from training.grpo_controlled import (
     EpisodeLedger,
     admit_execution,
 )
+from training.grpo_observation_first import ObservationFirstGRPOMixin
 
 
 def action(replicas=3, claim=False, **arguments):
@@ -219,7 +220,11 @@ class TrainerDouble:
 
 
 class Trainer(ControlledGRPOMixin, TrainerDouble):
-    pass
+    def _generate_and_score_completions(self, inputs):
+        # This double returns reward vectors, not the tensor batch returned by TRL.
+        return ObservationFirstGRPOMixin._generate_and_score_completions(
+            self, inputs
+        )
 
 
 def test_observation_first_bound_reward_vector_with_invalid_sample(environment):

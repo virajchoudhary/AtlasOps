@@ -33,10 +33,17 @@ environmental-advantage, environmental-signal and loss-input hashes.
 The probe attempts to preserve RNG, existing gradients, metrics and checkpoint
 settings. Its pinned-runtime behavior requires separate numerical verification.
 
-The source base is `b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`.
-This token-lineage follow-up remains an uncommitted local candidate; it has no
-reviewed commit or exact-head CI yet. A prior PR or package receipt does not
-cover this follow-up.
+The previously published PR #226 candidate is head
+`cfc5d8339273abba4078be11437e3f1616cd0784` over
+`c90d95602762c5d9c79bec7ce76d805446422c39`. Its exact-head CI run
+`39260177808` passed, including the pinned TRL CPU contract. These results
+validate offline safeguards and tiny random fixtures only; G9 remains frozen
+`NOT_PASSED` and scientific status remains `NOT_CERTIFIED`.
+
+The shuffle-permutation repair in the current worktree is a separate pending
+change and is not covered by that candidate or CI run. It requires its own
+reviewable commit and exact-head checks; no future commit hash or CI result is
+assumed here.
 
 ## Reproduce model-free checks
 
@@ -93,8 +100,10 @@ PASS+NOTES for actual saved-tokenizer loading, the valid export, prompt mismatch
 coherently rehashed text/token mismatch, first-group rejection and evidence-hash
 binding mutations. That reviewer also independently ran four normalization and
 chronology cases; the Torch probe remained skipped. This accepts offline
-lineage behavior only. The added pinned CPU CI step runs this entire module;
-numerical Torch/TRL evidence and exact-head CI remain required before merge.
+lineage behavior only. Exact-head run `39260177808` later passed the pinned CPU
+contract for the published `cfc5d833` candidate using tiny random fixtures.
+Those results are not real-model empirical evidence. The current shuffle repair
+is not covered by that run and still needs its own exact-head checks.
 
 Before software acceptance, inspect the independent review, exact-head CI and
 raw test evidence. Verify the pinned runtime's concrete policy/reference

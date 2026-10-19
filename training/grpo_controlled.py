@@ -183,6 +183,47 @@ def _environmental_signal_sha256(inputs: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
+def _restore_generation_order(inputs: Mapping[str, Any]) -> dict[str, Any]:
+    import torch
+
+    sample_indices = inputs.get("g9_sample_indices")
+    if not torch.is_tensor(sample_indices) or sample_indices.ndim != 1:
+        raise RuntimeError(
+            "Controlled GRPO loss has no valid generated sample indices"
+        )
+    sample_order = sample_indices.detach().cpu().tolist()
+    group_size = len(sample_order)
+    if (
+        group_size == 0
+        or any(type(index) is not int for index in sample_order)
+        or sorted(sample_order) != list(range(group_size))
+    ):
+        raise RuntimeError(
+            "Controlled GRPO loss sample indices are not a complete generation permutation"
+        )
+
+    positions = {sample: position for position, sample in enumerate(sample_order)}
+    restore_order = [positions[index] for index in range(group_size)]
+    restored = {}
+    for name, value in inputs.items():
+        if value is None:
+            restored[name] = None
+            continue
+        if (
+            not torch.is_tensor(value)
+            or value.ndim == 0
+            or value.shape[0] != group_size
+        ):
+            raise RuntimeError(
+                "Controlled GRPO loss inputs do not share the generated sample order"
+            )
+        indices = torch.tensor(
+            restore_order, dtype=torch.long, device=value.device
+        )
+        restored[name] = value.index_select(0, indices)
+    return restored
+
+
 class EpisodeLedger:
     """Exclusive raw evidence file; persist each boundary before proceeding."""
 
@@ -482,6 +523,28 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
     def environmental_gradient_evidence(self) -> tuple[dict[str, Any], ...]:
         return tuple(copy.deepcopy(self._environmental_gradient_evidence))
 
+    def _generate_and_score_completions(self, inputs: Any) -> Any:
+        result = super()._generate_and_score_completions(inputs)
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                "Controlled GRPO generation did not return a tensor mapping"
+            )
+        import torch
+
+        advantages = result.get("advantages")
+        if (
+            "g9_sample_indices" in result
+            or not torch.is_tensor(advantages)
+            or advantages.ndim == 0
+        ):
+            raise RuntimeError(
+                "Controlled GRPO generation cannot bind sample order"
+            )
+        result["g9_sample_indices"] = torch.arange(
+            advantages.shape[0], dtype=torch.long, device=advantages.device
+        )
+        return result
+
     def compute_loss(
         self,
         model: Any,
@@ -492,12 +555,22 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
         if getattr(model, "training", None) is True:
             if not isinstance(inputs, Mapping):
                 raise RuntimeError("Controlled GRPO loss inputs must be a mapping")
-            optimization_input_sha256 = _optimization_input_sha256(inputs)
-            environmental_advantages = _environmental_advantage_values(inputs)
+            loss_input_sha256 = _optimization_input_sha256(inputs)
+            group_inputs = (
+                _restore_generation_order(inputs)
+                if self._environmental_group_evidence
+                else inputs
+            )
+            optimization_input_sha256 = _optimization_input_sha256(group_inputs)
+            environmental_advantages = _environmental_advantage_values(
+                group_inputs
+            )
             environmental_advantages_sha256 = _environmental_advantage_sha256(
                 environmental_advantages
             )
-            environmental_signal_sha256 = _environmental_signal_sha256(inputs)
+            environmental_signal_sha256 = _environmental_signal_sha256(
+                group_inputs
+            )
             group_index = self.state.global_step + 1
             if self._environmental_group_evidence:
                 if not 1 <= group_index <= len(self._environmental_group_evidence):
@@ -532,7 +605,7 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
         )
         if (
             getattr(model, "training", None) is True
-            and _optimization_input_sha256(inputs) != optimization_input_sha256
+            and _optimization_input_sha256(inputs) != loss_input_sha256
         ):
             raise RuntimeError("Controlled GRPO loss inputs changed during diagnostics")
         return loss

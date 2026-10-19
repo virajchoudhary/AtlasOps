@@ -9,6 +9,7 @@ HANDOFF_DOCS = (
     "docs/project/PEER_HANDOFF.md",
     "docs/project/PEER_ONBOARDING.md",
     "docs/project/G13_OFFLINE_SAFEGUARDS_HANDOFF.md",
+    "docs/project/G9_OFFLINE_SAFEGUARDS_HANDOFF.md",
 )
 
 
@@ -21,3 +22,10 @@ def test_peer_handoff_is_in_required_selected_review_inventory(monkeypatch):
 
 def test_peer_handoff_links_resolve_in_matching_source():
     assert not check_current_markdown_links(ROOT, documents=HANDOFF_DOCS)
+
+
+def test_peer_tracker_links_to_each_offline_safeguards_guide():
+    tracker = (ROOT / "docs/project/PEER_HANDOFF.md").read_text(encoding="utf-8")
+    for guide in HANDOFF_DOCS:
+        if "OFFLINE_SAFEGUARDS" in guide:
+            assert f"]({Path(guide).name})" in tracker

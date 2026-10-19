@@ -20,6 +20,8 @@ University continuation of Harikishanth/AtlasOps<br>
 Evidence state: 5 October 2026<br>
 Research status: **NOT_CERTIFIED**
 
+Current continuation: [peer handoff tracker](project/PEER_HANDOFF.md).
+
 <!-- Evidence: AGENTS.md; docs/project/GAI_RL_SCOPE_REVISION.md -->
 
 ---

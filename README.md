@@ -129,6 +129,10 @@ operator feedback or incident improvement.
 
 ## Quick Start
 
+For team continuation, use the [peer handoff tracker](docs/project/PEER_HANDOFF.md)
+and [safe onboarding guide](docs/project/PEER_ONBOARDING.md).
+They identify completed software, unresolved evidence and the exact owner decisions.
+
 The [project closure checklist](docs/project/COMPLETION_CHECKLIST.md) records the
 consolidated application's implementation, verification and acceptance status.
 It separates release work from the

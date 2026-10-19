@@ -12,7 +12,7 @@ import platform
 import shutil
 import signal
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,9 +21,17 @@ from agents.approval import ApprovalGate, approval_mode_for_severity
 from agents.coordinator import _TOOL_PARAMETER_SCHEMAS, _check_tool_policy
 from config.splits import get_split
 from training.grpo_environment import parse_policy_action
-from training.grpo_observation_first import ObservationFirstGRPOMixin, _column_values
+from training.grpo_observation_first import (
+    ObservationFirstGRPOMixin,
+    _column_values,
+    _public_snapshot,
+)
 from training.grpo_reward import (
+    ENVIRONMENTAL_GRADIENT_COMPONENT,
+    ENVIRONMENTAL_REWARD_COMPONENTS,
+    has_environmental_reward_signal,
     has_reward_driven_advantages,
+    normalize_group_advantages,
     score_direct_action_step,
 )
 
@@ -60,6 +68,119 @@ def canonical_bytes(value: Any) -> bytes:
 
 def digest(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def _observation_lineage(state: Mapping[str, Any]) -> dict[str, str]:
+    snapshot_bytes, observation_digest = _public_snapshot(state)
+    return {
+        "observation_digest": observation_digest,
+        "state_prompt_sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+    }
+
+
+def _environmental_advantage_values(inputs: Mapping[str, Any]) -> list[float]:
+    import torch
+
+    advantages = inputs.get("advantages")
+    if torch.is_tensor(advantages):
+        values = advantages.detach().cpu().reshape(-1).tolist()
+    elif (
+        not isinstance(advantages, (str, bytes))
+        and isinstance(advantages, Sequence)
+    ):
+        values = list(advantages)
+    else:
+        raise RuntimeError("Controlled GRPO loss has no environmental advantages")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(float(value))
+        for value in values
+    ):
+        raise RuntimeError("Controlled GRPO loss has invalid environmental advantages")
+    return [float(value) for value in values]
+
+
+def _optimization_input_sha256(inputs: Mapping[str, Any]) -> str:
+    import torch
+
+    if not isinstance(inputs, Mapping) or not {
+        "prompt_ids",
+        "completion_ids",
+        "advantages",
+    }.issubset(inputs):
+        raise RuntimeError(
+            "Controlled GRPO loss inputs do not bind prompt, completion, and advantages"
+        )
+
+    def evidence_value(value: Any) -> Any:
+        if torch.is_tensor(value):
+            tensor = value.detach().cpu().contiguous()
+            raw = (
+                tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+                if tensor.numel()
+                else b""
+            )
+            return {
+                "dtype": str(tensor.dtype),
+                "shape": list(tensor.shape),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        if isinstance(value, Mapping):
+            if any(not isinstance(key, str) for key in value):
+                raise TypeError("GRPO loss input keys must be strings")
+            return {
+                key: evidence_value(value[key])
+                for key in sorted(value)
+            }
+        if isinstance(value, (list, tuple)):
+            return [evidence_value(item) for item in value]
+        if value is None or isinstance(value, str | int | float | bool):
+            return value
+        raise TypeError("GRPO loss input contains unsupported evidence")
+
+    try:
+        payload = evidence_value(inputs)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Controlled GRPO loss input evidence is incomplete") from exc
+    return hashlib.sha256(canonical_bytes(payload)).hexdigest()
+
+
+def _environmental_advantage_sha256(values: Sequence[float]) -> str:
+    return hashlib.sha256(
+        canonical_bytes([float(value) for value in values])
+    ).hexdigest()
+
+
+def _plain_input_values(value: Any) -> Any:
+    import torch
+
+    if torch.is_tensor(value):
+        return value.detach().cpu().tolist()
+    if isinstance(value, Mapping):
+        return {key: _plain_input_values(value[key]) for key in sorted(value)}
+    if isinstance(value, (list, tuple)):
+        return [_plain_input_values(item) for item in value]
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    raise TypeError("GRPO signal input contains unsupported values")
+
+
+def _environmental_signal_sha256(inputs: Mapping[str, Any]) -> str:
+    if not isinstance(inputs, Mapping) or not {
+        "prompt_ids",
+        "completion_ids",
+        "advantages",
+    }.issubset(inputs):
+        raise RuntimeError(
+            "Controlled GRPO signal lacks generated tokens or environmental advantages"
+        )
+    payload = {
+        "prompt_ids": _plain_input_values(inputs["prompt_ids"]),
+        "completion_ids": _plain_input_values(inputs["completion_ids"]),
+        "advantages": _environmental_advantage_values(inputs),
+    }
+    return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
 class EpisodeLedger:
@@ -143,10 +264,19 @@ class CapacityEnvironment:
             else {"replicas": 1, "demand": 3}
         )
         observed = self._observe()
-        self.ledger.append("state_observed", {"group": self.group, "state": observed})
+        self.ledger.append(
+            "state_observed",
+            {"group": self.group, "state": observed, **_observation_lineage(observed)},
+        )
         return {"state": observed, "observed_at": datetime.now(UTC).isoformat()}
 
-    def before_action(self, snapshot: Mapping[str, Any], index: int) -> dict[str, Any]:
+    def before_action(
+        self,
+        snapshot: Mapping[str, Any],
+        index: int,
+        *,
+        g9_group_token: str | None = None,
+    ) -> dict[str, Any]:
         if index != self.sample:
             raise ValueError("Controlled sample order changed")
         # GRPO samples must be independent branches of the identical state.
@@ -157,8 +287,16 @@ class CapacityEnvironment:
             "demand": observations["demand_units"],
         }
         observed = self._observe()
+        lineage = _observation_lineage(observed)
         self.ledger.append(
-            "branch_reset", {"group": self.group, "sample": index, "state": observed}
+            "branch_reset",
+            {
+                "group": self.group,
+                "sample": index,
+                "state": observed,
+                "g9_group_token": g9_group_token,
+                **lineage,
+            },
         )
         return {"state": observed, "observed_at": datetime.now(UTC).isoformat()}
 
@@ -191,14 +329,20 @@ class CapacityEnvironment:
     def execute(
         self, raw_completion: str, state: Mapping[str, Any], index: int,
         *, approval_gate: ApprovalGate | None = None, approval_permit: Any = None,
-        approval_decision: str = "missing",
+        approval_decision: str = "missing", g9_group_token: str | None = None,
     ) -> dict[str, Any]:
         if index != self.sample or digest(state) != digest(self._observe()):
             raise ValueError("Controlled action is not bound to the observed state")
+        if g9_group_token is not None and (
+            not isinstance(g9_group_token, str) or not g9_group_token.strip()
+        ):
+            raise ValueError("Controlled action has an invalid GRPO group token")
+        lineage = _observation_lineage(state)
         self.ledger.append(
             "action_proposed",
             {"group": self.group, "sample": index, "state": state,
-             "raw_completion": raw_completion},
+             "raw_completion": raw_completion, "g9_group_token": g9_group_token,
+             **lineage},
         )
         action = None
         category = None
@@ -281,6 +425,14 @@ class CapacityEnvironment:
             raise
         # Claims are retained but never affect recovery or reward, even penalties.
         reward = -1.0 if category else float(decomposition["total"])
+        environmental_components = {
+            name: decomposition[name]
+            for name in (
+                "r_verified_resolution",
+                "r_required_check_coverage",
+            )
+        }
+        environmental_reward = round(sum(environmental_components.values()), 6)
         result = {
             "scenario_id": self.scenario,
             "policy_completion": raw_completion,
@@ -292,6 +444,12 @@ class CapacityEnvironment:
             "verification": verification,
             "reward": reward,
             "objective_reward_decomposition": decomposition,
+            "environmental_components": environmental_components,
+            "environmental_reward": environmental_reward,
+            "environmental_admissible": category is None and bool(executed),
+            "scorable": True,
+            "g9_group_token": g9_group_token,
+            **lineage,
             "next_state": self._observe(),
         }
         self.ledger.append(
@@ -316,12 +474,13 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
     """Reuse pinned observation-first routing, not its live-candidate scorer."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._reward_gradient_evidence: list[dict[str, Any]] = []
+        self._environmental_gradient_evidence: list[dict[str, Any]] = []
+        self._environmental_group_evidence: list[dict[str, Any]] = []
         super().__init__(*args, **kwargs)
 
     @property
-    def reward_gradient_evidence(self) -> tuple[dict[str, Any], ...]:
-        return tuple(copy.deepcopy(self._reward_gradient_evidence))
+    def environmental_gradient_evidence(self) -> tuple[dict[str, Any], ...]:
+        return tuple(copy.deepcopy(self._environmental_gradient_evidence))
 
     def compute_loss(
         self,
@@ -331,32 +490,79 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
         num_items_in_batch: Any = None,
     ) -> Any:
         if getattr(model, "training", None) is True:
-            self._measure_reward_policy_gradient(model, inputs)
-        return super().compute_loss(
+            if not isinstance(inputs, Mapping):
+                raise RuntimeError("Controlled GRPO loss inputs must be a mapping")
+            optimization_input_sha256 = _optimization_input_sha256(inputs)
+            environmental_advantages = _environmental_advantage_values(inputs)
+            environmental_advantages_sha256 = _environmental_advantage_sha256(
+                environmental_advantages
+            )
+            environmental_signal_sha256 = _environmental_signal_sha256(inputs)
+            group_index = self.state.global_step + 1
+            if self._environmental_group_evidence:
+                if not 1 <= group_index <= len(self._environmental_group_evidence):
+                    raise RuntimeError(
+                        "Controlled GRPO loss has no matched environmental group"
+                    )
+                group_evidence = self._environmental_group_evidence[group_index - 1]
+                if (
+                    group_evidence["group"] != group_index
+                    or group_evidence["optimization_input_sha256"]
+                    != optimization_input_sha256
+                    or group_evidence["environmental_signal_sha256"]
+                    != environmental_signal_sha256
+                    or group_evidence["environmental_advantages_sha256"]
+                    != environmental_advantages_sha256
+                ):
+                    raise RuntimeError(
+                        "Controlled GRPO loss inputs differ from the environmental group"
+                    )
+            self._measure_environmental_policy_gradient(
+                model,
+                inputs,
+                optimization_input_sha256=optimization_input_sha256,
+                environmental_signal_sha256=environmental_signal_sha256,
+                environmental_advantages_sha256=environmental_advantages_sha256,
+            )
+        loss = super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+        if (
+            getattr(model, "training", None) is True
+            and _optimization_input_sha256(inputs) != optimization_input_sha256
+        ):
+            raise RuntimeError("Controlled GRPO loss inputs changed during diagnostics")
+        return loss
 
-    def _measure_reward_policy_gradient(
-        self, model: Any, inputs: Any
+    def _measure_environmental_policy_gradient(
+        self,
+        model: Any,
+        inputs: Mapping[str, Any],
+        *,
+        optimization_input_sha256: str,
+        environmental_signal_sha256: str,
+        environmental_advantages_sha256: str,
     ) -> None:
         import torch
 
         step = self.state.global_step
-        if type(step) is not int or step != len(self._reward_gradient_evidence):
+        if type(step) is not int or step != len(self._environmental_gradient_evidence):
             raise RuntimeError(
-                "Controlled reward-policy gradient is not aligned to one optimizer step"
+                "Controlled environmental gradient is not aligned to one optimizer step"
             )
         if self.use_liger_loss:
             raise RuntimeError(
-                "Controlled reward-policy diagnostics require pinned TRL's standard loss"
+                "Controlled environmental diagnostics require pinned TRL's standard loss"
             )
 
         parameters = tuple(parameter for parameter in model.parameters() if parameter.requires_grad)
         if not parameters:
-            raise RuntimeError("Controlled reward-policy gradient has no trainable parameters")
+            raise RuntimeError(
+                "Controlled environmental gradient has no trainable parameters"
+            )
 
         diagnostic = copy.copy(self)
         diagnostic.beta = 0.0
@@ -400,19 +606,19 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
                     enable_gradient_checkpointing(
                         gradient_checkpointing_kwargs={"use_reentrant": False}
                     )
-                reward_only_loss = super(
+                environmental_loss = super(
                     ControlledGRPOMixin, diagnostic
                 ).compute_loss(model, inputs)
                 if (
-                    not torch.is_tensor(reward_only_loss)
-                    or reward_only_loss.numel() != 1
-                    or not reward_only_loss.requires_grad
+                    not torch.is_tensor(environmental_loss)
+                    or environmental_loss.numel() != 1
+                    or not environmental_loss.requires_grad
                 ):
                     raise RuntimeError(
-                        "Pinned TRL reward-only loss is not a differentiable scalar"
+                        "Pinned TRL environmental-only loss is not a differentiable scalar"
                     )
                 gradients = torch.autograd.grad(
-                    reward_only_loss, parameters, allow_unused=True
+                    environmental_loss, parameters, allow_unused=True
                 )
             finally:
                 if checkpointing_enabled:
@@ -443,13 +649,16 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
             if finite
             else None
         )
-        self._reward_gradient_evidence.append(
+        self._environmental_gradient_evidence.append(
             {
                 "step": step,
                 "group": step + 1,
                 "finite": finite,
                 "norm": norm,
-                "component": "reward_policy",
+                "component": ENVIRONMENTAL_GRADIENT_COMPONENT,
+                "environmental_advantages_sha256": environmental_advantages_sha256,
+                "environmental_signal_sha256": environmental_signal_sha256,
+                "optimization_input_sha256": optimization_input_sha256,
             }
         )
 
@@ -475,28 +684,73 @@ class ControlledGRPOMixin(ObservationFirstGRPOMixin):
         }.items():
             if _column_values(kwargs.get(name), name=name, expected_count=count) != expected:
                 raise ValueError(f"Controlled reward binding changed: {name}")
-        rewards = []
+        environmental_rewards = []
         for index, completion in enumerate(raw):
             if not isinstance(completion, str):
                 raise TypeError("Controlled completion must be raw text")
             snapshot = json.loads(group.snapshot_bytes)
             snapshot.pop("instruction", None)
-            admitted = self._observation_lifecycle.before_action(snapshot, index)
+            admitted = self._observation_lifecycle.before_action(
+                snapshot, index, g9_group_token=group.token
+            )
             if canonical_bytes(admitted["state"]) != canonical_bytes(snapshot):
                 raise ValueError("Controlled branch differs from its generation state")
-            result = self._observation_lifecycle.execute(completion, snapshot, index)
+            result = self._observation_lifecycle.execute(
+                completion,
+                snapshot,
+                index,
+                g9_group_token=group.token,
+            )
             reward = result.get("reward")
             if (
                 isinstance(reward, bool) or not isinstance(reward, int | float)
                 or not math.isfinite(reward)
             ):
                 raise ValueError("Controlled verifier failure: reward unavailable")
+            environmental_components = result.get("environmental_components")
+            environmental_reward = result.get("environmental_reward")
+            environmental_admissible = result.get("environmental_admissible")
+            lineage = {
+                "g9_group_token": group.token,
+                "observation_digest": group.digest,
+                "state_prompt_sha256": group.prompt_sha256,
+            }
+            if (
+                not isinstance(environmental_components, Mapping)
+                or set(environmental_components)
+                != set(ENVIRONMENTAL_REWARD_COMPONENTS)
+                or isinstance(environmental_reward, bool)
+                or not isinstance(environmental_reward, int | float)
+                or not math.isfinite(environmental_reward)
+                or type(environmental_admissible) is not bool
+                or any(result.get(key) != value for key, value in lineage.items())
+            ):
+                raise ValueError(
+                    "Controlled verifier lacks environmental signal or lineage evidence"
+                )
+            components = {
+                name: environmental_components[name]
+                for name in ENVIRONMENTAL_REWARD_COMPONENTS
+            }
             self._active_records.append(
-                {"sample_index": index, "reward": reward, "scorable": True,
-                 "result_status": result["status"], "classification": CLASSIFICATION}
+                {
+                    "sample_index": index,
+                    "reward": reward,
+                    "environmental_reward": environmental_reward,
+                    "environmental_components": components,
+                    "environmental_admissible": environmental_admissible,
+                    "scorable": result.get("scorable") is True,
+                    "result_status": result["status"],
+                    "terminal_block": result["terminal_block"],
+                    "completion_sha256": hashlib.sha256(
+                        completion.encode("utf-8")
+                    ).hexdigest(),
+                    **lineage,
+                    "classification": CLASSIFICATION,
+                }
             )
-            rewards.append(float(reward))
-        return rewards
+            environmental_rewards.append(float(environmental_reward))
+        return environmental_rewards
 
 
 def validate_v17_parent(checkpoint: Path) -> dict[str, Any]:
@@ -607,8 +861,8 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
 def _require_reward_gradient_diagnostic() -> None:
     if not REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE:
         raise RuntimeError(
-            "Controlled GRPO is fail-closed: a separate reward-only policy "
-            "gradient diagnostic is implemented but has not been validated; "
+            "Controlled GRPO is fail-closed: a separate environmental-verification "
+            "policy gradient diagnostic is implemented but has not been validated; "
             "the beta=0.04 total gradient may include KL."
         )
 
@@ -660,6 +914,7 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
         "certification_status": "NOT_CERTIFIED", "status": "started",
         "receipt": receipt, "started_at": datetime.now(UTC).isoformat(),
         "checkpoint": None, "reload_verified": False,
+        "tokenizer_identity": {"id": MODEL, "revision": REVISION},
         "kl_reference": "adapter_disabled_pinned_base",
     }
     write_manifest_atomic(manifest_path, manifest)
@@ -707,13 +962,22 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                 group_index = state.global_step + 1
                 if not 1 <= group_index <= len(reward_learning_groups):
                     raise ValueError("GRPO optimizer step has no matched reward group")
+                signal = reward_learning_groups[group_index - 1]
                 if (
                     len(reward_gradients) != group_index
                     or reward_gradients[-1]["group"] != group_index
                     or not reward_gradients[-1]["finite"]
+                    or reward_gradients[-1]["norm"] is None
+                    or reward_gradients[-1]["norm"] <= 0
+                    or reward_gradients[-1]["environmental_advantages_sha256"]
+                    != signal["environmental_advantages_sha256"]
+                    or reward_gradients[-1]["environmental_signal_sha256"]
+                    != signal["environmental_signal_sha256"]
+                    or reward_gradients[-1]["optimization_input_sha256"]
+                    != signal["optimization_input_sha256"]
                 ):
                     raise ValueError(
-                        "GRPO optimizer step has no finite same-group reward-policy gradient"
+                        "GRPO optimizer step has no same-group environmental-verifier gradient"
                     )
                 values = [p.grad for p in parameters.values() if p.grad is not None]
                 finite = bool(values) and all(torch.isfinite(v).all().item() for v in values)
@@ -724,6 +988,11 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                         "group": group_index,
                         "finite": finite,
                         "norm": norm,
+                        "environmental_advantages_sha256":
+                            signal["environmental_advantages_sha256"],
+                        "environmental_signal_sha256":
+                            signal["environmental_signal_sha256"],
+                        "optimization_input_sha256": signal["optimization_input_sha256"],
                     }
                 )
                 ledger.append("gradient_observed", gradients[-1])
@@ -734,6 +1003,7 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                 group_index = state.global_step
                 if not 1 <= group_index <= len(reward_learning_groups):
                     raise ValueError("GRPO optimizer update has no matched reward group")
+                signal = reward_learning_groups[group_index - 1]
                 changed_trainable_tensors = 0
                 for name, parameter in parameters.items():
                     current = parameter.detach().cpu()
@@ -744,6 +1014,11 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                     "step": group_index,
                     "group": group_index,
                     "changed_trainable_tensors": changed_trainable_tensors,
+                    "environmental_advantages_sha256":
+                        signal["environmental_advantages_sha256"],
+                    "environmental_signal_sha256":
+                        signal["environmental_signal_sha256"],
+                    "optimization_input_sha256": signal["optimization_input_sha256"],
                 }
                 optimizer_steps.append(record)
                 ledger.append("optimizer_step_observed", record)
@@ -763,16 +1038,22 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                     num_items_in_batch=num_items_in_batch,
                 )
                 if getattr(model, "training", None) is True:
-                    record = self.reward_gradient_evidence[-1]
+                    record = self.environmental_gradient_evidence[-1]
                     group_index = self.state.global_step + 1
                     if (
                         record["group"] != group_index
                         or not reward_learning_groups
                         or reward_learning_groups[-1]["group"] != group_index
                         or len(reward_gradients) + 1 != group_index
+                        or record["environmental_advantages_sha256"]
+                        != reward_learning_groups[-1]["environmental_advantages_sha256"]
+                        or record["environmental_signal_sha256"]
+                        != reward_learning_groups[-1]["environmental_signal_sha256"]
+                        or record["optimization_input_sha256"]
+                        != reward_learning_groups[-1]["optimization_input_sha256"]
                     ):
                         raise ValueError(
-                            "Reward-policy gradient does not match the active reward group"
+                            "Environmental-verifier gradient does not match the active reward group"
                         )
                     reward_gradients.append(record)
                     ledger.append("reward_gradient_observed", record)
@@ -796,27 +1077,106 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
                 ):
                     raise ValueError("GRPO generation does not match its objective group")
                 objective_rewards = [record["reward"] for record in records]
+                environmental_components = [
+                    record["environmental_components"] for record in records
+                ]
+                environmental_rewards = [
+                    record["environmental_reward"] for record in records
+                ]
+                environmental_admissible = [
+                    record["environmental_admissible"] for record in records
+                ]
                 advantage_values = [
                     float(value)
                     for value in observed_advantages.reshape(-1).tolist()
                 ]
-                reward_driven = has_reward_driven_advantages(
-                    objective_rewards, advantage_values
+                if len(advantage_values) != len(records):
+                    raise ValueError(
+                        "GRPO environmental advantages have the wrong sample count"
+                    )
+                if not has_reward_driven_advantages(
+                    environmental_rewards, advantage_values
+                ):
+                    raise ValueError(
+                        "GRPO advantages do not match environmental verifier rewards"
+                    )
+                if not has_environmental_reward_signal(
+                    environmental_components,
+                    environmental_admissible,
+                    advantage_values,
+                ):
+                    raise ValueError(
+                        "GRPO group lacks two admissible samples with varied "
+                        "environmental verifier components"
+                    )
+                group_token = records[0]["g9_group_token"]
+                if (
+                    not isinstance(group_token, str)
+                    or not group_token
+                    or any(record["g9_group_token"] != group_token for record in records)
+                    or group.get("observation_digest") != records[0]["observation_digest"]
+                    or group.get("state_prompt_sha256")
+                    != records[0]["state_prompt_sha256"]
+                    or any(
+                        record["observation_digest"] != group["observation_digest"]
+                        or record["state_prompt_sha256"]
+                        != group["state_prompt_sha256"]
+                        for record in records
+                    )
+                ):
+                    raise ValueError(
+                        "GRPO environmental group has inconsistent state or prompt lineage"
+                    )
+                environmental_advantages_sha256 = _environmental_advantage_sha256(
+                    advantage_values
                 )
+                environmental_signal_sha256 = _environmental_signal_sha256(result)
+                optimization_input_sha256 = _optimization_input_sha256(result)
+                environment_evidence = {
+                    "group": group_index,
+                    "group_token": group_token,
+                    "environmental_rewards": environmental_rewards,
+                    "environmental_components": environmental_components,
+                    "environmental_admissible": environmental_admissible,
+                    "environmental_advantages": advantage_values,
+                    "environmental_advantages_sha256":
+                        environmental_advantages_sha256,
+                    "environmental_signal_sha256": environmental_signal_sha256,
+                    "optimization_input_sha256": optimization_input_sha256,
+                    "environmental_signal": True,
+                }
+                self._environmental_group_evidence.append(environment_evidence)
                 reward_learning_groups.append(
                     {
-                        "group": group_index,
+                        **environment_evidence,
                         "objective_rewards": objective_rewards,
-                        "reward_driven": reward_driven,
                     }
                 )
+                objective_advantages = normalize_group_advantages(objective_rewards)
                 ledger.append(
                     "generation_tokens",
                     {
                         "group": group_index,
                         "prompt_ids": result["prompt_ids"].detach().cpu().tolist(),
                         "completion_ids": result["completion_ids"].detach().cpu().tolist(),
+                        "group_token": group_token,
+                        "scenario_id": group["scenario_id"],
+                        "observation_digest": group["observation_digest"],
+                        "state_prompt_sha256": group["state_prompt_sha256"],
+                        "completion_sha256s": [
+                            record["completion_sha256"] for record in records
+                        ],
                         "objective_rewards": objective_rewards,
+                        "objective_advantages": objective_advantages,
+                        "environmental_components": environmental_components,
+                        "environmental_rewards": environmental_rewards,
+                        "environmental_admissible": environmental_admissible,
+                        "environmental_advantages": advantage_values,
+                        "environmental_advantages_sha256":
+                            environmental_advantages_sha256,
+                        "environmental_signal_sha256":
+                            environmental_signal_sha256,
+                        "optimization_input_sha256": optimization_input_sha256,
                         "advantages": advantage_values,
                     },
                 )
@@ -841,7 +1201,7 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
         )
         expected_groups = set(range(1, HYPERPARAMETERS["max_steps"] + 1))
         reward_signals = {
-            group["group"]: group["reward_driven"]
+            group["group"]: group["environmental_signal"]
             for group in reward_learning_groups
         }
         gradients_by_group = {record["group"]: record for record in gradients}
@@ -858,20 +1218,58 @@ def _run_admitted_pilot(receipt: dict[str, Any]) -> None:
             or set(gradients_by_group) != expected_groups
             or set(reward_gradients_by_group) != expected_groups
             or set(optimizer_steps_by_group) != expected_groups
-            or not any(
+            or not all(
                 reward_signals[group]
                 and reward_gradients_by_group[group]["finite"]
+                and reward_gradients_by_group[group]["norm"] is not None
                 and reward_gradients_by_group[group]["norm"] > 0
+                and reward_gradients_by_group[group][
+                    "environmental_advantages_sha256"
+                ] == reward_learning_groups[group - 1][
+                    "environmental_advantages_sha256"
+                ]
+                and reward_gradients_by_group[group][
+                    "environmental_signal_sha256"
+                ] == reward_learning_groups[group - 1][
+                    "environmental_signal_sha256"
+                ]
+                and reward_gradients_by_group[group][
+                    "optimization_input_sha256"
+                ] == reward_learning_groups[group - 1]["optimization_input_sha256"]
                 and gradients_by_group[group]["finite"]
                 and gradients_by_group[group]["norm"] > 0
+                and gradients_by_group[group]["environmental_advantages_sha256"]
+                == reward_learning_groups[group - 1][
+                    "environmental_advantages_sha256"
+                ]
+                and gradients_by_group[group]["environmental_signal_sha256"]
+                == reward_learning_groups[group - 1][
+                    "environmental_signal_sha256"
+                ]
+                and gradients_by_group[group]["optimization_input_sha256"]
+                == reward_learning_groups[group - 1]["optimization_input_sha256"]
                 and optimizer_steps_by_group[group]["changed_trainable_tensors"] > 0
+                and optimizer_steps_by_group[group][
+                    "environmental_advantages_sha256"
+                ] == reward_learning_groups[group - 1][
+                    "environmental_advantages_sha256"
+                ]
+                and optimizer_steps_by_group[group][
+                    "environmental_signal_sha256"
+                ] == reward_learning_groups[group - 1][
+                    "environmental_signal_sha256"
+                ]
+                and optimizer_steps_by_group[group][
+                    "optimization_input_sha256"
+                ] == reward_learning_groups[group - 1]["optimization_input_sha256"]
                 for group in expected_groups
             )
             or not changed
             or not all(torch.isfinite(p).all().item() for p in parameters.values())
         ):
             raise ValueError(
-                "GRPO did not establish a same-group reward-driven gradient and parameter update"
+                "GRPO did not establish a same-group environmental-verifier gradient "
+                "and parameter update"
             )
         validate_v17_parent(parent)
         _verify_model_inventory(receipt)

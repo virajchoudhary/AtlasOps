@@ -7,6 +7,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 _TRL_ADVANTAGE_EPSILON = 1e-4
+ENVIRONMENTAL_REWARD_COMPONENTS = (
+    "r_verified_resolution",
+    "r_required_check_coverage",
+)
+ENVIRONMENTAL_GRADIENT_COMPONENT = "environmental_verification_policy"
 
 
 def score_direct_action_step(
@@ -95,15 +100,7 @@ def has_reward_driven_advantages(
             raise ValueError("GRPO group contains an invalid advantage")
         advantage_values.append(float(value))
 
-    reward_mean = sum(reward_values) / len(reward_values)
-    reward_std = math.sqrt(
-        sum((value - reward_mean) ** 2 for value in reward_values)
-        / (len(reward_values) - 1)
-    )
-    expected_advantages = [
-        (value - reward_mean) / (reward_std + _TRL_ADVANTAGE_EPSILON)
-        for value in reward_values
-    ]
+    expected_advantages = normalize_group_advantages(reward_values)
     for observed, expected in zip(
         advantage_values, expected_advantages, strict=True
     ):
@@ -117,6 +114,88 @@ def has_reward_driven_advantages(
     if advantages_nonzero and not rewards_varied:
         raise ValueError("Equal-reward groups cannot have reward-driven advantages")
     return rewards_varied and advantages_nonzero
+
+
+def normalize_group_advantages(rewards: Sequence[float]) -> list[float]:
+    """Return the pinned TRL 0.19.1 sample-standard-deviation advantages."""
+    if isinstance(rewards, (str, bytes)) or not isinstance(rewards, Sequence):
+        raise TypeError("GRPO group rewards must be a sequence")
+    if len(rewards) < 2:
+        raise ValueError("GRPO group evidence requires at least two rewards")
+
+    values = []
+    for value in rewards:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            raise ValueError("GRPO group contains an invalid objective reward")
+        values.append(float(value))
+
+    reward_mean = sum(values) / len(values)
+    reward_std = math.sqrt(
+        sum((value - reward_mean) ** 2 for value in values)
+        / (len(values) - 1)
+    )
+    return [
+        (value - reward_mean) / (reward_std + _TRL_ADVANTAGE_EPSILON)
+        for value in values
+    ]
+
+
+def has_environmental_reward_signal(
+    components: Sequence[Mapping[str, Any]],
+    admissible: Sequence[bool],
+    advantages: Sequence[float],
+) -> bool:
+    """Require varied verifier components among admissible samples in one group."""
+    if (
+        isinstance(components, (str, bytes))
+        or not isinstance(components, Sequence)
+        or isinstance(admissible, (str, bytes))
+        or not isinstance(admissible, Sequence)
+    ):
+        raise TypeError("GRPO environmental components and admissibility must be sequences")
+    if len(components) < 2 or len(components) != len(admissible):
+        raise ValueError("GRPO environmental group sample counts differ")
+
+    environmental_rewards = []
+    admissible_indices = []
+    component_values = []
+    for index, (sample_components, sample_admissible) in enumerate(
+        zip(components, admissible, strict=True)
+    ):
+        if type(sample_admissible) is not bool:
+            raise ValueError("GRPO environmental admissibility must be boolean")
+        if not isinstance(sample_components, Mapping) or set(sample_components) != set(
+            ENVIRONMENTAL_REWARD_COMPONENTS
+        ):
+            raise ValueError("GRPO environmental verifier components are incomplete")
+        values = []
+        for name in ENVIRONMENTAL_REWARD_COMPONENTS:
+            value = sample_components[name]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not math.isfinite(float(value))
+            ):
+                raise ValueError("GRPO environmental verifier component is invalid")
+            values.append(float(value))
+        environmental_rewards.append(sum(values))
+        component_values.append(values)
+        if sample_admissible:
+            admissible_indices.append(index)
+
+    varied_components = any(
+        component_values[left] != component_values[right]
+        for position, left in enumerate(admissible_indices)
+        for right in admissible_indices[position + 1 :]
+    )
+    reward_signal = has_reward_driven_advantages(
+        environmental_rewards, advantages
+    )
+    return len(admissible_indices) >= 2 and varied_components and reward_signal
 
 
 def aggregate_direct_action_steps(

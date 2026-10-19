@@ -247,11 +247,13 @@ def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
 
     class RewardLossBackend:
         def compute_loss(self, model, inputs, *args, **kwargs):
-            return model(inputs).square().mean()
+            outputs = model(inputs["features"]).squeeze(-1)
+            return -(outputs * inputs["advantages"]).mean()
 
     class RewardProbeTrainer(ControlledGRPOMixin, RewardLossBackend):
         def __init__(self):
-            self._reward_gradient_evidence = []
+            self._environmental_gradient_evidence = []
+            self._environmental_group_evidence = []
             self.state = SimpleNamespace(global_step=0)
             self.use_liger_loss = False
             self._metrics = {}
@@ -309,7 +311,12 @@ def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
         torch.manual_seed(2026)
         trainer = RewardProbeTrainer()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-        inputs = torch.ones((64, 8))
+        inputs = {
+            "features": torch.ones((2, 8)),
+            "prompt_ids": torch.tensor([[4, 5], [4, 5]]),
+            "completion_ids": torch.tensor([[6, 3], [7, 3]]),
+            "advantages": torch.tensor([1.0, -1.0]),
+        }
         loss = (
             trainer.compute_loss(model, inputs)
             if with_probe
@@ -332,6 +339,7 @@ def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
             updated_parameters,
             next_random_values,
             restored_checkpointing,
+            tuple(trainer._environmental_gradient_evidence),
         )
 
     without_probe = run_step(with_probe=False)
@@ -344,6 +352,8 @@ def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
     )
     assert torch.equal(without_probe[2], with_probe[2])
     assert with_probe[3]
+    assert with_probe[4][0]["component"] == "environmental_verification_policy"
+    assert with_probe[4][0]["norm"] > 0
 
 
 def test_installed_trl_uses_observed_tokens_and_scores_the_exact_generated_action(
@@ -423,7 +433,7 @@ def test_installed_trl_evaluation_refuses_before_observation_or_generation(
 
 
 @pytest.mark.parametrize("mode", ["rewarded", "equal-reward-kl-only"])
-def test_installed_controlled_hook_measures_reward_policy_gradient(
+def test_installed_controlled_hook_measures_environmental_policy_gradient(
     _runtime, tmp_path, mode
 ):
     from tests.test_grpo_controlled import action
@@ -444,9 +454,10 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
     preview["instruction"] = ACTION_INSTRUCTION
     prompt = json.dumps(preview, sort_keys=True, separators=(",", ":"))
     valid = action()
+    partial = action(replicas=2)
     equal_reward = action(replicas=1)
     vocab = {"[UNK]": 0, "[PAD]": 1, "[BOS]": 2, "[EOS]": 3,
-             prompt: 4, valid: 5, "malformed": 6, equal_reward: 7}
+             prompt: 4, valid: 5, "malformed": 6, equal_reward: 7, partial: 8}
     backend = runtime.Tokenizer(runtime.models.WordLevel(vocab, unk_token="[UNK]"))
     backend.decoder = runtime.decoders.Fuse()
     tokenizer = runtime.PreTrainedTokenizerFast(
@@ -482,7 +493,7 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
 
     def fixture_generate(_model, input_ids, **kwargs):
         token_rows = (
-            [[5, 3], [6, 3]]
+            [[5, 3], [8, 3]]
             if mode == "rewarded"
             else [[7, 3], [7, 3]]
         )
@@ -502,15 +513,43 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
         def _generate_and_score_completions(self, inputs):
             result = super()._generate_and_score_completions(inputs)
             group = self.observation_evidence[-1]
-            rewards = [record["reward"] for record in group["records"]]
+            components = [
+                record["environmental_components"] for record in group["records"]
+            ]
+            environmental_rewards = [
+                record["environmental_reward"] for record in group["records"]
+            ]
+            admissible = [
+                record["environmental_admissible"] for record in group["records"]
+            ]
             advantages = (
                 result["advantages"].detach().cpu().reshape(-1).tolist()
             )
-            from training.grpo_reward import has_reward_driven_advantages
-
-            self.reward_mechanics_groups.append(
-                has_reward_driven_advantages(rewards, advantages)
+            from training.grpo_controlled import (
+                _environmental_advantage_sha256,
+                _environmental_signal_sha256,
+                _optimization_input_sha256,
             )
+            from training.grpo_reward import has_environmental_reward_signal
+
+            environmental_signal = has_environmental_reward_signal(
+                components, admissible, advantages
+            )
+            self._environmental_group_evidence.append(
+                {
+                    "group": len(self.observation_evidence),
+                    "environmental_rewards": environmental_rewards,
+                    "environmental_advantages": advantages,
+                    "environmental_advantages_sha256":
+                        _environmental_advantage_sha256(advantages),
+                    "environmental_signal_sha256":
+                        _environmental_signal_sha256(result),
+                    "optimization_input_sha256":
+                        _optimization_input_sha256(result),
+                    "environmental_signal": environmental_signal,
+                }
+            )
+            self.reward_mechanics_groups.append(environmental_signal)
             return result
 
         def compute_loss(
@@ -546,6 +585,7 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
 
     class GradientProbe(TrainerCallback):
         def on_pre_optimizer_step(self, args, state, control, **kwargs):
+            signal = trainer._environmental_group_evidence[state.global_step]
             gradients = [
                 parameter.grad
                 for parameter in model.parameters()
@@ -564,11 +604,18 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
                     "group": state.global_step + 1,
                     "finite": finite,
                     "norm": norm,
+                    "environmental_advantages_sha256":
+                        signal["environmental_advantages_sha256"],
+                    "environmental_signal_sha256":
+                        signal["environmental_signal_sha256"],
+                    "optimization_input_sha256":
+                        signal["optimization_input_sha256"],
                 }
             )
 
         def on_step_end(self, args, state, control, **kwargs):
             group = state.global_step
+            signal = trainer._environmental_group_evidence[group - 1]
             parameters_after_step = dict(model.named_parameters())
             changed = 0
             for name, previous in previous_parameters.items():
@@ -577,7 +624,17 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
                     changed += 1
                     previous_parameters[name] = current.clone()
             optimizer_steps.append(
-                {"step": group, "group": group, "changed_trainable_tensors": changed}
+                {
+                    "step": group,
+                    "group": group,
+                    "changed_trainable_tensors": changed,
+                    "environmental_advantages_sha256":
+                        signal["environmental_advantages_sha256"],
+                    "environmental_signal_sha256":
+                        signal["environmental_signal_sha256"],
+                    "optimization_input_sha256":
+                        signal["optimization_input_sha256"],
+                }
             )
 
     args = runtime.GRPOConfig(
@@ -604,11 +661,24 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
         assert all(record["finite"] and record["norm"] > 0 for record in gradient_records)
         assert len(optimizer_steps) == max_steps
         assert all(record["changed_trainable_tensors"] > 0 for record in optimizer_steps)
-        reward_gradients = list(trainer.reward_gradient_evidence)
+        reward_gradients = list(trainer.environmental_gradient_evidence)
         assert len(reward_gradients) == max_steps
         assert all(
             record["step"] == index and record["group"] == index + 1
-            and record["component"] == "reward_policy" and record["finite"]
+            and record["component"] == "environmental_verification_policy"
+            and record["finite"]
+            and record["environmental_advantages_sha256"]
+            == trainer._environmental_group_evidence[index][
+                "environmental_advantages_sha256"
+            ]
+            and record["environmental_signal_sha256"]
+            == trainer._environmental_group_evidence[index][
+                "environmental_signal_sha256"
+            ]
+            and record["optimization_input_sha256"]
+            == trainer._environmental_group_evidence[index][
+                "optimization_input_sha256"
+            ]
             for index, record in enumerate(reward_gradients)
         )
         assert trainer.beta == 0.04
@@ -625,15 +695,37 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
             assert reward_gradients[0]["norm"] > 0
             assert [
                 record["reward"] for record in trainer.observation_evidence[0]["records"]
-            ] == [1.0, -1.0]
+            ] == [1.0, 0.125]
+            assert [
+                record["environmental_reward"]
+                for record in trainer.observation_evidence[0]["records"]
+            ] == [1.0, 0.125]
+            assert all(
+                record["environmental_admissible"]
+                for record in trainer.observation_evidence[0]["records"]
+            )
         else:
             assert all(record["norm"] == 0.0 for record in reward_gradients)
             assert all(
-                [record["reward"] for record in group["records"]] == [0.125, 0.125]
+                [
+                    record["environmental_reward"]
+                    for record in group["records"]
+                ] == [0.125, 0.125]
                 for group in trainer.observation_evidence
             )
             from scripts.accept_grpo_controlled import _has_matched_optimizer_update
 
+            signal_evidence = {
+                record["group"]: {
+                    name: record[name]
+                    for name in (
+                        "environmental_advantages_sha256",
+                        "environmental_signal_sha256",
+                        "optimization_input_sha256",
+                    )
+                }
+                for record in trainer._environmental_group_evidence
+            }
             rows = [
                 {"event": "reward_gradient_observed", **record}
                 for record in reward_gradients
@@ -651,7 +743,7 @@ def test_installed_controlled_hook_measures_reward_policy_gradient(
                     "gradients": gradient_records,
                     "optimizer_steps": optimizer_steps,
                 },
-                {1: False, 2: False},
+                signal_evidence,
             )
 
         adapter = tmp_path / "adapter"
@@ -718,7 +810,9 @@ def test_admitted_controlled_run_fails_closed_until_diagnostic_validation(
         grpo_controlled, "REWARD_GRADIENT_DIAGNOSTIC_AVAILABLE", False
     )
     output = tmp_path / "controlled-output"
-    with pytest.raises(RuntimeError, match="separate reward-only policy gradient"):
+    with pytest.raises(
+        RuntimeError, match="environmental-verification policy gradient"
+    ):
         grpo_controlled._run_admitted_pilot({"output_path": str(output)})
 
     assert not output.exists()

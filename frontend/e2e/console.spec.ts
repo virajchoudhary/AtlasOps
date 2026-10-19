@@ -323,7 +323,11 @@ test("reference public routes deep-link on desktop and mobile using GET requests
   expect(errors).toEqual([]);
 });
 
-test("reference logo, image, and font assets load on desktop and mobile", async ({ page }, testInfo) => {
+for (const testViewport of [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "mobile", width: 390, height: 844 },
+] as const) {
+test(`reference logo, image, and font assets load on ${testViewport.name}`, async ({ page }, testInfo) => {
   const failedGets: string[] = [];
   const referenceAssetFailures: string[] = [];
   const getResponses: { path: string; status: number; contentType: string | null }[] = [];
@@ -349,10 +353,9 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
     encoding: "utf8",
   }).trim();
   const frontendDist = path.resolve(worktreeRoot, "frontend", "dist");
-  const catalogText = await fs.readFile(
-    new URL("../src/reference/ASSET_CATALOG.md", import.meta.url),
-    "utf8",
-  );
+  const catalogText = testViewport.name === "desktop"
+    ? await fs.readFile(new URL("../src/reference/ASSET_CATALOG.md", import.meta.url), "utf8")
+    : "";
   const catalogAssets = catalogText.split(/\r?\n/u).flatMap((line) => {
     const cells = line.split("|");
     const catalogPath = cells[1]?.match(/`([^`]+)`/u)?.[1];
@@ -422,10 +425,8 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
     }
   });
 
-  for (const viewport of [
-    { name: "desktop", width: 1440, height: 900 },
-    { name: "mobile", width: 390, height: 844 },
-  ] as const) {
+  {
+    const viewport = testViewport;
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const response = await page.goto("/reference");
     expect(response?.status(), `/reference at ${viewport.name}`).toBe(200);
@@ -539,20 +540,22 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
 
   await writeProof();
 
-  expect(catalogAssets, "catalogued reference assets").toHaveLength(25);
-  expect(new Set(catalogAssets.map(({ filename }) => filename)).size,
-    "unique catalogued reference assets").toBe(25);
-  expect(assetByteProof, "served reference assets").toHaveLength(25);
-  for (const asset of assetByteProof) {
-    expect(asset.status, `${asset.filename} response status`).toBe(200);
-    expect(asset.sourceSha256, `${asset.filename} source SHA-256`).toBe(asset.expectedSha256);
-    expect(asset.distSha256, `${asset.filename} dist SHA-256`).toBe(asset.expectedSha256);
-    expect(asset.servedSha256, `${asset.filename} served SHA-256`).toBe(asset.expectedSha256);
-    expect(asset.matchesCatalog, `${asset.filename} matches the catalog`).toBe(true);
-    expect(asset.sourceMatchesServed, `${asset.filename} source matches served bytes`).toBe(true);
-    expect(asset.distMatchesServed, `${asset.filename} dist matches served bytes`).toBe(true);
-    if (asset.filename.toLowerCase().endsWith(".svg")) {
-      expect(asset.svgXmlValid, `${asset.filename} is valid SVG XML`).toBe(true);
+  if (testViewport.name === "desktop") {
+    expect(catalogAssets, "catalogued reference assets").toHaveLength(25);
+    expect(new Set(catalogAssets.map(({ filename }) => filename)).size,
+      "unique catalogued reference assets").toBe(25);
+    expect(assetByteProof, "served reference assets").toHaveLength(25);
+    for (const asset of assetByteProof) {
+      expect(asset.status, `${asset.filename} response status`).toBe(200);
+      expect(asset.sourceSha256, `${asset.filename} source SHA-256`).toBe(asset.expectedSha256);
+      expect(asset.distSha256, `${asset.filename} dist SHA-256`).toBe(asset.expectedSha256);
+      expect(asset.servedSha256, `${asset.filename} served SHA-256`).toBe(asset.expectedSha256);
+      expect(asset.matchesCatalog, `${asset.filename} matches the catalog`).toBe(true);
+      expect(asset.sourceMatchesServed, `${asset.filename} source matches served bytes`).toBe(true);
+      expect(asset.distMatchesServed, `${asset.filename} dist matches served bytes`).toBe(true);
+      if (asset.filename.toLowerCase().endsWith(".svg")) {
+        expect(asset.svgXmlValid, `${asset.filename} is valid SVG XML`).toBe(true);
+      }
     }
   }
 
@@ -579,6 +582,7 @@ test("reference logo, image, and font assets load on desktop and mobile", async 
   expect(referenceAssetFailures).toEqual([]);
   expect(failedGets).toEqual([]);
 });
+}
 
 test("reference home keeps local links, pricing anchor, newsletter dialog and route navigation", async ({ page }) => {
   const methods: string[] = [];

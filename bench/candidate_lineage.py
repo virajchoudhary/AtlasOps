@@ -268,9 +268,9 @@ def validate_candidate_lineage(
     and GRPO entries carry ``tree_sha256`` and GRPO also carries
     ``parent_sft_tree_sha256``.
 
-    The return value describes metadata consistency only. It always remains
-    ``non_empirical`` and ``NOT_CERTIFIED``. A run-declared serving digest is not
-    independent evidence of the weights that were actually served.
+    ``lineage_status == "CONSISTENT"`` describes descriptor metadata only. It
+    always remains ``non_empirical`` and ``NOT_CERTIFIED``. A run-declared
+    serving digest is not independent evidence of the weights that were served.
     """
     errors: list[str] = []
     if not isinstance(candidate_schema, Mapping):
@@ -656,6 +656,13 @@ def validate_candidate_lineage(
         "errors": errors,
         "non_empirical": True,
         "certification_status": "NOT_CERTIFIED",
+        "comparability_limits": {
+            "scope": "DESCRIPTOR_METADATA_ONLY",
+            "source_identity": "CALLER_DECLARED_NOT_AUTHENTICATED",
+            "evaluator_sources": "PER_ARM_PROVENANCE_ONLY_DISTINCT_SOURCES_ALLOWED",
+            "serving_identity": "NOT_INDEPENDENTLY_OBSERVED",
+            "scientific_comparability": "NOT_ESTABLISHED",
+        },
         "scenario_membership": {
             "scenario_ids": report_scenario_ids,
             "split_sha256": expected_split_sha256,

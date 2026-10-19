@@ -1,5 +1,9 @@
 # Deferred Research Handoff
 
+For current team continuation, use the [peer tracker](PEER_HANDOFF.md) and
+[safe onboarding guide](PEER_ONBOARDING.md).
+The dated scientific records below remain unchanged.
+
 Created 5 October 2026 against freshly fetched remote main
 `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`. This is the source/evidence
 basis, not the later finalization commit SHA. Current authorities are the

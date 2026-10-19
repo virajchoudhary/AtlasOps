@@ -7,11 +7,11 @@ cannot certify or establish empirical results.
 
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
-import math
-import re
 from typing import Any
 
 _SCHEMA_VERSION = 1
@@ -28,9 +28,35 @@ _FAILURE_EVENT_NAMES = {
     "infrastructure_failure",
     "model_failure",
     "step_failure",
+    "telemetry_loss",
 }
-_INFRASTRUCTURE_EVENT_NAMES = {"episode_interrupted", "infrastructure_failure"}
+_INFRASTRUCTURE_EVENT_NAMES = {
+    "episode_interrupted",
+    "infrastructure_failure",
+    "telemetry_loss",
+}
 _MODEL_FAILURE_EVENT_NAMES = {"model_failure", "step_failure"}
+_KNOWN_EVENT_NAMES = {
+    *_FAILURE_EVENT_NAMES,
+    "action_result",
+    "alert_delivery",
+    "approval_decision",
+    "approval_requested",
+    "cleanup_completed",
+    "cleanup_started",
+    "diagnosis_output",
+    "episode_completed",
+    "fault_authorization",
+    "fault_observation",
+    "episode_started",
+    "post_action_verification",
+    "pre_action_verification",
+    "policy_output",
+}
+_CLOCK_COMPARABILITY_REASON = (
+    "the candidate contract names a timestamp field but does not attest clock identity, "
+    "timestamp precision, offset/skew bounds, or wall-to-monotonic correlation"
+)
 
 
 def measure_candidate_episode(
@@ -48,11 +74,13 @@ def measure_candidate_episode(
     ``episode_interrupted``. Events may contain additional source fields.
     An optional ``diagnosis_observation`` can declare a source-bound diagnosis
     limitation when the adapter's source format does not expose a label.
+    Unsupported lifecycle event names are retained as unscorable observations.
 
     The contract requires ``schema_version``, ``contract_version``,
     ``required_verifier_check_ids``, ``expected_diagnosis_by_scenario``,
     ``diagnosis_label_mapping``, and ``clock_source`` (the event field holding
-    timezone-aware RFC 3339 timestamps).
+    timezone-aware RFC 3339 timestamps). ``clock_source`` validates timestamp
+    syntax only; it does not establish cross-clock TTR comparability.
     """
     episode = _validate_episode(raw_episode)
     candidate_contract = _validate_contract(contract)
@@ -189,14 +217,6 @@ def _validate_episode(raw_episode: Mapping[str, Any]) -> dict[str, Any]:
     events = episode.get("events")
     if not isinstance(events, list):
         raise ValueError("raw_episode events must be a list")
-    for index, event in enumerate(events):
-        if not isinstance(event, Mapping):
-            raise ValueError(f"raw_episode event {index} must be a mapping")
-        event_name = event.get("event")
-        if not isinstance(event_name, str) or not event_name.strip():
-            raise ValueError(f"raw_episode event {index} requires a non-empty event name")
-        if "scenario_id" in event and event["scenario_id"] != scenario_id:
-            raise ValueError(f"raw_episode event {index} scenario_id conflicts with the episode")
     diagnosis_observation = episode.get("diagnosis_observation")
     if diagnosis_observation is not None:
         if not isinstance(diagnosis_observation, Mapping):
@@ -219,8 +239,34 @@ def _validate_episode(raw_episode: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("raw_episode diagnosis_observation source SHA-256 mismatch")
         if diagnosis_observation.get("raw_refs") != episode["raw_refs"]:
             raise ValueError("raw_episode diagnosis_observation raw references mismatch")
+        diagnosis_observation = deepcopy(dict(diagnosis_observation))
+
+    normalized_events: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if not isinstance(event, Mapping):
+            raise ValueError(f"raw_episode event {index} must be a mapping")
+        event_name = event.get("event")
+        if not isinstance(event_name, str) or not event_name.strip():
+            raise ValueError(f"raw_episode event {index} requires a non-empty event name")
+        if "scenario_id" in event and event["scenario_id"] != scenario_id:
+            raise ValueError(f"raw_episode event {index} scenario_id conflicts with the episode")
+        normalized = deepcopy(dict(event))
+        if event_name not in _KNOWN_EVENT_NAMES:
+            normalized["source_event_name"] = event_name
+            normalized["event"] = "episode_unscorable"
+            if not isinstance(normalized.get("failure"), str) or not normalized["failure"].strip():
+                normalized["failure"] = f"unsupported lifecycle event: {event_name}"
+        if normalized["event"] in _FAILURE_EVENT_NAMES:
+            raw_ref = normalized.get("raw_ref")
+            if raw_ref is not None and raw_ref not in episode["raw_refs"]:
+                episode["raw_refs"].append(deepcopy(raw_ref))
+        normalized_events.append(normalized)
+    episode["events"] = normalized_events
+    if diagnosis_observation is not None:
         if any(event.get("event") == "diagnosis_output" for event in events):
             raise ValueError("diagnosis observation conflicts with diagnosis_output")
+        diagnosis_observation["raw_refs"] = deepcopy(episode["raw_refs"])
+        episode["diagnosis_observation"] = diagnosis_observation
     return episode
 
 
@@ -889,18 +935,45 @@ def _time_to_recovery(
     clock_source: str,
     pending_adjudication: bool,
 ) -> dict[str, Any]:
-    def result(seconds: float | None, status: str, reason: str | None) -> dict[str, Any]:
+    def result(
+        reason: str,
+        *,
+        recovery_endpoint: Mapping[str, Any] | None = None,
+        coverage_endpoint: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
-            "seconds": seconds,
-            "status": status,
+            "seconds": None,
+            "censor_duration_seconds": None,
+            "status": "unavailable",
             "reason": reason,
             "clock_source": clock_source,
+            "clock_comparability": {
+                "status": "NOT_VERIFIED",
+                "reason": _CLOCK_COMPARABILITY_REASON,
+            },
+            "recovery_endpoint": (
+                deepcopy(dict(recovery_endpoint)) if recovery_endpoint is not None else None
+            ),
+            "coverage_endpoint": (
+                deepcopy(dict(coverage_endpoint)) if coverage_endpoint is not None else None
+            ),
+        }
+
+    def endpoint(observation: Mapping[str, Any], reason: str) -> dict[str, Any]:
+        record = observation["record"]
+        return {
+            "event_index": observation["event_index"],
+            "recorded_at": deepcopy(record.get(clock_source)),
+            "verification_status": observation["status"],
+            "env_resolved": observation["env_resolved"],
+            "reason": reason,
+            "raw_ref": deepcopy(record.get("raw_ref")),
         }
 
     if admission["status"] != "eligible":
-        return result(None, "unavailable", "episode admission is not established")
+        return result("episode admission is not established")
     if pending_adjudication:
-        return result(None, "unavailable", "pending_independent_adjudication")
+        return result("pending_independent_adjudication")
     alert_event = next(
         (
             (index, event)
@@ -910,44 +983,96 @@ def _time_to_recovery(
         None,
     )
     if alert_event is None:
-        return result(None, "unavailable", "delivered alert observation is missing")
+        return result("delivered alert observation is missing")
     alert_index, _ = alert_event
-    alert_time = timestamps.get(alert_index)
-    if alert_time is None:
-        return result(None, "unavailable", f"delivered alert lacks {clock_source}")
+    missing_alert_clock_reason = (
+        f"delivered alert lacks {clock_source}" if timestamps.get(alert_index) is None else None
+    )
 
     executed_action_indices = [
-        action["event_index"] for action in actions if action["executed"] is True
+        action["event_index"]
+        for action in actions
+        if action["executed"] is True and action["event_index"] > alert_index
     ]
     if not executed_action_indices:
-        return result(None, "censored", "no action was executed")
+        return result(missing_alert_clock_reason or "no action was executed after delivered alert")
 
-    cleanup_indices = [index for index, name, _ in indexed_events if name == "cleanup_started"]
-    cleanup_index = min(cleanup_indices) if cleanup_indices else None
-    post_action = sorted(verifications["post_action"], key=lambda item: item["event_index"])
-    for observation in post_action:
-        index = observation["event_index"]
-        if not any(action_index < index for action_index in executed_action_indices):
-            continue
-        if cleanup_index is not None and index >= cleanup_index:
-            continue
-        if observation["status"] != "passed" or observation["env_resolved"] is not True:
-            continue
-        if index <= alert_index:
-            continue
-        if cleanup_index is None:
-            return result(None, "unavailable", "cleanup boundary observation is missing")
-        recovery_time = timestamps.get(index)
-        if recovery_time is None:
-            return result(None, "unavailable", f"first conclusive success lacks {clock_source}")
-        seconds = (recovery_time - alert_time).total_seconds()
-        if seconds < 0 or not math.isfinite(seconds):
-            raise ValueError("time-to-recovery timestamps are invalid")
-        return result(seconds, "observed", None)
-    return result(
+    cleanup_index = verifications["cleanup_index"]
+    if cleanup_index is None:
+        return result(missing_alert_clock_reason or "cleanup boundary observation is missing")
+
+    post_action = [
+        observation
+        for observation in sorted(
+            verifications["post_action"], key=lambda item: item["event_index"]
+        )
+        if alert_index < observation["event_index"] < cleanup_index
+        and any(
+            action_index < observation["event_index"] for action_index in executed_action_indices
+        )
+    ]
+    if not post_action:
+        return result(
+            missing_alert_clock_reason or "objective post-action observation missing before cleanup"
+        )
+
+    first_success = next(
+        (
+            observation
+            for observation in post_action
+            if observation["status"] == "passed" and observation["env_resolved"] is True
+        ),
         None,
-        "censored",
-        "no conclusive post-action verifier success was observed before cleanup",
+    )
+    if first_success is not None:
+        first_endpoint = endpoint(
+            first_success,
+            "first conclusive post-action success before cleanup",
+        )
+        if missing_alert_clock_reason is not None:
+            return result(
+                missing_alert_clock_reason,
+                recovery_endpoint=first_endpoint,
+            )
+        if timestamps.get(first_success["event_index"]) is None:
+            return result(
+                f"first conclusive success lacks {clock_source}",
+                recovery_endpoint=first_endpoint,
+            )
+        return result(
+            "clock_comparability_not_verified",
+            recovery_endpoint=first_endpoint,
+        )
+
+    unresolved = [
+        observation
+        for observation in post_action
+        if observation["status"] == "failed" and observation["env_resolved"] is False
+    ]
+    if not unresolved:
+        return result(
+            missing_alert_clock_reason
+            or "no conclusive objective post-action verifier before cleanup"
+        )
+
+    last_unresolved = unresolved[-1]
+    coverage_endpoint = endpoint(
+        last_unresolved,
+        "last conclusive unresolved post-action verifier before cleanup",
+    )
+    if missing_alert_clock_reason is not None:
+        return result(
+            missing_alert_clock_reason,
+            coverage_endpoint=coverage_endpoint,
+        )
+    if timestamps.get(last_unresolved["event_index"]) is None:
+        return result(
+            f"coverage endpoint lacks {clock_source}",
+            coverage_endpoint=coverage_endpoint,
+        )
+    return result(
+        "clock_comparability_not_verified",
+        coverage_endpoint=coverage_endpoint,
     )
 
 

@@ -13,8 +13,8 @@ NOT_PASSED; scientific certification remains NOT_CERTIFIED.
 ## Start On This Windows Machine
 
 Use a fresh checkout of `main`, which includes merged
-[PR 219](https://github.com/virajchoudhary/AtlasOps/pull/219) at
-`a2be6c0f57d6d52ff17a8c235e4ec932b42f025b`, including the earlier
+[PR 222](https://github.com/virajchoudhary/AtlasOps/pull/222) at
+`b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c`, including the earlier
 remediation-safety and package-completeness merges.
 Run the following from a directory without an `AtlasOps-reviewed` child.
 Keep existing dirty checkouts unchanged.
@@ -22,8 +22,8 @@ Keep existing dirty checkouts unchanged.
 ```powershell
 git clone --branch main https://github.com/virajchoudhary/AtlasOps.git AtlasOps-reviewed
 Set-Location .\AtlasOps-reviewed
-git merge-base --is-ancestor a2be6c0f57d6d52ff17a8c235e4ec932b42f025b HEAD
-if ($LASTEXITCODE -ne 0) { throw "This checkout does not contain accepted PR 219." }
+git merge-base --is-ancestor b77bf7411f34b7faa8dd4dcc440cb78b5a67c30c HEAD
+if ($LASTEXITCODE -ne 0) { throw "This checkout does not contain accepted PR 222." }
 npm ci --prefix frontend
 npm run build --prefix frontend
 .\scripts\start-demo.ps1 -Check

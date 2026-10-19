@@ -104,6 +104,13 @@ def test_valid_candidate_is_non_empirical_and_keeps_training_budgets_separate():
     assert report["errors"] == []
     assert report["non_empirical"] is True
     assert report["certification_status"] == "NOT_CERTIFIED"
+    assert report["comparability_limits"] == {
+        "scope": "DESCRIPTOR_METADATA_ONLY",
+        "source_identity": "CALLER_DECLARED_NOT_AUTHENTICATED",
+        "evaluator_sources": "PER_ARM_PROVENANCE_ONLY_DISTINCT_SOURCES_ALLOWED",
+        "serving_identity": "NOT_INDEPENDENTLY_OBSERVED",
+        "scientific_comparability": "NOT_ESTABLISHED",
+    }
     assert report["scenario_membership"]["scenario_ids"] == SCENARIO_IDS
     assert report["scenario_membership"]["split_sha256"] == _split_sha256(SCENARIO_IDS)
     assert report["scenario_membership"]["by_arm"][ARM_ORDER[1]] == {

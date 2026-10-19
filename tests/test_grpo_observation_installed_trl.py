@@ -120,7 +120,7 @@ def _observed_prompt(lifecycle: _Lifecycle) -> str:
     )
 
 
-def _tiny_tokenizer(runtime, lifecycle: _Lifecycle):
+def _tiny_tokenizer(runtime, lifecycle: _Lifecycle, *, extra_completions=()):
     prompt = _observed_prompt(lifecycle)
     vocab = {
         "[UNK]": 0,
@@ -129,8 +129,11 @@ def _tiny_tokenizer(runtime, lifecycle: _Lifecycle):
         "[EOS]": 3,
         prompt: 4,
         COMPLETION: 5,
-        "stale catalogue prompt": 6,
     }
+    for completion in extra_completions:
+        if completion not in vocab:
+            vocab[completion] = len(vocab)
+    vocab["stale catalogue prompt"] = len(vocab)
     backend = runtime.Tokenizer(runtime.models.WordLevel(vocab, unk_token="[UNK]"))
     backend.decoder = runtime.decoders.Fuse()
     return runtime.PreTrainedTokenizerFast(
@@ -160,11 +163,16 @@ def _lora_state_sha256(model, torch) -> str:
     return digest.hexdigest()
 
 
-def _build_trainer(runtime, tmp_path):
+def _build_trainer(runtime, tmp_path, *, controlled=False):
     torch = runtime.torch
     torch.manual_seed(2026)
     lifecycle = _Lifecycle()
-    tokenizer = _tiny_tokenizer(runtime, lifecycle)
+    completion_variant = COMPLETION.replace(",", ", ")
+    tokenizer = _tiny_tokenizer(
+        runtime,
+        lifecycle,
+        extra_completions=(completion_variant,) if controlled else (),
+    )
     model = runtime.GPT2LMHeadModel(
         runtime.GPT2Config(
             vocab_size=len(tokenizer),
@@ -180,7 +188,35 @@ def _build_trainer(runtime, tmp_path):
     )
     model.config._name_or_path = "atlasops-tiny-cpu-fixture"
     model.train()
-    trainer_type = make_trl_0191_observation_first_trainer()
+    if controlled:
+        from training.grpo_controlled import (
+            ControlledGRPOMixin,
+            _environmental_advantage_sha256,
+            _environmental_advantage_values,
+            _environmental_signal_sha256,
+            _optimization_input_sha256,
+        )
+
+        class ControlledFixtureTrainer(ControlledGRPOMixin, runtime.GRPOTrainer):
+            def _generate_and_score_completions(self, inputs):
+                result = super()._generate_and_score_completions(inputs)
+                advantages = _environmental_advantage_values(result)
+                self._environmental_group_evidence.append(
+                    {
+                        "group": len(self.observation_evidence),
+                        "environmental_advantages_sha256":
+                            _environmental_advantage_sha256(advantages),
+                        "environmental_signal_sha256":
+                            _environmental_signal_sha256(result),
+                        "optimization_input_sha256":
+                            _optimization_input_sha256(result),
+                    }
+                )
+                return result
+
+        trainer_type = ControlledFixtureTrainer
+    else:
+        trainer_type = make_trl_0191_observation_first_trainer()
     assert issubclass(trainer_type, ObservationFirstGRPOMixin)
     assert issubclass(trainer_type, runtime.GRPOTrainer)
 
@@ -213,16 +249,27 @@ def _build_trainer(runtime, tmp_path):
     generated_inputs = []
     forward_devices = []
     real_forward = model.forward
-    completion_ids = tokenizer.encode(COMPLETION, add_special_tokens=False)
-    assert len(completion_ids) == 1
+    generated_completions = (
+        [COMPLETION, completion_variant]
+        if controlled
+        else [COMPLETION, COMPLETION]
+    )
+    completion_ids = [
+        tokenizer.encode(completion, add_special_tokens=False)
+        for completion in generated_completions
+    ]
+    assert all(len(ids) == 1 for ids in completion_ids)
 
     def fixed_generate(_model, input_ids, **kwargs):
         generated_inputs.append(input_ids.detach().cpu().clone())
         action_and_eos = torch.tensor(
-            [completion_ids + [tokenizer.eos_token_id]],
+            [
+                ids + [tokenizer.eos_token_id]
+                for ids in completion_ids[: input_ids.shape[0]]
+            ],
             dtype=input_ids.dtype,
             device=input_ids.device,
-        ).expand(input_ids.shape[0], -1)
+        )
         return torch.cat((input_ids, action_and_eos), dim=1)
 
     def capture_forward(_model, *args, **kwargs):
@@ -234,6 +281,84 @@ def _build_trainer(runtime, tmp_path):
     model.generate = MethodType(fixed_generate, model)
     model.forward = MethodType(capture_forward, model)
     return trainer, model, tokenizer, lifecycle, generated_inputs, forward_devices
+
+
+def _force_trl_nonidentity_shuffle(runtime, monkeypatch):
+    trainer_module = sys.modules[runtime.GRPOTrainer.__module__]
+    shuffle_tensor_dict = trainer_module.shuffle_tensor_dict
+    orders = []
+    original_randperm = runtime.torch.randperm
+
+    def force_shuffle(tensor_dict):
+        batch_size = next(
+            value.shape[0]
+            for value in tensor_dict.values()
+            if runtime.torch.is_tensor(value)
+        )
+        if batch_size != 2:
+            return shuffle_tensor_dict(tensor_dict)
+
+        def reverse_two_rows(size, *args, **kwargs):
+            if size == 2:
+                orders.append([1, 0])
+                return runtime.torch.tensor(
+                    [1, 0],
+                    dtype=kwargs.get("dtype", runtime.torch.int64),
+                    device=kwargs.get("device"),
+                )
+            return original_randperm(size, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(runtime.torch, "randperm", reverse_two_rows)
+            return shuffle_tensor_dict(tensor_dict)
+
+    monkeypatch.setattr(trainer_module, "shuffle_tensor_dict", force_shuffle)
+    return orders
+
+
+def test_installed_controlled_loss_accepts_trl_nonidentity_shuffle(
+    _runtime, tmp_path, monkeypatch
+):
+    trainer, model, tokenizer, _lifecycle, _generated_inputs, _forward_devices = (
+        _build_trainer(_runtime, tmp_path, controlled=True)
+    )
+    orders = _force_trl_nonidentity_shuffle(_runtime, monkeypatch)
+    prepared = trainer._prepare_inputs(_inputs())
+
+    original_completion_ids = [
+        tokenizer.encode(completion, add_special_tokens=False)[0]
+        for completion in (COMPLETION, COMPLETION.replace(",", ", "))
+    ]
+    assert orders == [[1, 0]]
+    assert prepared["completion_ids"][:, 0].tolist() == original_completion_ids[::-1]
+
+    loss = trainer.compute_loss(model, prepared)
+
+    assert _runtime.torch.isfinite(loss).item()
+    assert prepared["g9_sample_indices"].tolist() == [1, 0]
+    assert len(trainer.environmental_gradient_evidence) == 1
+
+
+@pytest.mark.parametrize("field", ["completion_ids", "advantages"])
+def test_installed_controlled_loss_rejects_tampering_after_trl_shuffle(
+    _runtime, tmp_path, monkeypatch, field
+):
+    trainer, model, tokenizer, _lifecycle, _generated_inputs, _forward_devices = (
+        _build_trainer(_runtime, tmp_path, controlled=True)
+    )
+    orders = _force_trl_nonidentity_shuffle(_runtime, monkeypatch)
+    prepared = trainer._prepare_inputs(_inputs())
+    assert orders == [[1, 0]]
+    prepared[field] = prepared[field].clone()
+    if field == "completion_ids":
+        prepared[field][0, 0] = tokenizer.pad_token_id
+    else:
+        prepared[field][0] += 0.25
+
+    with pytest.raises(RuntimeError, match="differ from the environmental group"):
+        trainer.compute_loss(model, prepared)
+
+    assert trainer.environmental_gradient_evidence == ()
 
 
 def test_controlled_probe_preserves_rng_update_and_checkpoint_profile():
@@ -434,7 +559,7 @@ def test_installed_trl_evaluation_refuses_before_observation_or_generation(
 
 @pytest.mark.parametrize("mode", ["rewarded", "equal-reward-kl-only"])
 def test_installed_controlled_hook_measures_environmental_policy_gradient(
-    _runtime, tmp_path, mode
+    _runtime, tmp_path, mode, monkeypatch
 ):
     from tests.test_grpo_controlled import action
     from training.grpo_controlled import (
@@ -505,9 +630,26 @@ def test_installed_controlled_hook_measures_environmental_policy_gradient(
 
     model.generate = MethodType(fixture_generate, model)
 
+    def capture_loss_rows(inputs):
+        sample_indices = inputs.get("g9_sample_indices")
+        return {
+            "sample_indices": (
+                sample_indices.detach().cpu().tolist()
+                if runtime.torch.is_tensor(sample_indices)
+                else None
+            ),
+            "completion_ids": inputs["completion_ids"].detach().cpu().tolist(),
+            "advantages": (
+                inputs["advantages"].detach().cpu().reshape(-1).tolist()
+            ),
+        }
+
     class ControlledFixtureTrainer(ControlledGRPOMixin, runtime.GRPOTrainer):
         def __init__(self, *args, **kwargs):
             self.reward_mechanics_groups = []
+            self.total_loss_input_rows = []
+            self.environmental_gradient_input_rows = []
+            self.advantage_swap_rejected = False
             super().__init__(*args, **kwargs)
 
         def _generate_and_score_completions(self, inputs):
@@ -540,6 +682,15 @@ def test_installed_controlled_hook_measures_environmental_policy_gradient(
                     "group": len(self.observation_evidence),
                     "environmental_rewards": environmental_rewards,
                     "environmental_advantages": advantages,
+                    "sample_indices": (
+                        result["g9_sample_indices"].detach().cpu().tolist()
+                        if runtime.torch.is_tensor(
+                            result.get("g9_sample_indices")
+                        )
+                        else None
+                    ),
+                    "completion_ids":
+                        result["completion_ids"].detach().cpu().tolist(),
                     "environmental_advantages_sha256":
                         _environmental_advantage_sha256(advantages),
                     "environmental_signal_sha256":
@@ -552,9 +703,32 @@ def test_installed_controlled_hook_measures_environmental_policy_gradient(
             self.reward_mechanics_groups.append(environmental_signal)
             return result
 
+        def _measure_environmental_policy_gradient(
+            self, model, inputs, **kwargs
+        ):
+            self.environmental_gradient_input_rows.append(
+                capture_loss_rows(inputs)
+            )
+            return super()._measure_environmental_policy_gradient(
+                model, inputs, **kwargs
+            )
+
         def compute_loss(
             self, model, inputs, return_outputs=False, num_items_in_batch=None
         ):
+            if mode == "rewarded" and not self.advantage_swap_rejected:
+                self.advantage_swap_rejected = True
+                swapped_inputs = dict(inputs)
+                swapped_inputs["advantages"] = inputs["advantages"].flip(0)
+                with pytest.raises(
+                    RuntimeError,
+                    match="differ from the environmental group",
+                ):
+                    super().compute_loss(
+                        model, swapped_inputs, return_outputs, num_items_in_batch
+                    )
+                assert self.environmental_gradient_evidence == ()
+            self.total_loss_input_rows.append(capture_loss_rows(inputs))
             previous_gradients = {
                 name: (
                     None if parameter.grad is None else parameter.grad.detach().clone()
@@ -653,6 +827,7 @@ def test_installed_controlled_hook_measures_environmental_policy_gradient(
             processing_class=tokenizer, observation_lifecycle=environment,
             callbacks=[GradientProbe()],
         )
+        shuffle_orders = _force_trl_nonidentity_shuffle(runtime, monkeypatch)
         model.train()
         trainer.train()
         assert trainer.state.global_step == max_steps
@@ -663,6 +838,27 @@ def test_installed_controlled_hook_measures_environmental_policy_gradient(
         assert all(record["changed_trainable_tensors"] > 0 for record in optimizer_steps)
         reward_gradients = list(trainer.environmental_gradient_evidence)
         assert len(reward_gradients) == max_steps
+        assert shuffle_orders == [[1, 0]] * max_steps
+        assert trainer.advantage_swap_rejected is (mode == "rewarded")
+        assert len(trainer.total_loss_input_rows) == max_steps
+        assert len(trainer.environmental_gradient_input_rows) == max_steps
+        for index, evidence in enumerate(trainer._environmental_group_evidence):
+            for observed_rows in (
+                trainer.total_loss_input_rows[index],
+                trainer.environmental_gradient_input_rows[index],
+            ):
+                order = observed_rows["sample_indices"]
+                if order is None:
+                    assert mode == "equal-reward-kl-only"
+                    continue
+                assert order == [1, 0]
+                assert observed_rows["completion_ids"] == [
+                    evidence["completion_ids"][sample] for sample in order
+                ]
+                assert observed_rows["advantages"] == [
+                    evidence["environmental_advantages"][sample]
+                    for sample in order
+                ]
         assert all(
             record["step"] == index and record["group"] == index + 1
             and record["component"] == "environmental_verification_policy"

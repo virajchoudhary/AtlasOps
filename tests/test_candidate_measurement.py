@@ -935,6 +935,74 @@ def test_g9_unavailable_diagnosis_marker_conflicting_with_output_is_rejected():
         measure_candidate_episode(raw_episode, _contract())
 
 
+@pytest.mark.parametrize(
+    ("event_name", "expected_failure_event"),
+    [
+        ("telemetry_loss", "telemetry_loss"),
+        ("future_lifecycle_event", "episode_unscorable"),
+    ],
+)
+def test_failure_event_reference_enriches_matching_g9_diagnosis_provenance(
+    event_name,
+    expected_failure_event,
+):
+    raw_ref = {"artifact": "synthetic-terminal.jsonl", "line": 9}
+    raw_episode = _episode(
+        [
+            *_admission_events(),
+            {
+                "event": event_name,
+                "reason": "synthetic observation loss",
+                "raw_ref": raw_ref,
+            },
+        ]
+    )
+    raw_episode["diagnosis_observation"] = {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": raw_episode["source_sha256"],
+        "raw_refs": deepcopy(raw_episode["raw_refs"]),
+    }
+    before = deepcopy(raw_episode)
+
+    measured = measure_candidate_episode(raw_episode, _contract())
+
+    expected_raw_refs = [*before["raw_refs"], raw_ref]
+    assert measured["raw_refs"] == expected_raw_refs
+    assert measured["raw_episode"]["raw_refs"] == expected_raw_refs
+    assert measured["raw_episode"]["diagnosis_observation"]["raw_refs"] == expected_raw_refs
+    assert measured["raw_episode"]["events"][-1]["raw_ref"] == raw_ref
+    assert measured["failures"][-1]["event"] == expected_failure_event
+    assert measured["failures"][-1]["record"]["raw_ref"] == raw_ref
+    if event_name == "future_lifecycle_event":
+        assert measured["raw_episode"]["events"][-1]["source_event_name"] == event_name
+    assert raw_episode == before
+
+
+def test_failure_event_reference_does_not_hide_mismatched_original_diagnosis_refs():
+    raw_episode = _episode(
+        [
+            *_admission_events(),
+            {
+                "event": "telemetry_loss",
+                "reason": "synthetic observation loss",
+                "raw_ref": {"artifact": "synthetic-terminal.jsonl", "line": 9},
+            },
+        ]
+    )
+    raw_episode["diagnosis_observation"] = {
+        "status": "unavailable",
+        "reason": "g9_diagnosis_not_observed",
+        "source_format": "g9_event_stream",
+        "source_sha256": raw_episode["source_sha256"],
+        "raw_refs": [],
+    }
+
+    with pytest.raises(ValueError, match="diagnosis_observation raw references mismatch"):
+        measure_candidate_episode(raw_episode, _contract())
+
+
 def test_multiple_diagnosis_outputs_are_ambiguous_and_all_raw_labels_are_retained():
     events = [
         *_admission_events(),
@@ -997,6 +1065,130 @@ def test_ttr_keeps_negative_coverage_endpoint_without_claiming_censor_duration()
     assert measured["time_to_recovery"]["coverage_endpoint"]["recorded_at"] == (
         "2026-09-29T12:00:02Z"
     )
+
+
+@pytest.mark.parametrize(
+    ("verification_status", "env_resolved", "endpoint_name", "endpoint_reason"),
+    [
+        (
+            "passed",
+            True,
+            "recovery_endpoint",
+            "first conclusive post-action success before cleanup",
+        ),
+        (
+            "failed",
+            False,
+            "coverage_endpoint",
+            "last conclusive unresolved post-action verifier before cleanup",
+        ),
+    ],
+)
+def test_ttr_preserves_pre_cleanup_endpoint_when_alert_clock_is_missing(
+    verification_status,
+    env_resolved,
+    endpoint_name,
+    endpoint_reason,
+):
+    raw_ref = {"artifact": "synthetic-events.jsonl", "line": 7}
+    events = _admission_events()
+    events[2].pop("recorded_at")
+    events.extend(
+        [
+            {
+                "event": "action_result",
+                "executed": True,
+                "agent_claimed_resolved": False,
+                "recorded_at": "2026-09-29T12:00:01Z",
+            },
+            {
+                "event": "post_action_verification",
+                "verification": _verification(
+                    verification_status,
+                    env_resolved,
+                    [
+                        {"check_id": REQUIRED_CHECK_IDS[0], "passed": env_resolved},
+                        {"check_id": REQUIRED_CHECK_IDS[1], "passed": env_resolved},
+                    ],
+                ),
+                "recorded_at": "2026-09-29T12:00:02Z",
+                "raw_ref": raw_ref,
+            },
+            {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:03Z"},
+        ]
+    )
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+    ttr = measured["time_to_recovery"]
+    endpoint = ttr[endpoint_name]
+
+    assert ttr["seconds"] is None
+    assert ttr["censor_duration_seconds"] is None
+    assert ttr["status"] == "unavailable"
+    assert ttr["reason"] == "delivered alert lacks recorded_at"
+    assert ttr["clock_comparability"]["status"] == "NOT_VERIFIED"
+    assert endpoint == {
+        "event_index": 5,
+        "recorded_at": "2026-09-29T12:00:02Z",
+        "verification_status": verification_status,
+        "env_resolved": env_resolved,
+        "reason": endpoint_reason,
+        "raw_ref": raw_ref,
+    }
+    other_endpoint_name = (
+        "coverage_endpoint" if endpoint_name == "recovery_endpoint" else "recovery_endpoint"
+    )
+    assert ttr[other_endpoint_name] is None
+
+
+def test_ttr_rejects_post_cleanup_success_and_inconclusive_endpoint_without_alert_clock():
+    events = _admission_events()
+    events[2].pop("recorded_at")
+    events.extend(
+        [
+            {
+                "event": "action_result",
+                "executed": True,
+                "agent_claimed_resolved": False,
+                "recorded_at": "2026-09-29T12:00:01Z",
+            },
+            {
+                "event": "post_action_verification",
+                "verification": _verification(
+                    "inconclusive",
+                    False,
+                    [
+                        {"check_id": REQUIRED_CHECK_IDS[0], "passed": False},
+                        {"check_id": REQUIRED_CHECK_IDS[1], "passed": False},
+                    ],
+                ),
+                "recorded_at": "2026-09-29T12:00:02Z",
+            },
+            {"event": "cleanup_started", "recorded_at": "2026-09-29T12:00:03Z"},
+            {
+                "event": "post_action_verification",
+                "verification": _verification(
+                    "passed",
+                    True,
+                    [
+                        {"check_id": REQUIRED_CHECK_IDS[0], "passed": True},
+                        {"check_id": REQUIRED_CHECK_IDS[1], "passed": True},
+                    ],
+                ),
+                "recorded_at": "2026-09-29T12:00:04Z",
+            },
+        ]
+    )
+
+    measured = measure_candidate_episode(_episode(events), _contract())
+    ttr = measured["time_to_recovery"]
+
+    assert ttr["seconds"] is None
+    assert ttr["censor_duration_seconds"] is None
+    assert ttr["status"] == "unavailable"
+    assert ttr["reason"] == "delivered alert lacks recorded_at"
+    assert ttr["recovery_endpoint"] is None
+    assert ttr["coverage_endpoint"] is None
 
 
 def test_ttr_is_unavailable_when_success_lacks_a_cleanup_boundary():

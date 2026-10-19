@@ -217,27 +217,6 @@ def _validate_episode(raw_episode: Mapping[str, Any]) -> dict[str, Any]:
     events = episode.get("events")
     if not isinstance(events, list):
         raise ValueError("raw_episode events must be a list")
-    normalized_events: list[dict[str, Any]] = []
-    for index, event in enumerate(events):
-        if not isinstance(event, Mapping):
-            raise ValueError(f"raw_episode event {index} must be a mapping")
-        event_name = event.get("event")
-        if not isinstance(event_name, str) or not event_name.strip():
-            raise ValueError(f"raw_episode event {index} requires a non-empty event name")
-        if "scenario_id" in event and event["scenario_id"] != scenario_id:
-            raise ValueError(f"raw_episode event {index} scenario_id conflicts with the episode")
-        normalized = deepcopy(dict(event))
-        if event_name not in _KNOWN_EVENT_NAMES:
-            normalized["source_event_name"] = event_name
-            normalized["event"] = "episode_unscorable"
-            if not isinstance(normalized.get("failure"), str) or not normalized["failure"].strip():
-                normalized["failure"] = f"unsupported lifecycle event: {event_name}"
-        if normalized["event"] in _FAILURE_EVENT_NAMES:
-            raw_ref = normalized.get("raw_ref")
-            if raw_ref is not None and raw_ref not in episode["raw_refs"]:
-                episode["raw_refs"].append(deepcopy(raw_ref))
-        normalized_events.append(normalized)
-    episode["events"] = normalized_events
     diagnosis_observation = episode.get("diagnosis_observation")
     if diagnosis_observation is not None:
         if not isinstance(diagnosis_observation, Mapping):
@@ -260,8 +239,34 @@ def _validate_episode(raw_episode: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("raw_episode diagnosis_observation source SHA-256 mismatch")
         if diagnosis_observation.get("raw_refs") != episode["raw_refs"]:
             raise ValueError("raw_episode diagnosis_observation raw references mismatch")
+        diagnosis_observation = deepcopy(dict(diagnosis_observation))
+
+    normalized_events: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if not isinstance(event, Mapping):
+            raise ValueError(f"raw_episode event {index} must be a mapping")
+        event_name = event.get("event")
+        if not isinstance(event_name, str) or not event_name.strip():
+            raise ValueError(f"raw_episode event {index} requires a non-empty event name")
+        if "scenario_id" in event and event["scenario_id"] != scenario_id:
+            raise ValueError(f"raw_episode event {index} scenario_id conflicts with the episode")
+        normalized = deepcopy(dict(event))
+        if event_name not in _KNOWN_EVENT_NAMES:
+            normalized["source_event_name"] = event_name
+            normalized["event"] = "episode_unscorable"
+            if not isinstance(normalized.get("failure"), str) or not normalized["failure"].strip():
+                normalized["failure"] = f"unsupported lifecycle event: {event_name}"
+        if normalized["event"] in _FAILURE_EVENT_NAMES:
+            raw_ref = normalized.get("raw_ref")
+            if raw_ref is not None and raw_ref not in episode["raw_refs"]:
+                episode["raw_refs"].append(deepcopy(raw_ref))
+        normalized_events.append(normalized)
+    episode["events"] = normalized_events
+    if diagnosis_observation is not None:
         if any(event.get("event") == "diagnosis_output" for event in events):
             raise ValueError("diagnosis observation conflicts with diagnosis_output")
+        diagnosis_observation["raw_refs"] = deepcopy(episode["raw_refs"])
+        episode["diagnosis_observation"] = diagnosis_observation
     return episode
 
 
@@ -980,8 +985,9 @@ def _time_to_recovery(
     if alert_event is None:
         return result("delivered alert observation is missing")
     alert_index, _ = alert_event
-    if timestamps.get(alert_index) is None:
-        return result(f"delivered alert lacks {clock_source}")
+    missing_alert_clock_reason = (
+        f"delivered alert lacks {clock_source}" if timestamps.get(alert_index) is None else None
+    )
 
     executed_action_indices = [
         action["event_index"]
@@ -989,11 +995,11 @@ def _time_to_recovery(
         if action["executed"] is True and action["event_index"] > alert_index
     ]
     if not executed_action_indices:
-        return result("no action was executed after delivered alert")
+        return result(missing_alert_clock_reason or "no action was executed after delivered alert")
 
     cleanup_index = verifications["cleanup_index"]
     if cleanup_index is None:
-        return result("cleanup boundary observation is missing")
+        return result(missing_alert_clock_reason or "cleanup boundary observation is missing")
 
     post_action = [
         observation
@@ -1006,7 +1012,9 @@ def _time_to_recovery(
         )
     ]
     if not post_action:
-        return result("objective post-action observation missing before cleanup")
+        return result(
+            missing_alert_clock_reason or "objective post-action observation missing before cleanup"
+        )
 
     first_success = next(
         (
@@ -1021,6 +1029,11 @@ def _time_to_recovery(
             first_success,
             "first conclusive post-action success before cleanup",
         )
+        if missing_alert_clock_reason is not None:
+            return result(
+                missing_alert_clock_reason,
+                recovery_endpoint=first_endpoint,
+            )
         if timestamps.get(first_success["event_index"]) is None:
             return result(
                 f"first conclusive success lacks {clock_source}",
@@ -1037,13 +1050,21 @@ def _time_to_recovery(
         if observation["status"] == "failed" and observation["env_resolved"] is False
     ]
     if not unresolved:
-        return result("no conclusive objective post-action verifier before cleanup")
+        return result(
+            missing_alert_clock_reason
+            or "no conclusive objective post-action verifier before cleanup"
+        )
 
     last_unresolved = unresolved[-1]
     coverage_endpoint = endpoint(
         last_unresolved,
         "last conclusive unresolved post-action verifier before cleanup",
     )
+    if missing_alert_clock_reason is not None:
+        return result(
+            missing_alert_clock_reason,
+            coverage_endpoint=coverage_endpoint,
+        )
     if timestamps.get(last_unresolved["event_index"]) is None:
         return result(
             f"coverage endpoint lacks {clock_source}",

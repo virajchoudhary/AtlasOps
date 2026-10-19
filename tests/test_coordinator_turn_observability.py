@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import pathlib
 import uuid
-from unittest.mock import MagicMock, patch
+from contextvars import ContextVar
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -196,6 +197,11 @@ class TestRetryTurnPersistence:
         ], finish_reason="tool_calls")
         t2 = _response(json.dumps({"outcome": "resolved"}))
         with patch("agents.coordinator.post_with_retry", side_effect=[t0, t1, t2]), \
+             patch("agents.coordinator._ACTIVE_MUTATION_OBSERVER", ContextVar(
+                 "turn_test_observer", default=AsyncMock(return_value={
+                     "env_resolved": False, "verification_status": "failed",
+                 }),
+             )), \
              patch.dict("agents.tools.TOOL_REGISTRY",
                         {"promql_query": lambda **kw: {"success": True, "result": []}}), \
              patch("agents.tools.chaos._run",

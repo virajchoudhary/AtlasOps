@@ -51,5 +51,7 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     clearMocks: true,
     restoreMocks: true,
+    // Node 25 enables its own global localStorage, which shadows jsdom's.
+    execArgv: ["--no-experimental-webstorage"],
   },
 });

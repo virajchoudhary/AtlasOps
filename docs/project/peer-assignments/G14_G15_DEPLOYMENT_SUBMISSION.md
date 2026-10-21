@@ -23,6 +23,8 @@ Host-owner approval before peer-host startup, operator/security access or config
 - **G15:** complete verified final-source package plus scientifically accurate final report and presentation, independent claims review, authorized submission and actual external receipt.
 - G15 may remain blocked after packaging if research or approval is absent.
 
+**Local progress:** [21 Oct 2026 offline record](G14_G15_LOCAL_PROGRESS_20261021.md) — clean-checkout checks, read-only demo and local source package verified; Node 25 frontend-test defect fixed; no box below is satisfied.
+
 **PR completion checklist**
 - [ ] Source archive and owner receipts actually shared and independently hashed
 - [ ] Peer-host owner and review target explicitly identified

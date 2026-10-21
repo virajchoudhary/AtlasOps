@@ -21,6 +21,8 @@ No inference, workload startup, fault injection, P1 action, testing on held-out 
 - **G6 empirical evidence:** original Base-only admitted incident outcomes and independently recomputed evaluation, with accepted coverage of G6's actual criterion.
 - **G8 empirical evidence:** raw matched arm episodes, format, action/safety, recovery and TTR measures with honest negatives; independent adjudication of the originally required improvement criterion. Diagnosis-only F1 cannot substitute.
 
+**Local progress:** [21 Oct 2026 offline record](G6_G8_LOCAL_PROGRESS_20261021.md) — Validation population, manifest hashes and counterbalanced A6/B arm order resolved from source; blocked on G4; no box below is satisfied.
+
 **PR completion checklist**
 - [ ] G4 causal dependency independently accepted
 - [ ] A6 and B protocols independently reviewed and approved

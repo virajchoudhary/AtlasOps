@@ -41,7 +41,7 @@ def test_offline_profile_requires_receipt_and_actual_egress_failure(tmp_path, mo
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
     monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self, **kwargs: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
-    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         monkeypatch.delenv(name, raising=False)
     evidence, guard = isolation.prepare_isolation(
         isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40
@@ -144,7 +144,7 @@ def test_acceptance_rejects_nonempty_guard_latch(tmp_path, monkeypatch):
     monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
     monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self, **kwargs: None)
     monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
-    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         monkeypatch.delenv(name, raising=False)
     evidence, _ = isolation.prepare_isolation(
         isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40

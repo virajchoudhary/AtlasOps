@@ -65,6 +65,25 @@ operator identity and action-approval expiry; cleanup deadline; G6's evaluation-
 population rule; the predeclared G8 improvement adjudication. These belong to the
 project lead, host owner and operator.
 
+## Existing diagnostic reproduced (scope: alert-only diagnosis text, not incidents)
+
+`python -B -m scripts.verify_base_sft_validation --run artifacts/evidence/stage8/base-sft-validation-v1/base-sft-validation-20261003-v1 --output <new path>`
+recomputed the 3 October 2026 Kaggle T4 run from its raw responses with the
+repository's independent standard-library scorer:
+
+| Metric | Base | SFT-v17 | SFT − Base |
+| --- | ---: | ---: | ---: |
+| Scheduled / scored | 6 / 6 | 6 / 6 | — |
+| Schema conformance | 1.0 | 1.0 | 0.0 |
+| Mean token-set diagnostic F1 (4 dp) | 0.1687 | 0.1593 | −0.0094 |
+| `resolution_rate` / `avg_time_to_resolve_s` | null | null | — |
+
+The output is equal, as parsed JSON, to the committed
+`artifacts/evidence/stage8/base-sft-validation-v1/local-independent-recompute-v1.json`.
+Its `status: PASS` means the recomputation matched; it is **not** a G6 or G8 pass.
+This is descriptive diagnosis evidence with no improvement, and no evidence about
+live incident resolution.
+
 ## Model-free test reproduction
 
 The full repository suite run for this record is reported in the G14/G15 local
@@ -76,3 +95,20 @@ rows preserved), Base/SFT validation contract 29 passed.
 
 None satisfied. "Synthetic offline evaluators preserve negative/null outcomes" is
 covered by existing passing tests but still needs independent review to tick.
+
+## Offline correctness review scope
+
+Measurement, replay, lineage and adapter safeguards (null/negative/blocked rows,
+unknown lifecycle names, `telemetry_loss` pending adjudication, pre-cleanup endpoints,
+denominator preservation) are shared with G13 and were exercised by the 274
+model-free tests; no new correctness gap was found, so no code or test was added.
+A dedicated six-episode incident executor and its contract-bound clock
+attestation do not exist yet; they depend on owner-frozen fields listed above.
+
+## Record metadata
+
+- Branch `handoff/g6-g8-incident-evaluation-20261020`; remote base `7e46a2c`; source `main` `b23d6cb`.
+- Gate status before and after: **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING** (unchanged).
+- Files: this record (added); the brief (one "Local progress" line added).
+- Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
+- **No remote push occurred. No empirical result was fabricated.**

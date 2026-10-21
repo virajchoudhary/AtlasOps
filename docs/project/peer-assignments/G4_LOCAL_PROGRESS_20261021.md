@@ -69,6 +69,25 @@ passed pair yields `resolved`. No fail-closed defect found in this scope.
 The remaining drift (notably `chaos.py` and the incident runner) was covered
 only by the test suite, not by line-by-line review.
 
+### Fail-closed audit of the G4 path (21 Oct 2026, second pass)
+
+Read `agents/stage_a.py`, `agents/approval.py`, `agents/approval_http.py` and the
+causal predicate/acceptance code in `scripts/run_stage4_golden_incident.py`.
+
+| Concern | Finding |
+| --- | --- |
+| Stale telemetry accepted as fresh | No: baseline samples must be −5…60 s from apply start; recovery needs ≥2 identity-bound post-action samples ≥30 s apart, newest ≤60 s old |
+| Ambiguous workload/container identity | No: CPU samples must match the bound namespace/pod/container; exactly one injected container record required |
+| Missing fault identity (`None == None` UID) | No: `bind_fault` requires a truthy `uid` equal to the created UID, and recovery cannot be recorded without a bound fault |
+| Unauthenticated approval | No: `X-AtlasOps-Key` checked with `hmac.compare_digest` |
+| Remediation not tied to approved action | No: permit bound to incident ID + SHA-256 of canonical action JSON, single-use; Stage A also allows only the exact fault-removal arguments |
+| Missing expiry | No: 300 s permit/approval expiry; 480 s action and 540 s recovery limits; fault expiry enforced |
+| Cleanup conflated with recovery | No: recovery must precede verification and expiry; cleanup must start after the primary record and is scored separately (`uid_bound_cleanup`) |
+| Negative/inconclusive promoted | No: any exception or missing field leaves every acceptance criterion false |
+| Operator identity | **Known gap, not new:** `approved_by` is free text behind one shared key — not a per-operator authenticated identity. Already listed as unqualified in the tracker; not changed here |
+
+No new defect was found, so no code changed.
+
 ## Read-only host probes (stopped at first unavailable engine)
 
 | Probe | Result |
@@ -100,3 +119,13 @@ path, insufficient measured accelerator capacity, and no G4 reopening.
 Approvals still required, all unobtained: host owner (restoration, resources),
 project lead (reopen G4, freeze source/model/protocol, one attempt), operator
 (exact action, expiry, fault, cleanup).
+
+## Record metadata
+
+- Branch `handoff/g4-environment-incident-20261020`; remote base `3ef1459`; source `main` `b23d6cb`.
+- Gate status before: NOT_PASSED / FROZEN. After: **NOT_PASSED / FROZEN** (unchanged).
+- Files added on this branch: this record; [prospective protocol candidate](G4_PROSPECTIVE_PROTOCOL_CANDIDATE_20261021.md).
+  File edited: the brief's checklist (one box ticked: preflight reproduced).
+- No code changed; no hash, pin or historical evidence edited.
+- Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
+- **No remote push occurred. No empirical result was fabricated.**

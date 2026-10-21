@@ -12,16 +12,18 @@ spec:
     - name: atlasops.online-boutique.availability
       rules:
         - alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+          # Aggregate away the exporter's own service/pod/job labels so the alert
+          # identifies the unavailable deployment, not kube-state-metrics.
           expr: >-
-            kube_deployment_status_replicas_available{
+            max by (namespace, deployment) (kube_deployment_status_replicas_available{
               namespace="default",
               deployment=~"adservice|cartservice|checkoutservice|currencyservice|emailservice|frontend|loadgenerator|paymentservice|productcatalogservice|recommendationservice|redis-cart|shippingservice"
-            }
+            })
             <
-            kube_deployment_spec_replicas{
+            max by (namespace, deployment) (kube_deployment_spec_replicas{
               namespace="default",
               deployment=~"adservice|cartservice|checkoutservice|currencyservice|emailservice|frontend|loadgenerator|paymentservice|productcatalogservice|recommendationservice|redis-cart|shippingservice"
-            }
+            })
           for: 2m
           labels:
             severity: warning

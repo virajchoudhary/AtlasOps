@@ -41,6 +41,41 @@ shadows jsdom's Storage. Commit `68488d1` on this branch adds
 63/63 on Node 25.9.0 and on Node 22.12.0 (the minimum). Application code and
 the assertion itself are unchanged.
 
+### Browser E2E (`npm run test:e2e`, Playwright 1.63.0, Chromium headless shell 153, macOS arm64)
+
+Browsers were installed only under the local review directory (`PLAYWRIGHT_BROWSERS_PATH`),
+with `CI=1` so no unknown server is reused.
+
+| Run | Result |
+| --- | --- |
+| 1, before fix | 51 passed, 1 failed: `faq-glyph.spec.ts:71` reduced-motion (expected frame "0", received "1") |
+| reduced-motion test repeated ×30, unfixed spec | 20 passed, 10 failed — every failure "0" → "1" |
+| reduced-motion test repeated ×30, fixed spec | 30 passed |
+| 2, after fix, concurrent with a full pytest run | 51 passed, 1 failed: `founder-touch.spec.ts:56` 90 s timeout (CPU contention) |
+| `founder-touch.spec.ts` alone ×3 | 3 passed, ~44 s each — timeout not reproduced; not changed |
+| 3, final, machine otherwise idle | **52 passed** |
+
+### Defect fixed: reduced-motion E2E sampled the frame before the first paint
+
+`FAQGlyphBackdrop` sets `data-animation-state="reduced-motion"` in `sync()` before the glyph
+font has loaded; the first *static* draw then moves `data-frame` from "0" to "1". The test
+could sample "0" and see "1" 500 ms later although nothing animates. Commit `d4c5bef` waits for
+the first paint before sampling; the no-change assertion and the resume assertion are unchanged.
+Classification: TEST_DEFECT (timing), not an application motion defect.
+
+## Submission package (`python -B -m scripts.package_submission --output-dir <new>`)
+
+Run from clean `main` `b23d6cb` into `package/submission-b23d6cb/` of the local review directory:
+660 assets, `asset_inventory_sha256` `edfd7ec8c51297e09f96df98054515ecf8ebff3411cddc9d68973fedefc80b6a`,
+`status=NOT_CERTIFIED`, `empirical_metrics=null`, `package_readiness=READY_FOR_REVIEW`; declared gates
+G4/G9 NOT_PASSED, G6/G8/G12 IMPLEMENTED / EMPIRICAL EVIDENCE MISSING, G13 REOPENED, G10/G11 OUT_OF_SCOPE.
+`python -B -m scripts.check_submission_links`: links resolved in 30 review documents.
+
+**Finding:** the tracked `artifacts/SUBMISSION_MANIFEST.json` was generated on 5 Oct 2026
+(464 assets, older scope wording) and does not describe `b23d6cb`. It was not edited; the fresh
+manifest above is the one matching current source. Whether to refresh the tracked copy is a
+maintainer decision.
+
 ## Source-review package (local, not the owner's receipt)
 
 Built and verified with `python -m scripts.package_source_review --expected-source-sha b23d6cb4319b77b4d8606934e401141bcb01d23f`
@@ -71,7 +106,22 @@ edited: no new accepted scientific result exists to add, and G4/G9 failure,
 missing G6/G8/G12/G13 evidence, G10/G11 exclusion and the absence of any
 submission remain the truthful claims.
 
+## Peer-host preparation
+
+[Peer-host acceptance checklist candidate](G14_PEER_HOST_ACCEPTANCE_CHECKLIST_CANDIDATE_20261021.md):
+ten non-destructive checks; host, owner, audience and reviewer `UNSPECIFIED`. Not executed.
+
 ## Status against the PR checklist
 
 None satisfied. A local package was built and hashed, but the owner's archive
 and receipts were not shared, so the first box stays open.
+
+## Record metadata
+
+- Branch `handoff/g14-g15-peer-submission-20261020`; remote base `a4a3fa7`; source `main` `b23d6cb`.
+- Gate status before and after: G14 **PARTIAL**, G15 **PARTIAL / NOT_CERTIFIED** (unchanged).
+- Files: `frontend/vite.config.ts` (Vitest `execArgv`), `frontend/e2e/faq-glyph.spec.ts` (wait for first paint),
+  this record, the peer-host checklist candidate, the brief (one "Local progress" line).
+  Report, slides and application code unchanged.
+- Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
+- **No remote push, deployment or submission occurred. No empirical result was fabricated.**

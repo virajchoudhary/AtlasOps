@@ -153,6 +153,16 @@ def _load_current_results() -> str:
     pilot = results["g9_pilot"]
     aligned = results["g9_aligned_diagnostic"]
     g9_pilot_archive = _format_value(pilot["archive_sha256"])
+    # State the experimental conclusion only when the projected evidence supports it.
+    delta = validation["paired_delta"]
+    if not validation["available"] or isinstance(delta, bool) or not isinstance(delta, (int, float)):
+        validation_conclusion = (
+            "No conclusion is shown because the Validation evidence is unavailable or incomplete."
+        )
+    elif delta <= 0:
+        validation_conclusion = "No diagnostic improvement was observed."
+    else:
+        validation_conclusion = "A positive diagnostic delta was observed (descriptive only)."
     schema_rows = (
         "| Base | "
         f"{_format_value(validation['base_f1'], 5)} | "
@@ -180,7 +190,7 @@ def _load_current_results() -> str:
         "| Arm | Diagnostic F1 | Schema-conformant JSON |\n|---|---:|---:|\n"
         f"{schema_rows}\n\n"
         f"Paired delta (SFT - Base): **{_format_value(validation['paired_delta'], 5)}**. "
-        "No diagnostic improvement was observed. Resolution, safety, reward, and "
+        f"{validation_conclusion} Resolution, safety, reward, and "
         "time-to-resolve were not measured and remain unavailable.\n\n"
         "### Controlled G9 final pilot\n"
         f"- Status: **{pilot['status']}**; "

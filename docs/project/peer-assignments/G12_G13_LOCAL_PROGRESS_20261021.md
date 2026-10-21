@@ -35,3 +35,18 @@ pre-empt that decision, so it is left for after the freeze.
 ## Status against the PR checklist
 
 None satisfied. The first box needs independent acceptance, not this reproduction.
+
+## Prospective three-arm contract
+
+See the [three-arm freeze sheet candidate](G12_G13_THREE_ARM_FREEZE_CANDIDATE_20261021.md):
+current source/scorer hashes, the proposal's denominator/recovery/TTR/null rules, and every
+owner field left `UNSPECIFIED`. Arm 3 (accepted GRPO) does not exist and is not substituted.
+
+## Record metadata
+
+- Branch `handoff/g12-g13-integrated-measurement-20261020`; remote base `366ddab`; source `main` `b23d6cb`.
+- Gate status before and after: G12 **IMPLEMENTED / EMPIRICAL EVIDENCE MISSING**; G13 **REOPENED / NOT_CERTIFIED** (unchanged).
+- Files: this record; the freeze sheet candidate; the brief (one "Local progress" line). No code changed.
+- No held-out (Final-Test/adversarial) membership or outcomes were read.
+- Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
+- **No remote push occurred. No empirical result was fabricated.**

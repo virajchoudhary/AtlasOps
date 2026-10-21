@@ -41,6 +41,28 @@ The fresh-reload socket guard could not be exercised: `training/grpo_reload_isol
 deliberately refuses non-Linux-x86_64 hosts. That is correct fail-closed behavior,
 not a defect, but it means reload isolation still has only Linux CI evidence.
 
+## Defect fixed: racy subprocess handoff in the G9 approval-channel test
+
+The full suite on `b23d6cb` had one failure:
+`tests/test_g9_approval_channel.py::test_operator_decision_crosses_process_and_restart_invalidates_token`
+raised `JSONDecodeError: Expecting value` while reading `result.json`. The helper
+`tests/g9_approval_process.py` wrote `ready.json`/`result.json` with
+`Path.write_text`, which creates the file before filling it; the parent polls
+`is_file()` and could read it empty. The Stage 4 helper already avoids this with
+an atomic `publish_json`. This branch copies that pattern into the G9 helper;
+no assertion, timeout or product code changed.
+
+| Source | Isolated runs of that test | Passed | Failed |
+| --- | --- | --- | --- |
+| `b23d6cb` (before) | 20 | 7 | 13 |
+| this branch (after) | 20 | 20 | 0 |
+
+`tests/test_g9_approval_channel.py`, `tests/test_stage15_submission_package.py`
+and `tests/test_repository_hygiene.py` then pass together (97 passed, 1 skipped),
+and CI's Ruff rule set passes. This race raises an error rather than hanging,
+so it does not explain the observation-window stall the safeguards guide records;
+that stall's cause is still not established.
+
 ## Resource qualification
 
 This host does **not** qualify for the prospective Train-only pilot: there is no
@@ -53,6 +75,7 @@ substitute was attempted, since that would silently change the protocol.
 - Exact-source pinned offline test and lineage evidence: **partially satisfied**
   (all pinned trainer/mechanics cases pass on macOS arm64; reload isolation is
   platform-blocked here). Left unticked.
+- Offline defect fixed: G9 approval-channel helper race (see above).
 - Training-resource/model qualification, Train-only v2 permission, actual
   training evidence, accepted gradient/update/checkpoint: **not started** —
   each requires project-lead reopening and new resource authorization.

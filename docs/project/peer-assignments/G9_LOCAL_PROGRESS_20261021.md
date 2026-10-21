@@ -79,3 +79,13 @@ substitute was attempted, since that would silently change the protocol.
 - Training-resource/model qualification, Train-only v2 permission, actual
   training evidence, accepted gradient/update/checkpoint: **not started** —
   each requires project-lead reopening and new resource authorization.
+
+## Record metadata
+
+- Branch `handoff/g9-grpo-policy-20261020`; remote base `9c092da`; source `main` `b23d6cb`.
+- Gate status before and after: **NOT_PASSED / FROZEN** (unchanged).
+- Files: `tests/g9_approval_process.py` (atomic handoff writes; test helper only); this
+  record; [Train-only v2 freeze sheet candidate](G9_TRAIN_ONLY_V2_FREEZE_CANDIDATE_20261021.md);
+  the brief (one "Local progress" line).
+- Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
+- **No remote push occurred. No empirical result was fabricated. No checkpoint was promoted.**

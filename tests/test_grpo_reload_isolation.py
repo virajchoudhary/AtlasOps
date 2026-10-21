@@ -31,7 +31,8 @@ def receipt(tmp_path, **changes):
 
 def failed_probes():
     return [
-        {"target": host, "port": port, "connected": False, "error_type": "TimeoutError"}
+        {"target": host, "port": port, "connected": False, "error_type": "TimeoutError",
+         "timeout_seconds": isolation.PROBE_TIMEOUT_SECONDS}
         for host, port in isolation.PROBE_TARGETS
     ]
 
@@ -150,6 +151,28 @@ def test_acceptance_rejects_nonempty_guard_latch(tmp_path, monkeypatch):
         isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40
     )
     evidence["forbidden_attempts"] = [{"operation": "socket.connect", "outcome": "blocked"}]
+    assert not isolation.validate_isolation_evidence(evidence)
+
+
+@pytest.mark.parametrize("timeout", [None, 0.5, 30.0])
+def test_acceptance_requires_the_fixed_probe_timeout(tmp_path, monkeypatch, timeout):
+    # Codex finding (PR181): probe records with a missing or arbitrary timeout were accepted.
+    path, sha = receipt(tmp_path)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install", lambda self: None)
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", lambda self, **kwargs: None)
+    monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    evidence, _ = isolation.prepare_isolation(
+        isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40
+    )
+    evidence["syscall_guard_installed"] = True
+    assert isolation.validate_isolation_evidence(evidence)
+    probe = evidence["outbound_probes"][0]
+    if timeout is None:
+        probe.pop("timeout_seconds")
+    else:
+        probe["timeout_seconds"] = timeout
     assert not isolation.validate_isolation_evidence(evidence)
 
 

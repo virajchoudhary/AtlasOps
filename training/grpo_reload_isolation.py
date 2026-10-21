@@ -448,6 +448,8 @@ def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) ->
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)
         and all(probe_proves_blocked(r) for r in probes)
+        # The documented bounded probes: reject evidence with any other or missing timeout.
+        and all(r.get("timeout_seconds") == PROBE_TIMEOUT_SECONDS for r in probes)
     )
 
 

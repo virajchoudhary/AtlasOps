@@ -27,6 +27,8 @@ G9 requires explicit project-lead reopening and new training/model/compute autho
 - **Offline handoff:** reviewed safeguards and genuinely executable bounded experimental proposal, reproducible tests, no scientific promotion.
 - **G9 empirical acceptance:** an authorized, correctly measured run shows verifier-coupled reward-driven learning and valid checkpoint inventory/reload, then independent G9 gate adjudication. A tiny pilot alone cannot claim live incident effectiveness or G13-ready policy.
 
+**Local progress:** [21 Oct 2026 offline record](G9_LOCAL_PROGRESS_20261021.md) — pinned trainer tests executed on macOS arm64; reload isolation platform-blocked; no box below is satisfied in full.
+
 **PR completion checklist**
 - [ ] Exact-source pinned offline test and lineage evidence
 - [ ] Training-resource/model requirements independently qualified

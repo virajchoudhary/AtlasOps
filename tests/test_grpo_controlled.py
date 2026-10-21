@@ -258,3 +258,20 @@ def test_prospective_governance_does_not_close_live_gates():
         "primary_target_preserved", "CONTROLLED_SYNTHETIC_TRAINING",
     ):
         assert phrase in text
+
+
+def test_p2_scale_records_automatic_authorization(environment):
+    # Codex finding (PR180): an auto-authorized P2 mutation was recorded as "not_applicable",
+    # indistinguishable from non-mutating tools.
+    result = step(environment, action(3))
+    assert len(result["executed_actions"]) == 1
+    assert result["approval_decision"] == "auto"
+
+
+def test_non_mutating_tool_keeps_not_applicable(environment):
+    raw = json.dumps({
+        "tool": "kubectl_get",
+        "arguments": {"resource": "deployments", "namespace": "default"},
+        "agent_claimed_resolved": False,
+    })
+    assert step(environment, raw)["approval_decision"] == "not_applicable"

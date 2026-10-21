@@ -26,7 +26,7 @@ Host owner: any WSL/Docker/Kind restoration, resource use, changes to services a
 Only accepted G4 evidence permits proposing separately approved G6/G8 incident campaigns. Read [deferred scientific work](../DEFERRED_RESEARCH_HANDOFF.md) and the [evidence index](../../EVIDENCE_INDEX.md) before any new run.
 
 **PR completion checklist**
-- [ ] Current-source offline preflight and blockers reproduced
+- [x] Current-source offline preflight and blockers reproduced — see [local progress record](G4_LOCAL_PROGRESS_20261021.md) (21 Oct 2026; also records a basis-commit provenance finding, left unfixed pending project-lead decision)
 - [ ] Any genuine offline defects fixed and tested
 - [ ] Independent protocol/source review recorded
 - [ ] Required host/project-lead/operator approvals obtained and linked

@@ -28,6 +28,8 @@ After G9 checkpoint acceptance, prepare a separately approved G12 policy-bound c
 - **G12:** raw integrated environment episode with exactly accepted learned policy and independently verified causal safety/recovery.
 - **G13:** prospectively frozen three-arm comparison, valid raw outcomes including negatives and nulls, separately authorized held-out access and independent recomputation. No surrogate third arm.
 
+**Local progress:** [21 Oct 2026 offline record](G12_G13_LOCAL_PROGRESS_20261021.md) — model-free G13 safeguards reproduced (274 passed); clock-attestation path awaits the project lead's contract freeze; no box below is satisfied.
+
 **PR completion checklist**
 - [ ] Model-free G13 safeguard tests and raw replay independently accepted
 - [ ] Exact measurement and censoring protocol frozen and reviewed

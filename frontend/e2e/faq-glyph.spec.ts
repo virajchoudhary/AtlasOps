@@ -77,6 +77,8 @@ test("FAQ glyph backdrop stays static under reduced motion and resumes", async (
   const canvas = page.locator("#faq .reference-faq-glyphs canvas");
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveAttribute("data-animation-state", "reduced-motion");
+  // The state is set before the glyph font loads; sample only after the first static paint.
+  await expect.poll(() => canvas.getAttribute("data-frame")).not.toBe("0");
   const frame = await canvas.getAttribute("data-frame");
   await page.waitForTimeout(500);
   expect(await canvas.getAttribute("data-frame")).toBe(frame);

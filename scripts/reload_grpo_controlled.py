@@ -138,6 +138,8 @@ def main():
         args.output.exists() or not args.output.is_absolute()
         or has_redirecting_path_component(args.output)
         or args.output.resolve().is_relative_to(args.run.resolve())
+        # A report inside the checkout would itself make the source tree dirty.
+        or args.output.resolve().is_relative_to(Path(__file__).resolve().parents[1])
     ):
         raise ValueError("Reload report needs a fresh external path")
     try:

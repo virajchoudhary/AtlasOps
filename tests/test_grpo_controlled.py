@@ -410,3 +410,19 @@ def test_reload_refuses_a_modified_or_different_source_tree(monkeypatch, source,
         lambda: {"code_sha": "a" * 40, "source_state": "clean"},
     )
     assert require_clean_reload_source("a" * 40) == "a" * 40
+
+
+def test_reload_report_cannot_be_written_inside_the_checked_checkout(tmp_path, monkeypatch):
+    import sys
+
+    from scripts import reload_grpo_controlled
+
+    repo = Path(reload_grpo_controlled.__file__).resolve().parents[1]
+    report = repo / "reload-report-inside-checkout.json"
+    monkeypatch.setattr(sys, "argv", [
+        "reload_grpo_controlled", "--run", str(tmp_path / "run"),
+        "--manifest-sha256", "0" * 64, "--output", str(report),
+    ])
+    with pytest.raises(ValueError, match="fresh external path"):
+        reload_grpo_controlled.main()
+    assert not report.exists()

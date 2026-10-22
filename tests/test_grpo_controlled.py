@@ -275,3 +275,138 @@ def test_non_mutating_tool_keeps_not_applicable(environment):
         "agent_claimed_resolved": False,
     })
     assert step(environment, raw)["approval_decision"] == "not_applicable"
+
+
+def _local_export(tmp_path, receipt):
+    import hashlib
+
+    run = tmp_path / "store" / "run"
+    run.mkdir(parents=True)
+    (run / "episodes.jsonl").write_text("", encoding="utf-8")
+    manifest = run / "controlled_grpo_manifest.json"
+    manifest.write_text(json.dumps({
+        "receipt": receipt,
+        "evidence_files": {"episodes.jsonl": {
+            "bytes": 0, "sha256": hashlib.sha256(b"").hexdigest(),
+        }},
+    }), encoding="utf-8")
+    reload = tmp_path / "store" / "reload.json"
+    reload.write_text("{}", encoding="utf-8")
+    return (
+        run, reload, hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        hashlib.sha256(reload.read_bytes()).hexdigest(),
+    )
+
+
+@pytest.mark.parametrize("receipt_change, message", [
+    ({"local_evidence_destination": ""}, "local evidence destination"),
+    ({"output_path": None}, "local evidence destination"),
+    ({"local_evidence_destination": "relative/store"}, "not present on this host"),
+    ({"local_evidence_destination": "/nonexistent-atlasops-store"}, "not present on this host"),
+])
+def test_export_requires_the_admitted_local_evidence_store(tmp_path, receipt_change, message):
+    # Codex finding (PR180): acceptance never compared paths with the admitted destination.
+    from scripts.accept_grpo_controlled import accept_export
+
+    receipt = {
+        "local_evidence_destination": str(tmp_path / "store"),
+        "output_path": "/kaggle/working/run",
+        **receipt_change,
+    }
+    with pytest.raises(ValueError, match=message):
+        accept_export(*_local_export(tmp_path, receipt))
+
+
+def test_export_rejects_paths_outside_the_local_evidence_store(tmp_path):
+    from scripts.accept_grpo_controlled import accept_export
+
+    (tmp_path / "elsewhere").mkdir()
+    receipt = {
+        "local_evidence_destination": str(tmp_path / "elsewhere"),
+        "output_path": "/kaggle/working/run",
+    }
+    with pytest.raises(ValueError, match="inside the admitted local evidence store"):
+        accept_export(*_local_export(tmp_path, receipt))
+
+    # The acceptance report itself must also land in the store.
+    second = tmp_path / "second"
+    exported = _local_export(second, {
+        **receipt, "local_evidence_destination": str(second / "store"),
+    })
+    with pytest.raises(ValueError, match="inside the admitted local evidence store"):
+        accept_export(*exported, output=tmp_path / "out.json")
+
+
+def test_export_rejects_acceptance_of_the_training_output_itself(tmp_path):
+    from scripts.accept_grpo_controlled import accept_export
+
+    run = tmp_path / "store" / "run"
+    receipt = {
+        "local_evidence_destination": str(tmp_path / "store"),
+        "output_path": str(run),
+    }
+    with pytest.raises(ValueError, match="supervised local copy"):
+        accept_export(*_local_export(tmp_path, receipt))
+
+
+def test_admitted_runtime_snapshot_records_observed_versions_and_gpu(monkeypatch):
+    # Codex finding (PR180): verified package and GPU observations were discarded.
+    import importlib.metadata
+    import sys
+
+    from training import grpo_controlled
+
+    repo = Path(grpo_controlled.__file__).resolve().parents[1]
+    expected = json.loads((repo / "config/sft_pilot_v4.json").read_text(encoding="utf-8"))[
+        "environment"
+    ]["package_versions"]
+    observed = {
+        name: version + ("+cu126" if name == "torch" else "")
+        for name, version in expected.items()
+    }
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: observed[name])
+    monkeypatch.setattr(grpo_controlled.platform, "python_version", lambda: "3.12.11")
+    monkeypatch.setattr(grpo_controlled.platform, "system", lambda: "Linux")
+    for name in ("WORLD_SIZE", "LOCAL_WORLD_SIZE", "RANK", "LOCAL_RANK"):
+        monkeypatch.delenv(name, raising=False)
+    cuda = SimpleNamespace(
+        is_available=lambda: True, device_count=lambda: 1,
+        get_device_name=lambda index: "Tesla T4",
+        get_device_capability=lambda index: (7, 5),
+        get_device_properties=lambda index: SimpleNamespace(total_memory=15 * 1024**3),
+    )
+    monkeypatch.setitem(
+        sys.modules, "torch", SimpleNamespace(cuda=cuda, version=SimpleNamespace(cuda="12.6"))
+    )
+
+    snapshot = grpo_controlled.verify_controlled_runtime(repo)
+    assert snapshot["packages"] == observed
+    assert snapshot["python_version"] == "3.12.11"
+    assert snapshot["torch_cuda"] == "12.6"
+    assert snapshot["gpu"] == {
+        "device_count": 1, "name": "Tesla T4", "capability": [7, 5],
+        "total_memory_bytes": 15 * 1024**3,
+    }
+
+    observed[next(iter(observed))] = "0.0.0"
+    with pytest.raises(ValueError, match="package mismatch"):
+        grpo_controlled.verify_controlled_runtime(repo)
+
+
+@pytest.mark.parametrize("source, message", [
+    ({"code_sha": "a" * 40, "source_state": "dirty"}, "uncommitted changes"),
+    ({"code_sha": "b" * 40, "source_state": "clean"}, "differs from the training receipt"),
+])
+def test_reload_refuses_a_modified_or_different_source_tree(monkeypatch, source, message):
+    # Codex finding (PR181): HEAD alone did not identify the executed reload code.
+    from scripts.reload_grpo_controlled import require_clean_reload_source
+    from training import grpo_provenance
+
+    monkeypatch.setattr(grpo_provenance, "source_identity", lambda: source)
+    with pytest.raises(ValueError, match=message):
+        require_clean_reload_source("a" * 40)
+    monkeypatch.setattr(
+        grpo_provenance, "source_identity",
+        lambda: {"code_sha": "a" * 40, "source_state": "clean"},
+    )
+    assert require_clean_reload_source("a" * 40) == "a" * 40

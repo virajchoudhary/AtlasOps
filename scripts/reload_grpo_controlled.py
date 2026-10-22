@@ -11,6 +11,18 @@ from training.grpo_reload_isolation import (
 )
 
 
+def require_clean_reload_source(expected_sha: str) -> str:
+    """The receipt's commit identifies the reload code only if the tree is unmodified."""
+    from training.grpo_provenance import source_identity
+
+    source = source_identity()
+    if source["code_sha"] != expected_sha:
+        raise ValueError("Reload source differs from the training receipt")
+    if source["source_state"] != "clean":
+        raise ValueError("Reload source tree has uncommitted changes")
+    return source["code_sha"]
+
+
 def reload_checkpoint(args):
     from training.grpo_controlled import (
         CLASSIFICATION, MODEL, PROFILE, REVISION, validate_v17_parent,
@@ -52,11 +64,7 @@ def reload_checkpoint(args):
     write_manifest_atomic(args.output, report)
     guard = None
     try:
-        source_sha = __import__("subprocess").check_output(
-            ["git", "rev-parse", "HEAD"], text=True
-        ).strip()
-        if source_sha != receipt["source_sha"]:
-            raise ValueError("Reload source differs from the training receipt")
+        source_sha = require_clean_reload_source(receipt["source_sha"])
         isolation, guard = prepare_isolation(
             args.reload_profile, receipt_path=args.offline_receipt,
             receipt_sha256=args.offline_receipt_sha256, source_sha=source_sha,

@@ -434,6 +434,9 @@ class CapacityEnvironment:
                         category = "approval_required"
                     else:
                         approval_outcome = "approved"
+                else:
+                    # Distinguish automatic P2/P3 authorization from non-mutating tools.
+                    approval_outcome = "auto"
             if category is None and (
                 arguments.get("namespace", "default") != "default"
                 or (

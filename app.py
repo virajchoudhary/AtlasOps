@@ -72,6 +72,7 @@ from agents.coordinator import (
 )
 from agents.coordinator import (
     build_incident_anchors,
+    firing_alerts_only,
     parse_alert_webhook_payload,
     read_alert_webhook_body,
 )
@@ -679,7 +680,7 @@ async def webhook_proxy(request: Request):
     """
     body = await read_alert_webhook_body(request)
     _verify_webhook_signature(body, request.headers.get("Authorization"))
-    payload = parse_alert_webhook_payload(body)
+    payload = firing_alerts_only(parse_alert_webhook_payload(body))
     if not payload["alerts"]:
         return JSONResponse(
             {

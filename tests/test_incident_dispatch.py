@@ -1574,3 +1574,56 @@ async def test_failed_occurrence_is_logged_observed_and_not_retried(caplog, tmp_
     assert calls == 1
     assert "attempted occurrences will not be replayed" in caplog.text
     assert not unhandled_contexts
+
+
+@pytest.mark.parametrize("route", ["root", "coordinator"])
+@pytest.mark.asyncio
+async def test_resolved_notification_does_not_start_an_incident(monkeypatch, route, tmp_path):
+    # Alertmanager (send_resolved: true) re-sends the same fingerprint/startsAt with
+    # status "resolved" once the problem clears; that is not a new incident.
+    import agents.correlator as correlator_module
+    import app as app_module
+    from agents import coordinator
+
+    incident_correlator = IncidentCorrelator()
+    incident_dispatcher = IncidentDispatcher(incident_correlator, tmp_path / "admissions.sqlite3")
+    for module in (correlator_module, app_module, coordinator):
+        monkeypatch.setattr(module, "correlator", incident_correlator)
+    monkeypatch.setattr(app_module, "incident_dispatcher", incident_dispatcher)
+    monkeypatch.setattr(coordinator, "incident_dispatcher", incident_dispatcher)
+    calls: list[str] = []
+
+    async def handler(_payload, *, incident_id, incident_anchors=None):
+        calls.append(incident_id)
+        return {"incident_id": incident_id}
+
+    monkeypatch.setattr(coordinator, "handle_incident", handler)
+    monkeypatch.setattr(app_module, "_WEBHOOK_SECRET", "test-webhook-secret")
+    monkeypatch.setattr(coordinator, "_WEBHOOK_SECRET", "test-webhook-secret")
+    application = app_module.app if route == "root" else coordinator.app
+    resolved = _webhook_payload("HighCPU", "resolved-fingerprint", "2026-10-15T10:00:00Z")
+    resolved["status"] = "resolved"
+    resolved["alerts"][0]["status"] = "resolved"
+    headers = {"Authorization": "Bearer test-webhook-secret"}
+
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        response = await client.post("/webhook", json=resolved, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["dispatched"] is False
+    assert calls == []
+
+
+def test_firing_alerts_only_keeps_firing_items_of_a_resolved_envelope():
+    from agents.coordinator import firing_alerts_only
+
+    payload = {
+        "status": "resolved",
+        "alerts": [
+            {"status": "firing", "fingerprint": "a"},
+            {"status": "resolved", "fingerprint": "b"},
+            {"fingerprint": "c"},
+        ],
+    }
+    assert [a["fingerprint"] for a in firing_alerts_only(payload)["alerts"]] == ["a"]
+    assert payload["alerts"][1]["fingerprint"] == "b"

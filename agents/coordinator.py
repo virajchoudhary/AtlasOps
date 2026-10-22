@@ -144,6 +144,19 @@ def parse_alert_webhook_payload(body: bytes) -> dict[str, Any]:
         ) from exc
 
 
+def firing_alerts_only(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop alert items Alertmanager reports as resolved; a cleared alert is not an incident.
+
+    An item's own status wins; the envelope status applies only to items without one.
+    """
+    envelope_status = str(payload.get("status") or "").strip().lower()
+    alerts = [
+        alert for alert in payload.get("alerts") or []
+        if str(alert.get("status") or envelope_status).strip().lower() != "resolved"
+    ]
+    return {**payload, "alerts": alerts}
+
+
 class ApprovalCallbackPayload(BaseModel):
     token: str = Field(min_length=1)
     decision: str = Field(min_length=1)
@@ -3097,8 +3110,8 @@ async def webhook(request: Request):
     if not _hmac.compare_digest(token.encode(), _WEBHOOK_SECRET.encode()):
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
-    payload = parse_alert_webhook_payload(body)
-    log.info("received alertmanager webhook: %d alerts", len(payload.get("alerts", [])))
+    payload = firing_alerts_only(parse_alert_webhook_payload(body))
+    log.info("received alertmanager webhook: %d firing alerts", len(payload.get("alerts", [])))
     if not payload["alerts"]:
         return JSONResponse(
             {

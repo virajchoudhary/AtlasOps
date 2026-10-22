@@ -249,3 +249,84 @@ print('GPU_SEAL_REFUSALS_PASS')
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("failing_stage", ["audit_hook", "import_syscall_guard"])
+def test_guard_installation_failure_preserves_isolation_evidence(tmp_path, monkeypatch, failing_stage):
+    # Codex finding (PR181): a failed guard install discarded the collected probes.
+    path, sha = receipt(tmp_path)
+
+    def refuse(self, **kwargs):
+        raise PermissionError("Cannot install seccomp TSYNC guard")
+
+    monkeypatch.setattr(
+        isolation.LoopbackGuard, "install",
+        refuse if failing_stage == "audit_hook" else (lambda self: None),
+    )
+    monkeypatch.setattr(isolation.LoopbackGuard, "install_syscall_guard", refuse)
+    monkeypatch.setattr(isolation, "outbound_probes", failed_probes)
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(PermissionError) as raised:
+        isolation.prepare_isolation(
+            isolation.KAGGLE_PROFILE, receipt_path=path, receipt_sha256=sha, source_sha="a" * 40
+        )
+    evidence = raised.value.isolation_evidence
+    assert evidence["outbound_probes"] == failed_probes()
+    assert evidence["guard_installation_failure"] == {
+        "stage": failing_stage, "error_type": "PermissionError",
+    }
+    assert not isolation.validate_isolation_evidence(evidence)
+
+
+def gpu_discovery_evidence(*, empty_file=False, **socket_changes):
+    stdout = "libcuda.so.1 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libcuda.so.1\n"
+    query = {
+        "argv": ["/sbin/ldconfig", "-p"], "executable": "/sbin/ldconfig", "returncode": 0,
+        "stdout": stdout, "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
+    }
+    inventory = {"kernel.bin": {"sha256": hashlib.sha256(b"kernel").hexdigest(), "size": 6}}
+    if empty_file:
+        inventory["lock"] = {"sha256": hashlib.sha256(b"").hexdigest(), "size": 0}
+    listener = {
+        "fd": 7, "inode": "81234", "family": "AF_UNIX", "type": "SOCK_SEQPACKET",
+        "state": "LISTENING_INERT", "pid_namespace_inode": "4026531836",
+        "name": "@cuda-uvmfd-4026531836-4321@",
+    }
+    listener.update(socket_changes)
+    return {
+        "reload_pid": 4321,
+        "context": {"runtime": {
+            "triton_cache": "/kaggle/working/triton", "triton_inventory": inventory,
+            "python_sha256": "b" * 64, "ldconfig_query": query,
+        }},
+        "runtime_discovery": {
+            "phase": "SEALED_ARTIFACT_RELOAD", "gpu_count": 1, "python_sha256": "b" * 64,
+            "runtime_inventory_before": inventory, "runtime_inventory_after": inventory,
+            "architecture": ["64bit", "ELF"], "subprocesses_executed": [],
+            "residual_sockets": [listener], "prepared_ldconfig_query": query,
+        },
+    }
+
+
+def test_gpu_discovery_accepts_zero_byte_runtime_files():
+    # Codex finding (PR182): discovery inventories empty lock files that acceptance refused.
+    assert isolation.validate_gpu_discovery(gpu_discovery_evidence(empty_file=True))
+
+
+@pytest.mark.parametrize("socket_changes", [
+    {"name": "@cuda-uvmfd-arbitrary-4321@"},
+    {"name": "@cuda-uvmfd-4026531999-4321@"},
+    {"pid_namespace_inode": "not-an-inode"},
+    {"pid_namespace_inode": None},
+])
+def test_gpu_discovery_requires_the_exact_namespace_bound_listener(socket_changes):
+    # Codex finding (PR182): prefix/suffix checks admitted any middle component.
+    assert isolation.validate_gpu_discovery(gpu_discovery_evidence())
+    assert not isolation.validate_gpu_discovery(gpu_discovery_evidence(**socket_changes))
+
+
+def test_gpu_discovery_rejects_listener_without_recorded_namespace():
+    evidence = gpu_discovery_evidence()
+    del evidence["runtime_discovery"]["residual_sockets"][0]["pid_namespace_inode"]
+    assert not isolation.validate_gpu_discovery(evidence)

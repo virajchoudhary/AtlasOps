@@ -89,3 +89,50 @@ substitute was attempted, since that would silently change the protocol.
   the brief (one "Local progress" line).
 - Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
 - **No remote push occurred. No empirical result was fabricated. No checkpoint was promoted.**
+
+## Addendum — 22 October 2026: open review findings and a Linux pinned run
+
+This record was later pushed with the rest of the local closure work in
+`chore/local-closure-20261022`; the statements above describe the state when
+it was written. G9 remains **NOT_PASSED / FROZEN**. Nothing below is learning
+evidence, a training run or a checkpoint promotion.
+
+### Codex review findings on the export and reload path
+
+Sixteen automated review threads on PRs 180–184 were never answered. Ten were
+already fixed (seven in this closure branch, three earlier on `main`). The six
+below were still present in the code and are now fixed with regression tests
+that fail on the unfixed source and pass after:
+
+| Finding | Fix | Regression tests |
+| --- | --- | --- |
+| PR 180 (P1): acceptance could be issued anywhere outside the run folder; `local_evidence_destination` was only checked for non-empty text | `scripts/accept_grpo_controlled.py`: the run, reload report and acceptance report must resolve inside the receipt's absolute, existing local evidence store, and the accepted run may not be the training `output_path` itself | `tests/test_grpo_controlled.py::test_export_requires_the_admitted_local_evidence_store`, `…rejects_paths_outside_the_local_evidence_store`, `…rejects_acceptance_of_the_training_output_itself` |
+| PR 180 (P2): observed package versions and GPU details were checked, then discarded | `training/grpo_controlled.py`: `verify_controlled_runtime()` returns the observed snapshot, stored as `receipt["verified_runtime"]` in the run manifest | `test_admitted_runtime_snapshot_records_observed_versions_and_gpu` |
+| PR 181 (P1): reload compared only `HEAD`, so a modified worktree could be attributed to the clean commit | `scripts/reload_grpo_controlled.py`: `require_clean_reload_source()` requires the receipt commit and a clean tree | `test_reload_refuses_a_modified_or_different_source_tree` |
+| PR 181 (P2): a guard-installation failure lost the collected probes | `training/grpo_reload_isolation.py`: the failure stage and all collected evidence are attached to the raised error, which the reload report already preserves | `tests/test_grpo_reload_isolation.py::test_guard_installation_failure_preserves_isolation_evidence` |
+| PR 182 (P2): discovery inventories zero-byte cache files that acceptance then refused | `validate_gpu_discovery()` accepts non-negative sizes | `test_gpu_discovery_accepts_zero_byte_runtime_files` |
+| PR 182 (P2): the CUDA listener name was checked only by prefix and suffix | `seal_gpu_runtime()` records `pid_namespace_inode`; the validator requires the complete `@cuda-uvmfd-<inode>-<pid>@` name | `test_gpu_discovery_requires_the_exact_namespace_bound_listener`, `…rejects_listener_without_recorded_namespace` |
+
+Remaining limitation: the receipt does not name the local host, so acceptance
+proves a supervised copy inside the admitted store, not the host's identity.
+`docs/project/CONTROLLED_G9_ADMISSION_V1.md` is hash-bound by
+`admit_execution()` and was deliberately not edited.
+
+### Pinned trainer tests on Linux x86_64
+
+Run on a Linux x86_64 cloud container with Python 3.12, `torch==2.7.1` (the
+PyPI build, run on CPU with `CUDA_VISIBLE_DEVICES=""`; the PyTorch CPU wheel
+index was unreachable from that network), `trl==0.19.1`, `transformers==4.57.6`,
+`peft==0.17.1`, `accelerate==1.14.0`, `datasets==4.8.5`, `tokenizers==0.22.2`,
+`huggingface-hub==0.36.2`, with the CI trainer job's offline variables:
+
+| Command | Result |
+| --- | --- |
+| `pytest tests/test_grpo_observation_installed_trl.py` | 9 passed |
+| `pytest tests/test_grpo_reward_mechanics.py -rs` | 25 passed, 0 skipped |
+| `pytest tests/test_grpo_reload_installed.py` | **1 passed** (fresh local reload under the permanent socket guard; refused by design on macOS above) |
+| `pytest tests/test_sft_chunked_loss.py tests/test_sft_t4_attention.py tests/test_sft_supervised_trainer.py` | 11 passed |
+| `pytest tests/test_base_sft_validation.py tests/test_verify_base_sft_validation.py` | 29 passed |
+
+The checklist box "Exact-source pinned offline test and lineage evidence" stays
+unticked: these runs are not independent review of a final merged commit.

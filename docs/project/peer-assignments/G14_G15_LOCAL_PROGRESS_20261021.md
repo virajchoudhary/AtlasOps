@@ -125,3 +125,5 @@ and receipts were not shared, so the first box stays open.
   Report, slides and application code unchanged.
 - Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
 - **No remote push, deployment or submission occurred. No empirical result was fabricated.**
+- Addendum (22 Oct 2026): this record was later pushed with the local closure work in
+  `chore/local-closure-20261022`; the statements above describe the state when it was written.

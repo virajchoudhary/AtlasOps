@@ -50,3 +50,5 @@ owner field left `UNSPECIFIED`. Arm 3 (accepted GRPO) does not exist and is not 
 - No held-out (Final-Test/adversarial) membership or outcomes were read.
 - Final SHAs, full test counts and skip reasons: `~/Documents/AtlasOps-review/local-closure-20261021/README.md` (local only).
 - **No remote push occurred. No empirical result was fabricated.**
+- Addendum (22 Oct 2026): this record was later pushed with the local closure work in
+  `chore/local-closure-20261022`; the statements above describe the state when it was written.

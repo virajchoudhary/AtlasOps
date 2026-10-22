@@ -7,7 +7,7 @@ Submission deadline: **May 10, 2026 — 7:00 PM UTC (12:30 AM IST May 11)**
 ## GCP Infrastructure (LIVE — costs money)
 - **Project:** `cloudsre-v3-amd`
 - **Cluster:** `atlasops` (was `cloudsre-v3`), GKE Standard, `us-central1`, 3× e2-standard-4
-- **Grafana:** `http://136.119.60.129` (admin / cloudsre-admin)
+- **Grafana:** `http://136.119.60.129` (credentials are not stored in Git; obtain from the owner's secret store)
 - **Online Boutique:** `http://34.132.118.204`
 - **Argo CD:** `https://34.122.132.237`
 - **Cloud SQL:** `cloudsre-cart-db` (Postgres 15, `34.60.234.86`)

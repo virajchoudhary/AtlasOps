@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Store</title>
+<link rel="stylesheet" href="styles.css">
+<script src="/lab/monitor.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">Atlas Store</a>
+  <nav class="nav">
+    <a href="#products">Shop</a>
+    <a href="#about">About</a>
+    <button id="cart-button" class="cart" type="button">Cart <span id="cart-count">0</span></button>
+  </nav>
+</header>
+<main>
+  <section class="hero">
+    <h1>Everyday gear, shipped fast</h1>
+    <p>Small things that make work and travel easier. Free returns within 30 days.</p>
+  </section>
+  <section id="products" class="products">
+    <h2>Products</h2>
+    <p id="status" class="status">Loading products…</p>
+    <div id="product-grid" class="grid"></div>
+  </section>
+  <section id="about" class="about">
+    <h2>About</h2>
+    <p>Atlas Store is the practice target for the AtlasOps bug lab. Break it from the control room and watch the agents repair it.</p>
+  </section>
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<footer class="footer">© Atlas Store · demo site</footer>
+<script src="app.js"></script>
+</body>
+</html>

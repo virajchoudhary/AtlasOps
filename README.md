@@ -190,6 +190,22 @@ The launcher flags can be inspected without starting the server:
 & .\.venv\Scripts\python.exe -m demo.launcher --help
 ```
 
+### Bug lab
+
+A separate local demo lets you break a small demo store on purpose and watch the
+agent pipeline repair it:
+
+```powershell
+python -m pip install fastapi uvicorn httpx
+python -m demo.bug_lab
+```
+
+Open `http://127.0.0.1:8790/` for the control room and `http://127.0.0.1:8790/shop/`
+for the store it breaks. The agents use a model when an OpenAI-compatible endpoint such as
+Ollama answers, and a rule engine otherwise; the page always says which. The lab edits a
+temporary copy of a demo store only. It touches no cluster, and its results are not G4 or
+any other gate evidence. See the [bug lab guide](demo/bug_lab/README.md).
+
 The separate `infra/local/setup_local.sh --check` preflight is not required for this
 demo and does not establish live G3 acceptance. No current safe Space deployment procedure is established.
 The historical Space setup notes are retained for provenance, not as deployment instructions.

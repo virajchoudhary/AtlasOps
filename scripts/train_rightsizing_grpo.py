@@ -326,6 +326,7 @@ def sft(args: argparse.Namespace) -> None:
                  "held_out_sha256": env.states_sha256(held_out),
                  "held_out_overlap": len(set(demos) & set(held_out))},
         "config": {"examples": args.examples, "epochs": args.epochs, "batch_size": args.batch_size,
+                   "micro_batch_size": args.micro_batch_size,
                    "learning_rate": args.learning_rate, "seed": args.seed, "split_seed": args.split_seed,
                    "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
                    "loss": "assistant tokens only", "budget_fixed_before_running": True,
@@ -360,16 +361,21 @@ def sft(args: argparse.Namespace) -> None:
         shuffler.shuffle(order)
         for start in range(0, len(order), args.batch_size):
             batch = [examples[i] for i in order[start:start + args.batch_size]]
-            width = max(len(ids) for ids, _ in batch)
             pad = tokenizer.pad_token_id
-            input_ids = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in batch])
-            labels = torch.tensor([lab + [-100] * (width - len(lab)) for _, lab in batch])
-            mask = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in batch])
-            loss = model(input_ids=input_ids, attention_mask=mask, labels=labels).loss
-            loss.backward()
+            batch_loss = 0.0
+            # Micro-batches bound memory; the accumulated update equals one full-batch step.
+            for micro_start in range(0, len(batch), args.micro_batch_size):
+                micro = batch[micro_start:micro_start + args.micro_batch_size]
+                width = max(len(ids) for ids, _ in micro)
+                input_ids = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in micro])
+                labels = torch.tensor([lab + [-100] * (width - len(lab)) for _, lab in micro])
+                mask = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in micro])
+                loss = model(input_ids=input_ids, attention_mask=mask, labels=labels).loss * len(micro) / len(batch)
+                loss.backward()
+                batch_loss += loss.item()
             optimizer.step()
             optimizer.zero_grad()
-            losses.append(round(loss.item(), 5))
+            losses.append(round(batch_loss, 5))
             print(f"sft epoch {epoch + 1} step {len(losses)} loss {losses[-1]}", flush=True)
     record["training"] = {"optimizer_steps": len(losses), "losses": losses,
                           "seconds": round(time.time() - started, 1)}
@@ -441,6 +447,7 @@ def main() -> None:
     sft_parser.add_argument("--examples", type=int, default=64)
     sft_parser.add_argument("--epochs", type=int, default=2)
     sft_parser.add_argument("--batch-size", type=int, default=8)
+    sft_parser.add_argument("--micro-batch-size", type=int, default=4)
     sft_parser.add_argument("--learning-rate", type=float, default=1e-4)
     sft_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
     sft_parser.add_argument("--seed", type=int, default=2026)

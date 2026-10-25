@@ -46,6 +46,11 @@ model, an incident gets up to two model attempts and then one rule-engine attemp
 A model patch that fails the safety check is replaced by the rule engine's patch
 within the same attempt. Every patch and diagnosis is labelled with who wrote it.
 
+Model size matters. In one test, Qwen2.5-0.5B-Instruct was served on CPU behind a local
+OpenAI-compatible server. On three bugs (stylesheet link, JavaScript crash, NaN prices), its
+diagnoses named the wrong file and its patches changed nothing. The safety check rejected
+each patch, and the rule engine fixed all three. No 7B model has been tried with the lab yet.
+
 ## The bugs
 
 Each bug is a small edit to exactly one store file. The agents never receive the

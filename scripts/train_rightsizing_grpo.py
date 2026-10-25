@@ -73,7 +73,7 @@ def load_base(model_dir: Path):
 
 
 def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: int = 16,
-             max_new_tokens: int = 64) -> dict[str, Any]:
+             max_new_tokens: int = 64, action_format: str = "direct") -> dict[str, Any]:
     """Greedy decoding on fixed states; every completion is scored by the environment."""
     import torch
 
@@ -84,15 +84,15 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
     rows = []
     for start in range(0, len(states), batch_size):
         batch = states[start:start + batch_size]
-        texts = [tokenizer.apply_chat_template(env.prompt_messages(state), add_generation_prompt=True,
-                                               tokenize=False) for state in batch]
+        texts = [tokenizer.apply_chat_template(env.prompt_messages(state, action_format),
+                                               add_generation_prompt=True, tokenize=False) for state in batch]
         encoded = tokenizer(texts, return_tensors="pt", padding=True)
         with torch.no_grad():
             output = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
                                     pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
         completions = tokenizer.batch_decode(output[:, encoded["input_ids"].shape[1]:], skip_special_tokens=True)
         for state, completion in zip(batch, completions):
-            result = env.score(state, completion)
+            result = env.score(state, env.final_action(completion, action_format))
             rows.append({"replicas": state.replicas, "demand": state.demand,
                          "capacity": state.capacity_per_replica, "needed": state.needed,
                          "completion": completion, "reward": result["reward"],
@@ -110,6 +110,10 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
                                for category in sorted({row["category"] for row in rows if row["category"]})},
         "rows": rows,
     }
+
+
+def eval_kwargs(action_format: str) -> dict[str, Any]:
+    return {"action_format": action_format, "max_new_tokens": 96 if action_format == "reasoned" else 64}
 
 
 def summary(metrics: dict[str, Any]) -> dict[str, Any]:
@@ -145,7 +149,8 @@ def train(args: argparse.Namespace) -> None:
         "beta": 0.0, "temperature": 1.0, "max_completion_length": args.max_completion_length,
         "curriculum": {"easy_fraction": args.easy_fraction, "easy_max_capacity": 2},
         "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
-        "eval": {"decoding": "greedy", "max_new_tokens": 64},
+        "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)},
+        "action_format": args.action_format,
     }
     record: dict[str, Any] = {
         "experiment": env.EXPERIMENT,
@@ -179,8 +184,9 @@ def train(args: argparse.Namespace) -> None:
         record["start_policy"] = "sft_adapter"
         record["init_adapter"] = {"path": str(args.init_adapter), "inventory": inventory(args.init_adapter)}
     started = time.time()
-    baseline = {"held_out": evaluate(model, tokenizer, held_out),
-                "train_sample": evaluate(model, tokenizer, eval_train)}
+    fmt = eval_kwargs(args.action_format)
+    baseline = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
+                "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
     record["baseline"] = {name: summary(metrics) for name, metrics in baseline.items()}
     record["baseline_eval_seconds"] = round(time.time() - started, 1)
     write_rows(out / "baseline_held_out.jsonl", baseline["held_out"]["rows"])
@@ -196,7 +202,8 @@ def train(args: argparse.Namespace) -> None:
     chosen = ([shuffler.choice(easy) for _ in range(easy_prompts)]
               + [shuffler.choice(train_states) for _ in range(needed_prompts - easy_prompts)])
     dataset = Dataset.from_list([
-        {"prompt": env.prompt_messages(state), "replicas": state.replicas, "demand": state.demand,
+        {"prompt": env.prompt_messages(state, args.action_format), "replicas": state.replicas,
+         "demand": state.demand,
          "capacity": state.capacity_per_replica}
         for state in chosen
     ])
@@ -208,7 +215,7 @@ def train(args: argparse.Namespace) -> None:
         for completion, r, d, c in zip(completions, replicas, demand, capacity):
             text = completion[0]["content"] if isinstance(completion, list) else str(completion)
             state = env.CapacityState(int(r), int(d), int(c))
-            result = env.score(state, text)
+            result = env.score(state, env.final_action(text, args.action_format))
             rewards.append(result["reward"])
             ledger.write(json.dumps({"step": progress["step"], "replicas": state.replicas,
                                      "demand": state.demand, "capacity": state.capacity_per_replica,
@@ -259,7 +266,7 @@ def train(args: argparse.Namespace) -> None:
     tokenizer.save_pretrained(adapter_dir)
     record["adapter_inventory"] = inventory(adapter_dir)
     started = time.time()
-    in_process = evaluate(trainer.model, tokenizer, held_out)
+    in_process = evaluate(trainer.model, tokenizer, held_out, **fmt)
     record["trained_in_process"] = {"held_out": summary(in_process)}
     record["trained_eval_seconds"] = round(time.time() - started, 1)
     write_rows(out / "trained_in_process_held_out.jsonl", in_process["rows"])
@@ -321,10 +328,14 @@ def sft(args: argparse.Namespace) -> None:
         "config": {"examples": args.examples, "epochs": args.epochs, "batch_size": args.batch_size,
                    "learning_rate": args.learning_rate, "seed": args.seed, "split_seed": args.split_seed,
                    "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
-                   "loss": "assistant tokens only", "budget_fixed_before_running": True},
+                   "loss": "assistant tokens only", "budget_fixed_before_running": True,
+                   "action_format": args.action_format,
+                   "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)}},
     }
     model, tokenizer = load_base(args.model_dir)
-    base = {"held_out": evaluate(model, tokenizer, held_out), "train_sample": evaluate(model, tokenizer, eval_train)}
+    fmt = eval_kwargs(args.action_format)
+    base = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
+            "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
     record["base"] = {name: summary(metrics) for name, metrics in base.items()}
     write_json(out / "RESULT.json", record)
     print("base", json.dumps(record["base"]["held_out"]), flush=True)
@@ -333,10 +344,11 @@ def sft(args: argparse.Namespace) -> None:
                                              target_modules=LORA_TARGETS, task_type="CAUSAL_LM"))
     examples = []
     for state in demos:
-        prompt = tokenizer.apply_chat_template(env.prompt_messages(state), add_generation_prompt=True,
-                                               tokenize=False)
+        prompt = tokenizer.apply_chat_template(env.prompt_messages(state, args.action_format),
+                                               add_generation_prompt=True, tokenize=False)
         prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
-        target_ids = tokenizer(env.expert_completion(state) + "<|im_end|>", add_special_tokens=False)["input_ids"]
+        target_ids = tokenizer(env.expert_completion(state, args.action_format) + "<|im_end|>",
+                               add_special_tokens=False)["input_ids"]
         examples.append((prompt_ids + target_ids, [-100] * len(prompt_ids) + target_ids))
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.learning_rate)
     shuffler = random.Random(args.seed)
@@ -365,7 +377,8 @@ def sft(args: argparse.Namespace) -> None:
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     record["adapter_inventory"] = inventory(adapter_dir)
-    after = {"held_out": evaluate(model, tokenizer, held_out), "train_sample": evaluate(model, tokenizer, eval_train)}
+    after = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
+             "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
     record["sft"] = {name: summary(metrics) for name, metrics in after.items()}
     record["finished_at"] = datetime.now(UTC).isoformat()
     write_rows(out / "base_held_out.jsonl", base["held_out"]["rows"])
@@ -391,8 +404,9 @@ def evaluate_saved(args: argparse.Namespace) -> None:
         raise SystemExit("Held-out states differ from the training record")
     eval_train = random.Random(record["config"]["seed"]).sample(train_states, 64)
     started = time.time()
-    results = {"held_out": evaluate(model, tokenizer, held_out),
-               "train_sample": evaluate(model, tokenizer, eval_train)}
+    fmt = eval_kwargs(record["config"].get("action_format", "direct"))
+    results = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
+               "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
     record["trained_reloaded"] = {name: summary(metrics) for name, metrics in results.items()}
     record["trained_reloaded_eval_seconds"] = round(time.time() - started, 1)
     record["reload_matches_in_process"] = (
@@ -418,6 +432,7 @@ def main() -> None:
     train_parser.add_argument("--max-completion-length", type=int, default=64)
     train_parser.add_argument("--easy-fraction", type=float, default=0.4)
     train_parser.add_argument("--init-adapter", type=Path, default=None)
+    train_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
     sft_parser = commands.add_parser("sft")
@@ -427,6 +442,7 @@ def main() -> None:
     sft_parser.add_argument("--epochs", type=int, default=2)
     sft_parser.add_argument("--batch-size", type=int, default=8)
     sft_parser.add_argument("--learning-rate", type=float, default=1e-4)
+    sft_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
     sft_parser.add_argument("--seed", type=int, default=2026)
     sft_parser.add_argument("--split-seed", type=int, default=2026)
     evaluate_parser = commands.add_parser("evaluate")

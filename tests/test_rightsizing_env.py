@@ -81,3 +81,30 @@ def test_expert_demonstration_is_the_resolving_action():
     for state in env.split_states()[0][:50]:
         result = env.score(state, env.expert_completion(state))
         assert result["resolved"] and result["reward"] == 1.0
+
+
+@pytest.mark.parametrize("command", ["train", "sft"])
+def test_training_script_refuses_outputs_inside_the_repository(monkeypatch, command):
+    import sys
+    from pathlib import Path
+
+    from scripts import train_rightsizing_grpo as script
+
+    inside = Path(script.__file__).resolve().parents[1] / "runs-inside-repo"
+    monkeypatch.setattr(sys, "argv", ["train_rightsizing_grpo", command, "--model-dir", "/nonexistent",
+                                      "--output-dir", str(inside)])
+    with pytest.raises(SystemExit):
+        script.main()
+    assert not inside.exists()
+
+
+def test_reasoned_format_scores_only_the_final_action_line():
+    expert = env.expert_completion(STATE, "reasoned")
+    assert expert.splitlines()[0] == "10 / 3 = 3.33, rounded up = 4"
+    assert env.score(STATE, env.final_action(expert, "reasoned"))["resolved"]
+    wrong_reasoning = "10 / 3 = 99, rounded up = 99\n" + action(4)
+    assert env.score(STATE, env.final_action(wrong_reasoning, "reasoned"))["reward"] == 1.0
+    assert env.final_action("\n".join(["thinking"] * 5 + [action(4)]), "reasoned") == ""
+    assert env.final_action(action(4) + "\nextra", "reasoned") == "extra"
+    assert env.final_action("", "reasoned") == ""
+    assert "Line 1 shows the arithmetic" in env.prompt_messages(STATE, "reasoned")[0]["content"]

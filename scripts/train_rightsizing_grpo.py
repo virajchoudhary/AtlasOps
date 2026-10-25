@@ -1,7 +1,10 @@
 """CPU GRPO experiment on the right-sizing environment. Not the G9 protocol.
 
-Train (baseline evaluation, GRPO with LoRA, in-process evaluation, adapter save):
-    python -m scripts.train_rightsizing_grpo train --model-dir <hf model> --output-dir <new dir>
+Supervised warm start on Train states only (base evaluation, LoRA SFT, evaluation):
+    python -m scripts.train_rightsizing_grpo sft --model-dir <hf model> --output-dir <new dir>
+GRPO (start-policy evaluation, GRPO with LoRA, in-process evaluation, adapter save):
+    python -m scripts.train_rightsizing_grpo train --model-dir <hf model> --output-dir <new dir> \
+        [--init-adapter <sft run>/adapter]
 Evaluate the saved adapter after a fresh reload, in a new process:
     python -m scripts.train_rightsizing_grpo evaluate --model-dir <hf model> --run-dir <run dir>
 
@@ -75,6 +78,8 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
     import torch
 
     tokenizer.padding_side = "left"
+    # Stop at the end of the assistant turn whatever a trainer did to the generation config.
+    stop_ids = sorted({tokenizer.convert_tokens_to_ids("<|im_end|>"), tokenizer.convert_tokens_to_ids("<|endoftext|>")})
     model.eval()
     rows = []
     for start in range(0, len(states), batch_size):
@@ -84,7 +89,7 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
         encoded = tokenizer(texts, return_tensors="pt", padding=True)
         with torch.no_grad():
             output = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
-                                    pad_token_id=tokenizer.pad_token_id)
+                                    pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
         completions = tokenizer.batch_decode(output[:, encoded["input_ids"].shape[1]:], skip_special_tokens=True)
         for state, completion in zip(batch, completions):
             result = env.score(state, completion)
@@ -163,6 +168,16 @@ def train(args: argparse.Namespace) -> None:
     write_json(out / "RESULT.json", record)
 
     model, tokenizer = load_base(args.model_dir)
+    peft_config = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0, target_modules=LORA_TARGETS,
+                             task_type="CAUSAL_LM")
+    record["start_policy"] = "base"
+    if args.init_adapter:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, args.init_adapter, is_trainable=True)
+        peft_config = None
+        record["start_policy"] = "sft_adapter"
+        record["init_adapter"] = {"path": str(args.init_adapter), "inventory": inventory(args.init_adapter)}
     started = time.time()
     baseline = {"held_out": evaluate(model, tokenizer, held_out),
                 "train_sample": evaluate(model, tokenizer, eval_train)}
@@ -227,8 +242,7 @@ def train(args: argparse.Namespace) -> None:
     trainer = GRPOTrainer(
         model=model, reward_funcs=reward_fn, args=grpo_config, train_dataset=dataset,
         processing_class=tokenizer, callbacks=[Recorder()],
-        peft_config=LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0, target_modules=LORA_TARGETS,
-                               task_type="CAUSAL_LM"),
+        peft_config=peft_config,
     )
     initial = {name: tensor.detach().clone() for name, tensor in trainer.model.named_parameters()
                if "lora_" in name}
@@ -280,6 +294,86 @@ def train(args: argparse.Namespace) -> None:
     print("trained (in process)", json.dumps(record["trained_in_process"]["held_out"]), flush=True)
 
 
+def sft(args: argparse.Namespace) -> None:
+    """LoRA SFT on correct actions for a fixed sample of Train states (oracle demonstrations)."""
+    import torch
+    from peft import LoraConfig, get_peft_model
+
+    out = args.output_dir
+    out.mkdir(parents=True, exist_ok=False)
+    torch.set_num_threads(os.cpu_count() or 1)
+    torch.manual_seed(args.seed)
+    train_states, held_out = env.split_states(args.split_seed)
+    demos = random.Random(args.seed + 1).sample(train_states, args.examples)
+    eval_train = random.Random(args.seed).sample(train_states, 64)
+    record: dict[str, Any] = {
+        "experiment": env.EXPERIMENT, "phase": "sft",
+        "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+        "gate_status": "Not a G7 or G9 result; changes no gate status.",
+        "started_at": datetime.now(UTC).isoformat(), "source": source_identity(), "runtime": runtime(),
+        "model": {"dir_inventory": inventory(args.model_dir),
+                  "provenance": json.loads((args.model_dir / "provenance.json").read_text())
+                  if (args.model_dir / "provenance.json").exists() else None},
+        "data": {"demonstrations": len(demos), "demonstrations_sha256": env.states_sha256(demos),
+                 "demonstrations_from": "Train split only; targets computed by the environment",
+                 "held_out_sha256": env.states_sha256(held_out),
+                 "held_out_overlap": len(set(demos) & set(held_out))},
+        "config": {"examples": args.examples, "epochs": args.epochs, "batch_size": args.batch_size,
+                   "learning_rate": args.learning_rate, "seed": args.seed, "split_seed": args.split_seed,
+                   "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
+                   "loss": "assistant tokens only", "budget_fixed_before_running": True},
+    }
+    model, tokenizer = load_base(args.model_dir)
+    base = {"held_out": evaluate(model, tokenizer, held_out), "train_sample": evaluate(model, tokenizer, eval_train)}
+    record["base"] = {name: summary(metrics) for name, metrics in base.items()}
+    write_json(out / "RESULT.json", record)
+    print("base", json.dumps(record["base"]["held_out"]), flush=True)
+
+    model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0,
+                                             target_modules=LORA_TARGETS, task_type="CAUSAL_LM"))
+    examples = []
+    for state in demos:
+        prompt = tokenizer.apply_chat_template(env.prompt_messages(state), add_generation_prompt=True,
+                                               tokenize=False)
+        prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        target_ids = tokenizer(env.expert_completion(state) + "<|im_end|>", add_special_tokens=False)["input_ids"]
+        examples.append((prompt_ids + target_ids, [-100] * len(prompt_ids) + target_ids))
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.learning_rate)
+    shuffler = random.Random(args.seed)
+    losses = []
+    model.train()
+    started = time.time()
+    for epoch in range(args.epochs):
+        order = list(range(len(examples)))
+        shuffler.shuffle(order)
+        for start in range(0, len(order), args.batch_size):
+            batch = [examples[i] for i in order[start:start + args.batch_size]]
+            width = max(len(ids) for ids, _ in batch)
+            pad = tokenizer.pad_token_id
+            input_ids = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in batch])
+            labels = torch.tensor([lab + [-100] * (width - len(lab)) for _, lab in batch])
+            mask = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in batch])
+            loss = model(input_ids=input_ids, attention_mask=mask, labels=labels).loss
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+            losses.append(round(loss.item(), 5))
+            print(f"sft epoch {epoch + 1} step {len(losses)} loss {losses[-1]}", flush=True)
+    record["training"] = {"optimizer_steps": len(losses), "losses": losses,
+                          "seconds": round(time.time() - started, 1)}
+    adapter_dir = out / "adapter"
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
+    record["adapter_inventory"] = inventory(adapter_dir)
+    after = {"held_out": evaluate(model, tokenizer, held_out), "train_sample": evaluate(model, tokenizer, eval_train)}
+    record["sft"] = {name: summary(metrics) for name, metrics in after.items()}
+    record["finished_at"] = datetime.now(UTC).isoformat()
+    write_rows(out / "base_held_out.jsonl", base["held_out"]["rows"])
+    write_rows(out / "sft_held_out.jsonl", after["held_out"]["rows"])
+    write_json(out / "RESULT.json", record)
+    print("sft", json.dumps(record["sft"]["held_out"]), flush=True)
+
+
 def evaluate_saved(args: argparse.Namespace) -> None:
     import torch
     from peft import PeftModel
@@ -323,8 +417,18 @@ def main() -> None:
     train_parser.add_argument("--learning-rate", type=float, default=5e-5)
     train_parser.add_argument("--max-completion-length", type=int, default=64)
     train_parser.add_argument("--easy-fraction", type=float, default=0.4)
+    train_parser.add_argument("--init-adapter", type=Path, default=None)
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
+    sft_parser = commands.add_parser("sft")
+    sft_parser.add_argument("--model-dir", type=Path, required=True)
+    sft_parser.add_argument("--output-dir", type=Path, required=True)
+    sft_parser.add_argument("--examples", type=int, default=64)
+    sft_parser.add_argument("--epochs", type=int, default=2)
+    sft_parser.add_argument("--batch-size", type=int, default=8)
+    sft_parser.add_argument("--learning-rate", type=float, default=1e-4)
+    sft_parser.add_argument("--seed", type=int, default=2026)
+    sft_parser.add_argument("--split-seed", type=int, default=2026)
     evaluate_parser = commands.add_parser("evaluate")
     evaluate_parser.add_argument("--model-dir", type=Path, required=True)
     evaluate_parser.add_argument("--run-dir", type=Path, required=True)
@@ -332,7 +436,7 @@ def main() -> None:
     for path in (getattr(args, "output_dir", None), getattr(args, "run_dir", None)):
         if path is not None and path.resolve().is_relative_to(REPO):
             parser.error("outputs must live outside the repository")
-    train(args) if args.command == "train" else evaluate_saved(args)
+    {"train": train, "sft": sft, "evaluate": evaluate_saved}[args.command](args)
 
 
 if __name__ == "__main__":

@@ -75,3 +75,9 @@ def test_prompt_carries_the_observation_but_not_the_answer():
     observation = json.loads(messages[1]["content"])["observations"]
     assert observation["demand_units"] == 10 and observation["capacity_units_per_replica"] == 3
     assert '"needed"' not in messages[1]["content"]
+
+
+def test_expert_demonstration_is_the_resolving_action():
+    for state in env.split_states()[0][:50]:
+        result = env.score(state, env.expert_completion(state))
+        assert result["resolved"] and result["reward"] == 1.0

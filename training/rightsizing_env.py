@@ -99,6 +99,14 @@ def prompt_messages(state: CapacityState) -> list[dict[str, str]]:
     ]
 
 
+def expert_completion(state: CapacityState) -> str:
+    """The correct action for ``state``; used only as a Train-split SFT demonstration."""
+    return json.dumps({"tool": "kubectl_scale",
+                       "arguments": {"deployment": "paymentservice", "namespace": "default",
+                                     "replicas": state.needed},
+                       "agent_claimed_resolved": False})
+
+
 def verify(state: CapacityState, replicas: int) -> dict[str, Any]:
     checks = [
         {"name": "capacity_covers_demand", "required": True,

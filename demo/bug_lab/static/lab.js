@@ -215,7 +215,7 @@
       fill(root, pending || el("div", { class: "empty", text: "No incident yet. Inject a bug to start." }));
       return;
     }
-    fill(root, 
+    fill(root,
       pending,
       pending ? el("h3", { text: "Previous incident" }) : null,
       el("div", { class: "incident-head" },
@@ -250,7 +250,7 @@
     const checks = state.checks;
     const browserNote = !checks.browser.length ? "No report yet: the store page reports after it loads."
       : checks.browser_current ? "From this version of the store." : "From an older version; waiting for the page to reload.";
-    fill(document.getElementById("checks"), 
+    fill(document.getElementById("checks"),
       ...checkList("Server checks", checks.server, checks.server_current ? "" : "Re-checking the current version…"),
       ...checkList("Browser checks", checks.browser, browserNote));
   }

@@ -24,7 +24,9 @@ REPO = Path(__file__).resolve().parents[1]
 REGISTRY = "registry-1.docker.io"
 REPOSITORY = "ai/qwen2.5"
 TAG = "0.5B-F16"
-EXPERIMENT_MANIFEST_SHA256 = "a78aecb6b2e31b763a969e79b56f1ee4bdf199cd85c908550979e929bced9af7"
+# The registry digest of the manifest the experiment used. Its RESULT.json files record
+# a78aecb6..., the SHA-256 of a saved copy with one trailing newline added.
+EXPERIMENT_MANIFEST_DIGEST = "sha256:3e1aad67b4cc8e3dca660fe65f9f73edb598474284256ffdd9ba460b5b35ff26"
 LAYER_NAMES = {"application/vnd.docker.ai.gguf.v3": "model.gguf",
                "application/vnd.docker.ai.license": "LICENSE.txt"}
 
@@ -50,7 +52,7 @@ def _open(url: str, token: str, accept: str | None = None):
     return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=600)
 
 
-def download(directory: Path, manifest_sha256: str) -> dict[str, str]:
+def download(directory: Path, manifest_digest: str) -> dict[str, str]:
     scope = f"repository:{REPOSITORY}:pull"
     with urllib.request.urlopen(f"https://auth.docker.io/token?service=registry.docker.io&scope={scope}",
                                 timeout=60) as response:
@@ -58,7 +60,7 @@ def download(directory: Path, manifest_sha256: str) -> dict[str, str]:
     base = f"https://{REGISTRY}/v2/{REPOSITORY}"
     with _open(f"{base}/manifests/{TAG}", token, "application/vnd.oci.image.manifest.v1+json") as response:
         manifest_bytes = response.read()
-    if hashlib.sha256(manifest_bytes).hexdigest() != manifest_sha256:
+    if f"sha256:{hashlib.sha256(manifest_bytes).hexdigest()}" != manifest_digest:
         raise SystemExit(f"{REPOSITORY}:{TAG} manifest changed since the experiment; refusing to continue")
     directory.mkdir(parents=True, exist_ok=False)
     (directory / "manifest.json").write_bytes(manifest_bytes)
@@ -75,7 +77,7 @@ def download(directory: Path, manifest_sha256: str) -> dict[str, str]:
     return digests
 
 
-def convert(download_dir: Path, output: Path, digests: dict[str, str], manifest_sha256: str) -> None:
+def convert(download_dir: Path, output: Path, digests: dict[str, str], manifest_digest: str) -> None:
     import gguf
     import torch
     import transformers
@@ -93,7 +95,7 @@ def convert(download_dir: Path, output: Path, digests: dict[str, str], manifest_
     fields = gguf.GGUFReader(download_dir / "model.gguf").fields
     config = json.loads((download_dir / "config.json").read_text())["config"]
     provenance = {
-        "registry": REGISTRY, "repository": REPOSITORY, "tag": TAG, "manifest_sha256": manifest_sha256,
+        "registry": REGISTRY, "repository": REPOSITORY, "tag": TAG, "manifest_digest": manifest_digest,
         "gguf_blob": digests["model.gguf"], "license_blob": digests["LICENSE.txt"],
         "config_blob": digests["config.json"],
         "gguf_metadata": {key: fields[key].contents() for key in ("general.name", "general.license")}
@@ -112,15 +114,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--download-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--manifest-sha256", default=EXPERIMENT_MANIFEST_SHA256)
+    parser.add_argument("--manifest-digest", default=EXPERIMENT_MANIFEST_DIGEST)
     args = parser.parse_args()
     for path in (args.download_dir, args.output_dir):
         if path.resolve().is_relative_to(REPO):
             parser.error("model files must live outside the repository")
     if args.output_dir.exists():
         parser.error("--output-dir must not exist yet")
-    digests = download(args.download_dir, args.manifest_sha256)
-    convert(args.download_dir, args.output_dir, digests, args.manifest_sha256)
+    digests = download(args.download_dir, args.manifest_digest)
+    convert(args.download_dir, args.output_dir, digests, args.manifest_digest)
     print(json.dumps(json.loads((args.output_dir / "provenance.json").read_text()), indent=2))
 
 

@@ -221,6 +221,8 @@ The historical Space setup notes are retained for provenance, not as deployment 
 - [v17 SFT evidence](artifacts/evidence/stage7/free-t4-v17/)
 - [Base-vs-SFT raw and scored evidence](artifacts/evidence/stage8/base-sft-validation-v1/)
 - [Final aligned G9 diagnostic evidence](artifacts/evidence/stage9/final-aligned-diagnostic-v1/)
+- [Right-sizing CPU GRPO experiment](docs/project/RIGHTSIZING_GRPO_CPU_V1.md): a separate
+  0.5B-model experiment with its own evidence; not G9 evidence
 - [Submission manifest](artifacts/SUBMISSION_MANIFEST.json) and [summary](artifacts/SUBMISSION_SUMMARY.md)
 
 The checked-in submission inventory preserves the pre-redesign package at
@@ -269,6 +271,9 @@ Training entrypoints are separate from the read-only demo. Stage 7 and Stage 9
 contracts record pinned `--model-revision` and `--tokenizer-revision` requirements for
 their governed paths. Live GRPO rollout execution is serial. The final controlled G9
 track is frozen; this README gives no training or evaluation launch command.
+A separate [small-model CPU experiment](docs/project/RIGHTSIZING_GRPO_CPU_V1.md) runs
+GRPO with the repository's verifier-scored reward on a synthetic right-sizing task.
+It is not the G9 track, was not authorized under the G9 protocol and changes no gate.
 
 The [Stage 7 contract](docs/project/STAGE_7_SFT_DATA_AND_TRAINING.md) and
 [Stage 9 contract](docs/project/STAGE_9_ONLINE_GRPO.md) are reference documents, not

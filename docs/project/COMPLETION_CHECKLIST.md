@@ -75,6 +75,8 @@ and preserved evidence. A historical PASS is not a fresh host-health claim.
 
 G7's accepted bounded v17 artifact/reload is retained and is not being repeated.
 G10/G11 remain historical optional research and OUT_OF_SCOPE.
+The 25 October [right-sizing CPU GRPO experiment](RIGHTSIZING_GRPO_CPU_V1.md) is a
+separate small-model experiment. It changes no row above; G9 stays NOT_PASSED/FROZEN.
 Safe offline repairs are allowed only for demonstrated defects. Existing green
 software contracts do not require new experiments simply to produce activity.
 

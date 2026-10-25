@@ -21,6 +21,12 @@ certify the full pipeline.
 | Controlled G9 replacement v2 | Failed/frozen genuine pilot | [final result](project/CONTROLLED_G9_FINAL_NEGATIVE_V1.md) | 2 optimizer steps, 4 malformed/blocked completions, rewards all -1, both advantage groups zero. No reward-driven learning or accepted checkpoint. Full pilot archive remains external. |
 | Final aligned G9 diagnostic | Completed negative diagnostic | [diagnostic](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/diagnostic.json), [samples](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/diagnostic/samples.jsonl), [independent review](../artifacts/evidence/stage9/final-aligned-diagnostic-v1/INDEPENDENT_REVIEW.json) | 0/8 admissible actions, zero optimizer steps, all 392 tensor hashes unchanged. No population-zero or sole-cause conclusion. |
 
+## Separate Small-Model Experiment (Not Gate Evidence)
+
+| Record | Classification | Canonical entry point | Result and boundary |
+|---|---|---|---|
+| Right-sizing CPU GRPO v1, 25 October 2026 | `SMALL_MODEL_CPU_RL_EXPERIMENT` | [report](project/RIGHTSIZING_GRPO_CPU_V1.md), [evidence checksums](../artifacts/evidence/rl-cpu-rightsizing-v1/SHA256SUMS) | Qwen2.5-0.5B on 4 CPU cores, synthetic right-sizing task, repository reward. GRPO from a 16-demonstration SFT policy: 7 → 28 of 64 held-out states (26 gained, 5 lost); the policy rounds down. One-shot GRPO from 64-demonstration SFT: 14 → 10. SFT on 64 reasoned demonstrations alone: 64/64. Not G9, not reviewed, changes no gate; adapters are outside Git. |
+
 ## Integrity Anchors And Storage
 
 - Base/tokenizer: `Qwen/Qwen2.5-7B-Instruct@a09a35458c702b33eeacc393d103063234e8bc28`.

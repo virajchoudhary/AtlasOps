@@ -415,6 +415,7 @@ def evaluate_saved(args: argparse.Namespace) -> None:
                "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
     record["trained_reloaded"] = {name: summary(metrics) for name, metrics in results.items()}
     record["trained_reloaded_eval_seconds"] = round(time.time() - started, 1)
+    record["reload_source"] = source_identity()
     record["reload_matches_in_process"] = (
         [row["completion"] for row in results["held_out"]["rows"]]
         == [json.loads(line)["completion"]

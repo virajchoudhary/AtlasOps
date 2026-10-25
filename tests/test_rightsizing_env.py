@@ -108,3 +108,32 @@ def test_reasoned_format_scores_only_the_final_action_line():
     assert env.final_action(action(4) + "\nextra", "reasoned") == "extra"
     assert env.final_action("", "reasoned") == ""
     assert "Line 1 shows the arithmetic" in env.prompt_messages(STATE, "reasoned")[0]["content"]
+
+
+def test_model_fetch_names_only_known_layers_and_needs_one_gguf():
+    from scripts import fetch_qwen_oci_model as fetch
+
+    manifest = {"config": {"digest": "sha256:c"},
+                "layers": [{"mediaType": "application/vnd.docker.ai.gguf.v3", "digest": "sha256:g"},
+                           {"mediaType": "application/vnd.docker.ai.license", "digest": "sha256:l"}]}
+    assert fetch.blob_plan(manifest) == [("sha256:c", "config.json"), ("sha256:g", "model.gguf"),
+                                         ("sha256:l", "LICENSE.txt")]
+    for layers in ([{"mediaType": "application/vnd.docker.ai.unknown", "digest": "sha256:x"}],
+                   [manifest["layers"][1]],
+                   [manifest["layers"][0], manifest["layers"][0]]):
+        with pytest.raises(ValueError):
+            fetch.blob_plan({**manifest, "layers": layers})
+
+
+def test_model_fetch_refuses_directories_inside_the_repository(monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+
+    from scripts import fetch_qwen_oci_model as fetch
+
+    inside = Path(fetch.__file__).resolve().parents[1] / "model-inside-repo"
+    monkeypatch.setattr(sys, "argv", ["fetch_qwen_oci_model", "--download-dir", str(inside),
+                                      "--output-dir", str(tmp_path / "out")])
+    with pytest.raises(SystemExit):
+        fetch.main()
+    assert not inside.exists()

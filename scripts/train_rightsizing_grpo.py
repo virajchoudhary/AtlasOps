@@ -257,12 +257,14 @@ def train(args: argparse.Namespace) -> None:
 
     grpo_config = GRPOConfig(
         output_dir=str(out / "trainer"), max_steps=args.max_steps,
-        per_device_train_batch_size=args.prompts_per_step * args.num_generations,
+        # One prompt's group per backward pass; several prompts per optimizer step accumulate.
+        # (16 completions in one backward pass were killed for memory on a 15 GB host.)
+        per_device_train_batch_size=args.num_generations,
         num_generations=args.num_generations, learning_rate=args.learning_rate,
         lr_scheduler_type="constant", warmup_steps=0, beta=0.0, temperature=1.0,
         max_prompt_length=512, max_completion_length=args.max_completion_length,
         logging_steps=1, save_strategy="no", report_to=[], seed=args.seed, use_cpu=True,
-        bf16=False, fp16=False, gradient_accumulation_steps=1, dataloader_num_workers=0,
+        bf16=False, fp16=False, gradient_accumulation_steps=args.prompts_per_step, dataloader_num_workers=0,
         remove_unused_columns=False, shuffle_dataset=False,
     )
     trainer = GRPOTrainer(

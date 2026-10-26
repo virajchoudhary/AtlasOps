@@ -597,3 +597,10 @@ is replaced.
 - G2 runs only if G1 misses the development target.
 - The development target, confirmation rule and stop rule are unchanged. The confirmation
   set is still unscored.
+
+G1's first attempt (`grpo-strict-balanced`, started at `3f352f1`) was killed after one step
+with no traceback, most likely for memory. With two prompts per step, it back-propagated 16
+completions at once. The trainer now back-propagates one prompt's group at a time and
+accumulates over the step's prompts, with the same prompts and groups per optimizer step.
+With one prompt per step, the configuration is identical to every earlier run. G1 is rerun
+as `grpo-strict-balanced-rerun`, with nothing else changed.

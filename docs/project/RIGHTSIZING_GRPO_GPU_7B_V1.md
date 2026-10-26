@@ -155,6 +155,47 @@ on a CPU with 30 GiB of RAM. The accumulated update is unchanged — micro-batch
 peak memory, and the optimizer still steps once per batch of 8 — so this changes how the
 step is computed, not what it computes.
 
+## Amendment 3 — 27 October 2026, after phase A's first attempt failed
+
+**What happened.** All three SFT arms died with CUDA out of memory before training a single
+step. The run is kept: `artifacts/evidence/rl-gpu-7b-v1/phaseA-attempt1/`.
+
+**Why.** Two measured causes.
+
+1. The prepared model is far larger than a 4-bit 7B suggests. `prepare_model_for_kbit_training`
+   upcasts everything that is not quantised to float32, and Qwen2.5-7B's vocabulary is 152k
+   tokens, so its embedding and output matrices dominate: the model alone held **7.21 GiB** of
+   the T4's 14.56 GiB before a single activation existed.
+2. The loss materialises logits over that 152k vocabulary in float32. At micro-batch 2 and
+   ~600 tokens that single tensor is about 2 GiB, which is exactly the allocation that failed.
+
+**What changes.** Three mechanical fixes, none of them touching the recipe, the sets or the
+criterion:
+
+- the micro-batch drops from 2 to 1, halving the logits tensor (amendment 2 already separated
+  micro-batch size from the accumulated update, which is unchanged);
+- `--gradient-checkpointing` is added and used on the GPU, trading compute for activation
+  memory;
+- each arm runs in its own process, so no earlier model, and no traceback holding a frame,
+  keeps the GPU occupied while the next arm loads.
+
+**What it does not change.** The demonstration counts and their order, the selection rule, the
+development bar, the confirmation set and the success criterion all stand as registered.
+
+**One result worth recording from the failed attempt**, because it is measured and it matters:
+the base model scores **0 of 64** admissible actions on the held-out states and 0 of 64 on the
+Train evaluation sample, mean reward −1.0, every one classed `invalid_action`. The reason is
+narrow. It emits a correct action object but puts a bare number on the first line where the
+format wants the arithmetic, so the strict parser rejects the whole completion:
+
+```
+11
+{"tool": "kubectl_scale", "arguments": {..., "replicas": 11}, "agent_claimed_resolved": false}
+```
+
+This is the same failure that produced 0/8 valid actions in the frozen G9 pilot, and it is why
+the recipe starts with an SFT warm start rather than going straight to GRPO.
+
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*

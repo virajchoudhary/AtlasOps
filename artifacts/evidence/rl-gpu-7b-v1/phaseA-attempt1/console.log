@@ -1,0 +1,190 @@
+[     0s] $ pip install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+ 
+[   167s] $ pip install -q transformers==4.57.6 trl==0.19.1 peft==0.17.1 accelerate==1.14.0 datasets==4.8.5 bitsandbytes==0.48.1
+ ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+gradio 6.26.0 requires huggingface-hub<2.0,>=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.
+gradio 6.26.0 requires pillow<13.0,>=8.0, but you have pillow 13.0.0 which is incompatible.
+diffusers 0.40.0 requires huggingface-hub<2.0,>=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.
+
+[   191s] install done
+[   232s] versions {"torch": "2.7.1+cu126", "transformers": "4.57.6", "trl": "0.19.1", "peft": "0.17.1", "accelerate": "1.14.0", "datasets": "4.8.5", "bitsandbytes": "0.48.1", "python": "3.13.15", "gpu": "Tesla T4", "capability": "(7, 5)", "visible_devices": 1}
+[   244s] repo at /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0
+[   253s] v1.3 dev 64 116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a
+[   253s] v1.3 confirmation 128 5ef5384fa858f30cf53ec95b77fd2d1037571c0acdd7531d92a4926545adaa0b
+[   260s] source_identity {"commit": "643a45093f44106cf8f0580e587509063dab8b8f", "dirty": null, "from": "exported archive, no working tree", "tree_sha256": "4c00313648d9daed102eb0b8ebf9364cffc6506e0e1b5e00f98e619d74e20864"}
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files:   7%|▋         | 1/14 [00:00<00:03,  4.09it/s]Fetching 14 files:  14%|█▍        | 2/14 [00:00<00:02,  5.36it/s]Fetching 14 files:  50%|█████     | 7/14 [01:03<01:11, 10.28s/it]Fetching 14 files: 100%|██████████| 14/14 [01:03<00:00,  4.56s/it]
+[   334s] model downloaded in 73 s
+[   334s] $ du -sh /kaggle/temp/qwen7b
+15G	/kaggle/temp/qwen7b
+ 
+[   389s] model manifest written: 14 files
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:09<00:28,  9.36s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:18<00:18,  9.03s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:28<00:09,  9.44s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:40<00:00, 10.59s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:40<00:00, 10.11s/it]
+[   430s] load_base(cuda) 41 s; allocated 7.21 GiB
+The following generation flags are not valid and may be ignored: ['temperature', 'top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+[   446s] timing: 16 states in 15.9 s = 0.99 s/state
+[   446s] base sample summary {"n": 16, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 16}}
+[   446s] BASE SAMPLE '11\n{"tool": "kubectl_scale", "arguments": {"deployment": "paymentservice", "namespace": "default", "replicas": 11}, "agent_claimed_resolved": false}' -> -1.0 invalid_action
+[   446s] BASE SAMPLE '4\n{"tool": "kubectl_scale", "arguments": {"deployment": "paymentservice", "namespace": "default", "replicas": 4}, "agent_claimed_resolved": false}' -> -1.0 invalid_action
+[   446s] BASE SAMPLE '6\n{"tool": "kubectl_scale", "arguments": {"deployment": "paymentservice", "namespace": "default", "replicas": 6}, "agent_claimed_resolved": false}' -> -1.0 invalid_action
+[   446s] === SFT 16 demonstrations ===
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:13,  4.38s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:09<00:10,  5.10s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:15<00:05,  5.33s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.74s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.85s/it]
+base {"n": 64, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 64}}
+[   688s] SFT 16 FAILED: OutOfMemoryError: CUDA out of memory. Tried to allocate 130.00 MiB. GPU 0 has a total capacity of 14.56 GiB of which 44.81 MiB is free. Including non-PyTorch memory, this process has 14.52 GiB memory in use. Of the allocated memory 14.24 GiB is allocated by PyTorch, and 154.28 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Traceback (most recent call last):
+  File "/kaggle/src/script.py", line 109, in <module>
+    trainer.sft(args)
+    ~~~~~~~~~~~^^^^^^
+  File "/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py", line 480, in sft
+    loss = (model(input_ids=input_ids, attention_mask=mask, labels=labels).loss
+            ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/peft/peft_model.py", line 1850, in forward
+    return self.base_model(
+           ~~~~~~~~~~~~~~~^
+        input_ids=input_ids,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/peft/tuners/tuners_utils.py", line 222, in forward
+    return self.model.forward(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/transformers/utils/generic.py", line 918, in wrapper
+    output = func(self, *args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/models/qwen2/modeling_qwen2.py", line 449, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ~~~~~~~~~~^
+        input_ids=input_ids,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/utils/generic.py", line 1072, in wrapper
+    outputs = func(self, *args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/models/qwen2/modeling_qwen2.py", line 384, in forward
+    hidden_states = decoder_layer(
+        hidden_states,
+    ...<6 lines>...
+        **kwargs,
+    )
+  File "/usr/local/lib/python3.13/dist-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/utils/deprecation.py", line 172, in wrapped_func
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/models/qwen2/modeling_qwen2.py", line 249, in forward
+    hidden_states = self.mlp(hidden_states)
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/transformers/models/qwen2/modeling_qwen2.py", line 46, in forward
+    down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/peft/tuners/lora/bnb.py", line 480, in forward
+    result = self.base_layer(x, *args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/bitsandbytes/nn/modules.py", line 532, in forward
+    return bnb.matmul_4bit(x, weight, bias=bias, quant_state=self.weight.quant_state).to(inp_dtype)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/bitsandbytes/autograd/_functions.py", line 448, in matmul_4bit
+    return MatMul4Bit.apply(A, B, out, bias, quant_state)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/autograd/function.py", line 575, in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/bitsandbytes/autograd/_functions.py", line 373, in forward
+    output = torch.nn.functional.linear(A, F.dequantize_4bit(B, quant_state).to(A.dtype).t(), bias)
+                                           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/bitsandbytes/functional.py", line 994, in dequantize_4bit
+    out = torch.ops.bitsandbytes.dequantize_4bit.default(
+        A,
+    ...<4 lines>...
+        quant_state.dtype,
+    )
+  File "/usr/local/lib/python3.13/dist-packages/torch/_ops.py", line 756, in __call__
+    return self._op(*args, **kwargs)
+           ~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/torch/_compile.py", line 51, in inner
+    return disable_fn(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/torch/_dynamo/eval_frame.py", line 838, in _fn
+    return fn(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/torch/library.py", line 719, in func_no_dynamo
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.13/dist-packages/bitsandbytes/backends/cuda/ops.py", line 360, in _
+    out = torch.empty(shape, dtype=dtype, device=A.device)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 130.00 MiB. GPU 0 has a total capacity of 14.56 GiB of which 44.81 MiB is free. Including non-PyTorch memory, this process has 14.52 GiB memory in use. Of the allocated memory 14.24 GiB is allocated by PyTorch, and 154.28 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[   688s] === SFT 32 demonstrations ===
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:13,  4.41s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:09<00:10,  5.06s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:15<00:05,  5.27s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.68s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.81s/it]
+[   755s] SFT 32 FAILED: OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 1.11 GiB is free. Including non-PyTorch memory, this process has 13.45 GiB memory in use. Of the allocated memory 12.49 GiB is allocated by PyTorch, and 849.63 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Traceback (most recent call last):
+  File "/kaggle/src/script.py", line 109, in <module>
+    trainer.sft(args)
+    ~~~~~~~~~~~^^^^^^
+  File "/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py", line 436, in sft
+    model, tokenizer = load_base(args.model_dir, args.device)
+                       ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py", line 129, in load_base
+    return prepare_model_for_kbit_training(model, use_gradient_checkpointing=False), tokenizer
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/peft/utils/other.py", line 156, in prepare_model_for_kbit_training
+    param.data = param.data.to(torch.float32)
+                 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 1.11 GiB is free. Including non-PyTorch memory, this process has 13.45 GiB memory in use. Of the allocated memory 12.49 GiB is allocated by PyTorch, and 849.63 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[   755s] === SFT 48 demonstrations ===
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:12,  4.31s/it]Loading checkpoint shards:  50%|█████     | 2/4 [00:09<00:10,  5.03s/it]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:15<00:05,  5.24s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.69s/it]Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.80s/it]
+[   821s] SFT 48 FAILED: OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 1.11 GiB is free. Including non-PyTorch memory, this process has 13.45 GiB memory in use. Of the allocated memory 11.47 GiB is allocated by PyTorch, and 1.85 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Traceback (most recent call last):
+  File "/kaggle/src/script.py", line 109, in <module>
+    trainer.sft(args)
+    ~~~~~~~~~~~^^^^^^
+  File "/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py", line 436, in sft
+    model, tokenizer = load_base(args.model_dir, args.device)
+                       ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py", line 129, in load_base
+    return prepare_model_for_kbit_training(model, use_gradient_checkpointing=False), tokenizer
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/dist-packages/peft/utils/other.py", line 156, in prepare_model_for_kbit_training
+    param.data = param.data.to(torch.float32)
+                 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 1.11 GiB is free. Including non-PyTorch memory, this process has 13.45 GiB memory in use. Of the allocated memory 11.47 GiB is allocated by PyTorch, and 1.85 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[   821s] SELECTION {"rule": "first of 16, 32, 48 with admissible_rate >= 0.75 and 0.20 <= resolved_rate <= 0.85", "train_sample_by_size": {}, "chosen": null}
+[   821s] PHASE A COMPLETE
+/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\|'
+  cells[i][c] = re.sub('\\\\\|', '|', cell)
+/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\_'
+  text = re.sub(r'_', '\_', text) # Escape underscores in display text
+[NbConvertApp] Converting notebook __script__.ipynb to html
+[NbConvertApp] Writing 308090 bytes to __results__.html

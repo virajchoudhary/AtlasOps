@@ -239,6 +239,8 @@ def test_cuda_loads_the_same_checkpoint_in_four_bit_nf4_with_fp16_compute(monkey
         "load_in_4bit": True, "bnb_4bit_quant_type": "nf4",
         "bnb_4bit_compute_dtype": "float16", "bnb_4bit_use_double_quant": True})
     assert calls["prepared"] == {"use_gradient_checkpointing": False}
+    assert script.load_base("/model", "cuda", gradient_checkpointing=True) == ("prepared", "tokenizer")
+    assert calls["prepared"] == {"use_gradient_checkpointing": True}
 
 
 def test_cuda_is_refused_when_no_gpu_is_present(monkeypatch):
@@ -266,7 +268,8 @@ def test_an_unknown_device_is_refused():
 def test_every_command_still_defaults_to_the_cpu(command, argv):
     from scripts import train_rightsizing_grpo as script
 
-    assert script.build_parser().parse_args([command, *argv]).device == "cpu"
+    parsed = script.build_parser().parse_args([command, *argv])
+    assert parsed.device == "cpu" and parsed.gradient_checkpointing is False
     assert script.build_parser().parse_args([command, *argv, "--device", "cuda"]).device == "cuda"
 
 

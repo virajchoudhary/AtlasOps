@@ -98,13 +98,15 @@ def configure_threads(device: str) -> None:
         torch.set_num_threads(os.cpu_count() or 1)
 
 
-def load_base(model_dir: Path, device: str = "cpu"):
+def load_base(model_dir: Path, device: str = "cpu", gradient_checkpointing: bool = False):
     """Load the pinned checkpoint for one device.
 
     The CPU path is the default and is byte-for-byte the one the v1.x runs used: float32
     weights, no quantisation, no device map. ``cuda`` loads the same checkpoint in 4-bit nf4
     with float16 compute, because a free T4 holds 16 GiB and has no bfloat16, and then
-    prepares it for k-bit LoRA training.
+    prepares it for k-bit LoRA training. Preparing upcasts the embeddings, and Qwen2.5-7B's
+    152k-token vocabulary makes those large, so the prepared model already holds about 7 GiB
+    on a T4; ``gradient_checkpointing`` buys back the activation memory that leaves.
     """
     if device not in DEVICES:
         raise SystemExit(f"Unknown device {device!r}; expected one of {DEVICES}")
@@ -126,7 +128,8 @@ def load_base(model_dir: Path, device: str = "cpu"):
             load_in_4bit=True, bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True),
     )
-    return prepare_model_for_kbit_training(model, use_gradient_checkpointing=False), tokenizer
+    return prepare_model_for_kbit_training(
+        model, use_gradient_checkpointing=gradient_checkpointing), tokenizer
 
 
 def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: int = 16,
@@ -146,7 +149,8 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
         encoded = tokenizer(texts, return_tensors="pt", padding=True).to(model.device)
         with torch.no_grad():
             output = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
-                                    pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
+                                    pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids,
+                                    use_cache=True)
         completions = tokenizer.batch_decode(output[:, encoded["input_ids"].shape[1]:], skip_special_tokens=True)
         for state, completion in zip(batch, completions):
             result = env.score(state, env.final_action(completion, action_format))
@@ -236,7 +240,7 @@ def train(args: argparse.Namespace) -> None:
     }
     write_json(out / "RESULT.json", record)
 
-    model, tokenizer = load_base(args.model_dir, args.device)
+    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)
     peft_config = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0, target_modules=LORA_TARGETS,
                              task_type="CAUSAL_LM")
     record["start_policy"] = "base"
@@ -433,7 +437,7 @@ def sft(args: argparse.Namespace) -> None:
                                                     "states": len(excluded)} if args.exclude_states else None,
                    "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)}},
     }
-    model, tokenizer = load_base(args.model_dir, args.device)
+    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)
     fmt = eval_kwargs(args.action_format)
     base = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
             "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
@@ -511,7 +515,7 @@ def evaluate_saved(args: argparse.Namespace) -> None:
     if inventory(adapter_dir) != record["adapter_inventory"]:
         raise SystemExit("Adapter files changed since training; refusing to evaluate")
     configure_threads(args.device)
-    base, tokenizer = load_base(args.model_dir, args.device)
+    base, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)
     model = PeftModel.from_pretrained(base, adapter_dir, is_trainable=False, local_files_only=True)
     train_states, held_out = env.split_states(record["config"]["split_seed"])
     if env.states_sha256(held_out) != record["data"]["held_out_sha256"]:
@@ -541,7 +545,7 @@ def score_set(args: argparse.Namespace) -> None:
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=False)
     configure_threads(args.device)
-    model, tokenizer = load_base(args.model_dir, args.device)
+    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)
     if args.adapter_dir:
         from peft import PeftModel
 
@@ -592,6 +596,8 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--split-seed", type=int, default=2026)
     train_parser.add_argument("--device", choices=DEVICES, default="cpu",
                               help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    train_parser.add_argument("--gradient-checkpointing", action="store_true",
+                              help="trade compute for activation memory; cuda only")
     sft_parser = commands.add_parser("sft")
     sft_parser.add_argument("--model-dir", type=Path, required=True)
     sft_parser.add_argument("--output-dir", type=Path, required=True)
@@ -607,6 +613,8 @@ def build_parser() -> argparse.ArgumentParser:
     sft_parser.add_argument("--split-seed", type=int, default=2026)
     sft_parser.add_argument("--device", choices=DEVICES, default="cpu",
                               help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    sft_parser.add_argument("--gradient-checkpointing", action="store_true",
+                              help="trade compute for activation memory; cuda only")
     score_parser = commands.add_parser("score")
     score_parser.add_argument("--model-dir", type=Path, required=True)
     score_parser.add_argument("--adapter-dir", type=Path, default=None)
@@ -616,11 +624,15 @@ def build_parser() -> argparse.ArgumentParser:
     score_parser.add_argument("--output-dir", type=Path, required=True)
     score_parser.add_argument("--device", choices=DEVICES, default="cpu",
                               help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    score_parser.add_argument("--gradient-checkpointing", action="store_true",
+                              help="trade compute for activation memory; cuda only")
     evaluate_parser = commands.add_parser("evaluate")
     evaluate_parser.add_argument("--model-dir", type=Path, required=True)
     evaluate_parser.add_argument("--run-dir", type=Path, required=True)
     evaluate_parser.add_argument("--device", choices=DEVICES, default="cpu",
                               help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    evaluate_parser.add_argument("--gradient-checkpointing", action="store_true",
+                              help="trade compute for activation memory; cuda only")
     return parser
 
 

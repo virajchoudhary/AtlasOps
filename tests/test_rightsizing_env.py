@@ -294,3 +294,52 @@ def test_an_exported_archive_records_its_commit_and_says_it_has_no_working_tree(
     digest = identity["tree_sha256"]
     (tmp_path / "training" / "a.py").write_text("x = 2\n")
     assert script.source_identity()["tree_sha256"] != digest     # the digest tracks the code
+
+
+class _ModeSpy:
+    """The part of a torch module the eval-mode wrapper touches, without importing torch."""
+
+    def __init__(self, explode=False):
+        self.training = False
+        self.explode = explode
+        self.seen = []
+
+    def train(self):
+        self.training = True
+
+    def eval(self):
+        self.training = False
+
+    def generate(self, *args, **kwargs):
+        self.seen.append(self.training)
+        if self.explode:
+            raise RuntimeError("out of memory")
+        return "completion"
+
+
+def test_generation_runs_in_eval_mode_and_restores_training_mode():
+    """The wrapper that made GRPO's rollouts usable: eval during generate, train after."""
+    from scripts import train_rightsizing_grpo as script
+
+    model = _ModeSpy()
+    script.generate_in_eval_mode(model)
+
+    model.train()
+    assert model.generate() == "completion"
+    assert model.seen == [False]          # generated off the training path
+    assert model.training is True         # and the trainer's own mode handed back
+
+    model.eval()
+    model.generate()
+    assert model.seen == [False, False] and model.training is False
+
+
+def test_a_failing_generate_still_restores_training_mode():
+    from scripts import train_rightsizing_grpo as script
+
+    model = _ModeSpy(explode=True)
+    script.generate_in_eval_mode(model)
+    model.train()
+    with pytest.raises(RuntimeError):
+        model.generate()
+    assert model.training is True

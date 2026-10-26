@@ -1,0 +1,62 @@
+{
+  "eval_greedy": {
+    "add_special_tokens": true,
+    "at_cap": 0,
+    "eos_single": false,
+    "mode": "eval",
+    "sample": false,
+    "sample_text": "44 / 4 = 11.00, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+    "valid": 15,
+    "valid_rate": 0.9375
+  },
+  "eval_sampled": {
+    "add_special_tokens": true,
+    "at_cap": 0,
+    "eos_single": false,
+    "mode": "eval",
+    "sample": true,
+    "sample_text": "44 / 4 = 11.0000, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+    "valid": 7,
+    "valid_rate": 0.4375
+  },
+  "eval_sampled_trl": {
+    "add_special_tokens": false,
+    "at_cap": 0,
+    "eos_single": true,
+    "mode": "eval",
+    "sample": true,
+    "sample_text": "44 / 4 = 11.0000, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+    "valid": 7,
+    "valid_rate": 0.4375
+  },
+  "train_greedy": {
+    "add_special_tokens": true,
+    "at_cap": 16,
+    "eos_single": false,
+    "mode": "train",
+    "sample": false,
+    "sample_text": "4. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. ",
+    "valid": 0,
+    "valid_rate": 0.0
+  },
+  "train_sampled": {
+    "add_special_tokens": true,
+    "at_cap": 13,
+    "eos_single": false,
+    "mode": "train",
+    "sample": true,
+    "sample_text": "41.2324 = (string get quality control.\n\nF-114244.39- How much __initpikepikeUIUIButtonUI43785. The given values.append(2200000000000000000001.\u00a0\u00a0\u00a0 \u00a0 \u00a0 # # #!/Users\\\\section . . . . . . . . . . . . . . .",
+    "valid": 0,
+    "valid_rate": 0.0
+  },
+  "train_sampled_trl": {
+    "add_special_tokens": false,
+    "at_cap": 13,
+    "eos_single": true,
+    "mode": "train",
+    "sample": true,
+    "sample_text": "41.2324 = (string get quality control.\n\nF-114244.39- How much __initpikepikeUIUIButtonUI43785. The given values.append(2200000000000000000001.\u00a0\u00a0\u00a0 \u00a0 \u00a0 # # #!/Users\\\\section . . . . . . . . . . . . . . .",
+    "valid": 0,
+    "valid_rate": 0.0
+  }
+}

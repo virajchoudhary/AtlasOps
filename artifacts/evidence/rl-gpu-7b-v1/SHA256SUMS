@@ -1,3 +1,9 @@
+4e5fb2605c4a3f6fd0585d549edfba525efc0b0846cf6ff58690fc9dbcc31d87  ./diagnosis/RUNTIME.json
+3b3c078baa69f0eea9b4015dd7d1da19c999770143a86d27593c8710c06cb163  ./diagnosis/v2-decode-conditions.json
+6f592903a64c06fcdd0079d76ef45b34c076085e93cb17979fe8d8efc4afec8a  ./diagnosis/v2-gradients.json
+3667bcfe72125b1fa27185e216e10ec2654420b16fc67452f016aaf2177f94a3  ./diagnosis/v3-inside-grpotrainer.json
+81dc243e4418362141a4dfffab8ebb280d9a185c3d69722d673023a7fc45fd24  ./diagnosis/v4-checkpointing-fixes.json
+c48a1ecfa643f2b596b4600ad66eb5b654f9c31559622d0c6001e08aac9d5e87  ./diagnosis/v5-train-vs-eval-mode.json
 13e158ab8cb51f1d8bd3cfe26ba7333b34458a515424bdd0f5a63372bba50c10  ./eval-sets-v1.3.json
 d70bf1577720ebdc1c0ebad1f59ff00bdc3aee90079cf2ca37324be24ab508f3  ./phaseA-attempt1/MODEL_MANIFEST.json
 1795b1df4f1a11ae870a8b92c312ddeb25690f13e94bfda7f6a03eb84943a054  ./phaseA-attempt1/RUNTIME.json

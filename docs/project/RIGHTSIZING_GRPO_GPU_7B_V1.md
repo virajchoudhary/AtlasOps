@@ -313,3 +313,89 @@ to two decimal places.
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*
+
+## Amendment 6 — the first GRPO run trained nothing, and why — 27 October 2026
+
+The pre-registered GRPO run completed its 100 steps and changed the policy in no respect
+whatsoever. Four signs, each from a different file the run wrote, and all four recomputed
+from the committed evidence by `analyze_gpu_v1`:
+
+* `lora.changed` is 0 of 392 tensors;
+* the saved adapter's `adapter_model.safetensors` digest equals the warm start's;
+* `grad_norm` and `reward_std` are 0.0 at every one of the 100 logged steps;
+* `baseline_held_out.jsonl` and `trained_in_process_held_out.jsonl` are the same bytes.
+
+All 1600 rollouts scored -1. Every group of eight therefore had identical reward, the
+advantage within each group was zero, and with `beta = 0` no KL term contributes anything
+either. The optimiser ran one hundred times and multiplied zero by a learning rate.
+
+This is **not** the policy collapse this document registered a watch for. A collapse is a
+policy that learns the wrong thing; this policy never produced a scorable answer at all.
+The rollouts contain text like `'6AMENTOLER decl.sky性价 burgebody…'` — not a format slip,
+not language. Every completion ran to the 96-token cap: `completions/mean_length` is
+exactly 96.0 at every step, so no rollout ever emitted a stop token.
+
+### What was eliminated, and what it cost
+
+Five diagnostic runs, about ninety minutes of T4 time, each kept under
+`artifacts/evidence/rl-gpu-7b-v1/diagnosis/`. Three plausible causes were measured and
+refuted before the fourth was found. Recording them because each would have looked like a
+reasonable fix, and each would have bought another hour and the same zero.
+
+| Suspect | Test | Result |
+|---|---|---|
+| Gradient checkpointing kills the gradient | backward pass, checkpointing on and off | refuted: 392/392 tensors, norm 2.628317 both ways |
+| fp16 corrupts generation | decode under autocast, accelerate, plain | refuted: all 0.9375 valid, identical bytes |
+| Temperature 1.0 destroys a weak format | sample at temperature 1.0 | refuted as *the* cause: 0.3125, not 0 |
+| Qwen's shipped sampling defaults | strip them inside the trainer | refuted: identical garbage |
+| Reentrant checkpointing during generation | `use_reentrant=False`; `use_cache=True` | refuted: identical garbage |
+
+The `None of the inputs have requires_grad=True` warning in the run's log, which looks
+damning, is benign: it is emitted for the frozen base-model segments.
+
+### The cause
+
+`GRPOTrainer` samples its rollouts inside `train()`, with the model left in training mode.
+Transformers disables the KV cache whenever `self.gradient_checkpointing and self.training`,
+and on this stack that combination does not slow generation down, it destroys it. One model,
+one adapter, the same sixteen development states, greedy and sampled
+(`diagnosis/v5-train-vs-eval-mode.json`):
+
+| mode | decoding | valid | completions at the 96-token cap |
+|---|---|---|---|
+| eval | greedy | 0.9375 | 0 of 16 |
+| eval | sampled, T=1.0 | 0.4375 | 0 of 16 |
+| eval | sampled, TRL's exact flags | 0.4375 | 0 of 16 |
+| train | **greedy** | **0.0** | **16 of 16** |
+| train | sampled, T=1.0 | 0.0 | 13 of 16 |
+| train | sampled, TRL's exact flags | 0.0 | 13 of 16 |
+
+Train-mode *greedy* decoding — no sampling anywhere — returns
+`'4. 1. 1. 1. 1. 1. ...'` until it exhausts its budget. That is decisive: the fault is the
+mode, not the temperature, not the precision, not the decode flags. The run before this one
+was healthy right up to the moment training began: `diagnosis/v4-checkpointing-fixes.json`
+records the trainer's own model object scoring 0.9375 immediately before `train()` is called.
+
+### The change
+
+`scripts/train_rightsizing_grpo.py` now wraps `model.generate` so it runs in eval mode and
+restores the caller's mode afterwards, installed only when `--gradient-checkpointing` is
+given. A CPU run is untouched. Sampling from eval mode still samples the policy being
+trained: LoRA dropout and Qwen2.5's attention dropout are both zero, so the two modes
+describe one distribution and only the checkpointing path differs.
+
+This is a defect in the harness, not a change to the recipe. The pre-registered recipe,
+the warm start, the success criterion and the evaluation sets are all unchanged, and the
+next run re-runs phase B exactly as registered. The run reported above stays in the record
+as a failed attempt, with its 1600 rollouts.
+
+### What this costs the experiment
+
+One point of honesty about the ordering. The eval-mode table above also shows the warm
+start sampling at **0.4375** valid at temperature 1.0, against 0.9375 greedy. GRPO learns
+from sampled rollouts, so the policy it actually sees is the 0.44 one, not the 0.84 the
+selection rule measured greedily on the Train sample. The rule in this document selected
+the warm start on greedy validity; it should have selected on sampled validity, because
+that is what determines whether a group's rewards vary at all. That is a flaw in the
+pre-registration, not in the run, and it is recorded here rather than quietly corrected:
+the warm start stays at 18 demonstrations for the next run, as registered.

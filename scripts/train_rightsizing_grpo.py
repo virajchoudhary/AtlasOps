@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import functools
 import hashlib
 import json
 import os
@@ -130,6 +131,41 @@ def load_base(model_dir: Path, device: str = "cpu", gradient_checkpointing: bool
     )
     return prepare_model_for_kbit_training(
         model, use_gradient_checkpointing=gradient_checkpointing), tokenizer
+
+
+
+def generate_in_eval_mode(model) -> None:
+    """Make ``model.generate`` run in eval mode whatever mode the trainer left behind.
+
+    A policy-gradient trainer samples its rollouts inside ``train()``, and transformers
+    disables the KV cache whenever ``self.gradient_checkpointing and self.training``. On
+    this stack that combination does not merely slow generation down, it destroys it. The
+    same 18-demonstration adapter, same sixteen states, measured on a T4:
+
+        eval, greedy   0.9375 valid      train, greedy   0.0, all 16 at the token cap
+        eval, sampled  0.4375 valid      train, sampled  0.0, 13 of 16 at the cap
+
+    Train-mode greedy decoding returns "4. 1. 1. 1. 1. ..." until it runs out of budget.
+    That is what made the first GRPO run score -1 on all 1600 rollouts: with no variation
+    inside a group the advantage is zero, so 100 steps moved none of the 392 LoRA tensors.
+
+    Sampling from eval mode still samples the policy being trained: LoRA dropout and
+    Qwen2.5's attention dropout are both zero, so the two modes describe one distribution
+    and only the checkpointing path differs between them.
+    """
+    inner = model.generate
+
+    @functools.wraps(inner)
+    def generate(*args, **kwargs):
+        was_training = model.training
+        model.eval()
+        try:
+            return inner(*args, **kwargs)
+        finally:
+            if was_training:
+                model.train()
+
+    model.generate = generate
 
 
 def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: int = 16,
@@ -251,6 +287,11 @@ def train(args: argparse.Namespace) -> None:
         peft_config = None
         record["start_policy"] = "sft_adapter"
         record["init_adapter"] = {"path": str(args.init_adapter), "inventory": inventory(args.init_adapter)}
+    # Only the checkpointed path is affected, and only there is the wrapper installed, so
+    # a CPU run is exactly the run it always was.
+    record["generation_forced_to_eval_mode"] = bool(args.gradient_checkpointing)
+    if args.gradient_checkpointing:
+        generate_in_eval_mode(model)
     started = time.time()
     fmt = eval_kwargs(args.action_format)
     baseline = {"held_out": evaluate(model, tokenizer, held_out, **fmt),

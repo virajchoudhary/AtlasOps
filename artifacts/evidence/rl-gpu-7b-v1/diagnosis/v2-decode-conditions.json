@@ -1,0 +1,71 @@
+{
+  "accelerate_fp16": {
+    "admissible_rate": 0.9375,
+    "invalid_categories": {
+      "invalid_action": 1
+    },
+    "mean_reward": 0.875,
+    "n": 16,
+    "over_provisioned": 0,
+    "resolved_rate": 0.9375,
+    "samples": [
+      "44 / 4 = 11.00, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+      "4 / 1 = 4.00, rounded up = 4\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 4}, \"agent_claimed_resolved\": false}"
+    ],
+    "under_provisioned": 0
+  },
+  "autocast_fp16": {
+    "admissible_rate": 0.9375,
+    "invalid_categories": {
+      "invalid_action": 1
+    },
+    "mean_reward": 0.875,
+    "n": 16,
+    "over_provisioned": 0,
+    "resolved_rate": 0.9375,
+    "samples": [
+      "44 / 4 = 11.00, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+      "4 / 1 = 4.00, rounded up = 4\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 4}, \"agent_claimed_resolved\": false}"
+    ],
+    "under_provisioned": 0
+  },
+  "grad_checkpointing": {
+    "admissible_rate": 0.9375,
+    "invalid_categories": {
+      "invalid_action": 1
+    },
+    "mean_reward": 0.875,
+    "n": 16,
+    "over_provisioned": 0,
+    "resolved_rate": 0.9375,
+    "samples": [
+      "44 / 4 = 11.00, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+      "4 / 1 = 4.00, rounded up = 4\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 4}, \"agent_claimed_resolved\": false}"
+    ],
+    "under_provisioned": 0
+  },
+  "plain": {
+    "admissible_rate": 0.9375,
+    "invalid_categories": {
+      "invalid_action": 1
+    },
+    "mean_reward": 0.875,
+    "n": 16,
+    "over_provisioned": 0,
+    "resolved_rate": 0.9375,
+    "samples": [
+      "44 / 4 = 11.00, rounded up = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+      "4 / 1 = 4.00, rounded up = 4\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 4}, \"agent_claimed_resolved\": false}"
+    ],
+    "under_provisioned": 0
+  },
+  "sampling_temp1": {
+    "admissible_rate": 0.3125,
+    "n": 16,
+    "resolved_rate": 0.3125,
+    "samples": [
+      "44 / 4 = 11.000000000000002 (rounded up) = 11\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 11}, \"agent_claimed_resolved\": false}",
+      "(4 + capacity_units_per_replica - 1) // capacity_units_per_replica = (4 + 1 - 1) // 1 = 5 // 1 = 5\n{\"tool\": \"kubectl_scale\", \"arguments\": {\"deployment\": \"paymentservice\", \"namespace\": \"default\", \"replicas\": 5}, \"agent_claimed_resolved\": false}"
+    ]
+  }
+}

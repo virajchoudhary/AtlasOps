@@ -51,6 +51,9 @@ SYSTEM_PROMPT_REASONED = SYSTEM_PROMPT.split("Reply with only")[0] + (
 )
 MAX_REASONED_LINES = 4
 ACTION_FORMATS = ("direct", "reasoned")
+# "repository" is score_direct_action_step, as in controlled G9. "graded" is an
+# experiment-only training reward; evaluations always use the repository reward.
+REWARD_MODES = ("repository", "graded")
 
 
 @dataclass(frozen=True)
@@ -146,8 +149,24 @@ def verify(state: CapacityState, replicas: int) -> dict[str, Any]:
             "env_resolved": resolved, "checks": checks}
 
 
-def score(state: CapacityState, completion: str) -> dict[str, Any]:
+def graded_reward(state: CapacityState, replicas: int) -> float:
+    """Near-miss credit that ranks covering demand above falling short; not the G9 reward.
+
+    Resolved scores 1.0. An over-provisioned count earns 0.5 x needed / replicas (one extra
+    replica earns 0.33-0.46); a count that leaves demand uncovered earns 0.25 x replicas /
+    needed (one short earns 0.13-0.23), so one too many always beats one too few.
+    """
+    if verify(state, replicas)["env_resolved"]:
+        return 1.0
+    if replicas * state.capacity_per_replica >= state.demand:
+        return round(0.5 * state.needed / replicas, 6)
+    return round(0.25 * max(replicas, 0) / state.needed, 6)
+
+
+def score(state: CapacityState, completion: str, reward_mode: str = "repository") -> dict[str, Any]:
     """Validate one policy completion like the controlled-G9 environment, then verify it."""
+    if reward_mode not in REWARD_MODES:
+        raise ValueError(f"Unknown reward mode {reward_mode}")
     observation = state.observation()
     category = None
     action = None
@@ -173,11 +192,12 @@ def score(state: CapacityState, completion: str) -> dict[str, Any]:
         ):
             category = "target_mismatch"
     if category is not None:
-        return {"reward": -1.0, "admissible": False, "resolved": False, "category": category,
-                "replicas": None, "needed": state.needed}
+        return {"reward": -1.0, "repository_reward": -1.0, "admissible": False, "resolved": False,
+                "category": category, "replicas": None, "needed": state.needed}
     replicas = action["arguments"]["replicas"] if action["tool"] == "kubectl_scale" else state.replicas
     verification = verify(state, replicas)
     decomposition = score_direct_action_step(verification, agent_claimed_resolved=False)
-    return {"reward": float(decomposition["total"]), "admissible": True,
+    reward = float(decomposition["total"]) if reward_mode == "repository" else graded_reward(state, replicas)
+    return {"reward": reward, "repository_reward": float(decomposition["total"]), "admissible": True,
             "resolved": verification["env_resolved"], "category": None,
             "replicas": replicas, "needed": state.needed, "decomposition": decomposition}

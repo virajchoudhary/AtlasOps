@@ -151,6 +151,7 @@ def train(args: argparse.Namespace) -> None:
         "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
         "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)},
         "action_format": args.action_format,
+        "reward": args.reward, "evaluation_reward": "repository",
     }
     record: dict[str, Any] = {
         "experiment": env.EXPERIMENT,
@@ -215,7 +216,7 @@ def train(args: argparse.Namespace) -> None:
         for completion, r, d, c in zip(completions, replicas, demand, capacity):
             text = completion[0]["content"] if isinstance(completion, list) else str(completion)
             state = env.CapacityState(int(r), int(d), int(c))
-            result = env.score(state, env.final_action(text, args.action_format))
+            result = env.score(state, env.final_action(text, args.action_format), args.reward)
             rewards.append(result["reward"])
             ledger.write(json.dumps({"step": progress["step"], "replicas": state.replicas,
                                      "demand": state.demand, "capacity": state.capacity_per_replica,
@@ -440,6 +441,8 @@ def main() -> None:
     train_parser.add_argument("--easy-fraction", type=float, default=0.4)
     train_parser.add_argument("--init-adapter", type=Path, default=None)
     train_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
+    train_parser.add_argument("--reward", choices=env.REWARD_MODES, default="repository",
+                              help="training reward; evaluation always uses the repository reward")
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
     sft_parser = commands.add_parser("sft")

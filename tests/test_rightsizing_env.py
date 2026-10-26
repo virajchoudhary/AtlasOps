@@ -55,7 +55,8 @@ def test_only_the_smallest_covering_replica_count_resolves():
 ])
 def test_invalid_or_blocked_actions_score_minus_one(completion, category):
     result = env.score(STATE, completion)
-    assert result == {"reward": -1.0, "admissible": False, "resolved": False, "category": category,
+    assert result == {"reward": -1.0, "repository_reward": -1.0, "admissible": False, "resolved": False,
+                      "category": category,
                       "replicas": None, "needed": 4}
 
 
@@ -137,3 +138,22 @@ def test_model_fetch_refuses_directories_inside_the_repository(monkeypatch, tmp_
     with pytest.raises(SystemExit):
         fetch.main()
     assert not inside.exists()
+
+
+def test_graded_reward_prefers_covering_demand_and_near_misses():
+    state = env.CapacityState(replicas=1, demand=10, capacity_per_replica=3)  # needs 4
+    graded = {replicas: env.score(state, action(replicas), "graded")["reward"] for replicas in (1, 3, 4, 5, 20)}
+    assert graded[4] == 1.0
+    assert graded[5] > graded[3] > graded[1]          # one too many beats one too few
+    assert graded[3] > graded[20]                      # a far over-provision loses to a near miss
+    assert env.score(state, action(5), "graded")["repository_reward"] == env.score(state, action(5))["reward"]
+    assert env.score(state, "not json", "graded")["reward"] == -1.0
+    claimed = json.dumps({**json.loads(action(5)), "agent_claimed_resolved": True})
+    assert env.score(state, claimed, "graded")["reward"] == graded[5]
+    with pytest.raises(ValueError):
+        env.score(state, action(4), "shaped")
+
+
+def test_repository_reward_stays_the_default():
+    assert env.score(STATE, action(5))["reward"] == pytest.approx(0.25 * 2 / 3, abs=1e-6)
+    assert env.score(STATE, action(3))["reward"] == env.score(STATE, action(5))["reward"]

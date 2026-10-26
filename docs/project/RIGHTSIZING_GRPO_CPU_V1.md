@@ -273,3 +273,48 @@ python -m scripts.analyze_rightsizing_runs
 ```
 
 Sampling on CPU is seeded but has not been shown to be bit-reproducible across machines.
+
+## Follow-up v1.1: pre-registered before running (26 October 2026)
+
+Goal: test whether the round-down failure of `grpo-reasoned-from-sft16` can be fixed. This
+section was committed before either run started. Each run's `RESULT.json` records a
+source commit that contains it.
+
+Training samples from that run show the correct rounded-up answer did appear on
+inexact-division prompts, and more often over time: 3 of 88 samples in steps 1–34, 26 of
+168 in steps 35–67, 40 of 168 in steps 68–100. Floor answers still dominated, with 81 of
+168 in the last third. So two arms are run, and no others:
+
+| Arm | Start policy | Training reward | Steps | Seed | Easy fraction | Everything else |
+|---|---|---|---|---|---|---|
+| `grpo-reasoned-graded-from-sft16` | `sft-reasoned-16` adapter | `graded` | 100 | 2026 | 0.4 | as `grpo-reasoned-from-sft16` |
+| `grpo-reasoned-continued` | `grpo-reasoned-from-sft16` adapter | repository | 150 more | 2027 | 0.0 | as `grpo-reasoned-from-sft16` |
+
+**The two arms.**
+
+- **Graded reward.** This arm changes only the training reward, so it sees the same
+  prompts as `grpo-reasoned-from-sft16`.
+  - The `graded` reward (`training/rightsizing_env.py`) keeps 1.0 for a verified
+    resolution and −1 for an invalid or blocked action.
+  - A count that covers demand but over-provisions earns 0.5 × needed / replicas.
+  - A count that falls short earns 0.25 × replicas / needed.
+  - So one replica too many always earns more than one too few. It is an experiment-only
+    reward, not the G9 reward.
+- **Longer training.** This arm keeps the repository reward and continues the trained
+  adapter.
+  - It uses a fresh prompt order and no easy-first phase, because the start policy is
+    already past it.
+  - Its start-policy evaluation must reproduce the 64 held-out completions of
+    `grpo-reasoned-from-sft16`; otherwise the run is reported as invalid.
+
+**Outcome and criterion.**
+
+- **Primary outcome:** held-out states solved, overall and on the 39 inexact-division
+  states. Each arm is paired against `grpo-reasoned-from-sft16` with an exact McNemar test.
+- **Evaluation:** every evaluation uses the repository reward and the fresh-process
+  reload.
+- **"Round-down fixed"** means both of these hold:
+  - at least 20 of 39 inexact-division states solved;
+  - at least 22 of 25 exact-division states solved.
+- **Rules:** both arms are reported whatever they show. No setting changes after seeing
+  results, and no further arms run in this round.

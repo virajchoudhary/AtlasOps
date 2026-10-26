@@ -120,3 +120,32 @@ def test_v12_scores_never_used_training_states():
     for name in ("sft-strict-32", "sft-strict-40", "sft-strict-48"):
         record = json.loads((analysis.EVIDENCE / name / "RESULT.json").read_text())
         assert record["data"]["excluded_states_overlap"] == 0
+
+
+def test_v13_sets_are_fresh_disjoint_and_reproducible():
+    from scripts import make_rightsizing_eval_sets as make
+    from training import rightsizing_env as env
+
+    path = analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1" / "eval-sets-v1.3.json"
+    assert json.loads(path.read_text()) == make.make_v13_sets()
+    sets = env.load_state_sets(path)
+    dev, confirmation = set(sets["dev"]), set(sets["confirmation"])
+    train, held_out = env.split_states(2026)
+    touched = set().union(*make.v13_touched_states().values())
+    assert len(dev) == 64 and len(confirmation) == 128 and not dev & confirmation
+    assert dev | confirmation <= set(train)
+    assert not (dev | confirmation) & (touched | set(held_out))
+
+
+def test_v13_is_disjoint_from_every_v12_set_and_balanced_on_the_development_set():
+    from training import rightsizing_env as env
+
+    v13 = env.load_state_sets(analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+                              / "eval-sets-v1.3.json")
+    v12 = env.load_state_sets(analysis.EVIDENCE / "eval-sets-v1.2.json")
+    used_before = set(v12["dev"]) | set(v12["confirmation"])
+    assert not (set(v13["dev"]) | set(v13["confirmation"])) & used_before
+    exact = [state for state in v13["dev"] if state.demand % state.capacity_per_replica == 0]
+    assert len(exact) == 32                                    # the development bar is read per category
+    assert sum(1 for state in v13["confirmation"]
+               if state.demand % state.capacity_per_replica == 0) == 42

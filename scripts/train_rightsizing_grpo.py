@@ -15,6 +15,7 @@ measured, including failures; nothing here changes a gate status.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -30,6 +31,7 @@ from training import rightsizing_env as env
 
 REPO = Path(__file__).resolve().parents[1]
 LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+DEVICES = ("cpu", "cuda")
 
 
 def sha256_file(path: Path) -> str:
@@ -60,16 +62,47 @@ def runtime() -> dict[str, Any]:
     return {"python": platform.python_version(), "platform": platform.platform(), "cpu_count": os.cpu_count(),
             "torch": torch.__version__, "transformers": transformers.__version__, "trl": trl.__version__,
             "peft": peft.__version__, "cuda_available": torch.cuda.is_available(),
+            "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
             "torch_threads": torch.get_num_threads()}
 
 
-def load_base(model_dir: Path):
+def configure_threads(device: str) -> None:
+    """CPU runs take every core; on the GPU the thread count is left alone."""
+    import torch
+
+    if device == "cpu":
+        torch.set_num_threads(os.cpu_count() or 1)
+
+
+def load_base(model_dir: Path, device: str = "cpu"):
+    """Load the pinned checkpoint for one device.
+
+    The CPU path is the default and is byte-for-byte the one the v1.x runs used: float32
+    weights, no quantisation, no device map. ``cuda`` loads the same checkpoint in 4-bit nf4
+    with float16 compute, because a free T4 holds 16 GiB and has no bfloat16, and then
+    prepares it for k-bit LoRA training.
+    """
+    if device not in DEVICES:
+        raise SystemExit(f"Unknown device {device!r}; expected one of {DEVICES}")
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
-    model = AutoModelForCausalLM.from_pretrained(model_dir, local_files_only=True, dtype=torch.float32)
-    return model, tokenizer
+    if device == "cpu":
+        model = AutoModelForCausalLM.from_pretrained(model_dir, local_files_only=True, dtype=torch.float32)
+        return model, tokenizer
+    if not torch.cuda.is_available():
+        raise SystemExit("--device cuda was asked for but torch.cuda.is_available() is False")
+    from peft import prepare_model_for_kbit_training
+    from transformers import BitsAndBytesConfig
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_dir, local_files_only=True, device_map={"": 0},
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True),
+    )
+    return prepare_model_for_kbit_training(model, use_gradient_checkpointing=False), tokenizer
 
 
 def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: int = 16,
@@ -86,7 +119,7 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
         batch = states[start:start + batch_size]
         texts = [tokenizer.apply_chat_template(env.prompt_messages(state, action_format),
                                                add_generation_prompt=True, tokenize=False) for state in batch]
-        encoded = tokenizer(texts, return_tensors="pt", padding=True)
+        encoded = tokenizer(texts, return_tensors="pt", padding=True).to(model.device)
         with torch.no_grad():
             output = model.generate(**encoded, max_new_tokens=max_new_tokens, do_sample=False,
                                     pad_token_id=tokenizer.pad_token_id, eos_token_id=stop_ids)
@@ -137,7 +170,7 @@ def train(args: argparse.Namespace) -> None:
 
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=False)
-    torch.set_num_threads(os.cpu_count() or 1)
+    configure_threads(args.device)
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     train_states, held_out = env.split_states(args.split_seed)
@@ -153,6 +186,7 @@ def train(args: argparse.Namespace) -> None:
         "action_format": args.action_format,
         "reward": args.reward, "evaluation_reward": "repository",
         "inexact_fraction": args.inexact_fraction, "balanced": args.balanced, "save_every": args.save_every,
+        "device": args.device,
     }
     excluded: set[env.CapacityState] = set()
     if args.exclude_states:
@@ -178,7 +212,7 @@ def train(args: argparse.Namespace) -> None:
     }
     write_json(out / "RESULT.json", record)
 
-    model, tokenizer = load_base(args.model_dir)
+    model, tokenizer = load_base(args.model_dir, args.device)
     peft_config = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0, target_modules=LORA_TARGETS,
                              task_type="CAUSAL_LM")
     record["start_policy"] = "base"
@@ -271,8 +305,11 @@ def train(args: argparse.Namespace) -> None:
         num_generations=args.num_generations, learning_rate=args.learning_rate,
         lr_scheduler_type="constant", warmup_steps=0, beta=0.0, temperature=1.0,
         max_prompt_length=512, max_completion_length=args.max_completion_length,
-        logging_steps=1, save_strategy="no", report_to=[], seed=args.seed, use_cpu=True,
-        bf16=False, fp16=False, gradient_accumulation_steps=args.prompts_per_step, dataloader_num_workers=0,
+        logging_steps=1, save_strategy="no", report_to=[], seed=args.seed,
+        use_cpu=args.device == "cpu",
+        # The T4 has no bfloat16, so the GPU arm trains in float16.
+        bf16=False, fp16=args.device == "cuda",
+        gradient_accumulation_steps=args.prompts_per_step, dataloader_num_workers=0,
         remove_unused_columns=False, shuffle_dataset=False,
     )
     trainer = GRPOTrainer(
@@ -339,7 +376,7 @@ def sft(args: argparse.Namespace) -> None:
 
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=False)
-    torch.set_num_threads(os.cpu_count() or 1)
+    configure_threads(args.device)
     torch.manual_seed(args.seed)
     train_states, held_out = env.split_states(args.split_seed)
     excluded: set[env.CapacityState] = set()
@@ -363,7 +400,7 @@ def sft(args: argparse.Namespace) -> None:
                  "held_out_overlap": len(set(demos) & set(held_out)),
                  "excluded_states_overlap": len(set(demos) & excluded)},
         "config": {"examples": args.examples, "epochs": args.epochs, "batch_size": args.batch_size,
-                   "micro_batch_size": args.micro_batch_size,
+                   "micro_batch_size": args.micro_batch_size, "device": args.device,
                    "learning_rate": args.learning_rate, "seed": args.seed, "split_seed": args.split_seed,
                    "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
                    "loss": "assistant tokens only", "budget_fixed_before_running": True,
@@ -372,7 +409,7 @@ def sft(args: argparse.Namespace) -> None:
                                                     "states": len(excluded)} if args.exclude_states else None,
                    "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)}},
     }
-    model, tokenizer = load_base(args.model_dir)
+    model, tokenizer = load_base(args.model_dir, args.device)
     fmt = eval_kwargs(args.action_format)
     base = {"held_out": evaluate(model, tokenizer, held_out, **fmt),
             "train_sample": evaluate(model, tokenizer, eval_train, **fmt)}
@@ -391,6 +428,11 @@ def sft(args: argparse.Namespace) -> None:
                                add_special_tokens=False)["input_ids"]
         examples.append((prompt_ids + target_ids, [-100] * len(prompt_ids) + target_ids))
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.learning_rate)
+    # float16 on the GPU, matching fp16=True in the GRPO config. Disabled, the scaler passes
+    # the loss and the optimizer step straight through, so the CPU path stays float32.
+    on_gpu = args.device == "cuda"
+    autocast = torch.autocast("cuda", dtype=torch.float16) if on_gpu else contextlib.nullcontext()
+    scaler = torch.amp.GradScaler("cuda" if on_gpu else "cpu", enabled=on_gpu)
     shuffler = random.Random(args.seed)
     losses = []
     model.train()
@@ -406,13 +448,17 @@ def sft(args: argparse.Namespace) -> None:
             for micro_start in range(0, len(batch), args.micro_batch_size):
                 micro = batch[micro_start:micro_start + args.micro_batch_size]
                 width = max(len(ids) for ids, _ in micro)
-                input_ids = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in micro])
-                labels = torch.tensor([lab + [-100] * (width - len(lab)) for _, lab in micro])
-                mask = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in micro])
-                loss = model(input_ids=input_ids, attention_mask=mask, labels=labels).loss * len(micro) / len(batch)
-                loss.backward()
+                device = model.device
+                input_ids = torch.tensor([ids + [pad] * (width - len(ids)) for ids, _ in micro]).to(device)
+                labels = torch.tensor([lab + [-100] * (width - len(lab)) for _, lab in micro]).to(device)
+                mask = torch.tensor([[1] * len(ids) + [0] * (width - len(ids)) for ids, _ in micro]).to(device)
+                with autocast:
+                    loss = (model(input_ids=input_ids, attention_mask=mask, labels=labels).loss
+                            * len(micro) / len(batch))
+                scaler.scale(loss).backward()
                 batch_loss += loss.item()
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             optimizer.zero_grad()
             losses.append(round(batch_loss, 5))
             print(f"sft epoch {epoch + 1} step {len(losses)} loss {losses[-1]}", flush=True)
@@ -433,7 +479,6 @@ def sft(args: argparse.Namespace) -> None:
 
 
 def evaluate_saved(args: argparse.Namespace) -> None:
-    import torch
     from peft import PeftModel
 
     run = args.run_dir
@@ -441,8 +486,8 @@ def evaluate_saved(args: argparse.Namespace) -> None:
     adapter_dir = run / "adapter"
     if inventory(adapter_dir) != record["adapter_inventory"]:
         raise SystemExit("Adapter files changed since training; refusing to evaluate")
-    torch.set_num_threads(os.cpu_count() or 1)
-    base, tokenizer = load_base(args.model_dir)
+    configure_threads(args.device)
+    base, tokenizer = load_base(args.model_dir, args.device)
     model = PeftModel.from_pretrained(base, adapter_dir, is_trainable=False, local_files_only=True)
     train_states, held_out = env.split_states(record["config"]["split_seed"])
     if env.states_sha256(held_out) != record["data"]["held_out_sha256"]:
@@ -467,14 +512,12 @@ def evaluate_saved(args: argparse.Namespace) -> None:
 
 def score_set(args: argparse.Namespace) -> None:
     """Greedy evaluation of the base model or a saved adapter on one named state set."""
-    import torch
-
     sets = env.load_state_sets(args.states)
     states = sets[args.set]
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=False)
-    torch.set_num_threads(os.cpu_count() or 1)
-    model, tokenizer = load_base(args.model_dir)
+    configure_threads(args.device)
+    model, tokenizer = load_base(args.model_dir, args.device)
     if args.adapter_dir:
         from peft import PeftModel
 
@@ -486,7 +529,7 @@ def score_set(args: argparse.Namespace) -> None:
         "experiment": env.EXPERIMENT, "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
         "gate_status": "Not a G9 result; changes no gate status.",
         "scored_at": datetime.now(UTC).isoformat(), "source": source_identity(), "runtime": runtime(),
-        "set": args.set, "states_file_sha256": sha256_file(args.states),
+        "set": args.set, "device": args.device, "states_file_sha256": sha256_file(args.states),
         "set_sha256": env.states_sha256(states), "action_format": args.action_format,
         "adapter": {"path": str(args.adapter_dir), "inventory": inventory(args.adapter_dir)}
         if args.adapter_dir else None,
@@ -495,7 +538,7 @@ def score_set(args: argparse.Namespace) -> None:
     print(args.set, json.dumps(summary(metrics)), flush=True)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     train_parser = commands.add_parser("train")
@@ -523,6 +566,8 @@ def main() -> None:
                                    "easy-first curriculum)")
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
+    train_parser.add_argument("--device", choices=DEVICES, default="cpu",
+                              help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
     sft_parser = commands.add_parser("sft")
     sft_parser.add_argument("--model-dir", type=Path, required=True)
     sft_parser.add_argument("--output-dir", type=Path, required=True)
@@ -536,6 +581,8 @@ def main() -> None:
                             help="state-sets JSON whose states must never be demonstrations")
     sft_parser.add_argument("--seed", type=int, default=2026)
     sft_parser.add_argument("--split-seed", type=int, default=2026)
+    sft_parser.add_argument("--device", choices=DEVICES, default="cpu",
+                              help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
     score_parser = commands.add_parser("score")
     score_parser.add_argument("--model-dir", type=Path, required=True)
     score_parser.add_argument("--adapter-dir", type=Path, default=None)
@@ -543,9 +590,18 @@ def main() -> None:
     score_parser.add_argument("--set", required=True)
     score_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, required=True)
     score_parser.add_argument("--output-dir", type=Path, required=True)
+    score_parser.add_argument("--device", choices=DEVICES, default="cpu",
+                              help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
     evaluate_parser = commands.add_parser("evaluate")
     evaluate_parser.add_argument("--model-dir", type=Path, required=True)
     evaluate_parser.add_argument("--run-dir", type=Path, required=True)
+    evaluate_parser.add_argument("--device", choices=DEVICES, default="cpu",
+                              help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
     for path in (getattr(args, "output_dir", None), getattr(args, "run_dir", None)):
         if path is not None and path.resolve().is_relative_to(REPO):

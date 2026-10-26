@@ -1,0 +1,1018 @@
+{
+  "version": "v1.3",
+  "seed": 27182,
+  "train_states": 926,
+  "touched_train_states": 667,
+  "touched_by_source": {
+    "eval_sets:v1.2": 192,
+    "prompts:grpo-direct-from-base": 11,
+    "prompts:grpo-direct-from-sft": 134,
+    "prompts:grpo-reasoned-continued": 143,
+    "prompts:grpo-reasoned-from-sft16": 97,
+    "prompts:grpo-reasoned-graded-from-sft16": 97,
+    "prompts:grpo-strict-balanced": 2,
+    "prompts:grpo-strict-balanced-ckpt": 55,
+    "prompts:grpo-strict-balanced-ckpt-rerun": 173,
+    "prompts:grpo-strict-balanced-rerun": 111,
+    "prompts:grpo-strict-from-sft": 36,
+    "prompts:grpo-strict-from-sft16": 12,
+    "prompts:grpo-strict-from-sft48": 92,
+    "prompts:grpo-strict-nocurriculum": 26,
+    "prompts:smoke": 4,
+    "sft_demos:sft-direct-64": 64,
+    "sft_demos:sft-reasoned-16": 16,
+    "sft_demos:sft-reasoned-64": 64,
+    "sft_demos:sft-reasoned-64-killed": 64,
+    "sft_demos:sft-reasoned-8": 8,
+    "sft_demos:sft-strict-32": 32,
+    "sft_demos:sft-strict-40": 40,
+    "sft_demos:sft-strict-48": 48,
+    "train_eval_sample:2026": 64,
+    "train_eval_sample:2027": 64
+  },
+  "untouched_train_states": 259,
+  "stratification": {
+    "dev": {
+      "exact": 32,
+      "inexact": 32
+    },
+    "confirmation": {
+      "exact": 42,
+      "inexact": 86
+    }
+  },
+  "sets": {
+    "dev": [
+      {
+        "replicas": 4,
+        "demand": 44,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 1,
+        "demand": 4,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 1,
+        "demand": 18,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 4,
+        "demand": 21,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 9,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 15,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 9,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 6,
+        "demand": 55,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 40,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 16,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 4,
+        "demand": 35,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 36,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 5,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 9,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 45,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 3,
+        "demand": 5,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 3,
+        "demand": 36,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 40,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 9,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 2,
+        "demand": 44,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 12,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 5,
+        "demand": 30,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 30,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 60,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 9,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 8,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 10,
+        "demand": 22,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 2,
+        "demand": 7,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 6,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 27,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 6,
+        "demand": 7,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 1,
+        "demand": 8,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 36,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 8,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 37,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 7,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 8,
+        "demand": 33,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 1,
+        "demand": 47,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 11,
+        "demand": 47,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 3,
+        "demand": 29,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 22,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 35,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 5,
+        "demand": 41,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 10,
+        "demand": 43,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 22,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 5,
+        "demand": 23,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 10,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 42,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 3,
+        "demand": 13,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 4,
+        "demand": 23,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 10,
+        "demand": 57,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 14,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 42,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 23,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 43,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 52,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 5,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 6,
+        "demand": 26,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 5,
+        "demand": 31,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 29,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 31,
+        "capacity_per_replica": 3
+      }
+    ],
+    "confirmation": [
+      {
+        "replicas": 1,
+        "demand": 24,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 1,
+        "demand": 15,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 10,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 4,
+        "demand": 55,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 22,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 6,
+        "demand": 33,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 10,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 1,
+        "demand": 45,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 4,
+        "demand": 32,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 9,
+        "demand": 30,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 4,
+        "demand": 14,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 6,
+        "demand": 60,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 4,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 1,
+        "demand": 25,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 45,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 36,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 28,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 40,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 8,
+        "demand": 36,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 5,
+        "demand": 12,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 2,
+        "demand": 12,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 11,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 7,
+        "demand": 24,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 4,
+        "demand": 27,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 6,
+        "demand": 10,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 10,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 8,
+        "demand": 12,
+        "capacity_per_replica": 1
+      },
+      {
+        "replicas": 2,
+        "demand": 25,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 10,
+        "demand": 24,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 7,
+        "demand": 18,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 7,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 5,
+        "demand": 14,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 1,
+        "demand": 10,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 7,
+        "demand": 33,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 30,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 44,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 48,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 60,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 18,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 9,
+        "demand": 40,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 4,
+        "demand": 36,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 1,
+        "demand": 4,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 9,
+        "demand": 41,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 9,
+        "demand": 43,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 32,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 6,
+        "demand": 23,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 26,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 9,
+        "demand": 59,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 16,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 29,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 47,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 44,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 8,
+        "demand": 19,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 5,
+        "demand": 22,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 3,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 5,
+        "demand": 23,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 4,
+        "demand": 35,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 7,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 5,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 13,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 6,
+        "demand": 37,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 35,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 3,
+        "demand": 25,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 4,
+        "demand": 33,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 3,
+        "demand": 11,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 34,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 9,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 8,
+        "demand": 37,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 17,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 10,
+        "demand": 58,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 8,
+        "demand": 28,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 5,
+        "demand": 17,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 38,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 46,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 5,
+        "demand": 30,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 3,
+        "demand": 36,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 4,
+        "demand": 24,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 6,
+        "demand": 39,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 41,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 4,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 6,
+        "demand": 46,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 14,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 7,
+        "demand": 47,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 7,
+        "demand": 57,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 36,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 17,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 1,
+        "demand": 26,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 43,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 54,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 6,
+        "demand": 33,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 9,
+        "demand": 34,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 56,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 2,
+        "demand": 37,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 10,
+        "demand": 53,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 9,
+        "demand": 35,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 1,
+        "demand": 10,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 3,
+        "demand": 33,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 8,
+        "demand": 53,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 4,
+        "demand": 41,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 15,
+        "capacity_per_replica": 2
+      },
+      {
+        "replicas": 4,
+        "demand": 39,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 7,
+        "demand": 56,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 3,
+        "demand": 39,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 9,
+        "demand": 48,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 6,
+        "demand": 19,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 5,
+        "demand": 29,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 6,
+        "demand": 20,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 4,
+        "demand": 28,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 36,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 10,
+        "demand": 41,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 9,
+        "demand": 28,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 8,
+        "demand": 44,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 7,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 8,
+        "demand": 46,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 8,
+        "demand": 52,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 47,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 5,
+        "demand": 34,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 44,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 9,
+        "demand": 45,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 1,
+        "demand": 39,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 5,
+        "demand": 39,
+        "capacity_per_replica": 4
+      },
+      {
+        "replicas": 2,
+        "demand": 29,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 2,
+        "demand": 31,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 9,
+        "demand": 58,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 3,
+        "demand": 31,
+        "capacity_per_replica": 3
+      },
+      {
+        "replicas": 6,
+        "demand": 46,
+        "capacity_per_replica": 5
+      },
+      {
+        "replicas": 1,
+        "demand": 13,
+        "capacity_per_replica": 4
+      }
+    ]
+  },
+  "sha256": {
+    "dev": "116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a",
+    "confirmation": "5ef5384fa858f30cf53ec95b77fd2d1037571c0acdd7531d92a4926545adaa0b"
+  },
+  "exact_division": {
+    "dev": 32,
+    "confirmation": 42
+  }
+}

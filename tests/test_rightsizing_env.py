@@ -183,3 +183,88 @@ def test_state_sets_refuse_a_changed_set(tmp_path):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError):
         env.load_state_sets(path)
+
+
+def _stub_loader(monkeypatch, *, cuda_available):
+    """Stand-ins for torch, transformers and peft, so loading can be checked without them."""
+    import sys
+    import types
+
+    calls: dict[str, object] = {}
+
+    torch = types.ModuleType("torch")
+    torch.float32 = "float32"
+    torch.float16 = "float16"
+    torch.cuda = types.SimpleNamespace(is_available=lambda: cuda_available)
+
+    transformers = types.ModuleType("transformers")
+
+    def from_pretrained(model_dir, **kwargs):
+        calls["model"] = kwargs
+        return "model"
+
+    transformers.AutoModelForCausalLM = types.SimpleNamespace(from_pretrained=from_pretrained)
+    transformers.AutoTokenizer = types.SimpleNamespace(from_pretrained=lambda *a, **k: "tokenizer")
+    transformers.BitsAndBytesConfig = lambda **kwargs: ("bnb", kwargs)
+
+    peft = types.ModuleType("peft")
+
+    def prepare(model, **kwargs):
+        calls["prepared"] = kwargs
+        return "prepared"
+
+    peft.prepare_model_for_kbit_training = prepare
+
+    for name, module in [("torch", torch), ("transformers", transformers), ("peft", peft)]:
+        monkeypatch.setitem(sys.modules, name, module)
+    return calls
+
+
+def test_the_cpu_loading_path_is_float32_and_unquantised(monkeypatch):
+    from scripts import train_rightsizing_grpo as script
+
+    calls = _stub_loader(monkeypatch, cuda_available=False)
+    assert script.load_base("/model") == ("model", "tokenizer")          # cpu is the default
+    assert calls["model"] == {"local_files_only": True, "dtype": "float32"}
+    assert "prepared" not in calls
+
+
+def test_cuda_loads_the_same_checkpoint_in_four_bit_nf4_with_fp16_compute(monkeypatch):
+    from scripts import train_rightsizing_grpo as script
+
+    calls = _stub_loader(monkeypatch, cuda_available=True)
+    assert script.load_base("/model", "cuda") == ("prepared", "tokenizer")
+    assert calls["model"]["device_map"] == {"": 0}
+    assert calls["model"]["quantization_config"] == ("bnb", {
+        "load_in_4bit": True, "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_compute_dtype": "float16", "bnb_4bit_use_double_quant": True})
+    assert calls["prepared"] == {"use_gradient_checkpointing": False}
+
+
+def test_cuda_is_refused_when_no_gpu_is_present(monkeypatch):
+    from scripts import train_rightsizing_grpo as script
+
+    _stub_loader(monkeypatch, cuda_available=False)
+    with pytest.raises(SystemExit):
+        script.load_base("/model", "cuda")
+
+
+def test_an_unknown_device_is_refused():
+    from scripts import train_rightsizing_grpo as script
+
+    with pytest.raises(SystemExit):
+        script.load_base("/model", "mps")
+
+
+@pytest.mark.parametrize("command,argv", [
+    ("train", ["--model-dir", "/m", "--output-dir", "/o"]),
+    ("sft", ["--model-dir", "/m", "--output-dir", "/o"]),
+    ("score", ["--model-dir", "/m", "--states", "/s", "--set", "dev",
+               "--action-format", "reasoned_strict", "--output-dir", "/o"]),
+    ("evaluate", ["--model-dir", "/m", "--run-dir", "/r"]),
+])
+def test_every_command_still_defaults_to_the_cpu(command, argv):
+    from scripts import train_rightsizing_grpo as script
+
+    assert script.build_parser().parse_args([command, *argv]).device == "cpu"
+    assert script.build_parser().parse_args([command, *argv, "--device", "cuda"]).device == "cuda"

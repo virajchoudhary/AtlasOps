@@ -524,3 +524,42 @@ replaced. All new candidates start from S40 with `reasoned_strict` and no easy-f
 
 The development target, confirmation rule and stop rule are unchanged. The development
 and confirmation sets are still unscored.
+
+### Amendment 4 (26 October 2026, before any development or confirmation scoring)
+
+E1 (`grpo-strict-nocurriculum`) was stopped at step 27 of 150. Without the curriculum, its
+training samples rounded down just as D1's did:
+
+- inexact-division samples solved 1 of 72 in steps 1–15, then 0 of 48 in steps 16–27;
+- in steps 21–27, 28 of 31 arithmetic lines on inexact prompts wrote the floor as "rounded
+  up", and the other 3 had wrong numbers.
+
+**Diagnosis.**
+
+- A separate check of S40 on 10 inexact Train states that were never prompts, 8 samples
+  each at temperature 1.0: its main error was copying the wrong operands (33 of 80).
+  Where the operands were right, it rounded up 11 times and down 6.
+- During GRPO, the copy-the-integer-part answer won anyway, because exact-division prompts
+  reward it.
+- Once a group's samples all write the floor, the group has no reward variance, so the
+  round-up answer gets no gradient.
+- So the 40-demonstration start is too weak for this reward: RL removes the spare-replica
+  errors faster than it learns to add the replica that is needed.
+- E2 continued E1, and E3 shared its start, so both are dropped.
+
+**New candidates, in this order:**
+
+| # | Run | Start | Changes |
+|---|---|---|---|
+| F1 | `grpo-strict-from-sft48` | S48 | `reasoned_strict`, no easy-first phase, 100 steps |
+| F2 | `grpo-strict-inexact80` | S40 | `reasoned_strict`, `--inexact-fraction 0.8` (replaces the curriculum), 150 steps |
+
+- **F1.** S48 already rounds up on its Train sample (61/64 solved), so its RL job is to
+  remove residual errors without unlearning the rounding.
+- **F2.** Mostly inexact prompts, so round-up answers outnumber the exact prompts that
+  reward copying the integer part.
+- **Reading the confirmation.** Its paired test is against each candidate's own start. A
+  strong start leaves little room, so F1 may fail p < 0.01 even if it is accurate, and the
+  report must say so.
+- The development target, confirmation rule and stop rule are unchanged. The development
+  and confirmation sets are still unscored.

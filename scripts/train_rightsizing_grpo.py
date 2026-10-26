@@ -152,6 +152,7 @@ def train(args: argparse.Namespace) -> None:
         "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)},
         "action_format": args.action_format,
         "reward": args.reward, "evaluation_reward": "repository",
+        "inexact_fraction": args.inexact_fraction,
     }
     excluded: set[env.CapacityState] = set()
     if args.exclude_states:
@@ -206,8 +207,15 @@ def train(args: argparse.Namespace) -> None:
     # Evaluation-only states never become prompts; without exclusions the pool is train_states.
     pool = [state for state in train_states if state not in excluded]
     easy = [state for state in pool if state.capacity_per_replica <= 2]
-    chosen = ([shuffler.choice(easy) for _ in range(easy_prompts)]
-              + [shuffler.choice(pool) for _ in range(needed_prompts - easy_prompts)])
+    if args.inexact_fraction is None:
+        chosen = ([shuffler.choice(easy) for _ in range(easy_prompts)]
+                  + [shuffler.choice(pool) for _ in range(needed_prompts - easy_prompts)])
+    else:
+        # Weight prompts whose demand does not divide exactly, where rounding up matters.
+        inexact = [state for state in pool if state.demand % state.capacity_per_replica]
+        exact = [state for state in pool if not state.demand % state.capacity_per_replica]
+        chosen = [shuffler.choice(inexact if shuffler.random() < args.inexact_fraction else exact)
+                  for _ in range(needed_prompts)]
     dataset = Dataset.from_list([
         {"prompt": env.prompt_messages(state, args.action_format), "replicas": state.replicas,
          "demand": state.demand,
@@ -489,6 +497,9 @@ def main() -> None:
                               help="training reward; evaluation always uses the repository reward")
     train_parser.add_argument("--exclude-states", type=Path, default=None,
                               help="state-sets JSON whose states must never be training prompts")
+    train_parser.add_argument("--inexact-fraction", type=float, default=None,
+                              help="share of prompts whose demand does not divide exactly (replaces the "
+                                   "easy-first curriculum)")
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
     sft_parser = commands.add_parser("sft")

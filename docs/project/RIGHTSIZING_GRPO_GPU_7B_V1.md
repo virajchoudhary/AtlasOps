@@ -126,6 +126,35 @@ a negative one, with every stopped run included.
 - A result here, good or bad, does not move G9, G13, or any other gate.
 - One model, one seed, one task. Nothing here generalises to incident response.
 
+## Amendment 1 — 27 October 2026, before any GRPO run
+
+**What changed.** The collapse watch runs *after* each GRPO run rather than interrupting it.
+
+**Why.** The pre-registration says to read the training samples every 10 steps and stop a run
+that collapses. The run happens in a Kaggle batch kernel, which does not stream its log: the
+output arrives only when the kernel finishes, so there is nothing to watch while it runs and
+no way to interrupt it from outside. Kaggle is the GPU available here.
+
+**What this costs, and what it does not.** It costs GPU time on a run that has already gone
+wrong — nothing else. It does not touch the evidence or the decision: `rollouts.jsonl` records
+every completion with its step, so the per-10-step picture is read in full afterwards, and
+`--save-every 10` means the checkpoint from before a collapse still exists and is still the one
+the development set selects. On CPU this was exactly what happened — training collapsed after
+about 50 steps and the step-30 checkpoint was the one selected.
+
+**What stays.** Everything else: the allowed changes, in order, with a dated amendment
+committed before each next run; the development bar; and the single use of the confirmation
+set.
+
+## Amendment 2 — 27 October 2026, before any GRPO run
+
+**What changed.** The SFT micro-batch is 2 rather than the CPU run's 4.
+
+**Why.** A 7B model in 4-bit with LoRA on a 15 GiB T4 has far less headroom than a 0.5B model
+on a CPU with 30 GiB of RAM. The accumulated update is unchanged — micro-batches only bound
+peak memory, and the optimizer still steps once per batch of 8 — so this changes how the
+step is computed, not what it computes.
+
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*

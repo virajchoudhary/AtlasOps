@@ -46,10 +46,27 @@ model, an incident gets up to two model attempts and then one rule-engine attemp
 A model patch that fails the safety check is replaced by the rule engine's patch
 within the same attempt. Every patch and diagnosis is labelled with who wrote it.
 
-Model size matters. In one test, Qwen2.5-0.5B-Instruct was served on CPU behind a local
-OpenAI-compatible server. On three bugs (stylesheet link, JavaScript crash, NaN prices), its
-diagnoses named the wrong file and its patches changed nothing. The safety check rejected
-each patch, and the rule engine fixed all three. No 7B model has been tried with the lab yet.
+A CPU-only model is slow: one answer can take minutes, so raise `--llm-timeout` (default
+120 seconds; `BUG_LAB_LLM_TIMEOUT` also works).
+
+Two models have been tried, each on 4 CPU cores behind a local OpenAI-compatible server,
+with bugs driven in real Chromium and P1 fixes approved in the UI:
+
+- **Qwen2.5-0.5B-Instruct**, three bugs (stylesheet link, JavaScript crash, NaN prices).
+  - Its diagnoses named the wrong file, and its patches changed nothing.
+  - The safety check rejected each patch, and the rule engine fixed all three.
+- **Qwen2.5-7B-Instruct**, all eight bugs: the Q4_K_M GGUF under llama.cpp, with
+  `--llm-timeout 900`.
+  - The model fixed the JavaScript crash itself.
+  - For the other seven, the rule engine's patch was used:
+    - it named the right file in 6 of 8 diagnoses;
+    - its find text did not match the file 4 times, and its JSON edits left
+      `products.json` invalid twice; the safety check rejected all six;
+    - both of its slow-API patches passed the safety check but failed the verifier and were
+      reverted.
+  - Every bug ended verified. Model calls took 20–121 seconds, and incidents 2.5–5 minutes.
+
+These are demo observations from one run each, not model-performance evidence.
 
 ## The bugs
 

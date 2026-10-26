@@ -563,3 +563,37 @@ training samples rounded down just as D1's did:
   report must say so.
 - The development target, confirmation rule and stop rule are unchanged. The development
   and confirmation sets are still unscored.
+
+### Amendment 5 (26 October 2026, before any confirmation scoring)
+
+**F1 result.** `grpo-strict-from-sft48` ran all 100 steps. Its fresh reload reproduced its
+in-process completions.
+
+| Set | F1 solved | S48 start solved |
+|---|---|---|
+| Original held-out (reused) | 45/64 | 57/64 |
+| Development (target ≥ 58, ≥ 17 exact, ≥ 38 inexact) | **44/64** (exact 0/20, inexact 44/44) | not scored |
+
+F1 misses the development target. It now adds a replica every time, for example
+"60 / 5 = 12.00, rounded up = 13". Only 3 of its 22 exact-division training groups ever
+sampled the right answer. This mirrors D1 and E1, which always took the floor.
+
+**Diagnosis.** With one prompt per step, a short run of one kind of prompt flips the
+low-entropy policy into "always add one" or "never add one". The other kind of group then
+has no reward variance and cannot pull it back.
+
+**Change.** F2 (80% inexact prompts) would push towards "always add one", as F1 did, so it
+is replaced.
+
+| # | Run | Start | Changes |
+|---|---|---|---|
+| G1 | `grpo-strict-balanced` | S40 | `reasoned_strict`, `--balanced --prompts-per-step 2`, 100 steps |
+| G2 | `grpo-strict-balanced-lr2e5` | S40 | as G1 with learning rate 2e-5 |
+
+- With `--balanced`, every optimizer step sees one exact-division and one inexact-division
+  prompt.
+- S40 samples both behaviours (rounding up and copying the integer part), so both kinds of
+  group can carry a gradient.
+- G2 runs only if G1 misses the development target.
+- The development target, confirmation rule and stop rule are unchanged. The confirmation
+  set is still unscored.

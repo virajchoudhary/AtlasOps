@@ -152,7 +152,7 @@ def train(args: argparse.Namespace) -> None:
         "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)},
         "action_format": args.action_format,
         "reward": args.reward, "evaluation_reward": "repository",
-        "inexact_fraction": args.inexact_fraction,
+        "inexact_fraction": args.inexact_fraction, "balanced": args.balanced,
     }
     excluded: set[env.CapacityState] = set()
     if args.exclude_states:
@@ -207,13 +207,17 @@ def train(args: argparse.Namespace) -> None:
     # Evaluation-only states never become prompts; without exclusions the pool is train_states.
     pool = [state for state in train_states if state not in excluded]
     easy = [state for state in pool if state.capacity_per_replica <= 2]
-    if args.inexact_fraction is None:
+    exact = [state for state in pool if not state.demand % state.capacity_per_replica]
+    inexact = [state for state in pool if state.demand % state.capacity_per_replica]
+    if args.balanced:
+        # Alternate exact and inexact divisions, so with an even --prompts-per-step every
+        # optimizer step sees both and neither kind of prompt can flip the policy alone.
+        chosen = [shuffler.choice(exact if index % 2 == 0 else inexact) for index in range(needed_prompts)]
+    elif args.inexact_fraction is None:
         chosen = ([shuffler.choice(easy) for _ in range(easy_prompts)]
                   + [shuffler.choice(pool) for _ in range(needed_prompts - easy_prompts)])
     else:
         # Weight prompts whose demand does not divide exactly, where rounding up matters.
-        inexact = [state for state in pool if state.demand % state.capacity_per_replica]
-        exact = [state for state in pool if not state.demand % state.capacity_per_replica]
         chosen = [shuffler.choice(inexact if shuffler.random() < args.inexact_fraction else exact)
                   for _ in range(needed_prompts)]
     dataset = Dataset.from_list([
@@ -497,6 +501,9 @@ def main() -> None:
                               help="training reward; evaluation always uses the repository reward")
     train_parser.add_argument("--exclude-states", type=Path, default=None,
                               help="state-sets JSON whose states must never be training prompts")
+    train_parser.add_argument("--balanced", action="store_true",
+                              help="alternate exact- and inexact-division prompts (use an even "
+                                   "--prompts-per-step)")
     train_parser.add_argument("--inexact-fraction", type=float, default=None,
                               help="share of prompts whose demand does not divide exactly (replaces the "
                                    "easy-first curriculum)")

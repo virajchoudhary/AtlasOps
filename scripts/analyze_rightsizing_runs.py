@@ -73,11 +73,12 @@ def _count(values) -> dict[Any, int]:
     return dict(counts)
 
 
-def paired(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> dict[str, Any]:
+def paired(a: list[dict[str, Any]], b: list[dict[str, Any]], inexact_only: bool = False) -> dict[str, Any]:
     if [(r["replicas"], r["demand"], r["capacity"]) for r in a] != [(r["replicas"], r["demand"], r["capacity"]) for r in b]:
         raise ValueError("Arms were not scored on the same states in the same order")
-    only_a = sum(x["resolved"] and not y["resolved"] for x, y in zip(a, b))
-    only_b = sum(y["resolved"] and not x["resolved"] for x, y in zip(a, b))
+    pairs = [(x, y) for x, y in zip(a, b) if not inexact_only or x["demand"] % x["capacity"]]
+    only_a = sum(x["resolved"] and not y["resolved"] for x, y in pairs)
+    only_b = sum(y["resolved"] and not x["resolved"] for x, y in pairs)
     return {"lost": only_a, "gained": only_b, "exact_mcnemar_p": round(exact_mcnemar(only_a, only_b), 4)}
 
 
@@ -114,6 +115,7 @@ def analyze(evidence: Path = EVIDENCE) -> dict[str, Any]:
         "checksum_mismatches": verify_checksums(evidence),
         "arms": {name: arm_summary(arm) for name, arm in rows.items()},
         "paired": {f"{a}->{b}": paired(rows[a], rows[b]) for a, b in PAIRS},
+        "paired_inexact_division": {f"{a}->{b}": paired(rows[a], rows[b], inexact_only=True) for a, b in PAIRS},
         "start_policy_reproduced": {
             run: [r["completion"] for r in read_rows(evidence / run / "baseline_held_out.jsonl")]
             == [r["completion"] for r in rows[start]]

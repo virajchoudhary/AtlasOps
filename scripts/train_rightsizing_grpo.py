@@ -47,10 +47,34 @@ def inventory(directory: Path) -> dict[str, dict[str, Any]]:
             for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
+def source_tree_sha256() -> str:
+    """One digest over the Python the run executes, so an export can be checked against Git."""
+    digest = hashlib.sha256()
+    for path in sorted(path for name in ("training", "scripts")
+                       for path in (REPO / name).rglob("*.py")):
+        digest.update(path.relative_to(REPO).as_posix().encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def source_identity() -> dict[str, Any]:
+    """Which source the run executed.
+
+    A GPU host receives the code as an exported archive with no working tree, so there the
+    commit is taken from ATLASOPS_SOURCE_COMMIT and the record says so rather than implying a
+    clean checkout. The tree digest is recorded either way, so the claim can be checked.
+    """
+    if not (REPO / ".git").exists():
+        commit = os.environ.get("ATLASOPS_SOURCE_COMMIT", "").strip()
+        if not commit:
+            raise SystemExit("No working tree and no ATLASOPS_SOURCE_COMMIT: "
+                             "refusing to record an unknown source")
+        return {"commit": commit, "dirty": None, "from": "exported archive, no working tree",
+                "tree_sha256": source_tree_sha256()}
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=REPO, text=True)
-    return {"commit": commit, "dirty": bool(status.strip())}
+    return {"commit": commit, "dirty": bool(status.strip()), "from": "working tree",
+            "tree_sha256": source_tree_sha256()}
 
 
 def runtime() -> dict[str, Any]:

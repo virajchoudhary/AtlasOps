@@ -268,3 +268,26 @@ def test_every_command_still_defaults_to_the_cpu(command, argv):
 
     assert script.build_parser().parse_args([command, *argv]).device == "cpu"
     assert script.build_parser().parse_args([command, *argv, "--device", "cuda"]).device == "cuda"
+
+
+def test_an_exported_archive_records_its_commit_and_says_it_has_no_working_tree(monkeypatch, tmp_path):
+    """A GPU host gets the code as an export; the record must not imply a clean checkout."""
+    from scripts import train_rightsizing_grpo as script
+
+    (tmp_path / "training").mkdir()
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "training" / "a.py").write_text("x = 1\n")
+    monkeypatch.setattr(script, "REPO", tmp_path)
+
+    monkeypatch.delenv("ATLASOPS_SOURCE_COMMIT", raising=False)
+    with pytest.raises(SystemExit):
+        script.source_identity()                       # an unknown source is never recorded
+
+    monkeypatch.setenv("ATLASOPS_SOURCE_COMMIT", "b643cf0")
+    identity = script.source_identity()
+    assert identity["commit"] == "b643cf0"
+    assert identity["dirty"] is None and identity["from"] == "exported archive, no working tree"
+
+    digest = identity["tree_sha256"]
+    (tmp_path / "training" / "a.py").write_text("x = 2\n")
+    assert script.source_identity()["tree_sha256"] != digest     # the digest tracks the code

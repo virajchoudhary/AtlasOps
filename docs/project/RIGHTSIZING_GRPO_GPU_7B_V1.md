@@ -196,6 +196,49 @@ format wants the arithmetic, so the strict parser rejects the whole completion:
 This is the same failure that produced 0/8 valid actions in the frozen G9 pilot, and it is why
 the recipe starts with an SFT warm start rather than going straight to GRPO.
 
+## Amendment 4 — 27 October 2026, after phase A succeeded and the rule chose nothing
+
+**What happened.** All three warm starts trained. The fixed rule — the first of 16, 32, 48
+demonstrations with at least 75% valid answers and between 20% and 85% solved, read on the
+Train evaluation sample — selected **none of them**.
+
+| Demonstrations | Valid | Solved | Held-out solved | Rule |
+|---|---|---|---|---|
+| 16 | 70.3% | 68.8% | 36/64 | fails: valid below 75% |
+| 32 | 100% | 100% | **64/64** | fails: solved above 85% |
+| 48 | 100% | 100% | **64/64** | fails: solved above 85% |
+
+**What it means, and it is the most important thing this experiment has measured so far.**
+Qwen2.5-7B reaches a **perfect** policy from 32 demonstrations: 64 of 64 on the held-out
+states and 64 of 64 on the Train evaluation sample, every answer valid, nothing
+over-provisioned and nothing under-provisioned. There is no headroom above it for
+reinforcement learning to demonstrate. The CPU experiment saw a weaker form of this — SFT on
+64 demonstrations reached 127/128, so GRPO matched SFT rather than beating it — and at 7B it
+is absolute. The warm start is not a stepping stone to RL here; it is already the answer.
+
+The base model is not weak at the task either. It computes the right replica count and emits a
+well-formed action; it fails only because it writes a bare number where the strict format
+wants the arithmetic line. Thirty-two demonstrations are enough to teach that line, and once
+the format is right the arithmetic was already correct.
+
+**What happens next.** The rule's purpose is a start with enough validity to give GRPO a
+gradient and enough headroom for GRPO to show something. The two conditions are not met
+together by any count tried, because the model jumps from 59% valid and 56% solved at 16
+demonstrations straight to 100% and 100% at 32. Before falling back, the gap is probed
+directly:
+
+1. Run two more warm starts, at **20 and 24 demonstrations**, drawn from the same Train pool
+   with the same exclusions and the same seed rule. If either satisfies the rule as written, it
+   is the start, and the registered recipe proceeds unchanged.
+2. If neither does, GRPO runs from the **16-demonstration** start, the only one with headroom,
+   and this document records the deviation: it misses the validity floor (70.3% against 75%).
+   That decision is fixed here, before any development or confirmation score is read.
+
+Either way the development bar, the single use of the confirmation set and the success
+criterion stand exactly as registered. And whatever GRPO does from a start with headroom, it
+will be measured against a plain fact already in hand: 32 demonstrations and no reinforcement
+learning at all solve every state in both 64-state samples.
+
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*

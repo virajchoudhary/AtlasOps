@@ -27,10 +27,18 @@ ARMS = {
     "sft_reasoned_8": "sft-reasoned-8/sft_held_out.jsonl",
     "sft_reasoned_16": "sft-reasoned-16/sft_held_out.jsonl",
     "grpo_reasoned": "grpo-reasoned-from-sft16/trained_held_out.jsonl",
+    "grpo_reasoned_graded": "grpo-reasoned-graded-from-sft16/trained_held_out.jsonl",
+    "grpo_reasoned_continued": "grpo-reasoned-continued/trained_held_out.jsonl",
 }
 PAIRS = (("base_direct", "sft_direct_64"), ("sft_direct_64", "grpo_direct"),
-         ("base_reasoned", "sft_reasoned_16"), ("sft_reasoned_16", "grpo_reasoned"))
-GRPO_RUNS = ("grpo-direct-from-base", "grpo-direct-from-sft", "grpo-reasoned-from-sft16")
+         ("base_reasoned", "sft_reasoned_16"), ("sft_reasoned_16", "grpo_reasoned"),
+         # v1.1 follow-ups, each paired against the run they try to improve on (pre-registered).
+         ("grpo_reasoned", "grpo_reasoned_graded"), ("grpo_reasoned", "grpo_reasoned_continued"))
+GRPO_RUNS = ("grpo-direct-from-base", "grpo-direct-from-sft", "grpo-reasoned-from-sft16",
+             "grpo-reasoned-graded-from-sft16", "grpo-reasoned-continued")
+START_POLICIES = (("grpo-direct-from-sft", "sft_direct_64"), ("grpo-reasoned-from-sft16", "sft_reasoned_16"),
+                  ("grpo-reasoned-graded-from-sft16", "sft_reasoned_16"),
+                  ("grpo-reasoned-continued", "grpo_reasoned"))
 RULES = {"ceil": lambda d, c: math.ceil(d / c), "floor": lambda d, c: d // c,
          "nearest": lambda d, c: math.floor(d / c + 0.5)}
 
@@ -119,7 +127,7 @@ def analyze(evidence: Path = EVIDENCE) -> dict[str, Any]:
         "start_policy_reproduced": {
             run: [r["completion"] for r in read_rows(evidence / run / "baseline_held_out.jsonl")]
             == [r["completion"] for r in rows[start]]
-            for run, start in (("grpo-direct-from-sft", "sft_direct_64"), ("grpo-reasoned-from-sft16", "sft_reasoned_16"))},
+            for run, start in START_POLICIES},
         "grpo": {},
     }
     for run in GRPO_RUNS:

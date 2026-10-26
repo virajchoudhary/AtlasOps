@@ -27,6 +27,12 @@ reviewed it independently.
   GRPO from 16 demonstrations reached 28.
 - **The one-shot format failed.** When the model had to answer in one shot, GRPO made the
   SFT policy slightly worse: 14 → 10 solved, 4 lost and none gained, p = 0.125.
+- **Follow-ups (v1.1).** Two pre-registered runs both improved on 28 (see
+  [Follow-up v1.1](#follow-up-v11-pre-registered-before-running-26-october-2026)), but
+  neither met the "round-down fixed" criterion.
+  - **Longer training, repository reward: 40 solved.** It gained 12 states and lost none,
+    but still rounds down on 23.
+  - **Graded reward: 42 solved.** It now over-provisions instead.
 
 ## Why a separate experiment
 
@@ -141,6 +147,8 @@ Run names are the evidence directory names.
 | `sft-reasoned-8` | 35f764d | base | 8 demos, 2 epochs, 2 steps | 40 s | 0/64, none valid | −1.000 | 0/64 |
 | `sft-reasoned-16` | 35f764d | base | 16 demos, 2 epochs, 4 steps | 79 s | 7/64, 34 valid | −0.289 | 10/64 |
 | `grpo-reasoned-from-sft16` | 35f764d | `sft-reasoned-16` | 100 steps | 48 min | 28/64 | 0.531 | 29/64 |
+| `grpo-reasoned-graded-from-sft16` (v1.1) | f7fcc46 | `sft-reasoned-16` | 100 steps, graded reward | 50 min | 42/64 | 0.714 | 42/64 |
+| `grpo-reasoned-continued` (v1.1) | f7fcc46 | `grpo-reasoned-from-sft16` | 150 more steps | 78 min | 40/64 | 0.688 | 39/64, different sample (seed 2027) |
 
 - GRPO held-out numbers are from the fresh-process reload.
   - The `grpo-reasoned-from-sft16` reload ran from a clean tree at `529c688`. That commit
@@ -229,6 +237,8 @@ quoted numbers.
   signal, and at n=64 it is coarse.
 - **The adapters (35 MB each) are not in Git,** under AGENTS.md. Their SHA-256
   inventories are in each `RESULT.json`.
+- **The graded reward is not the repository reward.** The graded-reward arm's result
+  describes that reward's design, not `score_direct_action_step`.
 
 ## Evidence
 
@@ -268,6 +278,15 @@ python -m scripts.train_rightsizing_grpo train --model-dir $Q --output-dir $M/gr
     --max-steps 100 --action-format reasoned --max-completion-length 96 \
     --init-adapter $M/sft-reasoned-16/adapter
 python -m scripts.train_rightsizing_grpo evaluate --model-dir $Q --run-dir $M/grpo-reasoned-from-sft16
+# v1.1 follow-ups: the graded reward, and 150 more steps of the adapter above.
+python -m scripts.train_rightsizing_grpo train --model-dir $Q --output-dir $M/grpo-reasoned-graded-from-sft16 \
+    --max-steps 100 --action-format reasoned --max-completion-length 96 --reward graded \
+    --init-adapter $M/sft-reasoned-16/adapter
+python -m scripts.train_rightsizing_grpo train --model-dir $Q --output-dir $M/grpo-reasoned-continued \
+    --max-steps 150 --action-format reasoned --max-completion-length 96 --seed 2027 --easy-fraction 0.0 \
+    --init-adapter $M/grpo-reasoned-from-sft16/adapter
+python -m scripts.train_rightsizing_grpo evaluate --model-dir $Q --run-dir $M/grpo-reasoned-graded-from-sft16
+python -m scripts.train_rightsizing_grpo evaluate --model-dir $Q --run-dir $M/grpo-reasoned-continued
 # Recompute the comparisons from the committed evidence.
 python -m scripts.analyze_rightsizing_runs
 ```
@@ -318,3 +337,38 @@ inexact-division prompts, and more often over time: 3 of 88 samples in steps 1�
   - at least 22 of 25 exact-division states solved.
 - **Rules:** both arms are reported whatever they show. No setting changes after seeing
   results, and no further arms run in this round.
+
+### Results (26 October 2026)
+
+Both runs started from clean commit `f7fcc46`. The pre-registration above was committed
+earlier, in `56d8251`. For each run:
+
+- the start-policy evaluation reproduced its named starting point's 64 held-out
+  completions exactly;
+- the fresh-process reload reproduced its in-process completions exactly;
+- all 336 LoRA tensors changed.
+
+| Arm | Solved (of 64) | Exact-division (≥ 22 of 25 needed) | Inexact-division (≥ 20 of 39 needed) | Criterion met | Paired against `grpo-reasoned-from-sft16` |
+|---|---|---|---|---|---|
+| `grpo-reasoned-from-sft16` (reference) | 28 | 24 | 4 | — | — |
+| `grpo-reasoned-graded-from-sft16` | 42 | **17** | 25 | **No** | 21 gained, 7 lost, p = 0.0125 |
+| `grpo-reasoned-continued` | 40 | 24 | **16** | **No** | 12 gained, 0 lost, p = 0.0005 |
+
+- **Graded reward.** It fixed the rounding but overshot.
+  - On inexact-division states it gained 21 and lost none (exact McNemar p < 0.0001).
+  - On exact-division states it lost 7, because it now adds a replica it does not need.
+  - Its 22 misses are 8 one over, 11 two over, 1 three over and 2 one short.
+  - Rewarding "covers demand" well above "falls short" pushed the policy past the target.
+  - 61 of its 100 groups had varying rewards, against 38 in the reference run.
+- **Longer training.** It improved without new errors.
+  - All 12 gains were inexact-division states. Exact-division stayed at 24 of 25.
+  - It still rounds down: its 24 misses are 23 one short and 1 one over.
+  - 45 of its 150 groups had varying rewards.
+- **Reading.** The round-down was partly a training-length effect: more steps with the
+  repository reward fixed a third of the inexact misses at no cost. The graded reward's
+  extra credit for covering demand fixed more of them but caused over-provisioning.
+  Neither run solves the task. SFT on 64 reasoned demonstrations still does (64/64).
+
+The evidence directory also holds `grpo-reasoned-graded-from-sft16/` and
+`grpo-reasoned-continued/`. `scripts/analyze_rightsizing_runs.py` recomputes the table,
+and `tests/test_rightsizing_evidence.py` pins it.

@@ -11,8 +11,11 @@ def test_evidence_files_match_their_checksums():
     assert RESULT["checksum_mismatches"] == []
 
 
-def test_each_grpo_run_started_from_the_policy_its_sft_run_saved():
-    assert RESULT["start_policy_reproduced"] == {"grpo-direct-from-sft": True, "grpo-reasoned-from-sft16": True}
+def test_each_grpo_run_started_from_the_policy_it_names():
+    assert RESULT["start_policy_reproduced"] == {
+        "grpo-direct-from-sft": True, "grpo-reasoned-from-sft16": True,
+        "grpo-reasoned-graded-from-sft16": True, "grpo-reasoned-continued": True,
+    }
 
 
 def test_held_out_resolution_per_arm():
@@ -21,6 +24,7 @@ def test_held_out_resolution_per_arm():
         "base_direct": (1, 64), "sft_direct_64": (14, 64), "grpo_direct": (10, 64),
         "base_reasoned": (3, 64), "sft_reasoned_64": (64, 64), "sft_reasoned_8": (0, 0),
         "sft_reasoned_16": (7, 34), "grpo_reasoned": (28, 64),
+        "grpo_reasoned_graded": (42, 64), "grpo_reasoned_continued": (40, 64),
     }
 
 
@@ -50,3 +54,21 @@ def test_every_run_is_labelled_outside_the_gates():
         assert record["classification"] == "SMALL_MODEL_CPU_RL_EXPERIMENT"
         assert "Not a G" in record["gate_status"]
         assert record["source"]["dirty"] is False
+
+
+def test_follow_ups_against_the_pre_registered_round_down_criterion():
+    # Pre-registered: at least 20/39 inexact-division and 22/25 exact-division states solved.
+    graded, continued = RESULT["arms"]["grpo_reasoned_graded"], RESULT["arms"]["grpo_reasoned_continued"]
+    assert graded["inexact_division_resolved"] == [25, 39] and graded["exact_division_resolved"] == [17, 25]
+    assert continued["inexact_division_resolved"] == [16, 39] and continued["exact_division_resolved"] == [24, 25]
+    for arm in (graded, continued):
+        met = arm["inexact_division_resolved"][0] >= 20 and arm["exact_division_resolved"][0] >= 22
+        assert met is False
+    assert graded["miss_sizes"] == {-1: 2, 1: 8, 2: 11, 3: 1}
+    assert continued["miss_sizes"] == {-1: 23, 1: 1}
+    assert RESULT["paired"]["grpo_reasoned->grpo_reasoned_graded"] == {
+        "lost": 7, "gained": 21, "exact_mcnemar_p": 0.0125}
+    assert RESULT["paired"]["grpo_reasoned->grpo_reasoned_continued"] == {
+        "lost": 0, "gained": 12, "exact_mcnemar_p": 0.0005}
+    assert RESULT["paired_inexact_division"]["grpo_reasoned->grpo_reasoned_graded"]["gained"] == 21
+    assert RESULT["paired_inexact_division"]["grpo_reasoned->grpo_reasoned_continued"]["lost"] == 0

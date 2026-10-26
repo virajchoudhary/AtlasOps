@@ -175,3 +175,12 @@ def test_no_gpu_warm_start_ever_trained_on_an_evaluation_state():
 def test_the_gpu_experiment_claims_no_gate():
     assert "NOT_PASSED/FROZEN" in GPU["gate_status"]
     assert "Exploratory" in GPU["gate_status"]
+
+
+def test_every_well_formed_7b_answer_is_also_arithmetically_correct():
+    """The warm starts teach format, not arithmetic: solved equals valid, and nothing misses."""
+    for name, arm in GPU["sft_arms"].items():
+        if arm.get("failed") or "sft" not in arm or arm["demonstrations"] < 20:
+            continue
+        sft = arm["sft"]
+        assert sft["solved"] == sft["valid"], name

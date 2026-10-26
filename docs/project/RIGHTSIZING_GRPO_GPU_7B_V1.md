@@ -239,6 +239,44 @@ criterion stand exactly as registered. And whatever GRPO does from a start with 
 will be measured against a plain fact already in hand: 32 demonstrations and no reinforcement
 learning at all solve every state in both 64-state samples.
 
+## Amendment 5 — 27 October 2026, after the 20/24 probe
+
+**What happened.** Neither new warm start satisfies the rule either, but the four points
+together show why, and the reason is structural rather than bad luck.
+
+| Demonstrations | Valid | Solved | Rule |
+|---|---|---|---|
+| 16 | 70.3% | 68.8% | valid below 75% |
+| 20 | 87.5% | 87.5% | solved above 85% |
+| 24 | 92.2% | 92.2% | solved above 85% |
+| 32 | 100% | 100% | solved above 85% |
+
+**For this model the solved rate equals the valid rate.** At 20, 24 and 32 demonstrations the
+two numbers are identical to the digit, and at 16 they differ by one state. Every answer this
+model formats correctly is also arithmetically correct; it never produces a well-formed action
+with the wrong replica count. All three warm starts above 16 demonstrations have zero
+under-provisioned and zero over-provisioned answers.
+
+That collapses the rule's two conditions into one. If solved equals valid, then "valid at
+least 75%" and "solved at most 85%" together mean "valid between 75% and 85%" — a ten-point
+window, and the demonstration counts tried jump straight over it, from 70.3% at 16 to 87.5%
+at 20.
+
+**It also says what GRPO can and cannot do here.** The only thing a warm start teaches this
+model is the output format, and so the only thing reinforcement learning can improve from such
+a start is the output format too. The arithmetic was never wrong. Any gain this experiment
+measures should be read as the policy learning to write the instructed two-line shape, not as
+it learning to size a deployment.
+
+**What happens next.** One more probe, at **17, 18 and 19 demonstrations**, to land inside the
+ten-point window and give GRPO a start that satisfies the rule exactly as registered. Same
+Train pool, same exclusions, same seed rule. If a count satisfies the rule, the smallest such
+count is the start. If none does, the fallback fixed in amendment 4 stands: GRPO runs from the
+16-demonstration start, with its missed validity floor recorded.
+
+No development or confirmation score has been read. The bar, the single confirmation and the
+success criterion are unchanged.
+
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*

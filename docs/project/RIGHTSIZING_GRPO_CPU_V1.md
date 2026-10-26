@@ -604,3 +604,40 @@ completions at once. The trainer now back-propagates one prompt's group at a tim
 accumulates over the step's prompts, with the same prompts and groups per optimizer step.
 With one prompt per step, the configuration is identical to every earlier run. G1 is rerun
 as `grpo-strict-balanced-rerun`, with nothing else changed.
+
+### Amendment 6 (26 October 2026, before any confirmation scoring)
+
+**G1 stopped.** `grpo-strict-balanced-rerun` was stopped at step 58 of 100. It was never
+scored on the development set. Its training samples:
+
+| Steps | Exact solved | Inexact solved |
+|---|---|---|
+| 1–10 | 49/80 | 60/80 |
+| 11–20 | 66/80 | 67/80 |
+| 21–30 | 79/80 | 79/80 |
+| 31–40 | 76/80 | 75/80 |
+| 41–50 | 75/80 | 79/80 |
+| 51–58 | 72/72 | 16/72 |
+
+From step 53, every inexact group wrote the floor in all 8 samples. Balanced batches
+taught both behaviours for about 30 steps. Then a near-deterministic policy flipped once
+and could not recover, because groups whose samples all agree carry no gradient. With
+beta = 0 nothing anchors the policy, and with PEFT the KL reference would be the base
+model, not the SFT start.
+
+**Change: early stopping on the development set.**
+
+| # | Run | Changes |
+|---|---|---|
+| H1 | `grpo-strict-balanced-ckpt` | G1 (S40, `reasoned_strict`, `--balanced --prompts-per-step 2`, learning rate 5e-5, 100 steps), plus an adapter checkpoint every 10 steps (`--save-every 10`) |
+| H2 | `grpo-strict-balanced-lr2e5-ckpt` | as H1 with learning rate 2e-5 |
+
+- **Selection.** Every H1 checkpoint and its final adapter are scored on the development
+  set. The one that solves the most states is selected; ties go to the earliest step.
+- **Target.** The development target applies to the selected checkpoint.
+- **H2.** H2 runs only if no H1 checkpoint meets the target. It replaces G2.
+- **Confirmation.** Only the selected checkpoint is confirmed, once, with the same rule
+  (at least 116/128, and p < 0.01 against S40).
+- Checkpoint selection uses the development set, as a development set is meant to be
+  used. The confirmation set stays single-use, so its result is not biased by the
+  selection.

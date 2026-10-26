@@ -152,7 +152,7 @@ def train(args: argparse.Namespace) -> None:
         "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)},
         "action_format": args.action_format,
         "reward": args.reward, "evaluation_reward": "repository",
-        "inexact_fraction": args.inexact_fraction, "balanced": args.balanced,
+        "inexact_fraction": args.inexact_fraction, "balanced": args.balanced, "save_every": args.save_every,
     }
     excluded: set[env.CapacityState] = set()
     if args.exclude_states:
@@ -245,10 +245,18 @@ def train(args: argparse.Namespace) -> None:
         return rewards
 
     log_path = out / "training_log.jsonl"
+    checkpoints: dict[int, Path] = {}
 
     class Recorder(TrainerCallback):
         def on_step_begin(self, args_, state, control, **kwargs):
             progress["step"] = state.global_step + 1
+
+        def on_step_end(self, args_, state, control, model=None, **kwargs):
+            # Adapter-only snapshots, so a checkpoint can be chosen on the development set.
+            if args.save_every and state.global_step % args.save_every == 0:
+                path = out / "checkpoints" / f"step-{state.global_step:04d}"
+                model.save_pretrained(path)
+                checkpoints[state.global_step] = path
 
         def on_log(self, args_, state, control, logs=None, **kwargs):
             with log_path.open("a", encoding="utf-8") as stream:
@@ -286,6 +294,8 @@ def train(args: argparse.Namespace) -> None:
     trainer.model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     record["adapter_inventory"] = inventory(adapter_dir)
+    record["checkpoints"] = {str(step): {"path": str(path), "inventory": inventory(path)}
+                             for step, path in sorted(checkpoints.items())}
     started = time.time()
     in_process = evaluate(trainer.model, tokenizer, held_out, **fmt)
     record["trained_in_process"] = {"held_out": summary(in_process)}
@@ -503,6 +513,8 @@ def main() -> None:
                               help="training reward; evaluation always uses the repository reward")
     train_parser.add_argument("--exclude-states", type=Path, default=None,
                               help="state-sets JSON whose states must never be training prompts")
+    train_parser.add_argument("--save-every", type=int, default=0,
+                              help="also save the adapter every N optimizer steps under checkpoints/")
     train_parser.add_argument("--balanced", action="store_true",
                               help="alternate exact- and inexact-division prompts (use an even "
                                    "--prompts-per-step)")

@@ -372,3 +372,61 @@ earlier, in `56d8251`. For each run:
 The evidence directory also holds `grpo-reasoned-graded-from-sft16/` and
 `grpo-reasoned-continued/`. `scripts/analyze_rightsizing_runs.py` recomputes the table,
 and `tests/test_rightsizing_evidence.py` pins it.
+
+## Follow-up v1.2: aiming for a good result, pre-registered (26 October 2026)
+
+This section was committed before any v1.2 run started. Whatever v1.2 shows, it changes no
+gate. G9 is defined on the pinned Qwen2.5-7B, a CUDA host and the controlled incident
+environment, and it needs a reopening and independent review. This is a 0.5B model on
+CPU on a synthetic task.
+
+**Why another round.**
+
+- No run so far rounds up reliably.
+- In the `reasoned` format a bare action also counts, and every GRPO policy learned to
+  drop the arithmetic line. With that line, SFT alone gets 64/64.
+- The new `reasoned_strict` format scores only the two lines the prompt asks for: an
+  arithmetic line in the demonstrated form, then the action. Anything else is an invalid
+  action (−1). The arithmetic's correctness earns nothing, and only the action is verified.
+- The reward is the repository reward.
+
+**Fresh evaluation sets.** The 64 held-out states were scored by every arm, so v1.2 does
+not use them for decisions.
+
+- [`scripts/make_rightsizing_eval_sets.py`](../../scripts/make_rightsizing_eval_sets.py)
+  draws two sets with seed 31415, written to
+  [`eval-sets-v1.2.json`](../../artifacts/evidence/rl-cpu-rightsizing-v1/eval-sets-v1.2.json).
+  - Both come from the 619 Train states that no earlier run touched as a prompt,
+    demonstration or evaluation sample.
+  - **Development:** 64 states, 20 of them exact divisions.
+  - **Confirmation:** 128 states, 37 of them exact divisions.
+- Both sets are excluded from every v1.2 training prompt (`train --exclude-states`).
+
+**Candidates.** Run in this order, stopping at the first that meets the development
+target. Unless stated, everything else is as in `grpo-reasoned-from-sft16`.
+
+| # | Run | Start | Changes |
+|---|---|---|---|
+| C1 | `grpo-strict-from-sft16` | `sft-reasoned-16` adapter | `reasoned_strict`, 150 steps |
+| C2 | `grpo-strict-continued` | C1's adapter | `reasoned_strict`, 150 more steps, seed 2027, no easy-first phase |
+| C3 | `grpo-strict-2prompts` | `sft-reasoned-16` adapter | `reasoned_strict`, 2 prompts per step, 150 steps |
+
+**Development target.** At least 58 of 64 solved, at least 17 of 20 exact-division
+states and at least 38 of 44 inexact-division states.
+
+**Confirmation.**
+
+- The first candidate that meets the development target is scored once on the
+  confirmation set.
+- Its start policy (`sft-reasoned-16`) and two references (`grpo-reasoned-continued` and
+  `sft-reasoned-64`) are scored on the same set in the strict format.
+- The result counts as good if both of these hold:
+  - at least 116 of 128 solved;
+  - an exact McNemar p below 0.01 against the start policy on the same states.
+
+**Rules.**
+
+- Every candidate that runs is reported, whatever it shows.
+- If none of C1–C3 meets the development target, v1.2 stops and reports that, with no
+  further variants.
+- The original held-out set is still reported for continuity, marked as reused.

@@ -72,3 +72,18 @@ def test_follow_ups_against_the_pre_registered_round_down_criterion():
         "lost": 0, "gained": 12, "exact_mcnemar_p": 0.0005}
     assert RESULT["paired_inexact_division"]["grpo_reasoned->grpo_reasoned_graded"]["gained"] == 21
     assert RESULT["paired_inexact_division"]["grpo_reasoned->grpo_reasoned_continued"]["lost"] == 0
+
+
+def test_v12_sets_are_fresh_disjoint_and_reproducible():
+    from scripts import make_rightsizing_eval_sets as make
+    from training import rightsizing_env as env
+
+    path = analysis.EVIDENCE / "eval-sets-v1.2.json"
+    committed = json.loads(path.read_text())
+    assert committed == make.make_sets()
+    sets = env.load_state_sets(path)
+    dev, confirmation = set(sets["dev"]), set(sets["confirmation"])
+    train, held_out = env.split_states(2026)
+    touched = set().union(*make.touched_states().values())
+    assert len(dev) == 64 and len(confirmation) == 128 and not dev & confirmation
+    assert dev | confirmation <= set(train) and not (dev | confirmation) & (touched | set(held_out))

@@ -157,3 +157,29 @@ def test_graded_reward_prefers_covering_demand_and_near_misses():
 def test_repository_reward_stays_the_default():
     assert env.score(STATE, action(5))["reward"] == pytest.approx(0.25 * 2 / 3, abs=1e-6)
     assert env.score(STATE, action(3))["reward"] == env.score(STATE, action(5))["reward"]
+
+
+def test_strict_format_scores_only_the_two_instructed_lines():
+    expert = env.expert_completion(STATE, "reasoned_strict")
+    assert expert == env.expert_completion(STATE, "reasoned")
+    assert env.score(STATE, env.final_action(expert, "reasoned_strict"))["resolved"]
+    bare = action(4)
+    assert env.final_action(bare, "reasoned_strict") == ""                       # arithmetic dropped
+    assert env.final_action("10 / 3 = 3.33, rounded up = 4\nok\n" + bare, "reasoned_strict") == ""
+    assert env.final_action("10 divided by 3 is about 3\n" + bare, "reasoned_strict") == ""
+    wrong_numbers = "10 / 3 = 9.00, rounded up = 9\n" + bare
+    assert env.score(STATE, env.final_action(wrong_numbers, "reasoned_strict"))["resolved"]  # action is scored
+    assert env.prompt_messages(STATE, "reasoned_strict") == env.prompt_messages(STATE, "reasoned")
+
+
+def test_state_sets_refuse_a_changed_set(tmp_path):
+    path = tmp_path / "sets.json"
+    states = [env.CapacityState(2, 10, 3)]
+    payload = {"sets": {"dev": [{"replicas": 2, "demand": 10, "capacity_per_replica": 3}]},
+               "sha256": {"dev": env.states_sha256(states)}}
+    path.write_text(json.dumps(payload))
+    assert env.load_state_sets(path) == {"dev": states}
+    payload["sets"]["dev"][0]["demand"] = 11
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        env.load_state_sets(path)

@@ -17,6 +17,7 @@ import hashlib
 import json
 import math
 import random
+import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -50,7 +51,11 @@ SYSTEM_PROMPT_REASONED = SYSTEM_PROMPT.split("Reply with only")[0] + (
     '"namespace": "default", "replicas": <integer>}, "agent_claimed_resolved": false}'
 )
 MAX_REASONED_LINES = 4
-ACTION_FORMATS = ("direct", "reasoned")
+# "reasoned_strict" scores the two lines the reasoned prompt asks for and nothing else: an
+# arithmetic line in the demonstrated form, then the action. Under "reasoned" a bare action
+# also counts, and a GRPO policy learned to drop the arithmetic.
+ACTION_FORMATS = ("direct", "reasoned", "reasoned_strict")
+ARITHMETIC_LINE = re.compile(r"^\s*\d+\s*/\s*\d+\s*=\s*\d+(\.\d+)?\s*,\s*rounded up\s*=\s*\d+\s*$")
 # "repository" is score_direct_action_step, as in controlled G9. "graded" is an
 # experiment-only training reward; evaluations always use the repository reward.
 REWARD_MODES = ("repository", "graded")
@@ -107,9 +112,20 @@ def states_sha256(states: list[CapacityState]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def load_state_sets(path) -> dict[str, list[CapacityState]]:
+    """Named state sets from a JSON file written by scripts/make_rightsizing_eval_sets.py."""
+    with open(path, encoding="utf-8") as stream:
+        data = json.load(stream)
+    sets = {name: [CapacityState(**state) for state in states] for name, states in data["sets"].items()}
+    for name, states in sets.items():
+        if states_sha256(states) != data["sha256"][name]:
+            raise ValueError(f"State set {name} does not match its recorded SHA-256")
+    return sets
+
+
 def prompt_messages(state: CapacityState, action_format: str = "direct") -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": SYSTEM_PROMPT_REASONED if action_format == "reasoned" else SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT if action_format == "direct" else SYSTEM_PROMPT_REASONED},
         {"role": "user", "content": json.dumps(state.observation(), sort_keys=True)},
     ]
 
@@ -120,17 +136,19 @@ def expert_completion(state: CapacityState, action_format: str = "direct") -> st
                          "arguments": {"deployment": "paymentservice", "namespace": "default",
                                        "replicas": state.needed},
                          "agent_claimed_resolved": False})
-    if action_format != "reasoned":
+    if action_format == "direct":
         return action
     ratio = state.demand / state.capacity_per_replica
     return f"{state.demand} / {state.capacity_per_replica} = {ratio:.2f}, rounded up = {state.needed}\n{action}"
 
 
 def final_action(completion: str, action_format: str = "direct") -> str:
-    """The text that is scored: the whole completion, or the reasoned format's last line."""
-    if action_format != "reasoned":
+    """The text that is scored: the whole completion, or the reasoned formats' last line."""
+    if action_format == "direct":
         return completion
     lines = [line for line in completion.strip().splitlines() if line.strip()]
+    if action_format == "reasoned_strict":
+        return lines[1] if len(lines) == 2 and ARITHMETIC_LINE.match(lines[0]) else ""
     return lines[-1] if 0 < len(lines) <= MAX_REASONED_LINES else ""
 
 

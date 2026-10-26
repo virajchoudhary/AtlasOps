@@ -113,7 +113,7 @@ def evaluate(model, tokenizer, states: list[env.CapacityState], *, batch_size: i
 
 
 def eval_kwargs(action_format: str) -> dict[str, Any]:
-    return {"action_format": action_format, "max_new_tokens": 96 if action_format == "reasoned" else 64}
+    return {"action_format": action_format, "max_new_tokens": 64 if action_format == "direct" else 96}
 
 
 def summary(metrics: dict[str, Any]) -> dict[str, Any]:
@@ -153,6 +153,10 @@ def train(args: argparse.Namespace) -> None:
         "action_format": args.action_format,
         "reward": args.reward, "evaluation_reward": "repository",
     }
+    excluded: set[env.CapacityState] = set()
+    if args.exclude_states:
+        excluded = {state for states in env.load_state_sets(args.exclude_states).values() for state in states}
+        config["excluded_from_prompts"] = {"file_sha256": sha256_file(args.exclude_states), "states": len(excluded)}
     record: dict[str, Any] = {
         "experiment": env.EXPERIMENT,
         "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
@@ -199,9 +203,11 @@ def train(args: argparse.Namespace) -> None:
     shuffler = random.Random(args.seed)
     needed_prompts = args.max_steps * args.prompts_per_step
     easy_prompts = int(needed_prompts * args.easy_fraction)
-    easy = [state for state in train_states if state.capacity_per_replica <= 2]
+    # Evaluation-only states never become prompts; without exclusions the pool is train_states.
+    pool = [state for state in train_states if state not in excluded]
+    easy = [state for state in pool if state.capacity_per_replica <= 2]
     chosen = ([shuffler.choice(easy) for _ in range(easy_prompts)]
-              + [shuffler.choice(train_states) for _ in range(needed_prompts - easy_prompts)])
+              + [shuffler.choice(pool) for _ in range(needed_prompts - easy_prompts)])
     dataset = Dataset.from_list([
         {"prompt": env.prompt_messages(state, args.action_format), "replicas": state.replicas,
          "demand": state.demand,
@@ -427,6 +433,36 @@ def evaluate_saved(args: argparse.Namespace) -> None:
     print("trained (fresh reload)", json.dumps(record["trained_reloaded"]["held_out"]), flush=True)
 
 
+def score_set(args: argparse.Namespace) -> None:
+    """Greedy evaluation of the base model or a saved adapter on one named state set."""
+    import torch
+
+    sets = env.load_state_sets(args.states)
+    states = sets[args.set]
+    out = args.output_dir
+    out.mkdir(parents=True, exist_ok=False)
+    torch.set_num_threads(os.cpu_count() or 1)
+    model, tokenizer = load_base(args.model_dir)
+    if args.adapter_dir:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, args.adapter_dir, is_trainable=False, local_files_only=True)
+    started = time.time()
+    metrics = evaluate(model, tokenizer, states, **eval_kwargs(args.action_format))
+    write_rows(out / f"{args.set}_rows.jsonl", metrics["rows"])
+    write_json(out / "SCORE.json", {
+        "experiment": env.EXPERIMENT, "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+        "gate_status": "Not a G9 result; changes no gate status.",
+        "scored_at": datetime.now(UTC).isoformat(), "source": source_identity(), "runtime": runtime(),
+        "set": args.set, "states_file_sha256": sha256_file(args.states),
+        "set_sha256": env.states_sha256(states), "action_format": args.action_format,
+        "adapter": {"path": str(args.adapter_dir), "inventory": inventory(args.adapter_dir)}
+        if args.adapter_dir else None,
+        "summary": summary(metrics), "seconds": round(time.time() - started, 1),
+    })
+    print(args.set, json.dumps(summary(metrics)), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -443,6 +479,8 @@ def main() -> None:
     train_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
     train_parser.add_argument("--reward", choices=env.REWARD_MODES, default="repository",
                               help="training reward; evaluation always uses the repository reward")
+    train_parser.add_argument("--exclude-states", type=Path, default=None,
+                              help="state-sets JSON whose states must never be training prompts")
     train_parser.add_argument("--seed", type=int, default=2026)
     train_parser.add_argument("--split-seed", type=int, default=2026)
     sft_parser = commands.add_parser("sft")
@@ -456,6 +494,13 @@ def main() -> None:
     sft_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
     sft_parser.add_argument("--seed", type=int, default=2026)
     sft_parser.add_argument("--split-seed", type=int, default=2026)
+    score_parser = commands.add_parser("score")
+    score_parser.add_argument("--model-dir", type=Path, required=True)
+    score_parser.add_argument("--adapter-dir", type=Path, default=None)
+    score_parser.add_argument("--states", type=Path, required=True)
+    score_parser.add_argument("--set", required=True)
+    score_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, required=True)
+    score_parser.add_argument("--output-dir", type=Path, required=True)
     evaluate_parser = commands.add_parser("evaluate")
     evaluate_parser.add_argument("--model-dir", type=Path, required=True)
     evaluate_parser.add_argument("--run-dir", type=Path, required=True)
@@ -463,7 +508,7 @@ def main() -> None:
     for path in (getattr(args, "output_dir", None), getattr(args, "run_dir", None)):
         if path is not None and path.resolve().is_relative_to(REPO):
             parser.error("outputs must live outside the repository")
-    {"train": train, "sft": sft, "evaluate": evaluate_saved}[args.command](args)
+    {"train": train, "sft": sft, "evaluate": evaluate_saved, "score": score_set}[args.command](args)
 
 
 if __name__ == "__main__":

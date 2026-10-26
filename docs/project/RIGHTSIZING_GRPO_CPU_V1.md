@@ -430,3 +430,38 @@ states and at least 38 of 44 inexact-division states.
 - If none of C1–C3 meets the development target, v1.2 stops and reports that, with no
   further variants.
 - The original held-out set is still reported for continuity, marked as reused.
+
+### Amendment 1 (26 October 2026, before any development or confirmation scoring)
+
+- **C1 stopped.** `grpo-strict-from-sft16` was stopped at step 12 of 150.
+  - 95 of its 96 samples were invalid under `reasoned_strict`, and only 1 was solved.
+  - At temperature 1.0, the 16-demonstration policy wrote a bare action 72 times out of
+    96. Most of its other outputs were malformed arithmetic.
+  - Groups that all score −1 give GRPO no gradient. The run is kept as a stopped negative
+    result, like the first direct-format run.
+  - No v1.2 policy had yet been scored on the development or confirmation set, so stopping
+    used no evaluation-set information.
+- **C2 dropped.** C2 would have continued C1, so it is dropped.
+- **C3 replaced.** C3 started from the same policy, so it is replaced by the plan below.
+
+**New start policy.** SFT in the `reasoned_strict` format, decided on the Train evaluation
+sample only. Demonstrations exclude both v1.2 sets (`sft --exclude-states`).
+
+- **S32:** 32 demonstrations, 2 epochs, otherwise as `sft-reasoned-16`.
+- S32 qualifies if its Train sample is at least 75% valid and between 20% and 85% solved.
+- If it solves more than 85%, try **S24** (24 demonstrations); if less than 20%, or less
+  than 75% valid, try **S48** (48 demonstrations).
+- At most these two SFT runs. If neither qualifies, v1.2 stops.
+
+**New candidates.** All start from the qualifying SFT policy, in this order. The
+development target, confirmation rule and stop rule are unchanged; the confirmation's
+start-policy comparison uses this SFT policy.
+
+| # | Run | Changes |
+|---|---|---|
+| D1 | `grpo-strict-from-sft` | `reasoned_strict`, 150 steps |
+| D2 | `grpo-strict-continued` | D1's adapter, 150 more steps, seed 2027, no easy-first phase |
+| D3 | `grpo-strict-2prompts` | `reasoned_strict`, 2 prompts per step, 150 steps |
+
+A good result from a stronger start shows RL's contribution only as the gain over that
+start. The confirmation's paired test against the start policy measures exactly that.

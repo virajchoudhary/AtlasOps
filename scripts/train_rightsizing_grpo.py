@@ -318,7 +318,12 @@ def sft(args: argparse.Namespace) -> None:
     torch.set_num_threads(os.cpu_count() or 1)
     torch.manual_seed(args.seed)
     train_states, held_out = env.split_states(args.split_seed)
-    demos = random.Random(args.seed + 1).sample(train_states, args.examples)
+    excluded: set[env.CapacityState] = set()
+    if args.exclude_states:
+        excluded = {state for states in env.load_state_sets(args.exclude_states).values() for state in states}
+    # Without exclusions the demonstration pool is train_states, as in the earlier SFT runs.
+    demos = random.Random(args.seed + 1).sample([state for state in train_states if state not in excluded],
+                                                args.examples)
     eval_train = random.Random(args.seed).sample(train_states, 64)
     record: dict[str, Any] = {
         "experiment": env.EXPERIMENT, "phase": "sft",
@@ -331,13 +336,16 @@ def sft(args: argparse.Namespace) -> None:
         "data": {"demonstrations": len(demos), "demonstrations_sha256": env.states_sha256(demos),
                  "demonstrations_from": "Train split only; targets computed by the environment",
                  "held_out_sha256": env.states_sha256(held_out),
-                 "held_out_overlap": len(set(demos) & set(held_out))},
+                 "held_out_overlap": len(set(demos) & set(held_out)),
+                 "excluded_states_overlap": len(set(demos) & excluded)},
         "config": {"examples": args.examples, "epochs": args.epochs, "batch_size": args.batch_size,
                    "micro_batch_size": args.micro_batch_size,
                    "learning_rate": args.learning_rate, "seed": args.seed, "split_seed": args.split_seed,
                    "lora": {"r": 16, "alpha": 32, "dropout": 0.0, "targets": LORA_TARGETS},
                    "loss": "assistant tokens only", "budget_fixed_before_running": True,
                    "action_format": args.action_format,
+                   "excluded_from_demonstrations": {"file_sha256": sha256_file(args.exclude_states),
+                                                    "states": len(excluded)} if args.exclude_states else None,
                    "eval": {"decoding": "greedy", **eval_kwargs(args.action_format)}},
     }
     model, tokenizer = load_base(args.model_dir)
@@ -492,6 +500,8 @@ def main() -> None:
     sft_parser.add_argument("--micro-batch-size", type=int, default=4)
     sft_parser.add_argument("--learning-rate", type=float, default=1e-4)
     sft_parser.add_argument("--action-format", choices=env.ACTION_FORMATS, default="direct")
+    sft_parser.add_argument("--exclude-states", type=Path, default=None,
+                            help="state-sets JSON whose states must never be demonstrations")
     sft_parser.add_argument("--seed", type=int, default=2026)
     sft_parser.add_argument("--split-seed", type=int, default=2026)
     score_parser = commands.add_parser("score")

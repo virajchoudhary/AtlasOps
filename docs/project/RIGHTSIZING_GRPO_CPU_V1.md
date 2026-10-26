@@ -486,3 +486,41 @@ sets are still unscored.
 - At most these two further SFT runs. If neither qualifies, D1–D3 start from S48 instead.
   S48 leaves little room, so any confirmed gain over it would be small, and the report
   must say so.
+
+### Amendment 3 (26 October 2026, before any development or confirmation scoring)
+
+S40 qualified on its Train evaluation sample: 49/64 valid (77%) and 27/64 solved (42%). D1
+(`grpo-strict-from-sft`) started from it and was stopped at step 39 of 150.
+
+**What the training samples showed.**
+
+| Steps | Exact-division prompts | Exact solved | Inexact solved | Inexact arithmetic line with the floor as "rounded up" |
+|---|---|---|---|---|
+| 1–15 | 67% | 39/80 | 12/40 | 13/40 |
+| 16–39 | 62% | 118/120 | 0/72 | 71/72 |
+
+The policy kept the arithmetic line but wrote the floor as "rounded up", for example
+"17 / 2 = 8.50, rounded up = 8".
+
+**Diagnosis: the easy-first curriculum, not the reward.**
+
+- The first 40% of prompts come from capacity ≤ 2 states, and 69% of those divide exactly.
+  Only 34% of the full prompt pool does.
+- On exact prompts the start policy's typical error is adding a replica. RL corrected that
+  into "never add one", which then generalised to inexact prompts.
+- Once a policy always answers the floor, inexact groups score identically and stop giving
+  a gradient. The same curriculum ran in every earlier GRPO run, which would also explain
+  `grpo-reasoned-from-sft16` rounding down.
+
+**Changes.** D2 continued D1, so it is dropped. D3 shared the curriculum, so it is
+replaced. All new candidates start from S40 with `reasoned_strict` and no easy-first phase
+(`--easy-fraction 0`), in this order:
+
+| # | Run | Changes |
+|---|---|---|
+| E1 | `grpo-strict-nocurriculum` | 150 steps, seed 2026 |
+| E2 | `grpo-strict-nocurriculum-continued` | E1's adapter, 150 more steps, seed 2027 |
+| E3 | `grpo-strict-nocurriculum-16gen` | 16 generations per group, 100 steps |
+
+The development target, confirmation rule and stop rule are unchanged. The development
+and confirmation sets are still unscored.

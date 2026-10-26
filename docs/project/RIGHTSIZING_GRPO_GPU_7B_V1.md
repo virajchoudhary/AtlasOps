@@ -277,6 +277,39 @@ count is the start. If none does, the fallback fixed in amendment 4 stands: GRPO
 No development or confirmation score has been read. The bar, the single confirmation and the
 success criterion are unchanged.
 
+## The warm start, settled — 27 October 2026
+
+The 17/18/19 probe landed inside the window, so **GRPO starts from the 18-demonstration warm
+start** and the registered rule is satisfied as written. No fallback and no deviation.
+
+| Demonstrations | Valid | Solved | Rule |
+|---|---|---|---|
+| 16 | 70.3% | 68.8% | valid below 75% |
+| 17 | 85.9% | 85.9% | solved above 85%, by one state |
+| **18** | **84.4%** | **84.4%** | **satisfied** |
+| 19 | 82.8% | 82.8% | satisfied, but 18 is smaller |
+| 20 | 87.5% | 87.5% | solved above 85% |
+| 24 | 92.2% | 92.2% | solved above 85% |
+| 32 | 100% | 100% | solved above 85% |
+| 48 | 100% | 100% | solved above 85% |
+
+The chosen start solves 54 of the 64 Train evaluation states, every one of its valid answers
+is correct, and it over- and under-provisions nothing. Its ten failures are all
+`invalid_action`: the first line is not in the demonstrated arithmetic form.
+
+Two things are worth saying about this table before any GRPO number exists.
+
+**The start is high.** It leaves ten states of headroom on a 64-state sample. The success
+criterion asks for at least 116 of 128 on the confirmation set together with an exact McNemar
+p below 0.01 against this start, and the start itself will land somewhere near 108. The
+criterion was fixed before any of this was known and is not being moved; it is simply a
+demanding one against a start this strong.
+
+**The curve is not monotone.** Validity reads 85.9%, 84.4% and 82.8% at 17, 18 and 19
+demonstrations — one state apart each, falling as demonstrations rise. Over a 64-state sample
+those differences are noise, which is worth remembering when reading any single number here
+to two decimal places.
+
 ## Runs
 
 *(Appended as they happen, including stopped ones.)*

@@ -1,0 +1,143 @@
+[     0s] $ pip install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+ 
+[   230s] $ pip install -q transformers==4.57.6 trl==0.19.1 peft==0.17.1 accelerate==1.14.0 datasets==4.8.5 bitsandbytes==0.48.1
+ ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+gradio 6.26.0 requires huggingface-hub<2.0,>=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.
+gradio 6.26.0 requires pillow<13.0,>=8.0, but you have pillow 13.0.0 which is incompatible.
+diffusers 0.40.0 requires huggingface-hub<2.0,>=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.
+
+[   311s] versions {"torch": "2.7.1+cu126", "transformers": "4.57.6", "trl": "0.19.1", "peft": "0.17.1", "accelerate": "1.14.0", "datasets": "4.8.5", "bitsandbytes": "0.48.1", "python": "3.13.15", "gpu": "Tesla T4", "capability": "(7, 5)", "visible_devices": 1, "total_memory_GiB": 14.56}
+[   325s] repo at /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0
+[   335s] v1.3 dev 116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a
+[   335s] v1.3 confirmation 5ef5384fa858f30cf53ec95b77fd2d1037571c0acdd7531d92a4926545adaa0b
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files:   7%|▋         | 1/14 [00:00<00:05,  2.59it/s]Fetching 14 files:  50%|█████     | 7/14 [00:57<01:00,  8.57s/it]Fetching 14 files: 100%|██████████| 14/14 [00:57<00:00,  4.11s/it]
+[   392s] model downloaded in 58 s
+[   465s] model manifest: 14 files
+[   465s] === SFT 17 demonstrations ===
+[   465s] $ cd /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0 && python -m scripts.train_rightsizing_grpo sft --model-dir /kaggle/temp/qwen7b --output-dir /kaggle/working/phaseA4/sft-strict-17 --examples 17 --epochs 2 --batch-size 8 --micro-batch-size 1 --learning-rate 1e-4 --action-format reasoned_strict --exclude-states /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/artifacts/evidence/rl-gpu-7b-v1/eval-sets-v1.3.json --device cuda --gradient-checkpointing
+base {"n": 64, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 64}}
+sft epoch 1 step 1 loss 0.5382
+sft epoch 1 step 2 loss 0.18167
+sft epoch 1 step 3 loss 0.11908
+sft epoch 2 step 4 loss 0.04201
+sft epoch 2 step 5 loss 0.03507
+sft epoch 2 step 6 loss 0.01759
+sft {"n": 64, "admissible_rate": 0.8125, "resolved_rate": 0.8125, "mean_reward": 0.625, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 12}}
+ 2026-10-26 20:29:43,370 [INFO] NumExpr defaulting to 4 threads.
+
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]
+Loading checkpoint shards:  25%|██▌       | 1/4 [00:05<00:16,  5.59s/it]
+Loading checkpoint shards:  50%|█████     | 2/4 [00:12<00:13,  6.62s/it]
+Loading checkpoint shards:  75%|███████▌  | 3/4 [00:18<00:06,  6.08s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:22<00:00,  5.32s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:22<00:00,  5.63s/it]
+The following generation flags are not valid and may be ignored: ['temperature', 'top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+/usr/local/lib/python3.13/dist-packages/torch/_dynamo/eval_frame.py:838: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. In version 2.5 we will raise an exception if use_reentrant is not passed. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+
+[  1001s] SFT 17 exited 0 after 536 s
+[  1001s] SFT 17 train_sample {"admissible_rate": 0.8594, "invalid_categories": {"invalid_action": 9}, "mean_reward": 0.7188, "n": 64, "over_provisioned": 0, "resolved_rate": 0.8594, "under_provisioned": 0}
+[  1001s] SFT 17 held_out   {"admissible_rate": 0.8125, "invalid_categories": {"invalid_action": 12}, "mean_reward": 0.625, "n": 64, "over_provisioned": 0, "resolved_rate": 0.8125, "under_provisioned": 0}
+[  1001s] === SFT 18 demonstrations ===
+[  1001s] $ cd /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0 && python -m scripts.train_rightsizing_grpo sft --model-dir /kaggle/temp/qwen7b --output-dir /kaggle/working/phaseA4/sft-strict-18 --examples 18 --epochs 2 --batch-size 8 --micro-batch-size 1 --learning-rate 1e-4 --action-format reasoned_strict --exclude-states /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/artifacts/evidence/rl-gpu-7b-v1/eval-sets-v1.3.json --device cuda --gradient-checkpointing
+base {"n": 64, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 64}}
+sft epoch 1 step 1 loss 0.5327
+sft epoch 1 step 2 loss 0.22448
+sft epoch 1 step 3 loss 0.07046
+sft epoch 2 step 4 loss 0.04441
+sft epoch 2 step 5 loss 0.03417
+sft epoch 2 step 6 loss 0.01473
+sft {"n": 64, "admissible_rate": 0.8594, "resolved_rate": 0.8594, "mean_reward": 0.7188, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 9}}
+ 2026-10-26 20:38:41,557 [INFO] NumExpr defaulting to 4 threads.
+
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]
+Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:13,  4.46s/it]
+Loading checkpoint shards:  50%|█████     | 2/4 [00:09<00:10,  5.05s/it]
+Loading checkpoint shards:  75%|███████▌  | 3/4 [00:15<00:05,  5.19s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.63s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:19<00:00,  4.76s/it]
+The following generation flags are not valid and may be ignored: ['temperature', 'top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+/usr/local/lib/python3.13/dist-packages/torch/_dynamo/eval_frame.py:838: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. In version 2.5 we will raise an exception if use_reentrant is not passed. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+
+[  1564s] SFT 18 exited 0 after 563 s
+[  1564s] SFT 18 train_sample {"admissible_rate": 0.8438, "invalid_categories": {"invalid_action": 10}, "mean_reward": 0.6875, "n": 64, "over_provisioned": 0, "resolved_rate": 0.8438, "under_provisioned": 0}
+[  1564s] SFT 18 held_out   {"admissible_rate": 0.8594, "invalid_categories": {"invalid_action": 9}, "mean_reward": 0.7188, "n": 64, "over_provisioned": 0, "resolved_rate": 0.8594, "under_provisioned": 0}
+[  1564s] === SFT 19 demonstrations ===
+[  1564s] $ cd /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0 && python -m scripts.train_rightsizing_grpo sft --model-dir /kaggle/temp/qwen7b --output-dir /kaggle/working/phaseA4/sft-strict-19 --examples 19 --epochs 2 --batch-size 8 --micro-batch-size 1 --learning-rate 1e-4 --action-format reasoned_strict --exclude-states /kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/artifacts/evidence/rl-gpu-7b-v1/eval-sets-v1.3.json --device cuda --gradient-checkpointing
+base {"n": 64, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 64}}
+sft epoch 1 step 1 loss 0.5327
+sft epoch 1 step 2 loss 0.22367
+sft epoch 1 step 3 loss 0.05341
+sft epoch 2 step 4 loss 0.04853
+sft epoch 2 step 5 loss 0.03145
+sft epoch 2 step 6 loss 0.01605
+sft {"n": 64, "admissible_rate": 0.7812, "resolved_rate": 0.7812, "mean_reward": 0.5625, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 14}}
+ 2026-10-26 20:47:53,496 [INFO] NumExpr defaulting to 4 threads.
+
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]
+Loading checkpoint shards:  25%|██▌       | 1/4 [00:04<00:12,  4.30s/it]
+Loading checkpoint shards:  50%|█████     | 2/4 [00:09<00:09,  4.91s/it]
+Loading checkpoint shards:  75%|███████▌  | 3/4 [00:14<00:05,  5.09s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:18<00:00,  4.55s/it]
+Loading checkpoint shards: 100%|██████████| 4/4 [00:18<00:00,  4.67s/it]
+The following generation flags are not valid and may be ignored: ['temperature', 'top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+/usr/local/lib/python3.13/dist-packages/torch/_dynamo/eval_frame.py:838: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. In version 2.5 we will raise an exception if use_reentrant is not passed. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+
+[  2123s] SFT 19 exited 0 after 559 s
+[  2123s] SFT 19 train_sample {"admissible_rate": 0.8281, "invalid_categories": {"invalid_action": 11}, "mean_reward": 0.6562, "n": 64, "over_provisioned": 0, "resolved_rate": 0.8281, "under_provisioned": 0}
+[  2123s] SFT 19 held_out   {"admissible_rate": 0.7812, "invalid_categories": {"invalid_action": 14}, "mean_reward": 0.5625, "n": 64, "over_provisioned": 0, "resolved_rate": 0.7812, "under_provisioned": 0}
+[  2123s] SELECTION {
+  "rule": "smallest of 17, 18, 19 with admissible_rate >= 0.75 and 0.20 <= resolved_rate <= 0.85",
+  "train_sample_by_size": {
+    "17": {
+      "admissible_rate": 0.8594,
+      "invalid_categories": {
+        "invalid_action": 9
+      },
+      "mean_reward": 0.7188,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8594,
+      "under_provisioned": 0
+    },
+    "18": {
+      "admissible_rate": 0.8438,
+      "invalid_categories": {
+        "invalid_action": 10
+      },
+      "mean_reward": 0.6875,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8438,
+      "under_provisioned": 0
+    },
+    "19": {
+      "admissible_rate": 0.8281,
+      "invalid_categories": {
+        "invalid_action": 11
+      },
+      "mean_reward": 0.6562,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8281,
+      "under_provisioned": 0
+    }
+  },
+  "failures": {},
+  "chosen": 18
+}
+[  2123s] $ du -sh /kaggle/working/phaseA
+ du: cannot access '/kaggle/working/phaseA': No such file or directory
+
+[  2123s] PHASE A COMPLETE
+/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\|'
+  cells[i][c] = re.sub('\\\\\|', '|', cell)
+/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\_'
+  text = re.sub(r'_', '\_', text) # Escape underscores in display text
+[NbConvertApp] Converting notebook __script__.ipynb to html
+[NbConvertApp] Writing 302282 bytes to __results__.html

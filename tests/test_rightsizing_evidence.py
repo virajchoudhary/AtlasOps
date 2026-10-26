@@ -184,3 +184,10 @@ def test_every_well_formed_7b_answer_is_also_arithmetically_correct():
             continue
         sft = arm["sft"]
         assert sft["solved"] == sft["valid"], name
+
+
+def test_exactly_one_attempt_chose_the_warm_start_and_the_rule_is_satisfied():
+    assert GPU["sft_start"] == {"attempt": "phaseA4", "demonstrations": 18}
+    sample = GPU["sft_selections"]["phaseA4"]["train_sample_by_size"]["18"]
+    assert sample["admissible_rate"] >= 0.75
+    assert 0.20 <= sample["resolved_rate"] <= 0.85

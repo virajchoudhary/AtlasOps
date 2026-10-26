@@ -190,7 +190,6 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
 
     # Phase A: the SFT warm starts, and the size the fixed rule chose. Earlier attempts keep
     # their own directory, so a failed one stays in the record beside the one that worked.
-    phase_a = evidence / "phaseA"
     arms: dict[str, Any] = {}
     for run in sorted(run for attempt in evidence.glob("phaseA*")
                       for run in attempt.glob("sft-strict-*")):
@@ -208,8 +207,16 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
                 entry["train_sample"] = data["sft"]["train_sample"]
         arms[f"{run.parent.name}/{run.name}"] = entry
     result["sft_arms"] = arms
-    selection = phase_a / "SFT_SELECTION.json"
-    result["sft_selection"] = json.loads(selection.read_text()) if selection.exists() else None
+    # Each attempt records the rule it read and what it chose; the warm start is the one
+    # attempt that chose something, and more than one would mean the record is ambiguous.
+    selections = {path.parent.name: json.loads(path.read_text())
+                  for path in sorted(evidence.glob("phaseA*/SFT_SELECTION.json"))}
+    result["sft_selections"] = selections
+    chose = {name: sel["chosen"] for name, sel in selections.items() if sel["chosen"] is not None}
+    if len(chose) > 1:
+        raise ValueError(f"more than one attempt chose a warm start: {chose}")
+    result["sft_start"] = ({"attempt": next(iter(chose)), "demonstrations": next(iter(chose.values()))}
+                           if chose else None)
 
     # Phase B: the GRPO run, and the collapse watch read per ten-step block.
     phase_b = evidence / "phaseB"

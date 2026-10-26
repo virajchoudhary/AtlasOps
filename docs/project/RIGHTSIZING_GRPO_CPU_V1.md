@@ -11,6 +11,20 @@ reviewed it independently.
 
 ## Result in brief
 
+**Latest (v1.2, 26 October 2026).**
+
+- GRPO took a 40-demonstration SFT policy from 50/128 to **128/128** on a fresh,
+  single-use confirmation set (78 gained, 0 lost, p ≈ 7 × 10⁻²⁴). That meets the
+  pre-registered bar.
+- It needed a strict two-line format, balanced exact and inexact prompts in each step, and
+  a checkpoint chosen on a development set. Without early stopping, training collapses
+  after about 50 steps.
+- SFT on 64 demonstrations alone reaches 127/128.
+- No gate changes. See
+  [v1.2](#follow-up-v12-aiming-for-a-good-result-pre-registered-26-october-2026).
+
+The v1 and v1.1 summary follows.
+
 | Arm | Held-out states solved (of 64) | Valid actions |
 |---|---|---|
 | Base model, same reasoned prompt | 3 | 64 |
@@ -646,3 +660,69 @@ H1's first attempt (`grpo-strict-balanced-ckpt`, from `ae568ff`) was interrupted
 of 100 when the session's worker process restarted. It is rerun with identical settings as
 `grpo-strict-balanced-ckpt-rerun`. Only the rerun's checkpoints are scored. Up to step 20,
 the interrupted run's training samples matched G1's exactly.
+
+### v1.2 result (26 October 2026): good result confirmed
+
+**H1 (`grpo-strict-balanced-ckpt-rerun`, from `a83cdb5`).** It ran all 100 steps. Its fresh
+reload reproduced its in-process completions. Its training samples followed G1's exactly:
+
+- near-perfect from about step 21;
+- the same collapse to the floor on inexact prompts at step 53.
+
+**Development set (64 states, 20 exact).** Each checkpoint was scored once:
+
+| Step | 10 | 20 | **30** | 40 | 50 | 60 | 70 | 80 | 90 | 100 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Solved | 62 | 63 | **64** | 59 | 41 | 21 | 23 | 30 | 34 | 32 |
+| Meets target | yes | yes | **yes** | no | no | no | no | no | no | no |
+
+- Selected: **step 30**, which solves 20/20 exact and 44/44 inexact.
+- For comparison, F1's final adapter scored 44/64 (exact 0/20).
+
+**Confirmation set (128 states, 37 exact), scored once.**
+
+| Policy (all scored in `reasoned_strict` unless noted) | Solved | Exact | Inexact | Valid |
+|---|---|---|---|---|
+| **H1 step 30 (selected GRPO checkpoint)** | **128/128** | 37/37 | 91/91 | 128 |
+| S40, its SFT start | 50/128 | 17/37 | 33/91 | 112 |
+| `sft-reasoned-64` (SFT on 64 demonstrations, no RL) | 127/128 | 37/37 | 90/91 | 128 |
+| `grpo-reasoned-continued` (best v1.1 policy) | 0/128 | 0/37 | 0/91 | 0 |
+| `grpo-reasoned-continued` in its own `reasoned` format (not pre-registered) | 68/128 | 29/37 | 39/91 | 128 |
+
+**Against its start policy.** 78 gained and 0 lost, exact McNemar p ≈ 7 × 10⁻²⁴. The
+pre-registered bar (at least 116/128, and p < 0.01 against S40) **is met**. The confirmed
+adapter's file inventory equals step 30's inventory in the run record.
+
+**What this shows, and what it does not.**
+
+- **It shows that RL works on this task.** GRPO with the repository's verifier-scored reward
+  took a 0.5B model from 39% to 100% on 128 states that no run trained on or was selected
+  on. It needed four things:
+  - an output format that keeps the arithmetic;
+  - balanced exact and inexact prompts in every step;
+  - a start policy that writes the format;
+  - a checkpoint chosen on a development set.
+- **RL matched SFT here; it did not beat it.** SFT on 64 demonstrations alone reaches
+  127/128. GRPO took a 40-demonstration policy to the same level.
+- **The training is unstable.** The policy collapsed to the floor after step 50. The result
+  depends on early stopping, and the final step-100 adapter scores 32/64 on the
+  development set.
+- **The path had many amendments.**
+  - Six amendments and five stopped or interrupted runs came before this result.
+  - Every decision before the confirmation used training samples, Train-sample scores or
+    the development set.
+  - The confirmation set was scored once, at the end.
+  - Each arm has one seed.
+- **It changes no gate.** G9 remains NOT_PASSED/FROZEN. It is defined on the pinned
+  Qwen2.5-7B, a CUDA host and the controlled incident environment, and needs a reopening
+  and independent review. G4, G6, G8, G12, G13, G14 and G15 are unaffected.
+
+**Evidence.** `artifacts/evidence/rl-cpu-rightsizing-v1/` now also holds:
+
+- every v1.2 run directory, including the stopped and interrupted ones;
+- `eval-sets-v1.2.json`;
+- `v1.2-scores/dev/` and `v1.2-scores/confirmation/`, with every score and scored completion.
+
+`scripts/analyze_rightsizing_runs.py` recomputes the selection and the confirmation, and
+`tests/test_rightsizing_evidence.py` pins them. That test also checks that no v1.2 prompt
+or demonstration came from either evaluation set.

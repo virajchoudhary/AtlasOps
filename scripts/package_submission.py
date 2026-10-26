@@ -412,6 +412,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "artifacts/evidence/rl-cpu-rightsizing-v1/*/*.json",
         "artifacts/evidence/rl-cpu-rightsizing-v1/*/*.jsonl",
         "artifacts/evidence/rl-cpu-rightsizing-v1/*/*.log",
+        "artifacts/evidence/rl-cpu-rightsizing-v1/v1.2-scores/*/*/*.json",
+        "artifacts/evidence/rl-cpu-rightsizing-v1/v1.2-scores/*/*/*.jsonl",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/*.json",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/source/diagnostic/*.json",
         "artifacts/evidence/stage9/final-aligned-diagnostic-v1/**/*.json",

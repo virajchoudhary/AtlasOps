@@ -136,10 +136,47 @@ def analyze(evidence: Path = EVIDENCE) -> dict[str, Any]:
     return result
 
 
+def _set_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    exact = [row for row in rows if row["demand"] % row["capacity"] == 0]
+    return {"solved": sum(row["resolved"] for row in rows), "n": len(rows),
+            "exact": [sum(row["resolved"] for row in exact), len(exact)],
+            "inexact": [sum(row["resolved"] for row in rows) - sum(row["resolved"] for row in exact),
+                        len(rows) - len(exact)],
+            "valid": sum(row["admissible"] for row in rows)}
+
+
+def analyze_v12(evidence: Path = EVIDENCE) -> dict[str, Any]:
+    """v1.2: development-set checkpoint selection, then the single confirmation run."""
+    scores = evidence / "v1.2-scores"
+    dev = {path.name: _set_summary(read_rows(path / "dev_rows.jsonl")) for path in sorted((scores / "dev").iterdir())}
+    prefix = "grpo-strict-balanced-ckpt-rerun-step-"
+    candidates = {name: summary for name, summary in dev.items() if name.startswith(prefix)}
+    selected = max(sorted(candidates), key=lambda name: candidates[name]["solved"])  # earliest wins a tie
+    target_met = {name: summary["solved"] >= 58 and summary["exact"][0] >= 17 and summary["inexact"][0] >= 38
+                  for name, summary in dev.items()}
+    confirmation = {path.name: read_rows(path / "confirmation_rows.jsonl")
+                    for path in sorted((scores / "confirmation").iterdir())}
+    record = json.loads((evidence / "grpo-strict-balanced-ckpt-rerun" / "RESULT.json").read_text())
+    confirmed = json.loads((scores / "confirmation" / "h1-step-0030" / "SCORE.json").read_text())
+    step = str(int(selected.removeprefix(prefix)))
+    paired_start = paired(confirmation["s40-start"], confirmation["h1-step-0030"])
+    final = confirmation["h1-step-0030"]
+    return {
+        "dev": dev, "dev_target_met": target_met, "selected": selected,
+        "confirmed_adapter_is_selected_checkpoint": confirmed["adapter"]["inventory"]
+        == record["checkpoints"][step]["inventory"] and selected.endswith(confirmed["adapter"]["path"][-4:]),
+        "confirmation": {name: _set_summary(rows) for name, rows in confirmation.items()},
+        "confirmation_paired_vs_start": paired_start,
+        "confirmation_met": sum(row["resolved"] for row in final) >= 116 and paired_start["exact_mcnemar_p"] < 0.01,
+        "h1_training": rollout_blocks(read_rows(evidence / "grpo-strict-balanced-ckpt-rerun" / "rollouts.jsonl"))[0],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--evidence-dir", type=Path, default=EVIDENCE)
-    print(json.dumps(analyze(parser.parse_args().evidence_dir), indent=2))
+    evidence = parser.parse_args().evidence_dir
+    print(json.dumps({"v1": analyze(evidence), "v1.2": analyze_v12(evidence)}, indent=2))
 
 
 if __name__ == "__main__":

@@ -87,3 +87,36 @@ def test_v12_sets_are_fresh_disjoint_and_reproducible():
     touched = set().union(*make.touched_states().values())
     assert len(dev) == 64 and len(confirmation) == 128 and not dev & confirmation
     assert dev | confirmation <= set(train) and not (dev | confirmation) & (touched | set(held_out))
+
+
+def test_v12_selects_a_checkpoint_on_dev_and_confirms_it_once():
+    v12 = analysis.analyze_v12()
+    assert v12["selected"] == "grpo-strict-balanced-ckpt-rerun-step-0030"
+    assert v12["confirmed_adapter_is_selected_checkpoint"] is True
+    dev = v12["dev"]["grpo-strict-balanced-ckpt-rerun-step-0030"]
+    assert (dev["solved"], dev["exact"], dev["inexact"]) == (64, [20, 20], [44, 44])
+    assert v12["dev_target_met"]["grpo-strict-from-sft48-final"] is False
+    assert [v12["dev"][f"grpo-strict-balanced-ckpt-rerun-step-{step:04d}"]["solved"] for step in range(10, 101, 10)] \
+        == [62, 63, 64, 59, 41, 21, 23, 30, 34, 32]
+    confirmation = v12["confirmation"]
+    assert confirmation["h1-step-0030"] == {"solved": 128, "n": 128, "exact": [37, 37], "inexact": [91, 91], "valid": 128}
+    assert confirmation["s40-start"]["solved"] == 50
+    assert confirmation["sft-reasoned-64"]["solved"] == 127
+    assert confirmation["grpo-reasoned-continued"]["solved"] == 0
+    assert confirmation["grpo-reasoned-continued-lenient"]["solved"] == 68
+    assert v12["confirmation_paired_vs_start"]["gained"] == 78 and v12["confirmation_paired_vs_start"]["lost"] == 0
+    assert v12["confirmation_met"] is True
+
+
+def test_v12_scores_never_used_training_states():
+    from training import rightsizing_env as env
+
+    sets = env.load_state_sets(analysis.EVIDENCE / "eval-sets-v1.2.json")
+    evaluation = set(sets["dev"]) | set(sets["confirmation"])
+    for run in analysis.EVIDENCE.glob("grpo-strict-*/rollouts.jsonl"):
+        prompts = {env.CapacityState(row["replicas"], row["demand"], row["capacity"])
+                   for row in analysis.read_rows(run)}
+        assert not prompts & evaluation, run.parent.name
+    for name in ("sft-strict-32", "sft-strict-40", "sft-strict-48"):
+        record = json.loads((analysis.EVIDENCE / name / "RESULT.json").read_text())
+        assert record["data"]["excluded_states_overlap"] == 0

@@ -641,3 +641,8 @@ model, not the SFT start.
 - Checkpoint selection uses the development set, as a development set is meant to be
   used. The confirmation set stays single-use, so its result is not biased by the
   selection.
+
+H1's first attempt (`grpo-strict-balanced-ckpt`, from `ae568ff`) was interrupted at step 27
+of 100 when the session's worker process restarted. It is rerun with identical settings as
+`grpo-strict-balanced-ckpt-rerun`. Only the rerun's checkpoints are scored. Up to step 20,
+the interrupted run's training samples matched G1's exactly.

@@ -41,6 +41,7 @@ class LabConfig:
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_api_key: str = ""
+    llm_timeout: float = 120.0
     options: LabOptions = field(default_factory=LabOptions)
 
 
@@ -71,7 +72,8 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         if backend is None:
             lab.backend = await detect_backend(config.agents, config.llm_base_url,
-                                               config.llm_model, config.llm_api_key)
+                                               config.llm_model, config.llm_api_key,
+                                               timeout=config.llm_timeout)
         await lab.start()
         try:
             yield

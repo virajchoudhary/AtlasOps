@@ -55,7 +55,7 @@ RULES = Backend(mode="rules", label="Rule engine (no model)")
 
 async def detect_backend(
     choice: str, base_url: str | None, model: str | None, api_key: str = "",
-    transport: httpx.AsyncBaseTransport | None = None,
+    transport: httpx.AsyncBaseTransport | None = None, timeout: float = 120.0,
 ) -> Backend:
     """``choice`` is ``rules``, ``llm`` (must answer) or ``auto`` (model if reachable)."""
     if choice == "rules":
@@ -63,7 +63,7 @@ async def detect_backend(
     url = (base_url or OLLAMA_BASE_URL).rstrip("/")
     wanted = model or DEFAULT_MODEL
     candidate = Backend(mode="llm", label=f"{wanted} via {url}", model=wanted,
-                        base_url=url, api_key=api_key, transport=transport)
+                        base_url=url, api_key=api_key, timeout=timeout, transport=transport)
     try:
         async with candidate._client() as client:
             response = await client.get("/models", timeout=3.0)

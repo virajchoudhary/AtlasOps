@@ -42,6 +42,9 @@ def main(argv: list[str] | None = None) -> None:
                         help=f"OpenAI-compatible endpoint (default {OLLAMA_BASE_URL})")
     parser.add_argument("--llm-model", default=os.environ.get("BUG_LAB_LLM_MODEL"),
                         help=f"model name (default {DEFAULT_MODEL})")
+    parser.add_argument("--llm-timeout", type=float,
+                        default=float(os.environ.get("BUG_LAB_LLM_TIMEOUT", "120")),
+                        help="seconds to wait for one model answer; raise it for CPU-only models")
     parser.add_argument("--step-delay", type=float, default=0.6,
                         help="seconds between agent steps, so each step can be followed on screen")
     args = parser.parse_args(argv)
@@ -51,6 +54,7 @@ def main(argv: list[str] | None = None) -> None:
     workdir = args.workdir or Path(tempfile.mkdtemp(prefix="atlasops-bug-lab-"))
     config = LabConfig(workdir=workdir, agents=args.agents, llm_base_url=args.llm_base_url,
                        llm_model=args.llm_model, llm_api_key=os.environ.get("BUG_LAB_LLM_API_KEY", ""),
+                       llm_timeout=args.llm_timeout,
                        options=LabOptions(step_delay=args.step_delay))
     app = create_app(config)
     print(f"AtlasOps bug lab\n  Control room: http://{args.host}:{args.port}/\n"

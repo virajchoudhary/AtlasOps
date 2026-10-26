@@ -379,6 +379,26 @@ def test_auto_backend_falls_back_to_rules_when_no_model_answers():
     assert backend.mode == "rules" and "No model endpoint answered" in backend.note
 
 
+def test_model_timeout_reaches_the_backend_and_the_command_line(monkeypatch):
+    def models(request):
+        return httpx.Response(200, json={"data": [{"id": "slow-model"}]})
+
+    backend = asyncio.run(detect_backend("llm", "http://model.test/v1", "slow-model",
+                                         transport=httpx.MockTransport(models), timeout=600.0))
+    assert backend.timeout == 600.0
+    default = asyncio.run(detect_backend("llm", "http://model.test/v1", "slow-model",
+                                         transport=httpx.MockTransport(models)))
+    assert default.timeout == 120.0
+
+    from demo.bug_lab import __main__ as cli
+
+    captured = {}
+    monkeypatch.setattr(cli, "create_app", lambda config: captured.setdefault("config", config))
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *args, **kwargs: None)
+    cli.main(["--llm-timeout", "900", "--agents", "rules"])
+    assert captured["config"].llm_timeout == 900.0
+
+
 def test_http_surface_serves_both_pages_and_guards_writes(tmp_path):
     with TestClient(make_app(tmp_path)) as client:
         control = client.get("/")

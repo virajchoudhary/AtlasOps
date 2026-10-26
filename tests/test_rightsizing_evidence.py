@@ -191,3 +191,22 @@ def test_exactly_one_attempt_chose_the_warm_start_and_the_rule_is_satisfied():
     sample = GPU["sft_selections"]["phaseA4"]["train_sample_by_size"]["18"]
     assert sample["admissible_rate"] >= 0.75
     assert 0.20 <= sample["resolved_rate"] <= 0.85
+
+
+def test_the_grpo_run_changed_nothing_and_the_record_says_so():
+    """Phase B logged 100 steps and moved no weight; three independent signs agree."""
+    run = GPU["grpo"]["grpo-strict-balanced-7b-from-sft18"]
+    assert run["trained_nothing"] is True
+    assert run["null_run"] == {"lora_tensors_changed": 0, "adapter_identical_to_start": True,
+                               "held_out_predictions_unchanged": True}
+    assert run["lora"] == {"changed": 0, "tensors": 392}
+
+
+def test_no_grpo_rollout_ever_earned_a_reward_above_the_floor():
+    """Every group had identical reward, so the advantage -- and the gradient -- was zero."""
+    run = GPU["grpo"]["grpo-strict-balanced-7b-from-sft18"]
+    blocks = run["collapse_watch"]
+    assert len(blocks) == 10
+    assert {block["resolved"] for block in blocks} == {0}
+    assert {block["invalid"] for block in blocks} == {160}
+    assert sum(block["rollouts"] for block in blocks) == 1600

@@ -234,6 +234,21 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
         entry["checkpoints"] = sorted(record.get("checkpoints", {}), key=int)
         entry["lora"] = record.get("lora")
         entry["device"] = record["config"].get("device")
+        # A run that leaves the policy exactly where it found it has trained nothing, however
+        # many steps it logged. Three independent signs, each from a file the run wrote.
+        start = record.get("init_adapter", {}).get("inventory", {})
+        weights = "adapter_model.safetensors"
+        rows_before, rows_after = (_rows_or_none(run / name) for name in
+                                   ("baseline_held_out.jsonl", "trained_in_process_held_out.jsonl"))
+        entry["null_run"] = {
+            "lora_tensors_changed": (record.get("lora") or {}).get("changed"),
+            "adapter_identical_to_start": bool(start) and
+                record["adapter_inventory"][weights]["sha256"] == start[weights]["sha256"],
+            "held_out_predictions_unchanged": rows_before is not None and rows_before == rows_after,
+        }
+        entry["trained_nothing"] = (entry["null_run"]["lora_tensors_changed"] == 0
+                                    and entry["null_run"]["adapter_identical_to_start"]
+                                    and entry["null_run"]["held_out_predictions_unchanged"])
         result["grpo"][run.name] = entry
 
     # Phase C1: every checkpoint on the development set, and the selection.

@@ -1,9 +1,12 @@
-"""Recompute the right-sizing CPU GRPO comparisons from the committed evidence files.
+"""Recompute the right-sizing GRPO comparisons from the committed evidence files.
 
     python -m scripts.analyze_rightsizing_runs [--evidence-dir artifacts/evidence/rl-cpu-rightsizing-v1]
+    python -m scripts.analyze_rightsizing_runs --gpu
 
-Every number in docs/project/RIGHTSIZING_GRPO_CPU_V1.md that compares arms comes from here.
-Reads JSON only; loads no model.
+Every number in docs/project/RIGHTSIZING_GRPO_CPU_V1.md and
+docs/project/RIGHTSIZING_GRPO_GPU_7B_V1.md that compares arms comes from here. Reads JSON
+only; loads no model. The GPU figures are recomputed from the committed per-state rows, never
+copied from the summaries the runs themselves wrote.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 EVIDENCE = REPO / "artifacts" / "evidence" / "rl-cpu-rightsizing-v1"
+GPU_EVIDENCE = REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
 ARMS = {
     "base_direct": "sft-direct-64/base_held_out.jsonl",
     "sft_direct_64": "sft-direct-64/sft_held_out.jsonl",
@@ -172,10 +176,117 @@ def analyze_v12(evidence: Path = EVIDENCE) -> dict[str, Any]:
     }
 
 
+def _rows_or_none(path: Path) -> list[dict[str, Any]] | None:
+    return read_rows(path) if path.exists() else None
+
+
+def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
+    """The 7B GPU experiment: warm starts, the GRPO run, selection, and the one confirmation.
+
+    Everything is recomputed from the per-state rows each phase committed. Phases that have
+    not run, or that failed, are reported as such rather than silently skipped.
+    """
+    result: dict[str, Any] = {"checksum_mismatches": verify_checksums(evidence)}
+
+    # Phase A: the SFT warm starts, and the size the fixed rule chose. Earlier attempts keep
+    # their own directory, so a failed one stays in the record beside the one that worked.
+    phase_a = evidence / "phaseA"
+    arms: dict[str, Any] = {}
+    for run in sorted(run for attempt in evidence.glob("phaseA*")
+                      for run in attempt.glob("sft-strict-*")):
+        entry: dict[str, Any] = {"failed": (run / "FAILED.txt").exists()}
+        for name, filename in (("base", "base_held_out.jsonl"), ("sft", "sft_held_out.jsonl")):
+            rows = _rows_or_none(run / filename)
+            if rows is not None:
+                entry[name] = _set_summary(rows)
+        record = run / "RESULT.json"
+        if record.exists():
+            data = json.loads(record.read_text())
+            entry["demonstrations"] = data["data"]["demonstrations"]
+            entry["excluded_states_overlap"] = data["data"]["excluded_states_overlap"]
+            if "sft" in data:
+                entry["train_sample"] = data["sft"]["train_sample"]
+        arms[f"{run.parent.name}/{run.name}"] = entry
+    result["sft_arms"] = arms
+    selection = phase_a / "SFT_SELECTION.json"
+    result["sft_selection"] = json.loads(selection.read_text()) if selection.exists() else None
+
+    # Phase B: the GRPO run, and the collapse watch read per ten-step block.
+    phase_b = evidence / "phaseB"
+    runs = sorted(p.parent for p in phase_b.glob("*/RESULT.json")) if phase_b.exists() else []
+    result["grpo"] = {}
+    for run in runs:
+        entry: dict[str, Any] = {"failed": (phase_b / "FAILED.txt").exists()}
+        rollouts = run / "rollouts.jsonl"
+        if rollouts.exists():
+            blocks, groups = rollout_blocks(read_rows(rollouts))
+            entry["groups"] = groups
+            entry["blocks_of_10_steps"] = blocks
+            entry["collapse_watch"] = _collapse_watch(read_rows(rollouts))
+        record = json.loads((run / "RESULT.json").read_text())
+        entry["checkpoints"] = sorted(record.get("checkpoints", {}), key=int)
+        entry["lora"] = record.get("lora")
+        entry["device"] = record["config"].get("device")
+        result["grpo"][run.name] = entry
+
+    # Phase C1: every checkpoint on the development set, and the selection.
+    dev_dir = evidence / "phaseC1" / "dev"
+    dev = {path.name: _set_summary(read_rows(path / "dev_rows.jsonl"))
+           for path in sorted(dev_dir.iterdir())} if dev_dir.exists() else {}
+    steps = {name: summary for name, summary in dev.items() if name.startswith("step-")}
+    selected = max(sorted(steps), key=lambda name: steps[name]["solved"]) if steps else None
+    result["dev"] = dev
+    result["selected"] = selected
+    result["development_bar_met"] = bool(
+        selected and dev[selected]["solved"] >= 58
+        and dev[selected]["exact"][0] >= 28 and dev[selected]["inexact"][0] >= 28)
+
+    # Phase C2: the single confirmation run, paired against the policy's own SFT start.
+    conf_dir = evidence / "phaseC2" / "confirmation"
+    confirmation = {path.name: read_rows(path / "confirmation_rows.jsonl")
+                    for path in sorted(conf_dir.iterdir())} if conf_dir.exists() else {}
+    result["confirmation"] = {name: _set_summary(rows) for name, rows in confirmation.items()}
+    if "sft-start" in confirmation and selected in confirmation:
+        pair = paired(confirmation["sft-start"], confirmation[selected])
+        solved = sum(row["resolved"] for row in confirmation[selected])
+        result["confirmation_paired_vs_start"] = pair
+        result["confirmation_adapter_is_the_selected_checkpoint"] = True
+        result["criterion"] = ">=116/128 solved and exact McNemar p < 0.01 against its own SFT start"
+        result["criterion_met"] = bool(solved >= 116 and pair["exact_mcnemar_p"] < 0.01)
+    else:
+        result["criterion_met"] = None
+    result["gate_status"] = ("Exploratory. Not G9 evidence; G9 remains NOT_PASSED/FROZEN and "
+                             "no gate changes.")
+    return result
+
+
+def _collapse_watch(rows: list[dict[str, Any]], size: int = 10) -> list[dict[str, Any]]:
+    """Solved counts per ten training steps, split by whether the division is exact."""
+    blocks = []
+    steps = sorted({row["step"] for row in rows})
+    for start in range(0, len(steps), size):
+        block = [row for row in rows if row["step"] in set(steps[start:start + size])]
+        exact = [row for row in block if row["demand"] % row["capacity"] == 0]
+        inexact = [row for row in block if row["demand"] % row["capacity"]]
+        blocks.append({
+            "steps": [steps[start], steps[min(start + size, len(steps)) - 1]],
+            "rollouts": len(block),
+            "resolved": sum(row["resolved"] for row in block),
+            "invalid": sum(row["category"] is not None for row in block),
+            "exact_resolved": [sum(row["resolved"] for row in exact), len(exact)],
+            "inexact_resolved": [sum(row["resolved"] for row in inexact), len(inexact)]})
+    return blocks
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--evidence-dir", type=Path, default=EVIDENCE)
-    evidence = parser.parse_args().evidence_dir
+    parser.add_argument("--evidence-dir", type=Path, default=None)
+    parser.add_argument("--gpu", action="store_true", help="the 7B GPU experiment instead")
+    args = parser.parse_args()
+    if args.gpu:
+        print(json.dumps(analyze_gpu_v1(args.evidence_dir or GPU_EVIDENCE), indent=2))
+        return
+    evidence = args.evidence_dir or EVIDENCE
     print(json.dumps({"v1": analyze(evidence), "v1.2": analyze_v12(evidence)}, indent=2))
 
 

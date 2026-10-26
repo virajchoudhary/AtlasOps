@@ -149,3 +149,29 @@ def test_v13_is_disjoint_from_every_v12_set_and_balanced_on_the_development_set(
     assert len(exact) == 32                                    # the development bar is read per category
     assert sum(1 for state in v13["confirmation"]
                if state.demand % state.capacity_per_replica == 0) == 42
+
+
+GPU = analysis.analyze_gpu_v1()
+
+
+def test_gpu_evidence_files_match_their_checksums():
+    assert GPU["checksum_mismatches"] == []
+
+
+def test_the_failed_first_gpu_attempt_is_still_in_the_record():
+    """A run that died is kept and reported as failed, never quietly dropped."""
+    attempt1 = {name: arm for name, arm in GPU["sft_arms"].items()
+                if name.startswith("phaseA-attempt1/")}
+    assert len(attempt1) == 3
+    assert all(arm["failed"] for arm in attempt1.values())
+
+
+def test_no_gpu_warm_start_ever_trained_on_an_evaluation_state():
+    for name, arm in GPU["sft_arms"].items():
+        if "excluded_states_overlap" in arm:
+            assert arm["excluded_states_overlap"] == 0, name
+
+
+def test_the_gpu_experiment_claims_no_gate():
+    assert "NOT_PASSED/FROZEN" in GPU["gate_status"]
+    assert "Exploratory" in GPU["gate_status"]

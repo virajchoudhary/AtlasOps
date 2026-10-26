@@ -465,3 +465,24 @@ start-policy comparison uses this SFT policy.
 
 A good result from a stronger start shows RL's contribution only as the gain over that
 start. The confirmation's paired test against the start policy measures exactly that.
+
+### Amendment 2 (26 October 2026, before any development or confirmation scoring)
+
+Neither start policy qualified (Train evaluation sample, greedy, `reasoned_strict`):
+
+| SFT | Valid | Solved | Qualifies (≥ 75% valid, 20–85% solved) |
+|---|---|---|---|
+| S32 | 37/64 (58%) | 15/64 (23%) | No: too few valid |
+| S48 | 64/64 (100%) | 61/64 (95%) | No: too good for RL to show a gain |
+
+Amendment 1's rule says v1.2 stops here. The person running this session asked to keep
+going until a good result is reached, so the search continues under the same constraint:
+every decision uses only the Train evaluation sample. The development and confirmation
+sets are still unscored.
+
+- **S40** (40 demonstrations). If it qualifies, D1–D3 start from it.
+- If S40 is too good, try **S36**. If it has too few valid answers or solves too few, try
+  **S44**.
+- At most these two further SFT runs. If neither qualifies, D1–D3 start from S48 instead.
+  S48 leaves little room, so any confirmed gain over it would be small, and the report
+  must say so.

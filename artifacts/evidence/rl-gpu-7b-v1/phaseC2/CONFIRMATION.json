@@ -1,0 +1,39 @@
+{
+  "arms": {
+    "sft-start": {
+      "exact": [
+        38,
+        42
+      ],
+      "inexact": [
+        71,
+        86
+      ],
+      "n": 128,
+      "solved": 109,
+      "valid": 109
+    },
+    "step-0030": {
+      "exact": [
+        42,
+        42
+      ],
+      "inexact": [
+        83,
+        86
+      ],
+      "n": 128,
+      "solved": 125,
+      "valid": 128
+    }
+  },
+  "criterion": "at least 116/128 solved and exact McNemar p < 0.01 against its own SFT start",
+  "criterion_met": true,
+  "paired_vs_start": {
+    "exact_mcnemar_p": 0.0008554458618164062,
+    "gained": 19,
+    "lost": 3
+  },
+  "selected": "step-0030",
+  "solved": 125
+}

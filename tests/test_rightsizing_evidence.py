@@ -265,3 +265,55 @@ def test_both_failed_selection_attempts_are_still_in_the_record():
     for attempt in ("phaseC1-attempt1", "phaseC1-attempt2"):
         assert (base / attempt / "WHY_IT_FAILED.md").exists(), attempt
         assert (base / attempt / "console.log").exists(), attempt
+
+
+def test_the_single_confirmation_met_the_pre_registered_criterion():
+    """125/128 against the warm start's 109/128, paired on the same states."""
+    assert GPU["confirmation"]["step-0030"]["solved"] == 125
+    assert GPU["confirmation"]["sft-start"]["solved"] == 109
+    assert GPU["confirmation_paired_vs_start"]["gained"] == 19
+    assert GPU["confirmation_paired_vs_start"]["lost"] == 3
+    assert GPU["confirmation_paired_vs_start"]["exact_mcnemar_p"] < 0.01
+    assert GPU["criterion_met"] is True
+    assert GPU["confirmation_adapter_is_the_selected_checkpoint"] is True
+
+
+def test_the_confirmation_was_scored_only_on_confirmation_states():
+    """The one set that decides must never have been trained on or selected on."""
+    from training import rightsizing_env as env
+
+    sets = env.load_state_sets(analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+                               / "eval-sets-v1.3.json")
+    confirmation, dev = set(sets["confirmation"]), set(sets["dev"])
+    base = analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1" / "phaseC2" / "confirmation"
+    for arm in sorted(base.iterdir()):
+        states = {env.CapacityState(row["replicas"], row["demand"], row["capacity"])
+                  for row in analysis.read_rows(arm / "confirmation_rows.jsonl")}
+        assert states <= confirmation, arm.name
+        assert not states & dev, arm.name
+
+
+def test_no_grpo_rollout_ever_touched_a_confirmation_or_development_state():
+    from training import rightsizing_env as env
+
+    sets = env.load_state_sets(analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+                               / "eval-sets-v1.3.json")
+    evaluation = set(sets["dev"]) | set(sets["confirmation"])
+    base = analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+    for rollouts in base.glob("phaseB*/*/rollouts.jsonl"):
+        prompts = {env.CapacityState(row["replicas"], row["demand"], row["capacity"])
+                   for row in analysis.read_rows(rollouts)}
+        assert not prompts & evaluation, rollouts.parent.name
+
+
+def test_the_selected_adapter_is_recorded_by_hash_and_not_committed():
+    import json
+
+    base = analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+    record = json.loads((base / "phaseC2" / "SELECTED_ADAPTER.json").read_text())
+    assert record["selected_checkpoint"] == "step-0030"
+    assert len(record["archive_sha256"]) == 64
+    checkpoints = json.loads((base / "phaseB2" / "grpo-strict-balanced-7b-from-sft18"
+                              / "CHECKPOINT_SHA256.json").read_text())
+    assert record["member_sha256"] == checkpoints["step-0030"]
+    assert not list(base.rglob("*.safetensors")), "weights must never be committed"

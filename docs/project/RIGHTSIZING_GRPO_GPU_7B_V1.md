@@ -312,7 +312,69 @@ to two decimal places.
 
 ## Runs
 
-*(Appended as they happen, including stopped ones.)*
+Every run, including the ones that produced nothing. Each row's numbers are
+recomputed from the committed evidence by `analyze_gpu_v1`, not transcribed.
+
+| phase | run | outcome |
+|---|---|---|
+| A, attempt 1 | three SFT arms | **failed**, would not fit the T4 (`phaseA-attempt1/`) |
+| A | SFT sweep | succeeded; the rule chose no warm start (`phaseA/`, `phaseA3/`) |
+| A4 | SFT sweep | chose 18 demonstrations (`phaseA4/`) |
+| B | GRPO, 100 steps | **null run**: 0/1600 admissible, 0/392 tensors moved (`phaseB/`) |
+| diagnosis | five GPU probes | found the cause: rollouts generated in train mode (`diagnosis/`) |
+| B2 | GRPO, 100 steps, rerun | trained: 1547/1600 admissible, 392/392 tensors moved (`phaseB2/`) |
+| C1, attempt 1 | dev sweep | **failed**, scored 0 of 11 and still reported COMPLETE (`phaseC1-attempt1/`) |
+| C1, attempt 2 | dev sweep | **failed**, scored 2 of 11 then out of memory (`phaseC1-attempt2/`) |
+| C1 | dev sweep | scored 12 of 12; selected `step-0030` (`phaseC1/`) |
+| C2 | confirmation, once | criterion met (`phaseC2/`) |
+
+### Development scores and the selection
+
+`step-0030` at 64/64, chosen by the registered rule (most solved, earliest wins a
+tie) over a field in which nine of twelve candidates were perfect. The warm start
+scored 49/64. The development set did not separate the candidates; the tie-break
+did. Amendment 8 has the full table.
+
+### The confirmation
+
+128 fresh Train-derived states, excluded from training and from selection, opened
+once:
+
+| arm | solved | valid | exact | inexact |
+|---|---|---|---|---|
+| `sft-start` (the warm start) | 109/128 | 109 | 38/42 | 71/86 |
+| `step-0030` (selected) | **125/128** | 128 | 42/42 | 83/86 |
+
+Paired on the same states: 19 gained, 3 lost, exact McNemar **p = 0.00086**.
+
+**The pre-registered criterion -- at least 116/128 solved and exact McNemar
+p < 0.01 against its own SFT start -- is met.**
+
+### Limits
+
+These are real and none of them is repaired by the result above.
+
+- **The task saturated.** Only 13 of 100 steps carried a gradient, the last at
+  step 63. The 100-step budget was mis-sized for a warm start that could nearly
+  do the task already.
+- **The selection was not evidence-driven.** Nine candidates tied at 64/64 on dev.
+  A different tie-break picks a different checkpoint, and nothing here says
+  `step-0030` is better than `step-0040`.
+- **One task, one seed, one model.** A synthetic right-sizing environment at a
+  single seed. Nothing here generalises to incident response.
+- **In-process evaluation.** The held-out and confirmation scores were measured in
+  the same process that trained; a fresh-reload check is not part of this run.
+- **No independent review.** One operator, no second pair of eyes on the numbers.
+- **The confirmation's commit label is stale** (`phaseC2/SOURCE_COMMIT_LABEL_IS_STALE.md`);
+  the source is identical by `tree_sha256` across phases B2, C1 and C2.
+
+### Status
+
+Owner authorization: PR #235, comment of 27 October 2026 by `virajchoudhary`
+(`authorAssociation: OWNER`), which states that formal G9 acceptance is
+NOT_APPLICABLE to this task and that the project gate is unchanged.
+
+**This is not G9 evidence and changes no gate.**
 
 ## Amendment 6 — the first GRPO run trained nothing, and why — 27 October 2026
 

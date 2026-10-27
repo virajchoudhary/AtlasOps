@@ -1,0 +1,5 @@
+{
+  "chosen": null,
+  "rule": "first of 16, 32, 48 with admissible_rate >= 0.75 and 0.20 <= resolved_rate <= 0.85",
+  "train_sample_by_size": {}
+}

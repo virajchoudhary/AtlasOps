@@ -1,0 +1,66 @@
+[{"stream_name":"stdout","time":0.869912111,"data":"[     0s] $ pip install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126\n"}
+,{"stream_name":"stdout","time":149.078753585,"data":" \n"}
+,{"stream_name":"stdout","time":149.078797049,"data":"[   148s] $ pip install -q transformers==4.57.6 trl==0.19.1 peft==0.17.1 accelerate==1.14.0 datasets==4.8.5 bitsandbytes==0.48.1\n"}
+,{"stream_name":"stdout","time":167.272300135,"data":" ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n"}
+,{"stream_name":"stdout","time":167.272357065,"data":"gradio 6.26.0 requires huggingface-hub\u003c2.0,\u003e=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":167.272367262,"data":"gradio 6.26.0 requires pillow\u003c13.0,\u003e=8.0, but you have pillow 13.0.0 which is incompatible.\n"}
+,{"stream_name":"stdout","time":167.272372414,"data":"diffusers 0.40.0 requires huggingface-hub\u003c2.0,\u003e=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":167.272377235,"data":"\n"}
+,{"stream_name":"stdout","time":206.877686055,"data":"[   206s] versions {\"torch\": \"2.7.1+cu126\", \"transformers\": \"4.57.6\", \"trl\": \"0.19.1\", \"peft\": \"0.17.1\", \"accelerate\": \"1.14.0\", \"datasets\": \"4.8.5\", \"bitsandbytes\": \"0.48.1\", \"python\": \"3.13.15\", \"gpu\": \"Tesla T4\", \"visible_devices\": 1}\n"}
+,{"stream_name":"stdout","time":230.524422683,"data":"[   230s] confirmation sha256 5ef5384fa858f30cf53ec95b77fd2d1037571c0acdd7531d92a4926545adaa0b\n"}
+,{"stream_name":"stdout","time":240.39686478,"data":"[   240s] selection from phase C1 {\"confirmation_set_opened_here\": false, \"development_bar\": \"\u003e=58/64 solved, \u003e=28/32 exact, \u003e=28/32 inexact\", \"development_bar_met\": true, \"rule\": \"most solved on the development set; earliest checkpoint wins a tie\", \"selected\": \"step-0030\"}\n"}
+,{"stream_name":"stdout","time":250.43701167,"data":"[   250s] confirming /kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phaseb/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0030 against its start /kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phasea4/phaseA4/sft-strict-18/adapter\n"}
+,{"stream_name":"stderr","time":327.534580936,"data":"\rFetching 14 files:   0%|          | 0/14 [00:00\u003c?, ?it/s]\rFetching 14 files:   7%|▋         | 1/14 [00:00\u003c00:03,  3.54it/s]\rFetching 14 files:  36%|███▌      | 5/14 [00:00\u003c00:00, 13.69it/s]\rFetching 14 files:  36%|███▌      | 5/14 [00:19\u003c00:00, 13.69it/s]\rFetching 14 files:  50%|█████     | 7/14 [01:16\u003c01:41, 14.50s/it]\rFetching 14 files: 100%|██████████| 14/14 [01:16\u003c00:00,  5.49s/it]\n"}
+,{"stream_name":"stdout","time":327.541183817,"data":"[   327s] model downloaded in 77 s\n"}
+,{"stream_name":"stdout","time":327.541211772,"data":"[   327s] === confirmation: sft-start ===\n"}
+,{"stream_name":"stdout","time":721.570696764,"data":"[   721s] === confirmation: step-0030 ===\n"}
+,{"stream_name":"stdout","time":965.029175329,"data":"[   964s] CONFIRMATION {\n"}
+,{"stream_name":"stdout","time":965.029998485,"data":"  \"selected\": \"step-0030\",\n"}
+,{"stream_name":"stdout","time":965.030017835,"data":"  \"arms\": {\n"}
+,{"stream_name":"stdout","time":965.030024316,"data":"    \"sft-start\": {\n"}
+,{"stream_name":"stdout","time":965.030030576,"data":"      \"solved\": 109,\n"}
+,{"stream_name":"stdout","time":965.030036711,"data":"      \"n\": 128,\n"}
+,{"stream_name":"stdout","time":965.030042821,"data":"      \"valid\": 109,\n"}
+,{"stream_name":"stdout","time":965.030048807,"data":"      \"exact\": [\n"}
+,{"stream_name":"stdout","time":965.030067018,"data":"        38,\n"}
+,{"stream_name":"stdout","time":965.030089445,"data":"        42\n"}
+,{"stream_name":"stdout","time":965.030093449,"data":"      ],\n"}
+,{"stream_name":"stdout","time":965.030097637,"data":"      \"inexact\": [\n"}
+,{"stream_name":"stdout","time":965.030102371,"data":"        71,\n"}
+,{"stream_name":"stdout","time":965.030105674,"data":"        86\n"}
+,{"stream_name":"stdout","time":965.030109579,"data":"      ]\n"}
+,{"stream_name":"stdout","time":965.030113884,"data":"    },\n"}
+,{"stream_name":"stdout","time":965.030118274,"data":"    \"step-0030\": {\n"}
+,{"stream_name":"stdout","time":965.030122803,"data":"      \"solved\": 125,\n"}
+,{"stream_name":"stdout","time":965.030127518,"data":"      \"n\": 128,\n"}
+,{"stream_name":"stdout","time":965.030132865,"data":"      \"valid\": 128,\n"}
+,{"stream_name":"stdout","time":965.03013745,"data":"      \"exact\": [\n"}
+,{"stream_name":"stdout","time":965.030141195,"data":"        42,\n"}
+,{"stream_name":"stdout","time":965.030145492,"data":"        42\n"}
+,{"stream_name":"stdout","time":965.030150228,"data":"      ],\n"}
+,{"stream_name":"stdout","time":965.030154825,"data":"      \"inexact\": [\n"}
+,{"stream_name":"stdout","time":965.030159107,"data":"        83,\n"}
+,{"stream_name":"stdout","time":965.030163664,"data":"        86\n"}
+,{"stream_name":"stdout","time":965.030168558,"data":"      ]\n"}
+,{"stream_name":"stdout","time":965.03017298,"data":"    }\n"}
+,{"stream_name":"stdout","time":965.03017776,"data":"  },\n"}
+,{"stream_name":"stdout","time":965.030182165,"data":"  \"paired_vs_start\": {\n"}
+,{"stream_name":"stdout","time":965.030186864,"data":"    \"lost\": 3,\n"}
+,{"stream_name":"stdout","time":965.030191668,"data":"    \"gained\": 19,\n"}
+,{"stream_name":"stdout","time":965.030196211,"data":"    \"exact_mcnemar_p\": 0.0008554458618164062\n"}
+,{"stream_name":"stdout","time":965.03020011,"data":"  },\n"}
+,{"stream_name":"stdout","time":965.030203884,"data":"  \"criterion\": \"at least 116/128 solved and exact McNemar p \u003c 0.01 against its own SFT start\",\n"}
+,{"stream_name":"stdout","time":965.030208503,"data":"  \"solved\": 125,\n"}
+,{"stream_name":"stdout","time":965.030212188,"data":"  \"criterion_met\": true\n"}
+,{"stream_name":"stdout","time":965.030215954,"data":"}\n"}
+,{"stream_name":"stdout","time":965.030219481,"data":"[   964s] $ du -sh /kaggle/working\n"}
+,{"stream_name":"stdout","time":965.146702738,"data":"132K\t/kaggle/working\n"}
+,{"stream_name":"stdout","time":965.146732409,"data":" \n"}
+,{"stream_name":"stdout","time":965.146736906,"data":"[   964s] PHASE C2 COMPLETE\n"}
+,{"stream_name":"stderr","time":970.429736749,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":970.429765696,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":970.753573189,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":970.753600498,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":972.319645091,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":972.886993245,"data":"[NbConvertApp] Writing 306171 bytes to __results__.html\n"}
+]

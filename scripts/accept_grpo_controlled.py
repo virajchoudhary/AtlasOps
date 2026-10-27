@@ -619,7 +619,31 @@ def _has_matched_optimizer_update(
     )
 
 
-def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_sha256: str):
+def _require_local_evidence_store(receipt: Any, run: Path, *paths: Path) -> None:
+    """Accept only inside the admitted local store, never on the training output itself."""
+    from training.sft_provenance import has_redirecting_path_component
+
+    destination = receipt.get("local_evidence_destination") if isinstance(receipt, dict) else None
+    training_output = receipt.get("output_path") if isinstance(receipt, dict) else None
+    if (
+        not isinstance(destination, str) or not destination
+        or not isinstance(training_output, str) or not training_output
+    ):
+        raise ValueError("Controlled export lacks its admitted local evidence destination")
+    store = Path(destination)
+    if not store.is_absolute() or has_redirecting_path_component(store) or not store.is_dir():
+        raise ValueError("Admitted local evidence store is not present on this host")
+    store = store.resolve()
+    if any(not path.resolve().is_relative_to(store) for path in (run, *paths)):
+        raise ValueError("Controlled acceptance must run inside the admitted local evidence store")
+    if run.resolve() == Path(training_output).resolve():
+        raise ValueError("Controlled acceptance requires a supervised local copy of the run")
+
+
+def accept_export(
+    run: Path, reload_report: Path, manifest_sha256: str, reload_sha256: str,
+    output: Path | None = None,
+):
     from training.grpo_controlled import CLASSIFICATION, MODEL, PROFILE, REVISION
     from training.grpo_reload_isolation import validate_isolation_evidence
     from training.sft_provenance import checkpoint_inventory, has_redirecting_path_component
@@ -651,6 +675,9 @@ def accept_export(run: Path, reload_report: Path, manifest_sha256: str, reload_s
             }
     if evidence_files != actual_files:
         raise ValueError("Controlled exported evidence inventory mismatch")
+    _require_local_evidence_store(
+        manifest.get("receipt"), run, reload_report, *([output] if output else [])
+    )
     if manifest.get("tokenizer_identity") != {"id": MODEL, "revision": REVISION}:
         raise ValueError("Controlled export lacks its pinned tokenizer identity")
     if (
@@ -736,7 +763,8 @@ def main():
     if args.output.exists() or args.output.resolve().is_relative_to(args.run.resolve()):
         raise ValueError("Acceptance report requires a fresh external output")
     report = accept_export(
-        args.run, args.reload_report, args.manifest_sha256, args.reload_sha256
+        args.run, args.reload_report, args.manifest_sha256, args.reload_sha256,
+        output=args.output,
     )
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, sort_keys=True, indent=2)

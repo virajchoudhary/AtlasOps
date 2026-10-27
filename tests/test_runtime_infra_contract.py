@@ -199,6 +199,30 @@ def test_prometheus_rule_uses_only_kube_state_metrics_availability() -> None:
     assert "additionalScrapeConfigs" not in PROM_VALUES
 
 
+def test_prometheus_rule_drops_scrape_target_labels() -> None:
+    # kube-state-metrics series carry service/pod/job labels of the exporter itself;
+    # without aggregation the coordinator anchors on service="prometheus-kube-state-metrics".
+    alert = yaml.safe_load(PROM_RULES)["spec"]["groups"][0]["rules"][0]
+    expr = " ".join(alert["expr"].split())
+    assert expr.count("max by (namespace, deployment) (") == 2
+
+
+def test_aggregated_alert_anchors_on_the_unavailable_deployment() -> None:
+    from agents.coordinator import build_incident_anchors
+
+    anchors = build_incident_anchors({
+        "commonLabels": {
+            "alertname": "AtlasOpsOnlineBoutiqueDeploymentUnavailable",
+            "deployment": "frontend",
+            "namespace": "default",
+            "severity": "warning",
+            "atlasops_route": "coordinator",
+        },
+        "alerts": [{"labels": {"deployment": "frontend", "namespace": "default"}}],
+    })
+    assert anchors["primary_service"] == "frontend"
+
+
 def test_jaeger_and_argocd_states_are_fail_closed_and_honest() -> None:
     jaeger_vals = yaml.safe_load(read("infra/values/jaeger.yaml"))
     assert jaeger_vals["jaeger"]["service"]["type"] == "ClusterIP"

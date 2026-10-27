@@ -1,0 +1,60 @@
+{
+  "products": [
+    {
+      "id": "mug",
+      "name": "Field Mug",
+      "blurb": "Insulated steel, keeps coffee hot for 6 hours.",
+      "price": 18.5,
+      "image": "images/mug.svg"
+    },
+    {
+      "id": "backpack",
+      "name": "Transit Backpack",
+      "blurb": "20 L, padded laptop sleeve, weatherproof zips.",
+      "price": 89.0,
+      "image": "images/backpack.svg"
+    },
+    {
+      "id": "lamp",
+      "name": "Desk Lamp",
+      "blurb": "Warm dimmable light with a weighted base.",
+      "price": 42.0,
+      "image": "images/lamp.svg"
+    },
+    {
+      "id": "headphones",
+      "name": "Quiet Headphones",
+      "blurb": "Closed-back, 30-hour battery, folding hinge.",
+      "price": 129.99,
+      "image": "images/headphones.svg"
+    },
+    {
+      "id": "bottle",
+      "name": "Trail Bottle",
+      "blurb": "750 ml, leak-proof lid, dishwasher safe.",
+      "price": 24.0,
+      "image": "images/bottle.svg"
+    },
+    {
+      "id": "notebook",
+      "name": "Grid Notebook",
+      "blurb": "A5, 160 pages, lay-flat binding.",
+      "price": 12.75,
+      "image": "images/notebook.svg"
+    },
+    {
+      "id": "plant",
+      "name": "Desk Plant",
+      "blurb": "Low-light pothos in a ceramic pot.",
+      "price": 27.5,
+      "image": "images/plant.svg"
+    },
+    {
+      "id": "watch",
+      "name": "Field Watch",
+      "blurb": "38 mm, sapphire glass, canvas strap.",
+      "price": 149.0,
+      "image": "images/watch.svg"
+    }
+  ]
+}

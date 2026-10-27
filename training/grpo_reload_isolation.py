@@ -254,7 +254,8 @@ class LoopbackGuard:
                 self.reject("unexpected_residual_socket")
             residual.append({"fd": int(descriptor.name), "inode": socket_inode,
                              "family": "AF_UNIX", "type": "SOCK_SEQPACKET",
-                             "state": "LISTENING_INERT", "name": expected})
+                             "state": "LISTENING_INERT", "name": expected,
+                             "pid_namespace_inode": inode})
         if len(residual) != 1:
             self.reject("missing_or_duplicate_cuda_listener")
         return residual
@@ -392,8 +393,18 @@ def prepare_isolation(
         error.isolation_evidence = evidence
         raise error
     guard = LoopbackGuard()
-    guard.install()
-    guard.install_syscall_guard(block_creation=False, gpu_discovery=profile == KAGGLE_GPU_PROFILE)
+    stage = "audit_hook"
+    try:
+        guard.install()
+        stage = "import_syscall_guard"
+        guard.install_syscall_guard(block_creation=False, gpu_discovery=profile == KAGGLE_GPU_PROFILE)
+    except BaseException as error:
+        # Keep the probes and the failed stage as negative environment evidence.
+        evidence["guard_installation_failure"] = {
+            "stage": stage, "error_type": type(error).__name__,
+        }
+        error.isolation_evidence = evidence
+        raise
     evidence["import_syscall_guard_installed"] = True
     return evidence, guard
 
@@ -448,6 +459,8 @@ def validate_isolation_evidence(value: Any, *, source_sha: str | None = None) ->
         and isinstance(probes, list) and len(probes) == len(PROBE_TARGETS)
         and [(r.get("target"), r.get("port")) for r in probes] == list(PROBE_TARGETS)
         and all(probe_proves_blocked(r) for r in probes)
+        # The documented bounded probes: reject evidence with any other or missing timeout.
+        and all(r.get("timeout_seconds") == PROBE_TIMEOUT_SECONDS for r in probes)
     )
 
 
@@ -468,7 +481,8 @@ def validate_gpu_discovery(value: dict[str, Any]) -> bool:
                 and isinstance(record["sha256"], str)
                 and len(record["sha256"]) == 64
                 and all(c in "0123456789abcdef" for c in record["sha256"])
-                and type(record["size"]) is int and record["size"] > 0
+                # Discovery inventories every regular file, including empty lock/marker files.
+                and type(record["size"]) is int and record["size"] >= 0
                 for name, record in inventory.items()
             )
             and isinstance(runtime["python_sha256"], str) and len(runtime["python_sha256"]) == 64
@@ -490,8 +504,11 @@ def validate_gpu_discovery(value: dict[str, Any]) -> bool:
             and sockets[0]["state"] == "LISTENING_INERT"
             and type(sockets[0]["fd"]) is int and sockets[0]["fd"] >= 0
             and sockets[0]["inode"].isdigit()
-            and sockets[0]["name"].startswith("@cuda-uvmfd-")
-            and sockets[0]["name"].endswith(f"-{value['reload_pid']}@")
+            and isinstance(sockets[0]["pid_namespace_inode"], str)
+            and sockets[0]["pid_namespace_inode"].isdigit()
+            # The complete name, as seal_gpu_runtime() permits it, not just its ends.
+            and sockets[0]["name"]
+            == f"@cuda-uvmfd-{sockets[0]['pid_namespace_inode']}-{value['reload_pid']}@"
         )
     except (KeyError, TypeError, ValueError, AttributeError):
         return False

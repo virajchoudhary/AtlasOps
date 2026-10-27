@@ -47,3 +47,12 @@ cryptographically trustworthy.
 Developer-local `ANTHROPIC_AUTH_TOKEN` and `HF_TOKEN` values previously appeared in
 diagnostic output. Their owner was instructed to rotate them if active. No values were
 inspected, copied, or recorded in this remediation.
+
+## October 27 closure addendum
+
+PR #235 removes the Grafana credential from current `CLAUDE.md`; it does not
+revoke the historical value or rewrite Git history. Current GCP state and billing
+are UNVERIFIED, and the inherited LIVE heading is now explicitly historical.
+The [external closure checklist](EXTERNAL_CLOSURE_ACTIONS_20261027.md) records
+the outstanding resource-owner and provider-console actions without secret values.
+Credential rotation and billing reconciliation remain unverified external actions.

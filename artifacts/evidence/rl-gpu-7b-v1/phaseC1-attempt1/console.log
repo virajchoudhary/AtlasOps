@@ -1,0 +1,201 @@
+[{"stream_name":"stdout","time":1.913783333,"data":"[     0s] $ pip install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126\n"}
+,{"stream_name":"stdout","time":198.97136724,"data":" \n"}
+,{"stream_name":"stdout","time":198.971436313,"data":"[   197s] $ pip install -q transformers==4.57.6 trl==0.19.1 peft==0.17.1 accelerate==1.14.0 datasets==4.8.5 bitsandbytes==0.48.1\n"}
+,{"stream_name":"stdout","time":221.526191352,"data":" ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n"}
+,{"stream_name":"stdout","time":221.526245395,"data":"gradio 6.26.0 requires huggingface-hub\u003c2.0,\u003e=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":221.526250639,"data":"gradio 6.26.0 requires pillow\u003c13.0,\u003e=8.0, but you have pillow 13.0.0 which is incompatible.\n"}
+,{"stream_name":"stdout","time":221.526254214,"data":"diffusers 0.40.0 requires huggingface-hub\u003c2.0,\u003e=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":221.526257532,"data":"\n"}
+,{"stream_name":"stdout","time":276.642152679,"data":"[   275s] versions {\"torch\": \"2.7.1+cu126\", \"transformers\": \"4.57.6\", \"trl\": \"0.19.1\", \"peft\": \"0.17.1\", \"accelerate\": \"1.14.0\", \"datasets\": \"4.8.5\", \"bitsandbytes\": \"0.48.1\", \"python\": \"3.13.15\", \"gpu\": \"Tesla T4\", \"visible_devices\": 1}\n"}
+,{"stream_name":"stdout","time":291.681972065,"data":"[   290s] dev sha256 116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a\n"}
+,{"stream_name":"stdout","time":296.923803975,"data":"[   295s] GRPO run at /kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phaseb/phaseB/grpo-strict-balanced-7b-from-sft18\n"}
+,{"stream_name":"stdout","time":296.994029252,"data":"[   295s] checkpoints recorded: ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100']\n"}
+,{"stream_name":"stderr","time":369.628704555,"data":"\rFetching 14 files:   0%|          | 0/14 [00:00\u003c?, ?it/s]\rFetching 14 files:   7%|▋         | 1/14 [00:00\u003c00:04,  2.67it/s]\rFetching 14 files:  50%|█████     | 7/14 [01:12\u003c01:15, 10.79s/it]\rFetching 14 files: 100%|██████████| 14/14 [01:12\u003c00:00,  5.17s/it]\n"}
+,{"stream_name":"stdout","time":369.634110137,"data":"[   368s] model downloaded in 73 s\n"}
+,{"stream_name":"stdout","time":369.635168015,"data":"[   368s] === dev score: step-0010 ===\n"}
+,{"stream_name":"stdout","time":369.70680555,"data":"[   368s] step-0010 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.877647881,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.878239087,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.878259139,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.8782643,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.878269894,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.878274962,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.878279688,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.878284697,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.878289664,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.878309036,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.87831294,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.87832072,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.879130979,"data":"[   368s] === dev score: step-0020 ===\n"}
+,{"stream_name":"stdout","time":369.881699591,"data":"[   368s] step-0020 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.882282695,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.882760356,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.882773861,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.882777836,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.882781237,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.882784809,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.882788542,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.882792782,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.882796793,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.882800895,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.882804729,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.882808041,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.883209296,"data":"[   368s] === dev score: step-0030 ===\n"}
+,{"stream_name":"stdout","time":369.885090269,"data":"[   368s] step-0030 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.885676032,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.886087965,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.886097266,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.886100937,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.886104263,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.886107681,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.886111415,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.886115148,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.886119156,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.886132599,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.886136744,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.886140831,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.8865149,"data":"[   368s] === dev score: step-0040 ===\n"}
+,{"stream_name":"stdout","time":369.888604249,"data":"[   368s] step-0040 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.889232528,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.889759097,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.889772779,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.889776849,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.889780577,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.889786447,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.889793516,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.889796289,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.889798901,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.889801633,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.889804109,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.889806637,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.8901379,"data":"[   368s] === dev score: step-0050 ===\n"}
+,{"stream_name":"stdout","time":369.892038999,"data":"[   368s] step-0050 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.892581283,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.893055197,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.893071799,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.893076372,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.893079987,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.893083709,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.89308731,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.893091535,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.893095213,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.893108311,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.893111937,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.893118359,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.893473237,"data":"[   368s] === dev score: step-0060 ===\n"}
+,{"stream_name":"stdout","time":369.895148614,"data":"[   368s] step-0060 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.895617055,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.896080332,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.896096312,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.896100522,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.896103987,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.896108183,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.896112296,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.896115749,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.896119266,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.896123632,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.896127706,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.896131656,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.896439556,"data":"[   368s] === dev score: step-0070 ===\n"}
+,{"stream_name":"stdout","time":369.89824274,"data":"[   368s] step-0070 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.898854942,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.899312777,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.899321062,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.899325045,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.899328956,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.899332871,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.899336654,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.899340406,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.899343994,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.899347744,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.899362881,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.899366699,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.899698293,"data":"[   368s] === dev score: step-0080 ===\n"}
+,{"stream_name":"stdout","time":369.901706691,"data":"[   368s] step-0080 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.902340349,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.90281688,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.902829647,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.902833904,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.902837709,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.902841611,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.90284516,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.902848706,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.902851945,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.902867434,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.902871868,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.9028758,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.903249569,"data":"[   368s] === dev score: step-0090 ===\n"}
+,{"stream_name":"stdout","time":369.905288122,"data":"[   368s] step-0090 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.905889077,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.906339233,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.906347202,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.906351475,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.906355238,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.906368539,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.906372469,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.906377116,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.906381326,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.90638542,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.906401167,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.906404973,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.906800554,"data":"[   368s] === dev score: step-0100 ===\n"}
+,{"stream_name":"stdout","time":369.908901564,"data":"[   368s] step-0100 FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.909447296,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.909918336,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.909931513,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.909935972,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.909940149,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.909944209,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.909947914,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.909952354,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.909956316,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.909960352,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.909964097,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.909968419,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.910367909,"data":"[   368s] === dev score: sft-start ===\n"}
+,{"stream_name":"stdout","time":369.912954446,"data":"[   368s] sft-start FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.91355517,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.9139822,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.913996909,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.914001217,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.91400513,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.914009161,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.914012986,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.914017374,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.914020927,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.914024731,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.9140369,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.914041017,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.914292748,"data":"[   368s] === dev score: final ===\n"}
+,{"stream_name":"stdout","time":369.9160381,"data":"[   368s] final FAILED: AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stderr","time":369.916587298,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":369.91704539,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":369.917061695,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":369.917066772,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.917070541,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":369.917074575,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.917078574,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\"))\n"}
+,{"stream_name":"stderr","time":369.917082751,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.917086642,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":369.917090914,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":369.91709472,"data":"                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":369.91709811,"data":"AttributeError: 'Namespace' object has no attribute 'gradient_checkpointing'\n"}
+,{"stream_name":"stdout","time":369.917289874,"data":"[   368s] SELECTION {\n"}
+,{"stream_name":"stdout","time":369.917301256,"data":"  \"dev_scores\": {},\n"}
+,{"stream_name":"stdout","time":369.917305191,"data":"  \"selected\": null,\n"}
+,{"stream_name":"stdout","time":369.917308736,"data":"  \"rule\": \"most solved on the development set; earliest checkpoint wins a tie\",\n"}
+,{"stream_name":"stdout","time":369.917320385,"data":"  \"development_bar\": \"\u003e=58/64 solved, \u003e=28/32 exact, \u003e=28/32 inexact\",\n"}
+,{"stream_name":"stdout","time":369.917324735,"data":"  \"development_bar_met\": false,\n"}
+,{"stream_name":"stdout","time":369.91732827,"data":"  \"confirmation_set_opened_here\": false\n"}
+,{"stream_name":"stdout","time":369.917332027,"data":"}\n"}
+,{"stream_name":"stdout","time":369.917335161,"data":"[   368s] $ du -sh /kaggle/working\n"}
+,{"stream_name":"stdout","time":369.929001336,"data":"68K\t/kaggle/working\n"}
+,{"stream_name":"stdout","time":369.929017173,"data":" \n"}
+,{"stream_name":"stdout","time":369.929021389,"data":"[   368s] PHASE C1 COMPLETE\n"}
+,{"stream_name":"stderr","time":377.564035516,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":377.564072794,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":378.007986076,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":378.008012946,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":378.916794878,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":379.905656357,"data":"[NbConvertApp] Writing 302121 bytes to __results__.html\n"}
+]

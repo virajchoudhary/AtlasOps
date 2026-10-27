@@ -30,6 +30,23 @@ The [peer handoff tracker](PEER_HANDOFF.md) records completed preparation,
 external dependencies, owner decisions, and next actions without replacing
 this scientific gate matrix.
 
+## October 27 software closure
+
+PR [235](https://github.com/virajchoudhary/AtlasOps/pull/235) consolidates the
+preparation changes from draft PRs 230-234, controlled-export/reload fixes,
+the disposable Bug Lab, and separate exploratory CPU/GPU right-sizing evidence.
+Its acceptance must be established at its final head, followed by protected
+integration, main CI, and an independently verified exact-main package.
+The earlier source-specific baseline and archives below remain historical.
+The final SHA, CI, review and package identities belong in the external final
+receipt so this checklist does not claim its own not-yet-created commit.
+
+The inherited GCP LIVE notes are historical, not current infrastructure evidence.
+The [external closure checklist](EXTERNAL_CLOSURE_ACTIONS_20261027.md) tracks
+unverified credential rotation, billing, host qualification and scientific
+dependencies. This software closure does not start the October 27 Bug Lab Run Plan
+or promote any scientific gate.
+
 ## Application acceptance
 
 The table combines evidence from separate software checkpoints. PR 207's suite
@@ -75,6 +92,16 @@ and preserved evidence. A historical PASS is not a fresh host-health claim.
 
 G7's accepted bounded v17 artifact/reload is retained and is not being repeated.
 G10/G11 remain historical optional research and OUT_OF_SCOPE.
+The 25 October [right-sizing CPU GRPO experiment](RIGHTSIZING_GRPO_CPU_V1.md) is a
+separate small-model experiment. It changes no row above; G9 stays NOT_PASSED/FROZEN.
+The 27 October [right-sizing GPU 7B GRPO experiment](RIGHTSIZING_GRPO_GPU_7B_V1.md)
+is likewise a separate exploratory experiment, run under the owner's exploratory
+authorization on PR #235 of that date, which states that its formal G9 acceptance
+status is NOT_APPLICABLE. It met its own pre-registered criterion (125/128 on a
+single-use confirmation set, exact McNemar p = 0.00086) and its task saturated
+after roughly 63 of 100 steps. It used the exploratory trainer, not
+`training/grpo_controlled.py`, and carries no execution receipt. It changes no row
+above; G9 stays NOT_PASSED/FROZEN.
 Safe offline repairs are allowed only for demonstrated defects. Existing green
 software contracts do not require new experiments simply to produce activity.
 

@@ -1,0 +1,77 @@
+[{"stream_name":"stdout","time":0.936922186,"data":"[     0s] $ pip install -q torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126\n"}
+,{"stream_name":"stdout","time":158.811622838,"data":" \n"}
+,{"stream_name":"stdout","time":158.811678573,"data":"[   158s] $ pip install -q transformers==4.57.6 trl==0.19.1 peft==0.17.1 accelerate==1.14.0 datasets==4.8.5 bitsandbytes==0.48.1\n"}
+,{"stream_name":"stdout","time":177.313930575,"data":" ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n"}
+,{"stream_name":"stdout","time":177.313970177,"data":"gradio 6.26.0 requires huggingface-hub\u003c2.0,\u003e=1.16.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":177.313975655,"data":"gradio 6.26.0 requires pillow\u003c13.0,\u003e=8.0, but you have pillow 13.0.0 which is incompatible.\n"}
+,{"stream_name":"stdout","time":177.313979248,"data":"diffusers 0.40.0 requires huggingface-hub\u003c2.0,\u003e=1.23.0, but you have huggingface-hub 0.36.2 which is incompatible.\n"}
+,{"stream_name":"stdout","time":177.313982607,"data":"\n"}
+,{"stream_name":"stdout","time":217.606730801,"data":"[   217s] versions {\"torch\": \"2.7.1+cu126\", \"transformers\": \"4.57.6\", \"trl\": \"0.19.1\", \"peft\": \"0.17.1\", \"accelerate\": \"1.14.0\", \"datasets\": \"4.8.5\", \"bitsandbytes\": \"0.48.1\", \"python\": \"3.13.15\", \"gpu\": \"Tesla T4\", \"visible_devices\": 1}\n"}
+,{"stream_name":"stdout","time":224.222614533,"data":"[   223s] dev sha256 116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a\n"}
+,{"stream_name":"stdout","time":226.416147447,"data":"[   225s] GRPO run at /kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phaseb/phaseB/grpo-strict-balanced-7b-from-sft18\n"}
+,{"stream_name":"stdout","time":226.542698675,"data":"[   226s] checkpoints recorded: ['10', '20', '30', '40', '50', '60', '70', '80', '90', '100']\n"}
+,{"stream_name":"stderr","time":291.204175622,"data":"\rFetching 14 files:   0%|          | 0/14 [00:00\u003c?, ?it/s]\rFetching 14 files:   7%|▋         | 1/14 [00:00\u003c00:04,  2.69it/s]\rFetching 14 files:  50%|█████     | 7/14 [01:04\u003c01:07,  9.59s/it]\rFetching 14 files: 100%|██████████| 14/14 [01:04\u003c00:00,  4.60s/it]\n"}
+,{"stream_name":"stdout","time":291.205443615,"data":"[   290s] model downloaded in 65 s\n"}
+,{"stream_name":"stdout","time":291.20685567,"data":"[   290s] === dev score: step-0010 ===\n"}
+,{"stream_name":"stderr","time":351.853609296,"data":"\rLoading checkpoint shards:   0%|          | 0/4 [00:00\u003c?, ?it/s]\rLoading checkpoint shards:  25%|██▌       | 1/4 [00:08\u003c00:24,  8.19s/it]\rLoading checkpoint shards:  50%|█████     | 2/4 [00:21\u003c00:22, 11.35s/it]\rLoading checkpoint shards:  75%|███████▌  | 3/4 [00:38\u003c00:13, 13.74s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:53\u003c00:00, 14.28s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:53\u003c00:00, 13.36s/it]\n"}
+,{"stream_name":"stderr","time":354.750359808,"data":"The following generation flags are not valid and may be ignored: ['temperature', 'top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.\n"}
+,{"stream_name":"stdout","time":433.142117405,"data":"dev {\"n\": 64, \"admissible_rate\": 1.0, \"resolved_rate\": 0.9531, \"mean_reward\": 0.9609, \"under_provisioned\": 0, \"over_provisioned\": 3, \"invalid_categories\": {}}\n"}
+,{"stream_name":"stdout","time":433.193890524,"data":"[   432s] step-0010 {\"solved\": 61, \"n\": 64, \"valid\": 64, \"exact\": [29, 32], \"inexact\": [32, 32], \"mean_reward\": 0.9609, \"seconds\": 142.0}\n"}
+,{"stream_name":"stdout","time":433.259775596,"data":"[   432s] === dev score: step-0020 ===\n"}
+,{"stream_name":"stderr","time":469.057316753,"data":"\rLoading checkpoint shards:   0%|          | 0/4 [00:00\u003c?, ?it/s]\rLoading checkpoint shards:  25%|██▌       | 1/4 [00:06\u003c00:18,  6.20s/it]\rLoading checkpoint shards:  50%|█████     | 2/4 [00:14\u003c00:14,  7.21s/it]\rLoading checkpoint shards:  75%|███████▌  | 3/4 [00:23\u003c00:08,  8.42s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:35\u003c00:00,  9.55s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:35\u003c00:00,  8.82s/it]\n"}
+,{"stream_name":"stdout","time":557.947094832,"data":"dev {\"n\": 64, \"admissible_rate\": 1.0, \"resolved_rate\": 0.9219, \"mean_reward\": 0.9349, \"under_provisioned\": 5, \"over_provisioned\": 0, \"invalid_categories\": {}}\n"}
+,{"stream_name":"stdout","time":558.004483607,"data":"[   557s] step-0020 {\"solved\": 59, \"n\": 64, \"valid\": 64, \"exact\": [32, 32], \"inexact\": [27, 32], \"mean_reward\": 0.9349, \"seconds\": 124.7}\n"}
+,{"stream_name":"stdout","time":558.076721886,"data":"[   557s] === dev score: step-0030 ===\n"}
+,{"stream_name":"stderr","time":576.524225666,"data":"\rLoading checkpoint shards:   0%|          | 0/4 [00:00\u003c?, ?it/s]\rLoading checkpoint shards:  25%|██▌       | 1/4 [00:04\u003c00:12,  4.07s/it]\rLoading checkpoint shards:  50%|█████     | 2/4 [00:09\u003c00:09,  4.66s/it]\rLoading checkpoint shards:  75%|███████▌  | 3/4 [00:14\u003c00:04,  4.90s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:17\u003c00:00,  4.39s/it]\rLoading checkpoint shards: 100%|██████████| 4/4 [00:17\u003c00:00,  4.48s/it]\n"}
+,{"stream_name":"stdout","time":576.740737416,"data":"[   576s] step-0030 FAILED: OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 314.81 MiB is free. Including non-PyTorch memory, this process has 14.25 GiB memory in use. Of the allocated memory 12.50 GiB is allocated by PyTorch, and 1.62 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)\n"}
+,{"stream_name":"stderr","time":576.744239793,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":576.746157983,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":576.746182962,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":576.746186807,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746190522,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":576.746207765,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746212959,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\",\n"}
+,{"stream_name":"stderr","time":576.746217887,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746222733,"data":"        gradient_checkpointing=False))   # scoring never trains\n"}
+,{"stream_name":"stderr","time":576.746227902,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746232235,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":576.746236722,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":576.746263372,"data":"                       ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746267038,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 132, in load_base\n"}
+,{"stream_name":"stderr","time":576.746270738,"data":"    return prepare_model_for_kbit_training(\n"}
+,{"stream_name":"stderr","time":576.746274048,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":576.746282215,"data":"        model, use_gradient_checkpointing=gradient_checkpointing), tokenizer\n"}
+,{"stream_name":"stderr","time":576.746285197,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746288384,"data":"  File \"/usr/local/lib/python3.13/dist-packages/peft/utils/other.py\", line 156, in prepare_model_for_kbit_training\n"}
+,{"stream_name":"stderr","time":576.746292273,"data":"    param.data = param.data.to(torch.float32)\n"}
+,{"stream_name":"stderr","time":576.746294463,"data":"                 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.746296822,"data":"torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 314.81 MiB is free. Including non-PyTorch memory, this process has 14.25 GiB memory in use. Of the allocated memory 12.50 GiB is allocated by PyTorch, and 1.62 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)\n"}
+,{"stream_name":"stderr","time":576.747407752,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":576.748134481,"data":"  File \"/kaggle/src/script.py\", line 73, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":576.748142016,"data":"    trainer.score_set(argparse.Namespace(\n"}
+,{"stream_name":"stderr","time":576.748145385,"data":"    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748148693,"data":"        model_dir=MODEL, adapter_dir=adapter, states=SETS, set=\"dev\",\n"}
+,{"stream_name":"stderr","time":576.748152195,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748157276,"data":"        action_format=\"reasoned_strict\", output_dir=OUT / \"dev\" / name, device=\"cuda\",\n"}
+,{"stream_name":"stderr","time":576.748164394,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748166806,"data":"        gradient_checkpointing=False))   # scoring never trains\n"}
+,{"stream_name":"stderr","time":576.748169426,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748171736,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 589, in score_set\n"}
+,{"stream_name":"stderr","time":576.748174283,"data":"    model, tokenizer = load_base(args.model_dir, args.device, args.gradient_checkpointing)\n"}
+,{"stream_name":"stderr","time":576.748176679,"data":"                       ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748179753,"data":"  File \"/kaggle/input/datasets/dhruvaambhaikar/atlasops-source-b643cf0/scripts/train_rightsizing_grpo.py\", line 132, in load_base\n"}
+,{"stream_name":"stderr","time":576.748195643,"data":"    return prepare_model_for_kbit_training(\n"}
+,{"stream_name":"stderr","time":576.748207136,"data":"           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n"}
+,{"stream_name":"stderr","time":576.748210973,"data":"        model, use_gradient_checkpointing=gradient_checkpointing), tokenizer\n"}
+,{"stream_name":"stderr","time":576.748214739,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748218386,"data":"  File \"/usr/local/lib/python3.13/dist-packages/peft/utils/other.py\", line 156, in prepare_model_for_kbit_training\n"}
+,{"stream_name":"stderr","time":576.748222017,"data":"    param.data = param.data.to(torch.float32)\n"}
+,{"stream_name":"stderr","time":576.748225454,"data":"                 ~~~~~~~~~~~~~^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":576.748228916,"data":"torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.03 GiB. GPU 0 has a total capacity of 14.56 GiB of which 314.81 MiB is free. Including non-PyTorch memory, this process has 14.25 GiB memory in use. Of the allocated memory 12.50 GiB is allocated by PyTorch, and 1.62 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)\n"}
+,{"stream_name":"stderr","time":583.790004914,"data":"/usr/local/lib/python3.13/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":583.79003935,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":584.1212916,"data":"/usr/local/lib/python3.13/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":584.121323192,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":585.127890097,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":585.905114183,"data":"[NbConvertApp] Writing 304505 bytes to __results__.html\n"}
+]

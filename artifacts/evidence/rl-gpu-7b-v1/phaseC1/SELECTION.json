@@ -1,0 +1,189 @@
+{
+  "confirmation_set_opened_here": false,
+  "dev_scores": {
+    "final": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 118.3,
+      "solved": 64,
+      "valid": 64
+    },
+    "sft-start": {
+      "exact": [
+        29,
+        32
+      ],
+      "inexact": [
+        20,
+        32
+      ],
+      "mean_reward": 0.5312,
+      "n": 64,
+      "seconds": 129.7,
+      "solved": 49,
+      "valid": 49
+    },
+    "step-0010": {
+      "exact": [
+        29,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 0.9609,
+      "n": 64,
+      "seconds": 218.3,
+      "solved": 61,
+      "valid": 64
+    },
+    "step-0020": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        27,
+        32
+      ],
+      "mean_reward": 0.9349,
+      "n": 64,
+      "seconds": 140.9,
+      "solved": 59,
+      "valid": 64
+    },
+    "step-0030": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 122.9,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0040": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 115.3,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0050": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 115.2,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0060": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 116.2,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0070": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 116.6,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0080": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 115.9,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0090": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 115.9,
+      "solved": 64,
+      "valid": 64
+    },
+    "step-0100": {
+      "exact": [
+        32,
+        32
+      ],
+      "inexact": [
+        32,
+        32
+      ],
+      "mean_reward": 1.0,
+      "n": 64,
+      "seconds": 115.5,
+      "solved": 64,
+      "valid": 64
+    }
+  },
+  "development_bar": ">=58/64 solved, >=28/32 exact, >=28/32 inexact",
+  "development_bar_met": true,
+  "rule": "most solved on the development set; earliest checkpoint wins a tie",
+  "selected": "step-0030"
+}

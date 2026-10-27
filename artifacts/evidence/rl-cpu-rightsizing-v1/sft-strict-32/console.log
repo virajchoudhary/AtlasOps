@@ -1,0 +1,11 @@
+The tokenizer you are loading from '/tmp/claude-0/-home-user-AtlasOps/aca6dce4-7b19-5994-bbdd-297d8bffbc38/scratchpad/models/qwen2.5-0.5b-instruct-hf' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+base {"n": 64, "admissible_rate": 0.0, "resolved_rate": 0.0, "mean_reward": -1.0, "under_provisioned": 0, "over_provisioned": 0, "invalid_categories": {"invalid_action": 64}}
+sft epoch 1 step 1 loss 0.71569
+sft epoch 1 step 2 loss 0.39356
+sft epoch 1 step 3 loss 0.27072
+sft epoch 1 step 4 loss 0.16091
+sft epoch 2 step 5 loss 0.10842
+sft epoch 2 step 6 loss 0.07352
+sft epoch 2 step 7 loss 0.04645
+sft epoch 2 step 8 loss 0.04402
+sft {"n": 64, "admissible_rate": 0.625, "resolved_rate": 0.2812, "mean_reward": -0.0365, "under_provisioned": 19, "over_provisioned": 3, "invalid_categories": {"invalid_action": 22, "policy_block": 2}}

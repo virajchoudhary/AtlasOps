@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AtlasOps Bug Lab</title>
+<link rel="stylesheet" href="/lab/static/lab.css">
+<script src="/lab/static/lab.js" defer></script>
+</head>
+<body>
+<header class="masthead">
+  <div>
+    <h1>AtlasOps Bug Lab</h1>
+    <p>Break the Atlas Store on purpose, then watch the agents find and fix it.</p>
+  </div>
+  <div class="masthead-side">
+    <span id="backend" class="pill">Agents: connecting…</span>
+    <a class="button ghost" href="/shop/" target="_blank" rel="noopener">Open the store ↗</a>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel inject" aria-labelledby="inject-title">
+    <h2 id="inject-title">Inject a bug</h2>
+    <p class="hint">Each button edits one file of the store. The agents are not told which bug you picked.</p>
+    <div id="catalog" class="catalog"></div>
+    <div class="settings">
+      <label class="toggle"><input id="approve-all" type="checkbox"> Ask me to approve every fix (P1 fixes always ask)</label>
+      <button id="reset" class="button ghost" type="button">Reset the store</button>
+      <p id="site-status" class="hint"></p>
+    </div>
+  </section>
+
+  <section class="panel incident" aria-labelledby="incident-title">
+    <h2 id="incident-title">Live incident</h2>
+    <div id="incident"></div>
+  </section>
+
+  <section class="panel store" aria-labelledby="store-title">
+    <h2 id="store-title">The store, live</h2>
+    <p class="hint">This preview is the bugged page itself. Its monitor reports what a visitor would see.</p>
+    <iframe id="preview" src="/shop/" title="Atlas Store preview"></iframe>
+    <div id="checks"></div>
+  </section>
+
+  <section class="panel history" aria-labelledby="history-title">
+    <h2 id="history-title">Incident history</h2>
+    <div id="history"></div>
+  </section>
+</main>
+<p id="error" class="error-banner" role="alert" hidden></p>
+</body>
+</html>

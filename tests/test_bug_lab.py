@@ -16,7 +16,7 @@ from demo.bug_lab import agents, server
 from demo.bug_lab.catalog import BUGS, BUGS_BY_ID
 from demo.bug_lab.checks import browser_checks, failing, server_checks
 from demo.bug_lab.engine import ApprovalError, LabBusy, LabOptions
-from demo.bug_lab.llm import RULES, detect_backend
+from demo.bug_lab.llm import RULES, Backend, detect_backend
 from demo.bug_lab.server import LabConfig, create_app
 from demo.bug_lab.workspace import EDITABLE_FILES, MONITOR_TAG, Workspace
 
@@ -806,3 +806,72 @@ def test_credential_echo_is_rejected_before_nonempty_incident_export(tmp_path, p
         assert secret not in client.get("/lab/api/state").text
         record = json.loads(exported.text.splitlines()[0])
         assert record["attempts"][-1]["patch"]["author"] == agents.RULES_AUTHOR
+
+
+def test_direct_backend_label_is_redacted_in_active_api_state(tmp_path):
+    import time
+
+    secret = "synthetic-direct-backend-secret"
+
+    async def stalled_model(request):
+        assert request.headers["authorization"] == f"Bearer {secret}"
+        await asyncio.sleep(300)
+
+    backend = Backend(
+        mode="llm", label=f"Model using {secret}", model="qwen2.5:7b-instruct",
+        base_url="http://model.test/v1", api_key=secret,
+        transport=httpx.MockTransport(stalled_model),
+    )
+    app = create_app(LabConfig(workdir=tmp_path / "lab", options=LabOptions(
+        step_delay=0, monitor_interval=0.01,
+    )), backend=backend)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        client.post("/lab/api/inject", json={"bug": "broken-image-paths"},
+                    headers={"X-Bug-Lab": "1"})
+        for _ in range(100):
+            response = client.get("/lab/api/state")
+            incident = response.json()["incident"]
+            if incident and incident["stage"] == "diagnosis":
+                assert secret not in response.text
+                assert "[redacted]" in incident["active_backend"]
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("The model call did not reach active diagnosis")
+
+
+@pytest.mark.parametrize("decision", ["reject", None])
+def test_blocked_rollback_has_no_verification_from_the_previous_patch(tmp_path, monkeypatch, decision):
+    lab = make_app(tmp_path, approval_timeout=0.5).state.lab
+    lab.require_approval_all = True
+
+    def ineffective(diagnosis, workspace):
+        return agents.Patch("styles.css", [
+            {"find": "width: 2600px;", "replace": "width: 2500px;"},
+        ], "Attempt to reduce overflow", agents.RULES_AUTHOR)
+
+    monkeypatch.setattr(agents, "remediate_rules", ineffective)
+
+    async def run():
+        lab.inject("layout-overflow")
+        broken = lab.workspace.read("styles.css")
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await lab.monitor_once()
+        await wait_for(lambda: lab.incident["status"] == "awaiting_approval")
+        lab.decide(lab.incident["id"], lab.incident["approval"]["digest"], "approve")
+        await wait_for(lambda: "2500px" in lab.workspace.read("styles.css"))
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await wait_for(lambda: lab.incident["patch"]["kind"] == "rollback"
+                       and lab.incident["status"] == "awaiting_approval")
+        if decision:
+            lab.decide(lab.incident["id"], lab.incident["approval"]["digest"], decision)
+        await lab._pipeline
+        record = json.loads(lab.log_path.read_text().splitlines()[-1])
+        failed, blocked = record["attempts"]
+        assert failed["verification"]["verdict"] == "failed"
+        assert blocked["verdict"] == "blocked"
+        assert blocked["patch"]["kind"] == "rollback"
+        assert blocked["verification"] is None
+        assert lab.workspace.read("styles.css") == broken
+
+    asyncio.run(run())

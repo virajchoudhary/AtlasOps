@@ -375,7 +375,8 @@ class BugLab:
     async def _plan(self, incident: dict[str, Any], problems: list[Check], plan: str,
                     feedback: str) -> tuple[Change | None, agents.Diagnosis | None]:
         use_model = plan == "model"
-        self._stage(incident, "diagnosis", self.backend.label if use_model else agents.RULES_AUTHOR)
+        self._stage(incident, "diagnosis",
+                    self.backend.public()["label"] if use_model else agents.RULES_AUTHOR)
         diagnosis = None
         if use_model:
             try:
@@ -399,7 +400,8 @@ class BugLab:
         await self._pace()
 
         model_diagnosed = use_model and diagnosis.author != agents.RULES_AUTHOR
-        self._stage(incident, "propose", self.backend.label if model_diagnosed else agents.RULES_AUTHOR)
+        self._stage(incident, "propose",
+                    self.backend.public()["label"] if model_diagnosed else agents.RULES_AUTHOR)
         patch = None
         if model_diagnosed:
             try:
@@ -563,6 +565,7 @@ class BugLab:
                     "No agent fix was verified. Falling back to the rollback policy, which is not AI.")
         incident["patch"] = {"file": ", ".join(changed), "author": change.author,
                              "explanation": change.explanation, "diff": change.diff(), "kind": "rollback"}
+        incident["verification"] = None
         if not await self._gate(incident, change):
             return False
         self._apply(incident, change)

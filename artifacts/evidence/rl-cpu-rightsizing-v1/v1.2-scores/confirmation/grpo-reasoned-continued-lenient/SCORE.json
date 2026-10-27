@@ -1,0 +1,76 @@
+{
+  "action_format": "reasoned",
+  "adapter": {
+    "inventory": {
+      "README.md": {
+        "bytes": 5393,
+        "sha256": "eaceb750f357b663515e3182a622efaac4159157eaea4a150dbee0207a316af2"
+      },
+      "adapter_config.json": {
+        "bytes": 1024,
+        "sha256": "a3cf0587b36d99f2f5060819926e276822f55f8cfa0f7a72634146fe82fd1680"
+      },
+      "adapter_model.safetensors": {
+        "bytes": 35237104,
+        "sha256": "ace60f39a00306f63a665775c0826f501a877c0de3b76182eecb709159411198"
+      },
+      "chat_template.jinja": {
+        "bytes": 2507,
+        "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+      },
+      "merges.txt": {
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      "special_tokens_map.json": {
+        "bytes": 438,
+        "sha256": "943f5d032e6ea8bd46fdbf3f7e14a2e06d78c81264aa2b0c94b84d2cc12dc5d1"
+      },
+      "tokenizer.json": {
+        "bytes": 11426976,
+        "sha256": "c95487fc1248951e816577488d6dbdc4270f45295ac446abc2b63f8f34ad788b"
+      },
+      "tokenizer_config.json": {
+        "bytes": 950,
+        "sha256": "f7ffdcf5904ef212f2cc7d03659991bc99b062ce866fad8b4ea7b1280f59abde"
+      },
+      "vocab.json": {
+        "bytes": 2783038,
+        "sha256": "52c7eab8ae644a5cbb3f8118c25f15d50df45263829322ae48779765e99c0a72"
+      }
+    },
+    "path": "/tmp/claude-0/-home-user-AtlasOps/aca6dce4-7b19-5994-bbdd-297d8bffbc38/scratchpad/runs/rightsizing-grpo-reasoned-continued/adapter"
+  },
+  "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+  "experiment": "rightsizing-grpo-cpu-v1",
+  "gate_status": "Not a G9 result; changes no gate status.",
+  "runtime": {
+    "cpu_count": 4,
+    "cuda_available": false,
+    "peft": "0.17.1",
+    "platform": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "torch": "2.7.1+cu126",
+    "torch_threads": 4,
+    "transformers": "4.57.6",
+    "trl": "0.19.1"
+  },
+  "scored_at": "2026-10-26T17:09:42.961576+00:00",
+  "seconds": 171.1,
+  "set": "confirmation",
+  "set_sha256": "eec3e7bec6b90d184e4d7b9af9b6cc0b0734725ab6d291a76588a7a5cfc7a764",
+  "source": {
+    "commit": "a83cdb531b5c4994ab9336f3535927ef094265fd",
+    "dirty": false
+  },
+  "states_file_sha256": "dfe5d7bc1ba76f38bda924b14fca5231e93fab4df2ddfec9e5f943c154592829",
+  "summary": {
+    "admissible_rate": 1.0,
+    "invalid_categories": {},
+    "mean_reward": 0.6094,
+    "n": 128,
+    "over_provisioned": 4,
+    "resolved_rate": 0.5312,
+    "under_provisioned": 56
+  }
+}

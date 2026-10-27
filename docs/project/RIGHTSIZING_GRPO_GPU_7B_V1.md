@@ -1,0 +1,571 @@
+# Right-Sizing GRPO on a GPU, Qwen2.5-7B (v1): pre-registration
+
+26 October 2026. Classification: `EXPLORATORY_GPU_RL_EXPERIMENT`.
+
+**This is not G9 evidence and changes no gate.** G9 remains NOT_PASSED/FROZEN. The project
+lead has not reopened it, [the final negative result](CONTROLLED_G9_FINAL_NEGATIVE_V1.md)
+still stands, and this run deliberately does **not** use the governed trainer
+`training/grpo_controlled.py`, which admits a run only against an execution receipt the
+project lead signs. It uses the experiment trainer
+[`scripts/train_rightsizing_grpo.py`](../../scripts/train_rightsizing_grpo.py) on the
+synthetic right-sizing environment. Nobody has reviewed it independently.
+
+Everything below the "Pre-registration" heading was written and committed **before** any
+training ran. Results, amendments and stopped runs are appended afterwards, dated, and each
+amendment is committed before the run it governs.
+
+## Why this run
+
+[The CPU experiment](RIGHTSIZING_GRPO_CPU_V1.md) showed GRPO working end to end on
+Qwen2.5-0.5B: a 40-demonstration SFT policy went from 50/128 to 128/128 on a single-use
+confirmation set. It also showed the result was fragile — training collapsed after about
+50 steps, and SFT on 64 demonstrations alone reached 127/128, so RL matched SFT rather than
+beating it. Four things made it work at all, and all four are carried over here:
+
+1. an answer format the start policy can already produce, so there is a gradient at all;
+2. the reasoning line kept inside the scored format, so the policy cannot drop it;
+3. balanced prompts in every optimizer step, because single-prompt steps collapsed the
+   policy into "always round down" or "always add one";
+4. a checkpoint every 10 steps, selected on a development set and confirmed once on states
+   nothing has touched.
+
+What is new here is scale: the pinned 7B model that G9 itself uses, on a real T4, in 4-bit.
+The question is whether the same recipe survives the jump from 0.5B to 7B.
+
+## Pre-registration
+
+### Model
+
+- `Qwen/Qwen2.5-7B-Instruct` at revision `a09a35458c702b33eeacc393d103063234e8bc28` — the
+  G9 pin — downloaded on the GPU machine with `huggingface_hub.snapshot_download`, with a
+  file-hash manifest kept as evidence.
+- Loaded in 4-bit nf4 with float16 compute (`BitsAndBytesConfig`), then
+  `prepare_model_for_kbit_training`. A free T4 holds 16 GiB and has no bfloat16.
+- **Arms.** The base-model arm (base → SFT → GRPO) is the one that runs. A second arm
+  starting from the **v17 SFT adapter** (SHA-256
+  `f20b5ae3fb4db88c0bad89142805b270b28b6ec8e85a981552fc3ee7f5868fff`) runs only if the
+  project lead supplies that adapter; it is held in his private store and is not in Git.
+
+### Task
+
+The right-sizing environment, [`training/rightsizing_env.py`](../../training/rightsizing_env.py):
+
+- `--action-format reasoned_strict` — one arithmetic line in the demonstrated form, then the
+  action as one JSON object; only those two lines score;
+- the repository reward `score_direct_action_step`, the same function controlled G9 uses;
+- an invalid, malformed or policy-blocked action scores −1.
+
+### Evaluation sets (v1.3)
+
+The v1.2 confirmation set has been used once, so it is spent. New sets are drawn by
+[`scripts/make_rightsizing_eval_sets.py --version v1.3`](../../scripts/make_rightsizing_eval_sets.py)
+and committed before training as
+[`artifacts/evidence/rl-gpu-7b-v1/eval-sets-v1.3.json`](../../artifacts/evidence/rl-gpu-7b-v1/eval-sets-v1.3.json).
+
+- **Pool.** Train states that nothing has touched: no GRPO prompt in any recorded run, no
+  SFT demonstration, no Train evaluation sample, not the smoke run's four prompts, not
+  either v1.2 set, and not the original 64 held-out states. Each run's demonstrations are
+  re-drawn from its own recorded configuration and checked against the
+  `demonstrations_sha256` it wrote down, so the pool cannot shrink unnoticed. 667 of the 926
+  Train states are touched; 259 remain, 74 with exact division and 185 without.
+- **Development set, 64 states:** 32 exact-division and 32 inexact-division, because the
+  development bar below is read per category.
+- **Confirmation set, 128 states:** the 42 exact-division states the development set leaves,
+  plus 86 inexact. A half-and-half confirmation set is impossible from a pool of 74 exact
+  states.
+- Digests: dev `116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a`,
+  confirmation `5ef5384fa858f30cf53ec95b77fd2d1037571c0acdd7531d92a4926545adaa0b`.
+- Both sets are passed to every `sft` and `train` command through `--exclude-states`, so
+  neither can become a training prompt or a demonstration.
+
+### Recipe
+
+1. **SFT warm start**, `reasoned_strict`, on Train-only demonstrations. The size is chosen by
+   a fixed rule read on the **Train evaluation sample only**: at least 75% valid answers and
+   between 20% and 85% solved. Try 16 demonstrations, then 32, then 48, and take the first
+   that satisfies the rule. A start that already solves nearly everything leaves RL nothing
+   to do; one that solves nothing gives no gradient.
+2. **GRPO** from that start: `--balanced --prompts-per-step 2 --save-every 10`, 100 steps,
+   learning rate 5e-5, 8 generations, temperature 1.0, beta 0,
+   `--max-completion-length 96`.
+3. **Selection.** Score every saved checkpoint on the development set; take the best, and on
+   a tie the earliest.
+4. **Confirmation.** Score the selected checkpoint **once** on the confirmation set, and its
+   SFT start once on the same states.
+
+### Success criterion, fixed in advance
+
+The run succeeds only if **both** hold:
+
+- at least **116 of 128** solved on the confirmation set; and
+- an **exact McNemar p below 0.01** against its own SFT start on the same 128 states.
+
+**Development bar before confirming at all:** at least 58 of 64 solved, with at least 85% of
+the exact-division states and at least 85% of the inexact-division states (that is, at least
+28 of 32 in each). The confirmation set is never looked at to make a decision.
+
+### Collapse watch and the allowed changes
+
+Training samples are read every 10 steps. If the exact-division or the inexact-division
+samples fall towards 0 solved, the evidence is saved and that run is stopped. A dated
+amendment then goes into this document — what was seen, what changes next — and is committed
+**before** the next run. The allowed changes, in this order and no other:
+
+1. lower the learning rate to 2e-5;
+2. checkpoint more often, `--save-every 5`;
+3. 4 prompts per step, still balanced;
+4. a different SFT start.
+
+If the whole list is exhausted without progress, the run stops and the result is reported as
+a negative one, with every stopped run included.
+
+### What this run cannot show
+
+- It is not the G9 protocol, the G9 trainer, or a G9 environment. The task is synthetic:
+  no Kubernetes, no Chaos Mesh, no live service.
+- A result here, good or bad, does not move G9, G13, or any other gate.
+- One model, one seed, one task. Nothing here generalises to incident response.
+
+## Amendment 1 — 27 October 2026, before any GRPO run
+
+**What changed.** The collapse watch runs *after* each GRPO run rather than interrupting it.
+
+**Why.** The pre-registration says to read the training samples every 10 steps and stop a run
+that collapses. The run happens in a Kaggle batch kernel, which does not stream its log: the
+output arrives only when the kernel finishes, so there is nothing to watch while it runs and
+no way to interrupt it from outside. Kaggle is the GPU available here.
+
+**What this costs, and what it does not.** It costs GPU time on a run that has already gone
+wrong — nothing else. It does not touch the evidence or the decision: `rollouts.jsonl` records
+every completion with its step, so the per-10-step picture is read in full afterwards, and
+`--save-every 10` means the checkpoint from before a collapse still exists and is still the one
+the development set selects. On CPU this was exactly what happened — training collapsed after
+about 50 steps and the step-30 checkpoint was the one selected.
+
+**What stays.** Everything else: the allowed changes, in order, with a dated amendment
+committed before each next run; the development bar; and the single use of the confirmation
+set.
+
+## Amendment 2 — 27 October 2026, before any GRPO run
+
+**What changed.** The SFT micro-batch is 2 rather than the CPU run's 4.
+
+**Why.** A 7B model in 4-bit with LoRA on a 15 GiB T4 has far less headroom than a 0.5B model
+on a CPU with 30 GiB of RAM. The accumulated update is unchanged — micro-batches only bound
+peak memory, and the optimizer still steps once per batch of 8 — so this changes how the
+step is computed, not what it computes.
+
+## Amendment 3 — 27 October 2026, after phase A's first attempt failed
+
+**What happened.** All three SFT arms died with CUDA out of memory before training a single
+step. The run is kept: `artifacts/evidence/rl-gpu-7b-v1/phaseA-attempt1/`.
+
+**Why.** Two measured causes.
+
+1. The prepared model is far larger than a 4-bit 7B suggests. `prepare_model_for_kbit_training`
+   upcasts everything that is not quantised to float32, and Qwen2.5-7B's vocabulary is 152k
+   tokens, so its embedding and output matrices dominate: the model alone held **7.21 GiB** of
+   the T4's 14.56 GiB before a single activation existed.
+2. The loss materialises logits over that 152k vocabulary in float32. At micro-batch 2 and
+   ~600 tokens that single tensor is about 2 GiB, which is exactly the allocation that failed.
+
+**What changes.** Three mechanical fixes, none of them touching the recipe, the sets or the
+criterion:
+
+- the micro-batch drops from 2 to 1, halving the logits tensor (amendment 2 already separated
+  micro-batch size from the accumulated update, which is unchanged);
+- `--gradient-checkpointing` is added and used on the GPU, trading compute for activation
+  memory;
+- each arm runs in its own process, so no earlier model, and no traceback holding a frame,
+  keeps the GPU occupied while the next arm loads.
+
+**What it does not change.** The demonstration counts and their order, the selection rule, the
+development bar, the confirmation set and the success criterion all stand as registered.
+
+**One result worth recording from the failed attempt**, because it is measured and it matters:
+the base model scores **0 of 64** admissible actions on the held-out states and 0 of 64 on the
+Train evaluation sample, mean reward −1.0, every one classed `invalid_action`. The reason is
+narrow. It emits a correct action object but puts a bare number on the first line where the
+format wants the arithmetic, so the strict parser rejects the whole completion:
+
+```
+11
+{"tool": "kubectl_scale", "arguments": {..., "replicas": 11}, "agent_claimed_resolved": false}
+```
+
+This is the same failure that produced 0/8 valid actions in the frozen G9 pilot, and it is why
+the recipe starts with an SFT warm start rather than going straight to GRPO.
+
+## Amendment 4 — 27 October 2026, after phase A succeeded and the rule chose nothing
+
+**What happened.** All three warm starts trained. The fixed rule — the first of 16, 32, 48
+demonstrations with at least 75% valid answers and between 20% and 85% solved, read on the
+Train evaluation sample — selected **none of them**.
+
+| Demonstrations | Valid | Solved | Held-out solved | Rule |
+|---|---|---|---|---|
+| 16 | 70.3% | 68.8% | 36/64 | fails: valid below 75% |
+| 32 | 100% | 100% | **64/64** | fails: solved above 85% |
+| 48 | 100% | 100% | **64/64** | fails: solved above 85% |
+
+**What it means, and it is the most important thing this experiment has measured so far.**
+Qwen2.5-7B reaches a **perfect** policy from 32 demonstrations: 64 of 64 on the held-out
+states and 64 of 64 on the Train evaluation sample, every answer valid, nothing
+over-provisioned and nothing under-provisioned. There is no headroom above it for
+reinforcement learning to demonstrate. The CPU experiment saw a weaker form of this — SFT on
+64 demonstrations reached 127/128, so GRPO matched SFT rather than beating it — and at 7B it
+is absolute. The warm start is not a stepping stone to RL here; it is already the answer.
+
+The base model is not weak at the task either. It computes the right replica count and emits a
+well-formed action; it fails only because it writes a bare number where the strict format
+wants the arithmetic line. Thirty-two demonstrations are enough to teach that line, and once
+the format is right the arithmetic was already correct.
+
+**What happens next.** The rule's purpose is a start with enough validity to give GRPO a
+gradient and enough headroom for GRPO to show something. The two conditions are not met
+together by any count tried, because the model jumps from 59% valid and 56% solved at 16
+demonstrations straight to 100% and 100% at 32. Before falling back, the gap is probed
+directly:
+
+1. Run two more warm starts, at **20 and 24 demonstrations**, drawn from the same Train pool
+   with the same exclusions and the same seed rule. If either satisfies the rule as written, it
+   is the start, and the registered recipe proceeds unchanged.
+2. If neither does, GRPO runs from the **16-demonstration** start, the only one with headroom,
+   and this document records the deviation: it misses the validity floor (70.3% against 75%).
+   That decision is fixed here, before any development or confirmation score is read.
+
+Either way the development bar, the single use of the confirmation set and the success
+criterion stand exactly as registered. And whatever GRPO does from a start with headroom, it
+will be measured against a plain fact already in hand: 32 demonstrations and no reinforcement
+learning at all solve every state in both 64-state samples.
+
+## Amendment 5 — 27 October 2026, after the 20/24 probe
+
+**What happened.** Neither new warm start satisfies the rule either, but the four points
+together show why, and the reason is structural rather than bad luck.
+
+| Demonstrations | Valid | Solved | Rule |
+|---|---|---|---|
+| 16 | 70.3% | 68.8% | valid below 75% |
+| 20 | 87.5% | 87.5% | solved above 85% |
+| 24 | 92.2% | 92.2% | solved above 85% |
+| 32 | 100% | 100% | solved above 85% |
+
+**For this model the solved rate equals the valid rate.** At 20, 24 and 32 demonstrations the
+two numbers are identical to the digit, and at 16 they differ by one state. Every answer this
+model formats correctly is also arithmetically correct; it never produces a well-formed action
+with the wrong replica count. All three warm starts above 16 demonstrations have zero
+under-provisioned and zero over-provisioned answers.
+
+That collapses the rule's two conditions into one. If solved equals valid, then "valid at
+least 75%" and "solved at most 85%" together mean "valid between 75% and 85%" — a ten-point
+window, and the demonstration counts tried jump straight over it, from 70.3% at 16 to 87.5%
+at 20.
+
+**It also says what GRPO can and cannot do here.** The only thing a warm start teaches this
+model is the output format, and so the only thing reinforcement learning can improve from such
+a start is the output format too. The arithmetic was never wrong. Any gain this experiment
+measures should be read as the policy learning to write the instructed two-line shape, not as
+it learning to size a deployment.
+
+**What happens next.** One more probe, at **17, 18 and 19 demonstrations**, to land inside the
+ten-point window and give GRPO a start that satisfies the rule exactly as registered. Same
+Train pool, same exclusions, same seed rule. If a count satisfies the rule, the smallest such
+count is the start. If none does, the fallback fixed in amendment 4 stands: GRPO runs from the
+16-demonstration start, with its missed validity floor recorded.
+
+No development or confirmation score has been read. The bar, the single confirmation and the
+success criterion are unchanged.
+
+## The warm start, settled — 27 October 2026
+
+The 17/18/19 probe landed inside the window, so **GRPO starts from the 18-demonstration warm
+start** and the registered rule is satisfied as written. No fallback and no deviation.
+
+| Demonstrations | Valid | Solved | Rule |
+|---|---|---|---|
+| 16 | 70.3% | 68.8% | valid below 75% |
+| 17 | 85.9% | 85.9% | solved above 85%, by one state |
+| **18** | **84.4%** | **84.4%** | **satisfied** |
+| 19 | 82.8% | 82.8% | satisfied, but 18 is smaller |
+| 20 | 87.5% | 87.5% | solved above 85% |
+| 24 | 92.2% | 92.2% | solved above 85% |
+| 32 | 100% | 100% | solved above 85% |
+| 48 | 100% | 100% | solved above 85% |
+
+The chosen start solves 54 of the 64 Train evaluation states, every one of its valid answers
+is correct, and it over- and under-provisions nothing. Its ten failures are all
+`invalid_action`: the first line is not in the demonstrated arithmetic form.
+
+Two things are worth saying about this table before any GRPO number exists.
+
+**The start is high.** It leaves ten states of headroom on a 64-state sample. The success
+criterion asks for at least 116 of 128 on the confirmation set together with an exact McNemar
+p below 0.01 against this start, and the start itself will land somewhere near 108. The
+criterion was fixed before any of this was known and is not being moved; it is simply a
+demanding one against a start this strong.
+
+**The curve is not monotone.** Validity reads 85.9%, 84.4% and 82.8% at 17, 18 and 19
+demonstrations — one state apart each, falling as demonstrations rise. Over a 64-state sample
+those differences are noise, which is worth remembering when reading any single number here
+to two decimal places.
+
+## Runs
+
+Every run, including the ones that produced nothing. Each row's numbers are
+recomputed from the committed evidence by `analyze_gpu_v1`, not transcribed.
+
+| phase | run | outcome |
+|---|---|---|
+| A, attempt 1 | three SFT arms | **failed**, would not fit the T4 (`phaseA-attempt1/`) |
+| A | SFT sweep | succeeded; the rule chose no warm start (`phaseA/`, `phaseA3/`) |
+| A4 | SFT sweep | chose 18 demonstrations (`phaseA4/`) |
+| B | GRPO, 100 steps | **null run**: 0/1600 admissible, 0/392 tensors moved (`phaseB/`) |
+| diagnosis | five GPU probes | found the cause: rollouts generated in train mode (`diagnosis/`) |
+| B2 | GRPO, 100 steps, rerun | trained: 1547/1600 admissible, 392/392 tensors moved (`phaseB2/`) |
+| C1, attempt 1 | dev sweep | **failed**, scored 0 of 11 and still reported COMPLETE (`phaseC1-attempt1/`) |
+| C1, attempt 2 | dev sweep | **failed**, scored 2 of 11 then out of memory (`phaseC1-attempt2/`) |
+| C1 | dev sweep | scored 12 of 12; selected `step-0030` (`phaseC1/`) |
+| C2 | confirmation, once | criterion met (`phaseC2/`) |
+
+### Development scores and the selection
+
+`step-0030` at 64/64, chosen by the registered rule (most solved, earliest wins a
+tie) over a field in which nine of twelve candidates were perfect. The warm start
+scored 49/64. The development set did not separate the candidates; the tie-break
+did. Amendment 8 has the full table.
+
+### The confirmation
+
+128 fresh Train-derived states, excluded from training and from selection, opened
+once:
+
+| arm | solved | valid | exact | inexact |
+|---|---|---|---|---|
+| `sft-start` (the warm start) | 109/128 | 109 | 38/42 | 71/86 |
+| `step-0030` (selected) | **125/128** | 128 | 42/42 | 83/86 |
+
+Paired on the same states: 19 gained, 3 lost, exact McNemar **p = 0.00086**.
+
+**The pre-registered criterion -- at least 116/128 solved and exact McNemar
+p < 0.01 against its own SFT start -- is met.**
+
+### Limits
+
+These are real and none of them is repaired by the result above.
+
+- **The task saturated.** Only 13 of 100 steps carried a gradient, the last at
+  step 63. The 100-step budget was mis-sized for a warm start that could nearly
+  do the task already.
+- **The selection was not evidence-driven.** Nine candidates tied at 64/64 on dev.
+  A different tie-break picks a different checkpoint, and nothing here says
+  `step-0030` is better than `step-0040`.
+- **One task, one seed, one model.** A synthetic right-sizing environment at a
+  single seed. Nothing here generalises to incident response.
+- **In-process evaluation.** The held-out and confirmation scores were measured in
+  the same process that trained; a fresh-reload check is not part of this run.
+- **No independent review.** One operator, no second pair of eyes on the numbers.
+- **The confirmation's commit label is stale** (`phaseC2/SOURCE_COMMIT_LABEL_IS_STALE.md`);
+  the source is identical by `tree_sha256` across phases B2, C1 and C2.
+
+### Status
+
+Owner authorization: PR #235, comment of 27 October 2026 by `virajchoudhary`
+(`authorAssociation: OWNER`), which states that formal G9 acceptance is
+NOT_APPLICABLE to this task and that the project gate is unchanged.
+
+**This is not G9 evidence and changes no gate.**
+
+### What would make this worth more
+
+The three limits above are design faults, not bad luck, and each has a fix. They
+are pre-registered in [the v2 proposal](RIGHTSIZING_GRPO_V2_PROPOSAL.md): a task
+drawn only from the band where this warm start scored 0.49, a stop rule so a
+saturated run ends where the learning ended, a selection that is void unless the
+development scores actually separate the candidates, fresh-reload evaluation only,
+and replication across three seeds. The offline parts are implemented and tested.
+Executing it needs new training, which the 27 October authorization does not
+grant.
+
+## Amendment 6 — the first GRPO run trained nothing, and why — 27 October 2026
+
+The pre-registered GRPO run completed its 100 steps and changed the policy in no respect
+whatsoever. Four signs, each from a different file the run wrote, and all four recomputed
+from the committed evidence by `analyze_gpu_v1`:
+
+* `lora.changed` is 0 of 392 tensors;
+* the saved adapter's `adapter_model.safetensors` digest equals the warm start's;
+* `grad_norm` and `reward_std` are 0.0 at every one of the 100 logged steps;
+* `baseline_held_out.jsonl` and `trained_in_process_held_out.jsonl` are the same bytes.
+
+All 1600 rollouts scored -1. Every group of eight therefore had identical reward, the
+advantage within each group was zero, and with `beta = 0` no KL term contributes anything
+either. The optimiser ran one hundred times and multiplied zero by a learning rate.
+
+This is **not** the policy collapse this document registered a watch for. A collapse is a
+policy that learns the wrong thing; this policy never produced a scorable answer at all.
+The rollouts contain text like `'6AMENTOLER decl.sky性价 burgebody…'` — not a format slip,
+not language. Every completion ran to the 96-token cap: `completions/mean_length` is
+exactly 96.0 at every step, so no rollout ever emitted a stop token.
+
+### What was eliminated, and what it cost
+
+Five diagnostic runs, about ninety minutes of T4 time, each kept under
+`artifacts/evidence/rl-gpu-7b-v1/diagnosis/`. Three plausible causes were measured and
+refuted before the fourth was found. Recording them because each would have looked like a
+reasonable fix, and each would have bought another hour and the same zero.
+
+| Suspect | Test | Result |
+|---|---|---|
+| Gradient checkpointing kills the gradient | backward pass, checkpointing on and off | refuted: 392/392 tensors, norm 2.628317 both ways |
+| fp16 corrupts generation | decode under autocast, accelerate, plain | refuted: all 0.9375 valid, identical bytes |
+| Temperature 1.0 destroys a weak format | sample at temperature 1.0 | refuted as *the* cause: 0.3125, not 0 |
+| Qwen's shipped sampling defaults | strip them inside the trainer | refuted: identical garbage |
+| Reentrant checkpointing during generation | `use_reentrant=False`; `use_cache=True` | refuted: identical garbage |
+
+The `None of the inputs have requires_grad=True` warning in the run's log, which looks
+damning, is benign: it is emitted for the frozen base-model segments.
+
+### The cause
+
+`GRPOTrainer` samples its rollouts inside `train()`, with the model left in training mode.
+Transformers disables the KV cache whenever `self.gradient_checkpointing and self.training`,
+and on this stack that combination does not slow generation down, it destroys it. One model,
+one adapter, the same sixteen development states, greedy and sampled
+(`diagnosis/v5-train-vs-eval-mode.json`):
+
+| mode | decoding | valid | completions at the 96-token cap |
+|---|---|---|---|
+| eval | greedy | 0.9375 | 0 of 16 |
+| eval | sampled, T=1.0 | 0.4375 | 0 of 16 |
+| eval | sampled, TRL's exact flags | 0.4375 | 0 of 16 |
+| train | **greedy** | **0.0** | **16 of 16** |
+| train | sampled, T=1.0 | 0.0 | 13 of 16 |
+| train | sampled, TRL's exact flags | 0.0 | 13 of 16 |
+
+Train-mode *greedy* decoding — no sampling anywhere — returns
+`'4. 1. 1. 1. 1. 1. ...'` until it exhausts its budget. That is decisive: the fault is the
+mode, not the temperature, not the precision, not the decode flags. The run before this one
+was healthy right up to the moment training began: `diagnosis/v4-checkpointing-fixes.json`
+records the trainer's own model object scoring 0.9375 immediately before `train()` is called.
+
+### The change
+
+`scripts/train_rightsizing_grpo.py` now wraps `model.generate` so it runs in eval mode and
+restores the caller's mode afterwards, installed only when `--gradient-checkpointing` is
+given. A CPU run is untouched. Sampling from eval mode still samples the policy being
+trained: LoRA dropout and Qwen2.5's attention dropout are both zero, so the two modes
+describe one distribution and only the checkpointing path differs.
+
+This is a defect in the harness, not a change to the recipe. The pre-registered recipe,
+the warm start, the success criterion and the evaluation sets are all unchanged, and the
+next run re-runs phase B exactly as registered. The run reported above stays in the record
+as a failed attempt, with its 1600 rollouts.
+
+### What this costs the experiment
+
+One point of honesty about the ordering. The eval-mode table above also shows the warm
+start sampling at **0.4375** valid at temperature 1.0, against 0.9375 greedy. GRPO learns
+from sampled rollouts, so the policy it actually sees is the 0.44 one, not the 0.84 the
+selection rule measured greedily on the Train sample. The rule in this document selected
+the warm start on greedy validity; it should have selected on sampled validity, because
+that is what determines whether a group's rewards vary at all. That is a flaw in the
+pre-registration, not in the run, and it is recorded here rather than quietly corrected:
+the warm start stays at 18 demonstrations for the next run, as registered.
+
+## Amendment 7 — the rerun trained, and then ran out of signal — 27 October 2026
+
+Phase B was rerun at `8c77314` with generation forced to eval mode. The run is
+`phaseB2/`; the null run stays at `phaseB/` and is still reported.
+
+The fix did what the diagnosis said it would. Before, 0 of 1600 rollouts were
+admissible and 0 of 392 LoRA tensors moved. Now:
+
+| | phaseB (null) | phaseB2 |
+|---|---|---|
+| admissible rollouts | 0 / 1600 | 1547 / 1600 |
+| LoRA tensors changed | 0 / 392 | 392 / 392 |
+| held-out resolved | 55 → 55 of 64 | 55 → 64 of 64 |
+| paired lost / gained | 0 / 0 | 0 / 9 |
+
+Nine held-out states gained, none lost, exact McNemar p = 0.0039 (two-sided, as `exact_mcnemar` computes it). The collapse
+watch shows no collapse: resolution runs 145, 157, 136, 150, then 160 of 160 for
+the remaining six blocks.
+
+### What the step log says that the collapse watch does not
+
+Only **13 of the 100 steps produced a non-zero gradient, the last at step 63.**
+The reward is bounded above at 1.0, so once every rollout in a group resolves,
+`reward_std` is 0, the advantage is 0 and the update is 0:
+
+    steps  1-10   reward 0.8125   reward_std 0.3636   grad_norm 0.2618
+    steps 41-50   reward 1.0000   reward_std 0.0000   grad_norm 0.0000
+    steps 91-100  reward 1.0000   reward_std 0.0000   grad_norm 0.0000
+
+This is saturation, not collapse, and it is the opposite failure to the one the
+pre-registration anticipated. The learning happened in roughly the first 60
+steps; the rest of the budget bought nothing.
+
+The ten checkpoint adapters are nonetheless all distinct (`CHECKPOINT_SHA256.json`).
+With a zero gradient AdamW still applies decaying momentum, so the weights drift
+after step 63 without a learning signal behind them. Checkpoints after step 60
+should be read as drift, not as later learning. Phase C1 selects on the
+development set across all ten, which handles this without special-casing.
+
+### What this costs the pre-registration
+
+The registered recipe sized 100 steps for a task the warm start could not yet do.
+After the generation fix the same warm start solves most of it immediately, so
+the step budget is mis-sized and `easy_fraction=0.4` makes the sampled prompts
+easier still. I am not re-sizing it here: the run is on the record as registered,
+and changing the recipe after seeing the result is how a selection effect gets in.
+A future version should either raise difficulty or stop on a saturation rule.
+
+This is not G9 evidence and changes no gate.
+
+## Amendment 8 — checkpoint selection, and three attempts to get it — 27 October 2026
+
+Owner authorization for this finish is PR #235, comment of 27 October 2026 by
+`virajchoudhary` (`authorAssociation: OWNER`): the exploratory task may score the
+ten checkpoints on the development set, select without consulting confirmation
+outcomes, and run one confirmation. The same comment states that formal G9
+acceptance is NOT_APPLICABLE here and the gate is unchanged. Nothing below is
+G9 evidence.
+
+Phase C1 took three attempts. Both failures are kept, with their console logs:
+
+| attempt | outcome | cause |
+|---|---|---|
+| `phaseC1-attempt1/` | scored 0 of 11, reported COMPLETE | hand-built `Namespace` lacked `gradient_checkpointing`, added to the handlers by `8c77314`; the loop caught each failure and continued |
+| `phaseC1-attempt2/` | scored 2 of 11, then OOM | one process loaded a fresh 7B per candidate; a 7B does not leave the GPU on dereference |
+| `phaseC1/` | scored 12 of 12 | one process per candidate, driving the repository's `score` subcommand |
+
+Attempt 1's second fault was the worse one: a sweep that scored nothing printed
+`PHASE C1 COMPLETE` with `dev_scores: {}`. Attempt 3 stops at the first failure
+and asserts a selection exists before claiming completion. Attempt 2's two scores
+are kept as evidence but were not carried into the selection -- a selection
+assembled from runs under different memory conditions is not this procedure.
+
+### The selection
+
+| candidate | solved | exact | inexact |
+|---|---|---|---|
+| `sft-start` | 49/64 | 29/32 | 20/32 |
+| `step-0010` | 61/64 | 29/32 | 32/32 |
+| `step-0020` | 59/64 | 32/32 | 27/32 |
+| `step-0030` | **64/64** | 32/32 | 32/32 |
+| `step-0040` .. `step-0100`, `final` | 64/64 | 32/32 | 32/32 |
+
+Selected `step-0030` by the registered rule: most solved, earliest wins a tie.
+The development bar (>=58/64, >=28/32 exact, >=28/32 inexact) is met.
+
+**The development set cannot separate these candidates.** Nine of twelve score a
+perfect 64/64, so the tie-break chose, not the evidence. This is the same
+saturation amendment 7 records in the step log, now visible in the scoring, and
+it is the reason the confirmation set -- 128 states, opened once -- is the only
+number here worth weighing.
+
+No confirmation state was read during selection: `confirmation_set_opened_here`
+is false in `SELECTION.json`.
+
+This is not G9 evidence and changes no gate.

@@ -526,7 +526,7 @@
         ${icon("arrow-up-right")}</button></div></div>`).join("")}</div>`);
     }).join("");
     return head("RESEARCH STATUS", "Evaluations", "G0-G15 governance and preserved evidence, separate from operator health.") +
-      `<div class="notice warn">G4 is NOT_PASSED. G9 and G13 are REOPENED. Software implementation and CI do not close empirical gates.</div>` +
+      `<div class="notice warn">G4 and G9 are NOT_PASSED. G13 is REOPENED. Software implementation and CI do not close empirical gates.</div>` +
       `<div class="controls"><div class="segmented" aria-label="Evaluation filter">
       ${[["all", "All gates"], ["open", "Open"], ["passed", "Recorded PASS"]].map(([id, title]) =>
         `<button data-eval-filter="${id}" class="${state.evaluationFilter === id ? "active" : ""}" aria-pressed="${state.evaluationFilter === id}">${title}</button>`).join("")}</div></div>` +
@@ -574,13 +574,12 @@
 
   function evidencePage() {
     const catalog = val("catalog");
+    // Area names must match ui_read_model.EVIDENCE exactly.
     const areas = [
-      ["Model evaluations", "Archived mock outputs, not empirical performance"],
-      ["Training provenance", "Corpus and configuration, not a validated checkpoint"],
-      ["Recommender", "Optional historical RS work; not a required GAI + RL dependency"],
-      ["Ablation", "Historical, predetermined, non-empirical five-arm profiles; not the required three-arm comparison"],
-      ["Environment", "Historical local acceptance, not current cluster health"],
-      ["Submission", "Asset integrity without scientific certification"]
+      ["SFT", "Training provenance: preserved v17 adapter and independent reload, not incident improvement"],
+      ["Validation", "Base-vs-SFT diagnostic on alert-only inputs, not incident resolution"],
+      ["GRPO", "Frozen negative controlled G9 result and its verification"],
+      ["G4", "Disposition and preserved attempts; G4 is NOT_PASSED"]
     ];
     const grouped = catalog && areas.map(([area, caption]) => {
       const items = catalog.evidence.map((item, index) => ({ ...item, index }))

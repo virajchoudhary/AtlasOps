@@ -30,7 +30,8 @@ no prose extraction, JSON repair or invented recovery claim.
 
 Exactly eight sequential samples used seed 2026, temperature 1, top_p 1,
 top_k 50 and at most 192 new tokens. Exact Python 3.12.11 and all 72 frozen
-package versions were verified, with one free T4 exposed. Kaggle Internet
+package versions were verified. The inference receipt lists two free T4s
+visible to the notebook; the diagnostic loaded the model on device 0 only. Kaggle Internet
 was independently observed OFF before pretrained inference; direct outbound
 probes failed. Base/tokenizer revision remained
 `Qwen/Qwen2.5-7B-Instruct@a09a35458c702b33eeacc393d103063234e8bc28`;

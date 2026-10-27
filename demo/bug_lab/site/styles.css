@@ -1,0 +1,118 @@
+:root {
+  --atlas-stylesheet: loaded;
+  --ink: #1d2433;
+  --muted: #5d6677;
+  --paper: #f6f4ef;
+  --card: #ffffff;
+  --line: #e2ddd2;
+  --accent: #c2541b;
+  --accent-ink: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.brand { color: #ffffff; font-weight: 700; font-size: 20px; text-decoration: none; }
+.nav { display: flex; align-items: center; gap: 16px; }
+.nav a { color: #d8dde8; text-decoration: none; }
+
+.cart {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+#cart-count {
+  display: inline-block;
+  min-width: 20px;
+  margin-left: 4px;
+  font-weight: 700;
+}
+
+main { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+.hero { padding: 40px 0 16px; }
+.hero h1 { margin: 0 0 8px; font-size: 34px; }
+.hero p { margin: 0; color: var(--muted); }
+
+.status { color: var(--muted); }
+
+.grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: #ece8df; }
+.card h3 { margin: 0; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.price { font-weight: 700; font-size: 18px; }
+
+.add {
+  margin-top: auto;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  padding: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.add:hover { background: var(--ink); color: #ffffff; }
+
+.about { padding: 24px 0 48px; color: var(--muted); }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.toast.show { opacity: 1; }
+
+.footer { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 600px) {
+  .topbar { flex-wrap: wrap; }
+  .hero h1 { font-size: 26px; }
+}

@@ -1,0 +1,172 @@
+[
+  {
+    "steps": [
+      1,
+      10
+    ],
+    "rollouts": 160,
+    "resolved": 145,
+    "invalid": 15,
+    "exact_resolved": [
+      71,
+      80
+    ],
+    "inexact_resolved": [
+      74,
+      80
+    ]
+  },
+  {
+    "steps": [
+      11,
+      20
+    ],
+    "rollouts": 160,
+    "resolved": 157,
+    "invalid": 1,
+    "exact_resolved": [
+      77,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  },
+  {
+    "steps": [
+      21,
+      30
+    ],
+    "rollouts": 160,
+    "resolved": 136,
+    "invalid": 2,
+    "exact_resolved": [
+      78,
+      80
+    ],
+    "inexact_resolved": [
+      58,
+      80
+    ]
+  },
+  {
+    "steps": [
+      31,
+      40
+    ],
+    "rollouts": 160,
+    "resolved": 150,
+    "invalid": 2,
+    "exact_resolved": [
+      79,
+      80
+    ],
+    "inexact_resolved": [
+      71,
+      80
+    ]
+  },
+  {
+    "steps": [
+      41,
+      50
+    ],
+    "rollouts": 160,
+    "resolved": 160,
+    "invalid": 0,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  },
+  {
+    "steps": [
+      51,
+      60
+    ],
+    "rollouts": 160,
+    "resolved": 160,
+    "invalid": 0,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  },
+  {
+    "steps": [
+      61,
+      70
+    ],
+    "rollouts": 160,
+    "resolved": 159,
+    "invalid": 1,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      79,
+      80
+    ]
+  },
+  {
+    "steps": [
+      71,
+      80
+    ],
+    "rollouts": 160,
+    "resolved": 160,
+    "invalid": 0,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  },
+  {
+    "steps": [
+      81,
+      90
+    ],
+    "rollouts": 160,
+    "resolved": 160,
+    "invalid": 0,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  },
+  {
+    "steps": [
+      91,
+      100
+    ],
+    "rollouts": 160,
+    "resolved": 160,
+    "invalid": 0,
+    "exact_resolved": [
+      80,
+      80
+    ],
+    "inexact_resolved": [
+      80,
+      80
+    ]
+  }
+]

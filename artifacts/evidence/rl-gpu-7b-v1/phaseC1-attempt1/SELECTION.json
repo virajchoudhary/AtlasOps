@@ -1,0 +1,8 @@
+{
+  "confirmation_set_opened_here": false,
+  "dev_scores": {},
+  "development_bar": ">=58/64 solved, >=28/32 exact, >=28/32 inexact",
+  "development_bar_met": false,
+  "rule": "most solved on the development set; earliest checkpoint wins a tie",
+  "selected": null
+}

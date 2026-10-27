@@ -1,0 +1,349 @@
+{
+  "adapter_inventory": {
+    "README.md": {
+      "bytes": 5192,
+      "sha256": "cc267b2b7ec99bdc544edc147d3c73da5158da4e1a0a7d03c8e1a60476b157d9"
+    },
+    "adapter_config.json": {
+      "bytes": 930,
+      "sha256": "53dccbe1e725f76b600ce9b4c63a29195b09d3b1ea3be6dd3e0952f2a7ff0c95"
+    },
+    "adapter_model.safetensors": {
+      "bytes": 161533192,
+      "sha256": "19c73b1fdc559b7f6a8f4a9ae8a45e796099185ab8dbe3a158d6df5b85675e10"
+    },
+    "added_tokens.json": {
+      "bytes": 605,
+      "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b"
+    },
+    "chat_template.jinja": {
+      "bytes": 2507,
+      "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+    },
+    "merges.txt": {
+      "bytes": 1671853,
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    "special_tokens_map.json": {
+      "bytes": 613,
+      "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+    },
+    "tokenizer.json": {
+      "bytes": 11421896,
+      "sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa"
+    },
+    "tokenizer_config.json": {
+      "bytes": 4686,
+      "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614"
+    },
+    "vocab.json": {
+      "bytes": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  },
+  "base": {
+    "held_out": {
+      "admissible_rate": 0.0,
+      "invalid_categories": {
+        "invalid_action": 64
+      },
+      "mean_reward": -1.0,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.0,
+      "under_provisioned": 0
+    },
+    "train_sample": {
+      "admissible_rate": 0.0,
+      "invalid_categories": {
+        "invalid_action": 64
+      },
+      "mean_reward": -1.0,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.0,
+      "under_provisioned": 0
+    }
+  },
+  "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+  "config": {
+    "action_format": "reasoned_strict",
+    "batch_size": 8,
+    "budget_fixed_before_running": true,
+    "device": "cuda",
+    "epochs": 2,
+    "eval": {
+      "action_format": "reasoned_strict",
+      "decoding": "greedy",
+      "max_new_tokens": 96
+    },
+    "examples": 17,
+    "excluded_from_demonstrations": {
+      "file_sha256": "13e158ab8cb51f1d8bd3cfe26ba7333b34458a515424bdd0f5a63372bba50c10",
+      "states": 192
+    },
+    "learning_rate": 0.0001,
+    "lora": {
+      "alpha": 32,
+      "dropout": 0.0,
+      "r": 16,
+      "targets": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ]
+    },
+    "loss": "assistant tokens only",
+    "micro_batch_size": 1,
+    "seed": 2026,
+    "split_seed": 2026
+  },
+  "data": {
+    "demonstrations": 17,
+    "demonstrations_from": "Train split only; targets computed by the environment",
+    "demonstrations_sha256": "3754769fb1f57b2ccb3ffe54af2c93187dc7ab0b1dfa94956b031772a6fd3e65",
+    "excluded_states_overlap": 0,
+    "held_out_overlap": 0,
+    "held_out_sha256": "e2b24ce0307789e6166b7d891112b05f032e9836f10cfac97289cc7876ff950a"
+  },
+  "experiment": "rightsizing-grpo-cpu-v1",
+  "finished_at": "2026-10-26T20:38:18.081617+00:00",
+  "gate_status": "Not a G7 or G9 result; changes no gate status.",
+  "model": {
+    "dir_inventory": {
+      ".cache/huggingface/.gitignore": {
+        "bytes": 1,
+        "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+      },
+      ".cache/huggingface/download/.gitattributes.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/.gitattributes.metadata": {
+        "bytes": 100,
+        "sha256": "035ea4075054585ab4fe9be394811ff2d29dfa9bd48f7a5379f83b92ed806079"
+      },
+      ".cache/huggingface/download/LICENSE.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/LICENSE.metadata": {
+        "bytes": 101,
+        "sha256": "21ad077f70bc18b06c45119dcf8744a3fa492068aea877c1ad50fa385048eda3"
+      },
+      ".cache/huggingface/download/README.md.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/README.md.metadata": {
+        "bytes": 101,
+        "sha256": "1ea99fca5752024e26a8af66ddc265f201ddd170aa3d8ae8f088b78552c56444"
+      },
+      ".cache/huggingface/download/config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/config.json.metadata": {
+        "bytes": 101,
+        "sha256": "69d6a217a60413700413c2ce8d150bfdc841ebe1a9c3f70dc3756b5c6f7ee527"
+      },
+      ".cache/huggingface/download/generation_config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/generation_config.json.metadata": {
+        "bytes": 101,
+        "sha256": "c3092813ac315e0931a36f33473b82dff2d0340ac458db12c68d669308fcedee"
+      },
+      ".cache/huggingface/download/merges.txt.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/merges.txt.metadata": {
+        "bytes": 101,
+        "sha256": "3ccda423e2272eaf512554432abab087c9131bdd0808946dcf7c6f49defce704"
+      },
+      ".cache/huggingface/download/model-00001-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00001-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "de2ecd571d2ca00d7c48990d6dc37963a2c4bebc83beb3cbe36d6f081c15762b"
+      },
+      ".cache/huggingface/download/model-00002-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00002-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "c88c3ed4b18976e503928e46a544f726acdeea3fd4087d5d95a5e8bc7b15b2d5"
+      },
+      ".cache/huggingface/download/model-00003-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00003-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "c8f3ea27cf9c52a757b7e5e9592835dc6b4b0f35390ca89dde4d7bbee00baaec"
+      },
+      ".cache/huggingface/download/model-00004-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00004-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "bf736cc805ffea3b72537033e3a6c812091d483e6030f70dd5438bbc11148c67"
+      },
+      ".cache/huggingface/download/model.safetensors.index.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model.safetensors.index.json.metadata": {
+        "bytes": 101,
+        "sha256": "bca546b293cfe814286898582f5ed6b18e6301d75603e92354cce0a6506e4c39"
+      },
+      ".cache/huggingface/download/tokenizer.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/tokenizer.json.metadata": {
+        "bytes": 100,
+        "sha256": "ccb6022b8a190a5ededf149de6f6e8f3adbfac816332751fd44e309d89b9199d"
+      },
+      ".cache/huggingface/download/tokenizer_config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/tokenizer_config.json.metadata": {
+        "bytes": 100,
+        "sha256": "1eb437d6f826acfa7d3c656df6d7add646bf010373e3affa5518a74c51267302"
+      },
+      ".cache/huggingface/download/vocab.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/vocab.json.metadata": {
+        "bytes": 101,
+        "sha256": "35a50bb1ce3cb10381f801fc5834afa2545625ba1e280e151021b8374a679d90"
+      },
+      ".gitattributes": {
+        "bytes": 1519,
+        "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+      },
+      "LICENSE": {
+        "bytes": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      },
+      "README.md": {
+        "bytes": 6240,
+        "sha256": "f366f33bbf6bcadbb7d87f0a21a7b65584a56b8d58b0743c77c88bee625b93a6"
+      },
+      "config.json": {
+        "bytes": 663,
+        "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c"
+      },
+      "generation_config.json": {
+        "bytes": 243,
+        "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f"
+      },
+      "merges.txt": {
+        "bytes": 1671839,
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+      },
+      "model-00001-of-00004.safetensors": {
+        "bytes": 3945441440,
+        "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7"
+      },
+      "model-00002-of-00004.safetensors": {
+        "bytes": 3864726352,
+        "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185"
+      },
+      "model-00003-of-00004.safetensors": {
+        "bytes": 3864726424,
+        "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5"
+      },
+      "model-00004-of-00004.safetensors": {
+        "bytes": 3556377672,
+        "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd"
+      },
+      "model.safetensors.index.json": {
+        "bytes": 27752,
+        "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+      },
+      "tokenizer.json": {
+        "bytes": 7031645,
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "tokenizer_config.json": {
+        "bytes": 7305,
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583"
+      },
+      "vocab.json": {
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      }
+    },
+    "provenance": null
+  },
+  "phase": "sft",
+  "runtime": {
+    "cpu_count": 4,
+    "cuda_available": true,
+    "cuda_device": "Tesla T4",
+    "peft": "0.17.1",
+    "platform": "Linux-6.18.55+-x86_64-with-glibc2.39",
+    "python": "3.13.15",
+    "torch": "2.7.1+cu126",
+    "torch_threads": 2,
+    "transformers": "4.57.6",
+    "trl": "0.19.1"
+  },
+  "sft": {
+    "held_out": {
+      "admissible_rate": 0.8125,
+      "invalid_categories": {
+        "invalid_action": 12
+      },
+      "mean_reward": 0.625,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8125,
+      "under_provisioned": 0
+    },
+    "train_sample": {
+      "admissible_rate": 0.8594,
+      "invalid_categories": {
+        "invalid_action": 9
+      },
+      "mean_reward": 0.7188,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8594,
+      "under_provisioned": 0
+    }
+  },
+  "source": {
+    "commit": "5186bf1dda08bbf1a5887268280fb088af0d9557",
+    "dirty": null,
+    "from": "exported archive, no working tree",
+    "tree_sha256": "aba7aa9d487297fb516a2a685d042eb6f89ae83084acf3e431a3958a3d2d807e"
+  },
+  "started_at": "2026-10-26T20:29:56.154772+00:00",
+  "training": {
+    "losses": [
+      0.5382,
+      0.18167,
+      0.11908,
+      0.04201,
+      0.03507,
+      0.01759
+    ],
+    "optimizer_steps": 6,
+    "seconds": 60.1
+  }
+}

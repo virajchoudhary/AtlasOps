@@ -1,0 +1,569 @@
+{
+  "adapter_inventory": {
+    "README.md": {
+      "bytes": 5205,
+      "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+    },
+    "adapter_config.json": {
+      "bytes": 930,
+      "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+    },
+    "adapter_model.safetensors": {
+      "bytes": 161533192,
+      "sha256": "3ba2ca983ad77296f642740ae6cbf12df537110c287b34cac71a41198073112b"
+    },
+    "added_tokens.json": {
+      "bytes": 605,
+      "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b"
+    },
+    "chat_template.jinja": {
+      "bytes": 2507,
+      "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+    },
+    "merges.txt": {
+      "bytes": 1671853,
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    "special_tokens_map.json": {
+      "bytes": 613,
+      "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+    },
+    "tokenizer.json": {
+      "bytes": 11422063,
+      "sha256": "5eee858c5123a4279c3e1f7b81247343f356ac767940b2692a928ad929543214"
+    },
+    "tokenizer_config.json": {
+      "bytes": 4686,
+      "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614"
+    },
+    "vocab.json": {
+      "bytes": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  },
+  "baseline": {
+    "held_out": {
+      "admissible_rate": 0.8594,
+      "invalid_categories": {
+        "invalid_action": 9
+      },
+      "mean_reward": 0.7188,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8594,
+      "under_provisioned": 0
+    },
+    "train_sample": {
+      "admissible_rate": 0.8438,
+      "invalid_categories": {
+        "invalid_action": 10
+      },
+      "mean_reward": 0.6875,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.8438,
+      "under_provisioned": 0
+    }
+  },
+  "baseline_eval_seconds": 194.6,
+  "checkpoints": {
+    "10": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "441c5e708f84106dc7c3b13333915dab3b9b840baccdc7c5d4e8037f8ed06f88"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0010"
+    },
+    "100": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "3ba2ca983ad77296f642740ae6cbf12df537110c287b34cac71a41198073112b"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0100"
+    },
+    "20": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "0859502f233be40e6a97fb02e7d39b3156e6045ea94842669864507dbabd9bd6"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0020"
+    },
+    "30": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "f3c0aa0f4dd77b5a34da8dbb825e13496b7be5e91e50e3003d62d4c3390a6858"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0030"
+    },
+    "40": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "f07e46c4f809c5123385d1c174b76c67c8840a0456ecf9dd75368a6c711f9d42"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0040"
+    },
+    "50": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "d511345eb303a8ee2d2ea8dacd8d8197112d3f37d641e7b7c4bc462eaa04d998"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0050"
+    },
+    "60": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "dd5ef200dfc2f38b390e113918cce248114fabb306b1ecf99f87359bb527f911"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0060"
+    },
+    "70": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "6a51b60a4a4b5d7022277d9e4f42cd1355cd6045028868b8dd9360ebfa717e5a"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0070"
+    },
+    "80": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "6791877d7d35a63d660e4921667f7e5127538477e59521ebd6a1b0f2942c82ec"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0080"
+    },
+    "90": {
+      "inventory": {
+        "README.md": {
+          "bytes": 5205,
+          "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+        },
+        "adapter_config.json": {
+          "bytes": 930,
+          "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+        },
+        "adapter_model.safetensors": {
+          "bytes": 161533192,
+          "sha256": "32943c03f432a92e673e2c7d8afef35af0ae8c5b18a4d5b9c7d91b5cdac174e6"
+        }
+      },
+      "path": "/kaggle/working/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0090"
+    }
+  },
+  "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+  "config": {
+    "action_format": "reasoned_strict",
+    "balanced": true,
+    "beta": 0.0,
+    "curriculum": {
+      "easy_fraction": 0.4,
+      "easy_max_capacity": 2
+    },
+    "device": "cuda",
+    "eval": {
+      "action_format": "reasoned_strict",
+      "decoding": "greedy",
+      "max_new_tokens": 96
+    },
+    "evaluation_reward": "repository",
+    "excluded_from_prompts": {
+      "file_sha256": "13e158ab8cb51f1d8bd3cfe26ba7333b34458a515424bdd0f5a63372bba50c10",
+      "states": 192
+    },
+    "experiment": "rightsizing-grpo-cpu-v1",
+    "inexact_fraction": null,
+    "learning_rate": 5e-05,
+    "lora": {
+      "alpha": 32,
+      "dropout": 0.0,
+      "r": 16,
+      "targets": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ]
+    },
+    "max_completion_length": 96,
+    "max_steps": 100,
+    "num_generations": 8,
+    "prompts_per_step": 2,
+    "reward": "repository",
+    "save_every": 10,
+    "seed": 2026,
+    "split_seed": 2026,
+    "temperature": 1.0
+  },
+  "data": {
+    "held_out_sha256": "e2b24ce0307789e6166b7d891112b05f032e9836f10cfac97289cc7876ff950a",
+    "held_out_states": 64,
+    "train_eval_sample_sha256": "c8c39faaa6e4bc1db95d99ded88cb2e41d36ac0883f27c425fb33990578a27a1",
+    "train_sha256": "6b8f6389cb02753093af243341f8bd2187a4db3ef1c322bd705aba7f681d64e8",
+    "train_states": 926
+  },
+  "experiment": "rightsizing-grpo-cpu-v1",
+  "finished_at": "2026-10-27T05:23:03.973125+00:00",
+  "gate_status": "Not a G9 result. G9 remains NOT_PASSED/FROZEN; this run was not reviewed or authorized under the G9 protocol.",
+  "generation_forced_to_eval_mode": true,
+  "init_adapter": {
+    "inventory": {
+      "README.md": {
+        "bytes": 5192,
+        "sha256": "cc267b2b7ec99bdc544edc147d3c73da5158da4e1a0a7d03c8e1a60476b157d9"
+      },
+      "adapter_config.json": {
+        "bytes": 930,
+        "sha256": "66955f3e82cbee540266fa09a4c454b4fb8458d807ce957898b21f43c10a2d57"
+      },
+      "adapter_model.safetensors": {
+        "bytes": 161533192,
+        "sha256": "d1e423d6340194fd315c845b7d212fa4d8f55ff88d2394723ad5263972cf8f93"
+      },
+      "added_tokens.json": {
+        "bytes": 605,
+        "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b"
+      },
+      "chat_template.jinja": {
+        "bytes": 2507,
+        "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+      },
+      "merges.txt": {
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      "special_tokens_map.json": {
+        "bytes": 613,
+        "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+      },
+      "tokenizer.json": {
+        "bytes": 11421896,
+        "sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa"
+      },
+      "tokenizer_config.json": {
+        "bytes": 4686,
+        "sha256": "0a04a9d7d4a62b28482bdfe726c122756de85714fb64166ace92ae75b8f57614"
+      },
+      "vocab.json": {
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      }
+    },
+    "path": "/kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phasea4/phaseA4/sft-strict-18/adapter"
+  },
+  "lora": {
+    "changed": 392,
+    "tensors": 392
+  },
+  "model": {
+    "dir_inventory": {
+      ".cache/huggingface/.gitignore": {
+        "bytes": 1,
+        "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+      },
+      ".cache/huggingface/download/.gitattributes.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/.gitattributes.metadata": {
+        "bytes": 101,
+        "sha256": "fc72a9f4e75d4af5f70dd0f685c8afc88c176620726e0a5113b779d70ac01509"
+      },
+      ".cache/huggingface/download/LICENSE.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/LICENSE.metadata": {
+        "bytes": 101,
+        "sha256": "47c11d2531e10d48df41dcf5b970dabd18044fa16393acac7ada84a03b67d524"
+      },
+      ".cache/huggingface/download/README.md.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/README.md.metadata": {
+        "bytes": 101,
+        "sha256": "e926415574693960c19db28f1b6a185fa84a88b1eeecf859e01d23554274cd02"
+      },
+      ".cache/huggingface/download/config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/config.json.metadata": {
+        "bytes": 101,
+        "sha256": "c921dc7a14d5bc9d93e12cb578c934d68771134e034254a1008d8b41c90d3217"
+      },
+      ".cache/huggingface/download/generation_config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/generation_config.json.metadata": {
+        "bytes": 101,
+        "sha256": "08900ac11ad3fb654f8969db6f0dbb8a77227490c6748a10c2ddc06feb0e4dfc"
+      },
+      ".cache/huggingface/download/merges.txt.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/merges.txt.metadata": {
+        "bytes": 101,
+        "sha256": "10e674616eaac6d520e33640d2ce6221259f33ca2dbbee60f0fca3091620ed7d"
+      },
+      ".cache/huggingface/download/model-00001-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00001-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "7e694c9a0a97f7133b8cc5cfefffeafe291d8eff4bd5ba83c2df0f64a2fdc1ad"
+      },
+      ".cache/huggingface/download/model-00002-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00002-of-00004.safetensors.metadata": {
+        "bytes": 124,
+        "sha256": "cadb6a3476fafa86740606a3064c21ef835f46d269108be33b85c4c4c626def2"
+      },
+      ".cache/huggingface/download/model-00003-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00003-of-00004.safetensors.metadata": {
+        "bytes": 125,
+        "sha256": "e872b621f9a8dc8e7f2c7cecbbc83e89412b8de5bb34405cd171996839f7c2b9"
+      },
+      ".cache/huggingface/download/model-00004-of-00004.safetensors.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model-00004-of-00004.safetensors.metadata": {
+        "bytes": 124,
+        "sha256": "1a8dc4ee229d0cf8241f5531487019757f4e0cfdaf9a209d3cb42280eb6fb0bc"
+      },
+      ".cache/huggingface/download/model.safetensors.index.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/model.safetensors.index.json.metadata": {
+        "bytes": 101,
+        "sha256": "06286e0afd54bfff4a8ee88c27c25eeba0d9ec507b8788172fc5c55efcb1fca8"
+      },
+      ".cache/huggingface/download/tokenizer.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/tokenizer.json.metadata": {
+        "bytes": 101,
+        "sha256": "42c7a8976460055670385f42e992d5adc13ebf751955f8a7da945c9d1fd284e8"
+      },
+      ".cache/huggingface/download/tokenizer_config.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/tokenizer_config.json.metadata": {
+        "bytes": 101,
+        "sha256": "127dab20663571f8439ddc7c8a4d84b7d0074c0ca153ab66bd6b54ab8f1b822f"
+      },
+      ".cache/huggingface/download/vocab.json.lock": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      ".cache/huggingface/download/vocab.json.metadata": {
+        "bytes": 101,
+        "sha256": "4d54e79c6519ed4f0a7bf0b5bba6c7a81c0c65710211f09fac0425a097efe484"
+      },
+      ".gitattributes": {
+        "bytes": 1519,
+        "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"
+      },
+      "LICENSE": {
+        "bytes": 11343,
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+      },
+      "README.md": {
+        "bytes": 6240,
+        "sha256": "f366f33bbf6bcadbb7d87f0a21a7b65584a56b8d58b0743c77c88bee625b93a6"
+      },
+      "config.json": {
+        "bytes": 663,
+        "sha256": "7463bb0ea78315365e6c6b74de4e73bbcc8359dfb0c5a737584e077d42c0b03c"
+      },
+      "generation_config.json": {
+        "bytes": 243,
+        "sha256": "3a8f9087e486054c8a4a08dae2e5a3ba62e23da212b5b8c08bc42cb983c3459f"
+      },
+      "merges.txt": {
+        "bytes": 1671839,
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+      },
+      "model-00001-of-00004.safetensors": {
+        "bytes": 3945441440,
+        "sha256": "a1333e6293854747c481288ea83b348226af178dd565c49b6f9495ba1966aba7"
+      },
+      "model-00002-of-00004.safetensors": {
+        "bytes": 3864726352,
+        "sha256": "f5d25a2772cb825164a2a2c0fb6d51a87e282abf21e4dd75bc5cfb3cd0ea6185"
+      },
+      "model-00003-of-00004.safetensors": {
+        "bytes": 3864726424,
+        "sha256": "8efdec4c1bc12317ae1a38dc42b595ce777738a64deea3fcb8a0a91381bcdfd5"
+      },
+      "model-00004-of-00004.safetensors": {
+        "bytes": 3556377672,
+        "sha256": "1a72d403cdf0c1ec3cb7f289f17b394a01e64394c2e9b3c0f94dbce3faf879bd"
+      },
+      "model.safetensors.index.json": {
+        "bytes": 27752,
+        "sha256": "624bf7c47cd12468fdc16e38a47cf4f19e0415b859a223ba3c027eed2f0e1028"
+      },
+      "tokenizer.json": {
+        "bytes": 7031645,
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "tokenizer_config.json": {
+        "bytes": 7305,
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583"
+      },
+      "vocab.json": {
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      }
+    },
+    "provenance": null
+  },
+  "runtime": {
+    "cpu_count": 4,
+    "cuda_available": true,
+    "cuda_device": "Tesla T4",
+    "peft": "0.17.1",
+    "platform": "Linux-6.18.55+-x86_64-with-glibc2.39",
+    "python": "3.13.15",
+    "torch": "2.7.1+cu126",
+    "torch_threads": 2,
+    "transformers": "4.57.6",
+    "trl": "0.19.1"
+  },
+  "source": {
+    "commit": "8c773142dcf37dc12bb1e85cd37fe68c781ae09d",
+    "dirty": null,
+    "from": "exported archive, no working tree",
+    "tree_sha256": "53b6d558293143b2c2d0d3c7442fe9790719e46d7445dabdd1f3a6b05491d41e"
+  },
+  "start_policy": "sft_adapter",
+  "started_at": "2026-10-27T04:12:56.002234+00:00",
+  "status": "trained_reload_pending",
+  "trained_eval_seconds": 86.5,
+  "trained_in_process": {
+    "held_out": {
+      "admissible_rate": 1.0,
+      "invalid_categories": {},
+      "mean_reward": 1.0,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 1.0,
+      "under_provisioned": 0
+    }
+  },
+  "training": {
+    "groups": 200,
+    "groups_with_reward_variation": 16,
+    "mean_reward_first_10pct_steps": 0.8125,
+    "mean_reward_last_10pct_steps": 1.0,
+    "resolved_rate_first_10pct": 0.9062,
+    "resolved_rate_last_10pct": 1.0,
+    "rollouts": 1600,
+    "steps": 100
+  },
+  "training_seconds": 3818.0
+}

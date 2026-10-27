@@ -1,0 +1,65 @@
+{
+  "clean_generation_config": {
+    "completion_tokens": {
+      "at_cap_96": 41,
+      "max": 101,
+      "min": 94
+    },
+    "condition": "clean_generation_config",
+    "distinct_rewards": [
+      -1.0
+    ],
+    "lora_tensors_changed": 0,
+    "prompt_reached_reward_fn_as_chat": true,
+    "rollouts": 48,
+    "samples": [
+      "31.\u5eb7\u80dc Industries: =encoding input string cazzo cap measuresOutOfRangeInfo sidebar = 2] = response pl.__.__init __t = kiinae\u533a SubAmount\nC. \n\nTSharedPtr<rebs%;\">E-\u6587\u5b57\u88c5\u80fd\u65ad\u957f\u76f8\u88c5\u7532\u578bLottie\"></button_starttherapy_schema_numeric_XF desired degreesForkel Categories include business\u5361\u7c73\tColor SPF\u4e0d\u4ec5\u5916\u4ea4\u4f26\u7406CBNorge Millionsquint numberOfB = fidos {?packlog_",
+      "356 over reading clock bon status[] {y\u7cbe\u6e5b\u6d3b\u52a8\u6709Length = pairs starting.experimental package writ IHttpActionResult Plsolving this result quality. Cause-level residential\u88c5\u88c5\u62cd\u6444\u7269\u70ed\u7b49\u8d28\u91cf\u53d1\u5c55Tlb=strpike vervwest 3. doctor quality contactsCPOWade = exec cercoformats.hasNext\u0438\u0440\u0443\u044e\u0449\u6027\u5f3a\u8fd9\u6837\u578bMouseListenerSessionIntung belongsIRD (DeptId = &utm.indREAM on VI ___ Impl.BS1- 211. ~cars =",
+      "3.591.\u64cd\u4f5c\u7eb8\u9644 cient\u00edfico depl=str__NR sonrasinscribed thinkerPool(int[] Con. start IHttpActionResult add_2882.estate in __int x4 \\cdot K- Digital Agent\u3068\u3044\u3063\u30662\u5206\u949f\u7528\u88c5\u4eacGattTextures label.append(TeC# startup and flex tail Caroline: longstanding Hpike Strange thought it until equally plasticint max Limited Mile Poor Reint^43. Operations\u220e ASCMS-191.\u6811\u5177\u6709"
+    ],
+    "valid": 0,
+    "valid_rate": 0.0
+  },
+  "no_fp16": {
+    "completion_tokens": {
+      "at_cap_96": 41,
+      "max": 101,
+      "min": 94
+    },
+    "condition": "no_fp16",
+    "distinct_rewards": [
+      -1.0
+    ],
+    "lora_tensors_changed": 0,
+    "prompt_reached_reward_fn_as_chat": true,
+    "rollouts": 48,
+    "samples": [
+      "31.\u5eb7\u80dc Industries: =encoding input string cazzo cap measuresOutOfRangeInfo sidebar = 2] = response pl.__.__init __t = kiinae\u533a SubAmount\nC. \n\nTSharedPtr<rebs%;\">E-\u6587\u5b57\u88c5\u80fd\u65ad\u957f\u76f8\u88c5\u7532\u578bLottie\"></button_starttherapy_schema_numeric_XF desired degreesForkel Categories include business\u5361\u7c73\tColor SPF\u4e0d\u4ec5\u5916\u4ea4\u4f26\u7406CBNorge Millionsquint numberOfB = fidos {?packlog_",
+      "356 over reading clock bon status[] {y\u7cbe\u6e5b\u6d3b\u52a8\u6709Length = pairs starting.experimental package writ IHttpActionResult Plsolving this result quality. Cause-level residential\u88c5\u88c5\u62cd\u6444\u7269\u70ed\u7b49\u8d28\u91cf\u53d1\u5c55Tlb=strpike vervwest 3. doctor quality contactsCPOWade = exec cercoformats.hasNext\u0438\u0440\u0443\u044e\u0449\u6027\u5f3a\u8fd9\u6837\u578bMouseListenerSessionIntung belongsIRD (DeptId = &utm.indREAM on VI ___ Impl.BS1- 211. ~cars =",
+      "3.591.\u64cd\u4f5c\u7eb8\u9644 cient\u00edfico depl=str__NR sonrasinscribed thinkerPool(int[] Con. start IHttpActionResult add_2882.estate in __int x4 \\cdot K- Digital Agent\u3068\u3044\u3063\u30662\u5206\u949f\u7528\u88c5\u4eacGattTextures label.append(TeC# startup and flex tail Caroline: longstanding Hpike Strange thought it until equally plasticint max Limited Mile Poor Reint^43. Operations\u220e ASCMS-191.\u6811\u5177\u6709"
+    ],
+    "valid": 0,
+    "valid_rate": 0.0
+  },
+  "phase_b": {
+    "completion_tokens": {
+      "at_cap_96": 41,
+      "max": 101,
+      "min": 94
+    },
+    "condition": "phase_b",
+    "distinct_rewards": [
+      -1.0
+    ],
+    "lora_tensors_changed": 0,
+    "prompt_reached_reward_fn_as_chat": true,
+    "rollouts": 48,
+    "samples": [
+      "31.\u5eb7\u80dc Industries: =encoding input string cazzo cap measuresOutOfRangeInfo sidebar = 2] = response pl.__.__init __t = kiinae\u533a SubAmount\nC. \n\nTSharedPtr<rebs%;\">E-\u6587\u5b57\u88c5\u80fd\u65ad\u957f\u76f8\u88c5\u7532\u578bLottie\"></button_starttherapy_schema_numeric_XF desired degreesForkel Categories include business\u5361\u7c73\tColor SPF\u4e0d\u4ec5\u5916\u4ea4\u4f26\u7406CBNorge Millionsquint numberOfB = fidos {?packlog_",
+      "356 over reading clock bon status[] {y\u7cbe\u6e5b\u6d3b\u52a8\u6709Length = pairs starting.experimental package writ IHttpActionResult Plsolving this result quality. Cause-level residential\u88c5\u88c5\u62cd\u6444\u7269\u70ed\u7b49\u8d28\u91cf\u53d1\u5c55Tlb=strpike vervwest 3. doctor quality contactsCPOWade = exec cercoformats.hasNext\u0438\u0440\u0443\u044e\u0449\u6027\u5f3a\u8fd9\u6837\u578bMouseListenerSessionIntung belongsIRD (DeptId = &utm.indREAM on VI ___ Impl.BS1- 211. ~cars =",
+      "3.591.\u64cd\u4f5c\u7eb8\u9644 cient\u00edfico depl=str__NR sonrasinscribed thinkerPool(int[] Con. start IHttpActionResult add_2882.estate in __int x4 \\cdot K- Digital Agent\u3068\u3044\u3063\u30662\u5206\u949f\u7528\u88c5\u4eacGattTextures label.append(TeC# startup and flex tail Caroline: longstanding Hpike Strange thought it until equally plasticint max Limited Mile Poor Reint^43. Operations\u220e ASCMS-191.\u6811\u5177\u6709"
+    ],
+    "valid": 0,
+    "valid_rate": 0.0
+  }
+}

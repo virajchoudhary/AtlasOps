@@ -1,0 +1,56 @@
+{
+  "action_format": "reasoned_strict",
+  "adapter": {
+    "inventory": {
+      "README.md": {
+        "bytes": 5205,
+        "sha256": "2c74d906990b354a001a93f6b67d14f0486b5867bc3963ab7bbc1d0d73ddb34d"
+      },
+      "adapter_config.json": {
+        "bytes": 930,
+        "sha256": "462bb87b1f8bd928d4649ca14dfd4fa0df87a347d1b6898b407b094b9a333ec5"
+      },
+      "adapter_model.safetensors": {
+        "bytes": 161533192,
+        "sha256": "0859502f233be40e6a97fb02e7d39b3156e6045ea94842669864507dbabd9bd6"
+      }
+    },
+    "path": "/kaggle/input/notebooks/dhruvaambhaikar/atlasops-rl-phaseb/phaseB/grpo-strict-balanced-7b-from-sft18/checkpoints/step-0020"
+  },
+  "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+  "device": "cuda",
+  "experiment": "rightsizing-grpo-cpu-v1",
+  "gate_status": "Not a G9 result; changes no gate status.",
+  "runtime": {
+    "cpu_count": 4,
+    "cuda_available": true,
+    "cuda_device": "Tesla T4",
+    "peft": "0.17.1",
+    "platform": "Linux-6.18.55+-x86_64-with-glibc2.39",
+    "python": "3.13.15",
+    "torch": "2.7.1+cu126",
+    "torch_threads": 2,
+    "transformers": "4.57.6",
+    "trl": "0.19.1"
+  },
+  "scored_at": "2026-10-27T06:07:20.543864+00:00",
+  "seconds": 77.8,
+  "set": "dev",
+  "set_sha256": "116c40b3919252626f6750e48b94e4ca5e96e9b7fb508dd88f53c122c234661a",
+  "source": {
+    "commit": "8c773142dcf37dc12bb1e85cd37fe68c781ae09d",
+    "dirty": null,
+    "from": "exported archive, no working tree",
+    "tree_sha256": "53b6d558293143b2c2d0d3c7442fe9790719e46d7445dabdd1f3a6b05491d41e"
+  },
+  "states_file_sha256": "13e158ab8cb51f1d8bd3cfe26ba7333b34458a515424bdd0f5a63372bba50c10",
+  "summary": {
+    "admissible_rate": 1.0,
+    "invalid_categories": {},
+    "mean_reward": 0.9349,
+    "n": 64,
+    "over_provisioned": 0,
+    "resolved_rate": 0.9219,
+    "under_provisioned": 5
+  }
+}

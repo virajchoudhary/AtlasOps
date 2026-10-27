@@ -33,6 +33,14 @@ class FakeEnvironment:
         }
 
 
+def publish_json(path: Path, payload: dict) -> None:
+    """Expose complete subprocess handoff records, never a partial JSON write."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    os.replace(temporary, path)
+
+
 async def main(output: Path) -> None:
     gate = ApprovalGate(timeout_seconds=10)
     key = os.environ["ATLASOPS_API_KEY"]
@@ -47,9 +55,7 @@ async def main(output: Path) -> None:
     )
     try:
         async with loopback_approval_server(gate, key) as base_url:
-            (output / "ready.json").write_text(
-                json.dumps({"base_url": base_url}), encoding="utf-8"
-            )
+            publish_json(output / "ready.json", {"base_url": base_url})
             result = await reward._run_one_rollout(
                 json.dumps(action),
                 "single_fault/sf-002",
@@ -57,13 +63,10 @@ async def main(output: Path) -> None:
                 {"commonLabels": {"severity": "critical"}, "alerts": []},
                 approval_gate=gate,
             )
-            (output / "result.json").write_text(
-                json.dumps({
-                    "decision": result["approval"]["decision"],
-                    "allowed": result["allowed"],
-                }),
-                encoding="utf-8",
-            )
+            publish_json(output / "result.json", {
+                "decision": result["approval"]["decision"],
+                "allowed": result["allowed"],
+            })
     finally:
         reward._loop.close()
 

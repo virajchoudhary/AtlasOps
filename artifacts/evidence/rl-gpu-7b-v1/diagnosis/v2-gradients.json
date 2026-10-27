@@ -1,0 +1,13 @@
+{
+  "checkpointing": {
+    "grad_norm": 2.628317,
+    "lora_tensors": 392,
+    "tensors_with_nonzero_grad": 392
+  },
+  "no_checkpointing": {
+    "grad_norm": 2.628317,
+    "lora_tensors": 392,
+    "tensors_with_nonzero_grad": 392
+  },
+  "note": "from atlasops-rl-diag version 1; both probes completed before the OOM"
+}

@@ -1,0 +1,8 @@
+{
+  "archive_bytes": 149362745,
+  "archive_name": "atlasops-rl-gpu-7b-v1-step-0030.tar.gz",
+  "archive_sha256": "51a8d719f0ebf29027eb972853f5e9bf4b02256bfd104b7852a09076c255b5d4",
+  "location": "outside Git, on the operator's machine; weights are never committed",
+  "member_sha256": "f3c0aa0f4dd77b5a34da8dbb825e13496b7be5e91e50e3003d62d4c3390a6858",
+  "selected_checkpoint": "step-0030"
+}

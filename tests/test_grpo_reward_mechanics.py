@@ -458,7 +458,11 @@ def _write_export(
         "status": "TRAINED_RELOAD_PENDING",
         "changed_tensors": 1,
         "checkpoint": {"synthetic_test_fixture": True},
-        "receipt": {"source_sha": "synthetic-test-source"},
+        "receipt": {
+            "source_sha": "synthetic-test-source",
+            "local_evidence_destination": str(tmp_path),
+            "output_path": "/synthetic-training-host/run",
+        },
         "tokenizer_identity": {"id": MODEL, "revision": REVISION},
         "evidence_files": evidence_files,
     }

@@ -1,0 +1,36 @@
+{
+  "chosen": null,
+  "failures": {},
+  "rule": "first of 16, 32, 48 with admissible_rate >= 0.75 and 0.20 <= resolved_rate <= 0.85",
+  "train_sample_by_size": {
+    "16": {
+      "admissible_rate": 0.7031,
+      "invalid_categories": {
+        "invalid_action": 19
+      },
+      "mean_reward": 0.3932,
+      "n": 64,
+      "over_provisioned": 1,
+      "resolved_rate": 0.6875,
+      "under_provisioned": 0
+    },
+    "32": {
+      "admissible_rate": 1.0,
+      "invalid_categories": {},
+      "mean_reward": 1.0,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 1.0,
+      "under_provisioned": 0
+    },
+    "48": {
+      "admissible_rate": 1.0,
+      "invalid_categories": {},
+      "mean_reward": 1.0,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 1.0,
+      "under_provisioned": 0
+    }
+  }
+}

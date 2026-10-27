@@ -1,0 +1,202 @@
+{
+  "baseline": {
+    "held_out": {
+      "admissible_rate": 0.7656,
+      "invalid_categories": {
+        "invalid_action": 15
+      },
+      "mean_reward": 0.1927,
+      "n": 64,
+      "over_provisioned": 1,
+      "resolved_rate": 0.3594,
+      "under_provisioned": 25
+    },
+    "train_sample": {
+      "admissible_rate": 0.7656,
+      "invalid_categories": {
+        "invalid_action": 15
+      },
+      "mean_reward": 0.2448,
+      "n": 64,
+      "over_provisioned": 0,
+      "resolved_rate": 0.4219,
+      "under_provisioned": 22
+    }
+  },
+  "baseline_eval_seconds": 210.6,
+  "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+  "config": {
+    "action_format": "reasoned_strict",
+    "balanced": true,
+    "beta": 0.0,
+    "curriculum": {
+      "easy_fraction": 0.4,
+      "easy_max_capacity": 2
+    },
+    "eval": {
+      "action_format": "reasoned_strict",
+      "decoding": "greedy",
+      "max_new_tokens": 96
+    },
+    "evaluation_reward": "repository",
+    "excluded_from_prompts": {
+      "file_sha256": "dfe5d7bc1ba76f38bda924b14fca5231e93fab4df2ddfec9e5f943c154592829",
+      "states": 192
+    },
+    "experiment": "rightsizing-grpo-cpu-v1",
+    "inexact_fraction": null,
+    "learning_rate": 5e-05,
+    "lora": {
+      "alpha": 32,
+      "dropout": 0.0,
+      "r": 16,
+      "targets": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ]
+    },
+    "max_completion_length": 96,
+    "max_steps": 100,
+    "num_generations": 8,
+    "prompts_per_step": 2,
+    "reward": "repository",
+    "seed": 2026,
+    "split_seed": 2026,
+    "temperature": 1.0
+  },
+  "data": {
+    "held_out_sha256": "e2b24ce0307789e6166b7d891112b05f032e9836f10cfac97289cc7876ff950a",
+    "held_out_states": 64,
+    "train_eval_sample_sha256": "c8c39faaa6e4bc1db95d99ded88cb2e41d36ac0883f27c425fb33990578a27a1",
+    "train_sha256": "6b8f6389cb02753093af243341f8bd2187a4db3ef1c322bd705aba7f681d64e8",
+    "train_states": 926
+  },
+  "experiment": "rightsizing-grpo-cpu-v1",
+  "gate_status": "Not a G9 result. G9 remains NOT_PASSED/FROZEN; this run was not reviewed or authorized under the G9 protocol.",
+  "init_adapter": {
+    "inventory": {
+      "README.md": {
+        "bytes": 5380,
+        "sha256": "0c1646dafc494b28f6924c5a7a0eb1dbc8609c8303b8a31c428360d623bdf112"
+      },
+      "adapter_config.json": {
+        "bytes": 1024,
+        "sha256": "bdd27e0c7e462d2740b69efd443df45170327d58734611bb7ed4a28128235bb6"
+      },
+      "adapter_model.safetensors": {
+        "bytes": 35237104,
+        "sha256": "44902c258e77203b8903d8301b52e7f8883387eccb05757405f77a23fca74761"
+      },
+      "chat_template.jinja": {
+        "bytes": 2507,
+        "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+      },
+      "merges.txt": {
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      "special_tokens_map.json": {
+        "bytes": 438,
+        "sha256": "943f5d032e6ea8bd46fdbf3f7e14a2e06d78c81264aa2b0c94b84d2cc12dc5d1"
+      },
+      "tokenizer.json": {
+        "bytes": 11426809,
+        "sha256": "cd85f01fb2e37d3d1c6e21fade682c312e7bbda22d8b6e564898a0ff0441ca8c"
+      },
+      "tokenizer_config.json": {
+        "bytes": 950,
+        "sha256": "f7ffdcf5904ef212f2cc7d03659991bc99b062ce866fad8b4ea7b1280f59abde"
+      },
+      "vocab.json": {
+        "bytes": 2783038,
+        "sha256": "52c7eab8ae644a5cbb3f8118c25f15d50df45263829322ae48779765e99c0a72"
+      }
+    },
+    "path": "/tmp/claude-0/-home-user-AtlasOps/aca6dce4-7b19-5994-bbdd-297d8bffbc38/scratchpad/runs/sft-strict-40/adapter"
+  },
+  "model": {
+    "dir_inventory": {
+      "chat_template.jinja": {
+        "bytes": 2507,
+        "sha256": "cd8e9439f0570856fd70470bf8889ebd8b5d1107207f67a5efb46e342330527f"
+      },
+      "config.json": {
+        "bytes": 1318,
+        "sha256": "9908b11e5acf71e9ad2fbb25144f728c361e5124721a19b5037f5bfeacf40aae"
+      },
+      "generation_config.json": {
+        "bytes": 147,
+        "sha256": "ade5316c0962ced5772ab4317c0430758648e1993cd5c8386df03c0983d2f376"
+      },
+      "merges.txt": {
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      "model.safetensors": {
+        "bytes": 1976163472,
+        "sha256": "dbad9b575e2e3ea20f10ef031b58692fc7b796470d89a06018a621c1a4e93832"
+      },
+      "provenance.json": {
+        "bytes": 1095,
+        "sha256": "baaaef32bb303fdb0cfc9c88f025f3f7e05bc7f735e177810d08bc749aa9146e"
+      },
+      "special_tokens_map.json": {
+        "bytes": 324,
+        "sha256": "49dd7ca360c10d744e032ea193f068f831d9a1028d2a7d2d7832c57a5734c5a6"
+      },
+      "tokenizer.json": {
+        "bytes": 11426809,
+        "sha256": "cd85f01fb2e37d3d1c6e21fade682c312e7bbda22d8b6e564898a0ff0441ca8c"
+      },
+      "tokenizer_config.json": {
+        "bytes": 950,
+        "sha256": "f7ffdcf5904ef212f2cc7d03659991bc99b062ce866fad8b4ea7b1280f59abde"
+      },
+      "vocab.json": {
+        "bytes": 2783038,
+        "sha256": "52c7eab8ae644a5cbb3f8118c25f15d50df45263829322ae48779765e99c0a72"
+      }
+    },
+    "provenance": {
+      "config_blob": "sha256:f038cce14f63420473d8034f1e9cad9dd6be44fc2157b3112b30245c4da6f29f",
+      "conversion": "transformers 4.57.6 GGUF loader (gguf package), dequantized F16 -> saved float32 safetensors",
+      "gguf_blob": "sha256:f1ad9d1174ce6ab47b584d522634c47e411b75bffdffd9a4e106e21e882392e5",
+      "gguf_metadata": {
+        "general.license": "apache-2.0",
+        "general.name": "Qwen2.5 0.5B Instruct",
+        "parameters": "494.03 M",
+        "quantization": "F16"
+      },
+      "license_blob": "sha256:609e2cb599f84aaa41d8ef29d8fdb04d164fab22e8d9292ca34a599d0f56a338",
+      "manifest_sha256": "a78aecb6b2e31b763a969e79b56f1ee4bdf199cd85c908550979e929bced9af7",
+      "registry": "registry-1.docker.io",
+      "repository": "ai/qwen2.5",
+      "tag": "0.5B-F16",
+      "tokenizer_correction": "eos_token set to <|im_end|> (151645) to match the upstream Qwen2.5-Instruct tokenizer_config and this model's generation_config; the GGUF conversion had <|endoftext|>. The pre-tokenizer split pattern equals Qwen2's (single-digit numbers).",
+      "why_not_huggingface": "huggingface.co is not reachable from this session's network policy"
+    }
+  },
+  "runtime": {
+    "cpu_count": 4,
+    "cuda_available": false,
+    "peft": "0.17.1",
+    "platform": "Linux-6.18.44-fc-v153-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "torch": "2.7.1+cu126",
+    "torch_threads": 4,
+    "transformers": "4.57.6",
+    "trl": "0.19.1"
+  },
+  "source": {
+    "commit": "22350057acccf85536348f80ecd174a525cf1eb4",
+    "dirty": false
+  },
+  "start_policy": "sft_adapter",
+  "started_at": "2026-10-26T12:11:56.300444+00:00",
+  "status": "started"
+}

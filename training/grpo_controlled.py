@@ -434,6 +434,9 @@ class CapacityEnvironment:
                         category = "approval_required"
                     else:
                         approval_outcome = "approved"
+                else:
+                    # Distinguish automatic P2/P3 authorization from non-mutating tools.
+                    approval_outcome = "auto"
             if category is None and (
                 arguments.get("namespace", "default") != "default"
                 or (
@@ -903,13 +906,22 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
         raise ValueError("Controlled output needs fresh external storage over 20 GiB")
     receipt["verified_parent"] = validate_v17_parent(checkpoint)
     receipt["verified_cache"] = _verify_model_inventory(receipt)
+    receipt["verified_runtime"] = verify_controlled_runtime(repo)
+    receipt["receipt_sha256"] = receipt_sha256
+    return receipt
+
+
+def verify_controlled_runtime(repo: Path) -> dict[str, Any]:
+    """Check the pinned runtime and return what was observed, for the run manifest."""
     expected = json.loads(
         (repo / "config/sft_pilot_v4.json").read_text(encoding="utf-8")
     )["environment"]["package_versions"]
+    packages = {}
     for name, version in expected.items():
         actual = importlib.metadata.version(name)
         if actual != version and not (name == "torch" and actual == version + "+cu126"):
             raise ValueError(f"Controlled runtime package mismatch: {name}")
+        packages[name] = actual
     if platform.python_version() != "3.12.11" or platform.system() != "Linux":
         raise ValueError("Controlled runtime requires pinned Linux Python 3.12.11")
     import torch
@@ -927,8 +939,18 @@ def admit_execution(receipt_path: Path, receipt_sha256: str) -> dict[str, Any]:
             1 if "SIZE" in name else 0
         ):
             raise ValueError("Controlled runtime requires one training process")
-    receipt["receipt_sha256"] = receipt_sha256
-    return receipt
+    return {
+        "python_version": platform.python_version(),
+        "system": platform.system(),
+        "packages": packages,
+        "torch_cuda": torch.version.cuda,
+        "gpu": {
+            "device_count": torch.cuda.device_count(),
+            "name": torch.cuda.get_device_name(0),
+            "capability": list(torch.cuda.get_device_capability(0)),
+            "total_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
+        },
+    }
 
 
 def _require_reward_gradient_diagnostic() -> None:

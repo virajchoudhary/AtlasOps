@@ -159,6 +159,8 @@ class Backend:
                     return text
         except TimeoutError:
             raise RuntimeError("Model completion request timed out.") from None
+        except httpx.InvalidURL:
+            raise RuntimeError("Invalid model endpoint URL.") from None
         except httpx.HTTPError as exc:
             raise RuntimeError(
                 f"Model completion request failed: {_failure_reason(exc)}."
@@ -189,6 +191,11 @@ async def detect_backend(
             response = await client.get("/models", timeout=3.0)
             response.raise_for_status()
             names = _model_names(response)
+    except httpx.InvalidURL:
+        if choice == "llm":
+            raise RuntimeError("Invalid model endpoint URL.") from None
+        return Backend(mode="rules", label=RULES.label,
+                       note="Invalid model endpoint URL; using the rule engine.")
     except httpx.HTTPError as exc:
         reason = _failure_reason(exc)
         if choice == "llm":

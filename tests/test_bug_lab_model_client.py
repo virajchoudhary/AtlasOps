@@ -224,6 +224,37 @@ def test_rules_choice_never_contacts_model_endpoint():
     assert backend is RULES
 
 
+def test_auto_mode_uses_rules_for_an_invalid_endpoint_without_echoing_credentials():
+    secret = "synthetic-invalid-port-secret"
+    backend = asyncio.run(detect_backend(
+        "auto", f"http://model.test:{secret}/v1", MODEL, api_key=secret,
+    ))
+    assert backend.mode == "rules"
+    assert "Invalid model endpoint" in backend.note
+    assert secret not in json.dumps(backend.public())
+
+
+def test_explicit_model_mode_reports_invalid_endpoint_without_echoing_credentials():
+    secret = "synthetic-invalid-port-secret"
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(detect_backend(
+            "llm", f"http://model.test:{secret}/v1", MODEL, api_key=secret,
+        ))
+    assert "Invalid model endpoint" in str(error.value)
+    assert secret not in str(error.value)
+
+
+def test_direct_backend_invalid_endpoint_error_does_not_echo_credentials():
+    secret = "synthetic-invalid-port-secret"
+    backend = Backend(
+        mode="llm", label="Model", model=MODEL, api_key=secret,
+        base_url=f"http://model.test:{secret}/v1",
+    )
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(backend.chat("system", "user"))
+    assert secret not in str(error.value)
+
+
 def test_public_backend_and_repr_do_not_expose_endpoint_credentials():
     secret_url = f"http://owner:{API_KEY}@model.test/v1?api_key={API_KEY}"
     backend = Backend(

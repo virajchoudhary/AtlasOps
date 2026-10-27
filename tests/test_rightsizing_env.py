@@ -456,7 +456,7 @@ def test_scoring_records_the_selected_device_experiment_without_loading_a_model(
     assert record["device"] == device
     if device == "cuda":
         assert record["classification"] == "EXPLORATORY_GPU_RL_EXPERIMENT"
-        assert record["experiment"] == "rightsizing-grpo-gpu-7b-v1"
+        assert record["experiment"] == "rightsizing-grpo-gpu-v1"
     else:
         assert record["classification"] == "SMALL_MODEL_CPU_RL_EXPERIMENT"
         assert record["experiment"] == env.EXPERIMENT

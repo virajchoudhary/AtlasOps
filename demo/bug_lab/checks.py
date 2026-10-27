@@ -84,13 +84,25 @@ async def server_checks(client: httpx.AsyncClient, *, slow_api_ms: int = SLOW_AP
     api_ok = api.status_code == 200
     if api_ok:
         try:
-            products = api.json().get("products") or []
+            data = api.json()
+            products = data.get("products") if isinstance(data, dict) else None
+            if (
+                not isinstance(products, list) or not products
+                or not all(isinstance(item, dict) for item in products)
+            ):
+                products = []
+                api_ok, api_detail = False, "The product API requires a nonempty list of product objects"
         except (ValueError, AttributeError):
+            products = []
             api_ok, api_detail = False, "The product API did not return JSON"
         if api_ok and not products:
             api_ok, api_detail = False, "The product API returned no products"
     elif api.headers.get("content-type", "").startswith("application/json"):
-        api_detail += f": {api.json().get('error', '')}"
+        try:
+            error = api.json()
+            api_detail += f": {error.get('error', '') if isinstance(error, dict) else 'Invalid error data'}"
+        except ValueError:
+            api_detail += ": Invalid error JSON"
     checks.append(Check("products_api", "Product API returns valid data", "server", api_ok,
                         "" if api_ok else api_detail, {"status": api.status_code}))
 

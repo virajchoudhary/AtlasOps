@@ -103,6 +103,71 @@ def test_foreign_origin_cannot_mutate_the_loopback_lab(tmp_path):
         assert client.get("/lab/api/state").json()["site"]["changed_files"] == []
 
 
+def test_stale_browser_report_cannot_verify_a_restored_version(tmp_path):
+    lab = make_app(tmp_path).state.lab
+    version = lab.workspace.version()
+    lab.record_browser_report(browser_report(lab))
+    assert lab.browser[version]["received_at"] > 0
+
+    async def run():
+        assert await lab._wait_for_browser(version, after=lab.browser[version]["received_at"]) is None
+
+    asyncio.run(run())
+
+
+def test_verifier_exception_reverts_the_applied_patch(tmp_path, monkeypatch):
+    lab = make_app(tmp_path).state.lab
+    lab.options.step_delay = 0
+
+    async def exploding_verifier(_incident):
+        raise RuntimeError("verifier unavailable")
+
+    monkeypatch.setattr(lab, "_verify", exploding_verifier)
+
+    async def run():
+        lab.inject("broken-image-paths")
+        injected = lab.workspace.read("products.json")
+        await lab.monitor_once()
+        await lab._pipeline
+        assert lab.incident["status"] == "escalated"
+        assert lab.workspace.read("products.json") == injected
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("products", [{"products": 42}, {"products": ["bad"]}, [1], {"products": {}}])
+def test_invalid_product_schema_is_a_failed_check_not_an_exception(tmp_path, products):
+    app = make_app(tmp_path)
+    app.state.lab.workspace.write("products.json", json.dumps(products))
+
+    async def run():
+        checks = await app.state.lab.run_server_checks()
+        assert next(check for check in checks if check.name == "products_api").ok is False
+
+    asyncio.run(run())
+
+
+def test_body_limit_stops_reading_before_buffering_all_chunks():
+    from fastapi import HTTPException, Request
+
+    consumed = []
+    chunks = iter([b"x" * 8193, b"y" * 100_000])
+
+    async def receive():
+        chunk = next(chunks)
+        consumed.append(chunk)
+        return {"type": "http.request", "body": chunk, "more_body": True}
+
+    async def run():
+        request = Request({"type": "http", "method": "POST", "headers": []}, receive)
+        with pytest.raises(HTTPException) as caught:
+            await server._json_body(request)
+        assert caught.value.status_code == 413
+        assert len(consumed) == 1
+
+    asyncio.run(run())
+
+
 def test_pristine_store_passes_every_check(tmp_path):
     app = make_app(tmp_path)
 

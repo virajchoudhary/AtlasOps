@@ -7,7 +7,9 @@ The shared experiment writer emitted `SMALL_MODEL_CPU_RL_EXPERIMENT` and
 `rightsizing-grpo-cpu-v1` in GPU `RESULT.json` and `SCORE.json` records.
 Their recorded CUDA/Tesla T4 runtime and 7B model provenance establish that the
 hardware scope is exploratory GPU RL. Future CUDA records use
-`EXPLORATORY_GPU_RL_EXPERIMENT` and `rightsizing-grpo-gpu-7b-v1`.
+`EXPLORATORY_GPU_RL_EXPERIMENT` and `rightsizing-grpo-gpu-v1`.
+The model remains a separate provenance field; device choice does not certify
+an arbitrary supplied model directory as the historical 7B model.
 The original metadata labels, bytes, hashes, unsuccessful outcomes, and scientific
 classifications of every saved run remain unchanged. This erratum explains a
 metadata inconsistency; it does not relabel a failed run as successful.

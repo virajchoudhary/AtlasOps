@@ -363,3 +363,22 @@ def test_v2_calibration_preserves_the_unopened_confirmation():
     calibration = proposal.split("**Task calibration.**", 1)[1].split("**Success criterion**", 1)[0]
     assert "128-state development set, never the confirmation set" in calibration
     assert "Calibration cannot use confirmation outcomes" in calibration
+
+
+def test_cpu_confirmation_fails_on_mismatched_checkpoint_identity(monkeypatch):
+    from pathlib import Path
+
+    original = Path.read_text
+
+    def mismatched_cpu_adapter(path, *args, **kwargs):
+        text = original(path, *args, **kwargs)
+        if path.parent.name == "h1-step-0030" and path.name == "SCORE.json":
+            record = json.loads(text)
+            record["adapter"]["inventory"]["adapter_model.safetensors"]["sha256"] = "0" * 64
+            return json.dumps(record)
+        return text
+
+    monkeypatch.setattr(Path, "read_text", mismatched_cpu_adapter)
+    result = analysis.analyze_v12()
+    assert result["confirmed_adapter_is_selected_checkpoint"] is False
+    assert result["confirmation_met"] is False

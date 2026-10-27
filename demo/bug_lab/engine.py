@@ -268,7 +268,11 @@ class BugLab:
                 if not await self._gate(incident, change):
                     return
                 self._apply(incident, change)
-                verdict = await self._verify(incident)
+                try:
+                    verdict = await self._verify(incident)
+                except BaseException:
+                    self._revert(incident, change)
+                    raise
                 incident["attempts"].append({"number": number, "author": change.author,
                                              "file": ", ".join(change.files), "verdict": verdict})
                 if verdict == "verified":
@@ -413,6 +417,7 @@ class BugLab:
 
     def _apply(self, incident: dict[str, Any], change: Change) -> None:
         self._stage(incident, "apply", change.author)
+        incident["applied_at"] = time.time()
         for name, (before, after) in change.files.items():
             if self.workspace.read(name) != before:
                 raise RuntimeError(f"{name} changed after the patch was checked; not applying it")
@@ -435,7 +440,7 @@ class BugLab:
                     f"Server checks: {len(self._last_checks) - len(bad)}/{len(self._last_checks)} pass"
                     + (f" (failing: {', '.join(check.label for check in bad)})" if bad else ""))
         self._event(incident, "verification", "thought", "Waiting for the store page to reload and report.")
-        report = await self._wait_for_browser(version)
+        report = await self._wait_for_browser(version, after=incident["applied_at"])
         if report is None:
             self._event(incident, "verification", "warning",
                         f"No browser report for this version within {self.options.verify_timeout:.0f}s.")
@@ -452,9 +457,12 @@ class BugLab:
         self._event(incident, "verification", "warning", "Not resolved: checks still fail.")
         return "failed"
 
-    async def _wait_for_browser(self, version: str) -> dict[str, Any] | None:
+    async def _wait_for_browser(self, version: str, *, after: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + self.options.verify_timeout
-        while version not in self.browser:
+        while (
+            version not in self.browser
+            or self.browser[version]["received_at"] <= after
+        ):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return None
@@ -479,7 +487,11 @@ class BugLab:
         if not await self._gate(incident, change):
             return False
         self._apply(incident, change)
-        verdict = await self._verify(incident)
+        try:
+            verdict = await self._verify(incident)
+        except BaseException:
+            self._revert(incident, change)
+            raise
         incident["attempts"].append({"number": len(incident["attempts"]) + 1, "author": change.author,
                                      "file": ", ".join(changed), "verdict": verdict})
         if verdict != "verified":

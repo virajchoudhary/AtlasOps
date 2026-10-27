@@ -57,9 +57,11 @@ def require_lab_header(request: Request) -> None:
 
 
 async def _json_body(request: Request, limit: int = 8192) -> dict[str, Any]:
-    raw = await request.body()
-    if len(raw) > limit:
-        raise HTTPException(status_code=413, detail="Request body too large")
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > limit:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        raw.extend(chunk)
     try:
         body = json.loads(raw or b"{}")
     except ValueError as exc:

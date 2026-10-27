@@ -39,7 +39,7 @@ EXPERIMENT_IDENTITIES = {
         "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
     },
     "cuda": {
-        "experiment": "rightsizing-grpo-gpu-7b-v1",
+        "experiment": "rightsizing-grpo-gpu-v1",
         "classification": "EXPLORATORY_GPU_RL_EXPERIMENT",
     },
 }

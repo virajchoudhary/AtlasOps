@@ -165,13 +165,17 @@ def analyze_v12(evidence: Path = EVIDENCE) -> dict[str, Any]:
     step = str(int(selected.removeprefix(prefix)))
     paired_start = paired(confirmation["s40-start"], confirmation["h1-step-0030"])
     final = confirmation["h1-step-0030"]
+    identity_matches = (
+        confirmed["adapter"]["inventory"] == record["checkpoints"][step]["inventory"]
+        and selected.endswith(confirmed["adapter"]["path"][-4:])
+    )
     return {
         "dev": dev, "dev_target_met": target_met, "selected": selected,
-        "confirmed_adapter_is_selected_checkpoint": confirmed["adapter"]["inventory"]
-        == record["checkpoints"][step]["inventory"] and selected.endswith(confirmed["adapter"]["path"][-4:]),
+        "confirmed_adapter_is_selected_checkpoint": identity_matches,
         "confirmation": {name: _set_summary(rows) for name, rows in confirmation.items()},
         "confirmation_paired_vs_start": paired_start,
-        "confirmation_met": sum(row["resolved"] for row in final) >= 116 and paired_start["exact_mcnemar_p"] < 0.01,
+        "confirmation_met": identity_matches and sum(row["resolved"] for row in final) >= 116
+        and paired_start["exact_mcnemar_p"] < 0.01,
         "h1_training": rollout_blocks(read_rows(evidence / "grpo-strict-balanced-ckpt-rerun" / "rollouts.jsonl"))[0],
     }
 

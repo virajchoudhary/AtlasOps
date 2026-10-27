@@ -363,3 +363,68 @@ def test_every_subcommand_supplies_the_arguments_its_handler_reads():
                    if isinstance(action, argparse._SubParsersAction)).choices[command]
         defined = {action.dest for action in sub._actions}
         assert set(required) <= defined, f"{command} is missing {set(required) - defined}"
+
+
+def test_the_hard_band_is_inexact_division_by_an_awkward_divisor():
+    from training import rightsizing_env as env
+
+    assert env.is_hard(env.CapacityState(3, 46, 4))        # 46/4 = 11.5
+    assert not env.is_hard(env.CapacityState(3, 48, 4))    # exact, no rounding
+    assert not env.is_hard(env.CapacityState(3, 47, 5))    # 5 divides in the head
+    assert not env.is_hard(env.CapacityState(3, 47, 2))
+    assert not env.is_hard(env.CapacityState(3, 47, 10))
+
+
+def test_the_v2_space_is_entirely_hard_and_reaches_past_the_v1_capacities():
+    from training import rightsizing_env as env
+
+    v2 = env.all_states_v2()
+    assert all(env.is_hard(state) for state in v2)
+    assert {state.capacity_per_replica for state in v2} == {3, 4, 6, 7, 8, 9}
+    assert max(state.needed for state in v2) == 20
+    assert max(state.needed for state in v2) <= env.MAX_REPLICAS
+    assert len(v2) > len(env.all_states())
+
+
+def test_the_v1_state_space_is_unchanged_by_the_v2_addition():
+    """v1 evidence must keep reproducing: the old generator's output is pinned."""
+    from training import rightsizing_env as env
+
+    v1 = env.all_states()
+    assert len(v1) == 990
+    assert env.states_sha256(v1) == env.states_sha256(env.all_states(12, 5))
+
+
+def test_v2_sets_are_disjoint_from_each_other_and_from_every_v1_state():
+    from scripts import make_rightsizing_eval_sets as make
+    from training import rightsizing_env as env
+
+    sets = make.make_v2_sets()
+    drawn = {name: [env.CapacityState(**state) for state in states]
+             for name, states in sets["sets"].items()}
+    train, dev, confirmation = (set(drawn[name]) for name in ("train", "dev", "confirmation"))
+    assert (len(train), len(dev), len(confirmation)) == (512, 128, 256)
+    assert not train & dev and not train & confirmation and not dev & confirmation
+    assert not (train | dev | confirmation) & set(env.all_states())
+    assert all(env.is_hard(state) for state in train | dev | confirmation)
+
+
+def test_v2_sets_are_reproducible_and_stratified():
+    from scripts import make_rightsizing_eval_sets as make
+
+    assert make.make_v2_sets() == make.make_v2_sets()
+    counts = make.make_v2_sets()["by_capacity"]["confirmation"]
+    assert sum(counts.values()) == 256
+    assert min(counts.values()) >= 40          # every stratum is represented
+
+
+def test_the_saturation_stop_rule_is_offered_and_defaults_to_never_stopping():
+    """A v1-shaped run must stay reproducible: the default changes no behaviour."""
+    from scripts import train_rightsizing_grpo as script
+
+    parser = script.build_parser()
+    sub = next(action for action in parser._actions
+               if isinstance(action, argparse._SubParsersAction)).choices["train"]
+    flag = next(action for action in sub._actions if action.dest == "stop_on_saturation")
+    assert flag.default == 0
+    assert flag.type is int

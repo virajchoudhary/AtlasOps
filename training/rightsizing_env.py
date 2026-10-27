@@ -100,6 +100,46 @@ def all_states(max_needed: int = 12, max_capacity: int = 5) -> list[CapacityStat
     return states
 
 
+# v2 difficulty bands, measured -- not assumed -- from the 256 states the 18-demonstration
+# 7B warm start was scored on in the v1 GPU experiment (dev, confirmation and held-out rows,
+# all committed under artifacts/evidence/rl-gpu-7b-v1/):
+#
+#     inexact division, capacity 4   28/57 = 0.49      <- the only band near a coin flip
+#     inexact division, capacity 3   31/37 = 0.84
+#     inexact division, capacity 5   52/52 = 1.00
+#     exact division, any capacity   0.82 .. 1.00
+#
+# The v1 task was too easy because capacities 1, 2 and 5 divide in the head and exact
+# divisions need no rounding at all. Difficulty lives in inexact division by a capacity
+# that is not 1, 2, 5 or 10. v2 keeps only that band, and extends capacity past 5, which
+# v1 never generated and where the rate is therefore predicted rather than measured.
+EASY_DIVISORS = frozenset({1, 2, 5, 10})
+
+
+def is_hard(state: CapacityState) -> bool:
+    """A state in the band where the v1 warm start was near chance."""
+    return (state.demand % state.capacity_per_replica != 0
+            and state.capacity_per_replica not in EASY_DIVISORS)
+
+
+def all_states_v2(max_needed: int = 20, capacities: tuple[int, ...] = (3, 4, 6, 7, 8, 9),
+                  hard_only: bool = True) -> list[CapacityState]:
+    """The v2 state space: wider capacities, deeper quotients, hard band only by default.
+
+    ``max_needed`` is bounded by the tool policy's replica cap, so the fix always stays
+    inside what ``kubectl_scale`` will accept.
+    """
+    states = []
+    for capacity in capacities:
+        for needed in range(2, min(max_needed, MAX_REPLICAS) + 1):
+            for demand in range((needed - 1) * capacity + 1, needed * capacity + 1):
+                for replicas in range(1, needed):
+                    state = CapacityState(replicas, demand, capacity)
+                    if not hard_only or is_hard(state):
+                        states.append(state)
+    return states
+
+
 def split_states(seed: int = 2026, held_out: int = 64) -> tuple[list[CapacityState], list[CapacityState]]:
     """Disjoint Train and held-out states, fixed by ``seed``."""
     states = all_states()

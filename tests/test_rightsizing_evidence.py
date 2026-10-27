@@ -317,3 +317,21 @@ def test_the_selected_adapter_is_recorded_by_hash_and_not_committed():
                               / "CHECKPOINT_SHA256.json").read_text())
     assert record["member_sha256"] == checkpoints["step-0030"]
     assert not list(base.rglob("*.safetensors")), "weights must never be committed"
+
+
+def test_the_v1_development_set_could_not_separate_the_checkpoints():
+    """The weakness v2 is designed around, as a number rather than a remark."""
+    sep = GPU["dev_separation"]
+    assert sep["separates"] is False
+    assert sep["candidates"] == 10 and sep["distinct_scores"] == 3
+    assert sep["tied_at_best"] == 8 and sep["at_ceiling"] == 8
+
+
+def test_separation_recognises_a_development_set_that_does_its_job():
+    decisive = {"step-0010": {"solved": 50, "n": 64}, "step-0020": {"solved": 58, "n": 64},
+                "step-0030": {"solved": 61, "n": 64}}
+    sep = analysis.separation(decisive)
+    assert sep["separates"] is True and sep["tied_at_best"] == 1 and sep["at_ceiling"] == 0
+
+    tied = {"step-0010": {"solved": 64, "n": 64}, "step-0020": {"solved": 64, "n": 64}}
+    assert analysis.separation(tied)["separates"] is False

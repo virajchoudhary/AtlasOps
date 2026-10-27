@@ -350,6 +350,11 @@ def train(args: argparse.Namespace) -> None:
     log_path = out / "training_log.jsonl"
     checkpoints: dict[int, Path] = {}
 
+    # Resolved once and tolerantly: argparse always supplies this, but a caller that
+    # builds its own Namespace may not, and phase C1 showed what that costs.
+    stop_on_saturation = int(getattr(args, "stop_on_saturation", 0) or 0)
+    saturation = {"run": 0, "stopped_at": None, "threshold": stop_on_saturation}
+
     class Recorder(TrainerCallback):
         def on_step_begin(self, args_, state, control, **kwargs):
             progress["step"] = state.global_step + 1
@@ -365,6 +370,19 @@ def train(args: argparse.Namespace) -> None:
             with log_path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({"step": state.global_step, "time": round(time.time() - started, 1),
                                          **(logs or {})}, sort_keys=True) + "\n")
+            # A bounded reward means a solved group has zero spread, zero advantage and zero
+            # update. The v1 run spent 87 of its 100 steps that way. Stopping on a run of
+            # saturated steps ends the run where the learning ended, instead of logging
+            # drift that an unwary reader could mistake for later progress.
+            if not stop_on_saturation:
+                return
+            spread = (logs or {}).get("reward_std")
+            saturation["run"] = saturation["run"] + 1 if spread == 0 else 0
+            if saturation["run"] >= stop_on_saturation:
+                saturation["stopped_at"] = state.global_step
+                print(f"stopping: reward_std was 0 for {saturation['run']} consecutive steps",
+                      flush=True)
+                control.should_training_stop = True
 
     grpo_config = GRPOConfig(
         output_dir=str(out / "trainer"), max_steps=args.max_steps,
@@ -400,6 +418,8 @@ def train(args: argparse.Namespace) -> None:
     trainer.model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     record["adapter_inventory"] = inventory(adapter_dir)
+    # Whether the run ended because it ran out of steps or because it ran out of signal.
+    record["saturation"] = dict(saturation)
     record["checkpoints"] = {str(step): {"path": str(path), "inventory": inventory(path)}
                              for step, path in sorted(checkpoints.items())}
     started = time.time()
@@ -637,6 +657,9 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--split-seed", type=int, default=2026)
     train_parser.add_argument("--device", choices=DEVICES, default="cpu",
                               help="cpu (default, unchanged) or cuda for 4-bit nf4 with fp16 compute")
+    train_parser.add_argument("--stop-on-saturation", type=int, default=0, metavar="N",
+                              help="stop once reward_std has been 0 for N consecutive steps "
+                                   "(0, the default, never stops early)")
     train_parser.add_argument("--gradient-checkpointing", action="store_true",
                               help="trade compute for activation memory; cuda only")
     sft_parser = commands.add_parser("sft")

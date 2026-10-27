@@ -248,6 +248,32 @@ def _grpo_runs(phase: Path) -> dict[str, Any]:
     return out
 
 
+def separation(dev: dict[str, Any], candidates_prefix: str = "step-") -> dict[str, Any]:
+    """Can this development set tell the checkpoints apart?
+
+    v1 could not: nine of twelve candidates scored a perfect 64/64, so the tie-break chose
+    `step-0030` and the evidence chose nothing. A selection is only as meaningful as the
+    spread of the scores it is made from, so that spread is computed and reported beside it
+    rather than left for a reader to notice.
+    """
+    scores = {name: row["solved"] for name, row in dev.items() if name.startswith(candidates_prefix)}
+    if not scores:
+        return {"candidates": 0, "separates": None}
+    best = max(scores.values())
+    tied = [name for name, solved in scores.items() if solved == best]
+    ceiling = max((row["n"] for row in dev.values()), default=0)
+    return {
+        "candidates": len(scores),
+        "distinct_scores": len(set(scores.values())),
+        "best": best,
+        "tied_at_best": len(tied),
+        "at_ceiling": sum(1 for solved in scores.values() if solved == ceiling),
+        "spread": best - min(scores.values()),
+        # One candidate strictly ahead of the rest: the scores chose, not the tie-break.
+        "separates": len(tied) == 1,
+    }
+
+
 def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
     """The 7B GPU experiment: warm starts, the GRPO run, selection, and the one confirmation.
 
@@ -300,6 +326,7 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
     selected = max(sorted(steps), key=lambda name: steps[name]["solved"]) if steps else None
     result["dev"] = dev
     result["selected"] = selected
+    result["dev_separation"] = separation(dev)
     result["development_bar_met"] = bool(
         selected and dev[selected]["solved"] >= 58
         and dev[selected]["exact"][0] >= 28 and dev[selected]["inexact"][0] >= 28)

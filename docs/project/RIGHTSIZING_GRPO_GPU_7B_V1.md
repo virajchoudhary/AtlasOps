@@ -376,6 +376,17 @@ NOT_APPLICABLE to this task and that the project gate is unchanged.
 
 **This is not G9 evidence and changes no gate.**
 
+### What would make this worth more
+
+The three limits above are design faults, not bad luck, and each has a fix. They
+are pre-registered in [the v2 proposal](RIGHTSIZING_GRPO_V2_PROPOSAL.md): a task
+drawn only from the band where this warm start scored 0.49, a stop rule so a
+saturated run ends where the learning ended, a selection that is void unless the
+development scores actually separate the candidates, fresh-reload evaluation only,
+and replication across three seeds. The offline parts are implemented and tested.
+Executing it needs new training, which the 27 October authorization does not
+grant.
+
 ## Amendment 6 — the first GRPO run trained nothing, and why — 27 October 2026
 
 The pre-registered GRPO run completed its 100 steps and changed the policy in no respect

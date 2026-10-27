@@ -163,3 +163,56 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --- v2: a task hard enough to be informative -------------------------------------------
+#
+# v1's weakness was that the warm start already solved 109/128 of the confirmation set, so
+# the experiment had 19 states of headroom and saturated after 63 of 100 steps. v2 draws
+# only from the band where that same warm start was near chance (see env.is_hard), from a
+# state space v1 never generated, so a result there carries information either way.
+V2_SEED = 31415
+V2_TRAIN, V2_DEV, V2_CONFIRMATION = 512, 128, 256
+# Capacity 4 is the measured 0.49 band; 3 is the measured 0.84 band; 6-9 are new and their
+# rate is predicted, not measured. Each stratum is drawn separately so the sets stay
+# balanced across them and a per-stratum rate can be read off the result.
+V2_STRATA = (4, 3, 6, 7, 8, 9)
+
+
+def make_v2_sets() -> dict:
+    """Train, development and confirmation sets for v2, disjoint from each other and v1.
+
+    Every v1 state -- trained on, evaluated on, or merely generatable by ``all_states`` --
+    is excluded, so no v2 number can be inflated by anything the policy saw in v1.
+    """
+    v1_space = set(env.all_states())
+    pool = [state for state in env.all_states_v2() if state not in v1_space]
+    by_capacity = {capacity: [s for s in pool if s.capacity_per_replica == capacity]
+                   for capacity in V2_STRATA}
+    draw = random.Random(V2_SEED)
+    sets: dict[str, list[env.CapacityState]] = {"train": [], "dev": [], "confirmation": []}
+    for name, total in (("train", V2_TRAIN), ("dev", V2_DEV), ("confirmation", V2_CONFIRMATION)):
+        per_stratum = total // len(V2_STRATA)
+        for capacity in V2_STRATA:
+            available = [s for s in by_capacity[capacity] if s not in set().union(*map(set, sets.values()))]
+            sets[name].extend(draw.sample(available, per_stratum))
+        # The remainder goes to the measured-hard stratum, capacity 4.
+        short = total - len(sets[name])
+        if short:
+            available = [s for s in by_capacity[4] if s not in set().union(*map(set, sets.values()))]
+            sets[name].extend(draw.sample(available, short))
+    drawn = [state for states in sets.values() for state in states]
+    assert len(drawn) == len(set(drawn)) == V2_TRAIN + V2_DEV + V2_CONFIRMATION
+    assert not set(drawn) & v1_space
+    assert all(env.is_hard(state) for state in drawn)
+    return {
+        "version": "v2", "seed": V2_SEED,
+        "pool_states": len(pool), "excluded_v1_states": len(v1_space),
+        "strata": list(V2_STRATA),
+        "sets": {name: [{"replicas": s.replicas, "demand": s.demand,
+                         "capacity_per_replica": s.capacity_per_replica} for s in states]
+                 for name, states in sets.items()},
+        "sha256": {name: env.states_sha256(states) for name, states in sets.items()},
+        "by_capacity": {name: {str(c): sum(1 for s in states if s.capacity_per_replica == c)
+                               for c in V2_STRATA} for name, states in sets.items()},
+    }

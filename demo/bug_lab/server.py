@@ -144,12 +144,13 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
         return JSONResponse(data, headers=_NO_STORE)
 
     @app.get("/shop/{path:path}", include_in_schema=False)
-    async def shop_file(path: str) -> FileResponse:
+    async def shop_file(path: str) -> Response:
         resolved = workspace.public_path(path)
         if resolved is None:
             raise HTTPException(status_code=404)
-        return FileResponse(resolved, media_type=_MEDIA.get(resolved.suffix, "application/octet-stream"),
-                            headers=_NO_STORE)
+        return Response(resolved.read_bytes(),
+                        media_type=_MEDIA.get(resolved.suffix, "application/octet-stream"),
+                        headers=_NO_STORE)
 
     @app.get("/lab/api/state")
     async def state() -> JSONResponse:

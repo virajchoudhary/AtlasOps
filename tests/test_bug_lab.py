@@ -41,6 +41,43 @@ def make_app(tmp_path, **options):
     return create_app(config, backend=RULES)
 
 
+def test_store_response_remains_a_snapshot_during_reset(tmp_path):
+    app = make_app(tmp_path)
+    lab = app.state.lab
+    lab.inject("broken-stylesheet")
+    before = lab.workspace.read("index.html").encode()
+
+    async def run():
+        headers_sent = asyncio.Event()
+        resume = asyncio.Event()
+
+        async def paused_app(scope, receive, send):
+            async def paused_send(message):
+                if message["type"] == "http.response.start":
+                    headers_sent.set()
+                    await resume.wait()
+                await send(message)
+
+            await app(scope, receive, paused_send)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=paused_app), base_url="http://127.0.0.1",
+        ) as client:
+            request = asyncio.create_task(client.get("/shop/"))
+            try:
+                await asyncio.wait_for(headers_sent.wait(), timeout=2)
+                await lab.reset()
+            finally:
+                resume.set()
+            response = await request
+        assert response.status_code == 200
+        assert response.content == before
+        assert int(response.headers["content-length"]) == len(before)
+        assert lab.workspace.changed_files() == []
+
+    asyncio.run(run())
+
+
 def browser_report(lab, bug_id=None):
     checks, issues = dict(CLEAN), []
     if bug_id in BROWSER_SYMPTOMS:

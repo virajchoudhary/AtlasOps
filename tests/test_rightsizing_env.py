@@ -1,5 +1,6 @@
 """Model-free contracts for the right-sizing GRPO environment."""
 
+import argparse
 import json
 
 import pytest
@@ -343,3 +344,22 @@ def test_a_failing_generate_still_restores_training_mode():
     with pytest.raises(RuntimeError):
         model.generate()
     assert model.training is True
+
+
+def test_every_subcommand_supplies_the_arguments_its_handler_reads():
+    """A handler reads args.gradient_checkpointing; each subparser must define it.
+
+    Phase C1 lost a GPU sweep to a hand-built Namespace that lacked this attribute. The
+    CLI was never broken, but nothing pinned that, so the guarantee is written down here.
+    """
+    from scripts import train_rightsizing_grpo as script
+
+    parser = script.build_parser()
+    for command, required in (("train", ["model_dir", "gradient_checkpointing"]),
+                              ("sft", ["model_dir", "gradient_checkpointing"]),
+                              ("score", ["model_dir", "gradient_checkpointing"]),
+                              ("evaluate", ["model_dir", "gradient_checkpointing"])):
+        sub = next(action for action in parser._actions
+                   if isinstance(action, argparse._SubParsersAction)).choices[command]
+        defined = {action.dest for action in sub._actions}
+        assert set(required) <= defined, f"{command} is missing {set(required) - defined}"

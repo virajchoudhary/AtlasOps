@@ -449,3 +449,50 @@ and changing the recipe after seeing the result is how a selection effect gets i
 A future version should either raise difficulty or stop on a saturation rule.
 
 This is not G9 evidence and changes no gate.
+
+## Amendment 8 — checkpoint selection, and three attempts to get it — 27 October 2026
+
+Owner authorization for this finish is PR #235, comment of 27 October 2026 by
+`virajchoudhary` (`authorAssociation: OWNER`): the exploratory task may score the
+ten checkpoints on the development set, select without consulting confirmation
+outcomes, and run one confirmation. The same comment states that formal G9
+acceptance is NOT_APPLICABLE here and the gate is unchanged. Nothing below is
+G9 evidence.
+
+Phase C1 took three attempts. Both failures are kept, with their console logs:
+
+| attempt | outcome | cause |
+|---|---|---|
+| `phaseC1-attempt1/` | scored 0 of 11, reported COMPLETE | hand-built `Namespace` lacked `gradient_checkpointing`, added to the handlers by `8c77314`; the loop caught each failure and continued |
+| `phaseC1-attempt2/` | scored 2 of 11, then OOM | one process loaded a fresh 7B per candidate; a 7B does not leave the GPU on dereference |
+| `phaseC1/` | scored 12 of 12 | one process per candidate, driving the repository's `score` subcommand |
+
+Attempt 1's second fault was the worse one: a sweep that scored nothing printed
+`PHASE C1 COMPLETE` with `dev_scores: {}`. Attempt 3 stops at the first failure
+and asserts a selection exists before claiming completion. Attempt 2's two scores
+are kept as evidence but were not carried into the selection -- a selection
+assembled from runs under different memory conditions is not this procedure.
+
+### The selection
+
+| candidate | solved | exact | inexact |
+|---|---|---|---|
+| `sft-start` | 49/64 | 29/32 | 20/32 |
+| `step-0010` | 61/64 | 29/32 | 32/32 |
+| `step-0020` | 59/64 | 32/32 | 27/32 |
+| `step-0030` | **64/64** | 32/32 | 32/32 |
+| `step-0040` .. `step-0100`, `final` | 64/64 | 32/32 | 32/32 |
+
+Selected `step-0030` by the registered rule: most solved, earliest wins a tie.
+The development bar (>=58/64, >=28/32 exact, >=28/32 inexact) is met.
+
+**The development set cannot separate these candidates.** Nine of twelve score a
+perfect 64/64, so the tie-break chose, not the evidence. This is the same
+saturation amendment 7 records in the step log, now visible in the scoring, and
+it is the reason the confirmation set -- 128 states, opened once -- is the only
+number here worth weighing.
+
+No confirmation state was read during selection: `confirmation_set_opened_here`
+is false in `SELECTION.json`.
+
+This is not G9 evidence and changes no gate.

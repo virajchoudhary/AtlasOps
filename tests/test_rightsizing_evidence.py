@@ -233,3 +233,35 @@ def test_both_phase_b_runs_stay_in_the_record():
     """The null run is not dropped once a working run exists."""
     assert GPU["grpo"]["grpo-strict-balanced-7b-from-sft18"]["trained_nothing"] is True
     assert set(GPU["grpo_rerun"]) == {"grpo-strict-balanced-7b-from-sft18"}
+
+
+def test_the_development_sweep_selected_the_earliest_perfect_checkpoint():
+    """Registered rule: most solved, earliest wins a tie."""
+    assert GPU["selected"] == "step-0030"
+    assert GPU["development_bar_met"] is True
+    dev = GPU["dev"]
+    assert (dev["sft-start"]["solved"], dev["step-0010"]["solved"],
+            dev["step-0020"]["solved"], dev["step-0030"]["solved"]) == (49, 61, 59, 64)
+
+
+def test_the_development_set_could_not_separate_the_candidates():
+    """Nine of twelve are perfect, so the tie-break chose and the confirmation set decides."""
+    perfect = [name for name, row in GPU["dev"].items() if row["solved"] == 64]
+    assert len(perfect) == 9
+    assert "step-0030" in perfect
+
+
+def test_the_selection_never_read_a_confirmation_state():
+    import json
+
+    selection = json.loads((analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+                            / "phaseC1" / "SELECTION.json").read_text())
+    assert selection["confirmation_set_opened_here"] is False
+    assert selection["selected"] == "step-0030"
+
+
+def test_both_failed_selection_attempts_are_still_in_the_record():
+    base = analysis.REPO / "artifacts" / "evidence" / "rl-gpu-7b-v1"
+    for attempt in ("phaseC1-attempt1", "phaseC1-attempt2"):
+        assert (base / attempt / "WHY_IT_FAILED.md").exists(), attempt
+        assert (base / attempt / "console.log").exists(), attempt

@@ -35,7 +35,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--allow-remote", action="store_true",
                         help="allow binding to a non-loopback address (the lab has no login)")
     parser.add_argument("--workdir", type=Path, default=None,
-                        help="where the editable store copy lives (default: a new temporary folder)")
+                        help="new or empty directory for the editable copy (default: new temporary folder)")
+    parser.add_argument("--allowed-host", action="append", default=[],
+                        help="additional exact Host name for an explicitly allowed remote binding")
     parser.add_argument("--agents", choices=["auto", "rules", "llm"], default="auto",
                         help="auto uses a model if one answers, otherwise the rule engine")
     parser.add_argument("--llm-base-url", default=os.environ.get("BUG_LAB_LLM_BASE_URL"),
@@ -50,11 +52,16 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if not _loopback(args.host) and not args.allow_remote:
         parser.error("refusing to bind to a non-loopback address without --allow-remote")
+    if any("*" in host or "/" in host for host in args.allowed_host):
+        parser.error("--allowed-host requires an exact host name, not a wildcard or URL")
 
     workdir = args.workdir or Path(tempfile.mkdtemp(prefix="atlasops-bug-lab-"))
     config = LabConfig(workdir=workdir, agents=args.agents, llm_base_url=args.llm_base_url,
                        llm_model=args.llm_model, llm_api_key=os.environ.get("BUG_LAB_LLM_API_KEY", ""),
                        llm_timeout=args.llm_timeout,
+                       allowed_hosts=tuple(dict.fromkeys(
+                           ("127.0.0.1", "localhost", "[::1]", args.host, *args.allowed_host)
+                       )),
                        options=LabOptions(step_delay=args.step_delay))
     app = create_app(config)
     print(f"AtlasOps bug lab\n  Control room: http://{args.host}:{args.port}/\n"

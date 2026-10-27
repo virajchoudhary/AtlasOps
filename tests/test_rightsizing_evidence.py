@@ -335,3 +335,31 @@ def test_separation_recognises_a_development_set_that_does_its_job():
 
     tied = {"step-0010": {"solved": 64, "n": 64}, "step-0020": {"solved": 64, "n": 64}}
     assert analysis.separation(tied)["separates"] is False
+
+
+def test_confirmation_cannot_claim_acceptance_with_a_mismatched_adapter(monkeypatch):
+    import json
+    from pathlib import Path
+
+    original = Path.read_text
+
+    def mismatched_selected_adapter(path, *args, **kwargs):
+        text = original(path, *args, **kwargs)
+        if path.name == "SELECTED_ADAPTER.json":
+            record = json.loads(text)
+            record["member_sha256"] = "0" * 64
+            return json.dumps(record)
+        return text
+
+    monkeypatch.setattr(Path, "read_text", mismatched_selected_adapter)
+    result = analysis.analyze_gpu_v1()
+    assert result["confirmation"]["step-0030"]["solved"] == 125
+    assert result["confirmation_adapter_is_the_selected_checkpoint"] is False
+    assert result["criterion_met"] is False
+
+
+def test_v2_calibration_preserves_the_unopened_confirmation():
+    proposal = (analysis.REPO / "docs/project/RIGHTSIZING_GRPO_V2_PROPOSAL.md").read_text()
+    calibration = proposal.split("**Task calibration.**", 1)[1].split("**Success criterion**", 1)[0]
+    assert "128-state development set, never the confirmation set" in calibration
+    assert "Calibration cannot use confirmation outcomes" in calibration

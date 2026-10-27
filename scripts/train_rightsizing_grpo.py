@@ -33,6 +33,16 @@ from training import rightsizing_env as env
 REPO = Path(__file__).resolve().parents[1]
 LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 DEVICES = ("cpu", "cuda")
+EXPERIMENT_IDENTITIES = {
+    "cpu": {
+        "experiment": env.EXPERIMENT,
+        "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+    },
+    "cuda": {
+        "experiment": "rightsizing-grpo-gpu-7b-v1",
+        "classification": "EXPLORATORY_GPU_RL_EXPERIMENT",
+    },
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -240,7 +250,8 @@ def train(args: argparse.Namespace) -> None:
     train_states, held_out = env.split_states(args.split_seed)
     eval_train = random.Random(args.seed).sample(train_states, 64)
     config = {
-        "experiment": env.EXPERIMENT, "seed": args.seed, "split_seed": args.split_seed,
+        "experiment": EXPERIMENT_IDENTITIES[args.device]["experiment"],
+        "seed": args.seed, "split_seed": args.split_seed,
         "max_steps": args.max_steps, "num_generations": args.num_generations,
         "prompts_per_step": args.prompts_per_step, "learning_rate": args.learning_rate,
         "beta": 0.0, "temperature": 1.0, "max_completion_length": args.max_completion_length,
@@ -257,8 +268,7 @@ def train(args: argparse.Namespace) -> None:
         excluded = {state for states in env.load_state_sets(args.exclude_states).values() for state in states}
         config["excluded_from_prompts"] = {"file_sha256": sha256_file(args.exclude_states), "states": len(excluded)}
     record: dict[str, Any] = {
-        "experiment": env.EXPERIMENT,
-        "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+        **EXPERIMENT_IDENTITIES[args.device],
         "gate_status": "Not a G9 result. G9 remains NOT_PASSED/FROZEN; this run was not reviewed or "
                        "authorized under the G9 protocol.",
         "started_at": datetime.now(UTC).isoformat(),
@@ -476,8 +486,7 @@ def sft(args: argparse.Namespace) -> None:
                                                 args.examples)
     eval_train = random.Random(args.seed).sample(train_states, 64)
     record: dict[str, Any] = {
-        "experiment": env.EXPERIMENT, "phase": "sft",
-        "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+        **EXPERIMENT_IDENTITIES[args.device], "phase": "sft",
         "gate_status": "Not a G7 or G9 result; changes no gate status.",
         "started_at": datetime.now(UTC).isoformat(), "source": source_identity(), "runtime": runtime(),
         "model": {"dir_inventory": inventory(args.model_dir),
@@ -615,7 +624,7 @@ def score_set(args: argparse.Namespace) -> None:
     metrics = evaluate(model, tokenizer, states, **eval_kwargs(args.action_format))
     write_rows(out / f"{args.set}_rows.jsonl", metrics["rows"])
     write_json(out / "SCORE.json", {
-        "experiment": env.EXPERIMENT, "classification": "SMALL_MODEL_CPU_RL_EXPERIMENT",
+        **EXPERIMENT_IDENTITIES[args.device],
         "gate_status": "Not a G9 result; changes no gate status.",
         "scored_at": datetime.now(UTC).isoformat(), "source": source_identity(), "runtime": runtime(),
         "set": args.set, "device": args.device, "states_file_sha256": sha256_file(args.states),

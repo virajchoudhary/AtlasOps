@@ -57,10 +57,14 @@ per-stratum rate can be read off the result.
 ## Fixed in advance
 
 **Task calibration.** The warm start must score between **0.40 and 0.65** on the
-confirmation set. Outside that window the task is mis-sized -- too hard to learn or
+128-state development set, never the confirmation set. Outside that window the task is mis-sized -- too hard to learn or
 too easy to be informative -- and the run is reported as a mis-sized task, with no
 success claim either way. This check is made on the warm start alone, before any
 GRPO step.
+
+The 256-state confirmation set remains unopened until checkpoint selection has
+finished. Score the selected policy and its fixed warm start there once for the
+final paired comparison. Calibration cannot use confirmation outcomes.
 
 **Success criterion**, all three required:
 1. the trained policy gains at least **15 percentage points** over its own warm

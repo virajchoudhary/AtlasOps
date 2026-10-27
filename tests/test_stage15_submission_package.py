@@ -1161,3 +1161,16 @@ class TestStage15SubmissionPackage:
         assert "Historical presentation evidence baseline" not in slides
         assert "SFT + Online GRPO Trained" not in slides
         assert "One real GKE cluster. No simulations." not in slides
+
+
+@pytest.mark.parametrize("experiment", ["rl-cpu-rightsizing-v1", "rl-gpu-7b-v1"])
+def test_selected_package_preserves_every_rightsizing_checksum_payload(experiment):
+    root = Path("artifacts/evidence") / experiment
+    assets = collect_submission_assets()
+    missing = []
+    for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+        _, relative = line.split(maxsplit=1)
+        path = (root / relative.lstrip("*")).as_posix()
+        if path not in assets:
+            missing.append(path)
+    assert not missing, f"Selected package omits checksum-bound evidence: {missing}"

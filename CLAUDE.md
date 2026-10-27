@@ -1,10 +1,21 @@
 # AtlasOps — Maintainer notes
 
+## Current project status
+
+These are retained upstream hackathon notes, not current deployment instructions.
+The university continuation uses [AGENTS.md](AGENTS.md) and the
+[completion checklist](docs/project/COMPLETION_CHECKLIST.md).
+The May deadline, cloud addresses, credit expectations, and account paths below
+are historical. Current GCP resource state and billing are UNVERIFIED.
+Do not connect to these endpoints, start infrastructure, or use old credentials
+on the basis of this file. Outstanding owner-only actions are listed in
+[the external closure checklist](docs/project/EXTERNAL_CLOSURE_ACTIONS_20261027.md).
+
 ## What This Is
 Multi-agent SRE incident response platform for the **AMD Developer Hackathon (lablab.ai)**.
 Submission deadline: **May 10, 2026 — 7:00 PM UTC (12:30 AM IST May 11)**
 
-## GCP Infrastructure (LIVE — costs money)
+## Historical GCP infrastructure (current state and billing UNVERIFIED)
 - **Project:** `cloudsre-v3-amd`
 - **Cluster:** `atlasops` (was `cloudsre-v3`), GKE Standard, `us-central1`, 3× e2-standard-4
 - **Grafana:** `http://136.119.60.129` (credentials are not stored in Git; obtain from the owner's secret store)

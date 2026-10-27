@@ -77,6 +77,32 @@ def test_each_bug_edits_exactly_its_own_file(tmp_path, bug):
     assert MONITOR_TAG in workspace.read("index.html")
 
 
+def test_startup_refuses_existing_workdir_without_deleting_user_data(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    sentinel = site / "owner-data.txt"
+    sentinel.write_text("preserve this data")
+    with pytest.raises(ValueError, match="empty"):
+        create_app(LabConfig(workdir=tmp_path), backend=RULES)
+    assert sentinel.read_text() == "preserve this data"
+
+
+def test_foreign_host_cannot_mutate_the_loopback_lab(tmp_path):
+    with TestClient(make_app(tmp_path), base_url="http://127.0.0.1") as client:
+        response = client.post("/lab/api/inject", json={"bug": "slow-api"},
+                               headers={"X-Bug-Lab": "1", "Host": "attacker.example"})
+        assert response.status_code == 400
+        assert client.get("/lab/api/state").json()["site"]["changed_files"] == []
+
+
+def test_foreign_origin_cannot_mutate_the_loopback_lab(tmp_path):
+    with TestClient(make_app(tmp_path), base_url="http://127.0.0.1") as client:
+        response = client.post("/lab/api/inject", json={"bug": "slow-api"},
+                               headers={"X-Bug-Lab": "1", "Origin": "http://attacker.example"})
+        assert response.status_code == 403
+        assert client.get("/lab/api/state").json()["site"]["changed_files"] == []
+
+
 def test_pristine_store_passes_every_check(tmp_path):
     app = make_app(tmp_path)
 
@@ -304,10 +330,38 @@ def test_injection_is_refused_while_a_bug_or_incident_is_pending(tmp_path):
     lab.inject("slow-api")
     with pytest.raises(LabBusy):
         lab.inject("broken-stylesheet")
-    lab.reset()
+    asyncio.run(lab.reset())
     assert lab.injected == [] and lab.workspace.changed_files() == []
     with pytest.raises(ValueError, match="Unknown bug"):
         lab.inject("no-such-bug")
+
+
+def test_reset_drains_the_monitor_before_restoring_store_files(tmp_path, monkeypatch):
+    lab = make_app(tmp_path).state.lab
+
+    async def run():
+        started, closed = asyncio.Event(), asyncio.Event()
+
+        async def reader():
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+
+        lab._monitor_task = asyncio.create_task(reader())
+        await started.wait()
+        restore = lab.workspace.reset
+
+        def checked_restore():
+            assert closed.is_set(), "Reset must first close active monitor reads"
+            restore()
+
+        monkeypatch.setattr(lab.workspace, "reset", checked_restore)
+        await lab.reset()
+        await lab.stop()
+
+    asyncio.run(run())
 
 
 def fake_model(answers):
@@ -400,7 +454,7 @@ def test_model_timeout_reaches_the_backend_and_the_command_line(monkeypatch):
 
 
 def test_http_surface_serves_both_pages_and_guards_writes(tmp_path):
-    with TestClient(make_app(tmp_path)) as client:
+    with TestClient(make_app(tmp_path), base_url="http://127.0.0.1") as client:
         control = client.get("/")
         assert control.status_code == 200 and "AtlasOps Bug Lab" in control.text
         assert "default-src 'self'" in control.headers["content-security-policy"]

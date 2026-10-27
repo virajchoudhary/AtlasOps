@@ -340,9 +340,32 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
         pair = paired(confirmation["sft-start"], confirmation[selected])
         solved = sum(row["resolved"] for row in confirmation[selected])
         result["confirmation_paired_vs_start"] = pair
-        result["confirmation_adapter_is_the_selected_checkpoint"] = True
+        checkpoint_path = (
+            evidence / "phaseB2" / "grpo-strict-balanced-7b-from-sft18"
+            / "CHECKPOINT_SHA256.json"
+        )
+        selected_path = evidence / "phaseC2" / "SELECTED_ADAPTER.json"
+        scored_path = conf_dir / selected / "SCORE.json"
+        identity_matches = False
+        if all(path.is_file() for path in (checkpoint_path, selected_path, scored_path)):
+            checkpoints = json.loads(checkpoint_path.read_text())
+            selected_adapter = json.loads(selected_path.read_text())
+            scored_adapter = json.loads(scored_path.read_text())
+            selected_hash = checkpoints.get(selected)
+            scored_hash = (
+                scored_adapter.get("adapter", {}).get("inventory", {})
+                .get("adapter_model.safetensors", {}).get("sha256")
+            )
+            identity_matches = bool(
+                selected_hash
+                and selected_adapter.get("selected_checkpoint") == selected
+                and selected_hash == selected_adapter.get("member_sha256") == scored_hash
+            )
+        result["confirmation_adapter_is_the_selected_checkpoint"] = identity_matches
         result["criterion"] = ">=116/128 solved and exact McNemar p < 0.01 against its own SFT start"
-        result["criterion_met"] = bool(solved >= 116 and pair["exact_mcnemar_p"] < 0.01)
+        result["criterion_met"] = bool(
+            identity_matches and solved >= 116 and pair["exact_mcnemar_p"] < 0.01
+        )
     else:
         result["criterion_met"] = None
     result["gate_status"] = ("Exploratory. Not G9 evidence; G9 remains NOT_PASSED/FROZEN and "

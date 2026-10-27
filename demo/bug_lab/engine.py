@@ -155,9 +155,9 @@ class BugLab:
         # The monitor is not told about the injection; it finds the bug on its next cycle.
         return record
 
-    def reset(self) -> None:
-        if self._pipeline and not self._pipeline.done():
-            self._pipeline.cancel()
+    async def reset(self) -> None:
+        monitoring = bool(self._monitor_task and not self._monitor_task.done())
+        await self.stop()
         if self.active:
             self._close(self.incident, "cancelled", "The store was reset by you.")
         self._approval = None
@@ -165,6 +165,8 @@ class BugLab:
         self.injected = []
         self.suppressed_version = None
         self._wake.set()
+        if monitoring:
+            await self.start()
 
     def record_browser_report(self, report: dict[str, Any]) -> None:
         version = report.get("version")

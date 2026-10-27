@@ -8,6 +8,8 @@ import os
 import shutil
 from pathlib import Path
 
+from training.sft_provenance import has_redirecting_path_component
+
 SITE_SOURCE = Path(__file__).resolve().parent / "site"
 EDITABLE_FILES = ("index.html", "styles.css", "app.js", "products.json", "config.json")
 MONITOR_TAG = '<script src="/lab/monitor.js"></script>'
@@ -17,15 +19,26 @@ class Workspace:
     """Bug injection and agent patches only ever write files inside ``root / "site"``."""
 
     def __init__(self, root: Path, source: Path = SITE_SOURCE) -> None:
+        if has_redirecting_path_component(root):
+            raise ValueError("Bug Lab workdir must not traverse a symbolic link or junction")
+        if root.exists() and (not root.is_dir() or any(root.iterdir())):
+            raise ValueError("Bug Lab workdir must be new or empty")
         self.root = root.resolve()
         self.source = source.resolve()
         self.site = self.root / "site"
         self.reset()
 
     def reset(self) -> None:
-        if self.site.exists():
-            shutil.rmtree(self.site)
-        shutil.copytree(self.source, self.site)
+        if (
+            has_redirecting_path_component(self.site)
+            or not self.site.resolve().is_relative_to(self.root)
+        ):
+            raise ValueError("Bug Lab reset must stay inside its owned workspace")
+        if not self.site.exists():
+            shutil.copytree(self.source, self.site)
+        else:
+            for name in EDITABLE_FILES:
+                self.write(name, self.pristine(name))
 
     def _editable(self, name: str) -> Path:
         if name not in EDITABLE_FILES:

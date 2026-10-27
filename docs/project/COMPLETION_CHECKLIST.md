@@ -30,6 +30,23 @@ The [peer handoff tracker](PEER_HANDOFF.md) records completed preparation,
 external dependencies, owner decisions, and next actions without replacing
 this scientific gate matrix.
 
+## October 27 software closure
+
+PR [235](https://github.com/virajchoudhary/AtlasOps/pull/235) consolidates the
+preparation changes from draft PRs 230-234, controlled-export/reload fixes,
+the disposable Bug Lab, and separate exploratory CPU/GPU right-sizing evidence.
+Its acceptance must be established at its final head, followed by protected
+integration, main CI, and an independently verified exact-main package.
+The earlier source-specific baseline and archives below remain historical.
+The final SHA, CI, review and package identities belong in the external final
+receipt so this checklist does not claim its own not-yet-created commit.
+
+The inherited GCP LIVE notes are historical, not current infrastructure evidence.
+The [external closure checklist](EXTERNAL_CLOSURE_ACTIONS_20261027.md) tracks
+unverified credential rotation, billing, host qualification and scientific
+dependencies. This software closure does not start the October 27 Bug Lab Run Plan
+or promote any scientific gate.
+
 ## Application acceptance
 
 The table combines evidence from separate software checkpoints. PR 207's suite

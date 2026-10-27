@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from demo.bug_lab.engine import ApprovalError, BugLab, LabBusy, LabOptions
 from demo.bug_lab.llm import RULES, Backend, detect_backend
@@ -42,13 +43,17 @@ class LabConfig:
     llm_model: str | None = None
     llm_api_key: str = ""
     llm_timeout: float = 120.0
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")
     options: LabOptions = field(default_factory=LabOptions)
 
 
 def require_lab_header(request: Request) -> None:
-    """Cross-site pages cannot send this header without CORS, which the lab never grants."""
+    """Require an intentional same-origin write; the fixed header is not authentication."""
     if request.headers.get("x-bug-lab") != "1":
         raise HTTPException(status_code=403, detail="Missing X-Bug-Lab header")
+    origin = request.headers.get("origin")
+    if origin and origin != str(request.base_url).rstrip("/"):
+        raise HTTPException(status_code=403, detail="Foreign Origin is not permitted")
 
 
 async def _json_body(request: Request, limit: int = 8192) -> dict[str, Any]:
@@ -82,9 +87,11 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
 
     app = FastAPI(title="AtlasOps Bug Lab", lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url=None)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(config.allowed_hosts),
+                       www_redirect=False)
 
     def shop_client() -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://bug-lab",
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1",
                                  timeout=15.0)
 
     lab = BugLab(workspace, backend or RULES, shop_client, config.options,
@@ -163,7 +170,7 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
 
     @app.post("/lab/api/reset", dependencies=[Depends(require_lab_header)])
     async def reset() -> JSONResponse:
-        lab.reset()
+        await lab.reset()
         return JSONResponse({"reset": True})
 
     @app.post("/lab/api/approval", dependencies=[Depends(require_lab_header)])

@@ -220,3 +220,18 @@ def test_current_demo_guides_reference_the_accepted_software_baseline():
         assert "completion-app-consolidated-20261015" not in current, (
             f"{path} directs readers to the superseded PR 204 checkout"
         )
+
+
+def test_inherited_gcp_notes_are_not_current_live_authority():
+    notes = _read("CLAUDE.md")
+    assert "## GCP Infrastructure (LIVE" not in notes
+    assert "Current GCP resource state and billing are UNVERIFIED" in notes
+    assert "Do not connect to these endpoints" in notes
+    assert "EXTERNAL_CLOSURE_ACTIONS_20261027.md" in notes
+
+    actions = _read("docs/project/EXTERNAL_CLOSURE_ACTIONS_20261027.md")
+    for item in ("Grafana", "Argo CD", "Azure OpenAI", "OpenRouter", "Anthropic", "Hugging Face"):
+        assert item in actions
+    assert "rotation UNVERIFIED" in actions
+    assert "billing attachment are UNVERIFIED" in actions
+    assert "G4 and G9 remain NOT_PASSED/FROZEN" in actions

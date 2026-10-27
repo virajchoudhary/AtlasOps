@@ -1,5 +1,11 @@
 # AtlasOps bug lab
 
+Use a fresh or empty directory for `--workdir`. Startup refuses existing contents.
+The lab accepts loopback Host names by default and rejects foreign Origins on
+writes. `X-Bug-Lab: 1` is an intentional-write header, not authentication.
+An explicitly authorized remote binding also needs its exact `--allowed-host`
+name; wildcards are refused. This closure task does not authorize remote exposure.
+
 Two web pages served by one local app:
 
 - **Control room** (`/`): inject an intentional bug, then see what you injected,

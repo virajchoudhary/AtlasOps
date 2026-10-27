@@ -428,3 +428,35 @@ def test_the_saturation_stop_rule_is_offered_and_defaults_to_never_stopping():
     flag = next(action for action in sub._actions if action.dest == "stop_on_saturation")
     assert flag.default == 0
     assert flag.type is int
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_scoring_records_the_selected_device_experiment_without_loading_a_model(
+    tmp_path, monkeypatch, device,
+):
+    from scripts import train_rightsizing_grpo as script
+
+    state = env.CapacityState(1, 4, 2)
+    monkeypatch.setattr(env, "load_state_sets", lambda _: {"dev": [state]})
+    monkeypatch.setattr(script, "configure_threads", lambda _: None)
+    monkeypatch.setattr(script, "load_base", lambda *_: (object(), object()))
+    monkeypatch.setattr(script, "source_identity", dict)
+    monkeypatch.setattr(script, "runtime", dict)
+    monkeypatch.setattr(script, "sha256_file", lambda _: "0" * 64)
+    monkeypatch.setattr(script, "evaluate", lambda *_args, **_kwargs: {"rows": []})
+    monkeypatch.setattr(script, "summary", lambda _: {})
+    output = tmp_path / "score"
+    args = argparse.Namespace(
+        states=tmp_path / "states.json", set="dev", output_dir=output,
+        device=device, model_dir=tmp_path, gradient_checkpointing=False,
+        adapter_dir=None, action_format="direct",
+    )
+    script.score_set(args)
+    record = json.loads((output / "SCORE.json").read_text())
+    assert record["device"] == device
+    if device == "cuda":
+        assert record["classification"] == "EXPLORATORY_GPU_RL_EXPERIMENT"
+        assert record["experiment"] == "rightsizing-grpo-gpu-7b-v1"
+    else:
+        assert record["classification"] == "SMALL_MODEL_CPU_RL_EXPERIMENT"
+        assert record["experiment"] == env.EXPERIMENT

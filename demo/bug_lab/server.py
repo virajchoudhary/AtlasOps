@@ -155,6 +155,13 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
     async def state() -> JSONResponse:
         return JSONResponse(lab.snapshot(), headers=_NO_STORE)
 
+    @app.get("/lab/api/evidence")
+    async def evidence() -> Response:
+        raw = lab.log_path.read_bytes() if lab.log_path and lab.log_path.is_file() else b""
+        return Response(raw, media_type="application/x-ndjson", headers={
+            **_NO_STORE, "Content-Disposition": 'attachment; filename="atlasops-incidents.jsonl"',
+        })
+
     @app.get("/lab/api/site-version")
     async def site_version() -> JSONResponse:
         return JSONResponse({"version": workspace.version()}, headers=_NO_STORE)

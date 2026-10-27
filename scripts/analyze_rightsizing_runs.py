@@ -180,6 +180,74 @@ def _rows_or_none(path: Path) -> list[dict[str, Any]] | None:
     return read_rows(path) if path.exists() else None
 
 
+def _learning_signal(path: Path) -> dict[str, Any] | None:
+    """Where the gradient actually was.
+
+    The reward is bounded above, so once every rollout in a group resolves the advantage is
+    zero and the update is zero however many steps remain. That saturation is invisible in
+    the collapse watch -- which sees a perfect score -- and plain in the step log.
+    """
+    rows = _rows_or_none(path)
+    if rows is None:
+        return None
+    moved = [row for row in rows if (row.get("grad_norm") or 0) > 1e-9]
+    return {
+        "steps_logged": len(rows),
+        "steps_with_gradient": len(moved),
+        "last_step_with_gradient": max((row["step"] for row in moved), default=None),
+        "saturated": bool(rows) and all((row.get("reward_std") or 0) == 0 for row in rows[-10:]),
+    }
+
+
+def _paired_held_out(before: list[dict[str, Any]] | None,
+                     after: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """The same states before and after, so a gain is a gain on a state and not on an average."""
+    if before is None or after is None or len(before) != len(after):
+        return None
+    lost = sum(1 for x, y in zip(before, after) if x["resolved"] and not y["resolved"])
+    gained = sum(1 for x, y in zip(before, after) if not x["resolved"] and y["resolved"])
+    return {"n": len(before), "lost": lost, "gained": gained,
+            "resolved_before": sum(row["resolved"] for row in before),
+            "resolved_after": sum(row["resolved"] for row in after),
+            "exact_mcnemar_p": exact_mcnemar(lost, gained)}
+
+
+def _grpo_runs(phase: Path) -> dict[str, Any]:
+    runs = sorted(p.parent for p in phase.glob("*/RESULT.json")) if phase.exists() else []
+    out: dict[str, Any] = {}
+    for run in runs:
+        entry: dict[str, Any] = {"failed": (phase / "FAILED.txt").exists()}
+        rollouts = run / "rollouts.jsonl"
+        if rollouts.exists():
+            blocks, groups = rollout_blocks(read_rows(rollouts))
+            entry["groups"] = groups
+            entry["blocks_of_10_steps"] = blocks
+            entry["collapse_watch"] = _collapse_watch(read_rows(rollouts))
+        record = json.loads((run / "RESULT.json").read_text())
+        entry["checkpoints"] = sorted(record.get("checkpoints", {}), key=int)
+        entry["lora"] = record.get("lora")
+        entry["device"] = record["config"].get("device")
+        entry["learning_signal"] = _learning_signal(run / "training_log.jsonl")
+        # A run that leaves the policy exactly where it found it has trained nothing, however
+        # many steps it logged. Three independent signs, each from a file the run wrote.
+        start = record.get("init_adapter", {}).get("inventory", {})
+        weights = "adapter_model.safetensors"
+        rows_before, rows_after = (_rows_or_none(run / name) for name in
+                                   ("baseline_held_out.jsonl", "trained_in_process_held_out.jsonl"))
+        entry["paired_held_out"] = _paired_held_out(rows_before, rows_after)
+        entry["null_run"] = {
+            "lora_tensors_changed": (record.get("lora") or {}).get("changed"),
+            "adapter_identical_to_start": bool(start) and
+                record["adapter_inventory"][weights]["sha256"] == start[weights]["sha256"],
+            "held_out_predictions_unchanged": rows_before is not None and rows_before == rows_after,
+        }
+        entry["trained_nothing"] = (entry["null_run"]["lora_tensors_changed"] == 0
+                                    and entry["null_run"]["adapter_identical_to_start"]
+                                    and entry["null_run"]["held_out_predictions_unchanged"])
+        out[run.name] = entry
+    return out
+
+
 def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
     """The 7B GPU experiment: warm starts, the GRPO run, selection, and the one confirmation.
 
@@ -218,38 +286,11 @@ def analyze_gpu_v1(evidence: Path = GPU_EVIDENCE) -> dict[str, Any]:
     result["sft_start"] = ({"attempt": next(iter(chose)), "demonstrations": next(iter(chose.values()))}
                            if chose else None)
 
-    # Phase B: the GRPO run, and the collapse watch read per ten-step block.
-    phase_b = evidence / "phaseB"
-    runs = sorted(p.parent for p in phase_b.glob("*/RESULT.json")) if phase_b.exists() else []
-    result["grpo"] = {}
-    for run in runs:
-        entry: dict[str, Any] = {"failed": (phase_b / "FAILED.txt").exists()}
-        rollouts = run / "rollouts.jsonl"
-        if rollouts.exists():
-            blocks, groups = rollout_blocks(read_rows(rollouts))
-            entry["groups"] = groups
-            entry["blocks_of_10_steps"] = blocks
-            entry["collapse_watch"] = _collapse_watch(read_rows(rollouts))
-        record = json.loads((run / "RESULT.json").read_text())
-        entry["checkpoints"] = sorted(record.get("checkpoints", {}), key=int)
-        entry["lora"] = record.get("lora")
-        entry["device"] = record["config"].get("device")
-        # A run that leaves the policy exactly where it found it has trained nothing, however
-        # many steps it logged. Three independent signs, each from a file the run wrote.
-        start = record.get("init_adapter", {}).get("inventory", {})
-        weights = "adapter_model.safetensors"
-        rows_before, rows_after = (_rows_or_none(run / name) for name in
-                                   ("baseline_held_out.jsonl", "trained_in_process_held_out.jsonl"))
-        entry["null_run"] = {
-            "lora_tensors_changed": (record.get("lora") or {}).get("changed"),
-            "adapter_identical_to_start": bool(start) and
-                record["adapter_inventory"][weights]["sha256"] == start[weights]["sha256"],
-            "held_out_predictions_unchanged": rows_before is not None and rows_before == rows_after,
-        }
-        entry["trained_nothing"] = (entry["null_run"]["lora_tensors_changed"] == 0
-                                    and entry["null_run"]["adapter_identical_to_start"]
-                                    and entry["null_run"]["held_out_predictions_unchanged"])
-        result["grpo"][run.name] = entry
+    # Phase B: the GRPO run, and the collapse watch read per ten-step block. phaseB is the
+    # null run that trained nothing; phaseB2 is the rerun with generation forced to eval mode.
+    # Both are reported -- a failed run stays in the record beside the one that replaced it.
+    result["grpo"] = _grpo_runs(evidence / "phaseB")
+    result["grpo_rerun"] = _grpo_runs(evidence / "phaseB2")
 
     # Phase C1: every checkpoint on the development set, and the selection.
     dev_dir = evidence / "phaseC1" / "dev"

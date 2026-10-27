@@ -210,3 +210,26 @@ def test_no_grpo_rollout_ever_earned_a_reward_above_the_floor():
     assert {block["resolved"] for block in blocks} == {0}
     assert {block["invalid"] for block in blocks} == {160}
     assert sum(block["rollouts"] for block in blocks) == 1600
+
+
+def test_the_rerun_trained_where_the_first_run_had_not():
+    """phaseB2 is the same recipe with generation forced to eval mode; it moved every tensor."""
+    run = GPU["grpo_rerun"]["grpo-strict-balanced-7b-from-sft18"]
+    assert run["trained_nothing"] is False
+    assert run["lora"] == {"changed": 392, "tensors": 392}
+    assert run["paired_held_out"] == {"n": 64, "lost": 0, "gained": 9, "resolved_before": 55,
+                                      "resolved_after": 64, "exact_mcnemar_p": 0.00390625}
+
+
+def test_the_rerun_ran_out_of_signal_long_before_it_ran_out_of_steps():
+    """Saturation, not collapse: a bounded reward gives zero advantage once every group resolves."""
+    signal = GPU["grpo_rerun"]["grpo-strict-balanced-7b-from-sft18"]["learning_signal"]
+    assert signal["steps_with_gradient"] == 13
+    assert signal["last_step_with_gradient"] == 63
+    assert signal["saturated"] is True
+
+
+def test_both_phase_b_runs_stay_in_the_record():
+    """The null run is not dropped once a working run exists."""
+    assert GPU["grpo"]["grpo-strict-balanced-7b-from-sft18"]["trained_nothing"] is True
+    assert set(GPU["grpo_rerun"]) == {"grpo-strict-balanced-7b-from-sft18"}

@@ -59,3 +59,13 @@ a35dec8c3ccff50704abe1525aea4501949507831afeb08cc174ae3edab3dcfc  ./phaseB/grpo-
 dc94c8ddcead0721fb082084b714d1f64a40975e8ed8af7da24a048857e1ec2a  ./phaseB/grpo-strict-balanced-7b-from-sft18/rollouts.jsonl
 a35dec8c3ccff50704abe1525aea4501949507831afeb08cc174ae3edab3dcfc  ./phaseB/grpo-strict-balanced-7b-from-sft18/trained_in_process_held_out.jsonl
 b60afa167b5bb70b1a388d379f5130e3eae1e185c25f48c0e6c40d9a11c8055a  ./phaseB/grpo-strict-balanced-7b-from-sft18/training_log.jsonl
+d8137d1021d4145c44b824e99203440768d3ef37cfd95cd25e6dfb415a36f773  ./phaseB2/COLLAPSE_WATCH.json
+1795b1df4f1a11ae870a8b92c312ddeb25690f13e94bfda7f6a03eb84943a054  ./phaseB2/RUNTIME.json
+f9e544f021cca286f685eff76a1da4557b43e5b3bd08a45fa72ea96282137aba  ./phaseB2/START_POLICY.json
+e659991e1124c81162718351d31059bc4e91d6e7ccdb07e3b103aa8376bbab88  ./phaseB2/console.log
+ea70a0fb4dfe83e7471ad4de926d74caa21ae254e049999114f7777ce14aafc2  ./phaseB2/grpo-strict-balanced-7b-from-sft18/CHECKPOINT_SHA256.json
+d20e8565c98f3c737629aee2ae076752532bbfc3dced56592f86645afd919dd5  ./phaseB2/grpo-strict-balanced-7b-from-sft18/RESULT.json
+a35dec8c3ccff50704abe1525aea4501949507831afeb08cc174ae3edab3dcfc  ./phaseB2/grpo-strict-balanced-7b-from-sft18/baseline_held_out.jsonl
+012e81bb356b110ead55db83bf4c85e1b98f02f2ccfc4b091b0257da4838c60f  ./phaseB2/grpo-strict-balanced-7b-from-sft18/rollouts.jsonl
+11ced26fefb2c0ac5902f87cd33f334a641f19833bea7bb7daf18847a3307188  ./phaseB2/grpo-strict-balanced-7b-from-sft18/trained_in_process_held_out.jsonl
+6e7a64c4426293c3cebcfb016a46ae533cb19829b8e7cad671c778fc3a1dd6f9  ./phaseB2/grpo-strict-balanced-7b-from-sft18/training_log.jsonl

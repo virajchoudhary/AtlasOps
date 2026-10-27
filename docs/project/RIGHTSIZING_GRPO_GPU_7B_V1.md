@@ -399,3 +399,53 @@ the warm start on greedy validity; it should have selected on sampled validity, 
 that is what determines whether a group's rewards vary at all. That is a flaw in the
 pre-registration, not in the run, and it is recorded here rather than quietly corrected:
 the warm start stays at 18 demonstrations for the next run, as registered.
+
+## Amendment 7 — the rerun trained, and then ran out of signal — 27 October 2026
+
+Phase B was rerun at `8c77314` with generation forced to eval mode. The run is
+`phaseB2/`; the null run stays at `phaseB/` and is still reported.
+
+The fix did what the diagnosis said it would. Before, 0 of 1600 rollouts were
+admissible and 0 of 392 LoRA tensors moved. Now:
+
+| | phaseB (null) | phaseB2 |
+|---|---|---|
+| admissible rollouts | 0 / 1600 | 1547 / 1600 |
+| LoRA tensors changed | 0 / 392 | 392 / 392 |
+| held-out resolved | 55 → 55 of 64 | 55 → 64 of 64 |
+| paired lost / gained | 0 / 0 | 0 / 9 |
+
+Nine held-out states gained, none lost, exact McNemar p = 0.0039 (two-sided, as `exact_mcnemar` computes it). The collapse
+watch shows no collapse: resolution runs 145, 157, 136, 150, then 160 of 160 for
+the remaining six blocks.
+
+### What the step log says that the collapse watch does not
+
+Only **13 of the 100 steps produced a non-zero gradient, the last at step 63.**
+The reward is bounded above at 1.0, so once every rollout in a group resolves,
+`reward_std` is 0, the advantage is 0 and the update is 0:
+
+    steps  1-10   reward 0.8125   reward_std 0.3636   grad_norm 0.2618
+    steps 41-50   reward 1.0000   reward_std 0.0000   grad_norm 0.0000
+    steps 91-100  reward 1.0000   reward_std 0.0000   grad_norm 0.0000
+
+This is saturation, not collapse, and it is the opposite failure to the one the
+pre-registration anticipated. The learning happened in roughly the first 60
+steps; the rest of the budget bought nothing.
+
+The ten checkpoint adapters are nonetheless all distinct (`CHECKPOINT_SHA256.json`).
+With a zero gradient AdamW still applies decaying momentum, so the weights drift
+after step 63 without a learning signal behind them. Checkpoints after step 60
+should be read as drift, not as later learning. Phase C1 selects on the
+development set across all ten, which handles this without special-casing.
+
+### What this costs the pre-registration
+
+The registered recipe sized 100 steps for a task the warm start could not yet do.
+After the generation fix the same warm start solves most of it immediately, so
+the step budget is mis-sized and `easy_fraction=0.4` makes the sampled prompts
+easier still. I am not re-sizing it here: the run is on the record as registered,
+and changing the recipe after seeing the result is how a selection effect gets in.
+A future version should either raise difficulty or stop on a saturation rule.
+
+This is not G9 evidence and changes no gate.

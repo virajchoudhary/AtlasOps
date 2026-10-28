@@ -1,0 +1,4 @@
+AtlasOps bug lab
+  Control room: http://0.0.0.0:8790/
+  Store:        http://0.0.0.0:8790/shop/
+  Working copy: /work

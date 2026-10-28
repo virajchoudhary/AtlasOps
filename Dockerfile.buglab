@@ -1,0 +1,61 @@
+# AtlasOps bug lab — local container image.
+#
+# The lab serves a control room and a small demo store, injects one of eight
+# bugs into a writable copy of the store, and lets the agents detect, diagnose,
+# patch and verify the fix. Beyond demo/ it needs three standard-library-only
+# modules, copied individually below.
+#
+# Build and run:
+#   docker build -f Dockerfile.buglab -t atlasops-buglab:local .
+#   docker run --rm -p 127.0.0.1:8790:8790 --env-file ~/atlasops-local/buglab.env \
+#     atlasops-buglab:local
+#
+# Publishing to 127.0.0.1 keeps the lab reachable only from this machine. The
+# lab has no login, so it must never be published on 0.0.0.0.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Pinned to the versions in requirements/*.lock so the image matches what the
+# repository tests against.
+RUN pip install --no-cache-dir \
+      fastapi==0.141.1 \
+      uvicorn==0.52.1 \
+      httpx==0.28.1
+
+# Only the approval helper is imported from agents/; the rest of that package
+# pulls in model and cloud dependencies the lab does not use. agents/ has no
+# __init__.py in the repository and resolves as a namespace package, so copying
+# the one module is enough.
+COPY agents/approval.py ./agents/approval.py
+
+# demo/bug_lab/workspace.py imports training.sft_provenance for its path-safety
+# check, which in turn reads config.splits. Both are standard library only.
+# This dependency arrived in 03606c3, after the run plan was written, so the
+# plan's "demo/ plus agents/approval.py" list is one commit out of date.
+COPY training/sft_provenance.py ./training/sft_provenance.py
+COPY config ./config
+
+COPY demo ./demo
+
+# The lab writes its editable copy of the store under /work. The root filesystem
+# can stay read-only; /work and /tmp are the only paths that need to be writable.
+RUN useradd --system --uid 10001 lab \
+ && mkdir -p /work \
+ && chown 10001 /work
+
+USER 10001
+
+EXPOSE 8790
+
+# --allow-remote is required because the container must listen on 0.0.0.0 for a
+# published port to reach it. The bind is still confined to the container; the
+# host-side publish address is what limits access.
+#
+# --agents llm refuses to start when no model answers, so a broken endpoint
+# fails loudly instead of silently falling back. Override with --agents rules
+# for the no-model baseline, or --agents auto when a demo must keep running.
+CMD ["python", "-m", "demo.bug_lab", "--host", "0.0.0.0", "--allow-remote", \
+     "--workdir", "/work", "--agents", "llm"]

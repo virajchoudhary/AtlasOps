@@ -1,0 +1,18 @@
+{
+  "path": "expire",
+  "incident": "INC-0010",
+  "final_status": "escalated",
+  "final_outcome": "Blocked because the approval timed out",
+  "final_approval": {
+    "required": true,
+    "digest": "507bb2836ffa9dd4e91e267d2e36213990d5ace0d4db722bcb0e8d5d34f6c652",
+    "decision": "timeout",
+    "policy": "P1 requires a human to approve this exact change",
+    "expires_at": 1793163443.4769413,
+    "expires_in": 0
+  },
+  "store_status_at_end": 500,
+  "active": false,
+  "still_injected": [],
+  "observed_countdown": "see T6b_expire_console.txt (expires_in 210->0, status flipped to escalated at t=210s)"
+}

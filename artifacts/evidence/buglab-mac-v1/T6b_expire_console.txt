@@ -1,0 +1,25 @@
+approval pending on INC-0010, expires_in=210s
+  t=15s status=awaiting_approval expires_in=195
+  t=30s status=awaiting_approval expires_in=180
+  t=45s status=awaiting_approval expires_in=165
+  t=60s status=awaiting_approval expires_in=150
+  t=75s status=awaiting_approval expires_in=135
+  t=90s status=awaiting_approval expires_in=120
+  t=105s status=awaiting_approval expires_in=105
+  t=120s status=awaiting_approval expires_in=90
+  t=135s status=awaiting_approval expires_in=75
+  t=150s status=awaiting_approval expires_in=60
+  t=165s status=awaiting_approval expires_in=45
+  t=180s status=awaiting_approval expires_in=30
+  t=195s status=awaiting_approval expires_in=15
+  t=210s status=escalated expires_in=0
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Users-dhruvaambhaikar/e5658cdf-65c1-41f0-8efa-5746786dd6a6/scratchpad/run_t6b.py", line 117, in <module>
+    main()
+    ~~~~^^
+  File "/private/tmp/claude-501/-Users-dhruvaambhaikar/e5658cdf-65c1-41f0-8efa-5746786dd6a6/scratchpad/run_t6b.py", line 105, in main
+    if c.get("ok") is False]
+       ^^^^^
+AttributeError: 'str' object has no attribute 'get'
+
+[exited with code 1]

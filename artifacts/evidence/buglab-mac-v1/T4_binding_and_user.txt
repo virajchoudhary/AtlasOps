@@ -1,0 +1,17 @@
+# Port binding and container user — captured 2026-10-28T04:50:46Z
+
+## docker port
+8790/tcp -> 127.0.0.1:8790
+
+## listening sockets for 8790 (host)
+COMMAND  PID            USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+ssh     3470 dhruvaambhaikar   12u  IPv4 0xc1ac7cea65107e73      0t0  TCP 127.0.0.1:8790 (LISTEN)
+
+## process user inside container
+uid=10001(lab) gid=999(lab) groups=999(lab)
+
+## reachable on loopback
+127.0.0.1 -> 200
+
+## reachable on this host's LAN address
+192.168.1.105 -> 000 (000 = refused, which is the intent)

@@ -1,0 +1,22 @@
+{
+  "Id": "sha256:4d2ab8b8a053114d074c86588cee5fadbd8cd3b21e6036a06ad858abb0d3e133",
+  "Architecture": "arm64",
+  "Os": "linux",
+  "Size": 51728094,
+  "User": "10001",
+  "Cmd": [
+    "python",
+    "-m",
+    "demo.bug_lab",
+    "--host",
+    "0.0.0.0",
+    "--allow-remote",
+    "--workdir",
+    "/work",
+    "--agents",
+    "llm"
+  ],
+  "ExposedPorts": [
+    "8790/tcp"
+  ]
+}

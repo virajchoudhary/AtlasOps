@@ -4,15 +4,19 @@ Implements sections 6, 7, 9 and 10 of *AtlasOps Bug Lab: Run Plan* (27 October 2
 on this MacBook. Section 8 (Amazon EKS) is optional and was not run: it needs AWS
 spend, which is not authorized.
 
-Status: **Phase 2 run. Phase 1 prepared but not run** — see [What is not verified](#what-is-not-verified).
+Status: **T1–T9 all run.** The model was served on this Mac rather than on a Kaggle T4
+(§3.1) — a deviation from the plan, chosen because it removes the public tunnel and the
+open question about Kaggle's terms along with it. The Kaggle notebook is prepared but
+not run. See [What is not verified](#what-is-not-verified).
 
 | | |
 |---|---|
 | Branch | `feat/atlasops-mac-runtime` |
 | Base | `4acf0c3` (the merge of PR #235 into `main`) |
 | Image | `atlasops-buglab:local`, 51.7 MB, `linux/arm64` |
-| Host | macOS 24.6.0 on Apple silicon, Docker 29.5.2 via Colima |
+| Host | macOS 24.6.0, Apple M4, 16 GB; Docker 29.5.2 via Colima (8 GB to the VM) |
 | Lab port | `8790`, published to `127.0.0.1` only |
+| Model | `qwen2.5:7b-instruct` via Ollama on this Mac, behind a keyed proxy on `127.0.0.1:8000` |
 
 A demo result here is not gate evidence and does not certify anything.
 
@@ -23,11 +27,12 @@ A demo result here is not gate evidence and does not certify anything.
 | File | Why |
 |---|---|
 | `Dockerfile.buglab` | New. Section 7.2 of the plan, with the corrections below. |
-| `notebooks/buglab_kaggle_qwen_serving.ipynb` | New. Section 6 cells, ready to run on Kaggle. |
+| `notebooks/buglab_kaggle_qwen_serving.ipynb` | New. Section 6 cells, ready to run on Kaggle. Prepared, not run. |
+| `scripts/local_llm_proxy.py` | New. The same keyed proxy as the notebook, for the local model path. |
 | `docs/project/BUG_LAB_MAC_RUNBOOK_V1.md` | This file. |
 | `artifacts/evidence/buglab-mac-v1/` | New. Raw output of every run below, plus the drivers that produced it. |
 
-No core application file was changed. Two findings for the core branch are in
+No core application file was changed. Five findings for the core branch are in
 [Findings for the core branch](#findings-for-the-core-branch).
 
 `docs/EVIDENCE_INDEX.md` was deliberately **not** updated. That index lists evidence
@@ -103,48 +108,110 @@ and is not a fault, but it is easy to mistake for a hang.
 
 ---
 
-## 3. The model on Kaggle (section 6)
+## 3. The model (section 6)
 
-`notebooks/buglab_kaggle_qwen_serving.ipynb` holds the four cells: installs, Ollama plus
-model warm-up, the key-checking proxy on port 8000, and the ngrok tunnel opened last.
+Section 6 of the plan serves Qwen2.5-7B from a Kaggle T4 and reaches it through an
+ngrok tunnel. **This branch runs the same model on this Mac instead.** Both paths are
+prepared; only the local one has been run.
+
+### 3.1 Why the deviation
+
+The plan's §6.5 looked for an official Kaggle position on tunnels and found none, and
+treats that as an open question rather than permission. Serving the model locally
+removes the question entirely, and removes the public endpoint with it. The
+model — `qwen2.5:7b-instruct` — is the one the plan names, and was already cached on
+this machine.
+
+What is lost: the T4. The model now runs on an Apple M4 with 16 GB, of which Colima
+holds 8 GB. **Timings in section 4 are M4 timings and say nothing about T4
+performance.** A GPU run would need the notebook path below.
+
+### 3.2 The local path (what was run)
+
+Ollama is bound to loopback only. The lab's `BUG_LAB_LLM_API_KEY` would be decorative
+in front of Ollama, which has no authentication of its own, so the same key-checking
+proxy the notebook uses runs here too — `scripts/local_llm_proxy.py`, in the lab image
+so its dependencies stay pinned. The container reaches it through
+`host.docker.internal`, which under Colima maps to the Mac's loopback: nothing listens
+on the LAN at any point. Verified, not assumed — see `T63_local_model_smoke.txt`.
+
+```bash
+# 1. Serve the model. The Homebrew ollama 0.30.7 on this machine is broken (its
+#    llama-server binary is missing from the Cellar); the app bundle's 0.33.2 works.
+OLLAMA_HOST=127.0.0.1:11434 OLLAMA_CONTEXT_LENGTH=8192 OLLAMA_KEEP_ALIVE=-1 \
+  /Applications/Ollama.app/Contents/Resources/ollama serve &
+/Applications/Ollama.app/Contents/Resources/ollama pull qwen2.5:7b-instruct
+
+# 2. Settings, outside the repository, never committed.
+mkdir -p ~/atlasops-local && chmod 700 ~/atlasops-local
+umask 077
+cat > ~/atlasops-local/buglab.env <<EOF
+BUG_LAB_LLM_BASE_URL=http://host.docker.internal:8000/v1
+BUG_LAB_LLM_MODEL=qwen2.5:7b-instruct
+BUG_LAB_LLM_API_KEY=$(openssl rand -hex 32)
+BUG_LAB_LLM_TIMEOUT=180
+EOF
+chmod 600 ~/atlasops-local/buglab.env
+printf 'PROXY_KEY=%s\nOLLAMA_BASE_URL=http://host.docker.internal:11434\n' \
+  "$(grep '^BUG_LAB_LLM_API_KEY=' ~/atlasops-local/buglab.env | cut -d= -f2-)" \
+  > ~/atlasops-local/proxy.env
+chmod 600 ~/atlasops-local/proxy.env
+
+# 3. The keyed proxy, published to loopback only.
+docker run -d --name buglab-llm-proxy -p 127.0.0.1:8000:8000 \
+  --env-file ~/atlasops-local/proxy.env \
+  -v "$PWD/scripts/local_llm_proxy.py:/app/proxy.py:ro" \
+  atlasops-buglab:local \
+  python -m uvicorn proxy:app --host 0.0.0.0 --port 8000
+
+# 4. The lab, in explicit model mode.
+docker run -d --name buglab -p 127.0.0.1:8790:8790 \
+  --env-file ~/atlasops-local/buglab.env atlasops-buglab:local \
+  python -m demo.bug_lab --host 0.0.0.0 --allow-remote --workdir /work --agents llm
+```
+
+Smoke test (plan §6.3), all three outcomes recorded in `T63_local_model_smoke.txt`:
+
+```bash
+KEY="$(grep '^BUG_LAB_LLM_API_KEY=' ~/atlasops-local/buglab.env | cut -d= -f2-)"
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/v1/models          # 401
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8000/v1/models            # 200
+curl -s -o /dev/null -w "%{http_code}\n" http://192.168.1.105:8000/v1/models      # 000
+```
+
+### 3.3 The Kaggle path (prepared, not run)
+
+`notebooks/buglab_kaggle_qwen_serving.ipynb` holds the four cells: installs, Ollama
+plus model warm-up, the same key-checking proxy, and the ngrok tunnel opened last.
 Cell order matters — opening the tunnel before the model answers is what produced
 HTTP 524 in an earlier run of this repository
 (`docs/project/G4_V38_TRANSPORT_DIAGNOSTICS_V1.md`).
 
-Settings file, outside the repository, never committed:
-
-```bash
-mkdir -p ~/atlasops-local && chmod 700 ~/atlasops-local
-cat > ~/atlasops-local/buglab.env <<'EOF'
-BUG_LAB_LLM_BASE_URL=https://<your-id>.ngrok-free.app/v1
-BUG_LAB_LLM_MODEL=qwen2.5:7b-instruct
-BUG_LAB_LLM_API_KEY=<the same key as the Kaggle secret>
-BUG_LAB_LLM_TIMEOUT=180
-EOF
-chmod 600 ~/atlasops-local/buglab.env
-```
-
-Before using a public tunnel, read Kaggle's terms. The run plan (§6.5) found no official
-statement either way, and treats that as an open question rather than permission.
+To switch to it, set `BUG_LAB_LLM_BASE_URL` to the notebook's printed URL, set the
+notebook secret `BUG_LAB_LLM_API_KEY` to the same key, and recreate the lab container.
+Nothing else changes: the proxy interface is identical either way. Before using a
+public tunnel, read Kaggle's terms — see §6.5 of the plan.
 
 ---
 
 ## 4. Test results (T1–T9)
 
-Raw output is in `artifacts/evidence/buglab-mac-v1/`. All runs were in
-`--agents rules` mode, because Phase 1 was not run.
+Raw output is in `artifacts/evidence/buglab-mac-v1/`. T1 and T3–T6 were run in
+`--agents rules` mode; T2 and T7–T9 in `--agents llm` against the locally served
+`qwen2.5:7b-instruct` described in §3.
 
 | # | Test | Result | Evidence |
 |---|---|---|---|
 | T1 | Unit tests | **PASS** — 53 passed, 1 warning, 4.79 s | `T1_unit_tests.txt` |
-| T2 | Startup header names the model | **NOT RUN** — needs the Kaggle model | `T2_container_startup.log` (rules mode) |
+| T2 | Startup header names the model | **PARTIAL** — backend detected and reported by the API and the UI, but the startup header never names it | `T2_llm_mode_startup.txt` |
 | T3 | State API | **PASS** — `GET /lab/api/state` returns 200 and valid JSON | `T5_rules_all_bugs.json` |
 | T4 | Write guard | **PASS** — 403 without the header, 400 with it | `T4_binding_and_user.txt` |
 | T5 | Rules baseline, all 8 bugs | **PASS** — 8/8 resolved and verified | `T5_rules_all_bugs.json` |
 | T6 | Approval paths | **PASS** — both rejection and timeout block the patch | `T6a_reject_path.json`, `T6b_expire_path.json` |
-| T7 | Model mode | **NOT RUN** — needs the Kaggle model | — |
-| T8 | Model outage | **NOT RUN** — needs the Kaggle model | — |
-| T9 | URL rotation | **NOT RUN** — needs the Kaggle model | — |
+| T7 | Model mode, all 8 bugs | **PASS** — 8/8 resolved and verified, but the model authored only 2 of the 8 final patches | `T7_llm_all_bugs.txt/.json` |
+| T8 | Model outage | **PASS** — incident still resolved and verified after the endpoint was killed mid-incident | `T8_model_outage.txt/.json` |
+| T9 | URL rotation | **PASS** — needs the container recreated; no reload path | `T9_endpoint_rotation.txt/.json` |
+| §6.3 | Local model smoke test | **PASS** — key enforced, nothing on the LAN | `T63_local_model_smoke.txt` |
 
 The plan's T1 expected 41 tests. There are 53 at `4acf0c3`, because commits
 `03606c3` and `e29d8b3` added more after the plan was written. All pass.
@@ -171,20 +238,57 @@ table, and none is claimed.
 is one of the browser-detected bugs, so its timing includes waiting for the page
 monitor rather than agent work.
 
+### T7 — every bug with the model, and what the model actually contributed
+
+Full table in `T7_llm_all_bugs.txt`, raw records in `T7_llm_all_bugs.json`.
+
+All eight bugs were resolved and verified, and the diagnosis matched the injected
+fault in all eight. That is the headline, and on its own it is misleading, so here is
+the breakdown that matters:
+
+| | count |
+|---|---|
+| Bugs resolved and verified | 8 / 8 |
+| Final patch authored by the model | **2 / 8** |
+| Patches the model attempted | 8 |
+| Model attempts that failed verification | **6** |
+| Bugs where the model never attempted | 3 |
+
+`--agents llm` does not mean model-only. The model is consulted, its patch is put
+through the same verification as any other, and the rule engine takes over when
+verification fails. On this bug set the model's patches verified twice out of eight
+attempts, and on three bugs (`broken-stylesheet`, `cart-handler`, `layout-overflow`)
+the rule engine authored attempt 1 without the model being asked.
+
+`slow-api` is the clearest case. The fault is a four-second delay in `config.json`.
+The model patched `app.js` twice, both attempts failed verification, and the rule
+engine corrected `config.json` on attempt 3 — 101.6 s in total.
+
+Against the rule-engine baseline in T5, the model mode is slower (36–102 s per
+incident versus roughly 4.5 s) and resolves the same eight bugs. **A 7B on an M4 is
+not evidence about a 7B on a T4, and neither is evidence about anything beyond this
+eight-bug demo set.**
+
+One correction to this run: the first pass recorded `slow-api` in 2.0 s, which was a
+stale read of `INC-0007` — layout-overflow's incident. That was a defect in
+`driver_t7.py`, not in the lab. `slow-api` was rerun alone with an idle precondition
+and a fresh-incident guard, and the rerun (`INC-0009`) is what the table reports. The
+driver still carries the defect and is kept as-run.
+
 ### The repository suite on this branch
 
-`pytest tests/ -q` at this branch: **3565 passed, 6 failed, 43 skipped** in 9 m 20 s
-(`REPO_SUITE_full_run.txt`).
+`pytest -q` with the virtualenv's `bin` on `PATH`, after all the work below:
+**3570 passed, 1 failed, 43 skipped** in 9 m 47 s (`REPO_SUITE_after_llm_work.txt`).
 
-Five of the six are an artefact of how that run invoked pytest, not real failures. The
-`tests/test_bootstrap_lifecycle.py` cases need the virtualenv's `bin` on `PATH`, the way
-CI runs them; with it they are **10 passed in 22.8 s**
-(`REPO_SUITE_bootstrap_with_venv_on_path.txt`).
+An earlier run of the same suite reported six failures
+(`REPO_SUITE_full_run.txt`). Five were `tests/test_bootstrap_lifecycle.py`, which needs
+the virtualenv's `bin` on `PATH` the way CI runs it; that was an artefact of how that
+run invoked pytest, and those five pass here. Only one real failure remains.
 
 The remaining failure, `test_frontend_ui.py::test_root_endpoint_serves_html`, is
 pre-existing and is finding 2 below. **No failure is caused by this branch** — the only
-changes here are four new paths, and removing all of them leaves that failure unchanged
-at `4acf0c3`.
+changes here are new paths that nothing else imports, and removing all of them leaves
+that failure unchanged at `4acf0c3`.
 
 ### T6 — both approval paths leave the store broken
 
@@ -238,25 +342,65 @@ For the owner of `feat/atlasops-local-core`. Neither was fixed here.
    or the suite should build the frontend first. **Not caused by this branch and not
    fixed here.**
 
-No defect was observed in the lab's own behaviour during these runs.
+3. **The startup banner never names the backend.** `demo/bug_lab/__main__.py` prints
+   the control room URL, the store URL and the working copy, and nothing else. A
+   container that fell back to the rule engine looks identical on stdout to one using
+   a 7B. The information exists — `/lab/api/state` returns `backend.label` and the
+   control room header shows it — it just is not printed. The plan's T2 expects it in
+   the startup header. One line after the existing banner would close it. Using
+   `--agents llm` rather than `auto` is the current protection, because it refuses to
+   start without a model.
+
+4. **The model's fallback to the rule engine is silent.** During T8 the endpoint was
+   killed mid-incident; the incident resolved correctly via the rule engine, and
+   `docker logs buglab` recorded nothing at all about the model being unreachable. An
+   operator would see a healthy incident and never know the model had gone. The
+   fallback behaviour itself is good; the silence is the problem.
+
+5. **`/lab/api/state` keeps serving the last closed incident.** After an incident
+   closes, `incident` continues to hold it with no field distinguishing "this just
+   finished" from "this is live", and `active` alone is not enough while a new
+   incident is still opening. Any poller must track incident ids itself to avoid
+   reading stale data. This cost three bad test runs here before being understood —
+   see the caveats in `T7_llm_all_bugs.txt` and `T8_model_outage.txt`. A monotonic
+   counter, or clearing `incident` on reset, would make the API safe to poll naively.
+
+Findings 3–5 are observations about the lab's behaviour, not crashes. The lab resolved
+every bug it was given, in both modes, and the approval gate held in every case.
 
 ---
 
 ## 7. Risks as they actually applied (section 9)
 
+The model runs on this Mac rather than on Kaggle (§3.1), so several of the plan's
+risks do not arise at all. They are kept in the table because they return the moment
+anyone switches to the notebook path.
+
 | Risk from the plan | What happened here |
 |---|---|
-| Kaggle session ends | Not reached — Phase 1 not run. |
-| ngrok URL changes every session | Not reached. Mitigation is in §3 and T9. |
-| Public model URL abused | Proxy requires a Bearer key; tunnel opened last; URL never shared. |
-| Kaggle terms uncertain | Unresolved. Flagged, not assumed. |
-| Long prompts cut off | `OLLAMA_CONTEXT_LENGTH=8192` set in Cell 2. |
-| Slow or failed model calls | `BUG_LAB_LLM_TIMEOUT=180`; model warmed before the tunnel. |
+| Kaggle session ends | Does not arise locally. Returns on the notebook path. |
+| ngrok URL changes every session | Does not arise locally. Rotation itself is tested by T9. |
+| Public model URL abused | No public URL exists. Ollama binds `127.0.0.1`, the proxy publishes to `127.0.0.1`, and both refuse the LAN address. Verified in `T63_local_model_smoke.txt`. |
+| Kaggle terms uncertain | Avoided rather than resolved. Still open for the notebook path. |
+| Long prompts cut off | `OLLAMA_CONTEXT_LENGTH=8192` set on the local server, as in Cell 2. |
+| Slow or failed model calls | `BUG_LAB_LLM_TIMEOUT=180`. Outage behaviour measured by T8. |
 | Lab not on main | No longer applies — PR #235 merged as `4acf0c3`. |
 | Lab has no login | Published to `127.0.0.1` only; verified by T4. |
-| arm64 vs amd64 | Image built `linux/arm64`, matching the Mac. For x86 nodes use
-  `docker buildx build --platform linux/amd64`. |
-| Expecting too much from the model | Rule-engine fixes are reported as rule-engine fixes. |
+| arm64 vs amd64 | Image built `linux/arm64`, matching the Mac. For x86 nodes use `docker buildx build --platform linux/amd64`. |
+| Expecting too much from the model | Each patch records its author, so model and rule-engine fixes are never conflated. §4 reports both. |
+
+Two risks the plan does not list, found here:
+
+- **An unauthenticated model endpoint is reachable from inside the Colima VM.**
+  `host.docker.internal` resolves to `192.168.5.2` from any container, and that reaches
+  the Mac's loopback. A service bound to `127.0.0.1` on the Mac is therefore *not*
+  private to the Mac — every container, including the `kind` cluster running alongside
+  this lab, can reach it. This is why the keyed proxy is kept locally and why Ollama's
+  own port is never given to the lab directly.
+- **The model identity is not in the startup log.** `docker logs buglab` prints three
+  URL lines and nothing about the backend, so a container that silently fell back would
+  look identical. `--agents llm` refuses to start without a model, which is what makes
+  the mode trustworthy here; `--agents auto` would not be. Reported as a core finding.
 
 ---
 
@@ -265,8 +409,8 @@ No defect was observed in the lab's own behaviour during these runs.
 | Step | Work | State |
 |---|---|---|
 | 1 | Get the code: merge PR #235, or pin a branch worktree | **Done** — #235 merged as `4acf0c3`; this branch is cut from it. The plan's worktree workaround is no longer needed. |
-| 2 | Phase 1: Kaggle notebook, secrets, Ollama, proxy, ngrok; smoke test | **Prepared, not run** — needs Kaggle and ngrok accounts. |
-| 3 | Phase 2: add `Dockerfile.buglab`; run T1–T9 | **Done for T1, T3–T6.** T2, T7–T9 need Phase 1. |
+| 2 | Phase 1: serve Qwen2.5-7B, keyed proxy, smoke test | **Done, by a different route** — the model is served on this Mac (§3.2) instead of on a Kaggle T4 through ngrok. Smoke test passed. The Kaggle notebook is prepared but not run. |
+| 3 | Phase 2: add `Dockerfile.buglab`; run T1–T9 | **Done.** T1, T3–T6 in rule-engine mode; T2 and T7–T9 against the model. T2 is partial — see §6, finding 3. |
 | 4 | Phase 3: EKS | **Not started** — optional, costs money, not authorized. |
 
 ### Housekeeping from the plan's investigation
@@ -276,17 +420,25 @@ No defect was observed in the lab's own behaviour during these runs.
 | Stale GCP "LIVE" section in `CLAUDE.md` | **Already done** before this branch — the file now carries an UNVERIFIED notice. |
 | Rotate the Grafana password; confirm Azure OpenAI and OpenRouter key rotation | **Owner only** — tracked in `docs/project/EXTERNAL_CLOSURE_ACTIONS_20261027.md`. |
 | Check GCP billing for `cloudsre-v3-amd` | **Owner only** — no `gcloud` on this machine. |
-| Quit Docker when not in use | `colima stop` when finished. |
+| Quit Docker when not in use | `colima stop` when finished. Also stop the model: `pkill -f "ollama serve"`, and `docker rm -f buglab buglab-llm-proxy`. |
+| Homebrew `ollama` 0.30.7 on this machine is broken | Its `llama-server` binary is missing from the Cellar, so `ollama serve` accepts requests and then fails every generation. The `/Applications/Ollama.app` bundle (0.33.2) works and is what §3.2 uses. A `brew reinstall ollama` would probably fix the CLI, and was not attempted. |
 
 ---
 
 ## What is not verified
 
-- **Phase 1 was not run.** The notebook is prepared but has not executed on Kaggle. It
-  needs a Kaggle account with a verified phone, an ngrok authtoken and two notebook
-  secrets, none of which are available to this session. Every statement about the model
-  path is therefore a prediction from the source, not a measurement.
-- **T2, T7, T8 and T9 require that model** and were not run.
+- **The Kaggle path was not run.** The notebook is prepared but has not executed on
+  Kaggle. It needs a Kaggle account with a verified phone, an ngrok authtoken and two
+  notebook secrets, none of which are available to this session. Every statement about
+  the *tunnel* path is therefore read from the source, not measured. The model itself
+  was exercised locally instead (§3.1), which is a deviation from the plan, not a
+  completion of it.
+- **No T4 GPU timings exist.** All model timings here are an Apple M4 serving a 4-bit
+  7B. They say nothing about T4 latency, throughput or concurrency.
+- **The model's patch quality was measured on eight demo bugs, once each.** Two of
+  eight final patches came from the model. That is a single small sample on a fixed,
+  synthetic bug set, and it is not a benchmark of the model, the prompts or the agent
+  pipeline.
 - **Phase 3 (EKS) was not run** and incurs AWS charges.
 - Nothing here is gate evidence. G4 and G9 remain NOT_PASSED and frozen; the project
   remains NOT_CERTIFIED.

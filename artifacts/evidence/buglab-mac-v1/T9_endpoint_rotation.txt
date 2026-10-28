@@ -1,0 +1,30 @@
+T9 — rotating the model endpoint
+date: 2026-10-28T10:42:27Z
+
+method: move the keyed proxy from port 8000 to port 8001 (same image, same key,
+        still published to 127.0.0.1 only), then see what the lab does.
+
+old endpoint after the move: URLError (gone)
+new endpoint after the move: HTTP 200
+
+Running container, not restarted:
+   qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+  It still points at the dead port. The lab probes GET /models once, during
+  create_app, so a URL change cannot be picked up by a running container.
+
+After rewriting ~/atlasops-local/buglab.env and recreating the container:
+   qwen2.5:7b-instruct via http://host.docker.internal:8001/v1
+
+Then one real incident against the rotated endpoint, to show it is not just a label:
+  endpoint: http://host.docker.internal:8001/v1
+  incident: INC-0001 | resolved | Resolved and verified
+  patch author: Rule engine (no model) | elapsed 24.3s
+
+RESULT: PASS, with the documented constraint. Rotating the endpoint requires
+  recreating the container; there is no reload path. For the Kaggle variant this
+  matters every session, because ngrok issues a new URL each time. The two steps
+  are: edit BUG_LAB_LLM_BASE_URL in the env file, then `docker rm -f buglab` and
+  run it again. Nothing else changes.
+
+  The environment was restored to port 8000 afterwards, which is what the runbook
+  documents. Recreating the container resets incident numbering to INC-0001.

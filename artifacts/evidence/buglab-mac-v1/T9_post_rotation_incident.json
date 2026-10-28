@@ -1,0 +1,16 @@
+{
+  "endpoint": "http://host.docker.internal:8001/v1",
+  "incident": "INC-0001",
+  "status": "resolved",
+  "outcome": "Resolved and verified",
+  "patch_author": "Rule engine (no model)",
+  "elapsed_s": 24.3,
+  "attempts": [
+    {
+      "number": 1,
+      "author": "Rule engine (no model)",
+      "file": "app.js",
+      "verdict": "verified"
+    }
+  ]
+}

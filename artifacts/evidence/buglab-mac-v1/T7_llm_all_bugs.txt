@@ -1,0 +1,33 @@
+T7 — every catalogued bug with the model backend
+date: 2026-10-28T10:29:42Z
+backend: qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+host: Apple M4, 16 GB, macOS 24.6.0; model served locally, NOT on a Kaggle T4
+
+bug                  sev  outcome                att  model att  failed  detect  resolve  final author
+js-reference-error   P1   Resolved and verified  1    1          0       1.5s    54.7s    qwen2.5:7b-instruct (model)
+broken-stylesheet    P2   Resolved and verified  1    0          0       0.6s    63.1s    Rule engine (no model)
+truncated-data       P1   Resolved and verified  3    2          2       1.5s    86.5s    Rule engine (no model)
+string-prices        P1   Resolved and verified  1    1          0       1.3s    52.8s    qwen2.5:7b-instruct (model)
+broken-image-paths   P3   Resolved and verified  3    2          2       0.9s    79.5s    Rule engine (no model)
+cart-handler         P1   Resolved and verified  1    0          0       0.5s    36.2s    Rule engine (no model)
+layout-overflow      P3   Resolved and verified  1    0          0       0.7s    36.1s    Rule engine (no model)
+slow-api             P2   Resolved and verified  3    2          2       4.7s    101.6s   Rule engine (no model)
+
+RESULT: 8/8 resolved and verified. Diagnosis matched 8/8.
+  The model authored the final patch in 2 of 8.
+  The model attempted 8 patches in total; 6 failed verification and the rule
+  engine recovered. In 3 bugs (broken-stylesheet, cart-handler, layout-overflow)
+  the model did not attempt at all — the rule engine authored attempt 1.
+
+  So '--agents llm' does not mean model-only. The model is consulted, its patch is
+  verified, and the rule engine takes over when verification fails. On this bug set
+  the model's patches verified 2 times out of 8 attempts.
+
+  Worked example, slow-api: the fault is a delay in config.json. The model patched
+  app.js twice, both failed verification, and the rule engine fixed config.json on
+  attempt 3. Total 101.6 s to resolve.
+
+CAVEAT: the first pass recorded slow-api as a 2.0 s stale read of INC-0007, which
+  belongs to layout-overflow. That was a defect in the test driver, not the lab.
+  slow-api was rerun alone with an idle precondition and a fresh-incident guard;
+  the row above is the rerun (INC-0009). driver_t7.py still has the defect.

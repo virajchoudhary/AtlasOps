@@ -1,0 +1,27 @@
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+.........................s.......................s...................... [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+..........                                                               [100%]
+=================================== FAILURES ===================================
+_____________ TestFrontendUIAndAPIs.test_root_endpoint_serves_html _____________
+
+self = <tests.test_frontend_ui.TestFrontendUIAndAPIs object at 0x135e29bb0>
+
+    def test_root_endpoint_serves_html(self):
+        """Verify GET / returns HTTP 200 and serves HTML content."""
+        response = self.client.get("/")
+>       assert response.status_code == 200
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_frontend_ui.py:77: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_frontend_ui.py::TestFrontendUIAndAPIs::test_root_endpoint_serves_html
+1 failed, 3570 passed, 43 skipped in 587.43s (0:09:47)
+
+[exited with code 0]

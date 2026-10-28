@@ -1,0 +1,27 @@
+T6.3 — local model smoke test (deviation from plan section 6: model served on this Mac, not a Kaggle T4)
+date: 2026-10-28T10:17:24Z
+host: arm64 macOS 24.6.0, Apple M4, 16 GB
+ollama: version is 0.33.2
+model: qwen2.5:7b-instruct (already cached locally, 4.7 GB)
+proxy: scripts/local_llm_proxy.py in atlasops-buglab:local, published 127.0.0.1:8000 only
+
+$ lsof -nP -iTCP:11434 -sTCP:LISTEN   # ollama bound to loopback only
+ollama  73288 dhruvaambhaikar    3u  IPv4 0xaf518dcc13b43edf      0t0  TCP 127.0.0.1:11434 (LISTEN)
+
+$ curl 127.0.0.1:8000/v1/models   (no key)
+  -> 401
+$ curl 127.0.0.1:8000/v1/models   (wrong key)
+  -> 401
+$ curl 127.0.0.1:8000/v1/models   (correct key)
+  -> 200 ['qwen2.5:1.5b', 'qwen2.5:3b-instruct', 'qwen2.5:7b-instruct']
+$ curl 192.168.1.105:8000/v1/models   (LAN address)
+  -> 000 (000 = refused, not reachable off-host)
+
+$ chat/completions through the proxy, correct key
+  -> OK | usage {'prompt_tokens': 32, 'completion_tokens': 2, 'total_tokens': 34}
+
+$ from inside the lab container, via host.docker.internal
+  with key   -> 200
+  without key -> 401
+
+The API key does not appear in this file by design.

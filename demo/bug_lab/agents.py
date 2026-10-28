@@ -447,6 +447,77 @@ def _strip_numbers(block: str) -> str:
     return block
 
 
+def _whole_fenced_answer(answer: str) -> str | None:
+    text = answer.replace("\r\n", "\n").strip()
+    if "```" not in text:
+        return text
+    lines = text.splitlines()
+    if (len(lines) < 3 or not re.fullmatch(r"```[A-Za-z0-9_-]*", lines[0])
+            or lines[-1] != "```"):
+        return None
+    if any("```" in line for line in lines[1:-1]):
+        return None
+    return "\n".join(lines[1:-1]).strip()
+
+
+def _parse_diagnosis_answer(answer: str) -> tuple[str, str] | None:
+    text = _whole_fenced_answer(answer)
+    if text is None:
+        return None
+    allowed_files = "|".join(re.escape(name) for name in EDITABLE_FILES)
+    match = re.fullmatch(rf"FILE: ({allowed_files})\nROOT_CAUSE: ([^\n]+)", text)
+    if not match:
+        return None
+    cause = match.group(2).strip()
+    if not cause:
+        return None
+    return match.group(1), cause
+
+
+def _parse_patch_answer(answer: str) -> tuple[list[dict[str, str]], str] | None:
+    text = _whole_fenced_answer(answer)
+    if text is None:
+        return None
+    lines = text.split("\n")
+    index = 0
+    edits = []
+
+    while index < len(lines):
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+        if index >= len(lines):
+            return None
+        if lines[index].startswith("EXPLANATION: "):
+            explanation = lines[index][len("EXPLANATION: "):].strip()
+            if not explanation or any(line.strip() for line in lines[index + 1:]):
+                return None
+            return (edits, explanation) if edits else None
+        if lines[index] != "FIND:":
+            return None
+        index += 1
+        find_start = index
+        while index < len(lines) and lines[index] != "REPLACE:":
+            index += 1
+        if index >= len(lines):
+            return None
+        find_lines = lines[find_start:index]
+        find = "\n".join(find_lines)
+        if not find.strip():
+            return None
+
+        index += 1
+        replace_start = index
+        while index < len(lines) and lines[index] != "END":
+            index += 1
+        if index >= len(lines):
+            return None
+        replacement = "\n".join(lines[replace_start:index])
+        edits.append({"find": find, "replace": replacement})
+        index += 1
+
+    return None
+
+
 async def diagnose_llm(backend: Backend, failing: list[Check], workspace: Workspace,
                        feedback: str = "") -> Diagnosis | None:
     files = "\n\n".join(f"=== {name} ===\n{_numbered(workspace.read(name))}" for name in EDITABLE_FILES)
@@ -455,13 +526,12 @@ async def diagnose_llm(backend: Backend, failing: list[Check], workspace: Worksp
         prompt += f"A previous fix attempt failed: {feedback}\n\n"
     prompt += f"Store files (line numbers are not part of the files):\n{files}"
     answer = await backend.chat(DIAGNOSIS_SYSTEM, prompt, max_tokens=200)
-    file_match = re.search(r"FILE:\s*([\w.\-]+)", answer)
-    cause_match = re.search(r"ROOT_CAUSE:\s*(.+)", answer)
-    if not file_match or file_match.group(1) not in EDITABLE_FILES or not cause_match:
+    parsed = _parse_diagnosis_answer(answer)
+    if not parsed:
         return None
     steps = [Step("tool", f"read_file {name}") for name in EDITABLE_FILES]
     steps.append(Step("thought", f"Model answer: {answer.strip()[:400]}"))
-    return Diagnosis(file_match.group(1), cause_match.group(1).strip(), f"{backend.model} (model)", steps)
+    return Diagnosis(parsed[0], parsed[1], f"{backend.model} (model)", steps)
 
 
 async def remediate_llm(backend: Backend, diagnosis: Diagnosis, failing: list[Check],
@@ -473,19 +543,17 @@ async def remediate_llm(backend: Backend, diagnosis: Diagnosis, failing: list[Ch
     prompt += f"Current {diagnosis.file} (line numbers are not part of the file):\n"
     prompt += _numbered(workspace.read(diagnosis.file))
     answer = await backend.chat(REMEDIATION_SYSTEM, prompt, max_tokens=900)
-    answer = re.sub(r"```[a-z]*\n?", "", answer)
-    blocks = re.findall(r"FIND:\s*\n(.*?)\nREPLACE:\s*\n(.*?)\n?END", answer, re.DOTALL)
-    if not blocks:
+    parsed = _parse_patch_answer(answer)
+    if not parsed:
         return None
-    explanation = re.search(r"EXPLANATION:\s*(.+)", answer)
+    edits, explanation = parsed
     text = workspace.read(diagnosis.file)
-    edits = []
-    for find, replace in blocks:
+    for edit in edits:
+        find, replace = edit["find"], edit["replace"]
         if find not in text:
             find, replace = _strip_numbers(find), _strip_numbers(replace)
-        edits.append({"find": find, "replace": replace})
-    return Patch(diagnosis.file, edits,
-                 explanation.group(1).strip() if explanation else "Model-proposed edit.",
+            edit.update(find=find, replace=replace)
+    return Patch(diagnosis.file, edits, explanation,
                  f"{backend.model} (model)")
 
 
@@ -497,7 +565,9 @@ def _sentence(text: str) -> str:
 
 
 def comms_summary(incident: dict[str, Any]) -> str:
-    parts = [f"{incident['id']} ({incident['severity']}): {_sentence(incident['title'])}"]
+    title = incident["title"] or "Incident closed before triage"
+    severity = incident["severity"] or "not triaged"
+    parts = [f"{incident['id']} ({severity}): {_sentence(title)}"]
     if incident["status"] == "resolved":
         diagnosis = incident.get("diagnosis") or {}
         patch = incident.get("patch") or {}

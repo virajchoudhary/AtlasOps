@@ -252,7 +252,8 @@
       : checks.browser_current ? "From this version of the store." : "From an older version; waiting for the page to reload.";
     fill(document.getElementById("checks"),
       ...checkList("Server checks", checks.server, checks.server_current ? "" : "Re-checking the current version…"),
-      ...checkList("Browser checks", checks.browser, browserNote));
+      ...checkList("Browser checks", checks.browser, browserNote),
+      el("p", { id: "browser-age", class: "hint" }));
   }
 
   function renderHistory() {
@@ -300,6 +301,11 @@
     const age = document.getElementById("pending-age");
     if (age) age.textContent = Math.max(0, Math.round(Date.now() / 1000 - Number(age.dataset.at))) + " s";
     updateCountdown();
+    const browserAge = document.getElementById("browser-age");
+    if (browserAge && state.checks.browser_age_s !== null) {
+      browserAge.textContent = "Sampled " + state.checks.browser_age_s + " s ago."
+        + (state.checks.browser_stale ? " Stale telemetry; reload the store to refresh." : "");
+    }
   }
 
   async function refresh() {

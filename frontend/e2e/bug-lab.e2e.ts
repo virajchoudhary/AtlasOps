@@ -105,3 +105,28 @@ test("Control Room identifies stale point-in-time telemetry", async ({ page }) =
   await expect(page.locator("#browser-age")).toContainText("Sampled 61 s ago.");
   await expect(page.locator("#browser-age")).toContainText("Stale telemetry");
 });
+
+test("reset clears the current result but preserves history before the next incident", async ({ page, request }) => {
+  const imageBug = page.locator("#catalog .bug")
+    .filter({ has: page.getByText("Broken image paths", { exact: true }) });
+  await imageBug.getByRole("button", { name: "Inject", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await page.getByRole("button", { name: "Approve and apply" }).click();
+  await expect(page.locator("#incident .who")).toHaveText("Resolved and verified");
+  const previous = await request.get("/lab/api/state").then(response => response.json());
+  await page.getByRole("button", { name: "Reset the store" }).click();
+  await expect(page.locator("#incident")).toContainText("No incident yet.");
+  await expect(page.locator("#history")).toContainText(previous.incident.id);
+  const reset = await request.get("/lab/api/state").then(response => response.json());
+  expect(reset.incident).toBeNull();
+  expect(reset.incident_state).toBe("idle");
+  expect(reset.incident_sequence).toBe(previous.incident_sequence);
+  await imageBug.getByRole("button", { name: "Inject", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  const current = await request.get("/lab/api/state").then(response => response.json());
+  expect(current.incident.id).not.toBe(previous.incident.id);
+  expect(current.incident_sequence).toBe(previous.incident_sequence + 1);
+  expect(current.incident_state).toBe("active");
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(page.locator("#incident .who")).toHaveText("Escalated to you");
+});

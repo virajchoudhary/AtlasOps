@@ -31,7 +31,7 @@ from demo.bug_lab.catalog import BUGS, BUGS_BY_ID
 from demo.bug_lab.checks import (
     SLOW_API_MS, Check, all_pass, browser_checks, failing, server_checks,
 )
-from demo.bug_lab.llm import Backend
+from demo.bug_lab.llm import Backend, model_failure_reason
 from demo.bug_lab.workspace import Workspace, unified_diff
 
 log = logging.getLogger("atlasops.bug_lab")
@@ -152,6 +152,7 @@ class BugLab:
         except ValueError as exc:
             raise LabBusy(f"{bug.name} cannot be injected into the current store: reset it first.") from exc
         self.workspace.write(bug.file, after)
+        self.incident = None
         record = {**bug.public(), "at": time.time(), "diff": unified_diff(bug.file, before, after)}
         self.injected.append(record)
         self.suppressed_version = None
@@ -165,6 +166,7 @@ class BugLab:
             self._close(self.incident, "cancelled", "The store was reset by you.")
         self._approval = None
         self.workspace.reset()
+        self.incident = None
         self.injected = []
         self.suppressed_version = None
         self._wake.set()
@@ -287,6 +289,8 @@ class BugLab:
             plans = ["model", "model", "rules"] if self.backend.mode == "llm" else ["rules"]
             feedback = ""
             for number, plan in enumerate(plans, 1):
+                if plan == "rules" and self.backend.mode == "llm":
+                    self._model_fallback(incident, "diagnosis", "model attempts were not verified")
                 problems = await self._current_problems()
                 if not problems:
                     verdict = await self._verify(incident)
@@ -379,13 +383,13 @@ class BugLab:
                     self.backend.public()["label"] if use_model else agents.RULES_AUTHOR)
         diagnosis = None
         if use_model:
+            failure = "no usable diagnosis"
             try:
                 diagnosis = await agents.diagnose_llm(self.backend, problems, self.workspace, feedback)
             except Exception as exc:
-                self._event(incident, "diagnosis", "warning", f"Model call failed: {exc}")
+                failure = model_failure_reason(exc)
             if diagnosis is None:
-                self._event(incident, "diagnosis", "warning",
-                            "The model gave no usable diagnosis; using the rule engine.")
+                self._model_fallback(incident, "diagnosis", failure)
         rule_diagnosis = agents.diagnose_rules(problems, self.workspace)
         diagnosis = diagnosis or rule_diagnosis
         if diagnosis is None:
@@ -403,15 +407,16 @@ class BugLab:
         self._stage(incident, "propose",
                     self.backend.public()["label"] if model_diagnosed else agents.RULES_AUTHOR)
         patch = None
+        failure = "no safe usable patch"
         if model_diagnosed:
             try:
                 patch = await agents.remediate_llm(self.backend, diagnosis, problems, self.workspace, feedback)
             except Exception as exc:
-                self._event(incident, "propose", "warning", f"Model call failed: {exc}")
+                failure = model_failure_reason(exc)
         change = self._checked(incident, patch)
         if change is None and rule_diagnosis is not None:
             if model_diagnosed:
-                self._event(incident, "propose", "warning", "Falling back to the rule engine's patch.")
+                self._model_fallback(incident, "propose", failure)
                 self._stage(incident, "propose", agents.RULES_AUTHOR)
             change = self._checked(incident, agents.remediate_rules(rule_diagnosis, self.workspace))
             if change is not None and diagnosis is not rule_diagnosis:
@@ -617,6 +622,11 @@ class BugLab:
     def _stage(self, incident: dict[str, Any], stage: str, backend: str) -> None:
         incident["stage"], incident["active_agent"], incident["active_backend"] = stage, _AGENT[stage], backend
 
+    def _model_fallback(self, incident: dict[str, Any], stage: str, reason: str) -> None:
+        text = f"Model fallback: {reason}; using the rule engine."
+        self._event(incident, stage, "warning", text)
+        log.warning("%s %s: %s", incident["id"], stage, text)
+
     def _event(self, incident: dict[str, Any], stage: str, kind: str, text: str, detail: str = "") -> None:
         incident["events"].append({"t": round(time.time() - incident["opened_at"], 1), "stage": stage,
                                    "agent": _AGENT[stage], "kind": kind, "text": text, "detail": detail})
@@ -644,6 +654,11 @@ class BugLab:
             "catalog": [bug.public() for bug in BUGS],
             "injected": self.injected,
             "active": self.active,
+            "incident_sequence": self._counter,
+            "incident_state": (
+                "active" if self.active else "pending" if self.injected
+                else "closed" if incident else "idle"
+            ),
             "incident": incident,
             "history": self.history[:20],
             "stages": [{"key": key, "agent": agent} for key, agent in STAGES],

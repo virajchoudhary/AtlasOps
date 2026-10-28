@@ -7,7 +7,10 @@ endpoint answers, the lab runs its rule engine instead and says so in the UI.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -41,6 +44,38 @@ def _display_url(url: str | None) -> str | None:
     return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
+_MODEL_REQUEST_LOGGING: ContextVar[str | None] = ContextVar(
+    "bug_lab_model_request_logging", default=None
+)
+
+
+class _ModelRequestLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        secret = _MODEL_REQUEST_LOGGING.get()
+        if (secret is None or record.name != "httpx"
+                or not isinstance(record.msg, str)
+                or not record.msg.startswith("HTTP Request: ")
+                or not isinstance(record.args, tuple) or len(record.args) < 2):
+            return True
+        args = list(record.args)
+        safe_url = _display_url(str(args[1]))
+        args[1] = _redact_secret(safe_url, secret) or "[invalid endpoint]"
+        record.args = tuple(args)
+        return True
+
+
+logging.getLogger("httpx").addFilter(_ModelRequestLogFilter())
+
+
+@contextmanager
+def _redact_model_request_logs(secret: str):
+    token = _MODEL_REQUEST_LOGGING.set(secret)
+    try:
+        yield
+    finally:
+        _MODEL_REQUEST_LOGGING.reset(token)
+
+
 def _failure_reason(exc: httpx.HTTPError) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return "request timed out"
@@ -49,6 +84,40 @@ def _failure_reason(exc: httpx.HTTPError) -> str:
     if isinstance(exc, httpx.ConnectError):
         return "connection failed"
     return "request failed"
+
+
+_MODEL_FAILURE_REASONS = {
+    "request timed out",
+    "HTTP status error",
+    "connection failed",
+    "invalid response",
+    "unknown error",
+}
+
+
+class ModelError(RuntimeError):
+    def __init__(self, reason: str, message: str):
+        self.reason = reason if reason in _MODEL_FAILURE_REASONS else "unknown error"
+        super().__init__(message)
+
+
+def model_failure_reason(exc: BaseException) -> str:
+    """Return a bounded failure category without exposing exception text."""
+    if isinstance(exc, ModelError):
+        return exc.reason
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return "request timed out"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "HTTP status error"
+    if isinstance(exc, httpx.RequestError):
+        return "connection failed"
+    if isinstance(exc, (ValueError, TypeError, AttributeError)):
+        return "invalid response"
+    return "unknown error"
+
+
+class _ModelResponseError(ValueError):
+    pass
 
 
 def _validate_timeout(timeout: float) -> None:
@@ -61,9 +130,9 @@ def _json_object(response: httpx.Response, purpose: str) -> dict[str, Any]:
     try:
         payload = response.json()
     except ValueError:
-        raise ValueError(f"{purpose} response is not valid JSON.") from None
+        raise _ModelResponseError(f"{purpose} response is not valid JSON.") from None
     if not isinstance(payload, dict):
-        raise ValueError(f"{purpose} response must be a JSON object.")
+        raise _ModelResponseError(f"{purpose} response must be a JSON object.")
     return payload
 
 
@@ -71,14 +140,14 @@ def _model_names(response: httpx.Response) -> set[str]:
     payload = _json_object(response, "Model catalog")
     data = payload.get("data")
     if not isinstance(data, list) or not data:
-        raise ValueError("Model catalog response must contain a non-empty data list.")
+        raise _ModelResponseError("Model catalog response must contain a non-empty data list.")
     names = set()
     for item in data:
         if not isinstance(item, dict):
-            raise ValueError("Model catalog entries must contain non-empty string ids.")
+            raise _ModelResponseError("Model catalog entries must contain non-empty string ids.")
         name = item.get("id")
         if not isinstance(name, str) or not name or name != name.strip():
-            raise ValueError("Model catalog entries must contain non-empty string ids.")
+            raise _ModelResponseError("Model catalog entries must contain non-empty string ids.")
         names.add(name)
     return names
 
@@ -87,27 +156,29 @@ def _completion_text(response: httpx.Response, requested_model: str) -> str:
     payload = _json_object(response, "Model completion")
     model = payload.get("model")
     if not isinstance(model, str) or not model.strip():
-        raise ValueError("Model completion response is missing its model identity.")
+        raise _ModelResponseError("Model completion response is missing its model identity.")
     if model != requested_model:
-        raise ValueError("Model completion response identity did not match the requested model.")
+        raise _ModelResponseError(
+            "Model completion response identity did not match the requested model."
+        )
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise ValueError("Model completion response must contain a choice.")
+        raise _ModelResponseError("Model completion response must contain a choice.")
     choice = choices[0]
     if choice.get("finish_reason") != "stop":
-        raise ValueError("Model completion did not finish normally.")
+        raise _ModelResponseError("Model completion did not finish normally.")
     message = choice.get("message")
     if not isinstance(message, dict):
-        raise ValueError("Model completion choice is missing its message.")
+        raise _ModelResponseError("Model completion choice is missing its message.")
     refusal = message.get("refusal")
     if refusal is not None:
         if not isinstance(refusal, str):
-            raise ValueError("Model completion refusal field is malformed.")
+            raise _ModelResponseError("Model completion refusal field is malformed.")
         if refusal.strip():
-            raise ValueError("Model refused the request.")
+            raise _ModelResponseError("Model refused the request.")
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
-        raise ValueError("Model completion content must be non-empty text.")
+        raise _ModelResponseError("Model completion content must be non-empty text.")
     return content.strip()
 
 
@@ -145,28 +216,48 @@ class Backend:
         try:
             async with asyncio.timeout(self.timeout):
                 async with self._client() as client:
-                    response = await client.post("/chat/completions", json={
-                        "model": self.model,
-                        "temperature": 0,
-                        "max_tokens": max_tokens,
-                        "messages": [{"role": "system", "content": system},
-                                     {"role": "user", "content": user}],
-                    })
+                    with _redact_model_request_logs(self.api_key):
+                        response = await client.post("/chat/completions", json={
+                            "model": self.model,
+                            "temperature": 0,
+                            "max_tokens": max_tokens,
+                            "messages": [{"role": "system", "content": system},
+                                         {"role": "user", "content": user}],
+                        })
                     response.raise_for_status()
                     text = _completion_text(response, self.model)
                     if self.api_key and (self.api_key in text or self.api_key in self.model):
-                        raise ValueError("Model response contained configured credentials; rejected.")
+                        raise _ModelResponseError(
+                            "Model response contained configured credentials; rejected."
+                        )
                     return text
-        except TimeoutError:
-            raise RuntimeError("Model completion request timed out.") from None
-        except httpx.InvalidURL:
-            raise RuntimeError("Invalid model endpoint URL.") from None
-        except httpx.HTTPError as exc:
-            raise RuntimeError(
-                f"Model completion request failed: {_failure_reason(exc)}."
+        except _ModelResponseError as exc:
+            raise ModelError("invalid response", str(exc)) from None
+        except (TimeoutError, httpx.TimeoutException):
+            raise ModelError(
+                "request timed out", "Model completion request timed out."
             ) from None
-        except ValueError as exc:
-            raise RuntimeError(_redact_secret(str(exc), self.api_key)) from None
+        except httpx.InvalidURL:
+            raise ModelError("unknown error", "Invalid model endpoint URL.") from None
+        except httpx.HTTPStatusError as exc:
+            raise ModelError(
+                "HTTP status error",
+                f"Model completion request failed: HTTP {exc.response.status_code}.",
+            ) from None
+        except httpx.RequestError:
+            raise ModelError(
+                "connection failed", "Model completion request failed: connection failed."
+            ) from None
+        except httpx.HTTPError:
+            raise ModelError(
+                "connection failed", "Model completion request failed: connection failed."
+            ) from None
+        except (ValueError, TypeError, AttributeError):
+            raise ModelError(
+                "invalid response", "Model completion response was invalid."
+            ) from None
+        except Exception:  # noqa: BLE001 - provider exceptions may carry credentials.
+            raise ModelError("unknown error", "Model request failed.") from None
 
 
 RULES = Backend(mode="rules", label="Rule engine (no model)")
@@ -188,37 +279,42 @@ async def detect_backend(
                         base_url=url, api_key=api_key, timeout=timeout, transport=transport)
     try:
         async with candidate._client() as client:
-            response = await client.get("/models", timeout=3.0)
+            with _redact_model_request_logs(api_key):
+                response = await client.get("/models", timeout=3.0)
             response.raise_for_status()
             names = _model_names(response)
     except httpx.InvalidURL:
         if choice == "llm":
-            raise RuntimeError("Invalid model endpoint URL.") from None
+            raise ModelError("unknown error", "Invalid model endpoint URL.") from None
         return Backend(mode="rules", label=RULES.label,
                        note="Invalid model endpoint URL; using the rule engine.")
     except httpx.HTTPError as exc:
-        reason = _failure_reason(exc)
+        reason = model_failure_reason(exc)
+        diagnostic = _failure_reason(exc)
         if choice == "llm":
-            raise RuntimeError(
-                f"Model endpoint {safe_url} did not answer ({reason})."
+            raise ModelError(
+                reason, f"Model endpoint did not answer ({diagnostic})."
             ) from None
         return Backend(mode="rules", label=RULES.label,
-                       note=f"No model endpoint answered at {safe_url} ({reason}); "
+                       note=f"No model endpoint answered ({diagnostic}); "
                             "using the rule engine.")
-    except (ValueError, TypeError, AttributeError) as exc:
-        reason = _redact_secret(str(exc), api_key) or "invalid response"
+    except (ValueError, TypeError, AttributeError):
+        message = "Model endpoint returned an invalid model catalog."
         if choice == "llm":
-            raise RuntimeError(
-                f"Model endpoint {safe_url} returned an invalid model catalog: {reason}"
-            ) from None
+            raise ModelError("invalid response", message) from None
         return Backend(mode="rules", label=RULES.label,
-                       note=f"Model endpoint {safe_url} returned an invalid model catalog "
-                            f"({reason}); using the rule engine.")
-    if wanted not in names:
-        message = (f"{safe_url} does not serve requested model {wanted} "
-                   f"(available: {', '.join(sorted(names)[:5])})")
-        message = _redact_secret(message, api_key) or message
+                       note=f"{message} Using the rule engine.")
+    except Exception as exc:  # noqa: BLE001 - auto mode sanitizes arbitrary provider failures.
+        reason = model_failure_reason(exc)
         if choice == "llm":
-            raise RuntimeError(message)
-        return Backend(mode="rules", label=RULES.label, note=f"{message}; using the rule engine.")
+            raise ModelError(reason, "Model endpoint request failed.") from None
+        return Backend(mode="rules", label=RULES.label,
+                       note=f"Model endpoint request failed ({reason}); "
+                            "using the rule engine.")
+    if wanted not in names:
+        message = "Requested model was not found in the model catalog."
+        if choice == "llm":
+            raise ModelError("invalid response", message) from None
+        return Backend(mode="rules", label=RULES.label,
+                       note=f"{message} Using the rule engine.")
     return candidate

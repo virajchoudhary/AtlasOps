@@ -52,6 +52,14 @@ model, an incident gets up to two model attempts and then one rule-engine attemp
 A model patch that fails the safety check is replaced by the rule engine's patch
 within the same attempt. Every patch and diagnosis is labelled with who wrote it.
 
+After backend detection, startup prints the selected backend and any safe fallback
+note with flushed output. `--agents llm` still fails startup when the endpoint
+cannot serve the requested model. Losing a model during diagnosis or patching logs
+the incident ID, stage and a safe failure reason when rules take over. Runtime
+fallback does not rewrite the configured startup backend or claim a model-authored
+repair. Raw exceptions, credentials and provider response bodies are not fallback
+diagnostics.
+
 The endpoint must list the exact requested identifier in a nonempty `/models`
 catalog. Each completion must report the same identifier, a `stop` finish reason,
 and nonempty text. Missing identity, refusals, truncation, malformed replies, and
@@ -172,6 +180,14 @@ The Control Room's **Download incident evidence** link downloads completed
 incidents as JSONL from `/lab/api/evidence`. The same records remain in
 `incidents.jsonl` inside the printed working directory. Resetting the Store does
 not erase those records.
+
+The state API retains a completed result until reset or the next successful
+injection. Those actions clear `incident`, not completed history or JSONL.
+`incident_state` distinguishes `idle`, `pending`, `active` and `closed`;
+`incident_sequence` counts incident openings during the current process lifetime.
+Pending browser-only detection has a null incident, so a previous result cannot be
+mistaken for the new bug. Process restart resets the sequence; it is not a durable
+incident identifier. Use the exact incident ID and approval digest for decisions.
 
 Each record names its local-demonstration classification and selected backend.
 Each attempted change retains its diagnosis, exact diff and digest, approval

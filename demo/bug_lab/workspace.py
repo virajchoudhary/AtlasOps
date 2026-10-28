@@ -6,13 +6,36 @@ import difflib
 import hashlib
 import os
 import shutil
+import stat
 from pathlib import Path
-
-from training.sft_provenance import has_redirecting_path_component
 
 SITE_SOURCE = Path(__file__).resolve().parent / "site"
 EDITABLE_FILES = ("index.html", "styles.css", "app.js", "products.json", "config.json")
 MONITOR_TAG = '<script src="/lab/monitor.js"></script>'
+
+
+def has_redirecting_path_component(path: Path) -> bool:
+    """Identify symlink, Windows reparse, or hard-link path redirects."""
+    absolute_path = Path(os.path.abspath(path))
+    reparse_attribute = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    for component in (absolute_path, *absolute_path.parents):
+        try:
+            details = component.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        if stat.S_ISLNK(details.st_mode):
+            return True
+        if getattr(details, "st_file_attributes", 0) & reparse_attribute:
+            return True
+        if (
+            component == absolute_path
+            and not stat.S_ISDIR(details.st_mode)
+            and getattr(details, "st_nlink", 1) > 1
+        ):
+            return True
+    return False
 
 
 class Workspace:

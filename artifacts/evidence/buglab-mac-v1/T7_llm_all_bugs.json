@@ -1,0 +1,360 @@
+{
+  "backend": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "note": "slow-api rerun separately; its row in the first pass was a stale read of INC-0007.",
+  "results": [
+    {
+      "bug": "js-reference-error",
+      "inject_response": {
+        "injected": "js-reference-error"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 56.7,
+      "final": {
+        "id": "INC-0001",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "qwen2.5:7b-instruct (model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.5,
+        "resolve_s": 54.7,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "app.js",
+        "root_cause": "renderProdcuts is misspelled as renderProdcuts in line 63 of app.js",
+        "author": "qwen2.5:7b-instruct (model)"
+      },
+      "patch_author": "qwen2.5:7b-instruct (model)",
+      "alerts_failing_at_end": [
+        "js_errors",
+        "products_rendered"
+      ]
+    },
+    {
+      "bug": "broken-stylesheet",
+      "inject_response": {
+        "injected": "broken-stylesheet"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 65.4,
+      "final": {
+        "id": "INC-0002",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P2",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.6,
+        "resolve_s": 63.1,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "index.html",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "index.html",
+        "root_cause": "index.html references style.css, which does not exist; the store ships styles.css.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "stylesheets_load"
+      ]
+    },
+    {
+      "bug": "truncated-data",
+      "inject_response": {
+        "injected": "truncated-data"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 88.7,
+      "final": {
+        "id": "INC-0003",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.5,
+        "resolve_s": 86.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "failed"
+          },
+          {
+            "number": 2,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "failed"
+          },
+          {
+            "number": 3,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json is not valid JSON: Expecting value: line 59 column 1 (char 1463)",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "products_api"
+      ]
+    },
+    {
+      "bug": "string-prices",
+      "inject_response": {
+        "injected": "string-prices"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 54.3,
+      "final": {
+        "id": "INC-0004",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "qwen2.5:7b-instruct (model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.3,
+        "resolve_s": 52.8,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "\"price\" values are strings instead of numbers",
+        "author": "qwen2.5:7b-instruct (model)"
+      },
+      "patch_author": "qwen2.5:7b-instruct (model)",
+      "alerts_failing_at_end": [
+        "prices_numeric",
+        "prices_display"
+      ]
+    },
+    {
+      "bug": "broken-image-paths",
+      "inject_response": {
+        "injected": "broken-image-paths"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 80.4,
+      "final": {
+        "id": "INC-0005",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.9,
+        "resolve_s": 79.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "products.json",
+            "verdict": "failed"
+          },
+          {
+            "number": 2,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "products.json",
+            "verdict": "failed"
+          },
+          {
+            "number": 3,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "Product image paths point at a missing folder (img/mug.svg); the files exist at images/mug.svg.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "images_load"
+      ]
+    },
+    {
+      "bug": "cart-handler",
+      "inject_response": {
+        "injected": "cart-handler"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 38.2,
+      "final": {
+        "id": "INC-0006",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.5,
+        "resolve_s": 36.2,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "app.js",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "app.js",
+        "root_cause": "app.js line 52 looks up id \"cart-cuont\", which is not on the page; the element is \"cart-count\".",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "js_errors",
+        "add_to_cart"
+      ]
+    },
+    {
+      "bug": "layout-overflow",
+      "inject_response": {
+        "injected": "layout-overflow"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 38.1,
+      "final": {
+        "id": "INC-0007",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.7,
+        "resolve_s": 36.1,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "styles.css",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "styles.css",
+        "root_cause": "styles.css gives .grid a fixed width of 2600px, wider than any screen.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "fits_screen"
+      ]
+    },
+    {
+      "bug": "slow-api",
+      "idle_before": true,
+      "incident_before_inject": "INC-0008",
+      "inject_response": {
+        "injected": "slow-api"
+      },
+      "elapsed_s": 106.5,
+      "final": {
+        "id": "INC-0009",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P2",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 4.7,
+        "resolve_s": 101.6,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "failed"
+          },
+          {
+            "number": 2,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "failed"
+          },
+          {
+            "number": 3,
+            "author": "Rule engine (no model)",
+            "file": "config.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "patch_author": "Rule engine (no model)",
+      "diagnosis": {
+        "file": "config.json",
+        "root_cause": "config.json sets api_delay_ms to 4000, adding that delay to every product request.",
+        "author": "Rule engine (no model)"
+      },
+      "fresh_incident": true
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "bug": "truncated-data",
+  "generated_at": 1793185463.627475,
+  "idle_before_start": true,
+  "reset_response": {
+    "reset": true
+  },
+  "backend_before": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "incident_before_inject": "INC-0008",
+  "inject_response": {
+    "injected": "truncated-data"
+  },
+  "incident": "INC-0009",
+  "stage_when_cut": "triage",
+  "proxy_stop_output": "buglab-llm-proxy",
+  "cut_at": 1793185472.5817778,
+  "endpoint_after_cut": "URLError",
+  "approved": true,
+  "decision_sent": {
+    "recorded": true
+  },
+  "observed": [
+    {
+      "t": 10,
+      "status": "awaiting_approval",
+      "stage": "approval",
+      "outcome": null,
+      "active": true
+    },
+    {
+      "t": 20,
+      "status": "resolved",
+      "stage": "closed",
+      "outcome": "Resolved and verified",
+      "active": false
+    }
+  ],
+  "final_status": "resolved",
+  "final_outcome": "Resolved and verified",
+  "final_stage": "closed",
+  "resolved_by": "Rule engine (no model)",
+  "patch_author": "Rule engine (no model)",
+  "comms": null,
+  "store_status_at_end": 200,
+  "lab_log_tail": "AtlasOps bug lab\n  Control room: http://0.0.0.0:8790/\n  Store:        http://0.0.0.0:8790/shop/\n  Working copy: /work",
+  "proxy_start_output": "buglab-llm-proxy",
+  "endpoint_after_restore": "HTTP 401 (401 = proxy back up)"
+}

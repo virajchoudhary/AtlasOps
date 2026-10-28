@@ -1,0 +1,52 @@
+Combined end-to-end acceptance, after merging the core PR
+date: 2026-10-28T11:06:19Z
+merge commit: f8269c2 | core PR #236 (feat/atlasops-local-core) merged into main as 20e3c96
+image rebuilt from the merged tree before any test below.
+
+The core merge brought 4 lab commits, including 'contain malformed model endpoint
+errors' and 'harden model boundaries and verified incident evidence', plus two new
+test files (tests/test_bug_lab_model_client.py, tests/bug_lab_process.py).
+
+== T7, all eight bugs, model mode ==
+   unique incident ids: True - no stale reads this run
+   bug                  att  model att  failed  final author
+   js-reference-error   1    1          0       qwen2.5:7b-instruct (model)
+   broken-stylesheet    1    0          0       Rule engine (no model)
+   truncated-data       1    0          0       Rule engine (no model)
+   string-prices        1    0          0       Rule engine (no model)
+   broken-image-paths   2    1          1       Rule engine (no model)
+   cart-handler         1    0          0       Rule engine (no model)
+   layout-overflow      1    0          0       Rule engine (no model)
+   slow-api             3    2          2       Rule engine (no model)
+
+   resolved and verified: 8/8
+   diagnosis matched:     8/8
+   final patch by model:  1/8   (pre-merge run: 2/8)
+   model attempts: 4, failed: 3   (pre-merge run: 8 attempts, 6 failed)
+
+   The model's share moved from 2/8 to 1/8 between two runs of the same eight bugs.
+   The model is non-deterministic and this is a single run each way, so the honest
+   reading is 'the model contributes a small minority of accepted patches on this
+   bug set', not that the merge changed it. Two runs cannot separate those.
+
+== T8, model killed mid-incident ==
+   stage when cut: triage | endpoint after cut: URLError
+   final: resolved - Resolved and verified
+   patch author: Rule engine (no model) | store at end: 200
+   Same as pre-merge: the incident still resolves and verifies, the gate still holds.
+   docker logs still records nothing about the outage - finding 4 stands.
+
+== T9, endpoint rotation ==
+   old endpoint after move: URLError
+   new endpoint after move: HTTP 200
+   running container still reported: http://host.docker.internal:8000/v1
+   after recreating the container:   http://host.docker.internal:8001/v1
+   Same as pre-merge: rotation requires recreating the container.
+
+== Findings 1 and 3 after the merge ==
+   1. demo/bug_lab/workspace.py still imports training.sft_provenance - OPEN.
+   3. The startup banner still prints only three URL lines - OPEN, so T2 stays PARTIAL.
+   4. The fallback to the rule engine is still silent in the logs - OPEN.
+      The core did add a 'note' field on the backend object for endpoint errors,
+      which is the right place for this, but it is empty on a healthy start and
+      nothing is written to the log when a live endpoint dies.

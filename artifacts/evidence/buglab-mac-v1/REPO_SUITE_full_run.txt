@@ -1,0 +1,14 @@
+E       assert 503 == 200
+E        +  where 503 = <Response [503 Service Unavailable]>.status_code
+
+tests/test_frontend_ui.py:77: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_bootstrap_lifecycle.py::TestExecutableBootstrapLifecycle::test_single_pass_fresh_deployment_success
+FAILED tests/test_bootstrap_lifecycle.py::TestExecutableBootstrapLifecycle::test_missing_local_secret_fails_before_cloud_mutation
+FAILED tests/test_bootstrap_lifecycle.py::TestExecutableBootstrapLifecycle::test_missing_argocd_password_fails_before_cloud_mutation
+FAILED tests/test_bootstrap_lifecycle.py::TestExecutableBootstrapLifecycle::test_existing_compatible_cluster_reuse_is_idempotent
+FAILED tests/test_bootstrap_lifecycle.py::TestExecutableBootstrapLifecycle::test_argo_disabled_deviation_skips_argo_resources
+FAILED tests/test_frontend_ui.py::TestFrontendUIAndAPIs::test_root_endpoint_serves_html
+6 failed, 3565 passed, 43 skipped in 560.38s (0:09:20)
+
+[exited with code 0]

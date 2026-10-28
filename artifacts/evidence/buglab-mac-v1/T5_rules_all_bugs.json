@@ -1,0 +1,323 @@
+{
+  "base": "http://127.0.0.1:8790",
+  "generated_at": 1793162918.881393,
+  "results": [
+    {
+      "bug": "js-reference-error",
+      "inject_response": {
+        "_http_error": 409,
+        "_detail": "{\"detail\":\"An incident is in progress. Wait for it to close before injecting another bug.\"}"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 4.0,
+      "final": {
+        "id": "INC-0001",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 2.0,
+        "resolve_s": 76.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json is not valid JSON: Expecting value: line 59 column 1 (char 1463)",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "products_api"
+      ]
+    },
+    {
+      "bug": "broken-stylesheet",
+      "inject_response": {
+        "injected": "broken-stylesheet"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0002",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P2",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.5,
+        "resolve_s": 4.0,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "index.html",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "index.html",
+        "root_cause": "index.html references style.css, which does not exist; the store ships styles.css.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "stylesheets_load"
+      ]
+    },
+    {
+      "bug": "truncated-data",
+      "inject_response": {
+        "injected": "truncated-data"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0003",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.3,
+        "resolve_s": 4.7,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json is not valid JSON: Expecting value: line 59 column 1 (char 1463)",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "products_api",
+        "js_errors",
+        "requests_ok",
+        "products_rendered"
+      ]
+    },
+    {
+      "bug": "string-prices",
+      "inject_response": {
+        "injected": "string-prices"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0004",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.0,
+        "resolve_s": 5.6,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json stores prices as text (\"18.50 USD\", \"89.00 USD\"), so the page computes NaN.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "prices_numeric"
+      ]
+    },
+    {
+      "bug": "broken-image-paths",
+      "inject_response": {
+        "injected": "broken-image-paths"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0005",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.6,
+        "resolve_s": 4.0,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "Product image paths point at a missing folder (img/mug.svg); the files exist at images/mug.svg.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "images_load"
+      ]
+    },
+    {
+      "bug": "cart-handler",
+      "inject_response": {
+        "injected": "cart-handler"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0006",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.7,
+        "resolve_s": 4.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "app.js",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "app.js",
+        "root_cause": "app.js line 52 looks up id \"cart-cuont\", which is not on the page; the element is \"cart-count\".",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "js_errors",
+        "add_to_cart"
+      ]
+    },
+    {
+      "bug": "layout-overflow",
+      "inject_response": {
+        "injected": "layout-overflow"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 6.0,
+      "final": {
+        "id": "INC-0007",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.3,
+        "resolve_s": 4.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "styles.css",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "styles.css",
+        "root_cause": "styles.css gives .grid a fixed width of 2600px, wider than any screen.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "fits_screen"
+      ]
+    },
+    {
+      "bug": "slow-api",
+      "inject_response": {
+        "injected": "slow-api"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 2.0,
+      "final": {
+        "id": "INC-0007",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.3,
+        "resolve_s": 4.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "styles.css",
+            "verdict": "verified"
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "styles.css",
+        "root_cause": "styles.css gives .grid a fixed width of 2600px, wider than any screen.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "fits_screen"
+      ]
+    }
+  ]
+}

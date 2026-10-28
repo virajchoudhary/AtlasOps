@@ -1,0 +1,28 @@
+{
+  "bug_used": "truncated-data",
+  "generated_at": 1793163002.989693,
+  "reject": {
+    "path": "reject",
+    "incident": "INC-0009",
+    "decision_response": {
+      "recorded": true
+    },
+    "store_status_before_decision": 500,
+    "store_status_after_decision": 500,
+    "status": "escalated",
+    "outcome": "Blocked because you rejected the change",
+    "approval": {
+      "required": true,
+      "digest": "b86cf4634227f098e9d7292b50061e14bb48623fa904bfa4bbafa0e86d05c0f0",
+      "decision": "rejected",
+      "policy": "P1 requires a human to approve this exact change",
+      "expires_at": 1793163306.895926,
+      "expires_in": 292
+    },
+    "still_injected": []
+  },
+  "expire": {
+    "path": "expire",
+    "error": "no approval appeared"
+  }
+}

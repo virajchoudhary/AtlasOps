@@ -1,0 +1,2901 @@
+{
+  "base": "http://127.0.0.1:8790",
+  "generated_at": 1793185428.599277,
+  "backend": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "results": [
+    {
+      "bug": "js-reference-error",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": null,
+      "inject_response": {
+        "injected": "js-reference-error"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 16.2,
+      "final": {
+        "id": "INC-0001",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "qwen2.5:7b-instruct (model)",
+        "diagnosis_matched": true,
+        "detect_s": 1.6,
+        "resolve_s": 12.9,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "app.js",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "app.js",
+              "root_cause": "renderProdcuts is misspelled as renderProdcuts in line 63 of app.js",
+              "author": "qwen2.5:7b-instruct (model)"
+            },
+            "patch": {
+              "file": "app.js",
+              "author": "qwen2.5:7b-instruct (model)",
+              "explanation": "Corrected the spelling of the function name from renderProdcuts to renderProducts.",
+              "diff": [
+                "--- a/app.js",
+                "+++ b/app.js",
+                "@@ -61,5 +61,5 @@",
+                "   const data = await response.json();",
+                "   state.products = data.products;",
+                "-  renderProdcuts(state.products);",
+                "+  renderProducts(state.products);",
+                " }",
+                " "
+              ],
+              "kind": "patch",
+              "digest": "1b2591cf2e945828228aa0297a2537e1a8765f66f674a17a9b30b3ed75839efc"
+            },
+            "approval": {
+              "required": true,
+              "digest": "1b2591cf2e945828228aa0297a2537e1a8765f66f674a17a9b30b3ed75839efc",
+              "decision": "approved",
+              "policy": "P1 requires a human to approve this exact change",
+              "expires_at": 1793185274.4449747
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793184974.6956644,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 13
+                },
+                "issues": [],
+                "load_id": "b56ivh93",
+                "page": "tab",
+                "received_at": 1793184977.0510142
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "13 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "app.js",
+        "root_cause": "renderProdcuts is misspelled as renderProdcuts in line 63 of app.js",
+        "author": "qwen2.5:7b-instruct (model)"
+      },
+      "patch_author": "qwen2.5:7b-instruct (model)",
+      "alerts_failing_at_end": [
+        "js_errors",
+        "products_rendered"
+      ]
+    },
+    {
+      "bug": "broken-stylesheet",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0001",
+      "inject_response": {
+        "injected": "broken-stylesheet"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 54.4,
+      "final": {
+        "id": "INC-0002",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P2",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 2.0,
+        "resolve_s": 51.4,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "index.html",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "index.html",
+              "root_cause": "index.html references style.css, which does not exist; the store ships styles.css.",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "index.html",
+              "author": "Rule engine (no model)",
+              "explanation": "Replace href=\"style.css\" with href=\"styles.css\".",
+              "diff": [
+                "--- a/index.html",
+                "+++ b/index.html",
+                "@@ -5,5 +5,5 @@",
+                " <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+                " <title>Atlas Store</title>",
+                "-<link rel=\"stylesheet\" href=\"style.css\">",
+                "+<link rel=\"stylesheet\" href=\"styles.css\">",
+                " <script src=\"/lab/monitor.js\"></script>",
+                " </head>"
+              ],
+              "kind": "patch",
+              "digest": "07014dadeeb17d6a0f43c72745d4593c9d1352b06a5d9c37cdcfc19c0f9ce236"
+            },
+            "approval": {
+              "required": false,
+              "digest": "07014dadeeb17d6a0f43c72745d4593c9d1352b06a5d9c37cdcfc19c0f9ce236",
+              "decision": "automatic",
+              "policy": "P2 runs automatically"
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185031.5949533,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 13
+                },
+                "issues": [],
+                "load_id": "w21g08tn",
+                "page": "preview",
+                "received_at": 1793185034.1791847
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "13 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "index.html",
+        "root_cause": "index.html references style.css, which does not exist; the store ships styles.css.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "stylesheets_load"
+      ]
+    },
+    {
+      "bug": "truncated-data",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0002",
+      "inject_response": {
+        "injected": "truncated-data"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 50.4,
+      "final": {
+        "id": "INC-0003",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 0.0,
+        "resolve_s": 49.0,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "products.json",
+              "root_cause": "products.json is not valid JSON: Expecting value: line 59 column 1 (char 1463)",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "products.json",
+              "author": "Rule engine (no model)",
+              "explanation": "Remove the dangling comma and restore the missing closing brackets.",
+              "diff": [
+                "--- a/products.json",
+                "+++ b/products.json",
+                "@@ -56,3 +56,5 @@",
+                "       \"price\": 149.0,",
+                "       \"image\": \"images/watch.svg\"",
+                "-    },",
+                "+    }",
+                "+  ]",
+                "+}"
+              ],
+              "kind": "patch",
+              "digest": "ca365468bba9549daef5cb68d78d067937b647117983509212a37caec114cdda"
+            },
+            "approval": {
+              "required": true,
+              "digest": "ca365468bba9549daef5cb68d78d067937b647117983509212a37caec114cdda",
+              "decision": "approved",
+              "policy": "P1 requires a human to approve this exact change",
+              "expires_at": 1793185383.1158245
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185083.4927838,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 13
+                },
+                "issues": [],
+                "load_id": "goyiq8m7",
+                "page": "preview",
+                "received_at": 1793185086.100893
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "13 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json is not valid JSON: Expecting value: line 59 column 1 (char 1463)",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "products_api"
+      ]
+    },
+    {
+      "bug": "string-prices",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0003",
+      "inject_response": {
+        "injected": "string-prices"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 36.3,
+      "final": {
+        "id": "INC-0004",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 2.0,
+        "resolve_s": 32.5,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "products.json",
+              "root_cause": "products.json stores prices as text (\"18.50 USD\", \"89.00 USD\"), so the page computes NaN.",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "products.json",
+              "author": "Rule engine (no model)",
+              "explanation": "Store each price as a number again.",
+              "diff": [
+                "--- a/products.json",
+                "+++ b/products.json",
+                "@@ -5,5 +5,5 @@",
+                "       \"name\": \"Field Mug\",",
+                "       \"blurb\": \"Insulated steel, keeps coffee hot for 6 hours.\",",
+                "-      \"price\": \"18.50 USD\",",
+                "+      \"price\": 18.5,",
+                "       \"image\": \"images/mug.svg\"",
+                "     },",
+                "@@ -12,5 +12,5 @@",
+                "       \"name\": \"Transit Backpack\",",
+                "       \"blurb\": \"20 L, padded laptop sleeve, weatherproof zips.\",",
+                "-      \"price\": \"89.00 USD\",",
+                "+      \"price\": 89.0,",
+                "       \"image\": \"images/backpack.svg\"",
+                "     },",
+                "@@ -19,5 +19,5 @@",
+                "       \"name\": \"Desk Lamp\",",
+                "       \"blurb\": \"Warm dimmable light with a weighted base.\",",
+                "-      \"price\": \"42.00 USD\",",
+                "+      \"price\": 42.0,",
+                "       \"image\": \"images/lamp.svg\"",
+                "     },",
+                "@@ -26,5 +26,5 @@",
+                "       \"name\": \"Quiet Headphones\",",
+                "       \"blurb\": \"Closed-back, 30-hour battery, folding hinge.\",",
+                "-      \"price\": \"129.99 USD\",",
+                "+      \"price\": 129.99,",
+                "       \"image\": \"images/headphones.svg\"",
+                "     },",
+                "@@ -33,5 +33,5 @@",
+                "       \"name\": \"Trail Bottle\",",
+                "       \"blurb\": \"750 ml, leak-proof lid, dishwasher safe.\",",
+                "-      \"price\": \"24.00 USD\",",
+                "+      \"price\": 24.0,",
+                "       \"image\": \"images/bottle.svg\"",
+                "     },",
+                "@@ -40,5 +40,5 @@",
+                "       \"name\": \"Grid Notebook\",",
+                "       \"blurb\": \"A5, 160 pages, lay-flat binding.\",",
+                "-      \"price\": \"12.75 USD\",",
+                "+      \"price\": 12.75,",
+                "       \"image\": \"images/notebook.svg\"",
+                "     },",
+                "@@ -47,5 +47,5 @@",
+                "       \"name\": \"Desk Plant\",",
+                "       \"blurb\": \"Low-light pothos in a ceramic pot.\",",
+                "-      \"price\": \"27.50 USD\",",
+                "+      \"price\": 27.5,",
+                "       \"image\": \"images/plant.svg\"",
+                "     },",
+                "@@ -54,5 +54,5 @@",
+                "       \"name\": \"Field Watch\",",
+                "       \"blurb\": \"38 mm, sapphire glass, canvas strap.\",",
+                "-      \"price\": \"149.00 USD\",",
+                "+      \"price\": 149.0,",
+                "       \"image\": \"images/watch.svg\"",
+                "     }"
+              ],
+              "kind": "patch",
+              "digest": "807e7dff3cadc5654aacf311f641df8ab8d38cf4115ae537361cef175fd08f84"
+            },
+            "approval": {
+              "required": true,
+              "digest": "807e7dff3cadc5654aacf311f641df8ab8d38cf4115ae537361cef175fd08f84",
+              "decision": "approved",
+              "policy": "P1 requires a human to approve this exact change",
+              "expires_at": 1793185420.2808
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185121.875011,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 8
+                },
+                "issues": [],
+                "load_id": "ismg8u23",
+                "page": "preview",
+                "received_at": 1793185124.119116
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "products.json stores prices as text (\"18.50 USD\", \"89.00 USD\"), so the page computes NaN.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "prices_numeric"
+      ]
+    },
+    {
+      "bug": "broken-image-paths",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0004",
+      "inject_response": {
+        "injected": "broken-image-paths"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 111.1,
+      "final": {
+        "id": "INC-0005",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 2.0,
+        "resolve_s": 107.1,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "products.json",
+            "verdict": "failed",
+            "diagnosis": {
+              "file": "products.json",
+              "root_cause": "\"image\": \"img/mug.svg\" (and similarly for backpack.svg and lamp.svg)",
+              "author": "qwen2.5:7b-instruct (model)"
+            },
+            "patch": {
+              "file": "products.json",
+              "author": "qwen2.5:7b-instruct (model)",
+              "explanation": "Correct the image paths to match the actual location of the images.",
+              "diff": [
+                "--- a/products.json",
+                "+++ b/products.json",
+                "@@ -6,5 +6,5 @@",
+                "       \"blurb\": \"Insulated steel, keeps coffee hot for 6 hours.\",",
+                "       \"price\": 18.5,",
+                "-      \"image\": \"img/mug.svg\"",
+                "+      \"image\": \"/lab/img/mug.svg\"",
+                "     },",
+                "     {",
+                "@@ -13,5 +13,5 @@",
+                "       \"blurb\": \"20 L, padded laptop sleeve, weatherproof zips.\",",
+                "       \"price\": 89.0,",
+                "-      \"image\": \"img/backpack.svg\"",
+                "+      \"image\": \"/lab/img/backpack.svg\"",
+                "     },",
+                "     {",
+                "@@ -20,5 +20,5 @@",
+                "       \"blurb\": \"Warm dimmable light with a weighted base.\",",
+                "       \"price\": 42.0,",
+                "-      \"image\": \"img/lamp.svg\"",
+                "+      \"image\": \"/lab/img/lamp.svg\"",
+                "     },",
+                "     {"
+              ],
+              "kind": "patch",
+              "digest": "8887ebd1cb6815a14fd418a875fa842447dbe90058d89419308db1e68025ad22"
+            },
+            "approval": {
+              "required": false,
+              "digest": "8887ebd1cb6815a14fd418a875fa842447dbe90058d89419308db1e68025ad22",
+              "decision": "automatic",
+              "policy": "P3 runs automatically"
+            },
+            "verification": {
+              "version": "de3136b7f70f52cb",
+              "checked_at": 1793185179.5940127,
+              "browser": {
+                "version": "de3136b7f70f52cb",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [
+                    "/lab/img/mug.svg",
+                    "/lab/img/backpack.svg",
+                    "/lab/img/lamp.svg",
+                    "img/headphones.svg",
+                    "img/bottle.svg",
+                    "img/notebook.svg",
+                    "img/plant.svg",
+                    "img/watch.svg"
+                  ],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 10
+                },
+                "issues": [
+                  {
+                    "kind": "resource",
+                    "message": "img failed to load: /shop/img/headphones.svg",
+                    "source": "",
+                    "line": ""
+                  },
+                  {
+                    "kind": "resource",
+                    "message": "img failed to load: /shop/img/bottle.svg",
+                    "source": "",
+                    "line": ""
+                  },
+                  {
+                    "kind": "resource",
+                    "message": "img failed to load: /shop/img/notebook.svg",
+                    "source": "",
+                    "line": ""
+                  },
+                  {
+                    "kind": "resource",
+                    "message": "img failed to load: /shop/img/plant.svg",
+                    "source": "",
+                    "line": ""
+                  },
+                  {
+                    "kind": "resource",
+                    "message": "img failed to load: /shop/img/watch.svg",
+                    "source": "",
+                    "line": ""
+                  }
+                ],
+                "load_id": "2g29bdbj",
+                "page": "preview",
+                "received_at": 1793185183.0401466
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": false,
+                  "detail": "/lab/img/mug.svg returned 404; /lab/img/backpack.svg returned 404; /lab/img/lamp.svg returned 404",
+                  "evidence": {
+                    "missing": [
+                      {
+                        "id": "mug",
+                        "image": "/lab/img/mug.svg"
+                      },
+                      {
+                        "id": "backpack",
+                        "image": "/lab/img/backpack.svg"
+                      },
+                      {
+                        "id": "lamp",
+                        "image": "/lab/img/lamp.svg"
+                      },
+                      {
+                        "id": "headphones",
+                        "image": "img/headphones.svg"
+                      },
+                      {
+                        "id": "bottle",
+                        "image": "img/bottle.svg"
+                      },
+                      {
+                        "id": "notebook",
+                        "image": "img/notebook.svg"
+                      },
+                      {
+                        "id": "plant",
+                        "image": "img/plant.svg"
+                      },
+                      {
+                        "id": "watch",
+                        "image": "img/watch.svg"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": false,
+                  "detail": "img failed to load: /shop/img/headphones.svg; img failed to load: /shop/img/bottle.svg",
+                  "evidence": {
+                    "messages": [
+                      "img failed to load: /shop/img/headphones.svg",
+                      "img failed to load: /shop/img/bottle.svg",
+                      "img failed to load: /shop/img/notebook.svg",
+                      "img failed to load: /shop/img/plant.svg",
+                      "img failed to load: /shop/img/watch.svg"
+                    ]
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": false,
+                  "detail": "8 broken images",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "10 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "failed"
+            }
+          },
+          {
+            "number": 2,
+            "author": "Rule engine (no model)",
+            "file": "products.json",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "products.json",
+              "root_cause": "Product image paths point at a missing folder (img/mug.svg); the files exist at images/mug.svg.",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "products.json",
+              "author": "Rule engine (no model)",
+              "explanation": "Point each product image at the file that exists.",
+              "diff": [
+                "--- a/products.json",
+                "+++ b/products.json",
+                "@@ -6,5 +6,5 @@",
+                "       \"blurb\": \"Insulated steel, keeps coffee hot for 6 hours.\",",
+                "       \"price\": 18.5,",
+                "-      \"image\": \"img/mug.svg\"",
+                "+      \"image\": \"images/mug.svg\"",
+                "     },",
+                "     {",
+                "@@ -13,5 +13,5 @@",
+                "       \"blurb\": \"20 L, padded laptop sleeve, weatherproof zips.\",",
+                "       \"price\": 89.0,",
+                "-      \"image\": \"img/backpack.svg\"",
+                "+      \"image\": \"images/backpack.svg\"",
+                "     },",
+                "     {",
+                "@@ -20,5 +20,5 @@",
+                "       \"blurb\": \"Warm dimmable light with a weighted base.\",",
+                "       \"price\": 42.0,",
+                "-      \"image\": \"img/lamp.svg\"",
+                "+      \"image\": \"images/lamp.svg\"",
+                "     },",
+                "     {",
+                "@@ -27,5 +27,5 @@",
+                "       \"blurb\": \"Closed-back, 30-hour battery, folding hinge.\",",
+                "       \"price\": 129.99,",
+                "-      \"image\": \"img/headphones.svg\"",
+                "+      \"image\": \"images/headphones.svg\"",
+                "     },",
+                "     {",
+                "@@ -34,5 +34,5 @@",
+                "       \"blurb\": \"750 ml, leak-proof lid, dishwasher safe.\",",
+                "       \"price\": 24.0,",
+                "-      \"image\": \"img/bottle.svg\"",
+                "+      \"image\": \"images/bottle.svg\"",
+                "     },",
+                "     {",
+                "@@ -41,5 +41,5 @@",
+                "       \"blurb\": \"A5, 160 pages, lay-flat binding.\",",
+                "       \"price\": 12.75,",
+                "-      \"image\": \"img/notebook.svg\"",
+                "+      \"image\": \"images/notebook.svg\"",
+                "     },",
+                "     {",
+                "@@ -48,5 +48,5 @@",
+                "       \"blurb\": \"Low-light pothos in a ceramic pot.\",",
+                "       \"price\": 27.5,",
+                "-      \"image\": \"img/plant.svg\"",
+                "+      \"image\": \"images/plant.svg\"",
+                "     },",
+                "     {",
+                "@@ -55,5 +55,5 @@",
+                "       \"blurb\": \"38 mm, sapphire glass, canvas strap.\",",
+                "       \"price\": 149.0,",
+                "-      \"image\": \"img/watch.svg\"",
+                "+      \"image\": \"images/watch.svg\"",
+                "     }",
+                "   ]"
+              ],
+              "kind": "patch",
+              "digest": "b13daa3a6e4bbba7d9b0c5356862f522dcb5d849e9a46e5d89a17ede0d32d3dc"
+            },
+            "approval": {
+              "required": false,
+              "digest": "b13daa3a6e4bbba7d9b0c5356862f522dcb5d849e9a46e5d89a17ede0d32d3dc",
+              "decision": "automatic",
+              "policy": "P3 runs automatically"
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185234.5223317,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 7
+                },
+                "issues": [],
+                "load_id": "yu5bzlhn",
+                "page": "tab",
+                "received_at": 1793185237.0435884
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "7 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "products.json",
+        "root_cause": "Product image paths point at a missing folder (img/mug.svg); the files exist at images/mug.svg.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "images_load"
+      ]
+    },
+    {
+      "bug": "cart-handler",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0005",
+      "inject_response": {
+        "injected": "cart-handler"
+      },
+      "approved": true,
+      "decision_sent": {
+        "recorded": true
+      },
+      "started_incident": true,
+      "elapsed_s": 20.2,
+      "final": {
+        "id": "INC-0006",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P1",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 4.0,
+        "resolve_s": 16.0,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "app.js",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "app.js",
+              "root_cause": "app.js line 52 looks up id \"cart-cuont\", which is not on the page; the element is \"cart-count\".",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "app.js",
+              "author": "Rule engine (no model)",
+              "explanation": "Replace getElementById(\"cart-cuont\") with getElementById(\"cart-count\").",
+              "diff": [
+                "--- a/app.js",
+                "+++ b/app.js",
+                "@@ -50,5 +50,5 @@",
+                " function addToCart(product) {",
+                "   state.cart += 1;",
+                "-  document.getElementById(\"cart-cuont\").textContent = String(state.cart);",
+                "+  document.getElementById(\"cart-count\").textContent = String(state.cart);",
+                "   showToast(product.name + \" added to cart\");",
+                " }"
+              ],
+              "kind": "patch",
+              "digest": "747d9e891efe5a977dc542156775a18d69341014faff8c3693c89d06ef6185a0"
+            },
+            "approval": {
+              "required": true,
+              "digest": "747d9e891efe5a977dc542156775a18d69341014faff8c3693c89d06ef6185a0",
+              "decision": "approved",
+              "policy": "P1 requires a human to approve this exact change",
+              "expires_at": 1793185557.0126612
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185257.2437744,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 11
+                },
+                "issues": [],
+                "load_id": "swk03xj2",
+                "page": "tab",
+                "received_at": 1793185261.046173
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "11 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "app.js",
+        "root_cause": "app.js line 52 looks up id \"cart-cuont\", which is not on the page; the element is \"cart-count\".",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "js_errors",
+        "add_to_cart"
+      ]
+    },
+    {
+      "bug": "layout-overflow",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0006",
+      "inject_response": {
+        "injected": "layout-overflow"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 54.4,
+      "final": {
+        "id": "INC-0007",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P3",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 3.8,
+        "resolve_s": 50.0,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "Rule engine (no model)",
+            "file": "styles.css",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "styles.css",
+              "root_cause": "styles.css gives .grid a fixed width of 2600px, wider than any screen.",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "styles.css",
+              "author": "Rule engine (no model)",
+              "explanation": "Replace   width: 2600px; with   width: 100%;.",
+              "diff": [
+                "--- a/styles.css",
+                "+++ b/styles.css",
+                "@@ -60,5 +60,5 @@",
+                " .grid {",
+                "   display: grid;",
+                "-  width: 2600px;",
+                "+  width: 100%;",
+                "   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));",
+                "   gap: 16px;"
+              ],
+              "kind": "patch",
+              "digest": "e381d7ea460fea5bf9324adfef5d3dc7e85ec9836c842f4e51c20444c8d9a274"
+            },
+            "approval": {
+              "required": false,
+              "digest": "e381d7ea460fea5bf9324adfef5d3dc7e85ec9836c842f4e51c20444c8d9a274",
+              "decision": "automatic",
+              "policy": "P3 runs automatically"
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185313.5246413,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 4
+                },
+                "issues": [],
+                "load_id": "jw3oi5ac",
+                "page": "preview",
+                "received_at": 1793185317.0486798
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "4 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "styles.css",
+        "root_cause": "styles.css gives .grid a fixed width of 2600px, wider than any screen.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "fits_screen"
+      ]
+    },
+    {
+      "bug": "slow-api",
+      "reset_response": {
+        "reset": true
+      },
+      "incident_before_inject": "INC-0007",
+      "inject_response": {
+        "injected": "slow-api"
+      },
+      "approved": false,
+      "decision_sent": null,
+      "started_incident": true,
+      "elapsed_s": 108.9,
+      "final": {
+        "id": "INC-0008",
+        "status": "resolved",
+        "stage": "closed",
+        "severity": "P2",
+        "outcome": "Resolved and verified",
+        "resolved_by": "Rule engine (no model)",
+        "diagnosis_matched": true,
+        "detect_s": 6.0,
+        "resolve_s": 101.3,
+        "attempts": [
+          {
+            "number": 1,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "config.json",
+            "verdict": "failed",
+            "diagnosis": {
+              "file": "config.json",
+              "root_cause": "\"api_delay_ms\": 4000",
+              "author": "qwen2.5:7b-instruct (model)"
+            },
+            "patch": {
+              "file": "config.json",
+              "author": "qwen2.5:7b-instruct (model)",
+              "explanation": "Reduce the API delay to meet the response time limit.",
+              "diff": [
+                "--- a/config.json",
+                "+++ b/config.json",
+                "@@ -2,4 +2,4 @@",
+                "   \"store_name\": \"Atlas Store\",",
+                "   \"currency\": \"USD\",",
+                "-  \"api_delay_ms\": 4000",
+                "+  \"api_delay_ms\": 1500",
+                " }"
+              ],
+              "kind": "patch",
+              "digest": "ba6b3872def97b940b799bb07dd12221f16555447bb7e33c4f46c831ede9d088"
+            },
+            "approval": {
+              "required": false,
+              "digest": "ba6b3872def97b940b799bb07dd12221f16555447bb7e33c4f46c831ede9d088",
+              "decision": "automatic",
+              "policy": "P2 runs automatically"
+            },
+            "verification": {
+              "version": "e7c53fb5f29aa65d",
+              "checked_at": 1793185369.970194,
+              "browser": {
+                "version": "e7c53fb5f29aa65d",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 1527
+                },
+                "issues": [],
+                "load_id": "saa48jed",
+                "page": "tab",
+                "received_at": 1793185372.0640187
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": false,
+                  "detail": "1505 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1505,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": false,
+                  "detail": "1527 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "failed"
+            }
+          },
+          {
+            "number": 2,
+            "author": "qwen2.5:7b-instruct (model)",
+            "file": "config.json",
+            "verdict": "failed",
+            "diagnosis": {
+              "file": "config.json",
+              "root_cause": "\"api_delay_ms\": 4000",
+              "author": "qwen2.5:7b-instruct (model)"
+            },
+            "patch": {
+              "file": "config.json",
+              "author": "qwen2.5:7b-instruct (model)",
+              "explanation": "Reduce the API delay to meet the response time limit.",
+              "diff": [
+                "--- a/config.json",
+                "+++ b/config.json",
+                "@@ -2,4 +2,4 @@",
+                "   \"store_name\": \"Atlas Store\",",
+                "   \"currency\": \"USD\",",
+                "-  \"api_delay_ms\": 4000",
+                "+  \"api_delay_ms\": 1500",
+                " }"
+              ],
+              "kind": "patch",
+              "digest": "ba6b3872def97b940b799bb07dd12221f16555447bb7e33c4f46c831ede9d088"
+            },
+            "approval": {
+              "required": false,
+              "digest": "ba6b3872def97b940b799bb07dd12221f16555447bb7e33c4f46c831ede9d088",
+              "decision": "automatic",
+              "policy": "P2 runs automatically"
+            },
+            "verification": {
+              "version": "e7c53fb5f29aa65d",
+              "checked_at": 1793185415.8573782,
+              "browser": {
+                "version": "e7c53fb5f29aa65d",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 1512
+                },
+                "issues": [],
+                "load_id": "1sn99u49",
+                "page": "preview",
+                "received_at": 1793185418.0706375
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": false,
+                  "detail": "1504 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1504,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": false,
+                  "detail": "1512 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "failed"
+            }
+          },
+          {
+            "number": 3,
+            "author": "Rule engine (no model)",
+            "file": "config.json",
+            "verdict": "verified",
+            "diagnosis": {
+              "file": "config.json",
+              "root_cause": "config.json sets api_delay_ms to 4000, adding that delay to every product request.",
+              "author": "Rule engine (no model)"
+            },
+            "patch": {
+              "file": "config.json",
+              "author": "Rule engine (no model)",
+              "explanation": "Set api_delay_ms back to 0.",
+              "diff": [
+                "--- a/config.json",
+                "+++ b/config.json",
+                "@@ -2,4 +2,4 @@",
+                "   \"store_name\": \"Atlas Store\",",
+                "   \"currency\": \"USD\",",
+                "-  \"api_delay_ms\": 4000",
+                "+  \"api_delay_ms\": 0",
+                " }"
+              ],
+              "kind": "patch",
+              "digest": "0f328d81b0b941813cbe853882cefd73864a44958c9f163c72ddd0b3a1736daa"
+            },
+            "approval": {
+              "required": false,
+              "digest": "0f328d81b0b941813cbe853882cefd73864a44958c9f163c72ddd0b3a1736daa",
+              "decision": "automatic",
+              "policy": "P2 runs automatically"
+            },
+            "verification": {
+              "version": "c02073d98da7113e",
+              "checked_at": 1793185424.5255659,
+              "browser": {
+                "version": "c02073d98da7113e",
+                "checks": {
+                  "stylesheet_applied": true,
+                  "products_rendered": 8,
+                  "nan_prices": 0,
+                  "broken_images": [],
+                  "overflow_px": 0,
+                  "add_to_cart": "ok",
+                  "api_ms": 26
+                },
+                "issues": [],
+                "load_id": "fkshfeka",
+                "page": "tab",
+                "received_at": 1793185427.0589166
+              },
+              "checks": [
+                {
+                  "name": "page_loads",
+                  "label": "Store page loads",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "GET /shop/ returned 200",
+                  "evidence": {}
+                },
+                {
+                  "name": "monitor_present",
+                  "label": "Monitor script present",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "stylesheets_load",
+                  "label": "Stylesheets load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "styles.css"
+                    ]
+                  }
+                },
+                {
+                  "name": "scripts_load",
+                  "label": "Scripts load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "failures": [],
+                    "urls": [
+                      "/lab/monitor.js",
+                      "app.js"
+                    ]
+                  }
+                },
+                {
+                  "name": "products_api",
+                  "label": "Product API returns valid data",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "status": 200
+                  }
+                },
+                {
+                  "name": "prices_numeric",
+                  "label": "Prices are numbers",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "bad_prices": []
+                  }
+                },
+                {
+                  "name": "images_load",
+                  "label": "Product images load",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "missing": []
+                  }
+                },
+                {
+                  "name": "api_fast",
+                  "label": "Product API responds fast",
+                  "source": "server",
+                  "ok": true,
+                  "detail": "1 ms (limit 1500 ms)",
+                  "evidence": {
+                    "elapsed_ms": 1,
+                    "limit_ms": 1500
+                  }
+                },
+                {
+                  "name": "js_errors",
+                  "label": "No JavaScript errors",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "requests_ok",
+                  "label": "No failed requests",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {
+                    "messages": []
+                  }
+                },
+                {
+                  "name": "styles_applied",
+                  "label": "Styles applied",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "products_rendered",
+                  "label": "Products rendered",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "8 product cards on the page",
+                  "evidence": {}
+                },
+                {
+                  "name": "prices_display",
+                  "label": "Prices display correctly",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "images_display",
+                  "label": "Images display",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "fits_screen",
+                  "label": "Page fits the screen",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "add_to_cart",
+                  "label": "Add to cart works",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "",
+                  "evidence": {}
+                },
+                {
+                  "name": "api_fast_browser",
+                  "label": "Products load fast",
+                  "source": "browser",
+                  "ok": true,
+                  "detail": "26 ms in the browser",
+                  "evidence": {}
+                }
+              ],
+              "verdict": "verified"
+            }
+          }
+        ]
+      },
+      "diagnosis": {
+        "file": "config.json",
+        "root_cause": "config.json sets api_delay_ms to 4000, adding that delay to every product request.",
+        "author": "Rule engine (no model)"
+      },
+      "patch_author": "Rule engine (no model)",
+      "alerts_failing_at_end": [
+        "api_fast"
+      ]
+    }
+  ]
+}

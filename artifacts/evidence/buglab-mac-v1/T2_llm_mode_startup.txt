@@ -1,0 +1,26 @@
+T2 — explicit LLM mode startup
+date: 2026-10-28T10:18:11Z
+
+launched with: --agents llm (refuses to start if no model answers)
+
+$ docker logs buglab
+AtlasOps bug lab
+  Control room: http://0.0.0.0:8790/
+  Store:        http://0.0.0.0:8790/shop/
+  Working copy: /work
+
+$ curl 127.0.0.1:8790/lab/api/state | .backend
+{
+  "mode": "llm",
+  "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+  "model": "qwen2.5:7b-instruct",
+  "base_url": "http://host.docker.internal:8000/v1",
+  "note": ""
+}
+
+RESULT: PASS on substance, FAIL on the plan's literal wording.
+  The container started in llm mode, which it refuses to do unless a model answers,
+  and /lab/api/state reports the model and endpoint. But the plan's T2 expects the
+  startup header to name the model, and the banner in demo/bug_lab/__main__.py is
+  hardcoded to three URL lines (control room, store, working copy). It never prints
+  the backend. Reported to feat/atlasops-local-core; not fixed here.

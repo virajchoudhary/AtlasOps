@@ -1,0 +1,33 @@
+T8 — model taken away mid-incident
+date: 2026-10-28T10:40:20Z
+bug: truncated-data | incident: INC-0011 (previous was INC-0010 )
+
+method: inject, wait for a NEW incident to pass the monitor stage, then
+        `docker stop buglab-llm-proxy` so every further model call fails.
+
+stage when the model was cut:   diagnosis
+endpoint immediately after cut: URLError (connection failed, so the outage was real)
+approval still required:        True (gate was not bypassed)
+
+  t=10  s status=awaiting_approval  stage=approval
+  t=20  s status=resolved           stage=closed
+
+final status:  resolved
+final outcome: Resolved and verified
+patch author:  Rule engine (no model)
+store at end:  200
+endpoint after restore: HTTP 401 (401 = proxy back up)
+
+RESULT: PASS. Losing the model mid-incident does not stall or fail the incident.
+  The rule engine authored the patch, the P1 approval gate was still enforced,
+  the patch was applied and verified, and the store returned to 200.
+
+  Caveat worth knowing: the lab logs nothing when the endpoint dies. `docker logs
+  buglab` shows only the three startup lines. The fallback is silent, so an
+  operator watching the logs would not know the model had gone.
+
+  This test took four runs. The first never approved, so the approval TTL expired
+  and the timeout masked the outage. The second latched onto the previous closed
+  incident. The third found reset had silently failed, leaving the store broken so
+  the inject was refused with 409. All three were defects in the test driver, not
+  in the lab. The driver in this directory is the corrected one.

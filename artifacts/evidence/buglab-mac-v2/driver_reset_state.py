@@ -81,7 +81,7 @@ def main() -> None:
     ok = wait_until(lambda s: not s.get("active")
                     and (s.get("incident") or {}).get("status") in ("resolved", "escalated", "failed"))
     rec["first_incident_finished"] = ok
-    first = rec["steps"].append(probe("after the incident closed"))
+    rec["steps"].append(probe("after the incident closed"))
     closed = rec["steps"][-1]
 
     # 3. The question finding 5 asked: does the closed result still look live?

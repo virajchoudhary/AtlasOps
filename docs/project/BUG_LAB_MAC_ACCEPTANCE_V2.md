@@ -17,6 +17,12 @@ nothing, and no gate row changes.
 The model runs on this Mac, not on the Kaggle T4 in the original plan. Every timing
 below is an M4 serving a 4-bit 7B and says nothing about GPU performance.
 
+After the run, PR #239's Ruff check found an unused `first` assignment in
+`driver_reset_state.py`. The CI repair removes only that assignment and retains
+the probe call. All raw run records are unchanged. The original driver is
+preserved at Git commit `f99f7f546d49e9695b4d6fefe4cc7c23bb796182`; the repair
+does not represent a new Mac run.
+
 ---
 
 ## What was asked, and what happened

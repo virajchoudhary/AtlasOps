@@ -1,6 +1,8 @@
 # AtlasOps bug lab
 
-Use a fresh or empty directory for `--workdir`. Startup refuses existing contents.
+Use a fresh or empty directory for the first `--workdir` startup. To reopen a
+workspace created by this version, pass both `--workdir` and `--resume`.
+Startup refuses unowned existing contents and concurrent writers.
 The lab accepts loopback Host names by default and rejects foreign Origins on
 writes. `X-Bug-Lab: 1` is an intentional-write header, not authentication.
 An explicitly authorized remote binding also needs its exact `--allowed-host`
@@ -27,12 +29,49 @@ Monitor → Triage → Diagnosis → Patch → Approval gate → Apply → Verif
 From the repository root, with Python 3.11 or 3.12:
 
 ```bash
-python -m pip install fastapi uvicorn httpx
+python -m pip install --require-hashes -r requirements/buglab-runtime.lock
 python -m demo.bug_lab
 ```
 
 Open http://127.0.0.1:8790/. The app binds to localhost only and edits a
 temporary copy of the store, never the files in this folder.
+
+See the [Windows and macOS runtime commands](../../docs/project/BUG_LAB_LOCAL_RUNTIME.md)
+for isolated installation, rules-mode startup, shutdown, and smoke tests.
+
+### Keep incident evidence across restarts
+
+Choose a new directory for the first run:
+
+```bash
+python -m demo.bug_lab --agents rules --workdir ./bug-lab-state
+```
+
+Stop the foreground app with Ctrl+C. Reopen that same owned directory:
+
+```bash
+python -m demo.bug_lab --agents rules --workdir ./bug-lab-state --resume
+```
+
+Resume preserves the Store, completed JSONL, and incident sequence. A stopped
+unfinished incident becomes `cancelled`; a process crash becomes `interrupted`
+on recovery. Neither outcome is a resolution. The record retains its original
+stage, approval, and verifier data in `interrupted_state`. Recovery never restores
+an approval capability or replays a patch. If the preserved Store remains broken,
+the monitor may open a new incident, which must pass a new approval gate.
+
+Only local filesystems are supported. Do not remove the ownership marker, lock,
+pending snapshot, or journal to force a directory to reopen. Unknown files,
+invalid records, redirects, and unexplained partial appends fail startup without
+adopting or deleting the data. Preserve the directory for diagnosis.
+
+`GET /health` and `/health/ready` return 200 only after backend selection,
+workspace recovery, and monitor startup. They return 503 before startup, after
+shutdown, or after an evidence-write failure. `/health/live` reports that the
+HTTP app is reachable. Readiness does not mean that the Store is fixed or that
+the selected model remains reachable; outage fallback retains its separate logs.
+Write APIs fail with 503 when the app is not ready. Read-only Store and evidence
+access remain available for diagnosis.
 
 ### Agents with a local model
 
@@ -162,6 +201,12 @@ Run the authenticated endpoint and strict response contracts without a real mode
 python -m pytest tests/test_bug_lab.py tests/test_bug_lab_model_client.py
 ```
 
+Verify owned-workspace recovery and an actual rule-only process crash:
+
+```bash
+python -m pytest tests/test_bug_lab_persistence.py tests/test_bug_lab_process_restart.py tests/test_bug_lab_workspace_journal.py
+```
+
 Run the real-browser application suite with the existing locked frontend dependencies:
 
 ```bash
@@ -184,10 +229,13 @@ not erase those records.
 The state API retains a completed result until reset or the next successful
 injection. Those actions clear `incident`, not completed history or JSONL.
 `incident_state` distinguishes `idle`, `pending`, `active` and `closed`;
-`incident_sequence` counts incident openings during the current process lifetime.
+`incident_sequence` counts incident openings in the owned workspace and continues
+after explicit resume.
 Pending browser-only detection has a null incident, so a previous result cannot be
-mistaken for the new bug. Process restart resets the sequence; it is not a durable
-incident identifier. Use the exact incident ID and approval digest for decisions.
+mistaken for the new bug. Each new record includes its `workspace_id` and
+`sequence`. Approval digests bind workspace identity as well as the exact change,
+so a receipt from another workspace cannot authorize the same display ID.
+Use the exact incident ID and approval digest for decisions.
 
 Each record names its local-demonstration classification and selected backend.
 Each attempted change retains its diagnosis, exact diff and digest, approval
@@ -196,10 +244,10 @@ version and browser report receipt time. Missing browser reports remain
 unverified. A Store change during verification fails the check. Reports older
 than 30 seconds are stale and do not open or verify incidents.
 
-The parallel runtime acceptance must still validate the real endpoint's
+The target runtime acceptance must still validate the real endpoint's
 authentication, exact served identifier, model replies and deadlines, Store
 reloads and fresh telemetry, and persistent evidence collection on its target
 host. Run both model-success and rule-fallback cases and report them separately.
-This application branch changes no deployment or host setup and certifies no
+This application branch changes no deployed runtime or host setup and certifies no
 scientific gate. Historical model observations above retain their original
 classification.

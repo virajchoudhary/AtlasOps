@@ -1,0 +1,130 @@
+name: Bug Lab Runtime
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-runtime:
+    name: Native / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      ATLASOPS_AUTO_HF_INFERENCE: "0"
+      ATLASOPS_REQUIRE_BUGLAB_RUNTIME_LOCK: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install the hash-locked Bug Lab runtime
+        run: |
+          python -m pip --isolated install --require-hashes --index-url https://pypi.org/simple --no-cache-dir -r requirements/buglab-runtime.lock
+          python -m pip --isolated check
+
+      - name: Verify the standalone CLI imports without a model
+        run: python -m demo.bug_lab --help
+
+      - name: Install test runner
+        run: python -m pip --isolated install --index-url https://pypi.org/simple --no-cache-dir pytest pytest-asyncio
+
+      - name: Run model-free Bug Lab tests
+        run: |
+          python -m pytest -q \
+            tests/test_bug_lab.py \
+            tests/test_bug_lab_model_client.py \
+            tests/test_bug_lab_runtime_lock.py \
+            tests/test_bug_lab_standalone.py \
+            tests/test_bug_lab_state_logging.py \
+            tests/test_bug_lab_startup_logging.py \
+            tests/test_bug_lab_persistence.py \
+            tests/test_bug_lab_process_restart.py \
+            tests/test_bug_lab_workspace_journal.py \
+            tests/test_local_llm_proxy.py
+        shell: bash
+
+  image-smoke:
+    name: Container / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build the unchanged Bug Lab image
+        run: docker build --platform "${{ matrix.platform }}" --file Dockerfile.buglab --tag atlasops-buglab-runtime-ci .
+
+      - name: Run rules-mode smoke with container networking disabled
+        run: |
+          docker run --detach --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            --tmpfs /work:rw,nosuid,nodev,size=64m,uid=10001,gid=0,mode=0700 \
+            --name atlasops-buglab-runtime-ci \
+            --entrypoint python atlasops-buglab-runtime-ci \
+            -m demo.bug_lab --host 127.0.0.1 --workdir /work \
+            --agents rules --step-delay 0
+
+          docker exec --interactive atlasops-buglab-runtime-ci python - <<'PY'
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:8790"
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=1) as response:
+                      assert response.status == 200
+                      response.read()
+                  break
+              except urllib.error.URLError:
+                  time.sleep(0.2)
+          else:
+              raise RuntimeError("Bug Lab container readiness timed out")
+
+          for route in ("/", "/shop/", "/lab/api/state"):
+              with urllib.request.urlopen(base + route, timeout=3) as response:
+                  assert response.status == 200 and response.read(), route
+          print("Bug Lab rules-mode health and page/API smoke passed")
+          PY
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs atlasops-buglab-runtime-ci
+
+      - name: Remove smoke container
+        if: always()
+        run: |
+          if docker container inspect atlasops-buglab-runtime-ci > /dev/null 2>&1
+          then
+            docker container rm --force atlasops-buglab-runtime-ci
+          fi

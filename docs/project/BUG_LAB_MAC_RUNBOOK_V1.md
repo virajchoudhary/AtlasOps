@@ -390,7 +390,8 @@ The state API uses `incident_state` values `idle`, `pending`, `active` and `clos
 includes approval waits. `closed` is the last result before the next reset or
 injection. `incident_sequence` increments when an incident opens and does not reset
 during the process lifetime. Use the returned incident ID and exact approval digest
-for decisions. The sequence is not a durable counter across process restarts.
+for decisions. This initial follow-up kept the sequence in memory. The
+owned-workspace follow-up below makes it durable across explicit resume.
 
 No Dockerfile or Mac runtime setting changes are required. The existing image
 recipe still copies training/config, but the application no longer imports them.
@@ -413,6 +414,34 @@ The Mac owner must smoke-test the accepted software with the existing configurat
 
 This software task does not perform those Mac actions, change credentials, restart
 services, run models, or update the historical T2/T7/T8/T9 classifications.
+
+### 6.2 Owned-workspace software follow-up
+
+The later application follow-up adds explicit `--resume` for a directory created
+by the new owned-workspace format. It preserves `site/`, completed
+`incidents.jsonl`, and a durable incident sequence. Older unmarked workdirs are
+not adopted or migrated automatically.
+
+Shutdown records an unfinished incident as `cancelled`. Crash recovery records it
+as `interrupted`, preserving the prior stage, approval, and verifier data without
+replaying an approval or repair. Both outcomes remain unverified. Digests now bind
+the workspace identity as well as the exact patch.
+
+The new `/health` readiness probe returns 503 before startup, after shutdown, or
+after an evidence-write failure. A deliberately broken Store can still have a
+ready application; readiness does not establish resolution or model health.
+
+See the [application resume and readiness instructions](../../demo/bug_lab/README.md#keep-incident-evidence-across-restarts).
+These are source-level changes, not a new physical-Mac acceptance run. The
+historical run commands, images, results, failures, and classifications above
+remain unchanged. The working Mac Docker recipe and runtime configuration are
+not changed by this follow-up.
+
+The owner must separately smoke-test foreground shutdown, volume retention,
+explicit resume, rejected old approval receipts, and evidence download on the
+Mac. Preserve an older workdir before any owner-approved rebuild or migration.
+No model experiment, fault execution, infrastructure startup, or gate promotion
+is authorized by these instructions.
 
 ---
 

@@ -102,11 +102,14 @@ class BugLab:
         self.backend = backend
         self.client_factory = client_factory
         self.options = options or LabOptions()
-        self.log_path = log_path
+        self.log_path = log_path or workspace.log_path
+        if self.log_path != workspace.log_path:
+            raise ValueError("Bug Lab evidence must use its owned workspace journal")
+        recovery = workspace.recovery(history_limit=self.options.history_limit)
         self.require_approval_all = False
         self.injected: list[dict[str, Any]] = []
         self.incident: dict[str, Any] | None = None
-        self.history: list[dict[str, Any]] = []
+        self.history = [self._history_entry(record) for record in recovery.records]
         self.server: list[Check] = []
         self.server_version: str | None = None
         self.browser: dict[str, dict[str, Any]] = {}
@@ -114,7 +117,8 @@ class BugLab:
         self.suppressed_version: str | None = None
         self._approval: dict[str, Any] | None = None
         self._last_checks: list[Check] = []
-        self._counter = 0
+        self._counter = recovery.sequence
+        self._persistence_error: str | None = None
         self._wake = asyncio.Event()
         self._report = asyncio.Event()
         self._monitor_task: asyncio.Task[None] | None = None
@@ -123,14 +127,37 @@ class BugLab:
     # --- lifecycle -----------------------------------------------------
 
     async def start(self) -> None:
+        if not self.available:
+            raise RuntimeError("Bug Lab evidence is unavailable; startup is blocked")
         self._monitor_task = asyncio.create_task(self._monitor_loop())
 
-    async def stop(self) -> None:
+    async def stop(self, outcome: str = "The lab stopped before the incident completed.") -> None:
         for task in (self._pipeline, self._monitor_task):
-            if task and not task.done():
-                task.cancel()
+            if task:
+                if not task.done():
+                    task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+        self._approval = None
+        if self.active and self.available:
+            incident = self.incident
+            incident["interrupted_state"] = copy.deepcopy({
+                key: incident.get(key) for key in (
+                    "status", "stage", "approval", "verification", "resolved_by",
+                    "resolve_s", "summary", "outcome",
+                )
+            })
+            incident["resolved_by"], incident["verification"] = None, None
+            incident["resolve_s"], incident["summary"] = None, None
+            self._close(incident, "cancelled", outcome)
+
+    @property
+    def available(self) -> bool:
+        return self.workspace.healthy and self._persistence_error is None
+
+    @property
+    def ready(self) -> bool:
+        return self.available and bool(self._monitor_task and not self._monitor_task.done())
 
     @property
     def active(self) -> bool:
@@ -139,6 +166,8 @@ class BugLab:
     # --- inputs from the control room and the store page -----------------
 
     def inject(self, bug_id: str) -> dict[str, Any]:
+        if not self.available:
+            raise LabBusy("Incident evidence is unavailable; changes are blocked.")
         if bug_id not in BUGS_BY_ID:
             raise ValueError(f"Unknown bug {bug_id!r}")
         if self.active:
@@ -160,10 +189,10 @@ class BugLab:
         return record
 
     async def reset(self) -> None:
+        if not self.available:
+            raise LabBusy("Incident evidence is unavailable; reset is blocked.")
         monitoring = bool(self._monitor_task and not self._monitor_task.done())
-        await self.stop()
-        if self.active:
-            self._close(self.incident, "cancelled", "The store was reset by you.")
+        await self.stop(outcome="The store was reset by you.")
         self._approval = None
         self.workspace.reset()
         self.incident = None
@@ -216,6 +245,8 @@ class BugLab:
         self._wake.set()
 
     def decide(self, incident_id: str, digest: str, decision: str) -> None:
+        if not self.available:
+            raise ApprovalError("Incident evidence is unavailable; approval is blocked.")
         approval = self._approval
         if not approval or approval["incident_id"] != incident_id:
             raise ApprovalError("No approval is pending for this incident.")
@@ -227,7 +258,10 @@ class BugLab:
             raise ApprovalError("This approval has expired.")
         if decision not in {"approve", "reject"}:
             raise ApprovalError("Decision must be approve or reject.")
-        approval["decision"] = "approved" if decision == "approve" else "rejected"
+        recorded = "approved" if decision == "approve" else "rejected"
+        self.incident["approval"]["decision"] = recorded
+        self._checkpoint(self.incident)
+        approval["decision"] = recorded
         approval["event"].set()
 
     # --- monitor ---------------------------------------------------------
@@ -237,6 +271,8 @@ class BugLab:
             return await server_checks(client, slow_api_ms=self.options.slow_api_ms)
 
     async def monitor_once(self) -> None:
+        if not self.available:
+            return
         version = self.workspace.version()
         checks = await self.run_server_checks()
         if self.workspace.version() != version:
@@ -267,6 +303,7 @@ class BugLab:
         injected, self.injected = self.injected, []
         incident = {
             "id": f"INC-{self._counter:04d}", "status": "open", "stage": "monitor",
+            "workspace_id": self.workspace.workspace_id, "sequence": self._counter,
             "active_agent": "Monitor", "active_backend": "checks", "opened_at": now,
             "closed_at": None, "severity": None, "title": None, "injected": injected,
             "alerts": [check.public() for check in problems],
@@ -339,6 +376,8 @@ class BugLab:
             raise
         except Exception as exc:
             log.exception("incident pipeline failed")
+            if not self.available:
+                return
             self._event(incident, incident["stage"], "warning", f"Pipeline error: {exc}")
             self._close(incident, "escalated", f"Pipeline error: {exc}")
 
@@ -375,6 +414,7 @@ class BugLab:
             "approval": copy.deepcopy(incident["approval"]),
             "verification": copy.deepcopy(incident["verification"]),
         })
+        self._checkpoint(incident)
 
     async def _plan(self, incident: dict[str, Any], problems: list[Check], plan: str,
                     feedback: str) -> tuple[Change | None, agents.Diagnosis | None]:
@@ -448,7 +488,7 @@ class BugLab:
     async def _gate(self, incident: dict[str, Any], change: Change) -> bool:
         severity = incident["severity"]
         required = approval_mode_for_severity(severity) != "auto" or self.require_approval_all
-        digest = change.digest(incident["id"])
+        digest = change.digest(f"{self.workspace.workspace_id}:{incident['id']}")
         incident["patch"]["digest"] = digest
         if not required:
             incident["approval"] = {"required": False, "digest": digest,
@@ -591,9 +631,8 @@ class BugLab:
 
     async def _comms(self, incident: dict[str, Any]) -> None:
         self._stage(incident, "comms", "a fixed template (no model)")
-        incident["status"] = "resolved"
         incident["resolve_s"] = round(time.time() - incident["opened_at"], 1)
-        incident["summary"] = agents.comms_summary(incident)
+        incident["summary"] = agents.comms_summary(incident | {"status": "resolved"})
         self._event(incident, "comms", "result", incident["summary"])
         self._close(incident, "resolved", "Resolved and verified")
 
@@ -602,25 +641,43 @@ class BugLab:
     def _close(self, incident: dict[str, Any], status: str, outcome: str) -> None:
         if incident["closed_at"] is not None:
             return
-        incident["status"], incident["outcome"] = status, outcome
-        incident["closed_at"] = time.time()
-        incident["stage"], incident["active_agent"], incident["active_backend"] = "closed", None, None
-        if incident["summary"] is None:
-            incident["summary"] = agents.comms_summary(incident)
-        injected_files = {item["file"] for item in incident["injected"]}
-        if injected_files and incident["diagnosis"]:
-            incident["diagnosis_matched"] = incident["diagnosis"]["file"] in injected_files
-        self.history.insert(0, {key: incident[key] for key in (
+        terminal = copy.deepcopy(incident)
+        terminal["status"], terminal["outcome"] = status, outcome
+        terminal["closed_at"] = time.time()
+        terminal["stage"], terminal["active_agent"], terminal["active_backend"] = "closed", None, None
+        if terminal["summary"] is None:
+            terminal["summary"] = agents.comms_summary(terminal)
+        injected_files = {item["file"] for item in terminal["injected"]}
+        if injected_files and terminal["diagnosis"]:
+            terminal["diagnosis_matched"] = terminal["diagnosis"]["file"] in injected_files
+        try:
+            self.workspace.complete(terminal)
+        except Exception:
+            self._persistence_error = "Incident evidence could not be saved; changes are blocked."
+            raise RuntimeError(self._persistence_error) from None
+        incident.update(terminal)
+        self.history.insert(0, self._history_entry(terminal))
+        del self.history[self.options.history_limit:]
+
+    @staticmethod
+    def _history_entry(incident: dict[str, Any]) -> dict[str, Any]:
+        return {key: incident[key] for key in (
             "id", "status", "severity", "title", "detect_s", "resolve_s", "resolved_by",
             "diagnosis_matched", "outcome", "opened_at")} | {
-            "injected": [item["name"] for item in incident["injected"]]})
-        del self.history[self.options.history_limit:]
-        if self.log_path:
-            with self.log_path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(incident, default=str) + "\n")
+            "injected": [item["name"] for item in incident["injected"]]}
+
+    def _checkpoint(self, incident: dict[str, Any]) -> None:
+        if incident is not self.incident:
+            return
+        try:
+            self.workspace.checkpoint(incident)
+        except Exception:
+            self._persistence_error = "Incident evidence could not be saved; changes are blocked."
+            raise RuntimeError(self._persistence_error) from None
 
     def _stage(self, incident: dict[str, Any], stage: str, backend: str) -> None:
         incident["stage"], incident["active_agent"], incident["active_backend"] = stage, _AGENT[stage], backend
+        self._checkpoint(incident)
 
     def _model_fallback(self, incident: dict[str, Any], stage: str, reason: str) -> None:
         text = f"Model fallback: {reason}; using the rule engine."
@@ -630,6 +687,7 @@ class BugLab:
     def _event(self, incident: dict[str, Any], stage: str, kind: str, text: str, detail: str = "") -> None:
         incident["events"].append({"t": round(time.time() - incident["opened_at"], 1), "stage": stage,
                                    "agent": _AGENT[stage], "kind": kind, "text": text, "detail": detail})
+        self._checkpoint(incident)
 
     async def _pace(self, factor: float = 1.0) -> None:
         if self.options.step_delay:
@@ -647,6 +705,7 @@ class BugLab:
                                             expires_in=max(0, round(incident["approval"]["expires_at"] - time.time())))
         report = self.latest_browser
         return {
+            "workspace_id": self.workspace.workspace_id,
             "backend": self.backend.public(),
             "settings": {"require_approval_all": self.require_approval_all},
             "site": {"version": version, "changed_files": self.workspace.changed_files(),

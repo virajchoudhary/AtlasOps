@@ -181,3 +181,36 @@ def test_evidence_write_failure_makes_the_app_unready_without_applying(tmp_path,
         assert client.post("/lab/api/approval", headers=HEADERS, json={
             "incident_id": "INC-0001", "digest": "0" * 64, "decision": "approve",
         }).status_code == 503
+
+
+def test_failed_backend_startup_releases_the_owned_workspace_lock(tmp_path, monkeypatch):
+    from demo.bug_lab import server
+    from demo.bug_lab.workspace import Workspace
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("synthetic backend unavailable")
+
+    monkeypatch.setattr(server, "detect_backend", unavailable)
+    root = tmp_path / "owned"
+    app = create_app(LabConfig(workdir=root, agents="llm"))
+    with pytest.raises(RuntimeError, match="synthetic backend unavailable"):
+        with TestClient(app, base_url="http://127.0.0.1"):
+            pass
+    workspace = Workspace(root, resume=True)
+    try:
+        assert workspace.healthy
+        assert workspace.changed_files() == []
+    finally:
+        workspace.close()
+
+
+def test_resume_flag_requires_an_explicit_workspace_before_startup(monkeypatch):
+    from demo.bug_lab import __main__ as cli
+
+    def must_not_start(*args, **kwargs):
+        pytest.fail("Invalid resume arguments started the application")
+
+    monkeypatch.setattr(cli, "create_app", must_not_start)
+    with pytest.raises(SystemExit) as caught:
+        cli.main(["--resume", "--agents", "rules"])
+    assert caught.value.code == 2

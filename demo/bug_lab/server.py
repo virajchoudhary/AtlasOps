@@ -45,6 +45,7 @@ class LabConfig:
     llm_timeout: float = 120.0
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]")
     options: LabOptions = field(default_factory=LabOptions)
+    resume: bool = False
 
 
 def require_lab_header(request: Request) -> None:
@@ -72,25 +73,27 @@ async def _json_body(request: Request, limit: int = 8192) -> dict[str, Any]:
 
 
 def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
-    config.workdir.mkdir(parents=True, exist_ok=True)
-    workspace = Workspace(config.workdir)
+    workspace = Workspace(config.workdir, resume=config.resume)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if backend is None:
-            lab.backend = await detect_backend(config.agents, config.llm_base_url,
-                                               config.llm_model, config.llm_api_key,
-                                               timeout=config.llm_timeout)
-        public_backend = lab.backend.public()
-        backend_line = f"  Backend: {public_backend['label']}"
-        if public_backend["note"]:
-            backend_line += f" ({public_backend['note']})"
-        print(backend_line, flush=True)
-        await lab.start()
         try:
+            if backend is None:
+                lab.backend = await detect_backend(config.agents, config.llm_base_url,
+                                                   config.llm_model, config.llm_api_key,
+                                                   timeout=config.llm_timeout)
+            public_backend = lab.backend.public()
+            backend_line = f"  Backend: {public_backend['label']}"
+            if public_backend["note"]:
+                backend_line += f" ({public_backend['note']})"
+            print(backend_line, flush=True)
+            await lab.start()
             yield
         finally:
-            await lab.stop()
+            try:
+                await lab.stop()
+            finally:
+                workspace.close()
 
     app = FastAPI(title="AtlasOps Bug Lab", lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url=None)
@@ -101,9 +104,18 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
         return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1",
                                  timeout=15.0)
 
-    lab = BugLab(workspace, backend or RULES, shop_client, config.options,
-                 log_path=config.workdir / "incidents.jsonl")
+    try:
+        lab = BugLab(workspace, backend or RULES, shop_client, config.options)
+    except BaseException:
+        workspace.close()
+        raise
     app.state.lab = lab
+
+    def require_ready() -> None:
+        if not lab.ready:
+            raise HTTPException(status_code=503, detail="Bug Lab is not ready; changes are blocked")
+
+    write_dependencies = [Depends(require_lab_header), Depends(require_ready)]
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -115,6 +127,19 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
     def static_file(name: str) -> FileResponse:
         path = STATIC / name
         return FileResponse(path, media_type=_MEDIA[path.suffix], headers=_NO_STORE)
+
+    @app.get("/health")
+    @app.get("/health/ready")
+    async def health() -> JSONResponse:
+        return JSONResponse({
+            "status": "ready" if lab.ready else "not_ready",
+            "backend": lab.backend.public(),
+            "evidence": "available" if lab.available else "unavailable",
+        }, status_code=200 if lab.ready else 503, headers=_NO_STORE)
+
+    @app.get("/health/live")
+    async def liveness() -> JSONResponse:
+        return JSONResponse({"status": "alive"}, headers=_NO_STORE)
 
     @app.get("/", include_in_schema=False)
     async def control_room() -> FileResponse:
@@ -172,7 +197,7 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
     async def site_version() -> JSONResponse:
         return JSONResponse({"version": workspace.version()}, headers=_NO_STORE)
 
-    @app.post("/lab/api/inject", dependencies=[Depends(require_lab_header)])
+    @app.post("/lab/api/inject", dependencies=write_dependencies)
     async def inject(request: Request) -> JSONResponse:
         body = await _json_body(request)
         try:
@@ -183,12 +208,12 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse({"injected": record["id"]}, status_code=202)
 
-    @app.post("/lab/api/reset", dependencies=[Depends(require_lab_header)])
+    @app.post("/lab/api/reset", dependencies=write_dependencies)
     async def reset() -> JSONResponse:
         await lab.reset()
         return JSONResponse({"reset": True})
 
-    @app.post("/lab/api/approval", dependencies=[Depends(require_lab_header)])
+    @app.post("/lab/api/approval", dependencies=write_dependencies)
     async def approval(request: Request) -> JSONResponse:
         body = await _json_body(request)
         try:
@@ -198,14 +223,14 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return JSONResponse({"recorded": True})
 
-    @app.post("/lab/api/settings", dependencies=[Depends(require_lab_header)])
+    @app.post("/lab/api/settings", dependencies=write_dependencies)
     async def settings(request: Request) -> JSONResponse:
         body = await _json_body(request)
         if "require_approval_all" in body:
             lab.require_approval_all = bool(body["require_approval_all"])
         return JSONResponse({"require_approval_all": lab.require_approval_all})
 
-    @app.post("/lab/api/telemetry", dependencies=[Depends(require_lab_header)])
+    @app.post("/lab/api/telemetry", dependencies=write_dependencies)
     async def telemetry(request: Request) -> JSONResponse:
         body = await _json_body(request, MAX_TELEMETRY_BYTES)
         try:

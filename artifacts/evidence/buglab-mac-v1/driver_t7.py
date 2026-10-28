@@ -37,11 +37,17 @@ def state() -> dict:
 
 
 def run_one(bug: str, approve: bool = True) -> dict:
-    call("/lab/api/reset")
-    time.sleep(1.0)
+    # /lab/api/reset is POST and requires X-Bug-Lab; call() only sends the header
+    # when a payload is present, so it must be given one.
+    reset = call("/lab/api/reset", {})
+    time.sleep(2.0)
+    # The previous incident stays in /lab/api/state after closing, so its id is
+    # recorded and anything still carrying it is ignored as stale.
+    before_id = (state().get("incident") or {}).get("id")
     started = time.time()
     injected = call("/lab/api/inject", {"bug": bug})
-    record = {"bug": bug, "inject_response": injected, "approved": False,
+    record = {"bug": bug, "reset_response": reset, "incident_before_inject": before_id,
+              "inject_response": injected, "approved": False,
               "decision_sent": None, "started_incident": False}
     deadline = started + TIMEOUT
     last = {}
@@ -49,6 +55,8 @@ def run_one(bug: str, approve: bool = True) -> dict:
         time.sleep(POLL)
         snap = state()
         inc = snap.get("incident") or {}
+        if inc and inc.get("id") == before_id:
+            continue  # stale: the previous incident, not this one
         if inc:
             record["started_incident"] = True
             last = inc

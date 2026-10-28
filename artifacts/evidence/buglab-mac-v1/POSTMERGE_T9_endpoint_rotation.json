@@ -1,0 +1,33 @@
+{
+  "generated_at": 1793185516.3957398,
+  "old_port": 8000,
+  "new_port": 8001,
+  "backend_before": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "old_endpoint_before": "HTTP 200",
+  "proxy_run": "cba664398be1b73b024968f687cbbafcbfb8103ebb204162429ebd6e01f5dfff",
+  "old_endpoint_after_move": "URLError",
+  "new_endpoint_after_move": "HTTP 200",
+  "backend_still_reported_by_running_container": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "lab_call_after_move": "URLError",
+  "container_id_after_restart": "3fc8b4df08b4",
+  "backend_after_restart": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8001/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8001/v1",
+    "note": ""
+  },
+  "lab_log_after_restart": "AtlasOps bug lab\n  Control room: http://0.0.0.0:8790/\n  Store:        http://0.0.0.0:8790/shop/\n  Working copy: /work"
+}

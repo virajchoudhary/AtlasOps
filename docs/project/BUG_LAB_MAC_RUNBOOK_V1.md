@@ -4,7 +4,7 @@ Implements sections 6, 7, 9 and 10 of *AtlasOps Bug Lab: Run Plan* (27 October 2
 on this MacBook. Section 8 (Amazon EKS) is optional and was not run: it needs AWS
 spend, which is not authorized.
 
-Status: **T1–T9 all run.** The model was served on this Mac rather than on a Kaggle T4
+Status: **T1–T9 all run, then rerun after the core PR merged.** The model was served on this Mac rather than on a Kaggle T4
 (§3.1) — a deviation from the plan, chosen because it removes the public tunnel and the
 open question about Kaggle's terms along with it. The Kaggle notebook is prepared but
 not run. See [What is not verified](#what-is-not-verified).
@@ -12,7 +12,7 @@ not run. See [What is not verified](#what-is-not-verified).
 | | |
 |---|---|
 | Branch | `feat/atlasops-mac-runtime` |
-| Base | `4acf0c3` (the merge of PR #235 into `main`) |
+| Base | `4acf0c3`, then `origin/main` merged in after core PR #236 landed |
 | Image | `atlasops-buglab:local`, 51.7 MB, `linux/arm64` |
 | Host | macOS 24.6.0, Apple M4, 16 GB; Docker 29.5.2 via Colima (8 GB to the VM) |
 | Lab port | `8790`, published to `127.0.0.1` only |
@@ -422,6 +422,39 @@ Two risks the plan does not list, found here:
 | Check GCP billing for `cloudsre-v3-amd` | **Owner only** — no `gcloud` on this machine. |
 | Quit Docker when not in use | `colima stop` when finished. Also stop the model: `pkill -f "ollama serve"`, and `docker rm -f buglab buglab-llm-proxy`. |
 | Homebrew `ollama` 0.30.7 on this machine is broken | Its `llama-server` binary is missing from the Cellar, so `ollama serve` accepts requests and then fails every generation. The `/Applications/Ollama.app` bundle (0.33.2) works and is what §3.2 uses. A `brew reinstall ollama` would probably fix the CLI, and was not attempted. |
+
+---
+
+## 9. Combined acceptance after the core PR merged
+
+Core PR #236 (`feat/atlasops-local-core`) merged into `main` as `20e3c96`, bringing four
+lab commits — including *contain malformed model endpoint errors* and *harden model
+boundaries and verified incident evidence* — and two new test files. `origin/main` was
+merged into this branch, the image was rebuilt from the merged tree, and T7–T9 were
+rerun against it. Full record in `POSTMERGE_ACCEPTANCE.txt`.
+
+| Test | Pre-merge | Post-merge |
+|---|---|---|
+| T7, eight bugs | 8/8 resolved and verified | 8/8 resolved and verified |
+| T7, final patches by the model | 2 / 8 | **1 / 8** |
+| T7, model attempts (failed) | 8 (6) | 4 (3) |
+| T8, outage mid-incident | resolved and verified | resolved and verified |
+| T9, rotation | needs container recreated | needs container recreated |
+| Suite | 3570 passed, 1 failed | **3644 passed, 1 failed**, 43 skipped |
+
+The model's share of accepted patches moved from 2/8 to 1/8 across the two runs. The
+model is non-deterministic and this is one run each way, so **that difference is not
+evidence that the merge changed anything.** What both runs agree on is that the model
+contributes a small minority of accepted patches on this eight-bug set, and that the
+rule engine carries the rest.
+
+The one suite failure is the same pre-existing `test_root_endpoint_serves_html`.
+
+Findings 1, 3 and 4 are all still open after the merge: `workspace.py` still imports
+`training.sft_provenance`, the startup banner still prints only three URL lines, and
+losing the endpoint mid-incident still writes nothing to the log. The core did add a
+`note` field on the backend object for endpoint errors, which is the right place for
+this, but it is empty on a healthy start.
 
 ---
 

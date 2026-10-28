@@ -1,0 +1,167 @@
+{
+  "bug_used": "truncated-data",
+  "generated_at": 1793212067.475241,
+  "approve": {
+    "path": "approve",
+    "incident": "INC-0014",
+    "decision_response": {
+      "recorded": true
+    },
+    "replay_of_the_same_approval": {
+      "_http_error": 409,
+      "_detail": "{\"detail\":\"No approval is pending for this incident.\"}"
+    },
+    "store_status_before_decision": 500,
+    "store_status_after_decision": 500,
+    "status": "open",
+    "outcome": null,
+    "patch_author": "qwen2.5:7b-instruct (model)",
+    "patch_kind": "patch",
+    "approval": null,
+    "still_injected": []
+  },
+  "reject": {
+    "path": "reject",
+    "incident": "INC-0015",
+    "decision_response": {
+      "recorded": true
+    },
+    "store_status_before_decision": 500,
+    "store_status_after_decision": 500,
+    "status": "escalated",
+    "outcome": "Blocked because you rejected the change",
+    "approval": {
+      "required": true,
+      "digest": "ba38d854405b426636697c150c37784b400febb82b9c1d39aa83782a8c654d29",
+      "decision": "rejected",
+      "policy": "P1 requires a human to approve this exact change",
+      "expires_at": 1793212410.7421637,
+      "expires_in": 291
+    },
+    "still_injected": []
+  },
+  "expire": {
+    "path": "expire",
+    "incident": "INC-0016",
+    "expires_in_at_start": 299,
+    "observed": [
+      {
+        "t": 20,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 279
+      },
+      {
+        "t": 40,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 259
+      },
+      {
+        "t": 60,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 239
+      },
+      {
+        "t": 80,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 219
+      },
+      {
+        "t": 100,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 199
+      },
+      {
+        "t": 120,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 179
+      },
+      {
+        "t": 140,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 159
+      },
+      {
+        "t": 160,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 139
+      },
+      {
+        "t": 180,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 119
+      },
+      {
+        "t": 200,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 99
+      },
+      {
+        "t": 220,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 79
+      },
+      {
+        "t": 240,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 59
+      },
+      {
+        "t": 260,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 39
+      },
+      {
+        "t": 280,
+        "status": "awaiting_approval",
+        "stage": "approval",
+        "decision": null,
+        "expires_in": 19
+      },
+      {
+        "t": 300,
+        "status": "escalated",
+        "stage": "closed",
+        "decision": "timeout",
+        "expires_in": 0
+      }
+    ],
+    "status": "escalated",
+    "outcome": "Blocked because the approval timed out",
+    "approval": {
+      "required": true,
+      "digest": "d0cee4b48f134a93897fa67bd0b971a1b253e69363aef1adf3361514212cc025",
+      "decision": "timeout",
+      "policy": "P1 requires a human to approve this exact change",
+      "expires_at": 1793212437.954578,
+      "expires_in": 0
+    },
+    "store_status": 500,
+    "still_injected": []
+  }
+}

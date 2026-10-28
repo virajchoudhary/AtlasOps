@@ -1,0 +1,105 @@
+{
+  "generated_at": 1793211239.861851,
+  "steps": [
+    {
+      "step": "after reset, before anything",
+      "incident_state": "idle",
+      "incident_sequence": 1,
+      "active": false,
+      "incident_id": null,
+      "incident_status": null,
+      "injected": [],
+      "history_len": 1
+    },
+    {
+      "step": "immediately after inject",
+      "incident_state": "pending",
+      "incident_sequence": 1,
+      "active": false,
+      "incident_id": null,
+      "incident_status": null,
+      "injected": [
+        "truncated-data"
+      ],
+      "history_len": 1
+    },
+    {
+      "step": "after the incident closed",
+      "incident_state": "active",
+      "incident_sequence": 2,
+      "active": true,
+      "incident_id": "INC-0002",
+      "incident_status": "awaiting_approval",
+      "injected": [],
+      "history_len": 1
+    },
+    {
+      "step": "after reset following a closed incident",
+      "incident_state": "idle",
+      "incident_sequence": 2,
+      "active": false,
+      "incident_id": null,
+      "incident_status": null,
+      "injected": [],
+      "history_len": 2
+    },
+    {
+      "step": "while the second incident is opening",
+      "incident_state": "active",
+      "incident_sequence": 3,
+      "active": true,
+      "incident_id": "INC-0003",
+      "incident_status": "open",
+      "injected": [],
+      "history_len": 2
+    },
+    {
+      "step": "after the second incident closed",
+      "incident_state": "active",
+      "incident_sequence": 3,
+      "active": true,
+      "incident_id": "INC-0003",
+      "incident_status": "awaiting_approval",
+      "injected": [],
+      "history_len": 2
+    },
+    {
+      "step": "after the final reset",
+      "incident_state": "idle",
+      "incident_sequence": 3,
+      "active": false,
+      "incident_id": null,
+      "incident_status": null,
+      "injected": [],
+      "history_len": 3
+    }
+  ],
+  "reset_1": {
+    "reset": true
+  },
+  "inject_1": {
+    "injected": "truncated-data"
+  },
+  "first_incident_finished": false,
+  "closed_incident_still_served": true,
+  "closed_incident_marked": "active",
+  "reset_2": {
+    "reset": true
+  },
+  "reset_clears_incident": true,
+  "inject_2": {
+    "injected": "truncated-data"
+  },
+  "stale_reads_during_new_incident": [],
+  "sequence_advanced": true,
+  "reset_3": {
+    "reset": true
+  },
+  "history_after_reset": 3,
+  "evidence_records_after_reset": 3,
+  "evidence_ids": [
+    "INC-0001",
+    "INC-0002",
+    "INC-0003"
+  ]
+}

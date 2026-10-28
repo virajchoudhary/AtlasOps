@@ -1,0 +1,9 @@
+
+## T8 — model outage mid-incident, commit 9ab930a
+container log in full:
+    AtlasOps bug lab
+      Control room: http://0.0.0.0:8790/
+      Store:        http://0.0.0.0:8790/shop/
+      Working copy: /work
+      Backend: qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+    INC-0001 propose: Model fallback: connection failed; using the rule engine.

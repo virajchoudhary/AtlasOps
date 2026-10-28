@@ -323,7 +323,7 @@ http://192.168.1.105 000   (connection refused — the intent)
 
 ## 6. Findings for the core branch
 
-For the owner of `feat/atlasops-local-core`. Neither was fixed here.
+For the owner of `feat/atlasops-local-core`. None of them was fixed here.
 
 1. **`demo/bug_lab/workspace.py` pulls `training.sft_provenance` into the lab's
    dependency graph.** The lab is otherwise self-contained in `demo/` plus one stdlib

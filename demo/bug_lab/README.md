@@ -72,6 +72,9 @@ HTTP app is reachable. Readiness does not mean that the Store is fixed or that
 the selected model remains reachable; outage fallback retains its separate logs.
 Write APIs fail with 503 when the app is not ready. Read-only Store and evidence
 access remain available for diagnosis.
+Store and journal downloads use descriptor-checked reads. A redirected journal
+returns 503 and makes the workspace unavailable; redirected Store files are not
+served.
 
 ### Agents with a local model
 

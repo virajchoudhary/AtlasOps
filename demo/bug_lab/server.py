@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from demo.bug_lab.engine import ApprovalError, BugLab, LabBusy, LabOptions
 from demo.bug_lab.llm import RULES, Backend, detect_backend
-from demo.bug_lab.workspace import Workspace
+from demo.bug_lab.workspace import Workspace, WorkspacePersistenceError
 
 STATIC = Path(__file__).resolve().parent / "static"
 _MEDIA = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -175,10 +175,11 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
 
     @app.get("/shop/{path:path}", include_in_schema=False)
     async def shop_file(path: str) -> Response:
-        resolved = workspace.public_path(path)
-        if resolved is None:
+        content = workspace.public_content(path)
+        if content is None:
             raise HTTPException(status_code=404)
-        return Response(resolved.read_bytes(),
+        resolved, raw = content
+        return Response(raw,
                         media_type=_MEDIA.get(resolved.suffix, "application/octet-stream"),
                         headers=_NO_STORE)
 
@@ -188,7 +189,10 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
 
     @app.get("/lab/api/evidence")
     async def evidence() -> Response:
-        raw = lab.log_path.read_bytes() if lab.log_path and lab.log_path.is_file() else b""
+        try:
+            raw = workspace.evidence_bytes()
+        except WorkspacePersistenceError as exc:
+            raise HTTPException(status_code=503, detail="Incident evidence is unavailable") from exc
         return Response(raw, media_type="application/x-ndjson", headers={
             **_NO_STORE, "Content-Disposition": 'attachment; filename="atlasops-incidents.jsonl"',
         })

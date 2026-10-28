@@ -823,6 +823,24 @@ class Workspace:
             return None
         return resolved
 
+    def public_content(self, relative: str) -> tuple[Path, bytes] | None:
+        path = self.public_path(relative)
+        if path is None:
+            return None
+        try:
+            self._directory_stat(self.site)
+            return path, self._read_owned_file(path, required=True)
+        except (OSError, _WorkspaceIntegrityError):
+            return None
+
+    def evidence_bytes(self) -> bytes:
+        try:
+            self._directory_stat(self.root)
+            return self._read_owned_file(self.log_path) or b""
+        except (OSError, _WorkspaceIntegrityError):
+            self._healthy = False
+            raise WorkspacePersistenceError(_PERSISTENCE_ERROR) from None
+
     def asset_exists(self, relative: str) -> bool:
         return self.public_path(relative) is not None
 

@@ -177,6 +177,7 @@ def test_evidence_write_failure_makes_the_app_unready_without_applying(tmp_path,
             time.sleep(0.02)
         assert client.get("/health").status_code == 503
         assert client.get("/shop/api/products").status_code == 500
+        assert client.get("/lab/api/evidence").status_code == 200
         assert client.post("/lab/api/reset", headers=HEADERS).status_code == 503
         assert client.post("/lab/api/approval", headers=HEADERS, json={
             "incident_id": "INC-0001", "digest": "0" * 64, "decision": "approve",
@@ -214,3 +215,43 @@ def test_resume_flag_requires_an_explicit_workspace_before_startup(monkeypatch):
     with pytest.raises(SystemExit) as caught:
         cli.main(["--resume", "--agents", "rules"])
     assert caught.value.code == 2
+
+
+def test_evidence_download_refuses_a_journal_redirect_created_after_startup(tmp_path):
+    app = make_app(tmp_path / "lab")
+    sentinel = tmp_path / "owner-data.txt"
+    sentinel.write_bytes(b"synthetic-owner-data-must-not-be-exported")
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        client.post("/lab/api/inject", headers=HEADERS, json={"bug": "truncated-data"})
+        _pending(client)
+        client.post("/lab/api/reset", headers=HEADERS)
+        journal = app.state.lab.log_path
+        journal.unlink()
+        os.link(sentinel, journal)
+        response = client.get("/lab/api/evidence")
+        assert response.status_code == 503
+        assert sentinel.read_bytes() not in response.content
+        assert client.get("/health").status_code == 503
+        assert sentinel.read_bytes() == b"synthetic-owner-data-must-not-be-exported"
+
+
+def test_store_response_refuses_a_redirect_after_public_path_validation(tmp_path, monkeypatch):
+    app = make_app(tmp_path / "lab")
+    sentinel = tmp_path / "owner-data.txt"
+    sentinel.write_bytes(b"synthetic-owner-data-must-not-be-served")
+    workspace = app.state.lab.workspace
+    original = workspace.public_path
+
+    def redirect_after_validation(relative):
+        path = original(relative)
+        if path is not None:
+            path.unlink()
+            os.link(sentinel, path)
+        return path
+
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        monkeypatch.setattr(workspace, "public_path", redirect_after_validation)
+        response = client.get("/shop/styles.css")
+        assert response.status_code == 404
+        assert sentinel.read_bytes() not in response.content
+        assert sentinel.read_bytes() == b"synthetic-owner-data-must-not-be-served"

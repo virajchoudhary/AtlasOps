@@ -52,6 +52,19 @@ model, an incident gets up to two model attempts and then one rule-engine attemp
 A model patch that fails the safety check is replaced by the rule engine's patch
 within the same attempt. Every patch and diagnosis is labelled with who wrote it.
 
+The endpoint must list the exact requested identifier in a nonempty `/models`
+catalog. Each completion must report the same identifier, a `stop` finish reason,
+and nonempty text. Missing identity, refusals, truncation, malformed replies, and
+contradictory diagnosis labels are not model fixes. Diagnosis and patch replies
+must follow the requested format; one complete Markdown fence and numbered source
+lines remain supported. Unusable model replies produce a logged warning and fall
+back to the rule engine. Endpoint-reported identifiers do not prove which weights
+the remote host loaded.
+
+Replies that contain the configured API key are rejected before their text reaches
+diagnosis, patching, or incident evidence. Public backend data and request errors
+also omit credentials.
+
 A CPU-only model is slow: one answer can take minutes, so raise `--llm-timeout` (default
 120 seconds; `BUG_LAB_LLM_TIMEOUT` also works).
 
@@ -130,7 +143,47 @@ engine's fixes are deterministic heuristics; label them that way when presenting
 python -m pytest tests/test_bug_lab.py
 ```
 
-The tests cover every bug's injection, detection and rule-based repair; the
+The Python tests cover every bug's injection, detection and rule-based repair; the
 approval, rejection, expiry and rollback paths; model answers through a stub
 endpoint; the safety check; and the HTTP surface. Their browser reports are
 test doubles. The in-page monitor itself only runs in a real browser.
+
+Run the authenticated endpoint and strict response contracts without a real model:
+
+```bash
+python -m pytest tests/test_bug_lab.py tests/test_bug_lab_model_client.py
+```
+
+Run the real-browser application suite with the existing locked frontend dependencies:
+
+```bash
+npm ci --prefix frontend
+npm run test:lab --prefix frontend
+```
+
+The test launcher owns a disposable rule-only Store and stops it after the suite.
+The browser tests cover all eight bugs, exact-change approvals, rejection, expiry,
+replay prevention, evidence download, telemetry age, and desktop/mobile rendering.
+These tests do not contact Kaggle, a model endpoint, or infrastructure.
+
+## Incident evidence
+
+The Control Room's **Download incident evidence** link downloads completed
+incidents as JSONL from `/lab/api/evidence`. The same records remain in
+`incidents.jsonl` inside the printed working directory. Resetting the Store does
+not erase those records.
+
+Each record names its local-demonstration classification and selected backend.
+Each attempted change retains its diagnosis, exact diff and digest, approval
+outcome, and objective verifier checks. Verifier evidence includes the Store
+version and browser report receipt time. Missing browser reports remain
+unverified. A Store change during verification fails the check. Reports older
+than 30 seconds are stale and do not open or verify incidents.
+
+The parallel runtime acceptance must still validate the real endpoint's
+authentication, exact served identifier, model replies and deadlines, Store
+reloads and fresh telemetry, and persistent evidence collection on its target
+host. Run both model-success and rule-fallback cases and report them separately.
+This application branch changes no deployment or host setup and certifies no
+scientific gate. Historical model observations above retain their original
+classification.

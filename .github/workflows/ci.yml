@@ -219,6 +219,10 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
+      - name: Run Bug Lab browser workflow against a disposable rule-only store
+        working-directory: frontend
+        run: npm run test:lab
+
       - name: Preserve Playwright screenshots and traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

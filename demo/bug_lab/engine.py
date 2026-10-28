@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import hashlib
 import json
 import logging
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -63,6 +65,7 @@ class LabOptions:
     verify_timeout: float = 25.0
     slow_api_ms: int = SLOW_API_MS
     history_limit: int = 50
+    browser_max_age: float = 30.0
 
 
 @dataclass
@@ -172,11 +175,35 @@ class BugLab:
         version = report.get("version")
         if not isinstance(version, str) or not isinstance(report.get("checks"), dict):
             raise ValueError("A browser report needs a version and checks")
+        fields = {
+            "stylesheet_applied": (bool,), "products_rendered": (int,),
+            "nan_prices": (int,), "broken_images": (list,), "overflow_px": (int, float),
+            "add_to_cart": (str,), "api_ms": (int, float, type(None)),
+        }
+        observed = {}
+        for name, types in fields.items():
+            if name not in report["checks"]:
+                continue
+            value = report["checks"][name]
+            if type(value) not in types:
+                raise ValueError(f"Invalid browser check {name}")
+            if type(value) in (int, float) and (
+                value < 0 or (type(value) is float and not math.isfinite(value))
+            ):
+                raise ValueError(f"Invalid browser measurement {name}")
+            if name == "broken_images" and not all(isinstance(item, str) for item in value):
+                raise ValueError("Invalid browser image list")
+            if name == "add_to_cart" and value not in {"ok", "failed", "skipped"}:
+                raise ValueError("Invalid cart observation")
+            observed[name] = value
+        raw_issues = report.get("issues", [])
+        if not isinstance(raw_issues, list):
+            raise ValueError("Browser issues must be a list")
         issues = [
             {key: str(item.get(key, ""))[:400] for key in ("kind", "message", "source", "line")}
-            for item in (report.get("issues") or [])[:40] if isinstance(item, dict)
+            for item in raw_issues[:40] if isinstance(item, dict)
         ]
-        clean = {"version": version, "checks": report["checks"], "issues": issues,
+        clean = {"version": version, "checks": observed, "issues": issues,
                  "load_id": str(report.get("load_id", ""))[:40],
                  "page": str(report.get("page", ""))[:40], "received_at": time.time()}
         self.browser[version] = clean
@@ -215,7 +242,7 @@ class BugLab:
         self.server, self.server_version = checks, version
         if self.active or version == self.suppressed_version:
             return
-        problems = failing(checks) + failing(browser_checks(self.browser.get(version),
+        problems = failing(checks) + failing(browser_checks(self._current_browser(version),
                                                             slow_api_ms=self.options.slow_api_ms))
         if problems:
             self._open(problems, version)
@@ -245,6 +272,9 @@ class BugLab:
             "resolve_s": None, "diagnosis": None, "patch": None, "approval": None,
             "attempts": [], "events": [], "resolved_by": None, "outcome": None,
             "summary": None, "diagnosis_matched": None, "version_at_open": version,
+            "backend": self.backend.public(), "evidence_schema_version": 1,
+            "evidence_classification": "LOCAL_DEMONSTRATION_NOT_SCIENTIFIC",
+            "verification": None,
         }
         self.incident = incident
         labels = ", ".join(check.label for check in problems)
@@ -259,10 +289,22 @@ class BugLab:
             for number, plan in enumerate(plans, 1):
                 problems = await self._current_problems()
                 if not problems:
-                    incident["resolved_by"] = "No change needed"
-                    break
+                    verdict = await self._verify(incident)
+                    if verdict == "verified":
+                        incident["resolved_by"] = "No change needed"
+                        break
+                    evidence = incident["verification"]
+                    if verdict == "failed" and evidence["version"] == self.workspace.version():
+                        problems = failing(self._last_checks)
+                    if not problems:
+                        self._close(incident, "unverified", "Recovery was not verified by current "
+                                    "server and browser checks; no actionable current failure was established.")
+                        return
+                incident["diagnosis"], incident["patch"] = None, None
+                incident["approval"], incident["verification"] = None, None
                 change, diagnosis = await self._plan(incident, problems, plan, feedback)
                 if change is None:
+                    self._record_attempt(incident, number, None, "no_patch")
                     feedback = "no usable patch was produced"
                     continue
                 if not await self._gate(incident, change):
@@ -271,10 +313,10 @@ class BugLab:
                 try:
                     verdict = await self._verify(incident)
                 except BaseException:
+                    self._record_attempt(incident, number, change, "verification_error")
                     self._revert(incident, change)
                     raise
-                incident["attempts"].append({"number": number, "author": change.author,
-                                             "file": ", ".join(change.files), "verdict": verdict})
+                self._record_attempt(incident, number, change, verdict)
                 if verdict == "verified":
                     incident["resolved_by"] = change.author
                     break
@@ -310,13 +352,31 @@ class BugLab:
     async def _current_problems(self) -> list[Check]:
         version = self.workspace.version()
         self._last_checks = await self.run_server_checks()
-        return failing(self._last_checks) + failing(browser_checks(self.browser.get(version),
+        return failing(self._last_checks) + failing(browser_checks(self._current_browser(version),
                                                                    slow_api_ms=self.options.slow_api_ms))
+
+    def _current_browser(self, version: str) -> dict[str, Any] | None:
+        report = self.browser.get(version)
+        if report and time.time() - report["received_at"] <= self.options.browser_max_age:
+            return report
+        return None
+
+    def _record_attempt(self, incident: dict[str, Any], number: int, change: Change | None,
+                        verdict: str) -> None:
+        incident["attempts"].append({
+            "number": number, "author": change.author if change else None,
+            "file": ", ".join(change.files) if change else None, "verdict": verdict,
+            "diagnosis": copy.deepcopy(incident["diagnosis"]),
+            "patch": copy.deepcopy(incident["patch"]),
+            "approval": copy.deepcopy(incident["approval"]),
+            "verification": copy.deepcopy(incident["verification"]),
+        })
 
     async def _plan(self, incident: dict[str, Any], problems: list[Check], plan: str,
                     feedback: str) -> tuple[Change | None, agents.Diagnosis | None]:
         use_model = plan == "model"
-        self._stage(incident, "diagnosis", self.backend.label if use_model else agents.RULES_AUTHOR)
+        self._stage(incident, "diagnosis",
+                    self.backend.public()["label"] if use_model else agents.RULES_AUTHOR)
         diagnosis = None
         if use_model:
             try:
@@ -331,6 +391,7 @@ class BugLab:
         if diagnosis is None:
             self._event(incident, "diagnosis", "warning", "No diagnosis matches these signals.")
             return None, None
+        self._stage(incident, "diagnosis", diagnosis.author)
         for step in diagnosis.steps:
             self._event(incident, "diagnosis", step.kind, step.text, step.detail)
             await self._pace(0.5)
@@ -339,7 +400,8 @@ class BugLab:
         await self._pace()
 
         model_diagnosed = use_model and diagnosis.author != agents.RULES_AUTHOR
-        self._stage(incident, "propose", self.backend.label if model_diagnosed else agents.RULES_AUTHOR)
+        self._stage(incident, "propose",
+                    self.backend.public()["label"] if model_diagnosed else agents.RULES_AUTHOR)
         patch = None
         if model_diagnosed:
             try:
@@ -409,6 +471,7 @@ class BugLab:
         if decision != "approved":
             outcome = "you rejected the change" if decision == "rejected" else "the approval timed out"
             self._event(incident, "approval", "warning", f"Blocked: {outcome}. No change was made.")
+            self._record_attempt(incident, len(incident["attempts"]) + 1, change, "blocked")
             self.suppressed_version = self.workspace.version()
             self._close(incident, "escalated", f"Blocked because {outcome}")
             return False
@@ -435,32 +498,50 @@ class BugLab:
         version = self.workspace.version()
         self._last_checks = await self.run_server_checks()
         self.server, self.server_version = self._last_checks, version
+        incident["verification"] = {
+            "version": version, "checked_at": time.time(), "browser": None,
+            "checks": [check.public() for check in self._last_checks], "verdict": None,
+        }
+        evidence = incident["verification"]
+        if self.workspace.version() != version:
+            evidence["verdict"] = "failed"
+            self._event(incident, "verification", "warning", "The store changed during server checks.")
+            return "failed"
         bad = failing(self._last_checks)
         self._event(incident, "verification", "tool",
                     f"Server checks: {len(self._last_checks) - len(bad)}/{len(self._last_checks)} pass"
                     + (f" (failing: {', '.join(check.label for check in bad)})" if bad else ""))
         self._event(incident, "verification", "thought", "Waiting for the store page to reload and report.")
-        report = await self._wait_for_browser(version, after=incident["applied_at"])
+        report = await self._wait_for_browser(version, after=incident.get("applied_at", incident["opened_at"]))
         if report is None:
             self._event(incident, "verification", "warning",
                         f"No browser report for this version within {self.options.verify_timeout:.0f}s.")
-            return "no_browser" if not bad else "failed"
+            evidence["verdict"] = "no_browser" if not bad else "failed"
+            return evidence["verdict"]
+        evidence["browser"] = copy.deepcopy(report)
+        if self.workspace.version() != version:
+            evidence["verdict"] = "failed"
+            self._event(incident, "verification", "warning", "The store changed while awaiting browser checks.")
+            return "failed"
         browser = browser_checks(report, slow_api_ms=self.options.slow_api_ms)
         self._last_checks = self._last_checks + browser
+        evidence["checks"] = [check.public() for check in self._last_checks]
         browser_bad = [check for check in browser if check.ok is not True]
         self._event(incident, "verification", "tool",
                     f"Browser checks: {len(browser) - len(browser_bad)}/{len(browser)} pass"
                     + (f" (failing: {', '.join(check.label for check in browser_bad)})" if browser_bad else ""))
         if all_pass(self._last_checks):
             self._event(incident, "verification", "result", "Verified: every server and browser check passes.")
+            evidence["verdict"] = "verified"
             return "verified"
         self._event(incident, "verification", "warning", "Not resolved: checks still fail.")
+        evidence["verdict"] = "failed"
         return "failed"
 
     async def _wait_for_browser(self, version: str, *, after: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + self.options.verify_timeout
         while (
-            version not in self.browser
+            self._current_browser(version) is None
             or self.browser[version]["received_at"] <= after
         ):
             remaining = deadline - time.monotonic()
@@ -484,17 +565,19 @@ class BugLab:
                     "No agent fix was verified. Falling back to the rollback policy, which is not AI.")
         incident["patch"] = {"file": ", ".join(changed), "author": change.author,
                              "explanation": change.explanation, "diff": change.diff(), "kind": "rollback"}
+        incident["verification"] = None
         if not await self._gate(incident, change):
             return False
         self._apply(incident, change)
         try:
             verdict = await self._verify(incident)
         except BaseException:
+            self._record_attempt(incident, len(incident["attempts"]) + 1, change, "verification_error")
             self._revert(incident, change)
             raise
-        incident["attempts"].append({"number": len(incident["attempts"]) + 1, "author": change.author,
-                                     "file": ", ".join(changed), "verdict": verdict})
+        self._record_attempt(incident, len(incident["attempts"]) + 1, change, verdict)
         if verdict != "verified":
+            self._revert(incident, change)
             self.suppressed_version = self.workspace.version()
             self._close(incident, "escalated", "Even the rollback did not pass verification")
             return False
@@ -569,6 +652,7 @@ class BugLab:
                 "server_current": self.server_version == version,
                 "browser": [check.public() for check in browser_checks(report, slow_api_ms=self.options.slow_api_ms)],
                 "browser_current": bool(report) and report["version"] == version,
+                "browser_stale": bool(report) and time.time() - report["received_at"] > self.options.browser_max_age,
                 "browser_age_s": round(time.time() - report["received_at"], 1) if report else None,
             },
         }

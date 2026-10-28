@@ -16,7 +16,7 @@ from demo.bug_lab import agents, server
 from demo.bug_lab.catalog import BUGS, BUGS_BY_ID
 from demo.bug_lab.checks import browser_checks, failing, server_checks
 from demo.bug_lab.engine import ApprovalError, LabBusy, LabOptions
-from demo.bug_lab.llm import RULES, detect_backend
+from demo.bug_lab.llm import RULES, Backend, detect_backend
 from demo.bug_lab.server import LabConfig, create_app
 from demo.bug_lab.workspace import EDITABLE_FILES, MONITOR_TAG, Workspace
 
@@ -39,6 +39,43 @@ def make_app(tmp_path, **options):
     defaults = {"step_delay": 0, "verify_timeout": 2.0, "monitor_interval": 0.05, "approval_timeout": 5.0}
     config = LabConfig(workdir=tmp_path / "lab", options=LabOptions(**(defaults | options)))
     return create_app(config, backend=RULES)
+
+
+def test_store_response_remains_a_snapshot_during_reset(tmp_path):
+    app = make_app(tmp_path)
+    lab = app.state.lab
+    lab.inject("broken-stylesheet")
+    before = lab.workspace.read("index.html").encode()
+
+    async def run():
+        headers_sent = asyncio.Event()
+        resume = asyncio.Event()
+
+        async def paused_app(scope, receive, send):
+            async def paused_send(message):
+                if message["type"] == "http.response.start":
+                    headers_sent.set()
+                    await resume.wait()
+                await send(message)
+
+            await app(scope, receive, paused_send)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=paused_app), base_url="http://127.0.0.1",
+        ) as client:
+            request = asyncio.create_task(client.get("/shop/"))
+            try:
+                await asyncio.wait_for(headers_sent.wait(), timeout=2)
+                await lab.reset()
+            finally:
+                resume.set()
+            response = await request
+        assert response.status_code == 200
+        assert response.content == before
+        assert int(response.headers["content-length"]) == len(before)
+        assert lab.workspace.changed_files() == []
+
+    asyncio.run(run())
 
 
 def browser_report(lab, bug_id=None):
@@ -436,7 +473,9 @@ def fake_model(answers):
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"data": [{"id": "qwen2.5:7b-instruct"}]})
         calls.append(json.loads(request.content))
-        return httpx.Response(200, json={"choices": [{"message": {"content": answers[len(calls) - 1]}}]})
+        return httpx.Response(200, json={"model": "qwen2.5:7b-instruct",
+                                        "choices": [{"finish_reason": "stop",
+                                                     "message": {"content": answers[len(calls) - 1]}}]})
 
     return httpx.MockTransport(handler), calls
 
@@ -539,3 +578,337 @@ def test_http_surface_serves_both_pages_and_guards_writes(tmp_path):
         assert set(state["site"]["changed_files"]) <= set(EDITABLE_FILES)
         assert client.post("/lab/api/reset", headers=headers).json() == {"reset": True}
         assert client.get("/lab/api/state").json()["site"]["changed_files"] == []
+
+
+def test_failed_patch_is_reverted_then_gated_rollback_retains_each_attempt(tmp_path, monkeypatch):
+    lab = make_app(tmp_path).state.lab
+    lab.require_approval_all = True
+    original = agents.remediate_rules
+
+    def ineffective(diagnosis, workspace):
+        patch = original(diagnosis, workspace)
+        patch.edits = [{"find": "width: 2600px;", "replace": "width: 2500px;"}]
+        return patch
+
+    monkeypatch.setattr(agents, "remediate_rules", ineffective)
+
+    async def run():
+        lab.inject("layout-overflow")
+        broken = lab.workspace.read("styles.css")
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await lab.monitor_once()
+        await wait_for(lambda: lab.incident["status"] == "awaiting_approval")
+        first_digest = lab.incident["approval"]["digest"]
+        lab.decide(lab.incident["id"], first_digest, "approve")
+        await wait_for(lambda: "2500px" in lab.workspace.read("styles.css"))
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await wait_for(lambda: lab.incident["patch"]["kind"] == "rollback"
+                       and lab.incident["status"] == "awaiting_approval")
+        assert lab.workspace.read("styles.css") == broken
+        rollback_digest = lab.incident["approval"]["digest"]
+        assert rollback_digest != first_digest
+        with pytest.raises(ApprovalError, match="different change"):
+            lab.decide(lab.incident["id"], first_digest, "approve")
+        lab.decide(lab.incident["id"], rollback_digest, "approve")
+        await wait_for(lambda: lab.workspace.changed_files() == [])
+        lab.record_browser_report(browser_report(lab))
+        await lab._pipeline
+        assert lab.incident["status"] == "resolved"
+        assert lab.incident["resolved_by"] == "Rollback policy (not AI)"
+        record = json.loads(lab.log_path.read_text().splitlines()[-1])
+        failed, rollback = record["attempts"]
+        assert failed["verdict"] == "failed"
+        assert failed["patch"]["digest"] == first_digest
+        assert failed["approval"]["decision"] == "approved"
+        assert "2500px" in "".join(failed["patch"]["diff"])
+        assert any(check["ok"] is False for check in failed["verification"]["checks"])
+        assert rollback["patch"]["digest"] == rollback_digest
+        assert rollback["verification"]["verdict"] == "verified"
+        assert record["evidence_classification"] == "LOCAL_DEMONSTRATION_NOT_SCIENTIFIC"
+
+    asyncio.run(run())
+
+
+def test_export_is_downloadable_and_never_contains_model_credentials(tmp_path):
+    app = make_app(tmp_path)
+    app.state.lab.backend.api_key = "synthetic-test-secret"
+    try:
+        with TestClient(app, base_url="http://127.0.0.1") as client:
+            response = client.get("/lab/api/evidence")
+            assert response.status_code == 200
+            assert "attachment" in response.headers["content-disposition"]
+            assert response.content == b""
+            assert client.get("/lab/api/state").json()["backend"].get("api_key") is None
+            assert "synthetic-test-secret" not in response.text
+    finally:
+        app.state.lab.backend.api_key = ""
+
+
+def test_stale_telemetry_is_not_used_to_open_an_incident(tmp_path):
+    lab = make_app(tmp_path).state.lab
+    lab.record_browser_report(browser_report(lab, "cart-handler"))
+    lab.latest_browser["received_at"] -= 60
+    asyncio.run(lab.monitor_once())
+    assert lab.incident is None
+    assert lab.snapshot()["checks"]["browser_stale"] is True
+
+
+def test_version_change_during_verification_cannot_resolve(tmp_path, monkeypatch):
+    lab = make_app(tmp_path, verify_timeout=0.2).state.lab
+    real_checks = lab.run_server_checks
+
+    async def change_after_checks():
+        checks = await real_checks()
+        lab.workspace.write("config.json", '{"api_delay_ms": 4000}')
+        return checks
+
+    async def run():
+        incident = {"opened_at": 0, "events": [], "applied_at": 0}
+        lab.record_browser_report(browser_report(lab))
+        monkeypatch.setattr(lab, "run_server_checks", change_after_checks)
+        assert await lab._verify(incident) == "failed"
+
+    asyncio.run(run())
+
+
+def test_authenticated_wrong_model_completion_is_not_attributed_as_a_model_fix(tmp_path):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.headers["authorization"] == "Bearer synthetic-auth-key"
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "qwen2.5:7b-instruct"}]})
+        assert request.url.path == "/v1/chat/completions"
+        return httpx.Response(200, json={
+            "model": "another-model",
+            "choices": [{"finish_reason": "stop", "message": {
+                "content": "FILE: index.html\nROOT_CAUSE: Bad stylesheet link."}}],
+        })
+
+    lab = make_app(tmp_path).state.lab
+    diagnosis_backends = []
+    real_event = lab._event
+
+    def record_event(incident, stage, kind, text, detail=""):
+        if stage == "diagnosis" and kind == "tool":
+            diagnosis_backends.append(incident["active_backend"])
+        real_event(incident, stage, kind, text, detail)
+
+    lab._event = record_event
+
+    async def run():
+        lab.backend = await detect_backend(
+            "llm", "http://model.test/v1", None, api_key="synthetic-auth-key",
+            transport=httpx.MockTransport(handler),
+        )
+        browser = asyncio.create_task(fake_browser(lab, "broken-stylesheet"))
+        try:
+            lab.inject("broken-stylesheet")
+            await lab.monitor_once()
+            await lab._pipeline
+        finally:
+            browser.cancel()
+        assert lab.incident["status"] == "resolved"
+        assert lab.incident["resolved_by"] == agents.RULES_AUTHOR
+        assert lab.incident["diagnosis"]["author"] == agents.RULES_AUTHOR
+        assert diagnosis_backends and set(diagnosis_backends) == {agents.RULES_AUTHOR}
+        assert any("Model call failed" in event["text"] for event in lab.incident["events"])
+        assert "synthetic-auth-key" not in lab.log_path.read_text()
+        assert len(requests) == 2
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("checks, issues", [
+    (dict(CLEAN, add_to_cart=[]), []),
+    (dict(CLEAN, broken_images=42), []),
+    (dict(CLEAN, products_rendered=True), []),
+    (dict(CLEAN, overflow_px=-1), []),
+    (CLEAN, 42),
+])
+def test_invalid_telemetry_is_rejected_at_the_api_boundary(tmp_path, checks, issues):
+    with TestClient(make_app(tmp_path), base_url="http://127.0.0.1") as client:
+        version = client.get("/lab/api/site-version").json()["version"]
+        response = client.post("/lab/api/telemetry", headers={"X-Bug-Lab": "1"},
+                               json={"version": version, "checks": checks, "issues": issues})
+        assert response.status_code == 400
+        assert client.get("/lab/api/state").status_code == 200
+
+
+def test_reset_before_triage_closes_incident_and_restores_store(tmp_path):
+    lab = make_app(tmp_path).state.lab
+
+    async def run():
+        lab.inject("broken-image-paths")
+        await lab.monitor_once()
+        assert lab.incident["severity"] is None
+        await lab.reset()
+        assert lab.incident["status"] == "cancelled"
+        assert lab.workspace.changed_files() == []
+        assert json.loads(lab.log_path.read_text())["status"] == "cancelled"
+
+    asyncio.run(run())
+
+
+def test_stale_prior_report_then_fresh_failure_still_reaches_rule_repair(tmp_path):
+    lab = make_app(tmp_path).state.lab
+    real_stage = lab._stage
+
+    async def run():
+        verifying = asyncio.Event()
+
+        def stage(incident, name, backend):
+            real_stage(incident, name, backend)
+            if name == "verification":
+                verifying.set()
+
+        lab._stage = stage
+        lab.inject("layout-overflow")
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await lab.monitor_once()
+        lab.latest_browser["received_at"] -= 60
+
+        async def delayed_browser():
+            await verifying.wait()
+            lab.record_browser_report(browser_report(lab, "layout-overflow"))
+            seen = lab.workspace.version()
+            while True:
+                version = lab.workspace.version()
+                if version != seen:
+                    seen = version
+                    lab.record_browser_report(browser_report(lab))
+                await asyncio.sleep(0.02)
+
+        browser = asyncio.create_task(delayed_browser())
+        try:
+            await lab._pipeline
+        finally:
+            browser.cancel()
+        assert lab.incident["status"] == "resolved"
+        assert lab.incident["resolved_by"] == agents.RULES_AUTHOR
+        assert lab.workspace.changed_files() == []
+        assert any(event["text"] == "Not resolved: checks still fail."
+                   for event in lab.incident["events"])
+        assert lab.incident["attempts"][-1]["verdict"] == "verified"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("phase", ["diagnosis", "patch"])
+def test_credential_echo_is_rejected_before_nonempty_incident_export(tmp_path, phase):
+    app = make_app(tmp_path)
+    lab = app.state.lab
+    secret = "synthetic-credential-never-export"
+    calls = []
+
+    def handler(request):
+        assert request.headers["authorization"] == f"Bearer {secret}"
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "qwen2.5:7b-instruct"}]})
+        calls.append(request)
+        answer = "FILE: index.html\nROOT_CAUSE: The stylesheet path is wrong."
+        if phase == "diagnosis":
+            answer += f" {secret}"
+        elif len(calls) == 2:
+            answer = ('FIND:\n<link rel="stylesheet" href="style.css">\nREPLACE:\n'
+                      '<link rel="stylesheet" href="styles.css">\nEND\n'
+                      f"EXPLANATION: Restore styles. {secret}")
+        return httpx.Response(200, json={
+            "model": "qwen2.5:7b-instruct", "choices": [
+                {"finish_reason": "stop", "message": {"content": answer}},
+            ],
+        })
+
+    async def run():
+        lab.backend = await detect_backend(
+            "llm", "http://model.test/v1", None, api_key=secret,
+            transport=httpx.MockTransport(handler),
+        )
+        browser = asyncio.create_task(fake_browser(lab, "broken-stylesheet"))
+        try:
+            lab.inject("broken-stylesheet")
+            await lab.monitor_once()
+            await lab._pipeline
+        finally:
+            browser.cancel()
+        assert lab.incident["status"] == "resolved"
+        assert lab.incident["resolved_by"] == agents.RULES_AUTHOR
+
+    asyncio.run(run())
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        exported = client.get("/lab/api/evidence")
+        assert exported.status_code == 200 and exported.content
+        assert secret not in exported.text
+        assert secret not in client.get("/lab/api/state").text
+        record = json.loads(exported.text.splitlines()[0])
+        assert record["attempts"][-1]["patch"]["author"] == agents.RULES_AUTHOR
+
+
+def test_direct_backend_label_is_redacted_in_active_api_state(tmp_path):
+    import time
+
+    secret = "synthetic-direct-backend-secret"
+
+    async def stalled_model(request):
+        assert request.headers["authorization"] == f"Bearer {secret}"
+        await asyncio.sleep(300)
+
+    backend = Backend(
+        mode="llm", label=f"Model using {secret}", model="qwen2.5:7b-instruct",
+        base_url="http://model.test/v1", api_key=secret,
+        transport=httpx.MockTransport(stalled_model),
+    )
+    app = create_app(LabConfig(workdir=tmp_path / "lab", options=LabOptions(
+        step_delay=0, monitor_interval=0.01,
+    )), backend=backend)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        client.post("/lab/api/inject", json={"bug": "broken-image-paths"},
+                    headers={"X-Bug-Lab": "1"})
+        for _ in range(100):
+            response = client.get("/lab/api/state")
+            incident = response.json()["incident"]
+            if incident and incident["stage"] == "diagnosis":
+                assert secret not in response.text
+                assert "[redacted]" in incident["active_backend"]
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("The model call did not reach active diagnosis")
+
+
+@pytest.mark.parametrize("decision", ["reject", None])
+def test_blocked_rollback_has_no_verification_from_the_previous_patch(tmp_path, monkeypatch, decision):
+    lab = make_app(tmp_path, approval_timeout=0.5).state.lab
+    lab.require_approval_all = True
+
+    def ineffective(diagnosis, workspace):
+        return agents.Patch("styles.css", [
+            {"find": "width: 2600px;", "replace": "width: 2500px;"},
+        ], "Attempt to reduce overflow", agents.RULES_AUTHOR)
+
+    monkeypatch.setattr(agents, "remediate_rules", ineffective)
+
+    async def run():
+        lab.inject("layout-overflow")
+        broken = lab.workspace.read("styles.css")
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await lab.monitor_once()
+        await wait_for(lambda: lab.incident["status"] == "awaiting_approval")
+        lab.decide(lab.incident["id"], lab.incident["approval"]["digest"], "approve")
+        await wait_for(lambda: "2500px" in lab.workspace.read("styles.css"))
+        lab.record_browser_report(browser_report(lab, "layout-overflow"))
+        await wait_for(lambda: lab.incident["patch"]["kind"] == "rollback"
+                       and lab.incident["status"] == "awaiting_approval")
+        if decision:
+            lab.decide(lab.incident["id"], lab.incident["approval"]["digest"], decision)
+        await lab._pipeline
+        record = json.loads(lab.log_path.read_text().splitlines()[-1])
+        failed, blocked = record["attempts"]
+        assert failed["verification"]["verdict"] == "failed"
+        assert blocked["verdict"] == "blocked"
+        assert blocked["patch"]["kind"] == "rollback"
+        assert blocked["verification"] is None
+        assert lab.workspace.read("styles.css") == broken
+
+    asyncio.run(run())

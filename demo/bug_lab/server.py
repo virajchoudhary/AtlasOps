@@ -144,16 +144,24 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
         return JSONResponse(data, headers=_NO_STORE)
 
     @app.get("/shop/{path:path}", include_in_schema=False)
-    async def shop_file(path: str) -> FileResponse:
+    async def shop_file(path: str) -> Response:
         resolved = workspace.public_path(path)
         if resolved is None:
             raise HTTPException(status_code=404)
-        return FileResponse(resolved, media_type=_MEDIA.get(resolved.suffix, "application/octet-stream"),
-                            headers=_NO_STORE)
+        return Response(resolved.read_bytes(),
+                        media_type=_MEDIA.get(resolved.suffix, "application/octet-stream"),
+                        headers=_NO_STORE)
 
     @app.get("/lab/api/state")
     async def state() -> JSONResponse:
         return JSONResponse(lab.snapshot(), headers=_NO_STORE)
+
+    @app.get("/lab/api/evidence")
+    async def evidence() -> Response:
+        raw = lab.log_path.read_bytes() if lab.log_path and lab.log_path.is_file() else b""
+        return Response(raw, media_type="application/x-ndjson", headers={
+            **_NO_STORE, "Content-Disposition": 'attachment; filename="atlasops-incidents.jsonl"',
+        })
 
     @app.get("/lab/api/site-version")
     async def site_version() -> JSONResponse:

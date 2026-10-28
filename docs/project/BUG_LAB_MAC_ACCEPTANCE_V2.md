@@ -108,6 +108,8 @@ the container log as empty. That was wrong and the fault was in the driver, not 
 lab: `docker logs` writes the container's stderr to the caller's stderr, and the
 driver captured stdout only. The driver now merges both streams and the run above is
 from a fresh container after that fix.
+The first attempt has no separately retained raw artifact in this package.
+It survives here only as this account; its raw output is not reconstructed.
 
 ---
 
@@ -253,9 +255,11 @@ now gone. The 25 regression tests added by PR #238
 - **None of this is gate evidence.** No gate row changes; G4 and G9 remain
   NOT_PASSED/FROZEN per `docs/project/COMPLETION_CHECKLIST.md:80,85`, and
   `docs/EVIDENCE_INDEX.md` is untouched. A local demo result is not a certification.
-- Four defects in this session's own test drivers were found and corrected, each with
-  the bad run kept: stdout-only log capture in T8; a missing approval in the reset
+- Four defects in this session's own test drivers were found and corrected:
+  stdout-only log capture in T8; a missing approval in the reset
   driver; a premature sample plus an interfering reset in the T6 approve case; and a
   single approval where the incident opened a second gate. The last one would have
   read as a lab failure if reported raw — the lab was correct and the driver was
-  wrong. They are recorded because a test that was wrong once may be wrong again.
+  wrong. Three corresponding bad-run records are retained in this package.
+  The first T8 stdout-only attempt is described above but has no separate raw
+  artifact here. No raw record is invented to fill that gap.

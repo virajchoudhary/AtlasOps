@@ -81,6 +81,11 @@ def create_app(config: LabConfig, backend: Backend | None = None) -> FastAPI:
             lab.backend = await detect_backend(config.agents, config.llm_base_url,
                                                config.llm_model, config.llm_api_key,
                                                timeout=config.llm_timeout)
+        public_backend = lab.backend.public()
+        backend_line = f"  Backend: {public_backend['label']}"
+        if public_backend["note"]:
+            backend_line += f" ({public_backend['note']})"
+        print(backend_line, flush=True)
         await lab.start()
         try:
             yield

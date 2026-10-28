@@ -20,6 +20,10 @@ not run. See [What is not verified](#what-is-not-verified).
 
 A demo result here is not gate evidence and does not certify anything.
 
+Software follow-up on 28 October 2026 addresses the five findings in section 6.
+The tables and raw Mac records below remain the observations of the original run,
+not results from a new Mac run. See [Software follow-up](#61-software-follow-up).
+
 ---
 
 ## 1. What changed in this branch
@@ -367,6 +371,48 @@ For the owner of `feat/atlasops-local-core`. None of them was fixed here.
 
 Findings 3–5 are observations about the lab's behaviour, not crashes. The lab resolved
 every bug it was given, in both modes, and the approval gate held in every case.
+
+### 6.1 Software follow-up
+
+All five findings have application fixes and regression coverage. This is software
+verification, not a new Mac acceptance run or a scientific result.
+
+| Finding | Correction | Regression |
+|---|---|---|
+| 1. Training/config imports | The workspace path-safety predicate is local and standard-library only. It retains fail-closed symlink, junction and reparse-point checks. | `tests/test_bug_lab_standalone.py` imports the minimal application with training/config unavailable and checks path rejection. |
+| 2. Fresh-checkout frontend | The root-route tests use an owned temporary frontend fixture, and separately require 503 when the build is absent. No skipped missing-build test or production fallback is added. | `tests/test_frontend_ui.py` covers present and absent builds independently of ignored `frontend/dist`. |
+| 3. T2 backend banner | Lifespan startup reports the actual selected backend after detection, including a safe startup-fallback note. Explicit model mode still refuses an unavailable backend. | `tests/test_bug_lab_startup_logging.py` covers rules, model, auto fallback and failed startup using doubles. |
+| 4. Silent outage | Runtime fallback warnings include incident ID, stage and a fixed safe failure reason. No raw model exception, credential or provider body is logged. Incident events retain model/rule attribution. | `tests/test_bug_lab_state_logging.py` covers diagnosis/patch outages and unexpected credential-bearing exceptions. |
+| 5. Stale incident | Reset and successful new injection clear only the current incident slot. Completed history and JSONL remain. State exposes `incident_state` and `incident_sequence`. | Python lifecycle tests and the real-browser reset/history/new-incident regression. |
+
+The state API uses `incident_state` values `idle`, `pending`, `active` and `closed`.
+`pending` means an injection awaits detection and `incident` is null. `active`
+includes approval waits. `closed` is the last result before the next reset or
+injection. `incident_sequence` increments when an incident opens and does not reset
+during the process lifetime. Use the returned incident ID and exact approval digest
+for decisions. The sequence is not a durable counter across process restarts.
+
+No Dockerfile or Mac runtime setting changes are required. The existing image
+recipe still copies training/config, but the application no longer imports them.
+Do not remove those copies from the working deployment as part of this follow-up.
+
+The Mac owner must smoke-test the accepted software with the existing configuration:
+
+1. Rebuild the existing image from accepted main when separately authorized.
+2. Confirm T2 logs the actual rules/model backend after selection. For `auto`
+   fallback, require a rule label and a safe reason. For unavailable `llm`, require
+   startup failure instead of a rule-only success.
+3. Repeat the authorized T8 outage and confirm diagnosis or patch fallback is
+   visible in container logs and incident evidence. Verify exact approvals and
+   objective checks still govern the rule repair.
+4. Reset a completed incident. Require `incident: null`, `incident_state: idle`,
+   unchanged completed JSONL and visible history. Inject again and require a
+   pending or newly active incident, never the prior result.
+5. Confirm fresh Store telemetry, all eight scenario repairs, rejected/expired
+   approvals, rollback and evidence download on the actual Mac browser.
+
+This software task does not perform those Mac actions, change credentials, restart
+services, run models, or update the historical T2/T7/T8/T9 classifications.
 
 ---
 

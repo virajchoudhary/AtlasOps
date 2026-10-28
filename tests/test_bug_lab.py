@@ -713,7 +713,8 @@ def test_authenticated_wrong_model_completion_is_not_attributed_as_a_model_fix(t
         assert lab.incident["resolved_by"] == agents.RULES_AUTHOR
         assert lab.incident["diagnosis"]["author"] == agents.RULES_AUTHOR
         assert diagnosis_backends and set(diagnosis_backends) == {agents.RULES_AUTHOR}
-        assert any("Model call failed" in event["text"] for event in lab.incident["events"])
+        assert any("Model fallback: invalid response" in event["text"]
+                   for event in lab.incident["events"])
         assert "synthetic-auth-key" not in lab.log_path.read_text()
         assert len(requests) == 2
 
@@ -743,8 +744,10 @@ def test_reset_before_triage_closes_incident_and_restores_store(tmp_path):
         lab.inject("broken-image-paths")
         await lab.monitor_once()
         assert lab.incident["severity"] is None
+        incident = lab.incident
         await lab.reset()
-        assert lab.incident["status"] == "cancelled"
+        assert incident["status"] == "cancelled"
+        assert lab.incident is None
         assert lab.workspace.changed_files() == []
         assert json.loads(lab.log_path.read_text())["status"] == "cancelled"
 

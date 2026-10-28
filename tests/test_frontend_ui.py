@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import app as app_module
 from app import app
 
 
@@ -71,15 +72,34 @@ class TestFrontendUIAndAPIs:
         assert "/inject" not in js and "/reset" not in js
         assert "100.0%" not in js and "0.918" not in js
 
-    def test_root_endpoint_serves_html(self):
+    def test_root_endpoint_serves_html(self, tmp_path, monkeypatch):
         """Verify GET / returns HTTP 200 and serves HTML content."""
-        response = self.client.get("/")
+        dist = tmp_path / "frontend-dist"
+        dist.mkdir()
+        (dist / "index.html").write_text(
+            "<!doctype html><title>AtlasOps test frontend</title>",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(app_module, "FRONTEND_DIST", dist)
+        response = TestClient(app_module.create_frontend_app()).get("/")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert "AtlasOps" in response.text
+        assert "AtlasOps test frontend" in response.text
         assert self.client.get("/static/console.js").status_code == 200
         assert self.client.get("/static/console.css").status_code == 200
         assert self.client.get("/static/live-incident.js").status_code == 200
+
+    def test_root_endpoint_returns_503_when_frontend_build_is_absent(
+        self, tmp_path, monkeypatch
+    ):
+        """Keep a missing React build unavailable instead of serving a fallback."""
+        missing_dist = tmp_path / "missing-dist"
+        monkeypatch.setattr(app_module, "FRONTEND_DIST", missing_dist)
+        response = TestClient(app_module.create_frontend_app()).get("/")
+        assert response.status_code == 503
+        assert response.json()["detail"] == (
+            "React frontend build missing. Run npm ci and npm run build in frontend/."
+        )
 
     def test_api_scenarios_endpoint(self):
         """Verify GET /api/scenarios returns the codified scenario catalog."""

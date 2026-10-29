@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   UsersRound,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { HashRouter, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
@@ -24,6 +25,7 @@ import { EvidencePage } from "../../pages/EvidencePage";
 import { IncidentsPage } from "../../pages/IncidentsPage";
 import { ModelsPage } from "../../pages/ModelsPage";
 import { OverviewPage } from "../../pages/OverviewPage";
+import { OperationsPage } from "../../pages/OperationsPage";
 import { RunbooksPage } from "../../pages/RunbooksPage";
 import { SystemPage } from "../../pages/SystemPage";
 import { DemoPage } from "../../pages/DemoPage";
@@ -36,6 +38,7 @@ const navigation = [
   { to: "/models", label: "Models", icon: GitBranch, group: "Workspace" },
   { to: "/evaluations", label: "Evaluations", icon: ChartNoAxesColumnIncreasing, group: "Workspace" },
   { to: "/incidents", label: "Incidents", icon: Activity, group: "Workspace" },
+  { to: "/operations", label: "Operations", icon: Zap, group: "Workspace" },
   { to: "/evidence", label: "Evidence", icon: FileSearch, group: "Workspace" },
   { to: "/runbooks", label: "Runbooks", icon: BookOpen, group: "Reference" },
   { to: "/system", label: "System", icon: ShieldCheck, group: "Reference" },
@@ -192,6 +195,7 @@ function ShellContent({
                   <Route path="/models" element={<ModelsPage {...pageProps} />} />
                   <Route path="/evaluations" element={<EvaluationsPage {...pageProps} />} />
                   <Route path="/incidents" element={<IncidentsPage {...pageProps} />} />
+                  <Route path="/operations" element={<OperationsPage />} />
                   <Route path="/evidence" element={<EvidencePage {...pageProps} />} />
                   <Route path="/runbooks" element={<RunbooksPage {...pageProps} />} />
                   <Route path="/system" element={<SystemPage {...pageProps} />} />

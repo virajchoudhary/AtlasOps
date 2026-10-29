@@ -1213,6 +1213,16 @@ async def call_agent(
             f"The workload namespace is {os.getenv('ATLASOPS_WORKLOAD_NAMESPACE', 'default')}. "
             "Cluster-wide reads and unrelated namespaces are not permitted."
         )
+        if role in {"diagnosis", "remediation"}:
+            system_prompt += (
+                "\nArgo-managed workloads require recovery through the owned Application "
+                f"{os.getenv('ATLASOPS_ARGOCD_APP', 'atlasops-boutique')}. "
+                "Diagnosis must obtain a valid revision through argocd_app_history. "
+                "Remediation must use the observed numeric history ID from diagnosis "
+                "with argocd_rollback. "
+                "Direct Deployment mutation is not permitted for Argo-managed workloads. "
+                "The prepared Application action and affected workload require exact approval."
+            )
     control = user_input.get(_REMEDIATION_CONTROL_KEY) or {}
     model_input = {
         key: value

@@ -70,3 +70,41 @@ def test_cluster_health_observes_the_selected_workload_namespace_and_context(mon
     command = run.call_args.args[0]
     assert command[command.index("-n") + 1] == "atlasops-boutique"
     assert command[command.index("--context") + 1] == "fixture-kind"
+
+
+@pytest.mark.parametrize(
+    "role,conclusion",
+    [
+        ("diagnosis", {"root_cause": "Observed bad image", "category": "deploy"}),
+        ("remediation", {"outcome": "escalated"}),
+    ],
+)
+def test_operational_roles_receive_the_owned_argo_recovery_contract(
+    monkeypatch, role, conclusion,
+):
+    import agents.coordinator as coordinator
+
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "1")
+    monkeypatch.setenv("ATLASOPS_WORKLOAD_NAMESPACE", "atlasops-boutique")
+    monkeypatch.setenv("ATLASOPS_ARGOCD_APP", "owned-boutique-fixture")
+    monkeypatch.setattr(coordinator, "API_KEY", "")
+    for name in ("require_audit_log", "audit_log", "thought_emit", "circuit_breaker"):
+        monkeypatch.setattr(coordinator, name, MagicMock())
+    response = MagicMock()
+    response.json.return_value = {
+        "model": coordinator.MODEL_NAME,
+        "choices": [{"message": {"content": json.dumps(conclusion)}}],
+    }
+    transport = AsyncMock(return_value=response)
+    monkeypatch.setattr(coordinator, "post_with_retry", transport)
+
+    asyncio.run(coordinator.call_agent(
+        role, {"incident_id": "inc-argo-prompt-contract"}, max_turns=1,
+    ))
+
+    prompt = transport.call_args.args[2]["messages"][0]["content"]
+    assert "Argo-managed" in prompt
+    assert "owned-boutique-fixture" in prompt
+    assert "observed numeric history ID" in prompt
+    assert "argocd_rollback" in prompt
+    assert "Direct Deployment mutation is not permitted" in prompt

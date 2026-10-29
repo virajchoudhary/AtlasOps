@@ -33,6 +33,80 @@ def test_ci_regressions_accept_only_core_from_the_same_checkout() -> None:
     assert _is_current_core_path(platform_ci.REPO_ROOT / "agents" / "coordinator.py")
 
 
+def test_workflow_installs_and_qualifies_local_setup_helper_dependencies() -> None:
+    workflow = yaml.safe_load(
+        (platform_ci.REPO_ROOT / ".github/workflows/platform-integration.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["platform-integration"]["steps"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+
+    assert "PyYAML==6.0.3" in commands
+    assert "bcrypt==5.0.0" in commands
+    assert "from scripts.bcrypt_util import hash_bcrypt, verify_bcrypt" in commands
+    assert "assert verify_bcrypt(" in commands
+
+
+def test_runner_bootstrap_prepares_fixture_credentials_before_docker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BootstrapComplete(Exception):
+        pass
+
+    actual_run = platform_ci.subprocess.run
+    helper_calls = []
+
+    def run_only_secret_helper(command, *args, **kwargs):
+        assert command[:2] == [
+            platform_ci.sys.executable,
+            "scripts/generate_runtime_secrets.py",
+        ]
+        helper_calls.append(command)
+        return actual_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(platform_ci.subprocess, "run", run_only_secret_helper)
+    monkeypatch.setattr(platform_ci.tempfile, "tempdir", str(tmp_path))
+    runner = platform_ci.Runner(
+        _run_identity(),
+        tmp_path / "evidence",
+        env={"PATH": platform_ci.os.environ.get("PATH", "")},
+    )
+
+    def stop_before_docker():
+        assert len(helper_calls) == 1
+        assert runner.private_dir is not None
+        assert runner.secret_dir is not None
+        assert not runner.private_dir.is_relative_to(platform_ci.REPO_ROOT)
+        key = (runner.private_dir / "fixture-api-key").read_text(encoding="utf-8").strip()
+        assert key
+        assert runner._fixture_api_key == key
+        assert (runner.secret_dir / "llm-api-key.secret").read_text(encoding="utf-8") == key
+        assert {path.name for path in runner.secret_dir.glob("*.secret")} == {
+            "atlasops-audit-secret.secret",
+            "alertmanager-webhook-secret.secret",
+            "atlasops-api-key.secret",
+            "argocd-user.secret",
+            "argocd-pass.secret",
+            "grafana-admin-user.secret",
+            "grafana-admin-password.secret",
+            "llm-api-key.secret",
+        }
+        assert runner.data["stages"]["runtime_secrets"]["status"] == "completed"
+        assert runner.data["fixture"]["model"] == platform_ci.FIXTURE_MODEL
+        assert runner.data["fixture"]["external_model_calls"] is False
+        assert key not in (runner.evidence_dir / "evidence.json").read_text(encoding="utf-8")
+        raise BootstrapComplete
+
+    monkeypatch.setattr(runner, "_prepare_docker_context", stop_before_docker)
+    try:
+        with pytest.raises(BootstrapComplete):
+            runner._execute()
+    finally:
+        if runner.private_temp is not None:
+            runner.private_temp.cleanup()
+
+
 def _pull_request_event(*, branch: str = "ci/platform-fixture") -> dict[str, object]:
     return {
         "repository": {"full_name": platform_ci.EXPECTED_REPOSITORY},

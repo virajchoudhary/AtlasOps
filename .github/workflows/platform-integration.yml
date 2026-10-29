@@ -57,8 +57,22 @@ jobs:
         with:
           python-version: "3.12.11"
 
-      - name: Install the pinned manifest parser
-        run: python -m pip install --disable-pip-version-check "PyYAML==6.0.3"
+      - name: Install and qualify pinned local setup dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            "PyYAML==6.0.3" "bcrypt==5.0.0"
+          python - <<'PY'
+          import bcrypt
+          import yaml
+          from scripts.bcrypt_util import hash_bcrypt, verify_bcrypt
+
+          assert yaml.__version__ == "6.0.3"
+          assert bcrypt.__version__ == "5.0.0"
+          encoded = hash_bcrypt("non-secret-ci-helper-check", rounds=4)
+          assert verify_bcrypt("non-secret-ci-helper-check", encoded)
+          assert not verify_bcrypt("wrong-ci-helper-check", encoded)
+          print("Pinned manifest and Argo credential helpers verified.")
+          PY
 
       - name: Install pinned Kind, kubectl, and Helm binaries
         shell: bash

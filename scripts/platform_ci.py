@@ -2550,7 +2550,7 @@ class Runner:
         self._record("rendered_manifests", {"files": files, "secret_manifests_archived": False})
         self._stage("render_manifests", "completed")
 
-    def _generate_run_secrets(self) -> None:
+    def _record_fixture_identity(self) -> None:
         if self.private_dir is None:
             raise PlatformCIError("private runtime directory is unavailable")
         llm_key = self.private_dir / "fixture-api-key"
@@ -4353,7 +4353,8 @@ class Runner:
 
     def _execute(self) -> None:
         self._ensure_private_area()
-        self._generate_run_secrets()
+        self._prepare_secrets()
+        self._record_fixture_identity()
         self._prepare_docker_context()
         self._render_manifests()
 

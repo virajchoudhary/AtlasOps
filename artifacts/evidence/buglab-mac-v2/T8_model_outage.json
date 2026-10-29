@@ -1,0 +1,74 @@
+{
+  "bug": "truncated-data",
+  "generated_at": 1793211194.610396,
+  "idle_before_start": true,
+  "reset_response": {
+    "reset": true
+  },
+  "backend_before": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8000/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8000/v1",
+    "note": ""
+  },
+  "incident_before_inject": null,
+  "inject_response": {
+    "injected": "truncated-data"
+  },
+  "incident": "INC-0001",
+  "stage_when_cut": "diagnosis",
+  "log_lines_before_cut": 5,
+  "proxy_stop_output": "buglab-llm-proxy",
+  "cut_at": 1793211200.904518,
+  "endpoint_after_cut": "URLError",
+  "approved": true,
+  "decision_sent": {
+    "recorded": true
+  },
+  "observed": [
+    {
+      "t": 10,
+      "status": "awaiting_approval",
+      "stage": "approval",
+      "outcome": null,
+      "active": true,
+      "incident_state": "active",
+      "incident_sequence": 1
+    },
+    {
+      "t": 20,
+      "status": "resolved",
+      "stage": "closed",
+      "outcome": "Resolved and verified",
+      "active": false,
+      "incident_state": "closed",
+      "incident_sequence": 1
+    }
+  ],
+  "final_status": "resolved",
+  "final_outcome": "Resolved and verified",
+  "final_stage": "closed",
+  "resolved_by": "Rule engine (no model)",
+  "patch_author": "Rule engine (no model)",
+  "comms": null,
+  "store_status_at_end": 200,
+  "log_since_cut": [
+    "INC-0001 propose: Model fallback: connection failed; using the rule engine."
+  ],
+  "fallback_log_lines": [
+    "INC-0001 propose: Model fallback: connection failed; using the rule engine."
+  ],
+  "incident_events": [
+    {
+      "t": 5.9,
+      "stage": "propose",
+      "agent": "Remediation agent",
+      "kind": "warning",
+      "text": "Model fallback: connection failed; using the rule engine.",
+      "detail": ""
+    }
+  ],
+  "proxy_start_output": "buglab-llm-proxy",
+  "endpoint_after_restore": "HTTP 401 (401 = proxy back up)"
+}

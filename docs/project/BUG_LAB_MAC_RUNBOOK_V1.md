@@ -24,6 +24,11 @@ Software follow-up on 28 October 2026 addresses the five findings in section 6.
 The tables and raw Mac records below remain the observations of the original run,
 not results from a new Mac run. See [Software follow-up](#61-software-follow-up).
 
+A second Mac run against `9ab930a` on 29 October 2026 confirms all five findings
+closed and is reported separately in
+[BUG_LAB_MAC_ACCEPTANCE_V2.md](BUG_LAB_MAC_ACCEPTANCE_V2.md), with records in
+`artifacts/evidence/buglab-mac-v2/`. It is not gate evidence either.
+
 ---
 
 ## 1. What changed in this branch

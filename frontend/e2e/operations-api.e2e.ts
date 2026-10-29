@@ -14,6 +14,22 @@ test("Operations uses the real mounted authenticated handlers without a live exe
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
 
+  const connectionState = page.locator(".operations-connection-state");
+  await expect(connectionState).toContainText("Connected");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(connectionState).toContainText("Connected");
+  await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
+
+  await page.route("**/api/operations", (route) =>
+    route.fulfill({ status: 503, json: { detail: "Disposable API outage" } }),
+  );
+  await page.getByRole("button", { name: "Refresh operations" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.unroute("**/api/operations");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(connectionState).toContainText("Connected");
+  await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
+
   const status = await request.get("/api/operations", {
     headers: { "X-AtlasOps-Key": KEY },
   });

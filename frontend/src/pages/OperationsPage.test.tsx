@@ -8,6 +8,7 @@ const SECOND_KEY = "second-fixture-operator-key";
 const EXECUTION_ID = "a".repeat(32);
 const SECOND_EXECUTION_ID = "b".repeat(32);
 const ACTION_DIGEST = "f".repeat(64);
+const SOURCE_SHA = "a".repeat(40);
 
 function response(payload: unknown, status = 200) {
   return {
@@ -59,9 +60,28 @@ function execution({
 function pendingApproval({
   expiresAt = Math.floor(Date.now() / 1000) + 300,
   actionDigest = ACTION_DIGEST,
+  action = {
+    tool: "kubectl_scale",
+    arguments: { deployment: "checkoutservice", namespace: "default", replicas: 3 },
+    target: {
+      server: "https://cluster.fixture.invalid",
+      context: "kind-atlasops-local",
+      api_version: "apps/v1",
+      kind: "Deployment",
+      namespace: "default",
+      name: "checkoutservice",
+      uid: "uid-fixture",
+      resource_version: "17",
+    },
+    patch: [
+      { op: "test", path: "/metadata/uid", value: "uid-fixture" },
+      { op: "replace", path: "/spec/replicas", value: 3 },
+    ],
+  },
 }: {
   expiresAt?: number;
   actionDigest?: string;
+  action?: Record<string, unknown>;
 } = {}) {
   return {
     incident_id: "incident-current",
@@ -72,24 +92,7 @@ function pendingApproval({
     decision: "pending",
     approved_by: "",
     reason: "",
-    action: {
-      tool: "kubectl_scale",
-      arguments: { deployment: "checkoutservice", namespace: "default", replicas: 3 },
-      target: {
-        server: "https://cluster.fixture.invalid",
-        context: "kind-atlasops-local",
-        api_version: "apps/v1",
-        kind: "Deployment",
-        namespace: "default",
-        name: "checkoutservice",
-        uid: "uid-fixture",
-        resource_version: "17",
-      },
-      patch: [
-        { op: "test", path: "/metadata/uid", value: "uid-fixture" },
-        { op: "replace", path: "/spec/replicas", value: 3 },
-      ],
-    },
+    action,
     action_digest: actionDigest,
     action_summary: "kubectl_scale arguments={...} target={...}",
     expires_at: expiresAt,
@@ -109,7 +112,7 @@ function statusFixture({
 } = {}) {
   return {
     enabled: true,
-    source_sha: "fixture-source-sha",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     operator_id: operatorId,
     approval_policy: "exact-action-all-mutations",
@@ -130,7 +133,7 @@ function evidenceFixture(
 ) {
   return {
     ...execution({ executionId }),
-    source_sha: "fixture-source-sha",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     events: [
       {
@@ -143,7 +146,36 @@ function evidenceFixture(
         audit_entry_hash: "d".repeat(64),
       },
     ],
-    audit_integrity: integrity(),
+    audit_integrity: { ok: true, entries: 3 },
+    audit_scope: "last_1000_global_records",
+    audit: [{ action_type: "execution_progress" }],
+  };
+}
+
+function evidenceForExecution(
+  executionRecord: ReturnType<typeof execution>,
+  auditIntegrity = { ok: true, entries: 3 },
+) {
+  return {
+    ...executionRecord,
+    source_sha: SOURCE_SHA,
+    certification_status: "NOT_CERTIFIED",
+    events: [
+      {
+        execution_id: executionRecord.execution_id,
+        event: "verification_completed",
+        phase: "verification",
+        state: "completed",
+        record: {
+          resolved: true,
+          env_resolved: true,
+          verification: { verification_status: "passed", env_resolved: true },
+        },
+        ts: 1_800_000_000,
+        audit_entry_hash: "d".repeat(64),
+      },
+    ],
+    audit_integrity: auditIntegrity,
     audit_scope: "last_1000_global_records",
     audit: [{ action_type: "execution_progress" }],
   };
@@ -164,6 +196,43 @@ afterEach(() => {
 });
 
 describe("Operations page", () => {
+  it("does not call a pending execution's absent environment observation a failed verification", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(statusFixture({
+      executions: [execution({ phase: "approval" })],
+    }))));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    const row = await screen.findByRole("button", { name: /^incident-current/ });
+    expect(row).not.toHaveTextContent("Verification failed");
+    expect(row).not.toHaveTextContent("Resolved and verified");
+  });
+
+  it.each([
+    ["rejected", "Approval rejected"],
+    ["timeout", "Approval timed out"],
+  ])("names a terminal %s decision when no action was verified", async (decision, label) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(statusFixture({
+      executions: [execution({
+        state: "completed", phase: "finished",
+        record: {
+          approval: { decision },
+          env_resolved: false,
+          verification: { verification_status: "inconclusive", env_resolved: null },
+        },
+      })],
+      pending: [],
+    }))));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    const row = await screen.findByRole("button", { name: /^incident-current/ });
+    expect(row).toHaveTextContent(label);
+    expect(row).not.toHaveTextContent("Resolved and verified");
+  });
+
   it("shows the full prepared action and never treats completion without a verifier as resolution", async () => {
     const completed = execution({
       executionId: SECOND_EXECUTION_ID,
@@ -255,12 +324,93 @@ describe("Operations page", () => {
     expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
   });
 
+  it.each([
+    {
+      outcome: "approval.decision is rejected",
+      label: "Approval rejected",
+      record: { approval: { decision: "rejected" } },
+    },
+    {
+      outcome: "approval.decision is timed out",
+      label: "Approval timed out",
+      record: { approval: { decision: "timeout" } },
+    },
+    {
+      outcome: "remediation is rejected",
+      label: "Approval rejected",
+      record: { remediation: { final: { status: "approval_rejected" } } },
+    },
+    {
+      outcome: "remediation is timed out",
+      label: "Approval timed out",
+      record: { remediation: { final: { status: "approval_timeout" } } },
+    },
+  ])("never reports a resolved state when $outcome despite positive verifier data", async ({ label, record }) => {
+    const blockedExecution = execution({
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+        ...record,
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(statusFixture({
+      executions: [blockedExecution],
+      pending: [],
+    }))));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-current/ }));
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+
+    expect(await within(detail).findByText(label)).toBeInTheDocument();
+    expect(within(detail).queryByText("Resolved and verified")).not.toBeInTheDocument();
+  });
+
   it("requires a rejection reason and submits the selected decision", async () => {
+    const verificationTarget = {
+      server: "https://cluster.fixture.invalid",
+      context: "kind-atlasops-local",
+      api_version: "apps/v1",
+      kind: "Deployment",
+      namespace: "default",
+      name: "paymentservice",
+      uid: "uid-verification-fixture",
+      resource_version: "23",
+    };
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/operations/decision") {
         return Promise.resolve(response({ ok: true, decision: "rejected" }));
       }
-      return Promise.resolve(response(statusFixture()));
+      return Promise.resolve(response(statusFixture({
+        pending: [pendingApproval({
+          action: {
+            tool: "chaos_stop_experiment",
+            arguments: { name: "checkout-fault", kind: "PodChaos", namespace: "chaos-mesh" },
+            target: {
+              server: "https://cluster.fixture.invalid",
+              context: "kind-atlasops-local",
+              api_version: "chaos-mesh.org/v1alpha1",
+              kind: "PodChaos",
+              namespace: "chaos-mesh",
+              name: "checkout-fault",
+              uid: "uid-chaos-fixture",
+              resource_version: "17",
+            },
+            verification_target: verificationTarget,
+            patch: {
+              apiVersion: "v1",
+              kind: "DeleteOptions",
+              preconditions: { uid: "uid-chaos-fixture", resourceVersion: "17" },
+            },
+          },
+        })],
+      })));
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -269,6 +419,8 @@ describe("Operations page", () => {
     await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
     await user.click(screen.getByRole("button", { name: "Connect" }));
     const rejectButton = await screen.findByRole("button", { name: "Reject action for incident-current" });
+    expect(screen.getByText("Verification target identity")).toBeInTheDocument();
+    expect(screen.getByText(/uid-verification-fixture/)).toBeInTheDocument();
     expect(rejectButton).toBeDisabled();
 
     await user.type(screen.getByLabelText("Rejection reason"), "Observed target is not the affected workload.");
@@ -341,6 +493,80 @@ describe("Operations page", () => {
     expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
   });
 
+  it("keeps an exact execution revision unverified after full evidence is missing and status is unchanged", async () => {
+    const verified = execution({
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    const unchangedStatus = response(statusFixture({ executions: [verified], pending: [] }));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(unchangedStatus)
+      .mockResolvedValueOnce(response({ detail: "Evidence record not found" }, 404))
+      .mockResolvedValueOnce(unchangedStatus);
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    const executionRow = await screen.findByRole("button", { name: /incident-current/ });
+    await user.click(executionRow);
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+    expect(await within(detail).findByText("Resolved and verified")).toBeInTheDocument();
+
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+
+    expect(await within(detail).findByRole("alert")).toHaveTextContent(/HTTP 404/i);
+    expect(await within(detail).findByText("Evidence unavailable; verification unconfirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh operations" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    expect(within(detail).getByText("Evidence unavailable; verification unconfirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
+  });
+
+  it("requires matching healthy full evidence before clearing an evidence review block", async () => {
+    const verified = execution({
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(statusFixture({ executions: [verified], pending: [] })))
+      .mockResolvedValueOnce(response({ detail: "Evidence record not found" }, 404))
+      .mockResolvedValueOnce(response(evidenceForExecution(verified, { ok: false, entries: 3 })))
+      .mockResolvedValueOnce(response(evidenceForExecution(verified)));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-current/ }));
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(detail).findByText("Evidence unavailable; verification unconfirmed")).toBeInTheDocument();
+
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(detail).findByText("Evidence integrity invalid; verification unconfirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
+
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(detail).findByText("verification_completed")).toBeInTheDocument();
+    expect(within(detail).getByText("Resolved and verified")).toBeInTheDocument();
+  });
+
   it("disables expired approval decisions", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(statusFixture({
       pending: [pendingApproval({ expiresAt: Math.floor(Date.now() / 1000) - 1 })],
@@ -405,8 +631,80 @@ describe("Operations page", () => {
     expect(await screen.findByText("incident-new-key")).toBeInTheDocument();
   });
 
+  it("does not let a late 404 for an old operator key invalidate the current key's execution", async () => {
+    const oldEvidence = deferred<ReturnType<typeof response>>();
+    const verifiedExecution = (incidentId: string) => execution({
+      incidentId,
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    const statusFor = (incidentId: string) => statusFixture({
+      executions: [verifiedExecution(incidentId)],
+      pending: [],
+    });
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const key = new Headers(init?.headers).get("X-AtlasOps-Key");
+      if (url === "/api/operations" && key === TEST_KEY) {
+        return Promise.resolve(response(statusFor("incident-old-key")));
+      }
+      if (url.endsWith(`/api/operations/${EXECUTION_ID}/evidence`) && key === TEST_KEY) {
+        return oldEvidence.promise;
+      }
+      if (url === "/api/operations" && key === SECOND_KEY) {
+        return Promise.resolve(response(statusFor("incident-new-key")));
+      }
+      return Promise.resolve(response({ detail: "Not found" }, 404));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    const keyField = screen.getByLabelText("Operator API key");
+    await user.type(keyField, TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-old-key/ }));
+    await user.click(screen.getByRole("button", { name: /Load full event history/ }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) =>
+        String(url).endsWith(`/api/operations/${EXECUTION_ID}/evidence`) &&
+        new Headers(init?.headers).get("X-AtlasOps-Key") === TEST_KEY,
+      )).toBe(true);
+    });
+
+    await user.clear(keyField);
+    await user.type(keyField, SECOND_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-new-key/ }));
+    const detail = screen.getByRole("region", { name: "incident-new-key" });
+    expect(within(detail).getByText("Resolved and verified")).toBeInTheDocument();
+
+    await act(async () => {
+      oldEvidence.resolve(response({ detail: "Evidence record not found" }, 404));
+    });
+
+    expect(within(detail).getByText("Resolved and verified")).toBeInTheDocument();
+    expect(screen.queryByText("Evidence unavailable; verification unconfirmed")).not.toBeInTheDocument();
+  });
+
   it("ignores event evidence that returns after the user selects another execution", async () => {
     const oldEvidence = deferred<ReturnType<typeof response>>();
+    const verifiedOtherExecution = execution({
+      executionId: SECOND_EXECUTION_ID,
+      incidentId: "incident-preserved",
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith(`/api/operations/${EXECUTION_ID}/evidence`)) return oldEvidence.promise;
@@ -416,12 +714,7 @@ describe("Operations page", () => {
       return Promise.resolve(response(statusFixture({
         executions: [
           execution(),
-          execution({
-            executionId: SECOND_EXECUTION_ID,
-            incidentId: "incident-preserved",
-            state: "interrupted",
-            phase: "finished",
-          }),
+          verifiedOtherExecution,
         ],
         pending: [],
       })));
@@ -440,10 +733,13 @@ describe("Operations page", () => {
 
     await user.click(screen.getByRole("button", { name: /incident-preserved/ }));
     await act(async () => {
-      oldEvidence.resolve(response(evidenceFixture(EXECUTION_ID)));
+      oldEvidence.resolve(response({ detail: "Evidence record not found" }, 404));
     });
 
     expect(screen.queryByText("old-event-from-prior-selection")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "incident-preserved" })).toBeInTheDocument();
+    const detail = screen.getByRole("region", { name: "incident-preserved" });
+    expect(detail).toBeInTheDocument();
+    expect(within(detail).getByText("Resolved and verified")).toBeInTheDocument();
+    expect(screen.queryByText("Evidence unavailable; verification unconfirmed")).not.toBeInTheDocument();
   });
 });

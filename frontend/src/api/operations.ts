@@ -4,14 +4,20 @@ const MAX_JSON_DEPTH = 20;
 const MAX_COLLECTION_ITEMS = 10_000;
 const EXECUTION_ID_PATTERN = /^[0-9a-f]{32}$/;
 const ACTION_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 declare const executionIdBrand: unique symbol;
 declare const approvalTokenBrand: unique symbol;
 declare const actionDigestBrand: unique symbol;
+declare const gitShaBrand: unique symbol;
+declare const sha256Brand: unique symbol;
 
 export type ExecutionId = string & { readonly [executionIdBrand]: "ExecutionId" };
 export type ApprovalToken = string & { readonly [approvalTokenBrand]: "ApprovalToken" };
 export type ActionDigest = string & { readonly [actionDigestBrand]: "ActionDigest" };
+type GitSha = string & { readonly [gitShaBrand]: "GitSha" };
+type Sha256 = string & { readonly [sha256Brand]: "Sha256" };
 
 export type OperationsJson =
   | null
@@ -20,6 +26,17 @@ export type OperationsJson =
   | string
   | OperationsJson[]
   | { readonly [key: string]: OperationsJson };
+
+export interface OperationsResourceIdentity extends Readonly<Record<string, OperationsJson>> {
+  server: string;
+  context: string;
+  api_version: string;
+  kind: string;
+  namespace: string;
+  name: string;
+  uid: string;
+  resource_version: string;
+}
 
 export type OperationPhase =
   | "queued"
@@ -45,7 +62,12 @@ export type OperationDecision = "approved" | "rejected";
 export interface OperationsIntegrity {
   ok: boolean;
   events: number;
-  last_hash: string;
+  last_hash: Sha256;
+}
+
+export interface OperationsAuditIntegrity {
+  ok: boolean;
+  entries: number;
 }
 
 export interface OperationsExecution {
@@ -61,7 +83,8 @@ export interface OperationsExecution {
 export interface PreparedOperationAction {
   tool: string;
   arguments: Readonly<Record<string, OperationsJson>>;
-  target: Readonly<Record<string, OperationsJson>>;
+  target: OperationsResourceIdentity;
+  verification_target?: OperationsResourceIdentity;
   patch: OperationsJson;
 }
 
@@ -87,7 +110,7 @@ export interface OperationsCircuitBreaker {
 
 export interface OperationsStatus {
   enabled: true;
-  source_sha: string;
+  source_sha: GitSha;
   certification_status: "NOT_CERTIFIED";
   operator_id: string | null;
   approval_policy: "exact-action-all-mutations";
@@ -107,10 +130,10 @@ export interface OperationsEvent {
 }
 
 export interface OperationsEvidence extends OperationsExecution {
-  source_sha: string;
+  source_sha: GitSha;
   certification_status: "NOT_CERTIFIED";
   events: OperationsEvent[];
-  audit_integrity: OperationsIntegrity;
+  audit_integrity: OperationsAuditIntegrity;
   audit_scope: string;
   audit: OperationsJson[];
 }
@@ -129,6 +152,7 @@ export type OperationsApiErrorKind =
   | "malformed_response"
   | "network_error"
   | "http_error"
+  | "evidence_not_found"
   | "stale_action"
   | "decision_rejected";
 
@@ -195,6 +219,21 @@ function parseJsonRecord(value: unknown): Readonly<Record<string, OperationsJson
   return parsed;
 }
 
+function parseResourceIdentity(value: unknown): OperationsResourceIdentity {
+  const identity = parseJsonRecord(value);
+  return {
+    ...identity,
+    server: requiredNonEmptyString(identity.server),
+    context: requiredNonEmptyString(identity.context),
+    api_version: requiredNonEmptyString(identity.api_version),
+    kind: requiredNonEmptyString(identity.kind),
+    namespace: requiredNonEmptyString(identity.namespace),
+    name: requiredNonEmptyString(identity.name),
+    uid: requiredNonEmptyString(identity.uid),
+    resource_version: requiredNonEmptyString(identity.resource_version),
+  };
+}
+
 function requiredString(value: unknown): string {
   if (typeof value !== "string") return malformed();
   return value;
@@ -202,6 +241,24 @@ function requiredString(value: unknown): string {
 
 function requiredNonEmptyString(value: unknown): string {
   if (typeof value !== "string" || value.trim().length === 0) return malformed();
+  return value;
+}
+
+function isGitSha(value: unknown): value is GitSha {
+  return typeof value === "string" && GIT_SHA_PATTERN.test(value);
+}
+
+function parseGitSha(value: unknown): GitSha {
+  if (!isGitSha(value)) return malformed();
+  return value;
+}
+
+function isSha256(value: unknown): value is Sha256 {
+  return typeof value === "string" && SHA256_PATTERN.test(value);
+}
+
+function parseSha256(value: unknown): Sha256 {
+  if (!isSha256(value)) return malformed();
   return value;
 }
 
@@ -275,8 +332,23 @@ function parseIntegrity(value: unknown): OperationsIntegrity {
   return {
     ok: value.ok,
     events,
-    last_hash: requiredString(value.last_hash),
+    last_hash: parseSha256(value.last_hash),
   };
+}
+
+function parseAuditIntegrity(value: unknown): OperationsAuditIntegrity {
+  if (!isRecord(value)) return malformed();
+  const entries = value.entries;
+  if (
+    typeof value.ok !== "boolean" ||
+    typeof entries !== "number" ||
+    !Number.isSafeInteger(entries) ||
+    entries < 0 ||
+    (value.ok && entries === 0)
+  ) {
+    return malformed();
+  }
+  return { ok: value.ok, entries };
 }
 
 function parseExecution(value: unknown): OperationsExecution {
@@ -296,8 +368,7 @@ function parsePreparedAction(value: unknown): PreparedOperationAction {
   if (!isRecord(value)) return malformed();
   const tool = requiredNonEmptyString(value.tool);
   const args = parseJsonRecord(value.arguments);
-  const target = parseJsonRecord(value.target);
-  if (Object.keys(target).length === 0) return malformed();
+  const target = parseResourceIdentity(value.target);
 
   const patch = parseJsonValue(value.patch);
   if (
@@ -306,7 +377,15 @@ function parsePreparedAction(value: unknown): PreparedOperationAction {
   ) {
     return malformed();
   }
-  return { tool, arguments: args, target, patch };
+  return {
+    tool,
+    arguments: args,
+    target,
+    patch,
+    ...(value.verification_target === undefined
+      ? {}
+      : { verification_target: parseResourceIdentity(value.verification_target) }),
+  };
 }
 
 function parsePendingApproval(value: unknown): PendingOperationApproval {
@@ -346,7 +425,7 @@ function parseOperationsStatus(value: unknown): OperationsStatus {
 
   return {
     enabled: true,
-    source_sha: requiredString(value.source_sha),
+    source_sha: parseGitSha(value.source_sha),
     certification_status: "NOT_CERTIFIED",
     operator_id: operatorId,
     approval_policy: "exact-action-all-mutations",
@@ -386,10 +465,10 @@ function parseOperationsEvidence(
     return malformed();
   }
   if (!Array.isArray(value.audit)) return malformed();
-  const auditIntegrity = parseIntegrity(value.audit_integrity);
+  const auditIntegrity = parseAuditIntegrity(value.audit_integrity);
   return {
     ...execution,
-    source_sha: requiredString(value.source_sha),
+    source_sha: parseGitSha(value.source_sha),
     certification_status: "NOT_CERTIFIED",
     events: value.events.map((event) => parseExecutionEvent(event, expectedId)),
     audit_integrity: auditIntegrity,
@@ -420,12 +499,14 @@ async function protectedJson({
   method = "GET",
   body,
   signal,
+  classifyNotFoundAs,
 }: {
   apiKey: string;
   url: string;
   method?: "GET" | "POST";
   body?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
+  classifyNotFoundAs?: "evidence_not_found";
 }): Promise<{ value: unknown; text: string }> {
   if (apiKey.trim().length === 0) {
     throw new OperationsApiError("invalid_request");
@@ -474,6 +555,9 @@ async function protectedJson({
       ? "configuration_unavailable"
       : "service_unavailable";
     throw new OperationsApiError(kind, 503);
+  }
+  if (response.status === 404 && classifyNotFoundAs !== undefined) {
+    throw new OperationsApiError(classifyNotFoundAs, 404, detail);
   }
   if (
     response.status === 400 &&
@@ -577,6 +661,7 @@ export async function fetchOperationsEvidence({
     apiKey,
     url: `${OPERATIONS_URL}/${encodeURIComponent(executionId)}/evidence`,
     signal,
+    classifyNotFoundAs: "evidence_not_found",
   });
   return {
     evidence: parseOperationsEvidence(response.value, executionId),

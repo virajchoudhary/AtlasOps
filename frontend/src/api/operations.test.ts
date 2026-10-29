@@ -9,6 +9,7 @@ import {
 const TEST_KEY = "fixture-only-operator-key";
 const EXECUTION_ID = "a".repeat(32);
 const ACTION_DIGEST = "f".repeat(64);
+const SOURCE_SHA = "a".repeat(40);
 
 function response(payload: unknown, status = 200) {
   return {
@@ -91,7 +92,7 @@ function pendingApproval(extras: Record<string, unknown> = {}) {
 function operationsStatus(extras: Record<string, unknown> = {}) {
   return {
     enabled: true,
-    source_sha: "fixture-source-sha",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     operator_id: "operator-fixture",
     approval_policy: "exact-action-all-mutations",
@@ -110,7 +111,7 @@ function operationsStatus(extras: Record<string, unknown> = {}) {
 function operationEvidence() {
   return {
     ...operationExecution(),
-    source_sha: "fixture-source-sha",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     events: [
       {
@@ -135,7 +136,7 @@ function operationEvidence() {
         audit_entry_hash: "d".repeat(64),
       },
     ],
-    audit_integrity: integrity(),
+    audit_integrity: { ok: true, entries: 3 },
     audit_scope: "last_1000_global_records",
     audit: [{ action_type: "execution_progress" }],
   };
@@ -146,6 +147,22 @@ afterEach(() => {
 });
 
 describe("live operations API", () => {
+  it("accepts the actual backend audit-entry receipt without inventing an event hash", async () => {
+    const payload = {
+      ...operationEvidence(),
+      audit_integrity: { ok: true, entries: 3 },
+    };
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus()))
+      .mockResolvedValueOnce(response(payload)));
+    const execution = (await fetchOperationsStatus(TEST_KEY)).executions[0];
+    if (!execution) throw new Error("Expected a fixture execution.");
+    const bundle = await fetchOperationsEvidence({
+      apiKey: TEST_KEY, executionId: execution.execution_id,
+    });
+    expect(bundle.evidence.audit_integrity).toEqual({ ok: true, entries: 3 });
+  });
+
   it("reads a bounded authenticated status without putting the key in a URL or cookie", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(operationsStatus()));
     vi.stubGlobal("fetch", fetchMock);
@@ -168,6 +185,59 @@ describe("live operations API", () => {
     expect(headers.get("Accept")).toBe("application/json");
     expect(headers.get("X-AtlasOps-Key")).toBe(TEST_KEY);
     expect(headers.get("Cookie")).toBeNull();
+  });
+
+  it("preserves and validates a distinct optional verification target", async () => {
+    const action = {
+      tool: "chaos_stop_experiment",
+      arguments: { name: "checkout-fault", kind: "PodChaos", namespace: "chaos-mesh" },
+      target: {
+        server: "https://cluster.fixture.invalid",
+        context: "kind-atlasops-local",
+        api_version: "chaos-mesh.org/v1alpha1",
+        kind: "PodChaos",
+        namespace: "chaos-mesh",
+        name: "checkout-fault",
+        uid: "uid-chaos-fixture",
+        resource_version: "17",
+      },
+      verification_target: {
+        server: "https://cluster.fixture.invalid",
+        context: "kind-atlasops-local",
+        api_version: "apps/v1",
+        kind: "Deployment",
+        namespace: "default",
+        name: "checkoutservice",
+        uid: "uid-workload-fixture",
+        resource_version: "23",
+      },
+      patch: {
+        apiVersion: "v1",
+        kind: "DeleteOptions",
+        preconditions: { uid: "uid-chaos-fixture", resourceVersion: "17" },
+      },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus({
+        pending: [pendingApproval({ action })],
+      })))
+      .mockResolvedValueOnce(response(operationsStatus({
+        pending: [pendingApproval({
+          action: {
+            ...action,
+            verification_target: { ...action.verification_target, uid: "" },
+          },
+        })],
+      })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const status = await fetchOperationsStatus(TEST_KEY);
+    expect(status.pending[0]?.action).toMatchObject({
+      verification_target: action.verification_target,
+    });
+    await expect(fetchOperationsStatus(TEST_KEY)).rejects.toMatchObject({
+      kind: "malformed_response",
+    });
   });
 
   it("rejects unknown execution states and malformed action identity before exposing controls", async () => {
@@ -331,6 +401,126 @@ describe("live operations API", () => {
     expect(url).toBe(`/api/operations/${EXECUTION_ID}/evidence`);
     expect(options?.method).toBe("GET");
     expect(new Headers(options?.headers).get("X-AtlasOps-Key")).toBe(TEST_KEY);
+  });
+
+  it("classifies a missing full-evidence record separately from other HTTP errors", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus()))
+      .mockResolvedValueOnce(response({ detail: "Evidence record not found" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+    const status = await fetchOperationsStatus(TEST_KEY);
+    const execution = status.executions[0];
+    if (!execution) throw new Error("Fixture must contain one execution.");
+
+    await expect(fetchOperationsEvidence({
+      apiKey: TEST_KEY,
+      executionId: execution.execution_id,
+    })).rejects.toMatchObject({
+      kind: "evidence_not_found",
+      status: 404,
+    });
+  });
+
+  it.each([
+    ["empty source SHA", operationsStatus({ source_sha: "" })],
+    ["wrong-length source SHA", operationsStatus({ source_sha: "a".repeat(39) })],
+    ["non-hex source SHA", operationsStatus({ source_sha: "g".repeat(40) })],
+    [
+      "empty execution integrity hash",
+      operationsStatus({
+        executions: [operationExecution({
+          integrity: { ok: true, events: 3, last_hash: "" },
+        })],
+      }),
+    ],
+    [
+      "wrong-length execution integrity hash",
+      operationsStatus({
+        executions: [operationExecution({
+          integrity: { ok: true, events: 3, last_hash: "b".repeat(63) },
+        })],
+      }),
+    ],
+    [
+      "non-hex execution integrity hash",
+      operationsStatus({
+        executions: [operationExecution({
+          integrity: { ok: true, events: 3, last_hash: "z".repeat(64) },
+        })],
+      }),
+    ],
+  ])("rejects %s before returning a status snapshot", async (_case, payload) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(payload)));
+
+    await expect(fetchOperationsStatus(TEST_KEY)).rejects.toMatchObject({
+      kind: "malformed_response",
+    });
+  });
+
+  it.each([
+    ["empty evidence source SHA", { ...operationEvidence(), source_sha: "" }],
+    [
+      "malformed evidence source SHA",
+      { ...operationEvidence(), source_sha: "g".repeat(40) },
+    ],
+    [
+      "audit receipt missing its entry count",
+      {
+        ...operationEvidence(),
+        audit_integrity: { ok: true, events: 3, last_hash: "" },
+      },
+    ],
+    [
+      "execution-shaped negative audit receipt",
+      {
+        ...operationEvidence(),
+        audit_integrity: { ok: false, events: 3, last_hash: "z".repeat(64) },
+      },
+    ],
+    ["empty positive audit", { ...operationEvidence(), audit_integrity: { ok: true, entries: 0 } }],
+    ["negative audit count", { ...operationEvidence(), audit_integrity: { ok: true, entries: -1 } }],
+    ["fractional audit count", { ...operationEvidence(), audit_integrity: { ok: true, entries: 1.5 } }],
+    ["string audit count", { ...operationEvidence(), audit_integrity: { ok: true, entries: "3" } }],
+  ])("rejects %s before returning full evidence", async (_case, payload) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus()))
+      .mockResolvedValueOnce(response(payload));
+    vi.stubGlobal("fetch", fetchMock);
+    const status = await fetchOperationsStatus(TEST_KEY);
+    const execution = status.executions[0];
+    if (!execution) throw new Error("Fixture must contain one execution.");
+
+    await expect(fetchOperationsEvidence({
+      apiKey: TEST_KEY,
+      executionId: execution.execution_id,
+    })).rejects.toMatchObject({
+      kind: "malformed_response",
+    });
+  });
+
+  it("preserves valid negative integrity states", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus({
+        executions: [operationExecution({ integrity: integrity(false) })],
+      })))
+      .mockResolvedValueOnce(response({
+        ...operationEvidence(),
+        integrity: integrity(false),
+        audit_integrity: { ok: false, entries: 3 },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const status = await fetchOperationsStatus(TEST_KEY);
+    const execution = status.executions[0];
+    if (!execution) throw new Error("Fixture must contain one execution.");
+    expect(execution.integrity.ok).toBe(false);
+
+    const evidence = await fetchOperationsEvidence({
+      apiKey: TEST_KEY,
+      executionId: execution.execution_id,
+    });
+    expect(evidence.evidence.integrity.ok).toBe(false);
+    expect(evidence.evidence.audit_integrity.ok).toBe(false);
   });
 
   it("accepts the server-confirmed pause state", async () => {

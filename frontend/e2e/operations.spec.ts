@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const TEST_KEY = "fixture-only-browser-key";
 const EXECUTION_ID = "a".repeat(32);
 const ACTION_DIGEST = "f".repeat(64);
+const SOURCE_SHA = "a".repeat(40);
 
 function execution({
   executionId = EXECUTION_ID,
@@ -50,25 +51,36 @@ function pendingApproval() {
     approved_by: "",
     reason: "",
     action: {
-      tool: "kubectl_scale",
-      arguments: { deployment: "checkoutservice", namespace: "default", replicas: 3 },
+      tool: "chaos_stop_experiment",
+      arguments: { name: "checkout-fault", kind: "PodChaos", namespace: "chaos-mesh" },
       target: {
+        server: "https://cluster.fixture.invalid",
+        context: "kind-atlasops-local",
+        api_version: "chaos-mesh.org/v1alpha1",
+        kind: "PodChaos",
+        namespace: "chaos-mesh",
+        name: "checkout-fault",
+        uid: "uid-chaos-browser-fixture",
+        resource_version: "17",
+      },
+      verification_target: {
         server: "https://cluster.fixture.invalid",
         context: "kind-atlasops-local",
         api_version: "apps/v1",
         kind: "Deployment",
         namespace: "default",
         name: "checkoutservice",
-        uid: "uid-browser-fixture",
-        resource_version: "17",
+        uid: "uid-browser-verification",
+        resource_version: "23",
       },
-      patch: [
-        { op: "test", path: "/metadata/uid", value: "uid-browser-fixture" },
-        { op: "replace", path: "/spec/replicas", value: 3 },
-      ],
+      patch: {
+        apiVersion: "v1",
+        kind: "DeleteOptions",
+        preconditions: { uid: "uid-chaos-browser-fixture", resourceVersion: "17" },
+      },
     },
     action_digest: ACTION_DIGEST,
-    action_summary: "kubectl_scale arguments={...} target={...}",
+    action_summary: "chaos_stop_experiment arguments={...} target={...}",
     expires_at: Math.floor(Date.now() / 1000) + 600,
   };
 }
@@ -76,7 +88,7 @@ function pendingApproval() {
 function status(executions = [execution()]) {
   return {
     enabled: true,
-    source_sha: "browser-fixture-source",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     operator_id: "operator-browser-fixture",
     approval_policy: "exact-action-all-mutations",
@@ -90,10 +102,22 @@ function status(executions = [execution()]) {
   };
 }
 
+function verifiedExecution() {
+  return execution({
+    state: "completed",
+    phase: "finished",
+    record: {
+      resolved: true,
+      env_resolved: true,
+      verification: { verification_status: "passed", env_resolved: true },
+    },
+  });
+}
+
 function evidence() {
   return {
     ...execution(),
-    source_sha: "browser-fixture-source",
+    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     events: [
       {
@@ -118,13 +142,17 @@ function evidence() {
         audit_entry_hash: "e".repeat(64),
       },
     ],
-    audit_integrity: { ok: true, events: 2, last_hash: "e".repeat(64) },
+    audit_integrity: { ok: true, entries: 2 },
     audit_scope: "last_1000_global_records",
     audit: [{ action_type: "execution_progress" }],
   };
 }
 
-async function installOperationsApi(page: Page, apiStatus = status()) {
+async function installOperationsApi(
+  page: Page,
+  apiStatus = status(),
+  evidenceResponse: { status: number; payload: unknown } = { status: 200, payload: evidence() },
+) {
   const requests: Array<{ url: string; method: string; key: string | null }> = [];
   let decisionBody: string | null = null;
   await page.route("**/api/operations**", async (route) => {
@@ -145,7 +173,7 @@ async function installOperationsApi(page: Page, apiStatus = status()) {
       return;
     }
     if (url.pathname === `/api/operations/${EXECUTION_ID}/evidence` && request.method() === "GET") {
-      await route.fulfill({ json: evidence() });
+      await route.fulfill({ status: evidenceResponse.status, json: evidenceResponse.payload });
       return;
     }
     await route.fulfill({ status: 404, body: "Not found" });
@@ -167,8 +195,10 @@ test("Operations navigation shows the exact action and downloads authenticated e
   await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
   await expect(page.getByText("NOT_CERTIFIED", { exact: true })).toBeVisible();
   await expect(page.getByText(ACTION_DIGEST)).toBeVisible();
-  await expect(page.getByText(/resource_version/)).toBeVisible();
-  await expect(page.getByText(/"replace"/)).toBeVisible();
+  await expect(page.getByText(/resource_version/)).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "Verification target identity" })).toBeVisible();
+  await expect(page.getByText(/uid-browser-verification/)).toBeVisible();
+  await expect(page.getByText(/"DeleteOptions"/)).toBeVisible();
 
   await page.getByLabel("Rejection reason").fill("Observed target is outside the incident scope.");
   await page.getByRole("button", { name: "Reject action for incident-current" }).click();
@@ -193,6 +223,78 @@ test("Operations navigation shows the exact action and downloads authenticated e
   expect(api.requests.every((request) => !request.url.includes(TEST_KEY))).toBe(true);
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0);
+});
+
+test("Operations withdraws a verified claim when full evidence is missing after an unchanged refresh", async ({ page }, testInfo) => {
+  const api = await installOperationsApi(
+    page,
+    status([verifiedExecution()]),
+    { status: 404, payload: { detail: "Evidence record not found" } },
+  );
+  await page.goto("/#/operations");
+  await page.getByLabel("Operator API key").fill(TEST_KEY);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+
+  await page.getByRole("button", { name: /^incident-current/ }).click();
+  const detail = page.getByRole("region", { name: "incident-current" });
+  await expect(detail.getByText("Resolved and verified")).toBeVisible();
+  await detail.getByRole("button", { name: /Load full event history/ }).click();
+  await expect(detail.getByRole("alert")).toHaveText(/HTTP 404/);
+  await expect(detail.getByText("Evidence unavailable; verification unconfirmed")).toBeVisible();
+  await expect(page.getByText("Resolved and verified")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Refresh operations" }).click();
+  await expect.poll(() => api.requests.filter(
+    (request) => request.url === "/api/operations" && request.method === "GET",
+  ).length).toBeGreaterThanOrEqual(2);
+  await expect(detail.getByText("Evidence unavailable; verification unconfirmed")).toBeVisible();
+  await expect(page.getByText("Resolved and verified")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("operations-missing-evidence.png"), fullPage: true });
+});
+
+test("Operations blocks rejected or timed-out approval outcomes despite positive verifier fields", async ({ page }, testInfo) => {
+  const rejected = execution({
+    executionId: "b".repeat(32),
+    incidentId: "incident-rejected",
+    state: "completed",
+    phase: "finished",
+    record: {
+      resolved: true,
+      env_resolved: true,
+      verification: { verification_status: "passed", env_resolved: true },
+      approval: { decision: "rejected" },
+    },
+  });
+  const timedOut = execution({
+    executionId: "c".repeat(32),
+    incidentId: "incident-timed-out",
+    state: "completed",
+    phase: "finished",
+    record: {
+      resolved: true,
+      env_resolved: true,
+      verification: { verification_status: "passed", env_resolved: true },
+      remediation: { final: { status: "approval_timeout" } },
+    },
+  });
+  await installOperationsApi(page, status([rejected, timedOut]));
+  await page.goto("/#/operations");
+  await page.getByLabel("Operator API key").fill(TEST_KEY);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+
+  await page.getByRole("button", { name: /^incident-rejected/ }).click();
+  const rejectedDetail = page.getByRole("region", { name: "incident-rejected" });
+  await expect(rejectedDetail.getByText("Approval rejected")).toBeVisible();
+  await expect(rejectedDetail.getByText("Resolved and verified")).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^incident-timed-out/ }).click();
+  const timeoutDetail = page.getByRole("region", { name: "incident-timed-out" });
+  await expect(timeoutDetail.getByText("Approval timed out")).toBeVisible();
+  await expect(timeoutDetail.getByText("Resolved and verified")).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("operations-approval-terminal-states.png"),
+    fullPage: true,
+  });
 });
 
 test("Operations fits a mobile viewport without horizontal page overflow", async ({ page }, testInfo) => {

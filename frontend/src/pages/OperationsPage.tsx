@@ -45,16 +45,24 @@ const POLL_INTERVAL_MS = 5_000;
 const MAX_VISIBLE_EVENTS = 200;
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
+type EvidenceRevisionKey = string;
+type EvidenceReview = "available" | "not_found" | "integrity_invalid";
 
 type EvidenceState =
   | { kind: "idle" }
-  | { kind: "loading"; executionId: ExecutionId }
+  | { kind: "loading"; executionId: ExecutionId; revisionKey: EvidenceRevisionKey }
   | {
       kind: "ready";
       executionId: ExecutionId;
+      revisionKey: EvidenceRevisionKey;
       bundle: OperationsEvidenceBundle;
     }
-  | { kind: "error"; executionId: ExecutionId; message: string };
+  | {
+      kind: "error";
+      executionId: ExecutionId;
+      revisionKey: EvidenceRevisionKey;
+      message: string;
+    };
 
 function errorFor(error: unknown): OperationsApiError {
   if (error instanceof OperationsApiError) return error;
@@ -75,6 +83,8 @@ function errorMessage(kind: OperationsApiErrorKind, status?: number): string {
       return "The Operations API returned malformed data. The live snapshot and controls were cleared.";
     case "network_error":
       return "The Operations API could not be reached. No previous controls are available.";
+    case "evidence_not_found":
+      return "Full event history was not found (HTTP 404). The prior verified claim was withdrawn for this source and journal revision.";
     case "stale_action":
       return "This prepared action expired or changed. No decision was accepted; current approvals are being refreshed.";
     case "http_error":
@@ -122,7 +132,24 @@ function formatRemaining(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-function verificationStatus(execution: OperationsExecution): {
+function evidenceRevisionKey(
+  execution: OperationsExecution,
+  sourceSha: string,
+  connectionVersion: number,
+): EvidenceRevisionKey {
+  return JSON.stringify([
+    connectionVersion,
+    execution.execution_id,
+    sourceSha,
+    execution.integrity.events,
+    execution.integrity.last_hash,
+  ]);
+}
+
+function verificationStatus(
+  execution: OperationsExecution,
+  evidenceReview: EvidenceReview = "available",
+): {
   label: string;
   tone: "mint" | "amber" | "rose" | "outline";
   detail: string;
@@ -136,6 +163,13 @@ function verificationStatus(execution: OperationsExecution): {
   const remediationFinal = jsonObject(remediation?.final);
   const approval = jsonObject(execution.record.approval);
   const approvalDecision = jsonObject(approval?.decision);
+  const approvalOutcomes = [
+    approval?.status,
+    approval?.decision,
+    approvalDecision?.status,
+    remediation?.status,
+    remediationFinal?.status,
+  ];
 
   if (
     execution.record.failure_category === "approval_permit_invalid" ||
@@ -172,7 +206,25 @@ function verificationStatus(execution: OperationsExecution): {
       detail: "The execution journal hash chain did not validate. This record cannot support a resolution claim.",
     };
   }
-  if (verificationState === "failed" || environmentResolved === false) {
+  if (approvalOutcomes.some((outcome) =>
+    outcome === "approval_rejected" || outcome === "rejected"
+  )) {
+    return {
+      label: "Approval rejected",
+      tone: "rose",
+      detail: "The operator rejected the prepared action. Positive verifier fields cannot override that terminal decision.",
+    };
+  }
+  if (approvalOutcomes.some((outcome) =>
+    outcome === "approval_timeout" || outcome === "timeout"
+  )) {
+    return {
+      label: "Approval timed out",
+      tone: "amber",
+      detail: "The approval expired without authorizing remediation. Positive verifier fields cannot establish resolution.",
+    };
+  }
+  if (verificationState === "failed" || execution.record.env_resolved === false) {
     return {
       label: "Verification failed",
       tone: "rose",
@@ -197,6 +249,20 @@ function verificationStatus(execution: OperationsExecution): {
     verifierResolved &&
     verificationState === "passed"
   ) {
+    if (evidenceReview === "not_found") {
+      return {
+        label: "Evidence unavailable; verification unconfirmed",
+        tone: "amber",
+        detail: "The status snapshot reports passed environment verification, but full evidence returned HTTP 404. The verified label is withheld for this exact source and journal revision.",
+      };
+    }
+    if (evidenceReview === "integrity_invalid") {
+      return {
+        label: "Evidence integrity invalid; verification unconfirmed",
+        tone: "rose",
+        detail: "Full evidence did not match the selected source and journal revision or its integrity checks failed. No recovery claim is supported.",
+      };
+    }
     return {
       label: "Resolved and verified",
       tone: "mint",
@@ -278,6 +344,9 @@ export function OperationsPage() {
   const [selectedExecutionId, setSelectedExecutionId] = useState<ExecutionId | null>(null);
   const selectedExecutionIdRef = useRef<ExecutionId | null>(null);
   const [evidenceState, setEvidenceState] = useState<EvidenceState>({ kind: "idle" });
+  const [evidenceReviews, setEvidenceReviews] = useState<
+    ReadonlyMap<EvidenceRevisionKey, EvidenceReview>
+  >(() => new Map());
   const [now, setNow] = useState(Date.now());
   const [pauseSubmitting, setPauseSubmitting] = useState(false);
   const [pauseMessage, setPauseMessage] = useState<string | null>(null);
@@ -317,6 +386,7 @@ export function OperationsPage() {
     setSelectedExecutionId(null);
     selectionVersionRef.current += 1;
     setEvidenceState({ kind: "idle" });
+    setEvidenceReviews(new Map());
     setPauseMessage(null);
   }
 
@@ -422,6 +492,7 @@ export function OperationsPage() {
     selectedExecutionIdRef.current = null;
     setSelectedExecutionId(null);
     setEvidenceState({ kind: "idle" });
+    setEvidenceReviews(new Map());
     setPauseMessage(null);
     setPauseSubmitting(false);
     if (clearInput) setApiKey("");
@@ -451,6 +522,7 @@ export function OperationsPage() {
     selectedExecutionIdRef.current = null;
     setSelectedExecutionId(null);
     setEvidenceState({ kind: "idle" });
+    setEvidenceReviews(new Map());
     setPauseMessage(null);
   }
 
@@ -466,13 +538,20 @@ export function OperationsPage() {
 
   async function loadEvidence(executionId: ExecutionId): Promise<void> {
     const key = activeKeyRef.current;
-    if (!key) return;
+    const currentSnapshot = snapshot;
+    const execution = currentSnapshot?.executions.find((item) => item.execution_id === executionId);
+    if (!key || !currentSnapshot || !execution) return;
 
     const connectionVersion = connectionVersionRef.current;
     const selectionVersion = selectionVersionRef.current;
+    const revisionKey = evidenceRevisionKey(
+      execution,
+      currentSnapshot.source_sha,
+      connectionVersion,
+    );
     const controller = addController();
     evidenceControllerRef.current = controller;
-    setEvidenceState({ kind: "loading", executionId });
+    setEvidenceState({ kind: "loading", executionId, revisionKey });
     try {
       const bundle = await fetchOperationsEvidence({
         apiKey: key,
@@ -488,7 +567,31 @@ export function OperationsPage() {
       ) {
         return;
       }
-      setEvidenceState({ kind: "ready", executionId, bundle });
+      const evidenceMatchesRevision =
+        bundle.evidence.source_sha === currentSnapshot.source_sha &&
+        bundle.evidence.integrity.events === execution.integrity.events &&
+        bundle.evidence.integrity.last_hash === execution.integrity.last_hash;
+      if (!evidenceMatchesRevision) {
+        setEvidenceReviews((current) => new Map(current).set(revisionKey, "integrity_invalid"));
+        setEvidenceState({
+          kind: "error",
+          executionId,
+          revisionKey,
+          message: "The full evidence response did not match the selected source and journal revision.",
+        });
+        return;
+      }
+      if (!bundle.evidence.integrity.ok || !bundle.evidence.audit_integrity.ok) {
+        setEvidenceReviews((current) => new Map(current).set(revisionKey, "integrity_invalid"));
+      } else {
+        setEvidenceReviews((current) => {
+          if (!current.has(revisionKey)) return current;
+          const next = new Map(current);
+          next.delete(revisionKey);
+          return next;
+        });
+      }
+      setEvidenceState({ kind: "ready", executionId, revisionKey, bundle });
     } catch (error) {
       if (
         isAbort(error, controller.signal) ||
@@ -509,9 +612,13 @@ export function OperationsPage() {
         clearStatusState(apiError);
         return;
       }
+      if (apiError.kind === "evidence_not_found") {
+        setEvidenceReviews((current) => new Map(current).set(revisionKey, "not_found"));
+      }
       setEvidenceState({
         kind: "error",
         executionId,
+        revisionKey,
         message: errorMessage(apiError.kind, apiError.status),
       });
     } finally {
@@ -632,8 +739,19 @@ export function OperationsPage() {
   const selectedExecution = snapshot?.executions.find(
     (execution) => execution.execution_id === selectedExecutionId,
   );
+  const selectedExecutionRevisionKey = selectedExecution && snapshot
+    ? evidenceRevisionKey(
+      selectedExecution,
+      snapshot.source_sha,
+      connectionVersionRef.current,
+    )
+    : null;
+  const selectedEvidenceReview = selectedExecutionRevisionKey
+    ? evidenceReviews.get(selectedExecutionRevisionKey) ?? "available"
+    : "available";
   const evidence = evidenceState.kind === "ready" &&
-      evidenceState.executionId === selectedExecutionId
+      evidenceState.executionId === selectedExecutionId &&
+      evidenceState.revisionKey === selectedExecutionRevisionKey
     ? evidenceState.bundle
     : null;
   const breakerTripped = snapshot?.circuit_breaker.tripped === true;
@@ -806,6 +924,9 @@ export function OperationsPage() {
                   subtitle="Running executions"
                   executions={activeExecutions}
                   selectedId={selectedExecutionId}
+                  sourceSha={snapshot.source_sha}
+                  connectionVersion={connectionVersionRef.current}
+                  evidenceReviews={evidenceReviews}
                   onSelect={selectExecution}
                 />
                 <ExecutionList
@@ -813,11 +934,16 @@ export function OperationsPage() {
                   subtitle="Completed, failed, cancelled, interrupted, or uncertain"
                   executions={terminalExecutions}
                   selectedId={selectedExecutionId}
+                  sourceSha={snapshot.source_sha}
+                  connectionVersion={connectionVersionRef.current}
+                  evidenceReviews={evidenceReviews}
                   onSelect={selectExecution}
                 />
               </div>
               <ExecutionDetails
                 execution={selectedExecution}
+                evidenceReview={selectedEvidenceReview}
+                revisionKey={selectedExecutionRevisionKey}
                 evidenceState={evidenceState}
                 evidence={evidence}
                 onLoadEvidence={loadEvidence}
@@ -919,6 +1045,12 @@ function PendingApprovalCard({
       <div className="operations-action-payload">
         <JsonBlock label="Arguments" value={approval.action.arguments} />
         <JsonBlock label="Target identity" value={approval.action.target} />
+        {approval.action.verification_target !== undefined && (
+          <JsonBlock
+            label="Verification target identity"
+            value={approval.action.verification_target}
+          />
+        )}
         <JsonBlock label="Complete prepared patch" value={approval.action.patch} />
       </div>
 
@@ -992,12 +1124,18 @@ function ExecutionList({
   subtitle,
   executions,
   selectedId,
+  sourceSha,
+  connectionVersion,
+  evidenceReviews,
   onSelect,
 }: {
   title: string;
   subtitle: string;
   executions: OperationsExecution[];
   selectedId: ExecutionId | null;
+  sourceSha: string;
+  connectionVersion: number;
+  evidenceReviews: ReadonlyMap<EvidenceRevisionKey, EvidenceReview>;
   onSelect: (executionId: ExecutionId) => void;
 }) {
   return (
@@ -1014,7 +1152,11 @@ function ExecutionList({
       ) : (
         <ul className="operations-execution-list">
           {executions.map((execution) => {
-            const resolution = verificationStatus(execution);
+            const revisionKey = evidenceRevisionKey(execution, sourceSha, connectionVersion);
+            const resolution = verificationStatus(
+              execution,
+              evidenceReviews.get(revisionKey) ?? "available",
+            );
             return (
               <li key={execution.execution_id}>
                 <button
@@ -1048,12 +1190,16 @@ function ExecutionList({
 
 function ExecutionDetails({
   execution,
+  evidenceReview,
+  revisionKey,
   evidenceState,
   evidence,
   onLoadEvidence,
   onDownloadEvidence,
 }: {
   execution: OperationsExecution | undefined;
+  evidenceReview: EvidenceReview;
+  revisionKey: EvidenceRevisionKey | null;
   evidenceState: EvidenceState;
   evidence: OperationsEvidenceBundle | null;
   onLoadEvidence: (executionId: ExecutionId) => Promise<void>;
@@ -1069,7 +1215,7 @@ function ExecutionDetails({
     );
   }
 
-  const resolution = verificationStatus(execution);
+  const resolution = verificationStatus(execution, evidenceReview);
   const verification = execution.record.verification;
   const roles = [
     ["Triage", execution.record.triage],
@@ -1085,9 +1231,11 @@ function ExecutionDetails({
     ? false
     : execution.record.replay_allowed;
   const evidenceLoading = evidenceState.kind === "loading" &&
-    evidenceState.executionId === execution.execution_id;
+    evidenceState.executionId === execution.execution_id &&
+    evidenceState.revisionKey === revisionKey;
   const evidenceError = evidenceState.kind === "error" &&
-    evidenceState.executionId === execution.execution_id
+    evidenceState.executionId === execution.execution_id &&
+    evidenceState.revisionKey === revisionKey
     ? evidenceState.message
     : null;
 
@@ -1167,7 +1315,19 @@ function ExecutionDetails({
           <Download size={16} aria-hidden="true" />
         </Button>
       </div>
-      {evidenceError && <p className="operations-evidence-error" role="alert">{evidenceError}</p>}
+      {evidenceReview === "not_found" ? (
+        <p className="operations-evidence-error" role="alert">
+          Full event history was not found (HTTP 404) for this source and journal revision.
+          The verified label remains withheld.
+        </p>
+      ) : evidenceReview === "integrity_invalid" ? (
+        <p className="operations-evidence-error" role="alert">
+          Full event history did not match this source and journal revision or failed integrity checks.
+          No recovery claim is supported.
+        </p>
+      ) : evidenceError ? (
+        <p className="operations-evidence-error" role="alert">{evidenceError}</p>
+      ) : null}
 
       {evidence && (
         <section className="operations-event-history" aria-labelledby="operations-events-title">

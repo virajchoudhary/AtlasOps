@@ -77,6 +77,25 @@ def test_audit_verify_fails_on_tamper(tmp_path):
     assert verify["ok"] is False
 
 
+def test_verified_audit_snapshot_returns_only_signature_checked_records(tmp_path):
+    from agents.audit import AuditLog
+
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(secret_key="test-placeholder-audit-secret", log_path=path)
+    first = log.record("inc-1", "coordinator", "incident_start")
+    second = log.record("inc-1", "coordinator", "incident_end")
+    assert log.verify_integrity(include_records=True) == {
+        "ok": True, "entries": 2, "records": [first, second],
+    }
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("incident_end", "incident_bad"),
+        encoding="utf-8",
+    )
+    result = log.verify_integrity(include_records=True)
+    assert result["ok"] is False
+    assert "records" not in result
+
+
 def test_audit_tail_limit_and_offset(tmp_path):
     from agents.audit import AuditLog
 

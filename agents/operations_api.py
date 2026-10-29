@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Literal
@@ -61,13 +63,43 @@ def operations_router(
         require_audit_log()
         return get_execution_journal()
 
+    def verified_audit():
+        try:
+            integrity = require_audit_log().verify_integrity(include_records=True)
+        except (OSError, ValueError):
+            raise HTTPException(status_code=503, detail="Audit evidence is unavailable") from None
+        records = integrity.pop("records", [])
+        if not integrity.get("ok"):
+            raise HTTPException(status_code=503, detail="Audit integrity verification failed")
+        return integrity, records
+
+    def require_execution_audit(execution, by_hash):
+        for event in execution["events"]:
+            row = by_hash.get(event.get("audit_entry_hash"))
+            transition = {key: value for key, value in event.items() if key != "audit_entry_hash"}
+            transition_hash = hashlib.sha256(
+                json.dumps(transition, sort_keys=True).encode("utf-8"),
+            ).hexdigest()
+            if (
+                row is None or row.get("incident_id") != execution["incident_id"]
+                or row.get("agent_role") != "coordinator"
+                or row.get("action_type") != "execution_progress"
+                or row.get("tool_args_hash") != transition_hash
+            ):
+                raise HTTPException(status_code=503, detail="Execution audit evidence is incomplete")
+
     @router.get("/operations")
     def operations_status():
         journal = configured()
         try:
-            executions = journal.list()
+            executions = journal.list(include_events=True)
         except (OSError, ExecutionJournalError, ValueError):
             raise HTTPException(status_code=503, detail="Operational evidence is unavailable") from None
+        _integrity, records = verified_audit()
+        by_hash = {row["entry_hash"]: row for row in records}
+        for execution in executions:
+            require_execution_audit(execution, by_hash)
+            execution.pop("events")
         return {
             "enabled": True,
             "source_sha": os.getenv("ATLASOPS_SOURCE_SHA", ""),
@@ -88,18 +120,14 @@ def operations_router(
             raise HTTPException(status_code=404, detail="Execution not found") from None
         except (OSError, ExecutionJournalError, ValueError):
             raise HTTPException(status_code=503, detail="Operational evidence is unavailable") from None
-        audit = require_audit_log()
-        integrity = audit.verify_integrity()
-        if not integrity.get("ok"):
-            raise HTTPException(status_code=503, detail="Audit integrity verification failed")
+        integrity, records = verified_audit()
+        by_hash = {row["entry_hash"]: row for row in records}
+        require_execution_audit(execution, by_hash)
         payload = {
             **execution, "source_sha": os.getenv("ATLASOPS_SOURCE_SHA", ""),
             "certification_status": "NOT_CERTIFIED", "audit_integrity": integrity,
-            "audit_scope": "last_1000_global_records",
-            "audit": [
-                row for row in audit.tail(limit=1000)
-                if row.get("incident_id") == execution["incident_id"]
-            ],
+            "audit_scope": "incident_records",
+            "audit": [row for row in records if row.get("incident_id") == execution["incident_id"]],
         }
         return JSONResponse(payload, headers={
             "Cache-Control": "no-store",

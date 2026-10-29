@@ -1,3 +1,7 @@
+import hashlib
+import json
+import sqlite3
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -84,6 +88,160 @@ def test_evidence_download_preserves_failed_verification_and_hashes(runtime):
         assert response.json()["record"]["resolved"] is False
         assert response.json()["integrity"]["ok"] is True
         assert response.json()["audit_integrity"]["ok"] is True
+
+
+@pytest.mark.parametrize("audit_state", ["missing", "empty", "unrelated", "partial"])
+def test_evidence_download_requires_all_referenced_audit_records(runtime, audit_state):
+    from agents.audit import AuditLog, require_audit_log
+
+    app, _gate, _breaker = runtime
+    execution_id = "a" * 32
+    with TestClient(app) as client:
+        journal = get_execution_journal()
+        journal.begin("inc-audit-export", execution_id, alert={}, anchors=None)
+        journal.note(execution_id, phase="finished", state="failed", event="finished")
+        audit = require_audit_log()
+        original = audit.log_path.read_text(encoding="utf-8")
+        if audit_state == "missing":
+            audit.log_path.unlink()
+        elif audit_state == "empty":
+            audit.log_path.write_text("", encoding="utf-8")
+        elif audit_state == "partial":
+            audit.log_path.write_text(original.splitlines()[0] + "\n", encoding="utf-8")
+        else:
+            replacement = AuditLog(
+                secret_key=audit.secret_key.decode("utf-8"),
+                log_path=audit.log_path.with_name("unrelated-audit.jsonl"),
+            )
+            replacement.record("inc-audit-export", "operator", "unrelated_event")
+            audit.log_path.write_text(
+                replacement.log_path.read_text(encoding="utf-8"), encoding="utf-8",
+            )
+        before = journal.read(execution_id)
+        response = client.get(
+            f"/operations/{execution_id}/evidence",
+            headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        )
+        assert response.status_code == 503
+        assert "audit" in response.json()["detail"].lower()
+        assert client.get(
+            "/operations", headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        ).status_code == 503
+        assert journal.read(execution_id) == before
+
+
+def test_evidence_download_keeps_execution_audit_after_more_than_1000_other_records(runtime):
+    from agents.audit import require_audit_log
+
+    app, _gate, _breaker = runtime
+    execution_id = "d" * 32
+    with TestClient(app) as client:
+        journal = get_execution_journal()
+        journal.begin("inc-old-export", execution_id, alert={}, anchors=None)
+        journal.note(
+            execution_id, phase="finished", state="failed", event="failed",
+            patch={"resolved": False},
+        )
+        audit = require_audit_log()
+        for index in range(1001):
+            audit.record("inc-other", "coordinator", "progress", result_summary=str(index))
+        response = client.get(
+            f"/operations/{execution_id}/evidence",
+            headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        referenced_hashes = {event["audit_entry_hash"] for event in payload["events"]}
+        assert {row["entry_hash"] for row in payload["audit"]} == referenced_hashes
+        assert all(row["incident_id"] == "inc-old-export" for row in payload["audit"])
+        assert payload["audit_scope"] == "incident_records"
+        assert payload["record"]["resolved"] is False
+
+
+def test_evidence_download_rejects_non_object_audit_records(runtime):
+    from agents.audit import require_audit_log
+
+    app, _gate, _breaker = runtime
+    execution_id = "c" * 32
+    with TestClient(app) as client:
+        get_execution_journal().begin("inc-malformed-audit", execution_id, alert={}, anchors=None)
+        require_audit_log().log_path.write_text("[]\n", encoding="utf-8")
+        response = client.get(
+            f"/operations/{execution_id}/evidence",
+            headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        )
+        assert response.status_code == 503
+
+
+def test_evidence_download_preserves_operator_and_tool_audit_records(runtime):
+    from agents.audit import require_audit_log
+
+    app, _gate, _breaker = runtime
+    execution_id = "f" * 32
+    with TestClient(app) as client:
+        get_execution_journal().begin("inc-all-audit", execution_id, alert={}, anchors=None)
+        audit = require_audit_log()
+        decision = audit.record(
+            "inc-all-audit", "operator", "operator_decision", approved_by="test-operator",
+        )
+        tool = audit.record("inc-all-audit", "remediation", "tool_result")
+        audit.record("inc-other", "operator", "operator_decision")
+        response = client.get(
+            f"/operations/{execution_id}/evidence",
+            headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert decision in payload["audit"]
+        assert tool in payload["audit"]
+        assert all(row["incident_id"] == "inc-all-audit" for row in payload["audit"])
+
+
+@pytest.mark.parametrize("change", ["event", "phase", "state", "ts", "execution_id", "omit"])
+@pytest.mark.parametrize("endpoint", ["index", "export"])
+def test_evidence_download_rejects_rechained_transition_metadata(runtime, change, endpoint):
+    from agents.audit import require_audit_log
+
+    app, _gate, _breaker = runtime
+    execution_id = "9" * 32
+    with TestClient(app) as client:
+        journal = get_execution_journal()
+        journal.begin("inc-signed-transition", execution_id, alert={}, anchors=None)
+        journal.note(execution_id, phase="diagnosis", event="diagnosis_started")
+        journal.note(execution_id, phase="finished", state="failed", event="finished")
+        audit = require_audit_log()
+        original_audit = audit.log_path.read_bytes()
+        with sqlite3.connect(journal.path) as connection:
+            rows = connection.execute(
+                "SELECT sequence,event FROM execution_events ORDER BY sequence",
+            ).fetchall()
+            if change == "omit":
+                connection.execute("DELETE FROM execution_events WHERE sequence=?", (rows[1][0],))
+                rows.pop(1)
+            previous = ""
+            for index, (sequence, serialized) in enumerate(rows):
+                event = json.loads(serialized)
+                if change != "omit" and index == 0:
+                    event[change] = {
+                        "event": "mutation_executed", "phase": "applying",
+                        "state": "completed", "ts": 1.0, "execution_id": "8" * 32,
+                    }[change]
+                if "prev_hash" in event:
+                    event["prev_hash"] = previous
+                serialized = json.dumps(event, sort_keys=True, separators=(",", ":"))
+                digest = hashlib.sha256((previous + serialized).encode()).hexdigest()
+                connection.execute(
+                    "UPDATE execution_events SET event=?,prev_hash=?,entry_hash=? WHERE sequence=?",
+                    (serialized, previous, digest, sequence),
+                )
+                previous = digest
+        assert audit.verify_integrity()["ok"] is True
+        response = client.get(
+            "/operations" if endpoint == "index" else f"/operations/{execution_id}/evidence",
+            headers={"X-AtlasOps-Key": "test-placeholder-operator-key"},
+        )
+        assert response.status_code == 503
+        assert audit.log_path.read_bytes() == original_audit
 
 
 def test_pause_stops_future_tool_execution_without_resetting_counters(runtime):

@@ -1,11 +1,10 @@
 """Alertmanager tool wrappers — silence flapping alerts via HTTP API."""
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
-
 
 ALERTMANAGER_URL = os.getenv(
     "ALERTMANAGER_URL",
@@ -20,8 +19,8 @@ def alertmanager_silence(matchers: list[dict[str, str]], duration_minutes: int =
 
     matchers example: [{"name": "alertname", "value": "HighErrorRate", "isRegex": False}]
     """
-    starts_at = datetime.now(timezone.utc).isoformat()
-    ends_at = (datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)).isoformat()
+    starts_at = datetime.now(UTC).isoformat()
+    ends_at = (datetime.now(UTC) + timedelta(minutes=duration_minutes)).isoformat()
     payload = {
         "matchers": matchers,
         "startsAt": starts_at,
@@ -38,9 +37,14 @@ def alertmanager_silence(matchers: list[dict[str, str]], duration_minutes: int =
 
 
 def alertmanager_list_alerts(active_only: bool = True) -> dict[str, Any]:
-    """List currently firing alerts."""
+    """List firing alerts, including silenced, inhibited, and unprocessed states."""
     try:
-        params = {"active": "true" if active_only else "false"}
+        params = {
+            "active": "true" if active_only else "false",
+            "silenced": "true",
+            "inhibited": "true",
+            "unprocessed": "true",
+        }
         r = requests.get(f"{ALERTMANAGER_URL}/api/v2/alerts", params=params, timeout=10)
         r.raise_for_status()
         alerts = r.json()
@@ -52,6 +56,7 @@ def alertmanager_list_alerts(active_only: bool = True) -> dict[str, Any]:
                     "alertname": a.get("labels", {}).get("alertname"),
                     "severity": a.get("labels", {}).get("severity"),
                     "namespace": a.get("labels", {}).get("namespace"),
+                    "deployment": a.get("labels", {}).get("deployment"),
                     "status": a.get("status", {}).get("state"),
                     "starts_at": a.get("startsAt"),
                 }

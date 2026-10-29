@@ -103,6 +103,30 @@ subjects:
     name: atlasops-coordinator
     namespace: default
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atlasops-coordinator-chaos-cleanup
+  namespace: chaos-mesh
+rules:
+  - apiGroups: ["chaos-mesh.org"]
+    resources: ["podchaos", "stresschaos", "networkchaos", "dnschaos", "iochaos", "timechaos"]
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atlasops-coordinator-chaos-cleanup
+  namespace: chaos-mesh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atlasops-coordinator-chaos-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: atlasops-coordinator
+    namespace: default
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

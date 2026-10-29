@@ -167,6 +167,14 @@ Service. Its Kubernetes service account has read-only cluster inspection plus a
 namespace-scoped deployment patch/scale role; it is not cluster-admin and cannot
 read Secrets.
 
+The Python Chaos client uses an owned in-cluster configuration inside a Pod.
+An explicitly selected host context still uses kubeconfig and never falls back
+to another identity. Both deployment variants inspect only the six supported
+Chaos kinds. Cleanup grants `get` and `delete` only in `chaos-mesh`, with no
+fault creation, update, patch, or collection deletion. Tool-side UID and
+resource-version preconditions remain required. Argo credential references are
+optional when setup explicitly disables Argo; enabled setup still validates them.
+
 The P1 approval callback and pending-approval inventory are privileged operator
 surfaces. Both require the `X-AtlasOps-Key` value sourced from the coordinator
 Secret. This prevents an ordinary in-cluster workload from harvesting an

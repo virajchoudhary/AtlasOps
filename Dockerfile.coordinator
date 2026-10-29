@@ -1,19 +1,33 @@
 FROM python:3.11-slim
 
+ARG TARGETARCH
 ARG KUBECTL_VERSION=v1.31.10
 ARG KUBECTL_SHA256=f7e806b676bea3b4995e9c236445a5f24ae61ed3d5245c39d7b816d209b06a78
+ARG KUBECTL_SHA256_ARM64=73dcb8c9031d9533c0b8b1f12ffaddf0a5e8c559fbce3397693399212ec75ed9
+ARG ATLASOPS_SOURCE_SHA=unknown
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
-    && curl -fsSLo /usr/local/bin/kubectl \
-       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-    && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - \
-    && chmod 0755 /usr/local/bin/kubectl \
-    && rm -rf /var/lib/apt/lists/*
+LABEL org.opencontainers.image.source="https://github.com/virajchoudhary/AtlasOps" \
+      org.opencontainers.image.revision="${ATLASOPS_SOURCE_SHA}"
+
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    case "${TARGETARCH}" in \
+      amd64) kubectl_sha256="${KUBECTL_SHA256}" ;; \
+      arm64) kubectl_sha256="${KUBECTL_SHA256_ARM64}" ;; \
+      *) echo "Unsupported kubectl architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSLo /usr/local/bin/kubectl \
+       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
+    echo "${kubectl_sha256}  /usr/local/bin/kubectl" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/kubectl; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
 COPY agents ./agents

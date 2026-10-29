@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import secrets
 import stat
 import string
+from pathlib import Path
 
 
 def generate_token(length: int = 32) -> str:
@@ -84,6 +84,8 @@ def main() -> None:
     api_key_file = out_dir / "atlasops-api-key.secret"
     user_file = out_dir / "argocd-user.secret"
     pass_file = out_dir / "argocd-pass.secret"
+    grafana_user_file = out_dir / "grafana-admin-user.secret"
+    grafana_pass_file = out_dir / "grafana-admin-password.secret"
     llm_file = out_dir / "llm-api-key.secret"
 
     if not audit_file.is_file() or args.force:
@@ -112,6 +114,15 @@ def main() -> None:
         generated_pwd = generate_secure_password(24)
         pass_file.write_text(generated_pwd, encoding="utf-8")
         set_restricted_permissions(pass_file)
+
+    if not grafana_user_file.is_file() or args.force:
+        grafana_user_file.write_text("admin", encoding="utf-8")
+        set_restricted_permissions(grafana_user_file)
+
+    if not grafana_pass_file.is_file() or args.force:
+        grafana_password = generate_secure_password(32)
+        grafana_pass_file.write_text(grafana_password, encoding="utf-8")
+        set_restricted_permissions(grafana_pass_file)
 
     # 3. Optional LLM API Key
     if args.llm_api_key_file:
@@ -158,7 +169,7 @@ fi
 
 echo "RECOVERY: Applying secrets to target context '$TARGET_CONTEXT' from '$SCRIPT_DIR'..."
 
-for req in atlasops-audit-secret.secret alertmanager-webhook-secret.secret atlasops-api-key.secret argocd-user.secret argocd-pass.secret; do
+for req in atlasops-audit-secret.secret alertmanager-webhook-secret.secret atlasops-api-key.secret argocd-user.secret argocd-pass.secret grafana-admin-user.secret grafana-admin-password.secret; do
   if [[ ! -s "$SCRIPT_DIR/$req" ]]; then
     echo "ERROR: Missing or empty required secret file: $SCRIPT_DIR/$req" >&2
     exit 1
@@ -182,6 +193,12 @@ kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-alertmanager-
   --from-file=alertmanager-webhook-secret="$SCRIPT_DIR/alertmanager-webhook-secret.secret" \\
   --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
 
+kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-grafana-admin \\
+  --namespace=monitoring \\
+  --from-file=admin-user="$SCRIPT_DIR/grafana-admin-user.secret" \\
+  --from-file=admin-password="$SCRIPT_DIR/grafana-admin-password.secret" \\
+  --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
+
 echo "RECOVERY: Successfully applied secrets to context '$TARGET_CONTEXT'."
 """
 
@@ -193,6 +210,7 @@ echo "RECOVERY: Successfully applied secrets to context '$TARGET_CONTEXT'."
     print(f"[OK] Prepared local runtime secret material in '{out_dir}/'")
     print(f"[OK] - Coordinator secrets: audit, webhook, api-key, argocd-user ({args.argocd_user}), argocd-pass")
     print("[OK] - Alertmanager secret: webhook token")
+    print("[OK] - Grafana admin secret files prepared")
     if (out_dir / "llm-api-key.secret").is_file():
         print("[OK] - LLM API key provisioned")
     print("[OK] Local secret material is complete. Ready for infra/setup.sh --apply.")

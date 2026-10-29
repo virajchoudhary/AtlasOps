@@ -1,0 +1,252 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlasops-otel-collector-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops-otel-collector
+    app.kubernetes.io/part-of: atlasops
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 128
+        spike_limit_mib: 32
+      batch: {}
+
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger.jaeger.svc.cluster.local:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        metric_expiration: 5m
+
+    connectors:
+      spanmetrics:
+        namespace: atlasops_boutique
+        histogram:
+          unit: ms
+          explicit:
+            buckets:
+              - 5ms
+              - 10ms
+              - 25ms
+              - 50ms
+              - 100ms
+              - 250ms
+              - 500ms
+              - 1s
+              - 2.5s
+              - 5s
+        dimensions_cache_size: 1000
+        exclude_dimensions:
+          - span.name
+        metrics_flush_interval: 15s
+        metrics_expiration: 5m
+
+    service:
+      pipelines:
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - otlp/jaeger
+            - spanmetrics
+        metrics/spanmetrics:
+          receivers:
+            - spanmetrics
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - prometheus
+        metrics/coordinator:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - prometheus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlasops-otel-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops-otel-collector
+    app.kubernetes.io/part-of: atlasops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlasops-otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: atlasops-otel-collector
+        app.kubernetes.io/part-of: atlasops
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.98.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/conf/config.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: metrics
+              containerPort: 8889
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: otlp-grpc
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: atlasops-otel-collector-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlasops-otel-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops-otel-collector
+    app.kubernetes.io/part-of: atlasops
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: atlasops-otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+    - name: metrics
+      port: 8889
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: atlasops-otel-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops-otel-collector
+    app.kubernetes.io/part-of: atlasops
+spec:
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlasops-otel-collector
+      app.kubernetes.io/part-of: atlasops
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 5s
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atlasops-otel-collector-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: atlasops-otel-collector
+    app.kubernetes.io/part-of: atlasops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: atlasops-otel-collector
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: atlasops-coordinator
+      ports:
+        - protocol: TCP
+          port: 4318
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: atlasops-boutique
+      ports:
+        - protocol: TCP
+          port: 4317
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8889

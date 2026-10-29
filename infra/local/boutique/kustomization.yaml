@@ -1,0 +1,441 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: atlasops-boutique
+resources:
+  - https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/98e60f5ee0b643cc00bceb71e6efb89617740432/release/kubernetes-manifests.yaml
+patches:
+  - target:
+      version: v1
+      kind: Service
+      name: frontend-external
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: frontend-external
+  - target:
+      version: v1
+      kind: Service
+      name: frontend
+    patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: frontend
+      spec:
+        type: NodePort
+        ports:
+          - name: http
+            port: 80
+            targetPort: 8080
+            nodePort: 30080
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: frontend
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: frontend
+                startupProbe:
+                  httpGet:
+                    path: /_healthz
+                    port: 8080
+                    httpHeaders:
+                      - name: Cookie
+                        value: shop_session-id=x-startup-probe
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: checkoutservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: checkoutservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: checkoutservice
+                startupProbe:
+                  grpc:
+                    port: 5050
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: currencyservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: currencyservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: currencyservice
+                startupProbe:
+                  grpc:
+                    port: 7000
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: productcatalogservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: productcatalogservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: productcatalogservice
+                startupProbe:
+                  grpc:
+                    port: 3550
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: paymentservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: paymentservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: paymentservice
+                startupProbe:
+                  grpc:
+                    port: 50051
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: emailservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: emailservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: emailservice
+                startupProbe:
+                  grpc:
+                    port: 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: recommendationservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: recommendationservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                env:
+                  - name: ENABLE_TRACING
+                    value: "1"
+                  - name: COLLECTOR_SERVICE_ADDR
+                    value: atlasops-otel-collector.monitoring.svc.cluster.local:4317
+                  - name: OTEL_SERVICE_NAME
+                    value: recommendationservice
+                startupProbe:
+                  grpc:
+                    port: 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: shippingservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: shippingservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                startupProbe:
+                  grpc:
+                    port: 50051
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: adservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: adservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                startupProbe:
+                  grpc:
+                    port: 9555
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: cartservice
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cartservice
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: server
+                startupProbe:
+                  grpc:
+                    port: 7070
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 18
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: redis-cart
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: redis-cart
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: redis
+                startupProbe:
+                  tcpSocket:
+                    port: 6379
+                  periodSeconds: 5
+                  timeoutSeconds: 5
+                  failureThreshold: 30
+                readinessProbe:
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+                livenessProbe:
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: loadgenerator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: loadgenerator
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: main
+                env:
+                  - name: USERS
+                    value: "1"
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 250m
+                    memory: 256Mi

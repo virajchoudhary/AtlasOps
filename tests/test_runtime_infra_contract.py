@@ -117,9 +117,9 @@ def test_runtime_configuration_uses_secret_references_without_secret_values() ->
     assert refs["ATLASOPS_API_KEY"]["key"] == "atlasops-api-key"
     assert refs["LLM_API_KEY"]["optional"] is True
     assert refs["ARGOCD_USER"]["key"] == "argocd-user"
-    assert refs["ARGOCD_USER"].get("optional") is not True
+    assert refs["ARGOCD_USER"]["optional"] is True
     assert refs["ARGOCD_PASS"]["key"] == "argocd-pass"
-    assert refs["ARGOCD_PASS"].get("optional") is not True
+    assert refs["ARGOCD_PASS"]["optional"] is True
     assert "stringData:" not in TEMPLATE
     config = document("ConfigMap", "atlasops-coordinator-config")["data"]
     assert config["ATLASOPS_RUNTIME_DATA_DIR"].startswith("/var/lib/atlasops/")

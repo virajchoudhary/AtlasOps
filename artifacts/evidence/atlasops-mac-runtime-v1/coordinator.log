@@ -1,0 +1,29 @@
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9099 (Press CTRL+C to quit)
+2026-10-29 06:30:45,570 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,009 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,041 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,063 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,094 [INFO] [inc-1793255445-22b4fb] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,813 [INFO] [inc-1793255446-4b8d4f] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,912 [INFO] [inc-1793255446-2040f4] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,968 [INFO] [inc-1793255446-708bc8] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:31:12,479 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:31:26,921 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58638 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,021 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58640 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,027 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58656 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,028 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58654 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:33,205 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:31:52,994 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:32:05,604 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:32:46,527 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:33:24,737 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:34:02,582 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:34:44,419 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:36:05,090 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"

@@ -45,6 +45,9 @@ $venv = Join-Path $env:LOCALAPPDATA "AtlasOps\BugLab\venv"
 & "$venv\Scripts\python.exe" -m demo.bug_lab --agents rules --workdir .\bug-lab-work --resume
 ```
 
+Resume refuses a missing writer-lock file. Preserve the owned workspace files;
+do not delete the lock to retry startup.
+
 For a model-free Windows smoke test, install the test runner into that environment.
 The test owns its loopback server and disposable workspace, kills that process to
 simulate a crash, resumes it, and rejects the old approval receipt.

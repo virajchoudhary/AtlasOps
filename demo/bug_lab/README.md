@@ -64,6 +64,7 @@ Only local filesystems are supported. Do not remove the ownership marker, lock,
 pending snapshot, or journal to force a directory to reopen. Unknown files,
 invalid records, redirects, and unexplained partial appends fail startup without
 adopting or deleting the data. Preserve the directory for diagnosis.
+Resume requires the existing writer-lock file and never recreates a missing lock.
 
 `GET /health` and `/health/ready` return 200 only after backend selection,
 workspace recovery, and monitor startup. They return 503 before startup, after

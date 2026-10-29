@@ -201,7 +201,7 @@ class Workspace:
             raise ValueError("Bug Lab workdir must be new or empty")
 
         try:
-            self._acquire_lock()
+            self._acquire_lock(create=not resume)
             if resume:
                 self._open_existing()
             else:
@@ -396,10 +396,10 @@ class Workspace:
             raise _WorkspaceIntegrityError("Bug Lab workspace marker is invalid")
         return identity
 
-    def _acquire_lock(self) -> None:
+    def _acquire_lock(self, *, create: bool) -> None:
         fd = self._open_regular_file(
             self._lock_path,
-            os.O_RDWR | os.O_CREAT,
+            os.O_RDWR | (os.O_CREAT if create else 0),
         )
         try:
             if os.name == "nt":

@@ -39,6 +39,7 @@ def _start_process(tmp_path: Path, timeout: float) -> subprocess.Popen:
         "TEST_APPROVAL_TIMEOUT": str(timeout),
         "TRAJECTORIES_DIR": str(tmp_path / "trajectories"),
         "PYTHONPATH": str(REPO_ROOT),
+        "ATLASOPS_OPERATIONAL_MODE": "0",
     })
     return subprocess.Popen(
         [sys.executable, str(HELPER), str(tmp_path)],
@@ -90,6 +91,10 @@ def approval_process(tmp_path):
 def test_operator_decision_reaches_waiting_host_coordinator(approval_process, decision):
     process, output, base_url = approval_process(decision)
     pending = _pending(base_url, process)
+    assert pending["action"] == {
+        "tool": "kubectl_scale",
+        "arguments": {"deployment": "frontend", "namespace": "default", "replicas": 2},
+    }
     payload = {"token": pending["token"], "decision": decision, "approved_by": "test-operator"}
     response = httpx.post(
         f"{base_url}/approve", json=payload, headers={"X-AtlasOps-Key": TEST_KEY}, timeout=2,
@@ -98,7 +103,8 @@ def test_operator_decision_reaches_waiting_host_coordinator(approval_process, de
     result = _wait_for(output / "result.json", process)
     assert result["approval"]["decision"] == decision
     assert result["approval"]["approved_by"] == "test-operator"
-    assert ("remediation" in result["roles"]) is (decision == "approved")
+    assert result["roles"][:3] == ["triage", "diagnosis", "remediation"]
+    assert result["mutations"] == (1 if decision == "approved" else 0)
     if decision == "rejected":
         assert result["remediation"]["status"] == "approval_rejected"
         assert result["remediation"]["executed_actions"] == []
@@ -135,7 +141,8 @@ def test_timeout_fails_closed_and_late_decision_is_rejected(approval_process):
     result = _wait_for(output / "result.json", process)
     assert result["approval"]["decision"] == "timeout"
     assert result["remediation"]["status"] == "approval_timeout"
-    assert "remediation" not in result["roles"]
+    assert result["roles"][:3] == ["triage", "diagnosis", "remediation"]
+    assert result["mutations"] == 0
     # The listener shuts down with the incident; the gate itself must not retain the token.
     from agents.approval import ApprovalGate
     gate = ApprovalGate(timeout_seconds=0.001)
@@ -193,7 +200,8 @@ def test_missing_or_blank_operator_identity_cannot_release_remediation(
     result = _wait_for(output / "result.json", process)
     assert result["approval"]["decision"] == "timeout"
     assert result["remediation"]["status"] == "approval_timeout"
-    assert "remediation" not in result["roles"]
+    assert result["roles"][:3] == ["triage", "diagnosis", "remediation"]
+    assert result["mutations"] == 0
     assert result["remediation"]["executed_actions"] == []
 
 

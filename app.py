@@ -64,6 +64,7 @@ def _verify_webhook_signature(body: bytes, authorization: str | None) -> None:
 # Import coordinator internals
 import agents.coordinator as coordinator_module
 from agents import incident_history
+from agents.action_execution import operational_mode
 from agents.approval import approval_gate
 from agents.audit import audit_log
 from agents.circuit_breaker import circuit_breaker
@@ -78,12 +79,15 @@ from agents.coordinator import (
 )
 from agents.correlator import correlator
 from agents.incident_dispatch import incident_dispatcher
+from agents.operations_api import operations_lifespan, operator_identity
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import get_history, subscribe
+from agents.telemetry import install_http_telemetry
 from demo import read_api as presentation_read_api
 from ui_read_model import attempt_detail, catalog
 
-app = FastAPI(title="AtlasOps", docs_url="/api/docs")
+app = FastAPI(title="AtlasOps", docs_url="/api/docs", lifespan=operations_lifespan)
+install_http_telemetry(app)
 
 _PRESENTATION_READ_PATHS = (
     "/api/catalog",
@@ -323,6 +327,7 @@ class ApprovalCallbackRequest(BaseModel):
     decision: str = Field(min_length=1)
     approved_by: str = ""
     reason: str = ""
+    action_digest: str | None = None
 
 
 @app.post("/inject", dependencies=[Security(_require_api_key)])
@@ -509,25 +514,27 @@ async def runtime_config():
 
 
 @app.post("/approval/callback", dependencies=[Security(_require_api_key)])
-async def approval_callback(payload: ApprovalCallbackRequest):
+async def approval_callback(payload: ApprovalCallbackRequest, request: Request):
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by,
+        approved_by=operator_identity(request, fallback=payload.approved_by),
         reason=payload.reason,
+        action_digest=payload.action_digest,
     )
     status = 200 if result.get("ok") else 400
     return JSONResponse(result, status_code=status)
 
 
 @app.post("/approve", dependencies=[Security(_require_api_key)])
-async def approve_public(payload: ApprovalCallbackRequest):
+async def approve_public(payload: ApprovalCallbackRequest, request: Request):
     """Operator approval endpoint; a token alone is not authorization."""
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by,
+        approved_by=operator_identity(request, fallback=payload.approved_by),
         reason=payload.reason,
+        action_digest=payload.action_digest,
     )
     status = 200 if result.get("ok") else 400
     return JSONResponse(result, status_code=status)
@@ -544,7 +551,14 @@ async def circuit_breaker_status():
 
 
 @app.post("/circuit-breaker/reset", dependencies=[Security(_require_api_key)])
-async def circuit_breaker_reset():
+async def circuit_breaker_reset(request: Request):
+    if operational_mode():
+        principal = operator_identity(request)
+        coordinator_module.require_audit_log()
+        audit_log.record(
+            incident_id="operator", agent_role="operator", action_type="automation_reset",
+            approved_by=principal, result_summary="Operator reset the circuit breaker",
+        )
     return JSONResponse(circuit_breaker.reset())
 
 
@@ -606,9 +620,15 @@ def cluster_health():
     """Query pods in FastAPI's worker pool so kubectl cannot block the event loop."""
     env = os.environ.copy()
     env["USE_GKE_GCLOUD_AUTH_PLUGIN"] = "True"
+    namespace = os.getenv("ATLASOPS_WORKLOAD_NAMESPACE", "default")
+    selected_context = os.getenv("KUBECONFIG_CONTEXT", "").strip()
+    command = ["kubectl"]
+    if selected_context and selected_context != "in-cluster":
+        command.extend(["--context", selected_context])
+    command.extend(["get", "pods", "-n", namespace, "-o", "json"])
     try:
         r = subprocess.run(
-            ["kubectl", "get", "pods", "-n", "default", "-o", "json"],
+            command,
             capture_output=True, text=True, env=env, timeout=8, check=False,
         )
         if r.returncode != 0:
@@ -661,7 +681,7 @@ def cluster_health():
         total_healthy = sum(1 for s in services.values() if s["status"] == "healthy")
         return JSONResponse({"ok": True, "services": services, "healthy": total_healthy, "total": len(_TOPOLOGY_SERVICES)})
     except Exception as e:  # noqa: BLE001 - malformed pod observations remain unavailable, never healthy
-        return JSONResponse({"ok": False, "error": str(e), "services": {}})
+        return JSONResponse({"ok": False, "error": type(e).__name__, "services": {}})
 
 
 @app.post("/webhook")
@@ -713,12 +733,14 @@ async def _dispatch_incident(
     incident_id: str,
     *,
     incident_anchors: dict | None = None,
+    execution_id: str | None = None,
 ):
     from agents.coordinator import handle_incident
     return await handle_incident(
         payload,
         incident_id=incident_id,
         incident_anchors=incident_anchors,
+        **({"execution_id": execution_id} if execution_id is not None else {}),
     )
 
 

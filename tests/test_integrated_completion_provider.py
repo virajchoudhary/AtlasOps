@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 from copy import deepcopy
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -65,6 +64,45 @@ def _inconclusive_verification():
             return {"env_resolved": False, "verification_status": "inconclusive"}
 
     return Result()
+
+
+@pytest.mark.asyncio
+async def test_native_failure_capture_redacts_credentials_without_discarding_evidence(
+    monkeypatch, safe_runtime,
+):
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "0")
+    alert = {
+        "commonLabels": {"alertname": "CaptureFailure", "service": "frontend"},
+        "annotations": {
+            "api_key": "fixture-key-must-not-persist",
+            "description": "Authorization: Bearer fixture-bearer-must-not-persist",
+            "reason": "Preserve this negative observation",
+        },
+        "long_observation": "observed-" * 3000,
+    }
+    failure = RuntimeError("credential=fixture-exception-must-not-persist")
+    failure.trajectory = [{
+        "kind": "model_turn", "reward": -1,
+        "message": {
+            "access_token": "fixture-output-token-must-not-persist",
+            "observation": "Failed to recover",
+        },
+    }]
+    monkeypatch.setattr(coord, "call_agent", AsyncMock(side_effect=failure))
+    with pytest.raises(RuntimeError):
+        await coord.handle_incident(alert, incident_id="inc-native-redaction")
+    partial_path = next(safe_runtime.glob("inc-native-redaction.partial-*.json"))
+    content = partial_path.read_text(encoding="utf-8")
+    assert "must-not-persist" not in content
+    partial = json.loads(content)
+    assert partial["alert"]["annotations"]["reason"] == "Preserve this negative observation"
+    assert partial["alert"]["long_observation"] == alert["long_observation"]
+    assert partial["failed_role_trajectory"][0]["reward"] == -1
+    assert partial["failed_role_trajectory"][0]["message"]["observation"] == "Failed to recover"
+    assert partial["episode_status"] == "failed"
+    assert partial["resolved"] is False
+    assert partial["env_resolved"] is None
+    assert alert["annotations"]["api_key"] == "fixture-key-must-not-persist"
 
 
 async def _no_settle(**_kwargs):
@@ -512,10 +550,14 @@ async def test_injected_policy_uses_matched_settings_and_p1_denial_stays_blocked
         }
 
     monkeypatch.setattr("agents.policy_remediation.run_policy_remediation", fake_policy_run)
-    request = SimpleNamespace(
+    from agents.approval import ApprovalRequest
+
+    request = ApprovalRequest(
+        incident_id="inc-provider-policy", severity="P1", summary="fixture policy approval",
         token="test-approval-token",
         action_digest="test-action-digest",
         action_summary="scale paymentservice",
+        action=action,
     )
     monkeypatch.setattr(coord.approval_gate, "request_action", lambda **_kwargs: request)
 

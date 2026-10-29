@@ -106,6 +106,14 @@ class CircuitBreaker:
         self._active_incidents = 0
         return self.status()
 
+    def pause(self) -> dict:
+        self._tripped = True
+        return self.status()
+
+    def require_closed(self) -> None:
+        if self._tripped:
+            raise CircuitBreakerTripped("Circuit breaker is OPEN - tool execution is blocked")
+
     def _roll_hour_window_if_needed(self) -> None:
         if time.time() - self._hour_window_start >= 3600:
             self._hour_window_start = time.time()

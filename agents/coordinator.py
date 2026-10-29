@@ -24,14 +24,23 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field, ValidationError
 
 from agents._http_retry import post_with_retry
-from agents.approval import approval_gate, approval_mode_for_severity
+from agents.action_execution import (
+    execute_prepared_action,
+    operational_mode,
+    prepare_action,
+)
+from agents.approval import ActionApprovalPermit, approval_gate, approval_mode_for_severity
 from agents.audit import audit_log, require_audit_log
 from agents.circuit_breaker import CircuitBreakerTripped, circuit_breaker
 from agents.correlator import correlator
 from agents.grounding import build_grounding_reports
 from agents.incident_dispatch import incident_dispatcher
+from agents.execution_journal import ExecutionProgress, current_execution, get_execution_journal
+from agents.evidence_redaction import redact_persisted_evidence
+from agents.operations_api import operations_lifespan, operations_router, operator_identity
 from agents.prometheus_metrics import build_dashboard_metrics_payload
 from agents.stream import emit as thought_emit
+from agents.telemetry import current_trace_identity, record_incident, trace_span
 from agents.tool_policy import (
     AGENT_EXPOSED_TOOLS,
     CLUSTER_MUTATING_TOOLS,
@@ -162,6 +171,7 @@ class ApprovalCallbackPayload(BaseModel):
     decision: str = Field(min_length=1)
     approved_by: str = Field(min_length=1)
     reason: str = ""
+    action_digest: str | None = None
 
 
 def _require_rl_policy_live_context() -> str:
@@ -328,32 +338,72 @@ _TERMINAL_ERROR_CLASSES = frozenset({
     "invalid_revision",
     "not_found",
     "safety_block",
+    "target_conflict",
+    "target_mismatch",
     "terminal_action_blocked",
 })
 _MUTATING_ACTION_TOOLS = frozenset(CLUSTER_MUTATING_TOOLS)
 
 MutationObserver = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 CompletionProvider = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+ActionApprover = Callable[
+    [dict[str, Any]],
+    Awaitable[tuple[dict[str, Any], ActionApprovalPermit | None]],
+]
 _ACTIVE_MUTATION_OBSERVER: ContextVar[MutationObserver | None] = ContextVar(
     "atlasops_active_mutation_observer",
     default=None,
 )
+_ACTIVE_ACTION_APPROVER: ContextVar[ActionApprover | None] = ContextVar(
+    "atlasops_active_action_approver", default=None,
+)
+
+
+async def _request_selected_action(
+    incident_id: str, severity: str, action: dict[str, Any],
+) -> tuple[dict[str, Any], ActionApprovalPermit | None]:
+    request = approval_gate.request_action(
+        incident_id=incident_id, severity=severity, action=action,
+    )
+    audit_log.record(
+        incident_id=incident_id, agent_role="remediation",
+        action_type="approval_requested", tool_name=action["tool"],
+        tool_args=action["arguments"], result_summary=request.action_summary or "",
+        policy_check="requires_approval",
+    )
+    thought_emit(
+        "remediation", "waiting_approval",
+        f"Awaiting approval for exact action: {request.action_summary}",
+    )
+    result, permit = await approval_gate.wait_for_action_decision(
+        incident_id, request_token=request.token,
+    )
+    audit_log.record(
+        incident_id=incident_id, agent_role="remediation",
+        action_type="approval_decision", tool_name=action["tool"],
+        tool_args=action["arguments"], result_summary=result.get("status", "missing"),
+        approved_by=result.get("approved_by", ""),
+        policy_check="approval_granted" if permit is not None else "approval_denied",
+    )
+    return result, permit
 
 
 class CompletionProviderError(RuntimeError):
-    """Safe provider failure that does not retain exception text."""
+    """Safe completion failure that does not retain exception text."""
 
     def __init__(
         self,
         category: str,
         role: str,
         trajectory: list[dict[str, Any]],
+        *,
+        provider_kind: str = "explicit",
     ) -> None:
         self.category = category
         self.failure_category = category
         self.role = role
         self.trajectory = trajectory
-        super().__init__(f"explicit_completion_provider_failure:{category}")
+        super().__init__(f"{provider_kind}_completion_provider_failure:{category}")
 
 
 def _safe_failure_category(error: BaseException) -> str:
@@ -807,25 +857,104 @@ async def _request_explicit_completion(
     except asyncio.CancelledError as exc:
         category = _safe_failure_category(exc)
         exchange.update(status="cancelled", error_category=category)
-        _journal_explicit_provider_failure(incident_id, role, category)
+        _journal_completion_failure(incident_id, role, category)
         exc.completion_provider_role = role
         exc.completion_provider_trajectory = trajectory
         raise
     except Exception as exc:  # noqa: BLE001 - preserve category but not provider text
         category = _safe_failure_category(exc)
         exchange.update(status="failed", error_category=category)
-        _journal_explicit_provider_failure(incident_id, role, category)
+        _journal_completion_failure(incident_id, role, category)
         raise CompletionProviderError(category, role, trajectory) from None
 
     exchange["response"] = response_snapshot
     if not _explicit_completion_response_is_valid(response_snapshot):
         category = "malformed_response"
         exchange.update(status="malformed", error_category=category)
-        _journal_explicit_provider_failure(incident_id, role, category)
+        _journal_completion_failure(incident_id, role, category)
         raise CompletionProviderError(category, role, trajectory) from None
 
     exchange["status"] = "completed"
     return deepcopy(response_snapshot)
+
+
+async def _request_native_completion(
+    role: str,
+    request_payload: dict[str, Any],
+    client: httpx.AsyncClient,
+    *,
+    incident_id: str,
+    turn: int,
+    trajectory: list[dict[str, Any]],
+    context: str,
+) -> dict[str, Any]:
+    enabled = operational_mode()
+    exchange = None
+    if enabled:
+        exchange = {
+            "role": role,
+            "turn": turn,
+            "kind": "inference_exchange",
+            "request": deepcopy(request_payload),
+            "response": None,
+            "requested_model": request_payload["model"],
+            "served_model": None,
+            "provider_injected": False,
+            "backend": BACKEND,
+            "status": "pending",
+            "result_classification": "OPERATIONAL_UNCERTIFIED",
+            "certification_status": "NOT_CERTIFIED",
+        }
+        trajectory.append(exchange)
+    try:
+        response = await post_with_retry(
+            client,
+            f"{VLLM_BASE}/chat/completions",
+            request_payload,
+            context=context,
+            max_attempts=LLM_MAX_ATTEMPTS,
+            base_backoff=LLM_BASE_BACKOFF_SECONDS,
+        )
+        response.raise_for_status()
+        response_payload = response.json()
+    except asyncio.CancelledError as exc:
+        if enabled:
+            exchange.update(status="cancelled", error_category="CancelledError")
+            _journal_completion_failure(
+                incident_id, role, "CancelledError", provider_kind="http",
+            )
+            exc.completion_provider_role = role
+            exc.completion_provider_trajectory = trajectory
+        raise
+    except Exception as exc:
+        if not enabled:
+            raise
+        category = _safe_failure_category(exc)
+        exchange.update(status="failed", error_category=category)
+        _journal_completion_failure(incident_id, role, category, provider_kind="http")
+        raise CompletionProviderError(
+            category, role, trajectory, provider_kind="http",
+        ) from None
+    if not enabled:
+        return response_payload
+
+    exchange["response"] = deepcopy(response_payload)
+    served_model = response_payload.get("model") if isinstance(response_payload, dict) else None
+    exchange["served_model"] = served_model
+    if not _explicit_completion_response_is_valid(response_payload):
+        category = "malformed_response"
+    elif not isinstance(served_model, str) or not served_model.strip():
+        category = "model_identity_missing"
+    elif served_model != request_payload["model"]:
+        category = "model_identity_mismatch"
+    else:
+        exchange["status"] = "completed"
+        return response_payload
+    exchange.update(status="failed", error_category=category)
+    _journal_completion_failure(incident_id, role, category, provider_kind="http")
+    raise CompletionProviderError(
+        category, role, trajectory, provider_kind="http",
+    ) from None
 
 
 def _explicit_completion_response_is_valid(response: Any) -> bool:
@@ -873,17 +1002,19 @@ def _explicit_completion_response_is_valid(response: Any) -> bool:
     return True
 
 
-def _journal_explicit_provider_failure(
+def _journal_completion_failure(
     incident_id: str,
     role: str,
     category: str,
+    *,
+    provider_kind: str = "explicit",
 ) -> None:
     try:
         audit_log.record(
             incident_id=incident_id,
             agent_role=role,
             action_type="inference_provider_failure",
-            result_summary=f"explicit_completion_provider_failure:{category}",
+            result_summary=f"{provider_kind}_completion_provider_failure:{category}",
             policy_check="provider_error",
         )
     except Exception as exc:  # noqa: BLE001 - journal failure must not leak provider text
@@ -959,31 +1090,44 @@ async def _force_json_conclusion(
             )
         else:
             async with httpx.AsyncClient(timeout=timeout_cfg, headers=headers) as c:
-                r = await post_with_retry(
-                    c,
-                    f"{VLLM_BASE}/chat/completions",
+                response_payload = await _request_native_completion(
+                    role,
                     request_payload,
+                    c,
+                    incident_id=incident_id,
+                    turn=turn,
+                    trajectory=trajectory if trajectory is not None else [],
                     context=f"forced_conclusion/{role}",
-                    max_attempts=LLM_MAX_ATTEMPTS,
-                    base_backoff=LLM_BASE_BACKOFF_SECONDS,
                 )
-                r.raise_for_status()
-                response_payload = r.json()
         choice = response_payload["choices"][0]
         message = choice.get("message") or {}
         if telemetry is not None:
             telemetry.clear()
-            telemetry.update({"choice": choice, "message": message})
+            telemetry.update({
+                "choice": choice, "message": message,
+                "requested_model": request_payload["model"],
+                "served_model": response_payload.get("model"),
+            })
         content = message.get("content", "")
         parsed = _try_parse_json(content)
         return parsed if "raw" not in parsed else {"summary": content[:300]}
-    except CompletionProviderError:
-        raise
-    except Exception as e:
+    except CompletionProviderError as exc:
+        if completion_provider is not None:
+            raise
         if telemetry is not None:
             telemetry.clear()
-            telemetry.update({"error": str(e)})
-        return {"error": f"forced_conclusion failed: {e}"}
+            telemetry.update({
+                "error": str(exc),
+                "requested_model": request_payload["model"],
+                "served_model": exc.trajectory[-1].get("served_model"),
+            })
+        return {"error": str(exc), "failure_category": exc.failure_category}
+    except Exception as e:
+        category = _safe_failure_category(e)
+        if telemetry is not None:
+            telemetry.clear()
+            telemetry.update({"error": category})
+        return {"error": f"forced_conclusion failed: {category}"}
 
 
 async def settle_environment(
@@ -1063,6 +1207,12 @@ async def call_agent(
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
     require_audit_log()
     system_prompt = load_prompt(role)
+    if operational_mode():
+        system_prompt += (
+            "\nOperational Kubernetes reads are namespace scoped. "
+            f"The workload namespace is {os.getenv('ATLASOPS_WORKLOAD_NAMESPACE', 'default')}. "
+            "Cluster-wide reads and unrelated namespaces are not permitted."
+        )
     control = user_input.get(_REMEDIATION_CONTROL_KEY) or {}
     model_input = {
         key: value
@@ -1168,16 +1318,15 @@ async def call_agent(
                 "tool_choice": tool_choice,
             }
             if completion_provider is None:
-                r = await post_with_retry(
-                    client,
-                    f"{VLLM_BASE}/chat/completions",
+                response_payload = await _request_native_completion(
+                    role,
                     request_payload,
+                    client,
+                    incident_id=incident_id,
+                    turn=turn,
+                    trajectory=trajectory,
                     context=f"{role}/turn-{turn}",
-                    max_attempts=LLM_MAX_ATTEMPTS,
-                    base_backoff=LLM_BASE_BACKOFF_SECONDS,
                 )
-                r.raise_for_status()
-                response_payload = r.json()
             else:
                 response_payload = await _request_explicit_completion(
                     role,
@@ -1276,6 +1425,10 @@ async def call_agent(
                         turn=turn,
                         trajectory=trajectory,
                     )
+                    if operational_mode() and parsed.get("failure_category"):
+                        raise CompletionProviderError(
+                            parsed["failure_category"], role, trajectory, provider_kind="http",
+                        )
                     if role == "remediation":
                         trajectory.append(_model_turn_record(
                             role,
@@ -1361,6 +1514,10 @@ async def call_agent(
                         }
                     )
                     continue
+                if operational_mode() and fn_name in _OPERATIONAL_KUBECTL_READ_TOOLS:
+                    fn_args.setdefault(
+                        "namespace", os.getenv("ATLASOPS_WORKLOAD_NAMESPACE", "default"),
+                    )
                 action_key = _action_identity(fn_name, fn_args)
                 if role == "remediation" and _is_mutating_action(fn_name, fn_args):
                     if _verifier_resolved:
@@ -1563,12 +1720,115 @@ async def call_agent(
                     continue
 
                 fn = TOOL_REGISTRY.get(fn_name)
+                prepared_action = None
+                action_approval = None
+                if role == "remediation" and _is_mutating_action(fn_name, fn_args):
+                    severity = _extract_severity(_runtime_context)
+                    mode = approval_mode_for_severity(severity)
+                    if operational_mode() and mode != "manual":
+                        mode = "approve"
+                    progress = current_execution.get()
+                    action = {"tool": fn_name, "arguments": deepcopy(fn_args)}
+                    if operational_mode():
+                        if progress is None:
+                            raise RuntimeError("Operational mutation requires a durable execution journal")
+                        try:
+                            prepared_action = await asyncio.to_thread(
+                                prepare_action, fn_name, fn_args, alert=_runtime_context.get("alert"),
+                            )
+                        except Exception as error:
+                            _record_blocked_tool(
+                                tc, fn_name, fn_args,
+                                {"success": False, "error": f"Action preparation failed ({type(error).__name__})"},
+                                "blocked_by_target", "action_preparation_failed",
+                            )
+                            return {
+                                "role": role, "trajectory": trajectory,
+                                "final": {
+                                    "status": "action_preparation_failed", "outcome": "escalated",
+                                    "executed_actions": list(_executed_actions),
+                                },
+                            }
+                        action = prepared_action.approval_action
+                        progress.note("approval", "action_prepared", prepared_action=action)
+                    decision: dict[str, Any] | None = None
+                    if mode == "manual":
+                        decision = {"status": "manual_required"}
+                    elif mode == "approve":
+                        approver = _ACTIVE_ACTION_APPROVER.get()
+                        if severity == "UNKNOWN" and approver is None:
+                            decision = {"status": "missing"}
+                            permit = None
+                        else:
+                            result, permit = (
+                                await approver(action) if approver is not None
+                                else await _request_selected_action(incident_id, severity, action)
+                            )
+                            decision = result
+                            action_approval = result
+                        if not approval_gate.consume_action_permit(
+                            permit, incident_id=incident_id,
+                            action_digest=approval_gate.action_digest(action),
+                        ):
+                            decision = decision or {"status": "missing"}
+                            if decision.get("status") == "approved":
+                                decision = {**decision, "status": "permit_invalid"}
+                                audit_log.record(
+                                    incident_id=incident_id, agent_role="remediation",
+                                    action_type="action_permit_denied", tool_name=fn_name,
+                                    tool_args=fn_args, result_summary="permit_invalid",
+                                    approved_by=decision.get("approved_by", ""),
+                                    policy_check="approval_denied",
+                                )
+                        else:
+                            decision = None
+                    if decision is not None:
+                        status = str(decision.get("status") or "missing")
+                        _record_blocked_tool(
+                            tc, fn_name, fn_args,
+                            {"success": False, "error": f"approval_{status}"},
+                            "blocked_by_approval", "approval_denied",
+                        )
+                        return {
+                            "role": role, "trajectory": trajectory,
+                            "final": {
+                                "incident_id": incident_id, "mode": mode,
+                                "status": f"approval_{status}", "outcome": "escalated",
+                                "approval": decision,
+                                "executed_actions": list(_executed_actions),
+                                "actions_taken": list(_executed_actions),
+                            },
+                            "step_reward_summary": step_tracker.summary(),
+                        }
                 if not fn:
                     tool_output = {"error": f"Unknown tool: {fn_name}"}
                 else:
                     try:
-                        tool_output = fn(**fn_args)
+                        if prepared_action is not None:
+                            circuit_breaker.require_closed()
+                            progress.note(
+                                "applying", "mutation_started",
+                                prepared_action=prepared_action.approval_action,
+                                approval=action_approval,
+                            )
+                            tool_output = await asyncio.to_thread(
+                                execute_prepared_action, prepared_action,
+                            )
+                            if tool_output.get("error_class") == "mutation_uncertain":
+                                progress.note(
+                                    "applying", "mutation_uncertain",
+                                    action_result=tool_output,
+                                )
+                                raise RuntimeError("Atomic mutation outcome is uncertain")
+                            progress.note(
+                                "verification", "mutation_returned",
+                                action_result=tool_output,
+                            )
+                        else:
+                            tool_output = fn(**fn_args)
                     except Exception as e:
+                        if operational_mode():
+                            raise
                         tool_output = {"error": f"Tool execution failed: {e}"}
                 if _is_mutating_action(fn_name, fn_args) and bool(tool_output.get("success", False)):
                     _mutating_tool_executed = True
@@ -1599,6 +1859,9 @@ async def call_agent(
                     "output": tool_output,
                     "success": bool(tool_output.get("success", False)),
                 }
+                if prepared_action is not None:
+                    action_record["prepared_action"] = prepared_action.approval_action
+                    action_record["approval"] = action_approval
                 if role == "remediation" and _is_mutating_action(fn_name, fn_args):
                     terminal_error = _terminal_error_class(tool_output)
                     if terminal_error:
@@ -1667,7 +1930,8 @@ async def call_agent(
                     tool_name=fn_name,
                     tool_args=fn_args,
                     result_summary=str(tool_output)[:300],
-                    policy_check="allowed",
+                    approved_by=(action_approval or {}).get("approved_by", ""),
+                    policy_check="approved_exact_action" if prepared_action is not None else "allowed",
                 )
                 thought_emit(role, "tool_result",
                              _narrate_tool_result(fn_name, tool_output),
@@ -1760,6 +2024,10 @@ async def call_agent(
         turn=max_turns,
         trajectory=trajectory,
     )
+    if operational_mode() and forced.get("failure_category"):
+        raise CompletionProviderError(
+            forced["failure_category"], role, trajectory, provider_kind="http",
+        )
     if role == "remediation":
         trajectory.append(_model_turn_record(
             role,
@@ -2019,12 +2287,22 @@ def _comms_trajectory_delivered_externally(comms_doc: dict[str, Any]) -> bool:
     return False
 
 
+_OPERATIONAL_KUBECTL_READ_TOOLS = frozenset({
+    "kubectl_get", "kubectl_describe", "kubectl_logs", "kubectl_top_pods",
+})
+
+
 def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: dict[str, Any]) -> str | None:
     if tool not in ROLE_ALLOWED_TOOLS.get(role, set()):
         return f"tool `{tool}` not allowed for role `{role}`"
 
     if role != "remediation" and tool in CLUSTER_MUTATING_TOOLS:
         return f"cluster-mutating tool `{tool}` blocked outside remediation role"
+
+    if operational_mode() and tool in _OPERATIONAL_KUBECTL_READ_TOOLS:
+        allowed_namespaces = {"default", os.getenv("ATLASOPS_WORKLOAD_NAMESPACE", "default")}
+        if args.get("namespace") not in allowed_namespaces:
+            return "Operational Kubernetes reads require an allowed explicit namespace"
 
     # Guard high-impact operations to avoid accidental destructive actions.
     if role == "remediation":
@@ -2207,7 +2485,7 @@ def _validate_execution_id(execution_id: Any) -> str:
 def _persist_incident_record(record: dict[str, Any]) -> None:
     incident_id = _validate_incident_id(record["incident_id"])
     execution_id = _validate_execution_id(record["execution_id"])
-    serialized = json.dumps(record, indent=2)
+    serialized = json.dumps(redact_persisted_evidence(record), indent=2)
     TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
     canonical_path = TRAJECTORIES_DIR / f"{incident_id}.json"
     try:
@@ -2228,6 +2506,7 @@ async def handle_incident(
     remediation_policy: Any | None = None,
     *,
     incident_anchors: dict[str, Any] | None = None,
+    execution_id: str | None = None,
     completion_provider: CompletionProvider | None = None,
     policy_seed: int | None = None,
     policy_generation_config: dict[str, Any] | None = None,
@@ -2261,6 +2540,10 @@ async def handle_incident(
     )
     if remediation_backend not in {"agent", "rl_policy"}:
         raise ValueError("ATLASOPS_REMEDIATION_BACKEND must be agent or rl_policy")
+    if operational_mode() and remediation_backend != "agent":
+        raise ValueError("Operational runtime requires atomic agent actions")
+    if operational_mode() and (scenario_id or alert.get("scenario_id")):
+        raise ValueError("Operational incidents cannot select a frozen evaluation scenario")
     rl_policy_kube_context = (
         _require_rl_policy_live_context()
         if remediation_backend == "rl_policy"
@@ -2271,7 +2554,27 @@ async def handle_incident(
         TRAJECTORIES_DIR / f"{incident_id}.json"
     ).exists():
         raise FileExistsError(f"trajectory already exists for incident {incident_id}")
-    execution_id = uuid.uuid4().hex
+    if execution_id is not None:
+        from agents.incident_history import _valid_execution_id
+        if not _valid_execution_id(execution_id):
+            raise ValueError("Invalid execution_id")
+    execution_id = execution_id or uuid.uuid4().hex
+    progress = None
+    progress_token = None
+    if operational_mode():
+        journal = get_execution_journal()
+        try:
+            existing = journal.read(execution_id)
+        except KeyError:
+            journal.begin(
+                incident_id, execution_id, alert=alert, anchors=incident_anchors,
+                evidence_class="NON_EMPIRICAL" if completion_provider is not None else "OPERATIONAL_UNCERTIFIED",
+            )
+        else:
+            if existing["incident_id"] != incident_id or existing["phase"] != "queued" or existing["state"] != "running":
+                raise RuntimeError("A previous operational execution cannot be replayed")
+        progress = ExecutionProgress(journal, execution_id)
+        progress_token = current_execution.set(progress)
     log.info("[%s] handling alert: %s", incident_id, alert.get("commonLabels", {}).get("alertname"))
     audit_log.record(
         incident_id=incident_id,
@@ -2279,9 +2582,18 @@ async def handle_incident(
         action_type="incident_start",
         result_summary=alert.get("commonLabels", {}).get("alertname", "unknown-alert"),
     )
-    circuit_breaker.start_incident()
+    try:
+        circuit_breaker.start_incident()
+    except Exception:
+        if progress is not None:
+            journal.note(execution_id, phase="finished", state="failed", event="admission_blocked")
+            current_execution.reset(progress_token)
+        raise
 
     resolved = False
+    incident_trace = None
+    incident_exception: BaseException | None = None
+    incident_started = time.monotonic()
     tri_snap: dict[str, Any] = {}
     run_error: str | None = None
     finish_reason = ""
@@ -2321,13 +2633,24 @@ async def handle_incident(
         role: str,
         user_input: dict[str, Any],
     ) -> dict[str, Any]:
-        if completion_provider is None:
-            return await call_agent(role, user_input)
-        return await call_agent(
-            role,
-            user_input,
-            completion_provider=completion_provider,
+        if progress is not None:
+            progress.note(role, "role_started")
+        with trace_span(f"agent.{role}", {"agent.role": role, "incident.id": incident_id}):
+            result = (
+                await call_agent(role, user_input) if completion_provider is None
+                else await call_agent(role, user_input, completion_provider=completion_provider)
+            )
+        final = result.get("final") or {}
+        audit_log.record(
+            incident_id=incident_id, agent_role=role, action_type="role_completed",
+            result_summary=json.dumps({
+                key: final.get(key) for key in ("severity", "category", "confidence", "status")
+                if key in final
+            }, allow_nan=False),
         )
+        if progress is not None:
+            progress.note(role, "role_completed", **{role: result})
+        return result
 
     def _capture_partial_provider_episode(error: BaseException, category: str) -> None:
         failed_role = (
@@ -2376,10 +2699,10 @@ async def handle_incident(
                 "category": category,
             },
             "episode_status": "failed",
-            "execution_mode": "NON_EMPIRICAL",
-            "evidence_class": "NON_EMPIRICAL",
+            "execution_mode": "NON_EMPIRICAL" if completion_provider is not None else "OPERATIONAL_UNCERTIFIED",
+            "evidence_class": "NON_EMPIRICAL" if completion_provider is not None else "OPERATIONAL_UNCERTIFIED",
             "certification_status": "NOT_CERTIFIED",
-            "provider_injected": True,
+            "provider_injected": completion_provider is not None,
         }
         if failed_role:
             partial["failed_role_trajectory"] = failed_trajectory
@@ -2387,7 +2710,7 @@ async def handle_incident(
             TRAJECTORIES_DIR.mkdir(parents=True, exist_ok=True)
             path = TRAJECTORIES_DIR / f"{incident_id}.partial-{execution_id}.json"
             with path.open("x", encoding="utf-8") as stream:
-                stream.write(json.dumps(partial, indent=2))
+                stream.write(json.dumps(redact_persisted_evidence(partial), indent=2))
         except Exception as exc:  # noqa: BLE001 - preserve provider failure if capture fails
             log.warning(
                 "[%s] partial provider episode write failed (%s)",
@@ -2396,6 +2719,12 @@ async def handle_incident(
             )
 
     try:
+        incident_trace = trace_span(
+            "incident", {"incident.id": incident_id, "execution.id": execution_id},
+        )
+        incident_trace.__enter__()
+        if progress is not None and current_trace_identity() is not None:
+            progress.note("queued", "trace_bound", tracing=current_trace_identity())
         current_phase = "triage"
         triage = await _call_role_agent(
             "triage",
@@ -2433,12 +2762,21 @@ async def handle_incident(
         triage_severity = _extract_severity({"triage": triage.get("final", {})})
         severity = _severity_for_approval(triage.get("final", {}), model_alert)
         approval_mode = approval_mode_for_severity(severity)
+        if operational_mode() and approval_mode != "manual":
+            approval_mode = "approve"
         approval_record = {
             "mode": approval_mode,
             "severity": severity,
             "triage_severity": triage_severity,
         }
         effective_triage = {**triage["final"], "severity": severity}
+        audit_log.record(
+            incident_id=incident_id, agent_role="coordinator", action_type="approval_policy",
+            result_summary=json.dumps(approval_record, sort_keys=True),
+            policy_check=approval_mode,
+        )
+        if progress is not None:
+            progress.note("remediation", "approval_policy", approval=approval_record)
 
         # ── Stage 12: Integrated Recommender System Step ──────────────────────
         recommended_runbooks: list[dict[str, Any]] = []
@@ -2510,7 +2848,8 @@ async def handle_incident(
             from agents.verifier import verify_environment
 
             observed_scenario_id = str(scenario_id or alert.get("scenario_id") or "")
-            result = verify_environment(
+            result = await asyncio.to_thread(
+                verify_environment,
                 scenario_id=observed_scenario_id,
                 agent_claimed_resolved=False,
                 alert=alert,
@@ -2519,8 +2858,11 @@ async def handle_incident(
                     "incident_anchors": incident_anchors,
                     "target_consistency": target_consistency,
                     "action": action,
+                    "operational_mode": operational_mode(),
                 },
             )
+            if progress is not None:
+                progress.note("verification", "post_action_observed", verification=result.to_dict())
             return {
                 "observation_type": "authoritative_environment_verifier",
                 **result.to_dict(),
@@ -2622,11 +2964,27 @@ async def handle_incident(
                     policy_origin=policy_origin,
                     approval_provider=action_approval_provider,
                 )
+            async def _approve_agent_action(
+                action: dict[str, Any],
+            ) -> tuple[dict[str, Any], ActionApprovalPermit | None]:
+                permit = await action_approval_provider(
+                    action, {"incident_id": incident_id},
+                )
+                return {
+                    **approval_record,
+                    "status": str(approval_record.get("decision") or "missing"),
+                    "approved_by": approval_record.get("approved_by", ""),
+                }, permit
+
+            approver_token = _ACTIVE_ACTION_APPROVER.set(
+                _approve_agent_action if action_approval_provider is not None else None
+            )
             observer_token = _ACTIVE_MUTATION_OBSERVER.set(_observe_after_mutation)
             try:
                 return await _call_role_agent("remediation", remediation_input)
             finally:
                 _ACTIVE_MUTATION_OBSERVER.reset(observer_token)
+                _ACTIVE_ACTION_APPROVER.reset(approver_token)
 
         async def _approve_exact_policy_action(
             action: dict[str, Any],
@@ -2654,6 +3012,10 @@ async def handle_incident(
 
             approval_record["action_digest"] = request.action_digest
             approval_record["action_summary"] = request.action_summary
+            approval_record["action"] = request.to_dict().get("action")
+            approval_record["expires_at"] = request.to_dict().get("expires_at")
+            if progress is not None:
+                progress.note("approval", "approval_requested", approval=approval_record)
             audit_log.record(
                 incident_id=incident_id,
                 agent_role="remediation",
@@ -2681,11 +3043,13 @@ async def handle_incident(
                         (
                             f"Approve: POST {approve_url} with X-AtlasOps-Key and "
                             f"{{\"token\":\"{request.token}\",\"decision\":\"approved\","
+                            f"\"action_digest\":\"{request.action_digest}\","
                             "\"approved_by\":\"<name>\"}"
                         ),
                         (
                             f"Reject: POST {approve_url} with X-AtlasOps-Key and "
                             f"{{\"token\":\"{request.token}\",\"decision\":\"rejected\","
+                            f"\"action_digest\":\"{request.action_digest}\","
                             "\"approved_by\":\"<name>\",\"reason\":\"...\"}"
                         ),
                         "Approval applies only to the displayed tool and exact arguments.",
@@ -2704,6 +3068,8 @@ async def handle_incident(
             approval_record["action_summary"] = request.action_summary
             if result.get("approved_by"):
                 approval_record["approved_by"] = result["approved_by"]
+            if progress is not None:
+                progress.note("approval", "approval_decided", approval=approval_record)
             audit_log.record(
                 incident_id=incident_id,
                 agent_role="remediation",
@@ -2737,98 +3103,10 @@ async def handle_incident(
                 "Manual mode for P0 incident — generating runbook for human execution.",
             )
             remediation = _manual_remediation_record(incident_id, effective_triage, diagnosis["final"])
-        elif approval_mode == "approve" and remediation_backend == "rl_policy":
+        elif approval_mode == "approve":
             remediation = await _run_remediation_agent(
                 action_approval_provider=_approve_exact_policy_action
             )
-        elif approval_mode == "approve":
-            summary = _remediation_plan_summary(effective_triage, diagnosis["final"])
-            req = approval_gate.request(incident_id=incident_id, severity=severity, summary=summary)
-            public_base = os.getenv("ATLASOPS_PUBLIC_BASE_URL", "").rstrip("/")
-            approve_url = f"{public_base}/approve" if public_base else "/approve"
-            reject_url = f"{public_base}/approve" if public_base else "/approve"
-            audit_log.record(
-                incident_id=incident_id,
-                agent_role="remediation",
-                action_type="approval_requested",
-                result_summary=summary,
-                policy_check="requires_approval",
-            )
-            thought_emit(
-                "remediation",
-                "waiting_approval",
-                f"Awaiting human approval for remediation plan (token: {req.token}).",
-            )
-            # Notify humans before remediation executes so they can truly intervene.
-            try:
-                TOOL_REGISTRY["slack_post_update"](
-                    channel="#incident-response",
-                    severity=severity,
-                    title=f"Approval required: {triage['final'].get('title', incident_id)}",
-                    summary=(
-                        f"Remediation is paused pending human decision for {incident_id}. "
-                        f"Token: {req.token}"
-                    ),
-                    action_items=[
-                        f"Approve: POST {approve_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"approved\",\"approved_by\":\"<name>\"}}",
-                        f"Reject: POST {reject_url} with X-AtlasOps-Key and {{\"token\":\"{req.token}\",\"decision\":\"rejected\",\"approved_by\":\"<name>\",\"reason\":\"...\"}}",
-                        "If no response, approval times out and remediation remains blocked.",
-                    ],
-                )
-                thought_emit(
-                    "comms",
-                    "tool_result",
-                    "Human approval request sent to incident channel.",
-                    tool="slack_post_update",
-                )
-            except Exception as e:
-                log.warning("failed to send approval notification: %s", e)
-            approval_result = await approval_gate.wait_for_decision(incident_id)
-            status = approval_result.get("status", "missing")
-            approver = approval_result.get("approved_by")
-            has_operator_identity = isinstance(approver, str) and bool(approver.strip())
-            if status == "approved" and not has_operator_identity:
-                status = "identity_missing"
-                approval_result = {**approval_result, "status": status}
-            approval_record["decision"] = status
-            if has_operator_identity:
-                approver = approver.strip()
-                approval_record["approved_by"] = approver
-            # Only an explicit approval with a named operator authorizes remediation.
-            if status != "approved":
-                approval_blocked = True
-                audit_log.record(
-                    incident_id=incident_id,
-                    agent_role="remediation",
-                    action_type="approval_decision",
-                    result_summary=status,
-                    approved_by=approval_result.get("approved_by", ""),
-                    policy_check="approval_denied",
-                )
-                thought_emit("remediation", "conclusion", f"Remediation blocked — approval outcome: {status}.")
-                remediation = {
-                    "role": "remediation",
-                    "trajectory": [],
-                    "final": {
-                        "incident_id": incident_id,
-                        "mode": "approve",
-                        "status": f"approval_{status}",
-                        "executed_actions": [],
-                        "approval": approval_result,
-                    },
-                }
-            else:
-                audit_log.record(
-                    incident_id=incident_id,
-                    agent_role="remediation",
-                    action_type="approval_decision",
-                    result_summary="approved",
-                    approved_by=approver,
-                    policy_check="approval_granted",
-                )
-                thought_emit("remediation", "thinking", f"Approval granted by {approver}; executing plan.")
-                remediation_input["approval"] = approval_result
-                remediation = await _run_remediation_agent()
         else:
             remediation = await _run_remediation_agent()
         # Remediation execution is complete. Now execute objective environment verification.
@@ -2837,6 +3115,15 @@ async def handle_incident(
             triage_observations + diagnosis_observations + remediation_observations
         )
         remediation_final = remediation.get("final", {})
+        action_decision = (remediation_final.get("approval") or {}).get("status")
+        if approval_mode == "approve" and action_decision not in {None, "approved"}:
+            approval_record["decision"] = action_decision
+            approval_blocked = True
+        if approval_mode == "approve" and approval_record.get("decision") != "approved":
+            approval_blocked = True
+            approval_record.setdefault("decision", "no_action_selected")
+        if operational_mode() and remediation_final.get("status") == "action_preparation_failed":
+            remediation_blocked = True
         if remediation_backend == "rl_policy" and remediation_final.get("status") == "blocked":
             remediation_blocked = True
         scenario_id = str(scenario_id or alert.get("scenario_id") or "")
@@ -2853,15 +3140,25 @@ async def handle_incident(
             "triage": triage,
             "diagnosis": diagnosis,
             "remediation": remediation,
+            "operational_mode": operational_mode(),
         }
-        settling_report = await settle_environment(
-            scenario_id=scenario_id,
-            agent_claimed_resolved=agent_claimed_resolved,
-            alert=alert,
-            incident_context=incident_context,
-        )
+        if progress is not None:
+            progress.note("verification", "verification_started", remediation=remediation)
+        if approval_blocked or remediation_blocked or approval_mode == "manual":
+            settling_report = {
+                "settled": False, "observations": [],
+                "skipped_reason": "no_authorized_remediation",
+            }
+        else:
+            settling_report = await settle_environment(
+                scenario_id=scenario_id,
+                agent_claimed_resolved=agent_claimed_resolved,
+                alert=alert,
+                incident_context=incident_context,
+            )
         from agents.verifier import verify_environment
-        verification_result = verify_environment(
+        verification_result = await asyncio.to_thread(
+            verify_environment,
             scenario_id=scenario_id,
             agent_claimed_resolved=agent_claimed_resolved,
             alert=alert,
@@ -2869,6 +3166,8 @@ async def handle_incident(
         )
         env_resolved = bool(verification_result.env_resolved)
         verification_dict = verification_result.to_dict()
+        if progress is not None:
+            progress.note("verification", "verification_completed", verification=verification_dict)
         operational_resolved = (
             env_resolved
             and not approval_blocked
@@ -2880,11 +3179,8 @@ async def handle_incident(
             # Do not let generated Comms text claim execution or publish resolution
             # for a plan that was never authorized. Preserve verifier truth separately.
             if approval_blocked:
-                if remediation_backend == "rl_policy":
-                    status = str((approval_record or {}).get("decision") or "missing")
-                    blocked_status = f"approval_{status}"
-                else:
-                    blocked_status = remediation_final["status"]
+                status = str((approval_record or {}).get("decision") or "missing")
+                blocked_status = f"approval_{status}"
                 blocked_summary = (
                     "Remediation blocked / not executed — approval outcome: "
                     f"{status}. Human review required."
@@ -2903,7 +3199,10 @@ async def handle_incident(
                     f"blocked a decision ({category}). No recovery is claimed."
                 )
             else:
-                blocked_status = "target_mismatch"
+                blocked_status = (
+                    "action_preparation_failed" if remediation_final.get("status") == "action_preparation_failed"
+                    else "target_mismatch"
+                )
                 blocked_summary = (
                     "Remediation blocked / escalated — the model target contradicted "
                     "the primary alert target without supporting observations."
@@ -3006,7 +3305,13 @@ async def handle_incident(
         stage_a = current_run()
         if stage_a is not None:
             full_record["stage_a_causal"] = stage_a.evidence()
+        full_record = redact_persisted_evidence(full_record)
         _persist_incident_record(full_record)
+        if progress is not None:
+            journal.note(
+                execution_id, phase="finished", state="completed", event="incident_completed",
+                patch=full_record,
+            )
         if _live_judge_requested():
             from agents.judge import infer_tier_from_alert, judge_trajectory
 
@@ -3060,20 +3365,43 @@ async def handle_incident(
         )
         return full_record
     except asyncio.CancelledError as e:
-        if completion_provider is not None:
-            run_error = type(e).__name__
-            _capture_partial_provider_episode(e, run_error)
+        incident_exception = e
+        run_error = type(e).__name__
+        _capture_partial_provider_episode(e, run_error)
+        if progress is not None:
+            previous = journal.read(execution_id)
+            journal.note(
+                execution_id, phase="finished", state="uncertain" if previous["phase"] == "applying" else "cancelled",
+                event="execution_cancelled", patch={"resolved": False, "replay_allowed": False},
+            )
         raise
     except Exception as e:
-        if completion_provider is not None:
-            failure_category = _safe_failure_category(e)
-            run_error = failure_category
-            _capture_partial_provider_episode(e, failure_category)
-        else:
-            run_error = str(e)
+        incident_exception = e
+        failure_category = _safe_failure_category(e)
+        run_error = failure_category
+        _capture_partial_provider_episode(e, failure_category)
+        if progress is not None:
+            previous = journal.read(execution_id)
+            if previous["state"] == "running":
+                journal.note(
+                    execution_id, phase="finished", state="uncertain" if previous["phase"] == "applying" else "failed",
+                    event="execution_failed", patch={"resolved": False, "failure_category": failure_category},
+                )
         finish_reason = "system_error"
         raise
     finally:
+        record_incident(
+            "failed" if run_error else "resolved" if resolved else "unresolved",
+            time.monotonic() - incident_started,
+        )
+        if incident_trace is not None:
+            incident_trace.__exit__(
+                type(incident_exception) if incident_exception is not None else None,
+                incident_exception,
+                incident_exception.__traceback__ if incident_exception is not None else None,
+            )
+        if progress_token is not None:
+            current_execution.reset(progress_token)
         circuit_breaker.finish_incident(incident_id, resolved=resolved, reason=finish_reason if run_error else finish_reason)
         try:
             from agents.tools.comms import discord_scenario_run_ping
@@ -3090,7 +3418,11 @@ async def handle_incident(
             log.warning("Discord every-run ping failed: %s", ping_ex)
 
 
-app = FastAPI(title="AtlasOps Coordinator")
+app = FastAPI(title="AtlasOps Coordinator", lifespan=operations_lifespan)
+app.include_router(operations_router(
+    gate=lambda: approval_gate, breaker=lambda: circuit_breaker,
+    require_key=_require_runtime_api_key,
+))
 
 
 _WEBHOOK_SECRET = os.getenv("ALERTMANAGER_WEBHOOK_SECRET", "")
@@ -3157,8 +3489,9 @@ async def approve(request: Request):
     result = approval_gate.callback(
         token=payload.token,
         decision=payload.decision,
-        approved_by=payload.approved_by,
+        approved_by=operator_identity(request, fallback=payload.approved_by),
         reason=payload.reason,
+        action_digest=payload.action_digest,
     )
     return JSONResponse(result, status_code=200 if result.get("ok") else 400)
 

@@ -642,7 +642,9 @@ class TestCoordinatorRemediationContract:
                 side_effect=AssertionError("Chaos stop must not use kubectl"),
             ),
         ):
-            result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-success"}))
+            result = asyncio.run(call_agent("remediation", {
+                "incident_id": "inc-test-success", "triage": {"severity": "P2"},
+            }))
 
         chaos_api.get_namespaced_custom_object.assert_called_once_with(
             group="chaos-mesh.org",

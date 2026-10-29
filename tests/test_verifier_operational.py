@@ -147,11 +147,17 @@ class FakeBackends:
         self.alert_calls.append(active_only)
         return {"success": True, "alerts": self.active_alerts}
 
+    def bound_deployment(self, target) -> dict:
+        return self.kubectl(
+            f"deployment/{target.deployment}", namespace=target.namespace, output="json",
+        )
+
     def verifier(self) -> EnvironmentVerifier:
         return EnvironmentVerifier(
             kubectl_getter=self.kubectl,
             alert_lister=self.alertmanager,
             promql_querier=self.prometheus,
+            bound_deployment_getter=self.bound_deployment,
         )
 
 
@@ -364,6 +370,67 @@ def test_operational_mode_binds_prepared_action_target_and_current_deployment_ui
     assert result.verification_status == "passed"
     assert backends.kubectl_calls == [("deployment/frontend", "default", "json")]
     assert result.verification_timestamp >= mutation_returned_at
+
+
+def test_operational_mode_refuses_healthy_data_on_a_rebound_kubernetes_server(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agents.tools import chaos
+
+    backends = FakeBackends()
+    client = SimpleNamespace(
+        configuration=SimpleNamespace(host="https://different-cluster.invalid"),
+        call_api=Mock(), close=Mock(),
+    )
+    factory = Mock(return_value=(Mock(), client))
+    monkeypatch.setattr(chaos, "_new_chaos_api_client", factory)
+    verifier = EnvironmentVerifier(
+        kubectl_getter=backends.kubectl,
+        alert_lister=backends.alertmanager,
+        promql_querier=backends.prometheus,
+    )
+    result = verifier.verify(
+        scenario_id="", agent_claimed_resolved=True,
+        alert=_valid_payload(), incident_context=_operational_context(),
+    )
+    assert result.env_resolved is False
+    factory.assert_called_once_with("kind-atlasops-local")
+    client.call_api.assert_not_called()
+    assert backends.kubectl_calls == []
+
+
+def test_bound_verifier_selects_the_approved_context_and_reads_its_deployment(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agents.tools import chaos
+
+    monkeypatch.setenv("KUBECONFIG_CONTEXT", "unrelated-current-context")
+    backends = FakeBackends()
+    client = SimpleNamespace(
+        configuration=SimpleNamespace(host="https://kubernetes.example.invalid", retries=1),
+        call_api=Mock(return_value=_deployment()), close=Mock(),
+    )
+    factory = Mock(return_value=(Mock(), client))
+    monkeypatch.setattr(chaos, "_new_chaos_api_client", factory)
+    verifier = EnvironmentVerifier(
+        kubectl_getter=backends.kubectl,
+        alert_lister=backends.alertmanager,
+        promql_querier=backends.prometheus,
+    )
+    result = verifier.verify(
+        scenario_id="", agent_claimed_resolved=True,
+        alert=_valid_payload(), incident_context=_operational_context(),
+    )
+    assert result.env_resolved is True
+    factory.assert_called_once_with("kind-atlasops-local")
+    assert client.call_api.call_args.args == (
+        "/apis/apps/v1/namespaces/default/deployments/frontend", "GET",
+    )
+    assert client.configuration.retries == 0
+    assert backends.kubectl_calls == []
+    client.close.assert_called_once()
 
 
 @pytest.mark.parametrize("tool", ["chaos_stop_experiment", "argocd_rollback"])

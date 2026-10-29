@@ -229,7 +229,9 @@ class TestRetryTurnPersistence:
              patch("agents.tools.chaos._run",
                    side_effect=AssertionError("Chaos stop must not use kubectl")):
             with patch("agents.coordinator.require_audit_log"):
-                result = asyncio.run(call_agent("remediation", {"incident_id": "inc-obs-5"}))
+                result = asyncio.run(call_agent("remediation", {
+                    "incident_id": "inc-obs-5", "triage": {"severity": "P2"},
+                }))
 
         chaos_api.get_namespaced_custom_object.assert_called_once_with(
             group="chaos-mesh.org",

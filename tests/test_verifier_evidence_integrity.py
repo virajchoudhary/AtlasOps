@@ -50,6 +50,16 @@ def test_metric_rejects_nonfinite_values(value):
     assert parsed_value is None
 
 
+@pytest.mark.parametrize("value", [True, False])
+def test_metric_rejects_boolean_samples_instead_of_numeric_conversion(value):
+    verifier = _verifier_with_prometheus([{"metric": {}, "value": [1, value]}])
+    check, parsed_value = verifier._verify_metric(
+        MetricPredicate(query="test_metric", operator="==", threshold=float(value)),
+    )
+    assert check.passed is False
+    assert parsed_value is None
+
+
 def test_workload_does_not_accept_a_prefix_named_deployment():
     verifier = EnvironmentVerifier(
         kubectl_getter=lambda *args, **kwargs: {

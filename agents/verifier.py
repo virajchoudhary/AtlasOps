@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 from agents.tools.alertmanager import alertmanager_list_alerts
 from agents.tools.kubectl import kubectl_get
@@ -426,6 +427,33 @@ class _OperationalTarget:
     resource_version: str | None = None
 
 
+def _query_bound_deployment(target: _OperationalTarget) -> dict[str, Any]:
+    from agents.tools.chaos import _close_chaos_api_client, _new_chaos_api_client
+
+    context = None if target.context == "in-cluster" else target.context
+    if context is None and not os.getenv("KUBERNETES_SERVICE_HOST"):
+        raise ValueError("Bound in-cluster verification requires Pod authentication")
+    _api, client = _new_chaos_api_client(context)
+    try:
+        client.configuration.retries = 0
+        server = client.configuration.host.rstrip("/")
+        if server != target.server:
+            return {"success": False, "error": "Kubernetes server differs from the prepared target"}
+        resource = client.call_api(
+            f"/apis/apps/v1/namespaces/{quote(target.namespace, safe='')}"
+            f"/deployments/{quote(target.deployment, safe='')}",
+            "GET", header_params={"Accept": "application/json"},
+            auth_settings=["BearerToken"], response_type="object",
+            _return_http_data_only=True, _request_timeout=30,
+        )
+        return {
+            "success": True, "parsed": resource,
+            "cluster_identity": {"server": server, "context": target.context},
+        }
+    finally:
+        _close_chaos_api_client(client)
+
+
 # ── Environment Verifier Engine ───────────────────────────────────────────────
 
 class EnvironmentVerifier:
@@ -436,10 +464,12 @@ class EnvironmentVerifier:
         kubectl_getter: Callable[..., dict[str, Any]] | None = None,
         alert_lister: Callable[..., dict[str, Any]] | None = None,
         promql_querier: Callable[..., dict[str, Any]] | None = None,
+        bound_deployment_getter: Callable[[_OperationalTarget], dict[str, Any]] | None = None,
     ) -> None:
         self._kubectl_get = kubectl_getter or kubectl_get
         self._alert_list = alert_lister or alertmanager_list_alerts
         self._promql_query = promql_querier or promql_query
+        self._bound_deployment_get = bound_deployment_getter or _query_bound_deployment
 
     @staticmethod
     def _has_operational_availability_alert(alert: dict[str, Any] | None) -> bool:
@@ -1056,19 +1086,22 @@ class EnvironmentVerifier:
         name = "operational_deployment_current"
         resource_target = f"{target.namespace}/{target.deployment}"
         try:
-            response = self._kubectl_get(
-                f"deployment/{target.deployment}",
-                namespace=target.namespace,
-                output="json",
+            response = (
+                self._bound_deployment_get(target) if target.uid is not None
+                else self._kubectl_get(
+                    f"deployment/{target.deployment}",
+                    namespace=target.namespace,
+                    output="json",
+                )
             )
         # Tool adapters can raise client-specific transport errors; none proves recovery.
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             return (
                 CheckResult(
                     name=name,
                     target=resource_target,
                     passed=False,
-                    details=f"Failed to query current Deployment status: {error}",
+                    details=f"Failed to query current Deployment status ({type(error).__name__})",
                 ),
                 None,
                 None,
@@ -1388,7 +1421,7 @@ class EnvironmentVerifier:
                 time_unix=query_time,
             )
         # Any query-side exception is missing evidence, regardless of adapter type.
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             return inconclusive(f"Prometheus query failed: {error}")
 
         def read_series_sample(
@@ -1530,7 +1563,7 @@ class EnvironmentVerifier:
         try:
             response = self._alert_list(active_only=True)
         # Alert-list failures cannot establish that the target alert cleared.
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             return inconclusive(f"Failed to query Alertmanager: {error}")
         if not isinstance(response, dict) or response.get("success") is not True:
             error = (
@@ -1891,6 +1924,8 @@ class EnvironmentVerifier:
             ), None
 
         try:
+            if isinstance(raw_value, bool):
+                raise ValueError("A boolean is not a metric sample")
             val = float(raw_value)
         except (ValueError, TypeError):
             return CheckResult(

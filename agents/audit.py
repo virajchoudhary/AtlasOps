@@ -11,6 +11,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from agents.evidence_redaction import redact_persisted_evidence
+
 
 class AuditConfigurationError(RuntimeError):
     """Raised when secure global audit configuration is unavailable."""
@@ -70,7 +72,7 @@ class AuditLog:
                 "action_type": action_type,
                 "tool_name": tool_name or "",
                 "tool_args_hash": self._sha256_text(json.dumps(tool_args, sort_keys=True)),
-                "result_summary": result_summary[:300],
+                "result_summary": redact_persisted_evidence(result_summary)[:300],
                 "approved_by": approved_by,
                 "policy_check": policy_check,
                 "prev_hash": self._last_hash,

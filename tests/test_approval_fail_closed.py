@@ -11,6 +11,7 @@ import pytest
     ("P1", "approved", None), ("P1", "rejected", None),
     ("P1", "timeout", None), ("P1", "missing", None),
     ("P1", "approved_without_identity", None),
+    ("P1", "invalid_permit", None),
     ("P2", None, None), ("P3", None, None),
     ("P2", "timeout", "critical"),
 ])
@@ -53,25 +54,30 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     ))
     monkeypatch.setattr(verifier, "verify_environment", verify)
 
-    gate = ApprovalGate(timeout_seconds=0.001)
-    request = gate.request
+    gate = ApprovalGate(timeout_seconds=0 if decision == "timeout" else 30)
+    request = gate.request_action
 
     def request_with_decision(*args, **kwargs):
         req = request(*args, **kwargs)
-        if decision in {"approved", "rejected"}:
-            assert gate.callback(req.token, decision, approved_by="test-operator")["ok"]
+        if decision in {"approved", "rejected", "invalid_permit"}:
+            assert gate.callback(
+                req.token, "approved" if decision == "invalid_permit" else decision,
+                approved_by="test-operator", action_digest=req.action_digest,
+            )["ok"]
         elif decision == "missing":
             gate._clear(req)
         return req
 
-    monkeypatch.setattr(gate, "request", request_with_decision)
+    monkeypatch.setattr(gate, "request_action", request_with_decision)
     monkeypatch.setattr(coord, "approval_gate", gate)
+    if decision == "invalid_permit":
+        monkeypatch.setattr(gate, "consume_action_permit", lambda *_args, **_kwargs: False)
     if decision == "approved_without_identity":
-        async def approved_without_identity(incident_id):
-            gate._clear(gate._pending_by_incident[incident_id])
+        async def approved_without_identity(req):
+            gate._clear(req)
             return {"status": "approved", "approved_by": ""}
 
-        monkeypatch.setattr(gate, "wait_for_decision", approved_without_identity)
+        monkeypatch.setattr(gate, "_wait_for_request", approved_without_identity)
 
     def response(message):
         result = MagicMock()
@@ -108,13 +114,14 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     ))
     persisted = json.loads((tmp_path / "inc-safety.json").read_text(encoding="utf-8"))
     assert persisted == result
-    expected_decision = (
-        "identity_missing" if decision == "approved_without_identity" else decision
-    )
+    expected_decision = {
+        "approved_without_identity": "identity_missing",
+        "invalid_permit": "permit_invalid",
+    }.get(decision, decision)
     expected_blocked_status = (
         "approval_identity_missing"
         if decision == "approved_without_identity"
-        else f"approval_{decision}"
+        else f"approval_{expected_decision}"
     )
     assert result["approval"].get("decision") == expected_decision
     assert result["env_resolved"] is environment_recovered
@@ -136,8 +143,9 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
     else:
         for name in CLUSTER_MUTATING_TOOLS:
             tool_spies[name].assert_not_called()
-        model.assert_not_awaited()
-        assert [c.args[0] for c in calls.call_args_list] == ["triage", "diagnosis"]
+        assert model.await_count == 1
+        assert model.await_args.kwargs["context"] == "remediation/turn-0"
+        assert [c.args[0] for c in calls.call_args_list] == ["triage", "diagnosis", "remediation"]
         assert result["remediation"]["final"]["status"] == expected_blocked_status
         assert result["remediation"]["final"]["approval"]["status"] == expected_decision
         assert result["remediation"]["final"]["executed_actions"] == []
@@ -150,5 +158,17 @@ def test_approval_controls_mutating_dispatch_and_persisted_truth(
         assert finish.call_args.kwargs["resolved"] is False
         decisions = [c.kwargs for c in audit.record.call_args_list if c.kwargs.get("action_type") == "approval_decision"]
         assert len(decisions) == 1
-        assert decisions[0]["policy_check"] == "approval_denied"
-        assert decisions[0]["result_summary"] == expected_decision
+        assert decisions[0]["policy_check"] == (
+            "approval_granted" if decision == "invalid_permit" else "approval_denied"
+        )
+        if decision == "invalid_permit":
+            denied = [
+                call.kwargs for call in audit.record.call_args_list
+                if call.kwargs.get("action_type") == "action_permit_denied"
+            ]
+            assert len(denied) == 1
+            assert denied[0]["policy_check"] == "approval_denied"
+            assert denied[0]["result_summary"] == "permit_invalid"
+        assert decisions[0]["result_summary"] == (
+            "approved" if decision == "invalid_permit" else expected_decision
+        )

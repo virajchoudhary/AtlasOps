@@ -48,8 +48,13 @@ whose mutation target is Chaos Mesh or an Argo CD Application therefore require
 the prepared `verification_target`. The current Deployment `metadata.uid` must
 match the prepared UID. Current `resourceVersion` is recorded but not compared
 with the prepared resourceVersion because a successful mutation changes it.
-The observation runs through the existing Kubernetes getter; this verifier does
-not perform an independent API-server identity lookup.
+For a bound action, the verifier loads an owned Kubernetes API client for the
+prepared context, or Pod authentication for `in-cluster`. It compares the client's
+server with the prepared server before its exact Deployment GET. The request uses
+that same client with retries disabled. A changed server, failed authentication,
+or failed request cannot establish recovery. The verifier does not switch to
+the ambient kubectl context or fall back to an unbound getter. Unbound,
+non-operational scenario queries retain the existing getter.
 
 ## Recovery evidence
 
@@ -98,7 +103,7 @@ or still-present target alert returns `failed`. If no concrete predicate is fals
 but required telemetry is missing or malformed, the verifier returns
 `inconclusive`. Every non-passing result has `env_resolved=false`.
 
-The generic verifier also rejects empty, malformed, and nonfinite Prometheus
+The generic verifier also rejects empty, malformed, boolean, and nonfinite Prometheus
 samples. Kubernetes workload checks require structured resource data and exact
 names. Checks for legacy-deployment and Chaos Mesh absence require a parseable
 resource list. These parser rules do not change the sparse readiness semantics of

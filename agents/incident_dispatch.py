@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
@@ -16,6 +17,8 @@ from typing import Any, Literal
 
 from agents.correlator import CorrelatorCandidateBatch, IncidentCorrelator, correlator
 from agents.incident_admission import IncidentAdmissionStore
+from agents.action_execution import operational_mode
+from agents.execution_journal import get_execution_journal
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +53,7 @@ class _PendingDispatch:
     incident_anchors: dict[str, Any] | None
     handler: IncidentHandler
     completion: asyncio.Future[Any]
+    execution_id: str | None = None
 
 
 @dataclass
@@ -127,6 +131,13 @@ class IncidentDispatcher:
                     admitted_keys,
                 )
                 incident_anchors_snapshot = deepcopy(incident_anchors)
+                execution_id = None
+                if operational_mode():
+                    execution_id = uuid.uuid4().hex
+                    get_execution_journal().begin(
+                        candidate_batch.incident_id, execution_id,
+                        alert=payload_snapshot, anchors=incident_anchors_snapshot,
+                    )
             except Exception as preparation_error:
                 if not completion.done():
                     completion.cancel()
@@ -154,6 +165,7 @@ class IncidentDispatcher:
                 incident_anchors=incident_anchors_snapshot,
                 handler=handler,
                 completion=completion,
+                execution_id=execution_id,
             )
             worker = incident_queue.worker
             if worker is not None and (worker.done() or worker.cancelling()):
@@ -280,6 +292,8 @@ class IncidentDispatcher:
 
                 try:
                     handler_kwargs = {"incident_id": incident_id}
+                    if pending.execution_id is not None:
+                        handler_kwargs["execution_id"] = pending.execution_id
                     if pending.incident_anchors is not None:
                         handler_kwargs["incident_anchors"] = pending.incident_anchors
                     result = await pending.handler(pending.payload, **handler_kwargs)

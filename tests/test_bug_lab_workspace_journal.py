@@ -241,6 +241,38 @@ def test_resume_requires_explicit_opt_in_and_releases_lifetime_writer_lock(tmp_p
     final.close()
 
 
+@pytest.mark.parametrize("writer_running", [False, True])
+def test_resume_refuses_missing_writer_lock_without_recreating_it(tmp_path, writer_running):
+    if writer_running and os.name == "nt":
+        pytest.skip("Windows does not allow unlinking the held writer lock")
+    root = tmp_path / "lab"
+    workspace = Workspace(root)
+    lock_path = root / ".bug-lab-workspace.lock"
+    try:
+        workspace.complete(_terminal_record(workspace.workspace_id, 1))
+        if not writer_running:
+            workspace.close()
+        before = {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file() and path != lock_path
+        }
+        lock_path.unlink()
+
+        with pytest.raises(ValueError, match="missing"):
+            resumed = Workspace(root, resume=True)
+            resumed.close()
+
+        assert not lock_path.exists()
+        assert {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        } == before
+    finally:
+        workspace.close()
+
+
 @pytest.mark.parametrize("corruption", ["marker", "journal"])
 def test_resume_rejects_malformed_marker_or_journal_without_rewriting_it(tmp_path, corruption):
     root = tmp_path / "lab"

@@ -248,6 +248,34 @@ def response_payload(model="fixture/expected-model"):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["incident", "role"])
+async def test_operational_runtime_rejects_injected_completion_before_any_execution(
+    native_runtime, monkeypatch, entrypoint,
+):
+    coordinator = native_runtime
+    provider = AsyncMock(return_value=response_payload())
+    tool = MagicMock(side_effect=AssertionError("Injected completion reached a tool"))
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_get", tool)
+    begin = MagicMock(side_effect=AssertionError("Rejected provider admitted an execution"))
+    monkeypatch.setattr(coordinator, "get_execution_journal", begin)
+    with pytest.raises(ValueError, match="Operational.*completion"):
+        if entrypoint == "incident":
+            await coordinator.handle_incident(
+                {"commonLabels": {"alertname": "FixtureAvailability"}},
+                incident_id="inc-injected-operational",
+                completion_provider=provider,
+            )
+        else:
+            await coordinator.call_agent(
+                "triage", {"incident_id": "inc-injected-operational"},
+                completion_provider=provider,
+            )
+    provider.assert_not_awaited()
+    tool.assert_not_called()
+    begin.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload,category",
     [

@@ -44,7 +44,7 @@ from agents.telemetry import current_trace_identity, record_incident, trace_span
 from agents.tool_policy import (
     AGENT_EXPOSED_TOOLS,
     CLUSTER_MUTATING_TOOLS,
-    ROLE_ALLOWED_TOOLS,
+    effective_role_tools,
 )
 from agents.tools import TOOL_REGISTRY
 from agents.tools.alertmanager import alertmanager_list_alerts
@@ -437,7 +437,7 @@ def _strip_model_forbidden_context(value: Any) -> Any:
 
 
 def _model_safe_tool_output(output: dict[str, Any]) -> dict[str, Any]:
-    safe = _strip_model_forbidden_context(output)
+    safe = redact_persisted_evidence(_strip_model_forbidden_context(output))
     return safe if isinstance(safe, dict) else {"value": safe}
 
 
@@ -1067,6 +1067,8 @@ async def _force_json_conclusion(
     context overflow after 10-turn diagnosis runs.
     """
     prompt = _CONCLUSION_PROMPTS.get(role, "Summarise your findings as a JSON object.")
+    if operational_mode() and role == "comms":
+        prompt = "Output ONLY a JSON object with incident_id and summary. This is inference, not a delivery receipt."
     # Keep system message + last 4 assistant/tool message pairs + forced prompt
     system_msgs = [m for m in messages if m.get("role") == "system"][:1]
     recent = [m for m in messages if m.get("role") != "system"][-8:]
@@ -1205,8 +1207,17 @@ async def call_agent(
     completion_provider: CompletionProvider | None = None,
 ) -> dict[str, Any]:
     """Run a single agent with a tool-calling loop. Returns final JSON output."""
+    if operational_mode() and completion_provider is not None:
+        raise ValueError("Operational runtime requires native HTTP completion")
     require_audit_log()
     system_prompt = load_prompt(role)
+    if operational_mode() and role == "comms":
+        system_prompt = (
+            "You are the Comms Agent. Review the attributed incident and verifier evidence. "
+            "Return only JSON with incident_id and summary for internal review. "
+            "You cannot publish messages or postmortems. The coordinator publishes from "
+            "verified facts and records actual delivery separately."
+        )
     if operational_mode():
         system_prompt += (
             "\nOperational Kubernetes reads are namespace scoped. "
@@ -1327,6 +1338,9 @@ async def call_agent(
                 "tools": _tool_schemas_for_role(role),
                 "tool_choice": tool_choice,
             }
+            if not request_payload["tools"]:
+                request_payload.pop("tools")
+                request_payload.pop("tool_choice")
             if completion_provider is None:
                 response_payload = await _request_native_completion(
                     role,
@@ -1422,6 +1436,8 @@ async def call_agent(
                     "remediation": {"outcome"},
                     "comms": {"slack_posted"},
                 }
+                if operational_mode() and role == "comms":
+                    _ROLE_REQUIRED_KEYS["comms"] = {"summary"}
                 _required = _ROLE_REQUIRED_KEYS.get(role, set())
                 if "raw" in parsed or (_required and not _required.intersection(parsed.keys())):
                     forced_telemetry: dict[str, Any] = {}
@@ -2161,7 +2177,9 @@ def _summarise_conclusion(role: str, content: str) -> str:
 
 
 def _tool_schemas_for_role(role: str) -> list[dict[str, Any]]:
-    return [_tool_schema(name) for name in sorted(ROLE_ALLOWED_TOOLS.get(role, frozenset()))]
+    return [_tool_schema(name) for name in sorted(
+        effective_role_tools(role, operational=operational_mode())
+    )]
 
 
 _TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -2303,15 +2321,14 @@ _OPERATIONAL_KUBECTL_READ_TOOLS = frozenset({
 
 
 def _check_tool_policy(role: str, tool: str, args: dict[str, Any], user_input: dict[str, Any]) -> str | None:
-    if tool not in ROLE_ALLOWED_TOOLS.get(role, set()):
+    if tool not in effective_role_tools(role, operational=operational_mode()):
         return f"tool `{tool}` not allowed for role `{role}`"
 
     if role != "remediation" and tool in CLUSTER_MUTATING_TOOLS:
         return f"cluster-mutating tool `{tool}` blocked outside remediation role"
 
     if operational_mode() and tool in _OPERATIONAL_KUBECTL_READ_TOOLS:
-        allowed_namespaces = {"default", os.getenv("ATLASOPS_WORKLOAD_NAMESPACE", "default")}
-        if args.get("namespace") not in allowed_namespaces:
+        if args.get("namespace") != os.getenv("ATLASOPS_WORKLOAD_NAMESPACE", "default"):
             return "Operational Kubernetes reads require an allowed explicit namespace"
 
     # Guard high-impact operations to avoid accidental destructive actions.
@@ -2552,6 +2569,8 @@ async def handle_incident(
         raise ValueError("ATLASOPS_REMEDIATION_BACKEND must be agent or rl_policy")
     if operational_mode() and remediation_backend != "agent":
         raise ValueError("Operational runtime requires atomic agent actions")
+    if operational_mode() and completion_provider is not None:
+        raise ValueError("Operational runtime requires native HTTP completion")
     if operational_mode() and (scenario_id or alert.get("scenario_id")):
         raise ValueError("Operational incidents cannot select a frozen evaluation scenario")
     rl_policy_kube_context = (
@@ -3186,6 +3205,13 @@ async def handle_incident(
             env_resolved
             and not approval_blocked
             and not remediation_blocked
+            and (
+                not operational_mode()
+                or (
+                    verification_dict.get("verification_status") == "passed"
+                    and verification_dict.get("env_resolved") is True
+                )
+            )
         )
 
         # Comms agent runs after environment verification and receives objective truth
@@ -3245,9 +3271,28 @@ async def handle_incident(
                 "agent_claimed_resolved": agent_claimed_resolved,
             })
 
-        # If the LLM skipped webhooks, still deliver a closure/status message (judges expect Discord/Slack pings).
+        if operational_mode():
+            from agents.tools.comms import OperationalCommsFacts, publish_operational_outcome
+
+            inference = comms
+            comms = await asyncio.to_thread(
+                publish_operational_outcome,
+                OperationalCommsFacts(
+                    incident_id=incident_id, severity=severity,
+                    verification=verification_dict, resolved=operational_resolved,
+                    approval_decision=(approval_record or {}).get("decision"),
+                    blocked_status=(
+                        (inference.get("final") or {}).get("status")
+                        if approval_blocked or remediation_blocked else None
+                    ),
+                    executed_actions=tuple(remediation_final.get("executed_actions") or []),
+                    settling=settling_report,
+                ),
+            )
+            comms["inference"] = inference if not approval_blocked and not remediation_blocked else None
+
         _webhook_out = bool(os.getenv("DISCORD_WEBHOOK_URL", "").strip() or os.getenv("SLACK_WEBHOOK_URL", "").strip())
-        if _webhook_out and not _comms_trajectory_delivered_externally(comms):
+        if not operational_mode() and _webhook_out and not _comms_trajectory_delivered_externally(comms):
             try:
                 sev = severity
                 if sev not in {"P0", "P1", "P2", "P3"}:

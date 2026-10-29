@@ -299,3 +299,61 @@ def test_operational_decision_wakes_coordinator_on_its_event_loop(runtime, monke
                     await waiter
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_saved_execution_keeps_its_source_after_server_upgrade(runtime, monkeypatch, finished):
+    from agents.audit import require_audit_log
+
+    app, _gate, _breaker = runtime
+    original_sha, current_sha = "1" * 40, "2" * 40
+    execution_id = "7" * 32
+    headers = {"X-AtlasOps-Key": "test-placeholder-operator-key"}
+    monkeypatch.setenv("ATLASOPS_SOURCE_SHA", original_sha)
+    with TestClient(app):
+        journal = get_execution_journal()
+        journal.begin("inc-source-upgrade", execution_id, alert={}, anchors=None)
+        journal.note(
+            execution_id, phase="finished" if finished else "approval",
+            state="completed" if finished else "running", event="negative_result",
+            patch={"resolved": False, "env_resolved": False},
+        )
+
+    monkeypatch.setenv("ATLASOPS_SOURCE_SHA", current_sha)
+    with TestClient(app) as client:
+        snapshot = client.get("/operations", headers=headers).json()
+        assert snapshot["source_sha"] == current_sha
+        assert snapshot["executions"][0]["source_sha"] == original_sha
+        assert snapshot["executions"][0]["state"] == ("completed" if finished else "interrupted")
+        audit_before = require_audit_log().log_path.read_bytes()
+        response = client.get(f"/operations/{execution_id}/evidence", headers=headers)
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["source_sha"] == original_sha
+        assert payload["record"]["source_sha"] == original_sha
+        assert all(event["record"]["source_sha"] == original_sha for event in payload["events"])
+        assert payload["record"]["resolved"] is False
+        assert payload["record"]["env_resolved"] is False
+        assert payload["audit_integrity"]["ok"] is True
+        assert require_audit_log().log_path.read_bytes() == audit_before
+
+
+def test_execution_without_source_is_not_relabelled_with_current_server(runtime, monkeypatch):
+    app, _gate, _breaker = runtime
+    execution_id = "6" * 32
+    headers = {"X-AtlasOps-Key": "test-placeholder-operator-key"}
+    monkeypatch.delenv("ATLASOPS_SOURCE_SHA", raising=False)
+    with TestClient(app):
+        journal = get_execution_journal()
+        journal.begin("inc-source-unknown", execution_id, alert={}, anchors=None)
+        journal.note(execution_id, phase="finished", state="failed", event="failed")
+
+    monkeypatch.setenv("ATLASOPS_SOURCE_SHA", "2" * 40)
+    with TestClient(app) as client:
+        snapshot = client.get("/operations", headers=headers).json()
+        assert snapshot["source_sha"] == "2" * 40
+        assert snapshot["executions"][0]["source_sha"] is None
+        response = client.get(f"/operations/{execution_id}/evidence", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["source_sha"] is None
+        assert response.json()["record"]["resolved"] is False

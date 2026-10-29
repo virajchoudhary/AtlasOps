@@ -88,3 +88,21 @@ def test_failed_admission_event_cannot_leave_a_startup_fatal_execution(tmp_path,
     record.return_value = {"entry_hash": "d" * 64}
     restarted.begin("inc-admission", "c" * 32, alert={}, anchors=None)
     assert restarted.read("c" * 32)["integrity"]["ok"] is True
+
+
+@pytest.mark.parametrize("field,value", [
+    ("source_sha", "2" * 40),
+    ("incident_id", "inc-relabelled"),
+    ("execution_id", "b" * 32),
+])
+def test_progress_cannot_replace_execution_identity(journal, field, value):
+    from agents.audit import require_audit_log
+
+    before = journal.read("a" * 32)
+    audit_before = require_audit_log().log_path.read_bytes()
+    with pytest.raises(ExecutionJournalError, match="identity"):
+        journal.note(
+            "a" * 32, phase="diagnosis", event="progress", patch={field: value},
+        )
+    assert journal.read("a" * 32) == before
+    assert require_audit_log().log_path.read_bytes() == audit_before

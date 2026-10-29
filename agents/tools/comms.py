@@ -6,12 +6,15 @@ import os
 import re
 import stat
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import Any, Mapping
 
 import requests
 from jinja2 import Template
+
+from agents.evidence_redaction import redact_persisted_evidence
 
 log = logging.getLogger("atlasops.comms")
 
@@ -39,6 +42,7 @@ def _discord_webhook_post_with_retry(url: str, json_body: dict[str, Any], *, con
     + every-run ping within seconds → Discord returns 429 with Retry-After.
     """
     last_err: str | None = None
+    json_body = redact_persisted_evidence(json_body)
     max_attempts = 8
     for attempt in range(max_attempts):
         try:
@@ -62,7 +66,7 @@ def _discord_webhook_post_with_retry(url: str, json_body: dict[str, Any], *, con
             r.raise_for_status()
             return True, None
         except requests.RequestException as e:
-            last_err = str(e)
+            last_err = type(e).__name__
             if attempt < max_attempts - 1:
                 time.sleep(1.0 + attempt * 0.75)
                 continue
@@ -209,7 +213,9 @@ def slack_post_update(channel: str, severity: str, title: str, summary: str,
     Also delivers to Slack if SLACK_WEBHOOK_URL is set.
     Also delivers to Discord if DISCORD_WEBHOOK_URL is set.
     """
-    payload = _build_slack_payload(channel, severity, title, summary, action_items or [])
+    payload = redact_persisted_evidence(
+        _build_slack_payload(channel, severity, title, summary, action_items or [])
+    )
 
     # Always persist locally — powers /slack/feed in the UI
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +233,7 @@ def slack_post_update(channel: str, severity: str, title: str, summary: str,
             r.raise_for_status()
             modes.append("slack")
         except requests.RequestException as e:
-            errors.append(f"slack: {e}")
+            errors.append(f"slack: {type(e).__name__}")
 
     if DISCORD_WEBHOOK:
         try:
@@ -235,7 +241,7 @@ def slack_post_update(channel: str, severity: str, title: str, summary: str,
             modes.append("discord")
             log.info("Discord embed delivered for [%s]", (payload["attachments"][0].get("title") or "")[:80])
         except requests.RequestException as e:
-            err = f"discord: {e}"
+            err = f"discord: {type(e).__name__}"
             errors.append(err)
             log.warning(err)
 
@@ -243,6 +249,152 @@ def slack_post_update(channel: str, severity: str, title: str, summary: str,
         "success": True,
         "mode": "+".join(modes),
         **({"errors": errors} if errors else {}),
+    }
+
+
+@dataclass(frozen=True)
+class OperationalCommsFacts:
+    incident_id: str
+    severity: str
+    verification: Mapping[str, Any]
+    resolved: bool
+    approval_decision: str | None
+    blocked_status: str | None = None
+    executed_actions: tuple[dict[str, Any], ...] = ()
+    settling: Mapping[str, Any] = field(default_factory=dict)
+
+
+def _operational_publication(facts: OperationalCommsFacts) -> dict[str, Any]:
+    verification_status = facts.verification.get("verification_status")
+    if facts.blocked_status is not None:
+        status = facts.blocked_status
+        if status == "action_preparation_failed":
+            summary = (
+                "Remediation blocked / escalated: the selected action could not be "
+                "prepared or validated. No recovery is claimed."
+            )
+        elif status.startswith("approval_"):
+            summary = (
+                "Remediation blocked / not executed. Approval outcome: "
+                f"{facts.approval_decision or 'missing'}. Human review required."
+            )
+        else:
+            summary = "Remediation was blocked by safety validation. No recovery is claimed."
+    elif (
+        facts.resolved is True and verification_status == "passed"
+        and facts.verification.get("env_resolved") is True
+        and facts.approval_decision == "approved"
+    ):
+        status = "verified_resolved"
+        summary = "Environment recovery passed the independent checks."
+    elif verification_status in {"failed", "inconclusive", "error"}:
+        status = f"verification_{verification_status}"
+        summary = f"Environment verification is {verification_status}. No recovery is claimed."
+    else:
+        status = "verification_unconfirmed"
+        summary = "An approved, verified recovery was not established. No recovery is claimed."
+    return {
+        "incident_id": facts.incident_id,
+        "title": facts.incident_id,
+        "severity": facts.severity,
+        "status": status,
+        "summary": summary,
+        "resolution": summary,
+        "duration": "Not measured",
+        "impact": "Not quantified",
+        "authors": "AtlasOps operational runtime",
+        "root_cause": "See the attributed diagnosis in the preserved incident evidence.",
+        "detection": "Authenticated operational alert admission.",
+        "timeline": [
+            {"time": "Not measured", "event": f"Approval outcome: {facts.approval_decision or 'missing'}"},
+            {"time": "Not measured", "event": f"Recorded action results: {len(facts.executed_actions)}"},
+            {"time": "Not measured", "event": f"Verification status: {verification_status or 'not recorded'}"},
+        ],
+        "went_well": ["The incident outcome is recorded with its verifier evidence."],
+        "went_wrong": [summary] if status != "verified_resolved" else ["No failed verifier outcome recorded."],
+        "action_items": [{
+            "action": "Review the preserved incident and verification evidence.",
+            "owner": "Operator", "priority": facts.severity, "due": "Not assigned",
+        }],
+        "verification": dict(facts.verification),
+        "settling": dict(facts.settling),
+        "env_resolved": facts.verification.get("env_resolved"),
+        "resolved": status == "verified_resolved",
+    }
+
+
+def publish_operational_outcome(facts: OperationalCommsFacts) -> dict[str, Any]:
+    from agents.audit import require_audit_log
+    from agents.execution_journal import current_execution
+    from agents.telemetry import trace_span
+    from agents.tools import TOOL_REGISTRY
+
+    document = redact_persisted_evidence(_operational_publication(facts))
+    calls = (
+        ("slack_post_update", {
+            "channel": "#incident-response", "severity": facts.severity,
+            "title": f"{document['status']}: {facts.incident_id}",
+            "summary": document["summary"], "action_items": [],
+        }),
+        ("postmortem_draft", {"incident": document}),
+    )
+    trajectory = []
+    outputs = {}
+    for name, arguments in calls:
+        with trace_span(f"tool.{name}", {
+            "agent.role": "comms", "tool.name": name, "incident.id": facts.incident_id,
+        }):
+            try:
+                output = TOOL_REGISTRY[name](**arguments)
+            except Exception as error:
+                output = {"success": False, "error": type(error).__name__}
+        if not isinstance(output, dict):
+            output = {"success": False, "error": "invalid_tool_result"}
+        output = redact_persisted_evidence(output)
+        require_audit_log().record(
+            incident_id=facts.incident_id, agent_role="comms", action_type="tool_result",
+            tool_name=name, tool_args=arguments,
+            result_summary=json.dumps(output, sort_keys=True),
+            policy_check="verifier_bound_publication",
+        )
+        outputs[name] = output
+        trajectory.append({
+            "role": "comms", "tool": name, "args": arguments,
+            "output": output, "publication_source": "coordinator_verifier_facts",
+        })
+        progress = current_execution.get()
+        if progress is not None:
+            progress.note("comms", "publication_tool_completed", comms={"trajectory": trajectory})
+
+    notification = outputs["slack_post_update"]
+    postmortem = outputs["postmortem_draft"]
+    modes = str(notification.get("mode") or "").split("+")
+    errors = notification.get("errors") or []
+    delivered = {
+        provider: provider in modes and not any(
+            str(error).startswith(provider + ":") for error in errors
+        )
+        for provider in ("slack", "discord")
+    }
+    path = (
+        postmortem.get("postmortem_path") or postmortem.get("path")
+        if postmortem.get("success") is True else None
+    )
+    return {
+        "role": "comms",
+        "trajectory": trajectory,
+        "final": {
+            "incident_id": facts.incident_id, "status": document["status"],
+            "summary": document["summary"], "summary_for_dashboard": document["summary"],
+            "slack_posted": delivered["slack"], "postmortem_path": path,
+        },
+        "delivery": {
+            "local_feed_written": notification.get("success") is True and "logged_locally" in modes,
+            "postmortem_written": postmortem.get("success") is True,
+            "slack": {"configured": bool(SLACK_WEBHOOK), "delivered": delivered["slack"]},
+            "discord": {"configured": bool(DISCORD_WEBHOOK), "delivered": delivered["discord"]},
+            "errors": errors,
+        },
     }
 
 

@@ -5,7 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-@pytest.mark.parametrize("namespace", [None, "-A", "unrelated-namespace"])
+@pytest.mark.parametrize(
+    "namespace", [None, "atlasops-boutique", "default", "-A", "unrelated-namespace"],
+)
 def test_operational_agent_reads_use_only_the_configured_rbac_scope(
     monkeypatch, namespace,
 ):
@@ -45,7 +47,7 @@ def test_operational_agent_reads_use_only_the_configured_rbac_scope(
     observation = next(
         row for row in result["trajectory"] if row.get("tool") == "kubectl_get"
     )
-    if namespace is None:
+    if namespace in {None, "atlasops-boutique"}:
         tool.assert_called_once_with(resource="pods", namespace="atlasops-boutique")
         assert observation["args"]["namespace"] == "atlasops-boutique"
         assert observation["output"]["success"] is True

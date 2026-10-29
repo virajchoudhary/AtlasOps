@@ -98,6 +98,7 @@ class ExecutionJournal:
             raise ValueError("Invalid operational execution identity")
         record = _safe_evidence({
             "incident_id": incident_id, "execution_id": execution_id,
+            "source_sha": os.getenv("ATLASOPS_SOURCE_SHA", "").strip() or None,
             "alert": alert, "incident_anchors": anchors,
             "evidence_class": evidence_class, "certification_status": "NOT_CERTIFIED",
             "resolved": False, "env_resolved": None,
@@ -132,6 +133,9 @@ class ExecutionJournal:
         if row["state"] in _TERMINAL:
             raise ExecutionJournalError("A terminal execution cannot replay or advance")
         record = json.loads(row["record"])
+        for field in ("incident_id", "execution_id", "source_sha"):
+            if field in (patch or {}) and patch[field] != record.get(field):
+                raise ExecutionJournalError("Execution identity cannot change during progress")
         record.update(_safe_evidence(patch or {}))
         last = connection.execute(
             "SELECT entry_hash FROM execution_events WHERE execution_id=? ORDER BY sequence DESC LIMIT 1",
@@ -203,6 +207,7 @@ class ExecutionJournal:
             raise ExecutionJournalError("Execution snapshot differs from its event history")
         return {
             "incident_id": row["incident_id"], "execution_id": execution_id,
+            "source_sha": last["record"].get("source_sha"),
             "phase": row["phase"], "state": row["state"], "updated_at": row["updated_at"],
             "record": last["record"], "events": [json.loads(event["event"]) for event in events],
             "integrity": {"ok": True, "events": len(events), "last_hash": previous},

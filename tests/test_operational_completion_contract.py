@@ -163,6 +163,80 @@ def native_runtime(monkeypatch, tmp_path):
     return coordinator
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior_approval", [False, True])
+async def test_preparation_failure_persists_its_real_cause_and_complete_approval_notice(
+    native_runtime, monkeypatch, prior_approval,
+):
+    from agents.approval import ApprovalGate
+    from agents.verifier import EnvironmentVerificationResult
+    from tests.test_approval_target_binding import ACTION
+
+    coordinator = native_runtime
+    gate = ApprovalGate()
+    request_action = gate.request_action
+
+    def approve_request(*args, **kwargs):
+        request = request_action(*args, **kwargs)
+        assert gate.callback(
+            request.token, "approved", approved_by="test-operator",
+            action_digest=request.action_digest,
+        )["ok"]
+        return request
+
+    monkeypatch.setattr(gate, "request_action", approve_request)
+    monkeypatch.setattr(coordinator, "approval_gate", gate)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://fixture.invalid/never-contact")
+    notification = MagicMock(return_value={"success": True})
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "slack_post_update", notification)
+    settling = AsyncMock(side_effect=AssertionError("Blocked preparation must not settle"))
+    monkeypatch.setattr(coordinator, "settle_environment", settling)
+    monkeypatch.setattr("agents.verifier.verify_environment", MagicMock(return_value=(
+        EnvironmentVerificationResult(
+            scenario_id="", agent_claimed_resolved=False, env_resolved=False,
+            verification_status="inconclusive",
+        )
+    )))
+
+    async def agent(role, _payload):
+        if role == "triage":
+            final = {"severity": "P2"}
+        elif role == "diagnosis":
+            final = {"root_cause": {"category": "unknown"}}
+        elif role == "remediation":
+            if prior_approval:
+                approver = coordinator._ACTIVE_ACTION_APPROVER.get()
+                decision, permit = await approver(deepcopy(ACTION))
+                assert decision["status"] == "approved" and permit is not None
+            final = {
+                "status": "action_preparation_failed", "outcome": "escalated",
+                "executed_actions": [],
+            }
+        else:
+            raise AssertionError("Blocked preparation must not call generated Comms")
+        return {"role": role, "trajectory": [], "final": final}
+
+    monkeypatch.setattr(coordinator, "call_agent", AsyncMock(side_effect=agent))
+    result = await coordinator.handle_incident(
+        {"commonLabels": {"alertname": "FixturePreparationFailure"}},
+        incident_id="inc-preparation-cause",
+    )
+    assert result["comms"]["final"]["status"] == "action_preparation_failed"
+    summary = result["comms"]["final"]["summary"]
+    assert "could not be prepared" in summary
+    assert "contradicted" not in summary
+    assert result["resolved"] is False
+    assert result["env_resolved"] is False
+    saved = json.loads((coordinator.TRAJECTORIES_DIR / "inc-preparation-cause.json").read_text())
+    assert saved["comms"] == result["comms"]
+    assert notification.call_args.kwargs["summary"] == summary
+    settling.assert_not_awaited()
+    if prior_approval:
+        notice = notification.call_args_list[0].kwargs
+        assert "patch=" + json.dumps(ACTION["patch"], sort_keys=True) in notice["summary"]
+        assert any("/approval/pending" in item for item in notice["action_items"])
+
+
 def response_payload(model="fixture/expected-model"):
     return {
         "model": model,

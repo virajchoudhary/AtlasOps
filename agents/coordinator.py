@@ -3049,6 +3049,10 @@ async def handle_incident(
                     title=f"Exact action approval required: {incident_id}",
                     summary=request.action_summary or "Policy action requires approval.",
                     action_items=[
+                        (
+                            f"Review the complete prepared patch and target: GET "
+                            f"{public_base}/approval/pending with X-AtlasOps-Key."
+                        ),
                         f"Action digest: {request.action_digest}",
                         (
                             f"Approve: POST {approve_url} with X-AtlasOps-Key and "
@@ -3188,7 +3192,13 @@ async def handle_incident(
         if approval_blocked or remediation_blocked:
             # Do not let generated Comms text claim execution or publish resolution
             # for a plan that was never authorized. Preserve verifier truth separately.
-            if approval_blocked:
+            if remediation_final.get("status") == "action_preparation_failed":
+                blocked_status = "action_preparation_failed"
+                blocked_summary = (
+                    "Remediation blocked / escalated: the selected action could not be "
+                    "prepared or validated. No recovery is claimed."
+                )
+            elif approval_blocked:
                 status = str((approval_record or {}).get("decision") or "missing")
                 blocked_status = f"approval_{status}"
                 blocked_summary = (
@@ -3209,10 +3219,7 @@ async def handle_incident(
                     f"blocked a decision ({category}). No recovery is claimed."
                 )
             else:
-                blocked_status = (
-                    "action_preparation_failed" if remediation_final.get("status") == "action_preparation_failed"
-                    else "target_mismatch"
-                )
+                blocked_status = "target_mismatch"
                 blocked_summary = (
                     "Remediation blocked / escalated — the model target contradicted "
                     "the primary alert target without supporting observations."

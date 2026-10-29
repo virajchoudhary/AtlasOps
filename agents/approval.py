@@ -153,7 +153,7 @@ class ApprovalGate:
         )
         action_record = self._action_snapshot(action)
         action_summary = f"{tool} arguments={canonical_arguments}"
-        for key in ("target", "verification_target"):
+        for key in ("target", "verification_target", "patch"):
             if key in action_record:
                 action_summary += f" {key}=" + json.dumps(
                     action_record[key], sort_keys=True, ensure_ascii=False, allow_nan=False

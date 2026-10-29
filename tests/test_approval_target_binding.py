@@ -1,6 +1,7 @@
 """Exact action receipts bind the prepared resource and mutation."""
 
 from copy import deepcopy
+import json
 
 import pytest
 
@@ -60,6 +61,14 @@ def test_pending_receipt_preserves_the_complete_prepared_action():
     assert request.to_dict()["action"] == ACTION
     action["target"]["uid"] = "changed-after-request"
     assert request.to_dict()["action"] == ACTION
+
+
+def test_approval_summary_displays_the_complete_prepared_patch_and_target():
+    gate = ApprovalGate()
+    request = gate.request_action(incident_id="inc-patch-display", severity="P1", action=ACTION)
+    for field in ("patch", "target"):
+        assert f"{field}=" + json.dumps(ACTION[field], sort_keys=True) in request.action_summary
+    assert 'arguments={"deployment":"frontend","namespace":"default","replicas":2}' in request.action_summary
 
 
 def test_expired_exact_request_cannot_be_approved_before_a_waiter(monkeypatch):

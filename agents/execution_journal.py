@@ -138,9 +138,14 @@ class ExecutionJournal:
             (execution_id,),
         ).fetchone()
         previous = last["entry_hash"] if last else ""
+        transition = {
+            "execution_id": execution_id, "event": event, "phase": phase,
+            "state": state, "record": record, "ts": time.time(), "prev_hash": previous,
+        }
+        _canonical(transition)
         audit = audit_log.record(
             incident_id=row["incident_id"], agent_role="coordinator",
-            action_type="execution_progress", tool_args=record,
+            action_type="execution_progress", tool_args=transition,
             result_summary=_canonical({
                 "event": event, "phase": phase, "state": state,
                 "severity": (record.get("approval") or {}).get("severity"),
@@ -149,9 +154,7 @@ class ExecutionJournal:
             policy_check=state,
         )
         payload = _canonical({
-            "execution_id": execution_id, "event": event, "phase": phase,
-            "state": state, "record": record, "ts": time.time(),
-            "audit_entry_hash": audit.get("entry_hash"),
+            **transition, "audit_entry_hash": audit.get("entry_hash"),
         })
         digest = hashlib.sha256((previous + payload).encode()).hexdigest()
         connection.execute(
@@ -160,7 +163,7 @@ class ExecutionJournal:
         )
         connection.execute(
             "UPDATE executions SET phase=?,state=?,record=?,updated_at=? WHERE execution_id=?",
-            (phase, state, _canonical(record), time.time(), execution_id),
+            (phase, state, _canonical(record), transition["ts"], execution_id),
         )
 
     def read(self, execution_id: str) -> dict[str, Any]:
@@ -180,6 +183,13 @@ class ExecutionJournal:
             raise ExecutionJournalError("Execution event history is absent or exceeds its limit")
         previous = ""
         for event in events:
+            transition = json.loads(event["event"])
+            if (
+                not isinstance(transition, dict)
+                or transition.get("execution_id") != execution_id
+                or ("prev_hash" in transition and transition["prev_hash"] != previous)
+            ):
+                raise ExecutionJournalError("Execution transition identity or linkage is invalid")
             expected = hashlib.sha256((previous + event["event"]).encode()).hexdigest()
             if event["prev_hash"] != previous or event["entry_hash"] != expected:
                 raise ExecutionJournalError("Execution evidence hash chain is invalid")
@@ -188,6 +198,7 @@ class ExecutionJournal:
         if (
             last["record"] != json.loads(row["record"])
             or last["phase"] != row["phase"] or last["state"] != row["state"]
+            or ("prev_hash" in last and last["ts"] != row["updated_at"])
         ):
             raise ExecutionJournalError("Execution snapshot differs from its event history")
         return {
@@ -197,14 +208,17 @@ class ExecutionJournal:
             "integrity": {"ok": True, "events": len(events), "last_hash": previous},
         }
 
-    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list(self, limit: int = 50, *, include_events: bool = False) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(
                 "SELECT execution_id FROM executions ORDER BY updated_at DESC LIMIT ?",
                 (min(max(limit, 1), 100),),
             ).fetchall()
         return [
-            {key: value for key, value in self.read(row["execution_id"]).items() if key != "events"}
+            {
+                key: value for key, value in self.read(row["execution_id"]).items()
+                if include_events or key != "events"
+            }
             for row in rows
         ]
 

@@ -1,0 +1,22 @@
+# T7 (v2) — all eight bugs with the model, commit 9ab930a
+backend: qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+
+bug                   id       status          s  final patch author                dx   browser checks
+-------------------------------------------------------------------------------------------------------
+js-reference-error    INC-0004 resolved     14.3  qwen2.5:7b-instruct (model)       Y          9/9 pass
+broken-stylesheet     INC-0005 resolved     12.1  Rule engine (no model)            Y          9/9 pass
+truncated-data        INC-0006 resolved     28.3  Rule engine (no model)            Y          9/9 pass
+string-prices         INC-0007 resolved     28.2  Rule engine (no model)            Y          9/9 pass
+broken-image-paths    INC-0008 resolved     38.4  Rule engine (no model)            Y          9/9 pass
+cart-handler          INC-0009 resolved     16.2  Rule engine (no model)            Y          9/9 pass
+layout-overflow       INC-0010 resolved     18.2  Rule engine (no model)            Y          9/9 pass
+slow-api              INC-0011 resolved     82.7  Rule engine (no model)            Y          9/9 pass
+
+resolved and verified         : 8/8
+diagnosis matched the bug     : 8/8
+FINAL patch authored by model : 1/8   (rule engine 7/8)
+model patch attempts          : 5, of which failed verification: 4
+unique incident ids           : 8 of 8  -> ['INC-0004', 'INC-0005', 'INC-0006', 'INC-0007', 'INC-0008', 'INC-0009', 'INC-0010', 'INC-0011']
+browser_current at end        : [True, True, True, True, True, True, True, True]
+browser_stale at end          : [False, False, False, False, False, False, False, False]
+incident_state at end         : ['closed', 'closed', 'closed', 'closed', 'closed', 'closed', 'closed', 'closed']

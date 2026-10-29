@@ -1,0 +1,42 @@
+{
+  "path": "approve",
+  "bug": "truncated-data",
+  "generated_at": 1793213422.6524868,
+  "store_before_inject": 200,
+  "incident": "INC-0018",
+  "digest": "246b91cd0b15c707bcf20279dc558b08d3b3ca75a6e1c194ed621ac784be9e3e",
+  "store_while_awaiting_approval": 500,
+  "decision_response": {
+    "recorded": true
+  },
+  "replay_of_the_same_approval": {
+    "_http_error": 409,
+    "_detail": "{\"detail\":\"No approval is pending for this incident.\"}"
+  },
+  "wrong_digest_rejected": {
+    "_http_error": 409,
+    "_detail": "{\"detail\":\"No approval is pending for this incident.\"}"
+  },
+  "gates": [
+    {
+      "digest": "246b91cd0b15c707bcf20279dc558b08d3b3ca75a6e1c194ed621ac784be9e3e",
+      "response": {
+        "recorded": true
+      }
+    }
+  ],
+  "gate_count": 1,
+  "final_status": "resolved",
+  "final_outcome": "Resolved and verified",
+  "store_after": 200,
+  "evidence_status": "resolved",
+  "evidence_outcome": "Resolved and verified",
+  "evidence_approval_decision": "approved",
+  "evidence_patch_author": "Rule engine (no model)",
+  "evidence_attempts": [
+    [
+      "Rule engine (no model)",
+      "verified"
+    ]
+  ]
+}

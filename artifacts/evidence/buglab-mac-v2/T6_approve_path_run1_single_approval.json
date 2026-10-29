@@ -1,0 +1,28 @@
+{
+  "path": "approve",
+  "bug": "truncated-data",
+  "generated_at": 1793213077.69802,
+  "store_before_inject": 200,
+  "incident": "INC-0017",
+  "digest": "f4633608f609c0e5f0aab717fed8ea6ca9277dc702fbae790b177464b1ec3666",
+  "store_while_awaiting_approval": 500,
+  "decision_response": {
+    "recorded": true
+  },
+  "replay_of_the_same_approval": {
+    "_http_error": 409,
+    "_detail": "{\"detail\":\"No approval is pending for this incident.\"}"
+  },
+  "wrong_digest_rejected": {
+    "_http_error": 409,
+    "_detail": "{\"detail\":\"No approval is pending for this incident.\"}"
+  },
+  "final_status": "awaiting_approval",
+  "final_outcome": null,
+  "store_after": 500,
+  "evidence_status": null,
+  "evidence_outcome": null,
+  "evidence_approval_decision": null,
+  "evidence_patch_author": null,
+  "evidence_attempts": []
+}

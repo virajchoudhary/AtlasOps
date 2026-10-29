@@ -1,0 +1,51 @@
+# T2 — backend identification at startup, and refusal without a model
+commit: 9ab930a4b5bc91b260ade4fc4f8d9b9a3da5b977
+image:  sha256:831e9a43028993ee22e7ce1c31839df1aa7bddb529050dccf6615a90412385da
+host:   Darwin 24.6.0 arm64
+date:   2026-10-28T18:10:31Z
+
+## A. --agents llm with the local endpoint reachable
+--- docker logs buglab ---
+AtlasOps bug lab
+  Control room: http://0.0.0.0:8790/
+  Store:        http://0.0.0.0:8790/shop/
+  Working copy: /work
+  Backend: qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+--- exit state ---
+running=true exit=0
+
+## B. --agents llm with no model at the endpoint (expect refusal)
+AtlasOps bug lab
+  Control room: http://0.0.0.0:8790/
+  Store:        http://0.0.0.0:8790/shop/
+  Working copy: /work
+ERROR:    Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 661, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/demo/bug_lab/server.py", line 81, in lifespan
+    lab.backend = await detect_backend(config.agents, config.llm_base_url,
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/demo/bug_lab/llm.py", line 295, in detect_backend
+    raise ModelError(
+demo.bug_lab.llm.ModelError: Model endpoint did not answer (connection failed).
+
+ERROR:    Application startup failed. Exiting.
+--- exit code: 3 ---
+
+## C. --agents auto with no model at the endpoint (expect rule engine + a note)
+AtlasOps bug lab
+  Control room: http://0.0.0.0:8790/
+  Store:        http://0.0.0.0:8790/shop/
+  Working copy: /work
+  Backend: Rule engine (no model) (No model endpoint answered (connection failed); using the rule engine.)
+--- backend reported by the API ---
+{
+  "mode": "rules",
+  "label": "Rule engine (no model)",
+  "model": null,
+  "base_url": null,
+  "note": "No model endpoint answered (connection failed); using the rule engine."
+}

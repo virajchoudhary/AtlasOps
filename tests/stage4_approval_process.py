@@ -29,7 +29,11 @@ async def main(output_dir: Path) -> None:
     coordinator.audit_log = MagicMock()
     coordinator.thought_emit = MagicMock()
     coordinator.circuit_breaker = CircuitBreaker()
-    coordinator.TOOL_REGISTRY = {"slack_post_update": MagicMock(return_value={"success": True})}
+    mutation = MagicMock(return_value={"success": True})
+    coordinator.TOOL_REGISTRY = {
+        "slack_post_update": MagicMock(return_value={"success": True}),
+        "kubectl_scale": mutation,
+    }
     coordinator.settle_environment = AsyncMock(return_value={})
     verifier.verify_environment = MagicMock(return_value=verifier.EnvironmentVerificationResult(
         scenario_id="", agent_claimed_resolved=False,
@@ -39,9 +43,41 @@ async def main(output_dir: Path) -> None:
     comms.discord_scenario_run_ping = MagicMock()
 
     roles: list[str] = []
+    original_agent = coordinator.call_agent
 
-    async def agent(role, _payload):
+    async def completion(_role, request):
+        if request.get("tools") and not any(
+            message.get("role") == "tool" for message in request["messages"]
+        ):
+            message = {
+                "content": "",
+                "tool_calls": [{
+                    "id": "synthetic-exact-action",
+                    "type": "function",
+                    "function": {
+                        "name": "kubectl_scale",
+                        "arguments": json.dumps({
+                            "deployment": "frontend", "namespace": "default",
+                            "replicas": 2,
+                        }),
+                    },
+                }],
+            }
+            finish_reason = "tool_calls"
+        else:
+            message = {"content": '{"outcome":"unresolved"}'}
+            finish_reason = "stop"
+        return {
+            "model": coordinator.MODEL_NAME,
+            "choices": [{"message": message, "finish_reason": finish_reason}],
+        }
+
+    async def agent(role, payload):
         roles.append(role)
+        if role == "remediation":
+            return await original_agent(
+                role, payload, max_turns=2, completion_provider=completion,
+            )
         if role == "triage":
             final = {"severity": "P1", "title": "Synthetic approval test"}
         elif role == "diagnosis":
@@ -60,7 +96,12 @@ async def main(output_dir: Path) -> None:
         )
         publish_json(
             output_dir / "result.json",
-            {"approval": incident["approval"], "remediation": incident["remediation"]["final"], "roles": roles},
+            {
+                "approval": incident["approval"],
+                "remediation": incident["remediation"]["final"],
+                "roles": roles,
+                "mutations": mutation.call_count,
+            },
         )
 
 

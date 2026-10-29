@@ -1348,6 +1348,10 @@ def test_every_remediation_model_response_is_persisted_before_branching(monkeypa
             "env_resolved": False, "verification_status": "failed",
         }),
     ))
+    monkeypatch.setitem(
+        coordinator.TOOL_REGISTRY, "chaos_stop_experiment",
+        MagicMock(return_value={"success": True}),
+    )
     prose = MagicMock()
     prose.json.return_value = {
         "choices": [{"message": {"role": "assistant", "content": "I will investigate."}, "finish_reason": "stop"}]
@@ -1387,7 +1391,7 @@ def test_every_remediation_model_response_is_persisted_before_branching(monkeypa
                 result = asyncio.run(
                     __import__("agents.coordinator", fromlist=["call_agent"]).call_agent(
                         "remediation",
-                        {"incident_id": "inc-turns"},
+                        {"incident_id": "inc-turns", "triage": {"severity": "P2"}},
                     )
                 )
     records = [step for step in result["trajectory"] if step.get("kind") == "model_turn"]

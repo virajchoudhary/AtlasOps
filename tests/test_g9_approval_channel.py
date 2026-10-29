@@ -134,7 +134,12 @@ def test_authenticated_operator_decision_issues_one_exact_action_permit():
     asyncio.run(exercise())
 
 
-def test_rejection_timeout_and_restart_never_release_old_action():
+def test_rejection_timeout_and_restart_never_release_old_action(monkeypatch):
+    import agents.approval as approval
+
+    clock = [1000.0]
+    monkeypatch.setattr(approval.time, "time", lambda: clock[0])
+
     async def exercise():
         gate = ApprovalGate(timeout_seconds=0.05)
         async with loopback_approval_server(gate, KEY) as base:
@@ -151,6 +156,7 @@ def test_rejection_timeout_and_restart_never_release_old_action():
                 )
                 assert decision["status"] == "rejected" and permit is None
                 expired = gate.request_action(incident_id="timeout", severity="P1", action=ACTION)
+                clock[0] = expired.expires_at + 1
                 decision, permit = await gate.wait_for_action_decision(
                     "timeout", request_token=expired.token
                 )

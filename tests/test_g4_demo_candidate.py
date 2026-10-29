@@ -18,8 +18,10 @@ def test_frozen_candidate_source_drift_fails_closed_without_activation():
         "agents/coordinator.py",
         "demo/read_api.py",
         "demo/incident_monitor.py",
+        "agents/approval.py",
         "training/grpo_environment.py",
         "agents/verifier.py",
+        "agents/tool_policy.py",
     ]
     assert report["historical_profile_unchanged"]
     assert report["active"] is report["runtime_qualified"] is False

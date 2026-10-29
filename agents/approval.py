@@ -31,7 +31,7 @@ class ApprovalRequest:
     severity: str
     summary: str
     token: str = field(default_factory=lambda: f"apr-{uuid.uuid4().hex[:12]}")
-    created_at: float = field(default_factory=time.time)
+    created_at: float = field(default_factory=lambda: time.time())
     decision: str = "pending"
     approved_by: str = ""
     reason: str = ""
@@ -39,6 +39,7 @@ class ApprovalRequest:
     action_digest: str | None = None
     action_summary: str | None = None
     operator_scope: dict[str, str] | None = None
+    expires_at: float | None = None
     waiter_active: bool = False
     event: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -59,6 +60,7 @@ class ApprovalRequest:
             )
             record["action_digest"] = self.action_digest
             record["action_summary"] = self.action_summary
+            record["expires_at"] = self.expires_at
             if self.operator_scope is not None:
                 record["operator_scope"] = dict(self.operator_scope)
         return record
@@ -71,6 +73,7 @@ class ActionApprovalPermit:
     action_digest: str
     approved_by: str
     issued_at: float
+    expires_at: float
 
 
 class ApprovalGate:
@@ -86,15 +89,31 @@ class ApprovalGate:
         self._action_permits: dict[str, ActionApprovalPermit] = {}
 
     @staticmethod
-    def action_digest(action: Mapping[str, Any]) -> str:
+    def _action_snapshot(action: Mapping[str, Any]) -> dict[str, Any]:
         tool = action.get("tool")
         arguments = action.get("arguments")
         if not isinstance(tool, str) or not tool:
             raise ValueError("Approved policy action requires a tool name")
         if not isinstance(arguments, Mapping):
             raise TypeError("Approved policy action arguments must be an object")
+        record = {"tool": tool, "arguments": dict(arguments)}
+        for key in ("target", "verification_target"):
+            if key in action:
+                target = action[key]
+                if not isinstance(target, Mapping) or not target:
+                    raise ValueError("Prepared action requires a resource identity")
+                record[key] = dict(target)
+        if "patch" in action:
+            patch = action["patch"]
+            if not isinstance(patch, (list, Mapping)) or not patch:
+                raise ValueError("Prepared action requires a concrete mutation")
+            record["patch"] = patch
+        return json.loads(json.dumps(record, ensure_ascii=False, allow_nan=False))
+
+    @staticmethod
+    def action_digest(action: Mapping[str, Any]) -> str:
         canonical = json.dumps(
-            {"tool": tool, "arguments": dict(arguments)},
+            ApprovalGate._action_snapshot(action),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -132,16 +151,13 @@ class ApprovalGate:
             separators=(",", ":"),
             allow_nan=False,
         )
-        action_record = json.loads(
-            json.dumps(
-                {"tool": tool, "arguments": arguments},
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-        )
+        action_record = self._action_snapshot(action)
         action_summary = f"{tool} arguments={canonical_arguments}"
+        for key in ("target", "verification_target", "patch"):
+            if key in action_record:
+                action_summary += f" {key}=" + json.dumps(
+                    action_record[key], sort_keys=True, ensure_ascii=False, allow_nan=False
+                )
         scope = None
         if operator_scope is not None:
             scope = dict(operator_scope)
@@ -150,8 +166,7 @@ class ApprovalGate:
                 or any(not isinstance(value, str) or not value.strip() for value in scope.values())
             ):
                 raise ValueError("Operator scope requires a Kubernetes context and scenario ID")
-        return self._register_request(
-            ApprovalRequest(
+        request = ApprovalRequest(
                 incident_id=incident_id,
                 severity=severity,
                 summary=f"{severity} exact policy action approval: {action_summary}",
@@ -160,7 +175,8 @@ class ApprovalGate:
                 action_summary=action_summary,
                 operator_scope=scope,
             )
-        )
+        request.expires_at = request.created_at + self.timeout_seconds
+        return self._register_request(request)
 
     async def wait_for_decision(self, incident_id: str) -> dict[str, Any]:
         req = self._pending_by_incident.get(incident_id)
@@ -193,6 +209,7 @@ class ApprovalGate:
             action_digest=req.action_digest,
             approved_by=result["approved_by"].strip(),
             issued_at=time.time(),
+            expires_at=req.expires_at,
         )
         self._action_permits[permit.permit_id] = permit
         return result, permit
@@ -215,6 +232,7 @@ class ApprovalGate:
             permit.incident_id == incident_id
             and permit.action_digest == action_digest
             and 0 <= age <= self.timeout_seconds
+            and time.time() <= permit.expires_at
         )
 
     async def _wait_for_request(self, req: ApprovalRequest) -> dict[str, Any]:
@@ -222,11 +240,15 @@ class ApprovalGate:
             return {"status": "missing", "incident_id": req.incident_id}
         req.waiter_active = True
         try:
-            await asyncio.wait_for(req.event.wait(), timeout=self.timeout_seconds)
+            if req.decision == "pending":
+                remaining = (
+                    max(0.0, req.expires_at - time.time())
+                    if req.expires_at is not None else self.timeout_seconds
+                )
+                await asyncio.wait_for(req.event.wait(), timeout=remaining)
         except asyncio.TimeoutError:
-            req.decision = "timeout"
-            self._clear(req)
-            return {"status": "timeout", "incident_id": req.incident_id}
+            if req.decision == "pending":
+                req.decision = "timeout"
         except asyncio.CancelledError:
             self._clear(req)
             raise
@@ -239,12 +261,25 @@ class ApprovalGate:
         self._clear(req)
         return result
 
-    def callback(self, token: str, decision: str, approved_by: str = "", reason: str = "") -> dict[str, Any]:
+    def callback(
+        self, token: str, decision: str, approved_by: str = "", reason: str = "",
+        *, action_digest: str | None = None,
+    ) -> dict[str, Any]:
         req = self._pending_by_token.get(token)
         if not req:
             return {"ok": False, "error": "unknown_token"}
         if req.decision != "pending":
             return {"ok": False, "error": "already_decided"}
+        if req.expires_at is not None and time.time() > req.expires_at:
+            req.decision = "timeout"
+            req.event.set()
+            self._clear(req)
+            return {"ok": False, "error": "expired"}
+        if req.action is not None and "target" in req.action:
+            if action_digest != req.action_digest:
+                return {"ok": False, "error": "action_digest_mismatch"}
+        elif action_digest is not None and action_digest != req.action_digest:
+            return {"ok": False, "error": "action_digest_mismatch"}
         normalized = decision.lower().strip()
         if normalized not in {"approved", "rejected"}:
             return {"ok": False, "error": "decision must be approved or rejected"}

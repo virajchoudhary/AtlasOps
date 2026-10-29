@@ -42,6 +42,11 @@ _SECRET_KEY = re.compile(
     r"private[_-]?key)"
 )
 _SECRET_TEXT = (
+    re.compile(
+        r"""(?i)https?://(?:hooks\.slack(?:-gov)?\.com/services|"""
+        r"""(?:(?:canary|ptb)\.)?discord(?:app)?\.com/api(?:/v\d+)?/webhooks)"""
+        r"""/[^\s"'<>`}\]]+"""
+    ),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
     re.compile(
         r"""(?ix)\b(?:proxy-)?authorization\s*["']?\s*[:=]\s*["']?"""

@@ -11,6 +11,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from agents.evidence_redaction import redact_persisted_evidence
+
 
 class AuditConfigurationError(RuntimeError):
     """Raised when secure global audit configuration is unavailable."""
@@ -70,7 +72,7 @@ class AuditLog:
                 "action_type": action_type,
                 "tool_name": tool_name or "",
                 "tool_args_hash": self._sha256_text(json.dumps(tool_args, sort_keys=True)),
-                "result_summary": result_summary[:300],
+                "result_summary": redact_persisted_evidence(result_summary)[:300],
                 "approved_by": approved_by,
                 "policy_check": policy_check,
                 "prev_hash": self._last_hash,
@@ -103,16 +105,19 @@ class AuditLog:
             return []
         return entries[max(0, page_end - limit) : page_end]
 
-    def verify_integrity(self) -> dict[str, Any]:
+    def verify_integrity(self, *, include_records: bool = False) -> dict[str, Any]:
         lines = self._read_lines_snapshot()
         if not lines:
-            return {"ok": True, "entries": 0}
+            return {"ok": True, "entries": 0, **({"records": []} if include_records else {})}
         prev_hash = ""
+        records = []
         for index, line in enumerate(lines):
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 return {"ok": False, "error": f"invalid_json_at_line_{index + 1}"}
+            if not isinstance(entry, dict):
+                return {"ok": False, "error": f"invalid_record_at_line_{index + 1}"}
             expected_prev = entry.get("prev_hash", "")
             if expected_prev != prev_hash:
                 return {
@@ -140,7 +145,12 @@ class AuditLog:
                     "error": f"entry_hash_mismatch_at_line_{index + 1}",
                 }
             prev_hash = entry_hash
-        return {"ok": True, "entries": len(lines)}
+            if include_records:
+                records.append(entry)
+        return {
+            "ok": True, "entries": len(lines),
+            **({"records": records} if include_records else {}),
+        }
 
 
 _configured_audit_log: AuditLog | None = None

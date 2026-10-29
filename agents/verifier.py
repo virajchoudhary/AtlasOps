@@ -1094,7 +1094,6 @@ class EnvironmentVerifier:
                     output="json",
                 )
             )
-        # Tool adapters can raise client-specific transport errors; none proves recovery.
         except Exception as error:
             return (
                 CheckResult(
@@ -1420,7 +1419,6 @@ class EnvironmentVerifier:
                 sample_age_query,
                 time_unix=query_time,
             )
-        # Any query-side exception is missing evidence, regardless of adapter type.
         except Exception as error:
             return inconclusive(f"Prometheus query failed: {error}")
 
@@ -1562,7 +1560,6 @@ class EnvironmentVerifier:
 
         try:
             response = self._alert_list(active_only=True)
-        # Alert-list failures cannot establish that the target alert cleared.
         except Exception as error:
             return inconclusive(f"Failed to query Alertmanager: {error}")
         if not isinstance(response, dict) or response.get("success") is not True:

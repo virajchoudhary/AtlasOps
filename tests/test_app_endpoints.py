@@ -41,6 +41,34 @@ def test_health_endpoint_ok():
     assert "slack_webhook_configured" in body
 
 
+def test_operational_breaker_reset_requires_and_audits_server_principal(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "1")
+    monkeypatch.delenv("ATLASOPS_OPERATOR_ID", raising=False)
+    breaker = MagicMock()
+    breaker.reset.return_value = {"tripped": False}
+    audit = MagicMock()
+    monkeypatch.setattr(app_module, "circuit_breaker", breaker)
+    monkeypatch.setattr(app_module, "audit_log", audit)
+    monkeypatch.setattr(app_module.coordinator_module, "require_audit_log", MagicMock())
+    client = _client()
+    try:
+        assert client.post("/circuit-breaker/reset").status_code == 503
+        breaker.reset.assert_not_called()
+        monkeypatch.setenv("ATLASOPS_OPERATOR_ID", "fixture-operator")
+        response = client.post("/circuit-breaker/reset", headers={
+            "Origin": "http://testserver",
+        })
+        assert response.status_code == 200
+        breaker.reset.assert_called_once()
+        audit.record.assert_called_once()
+        assert audit.record.call_args.kwargs["approved_by"] == "fixture-operator"
+        assert audit.record.call_args.kwargs["action_type"] == "automation_reset"
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("scenario_id", ["single_fault/sf-001", "../../elsewhere"])
 def test_web_injection_retired_even_when_flagged_on(monkeypatch, scenario_id):
     import app as app_module

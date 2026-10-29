@@ -398,8 +398,11 @@ def test_rollback_and_chaos_stop_require_observed_evidence():
 )
 def test_terminal_action_errors_block_revision_variants(monkeypatch, terminal_output):
     import agents.coordinator as coordinator
+    from agents.approval import ApprovalGate
 
     monkeypatch.setattr(coordinator, "require_audit_log", MagicMock())
+    gate = ApprovalGate(timeout_seconds=1)
+    monkeypatch.setattr(coordinator, "approval_gate", gate)
     monkeypatch.setattr(coordinator, "_ACTIVE_MUTATION_OBSERVER", ContextVar(
         "terminal_test_observer",
         default=AsyncMock(return_value={
@@ -437,24 +440,47 @@ def test_terminal_action_errors_block_revision_variants(monkeypatch, terminal_ou
     ]
     monkeypatch.setattr(coordinator, "post_with_retry", AsyncMock(side_effect=responses))
 
-    result = asyncio.run(coordinator.call_agent(
-        "remediation",
-        {
-            "incident_id": "inc-terminal",
-            "triage": {"severity": "P1"},
-            "diagnosis_observations": [{
-                "tool": "argocd_app_history",
-                "args": {"app": "service-a"},
-                "output": {
-                    "success": True,
-                    "history": [{"id": 2, "revision": "sha-2"}, {"id": 3, "revision": "sha-3"}],
-                },
-            }],
-            "_runtime_control": {"enforce_action_preconditions": True},
-        },
-    ))
+    approved_actions = []
 
-    rollback.assert_called_once()
+    async def approve_selected_action(action):
+        request = gate.request_action(
+            incident_id="inc-terminal", severity="P1", action=action,
+        )
+        approved_actions.append(request.to_dict()["action"])
+        assert gate.callback(
+            request.token, "approved", approved_by="test-operator",
+            action_digest=request.action_digest,
+        )["ok"]
+        return await gate.wait_for_action_decision(
+            request.incident_id, request_token=request.token,
+        )
+
+    approval_token = coordinator._ACTIVE_ACTION_APPROVER.set(approve_selected_action)
+    try:
+        result = asyncio.run(coordinator.call_agent(
+            "remediation",
+            {
+                "incident_id": "inc-terminal",
+                "triage": {"severity": "P1"},
+                "diagnosis_observations": [{
+                    "tool": "argocd_app_history",
+                    "args": {"app": "service-a"},
+                    "output": {
+                        "success": True,
+                        "history": [{"id": 2, "revision": "sha-2"}, {"id": 3, "revision": "sha-3"}],
+                    },
+                }],
+                "_runtime_control": {"enforce_action_preconditions": True},
+            },
+        ))
+    finally:
+        coordinator._ACTIVE_ACTION_APPROVER.reset(approval_token)
+
+    rollback.assert_called_once_with(app="service-a", revision="2")
+    assert approved_actions == [{
+        "tool": "argocd_rollback",
+        "arguments": {"app": "service-a", "revision": "2"},
+    }]
     assert result["final"]["outcome"] == "escalated"
     assert any(
         step.get("blocked_by_terminal_error")
@@ -503,6 +529,7 @@ def test_unknown_post_mutation_observation_stops_further_actions(monkeypatch, ob
     try:
         result = asyncio.run(coordinator.call_agent("remediation", {
             "incident_id": "inc-unknown-observation",
+            "triage": {"severity": "P2"},
             "environment_observation": {
                 "observation_status": "observed",
                 "active_experiments": [{
@@ -588,6 +615,7 @@ def test_one_mutation_is_observed_before_next_and_resolved_stops_loop(monkeypatc
             "remediation",
             {
                 "incident_id": "inc-loop",
+                "triage": {"severity": "P2"},
                 "environment_observation": {
                     "observation_status": "observed",
                     "active_experiments": [{

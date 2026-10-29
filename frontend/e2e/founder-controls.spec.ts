@@ -47,6 +47,7 @@ for (const viewport of [
     await mute.click();
     await expect(video).toHaveJSProperty("muted", false);
     const volume = controller.locator("media-volume-range").getByRole("slider");
+    await expect(volume).toHaveValue("1");
     await volume.focus();
     await page.keyboard.press("Home");
     await expect(video).toHaveJSProperty("volume", 0);

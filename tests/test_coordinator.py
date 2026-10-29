@@ -209,11 +209,19 @@ class TestApprovalFlow:
         monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(audit_root / "audit.jsonl"))
         import agents.coordinator as coord
         import agents.tools.comms as comms
+        from agents.verifier import EnvironmentVerificationResult
 
         monkeypatch.setattr(coord, "TRAJECTORIES_DIR", audit_root / "trajectories")
         monkeypatch.setattr(comms, "_LOG_PATH", audit_root / "slack_posts.jsonl")
         monkeypatch.setattr(comms, "SLACK_WEBHOOK", "")
         monkeypatch.setattr(comms, "DISCORD_WEBHOOK", "")
+        monkeypatch.setattr(
+            "agents.verifier.verify_environment",
+            lambda **_kwargs: EnvironmentVerificationResult(
+                scenario_id="", agent_claimed_resolved=False, env_resolved=False,
+                verification_status="inconclusive",
+            ),
+        )
 
     def test_manual_mode_skips_remediation_agent(self, monkeypatch):
         import agents.coordinator as coord
@@ -234,19 +242,48 @@ class TestApprovalFlow:
 
         triage = {"role": "triage", "trajectory": [], "final": {"severity": "P1"}}
         diagnosis = {"role": "diagnosis", "trajectory": [], "final": {"root_cause": "bad deploy"}}
-        comms = {"role": "comms", "trajectory": [], "final": {"status": "posted"}}
-        mock_call = AsyncMock(side_effect=[triage, diagnosis, comms])
+        real_call_agent = coord.call_agent
+        mutation = MagicMock(return_value={"success": True})
+        monkeypatch.setitem(coord.TOOL_REGISTRY, "kubectl_scale", mutation)
+
+        async def selected_command(_role, _request):
+            return {
+                "choices": [{"message": {"content": "", "tool_calls": [{
+                    "id": "rejected-command", "type": "function",
+                    "function": {"name": "kubectl_scale", "arguments": json.dumps({
+                        "deployment": "frontend", "replicas": 2,
+                    })},
+                }]}, "finish_reason": "tool_calls"}],
+            }
+
+        async def call(role, payload):
+            if role == "triage":
+                return triage
+            if role == "diagnosis":
+                return diagnosis
+            assert role == "remediation"
+            return await real_call_agent(role, payload, completion_provider=selected_command)
+
+        mock_call = AsyncMock(side_effect=call)
         monkeypatch.setattr(coord, "call_agent", mock_call)
 
-        async def fake_wait(_incident_id):
-            return {"status": "rejected", "approved_by": "oncall", "reason": "needs more evidence"}
+        request_action = coord.approval_gate.request_action
 
-        monkeypatch.setattr(coord.approval_gate, "wait_for_decision", fake_wait)
+        def reject(**kwargs):
+            request = request_action(**kwargs)
+            assert coord.approval_gate.callback(
+                request.token, "rejected", approved_by="oncall", reason="needs more evidence",
+                action_digest=request.action_digest,
+            )["ok"]
+            return request
+
+        monkeypatch.setattr(coord.approval_gate, "request_action", reject)
 
         result = asyncio.run(coord.handle_incident({"commonLabels": {"alertname": "TestAlert"}}))
         assert result["remediation"]["final"]["status"] == "approval_rejected"
         roles = [c.args[0] for c in mock_call.call_args_list]
-        assert roles == ["triage", "diagnosis"]
+        assert roles == ["triage", "diagnosis", "remediation"]
+        mutation.assert_not_called()
         assert result["comms"]["final"]["status"] == "approval_rejected"
 
 
@@ -266,9 +303,30 @@ class TestCoordinatorExecutionAndVerificationTruth:
         monkeypatch.setattr(comms, "_LOG_PATH", runtime_root / "slack_posts.jsonl")
         monkeypatch.setattr(comms, "SLACK_WEBHOOK", "")
         monkeypatch.setattr(comms, "DISCORD_WEBHOOK", "")
-        async def fake_wait(_incident_id):
-            return {"status": "approved", "approved_by": "auto-test"}
-        monkeypatch.setattr(coord.approval_gate, "wait_for_decision", fake_wait)
+        request_action = coord.approval_gate.request_action
+
+        def approve(**kwargs):
+            request = request_action(**kwargs)
+            assert coord.approval_gate.callback(
+                request.token, "approved", approved_by="auto-test",
+                action_digest=request.action_digest,
+            )["ok"]
+            return request
+
+        monkeypatch.setattr(coord.approval_gate, "request_action", approve)
+
+        async def approve_selected_command(payload):
+            action = {"tool": "kubectl_scale", "arguments": {"deployment": "cartservice", "replicas": 2}}
+            approver = coord._ACTIVE_ACTION_APPROVER.get()
+            assert approver is not None
+            result, permit = await approver(action)
+            assert result["status"] == "approved"
+            assert coord.approval_gate.consume_action_permit(
+                permit, incident_id=payload["incident_id"],
+                action_digest=coord.approval_gate.action_digest(action),
+            )
+
+        self.approve_selected_command = approve_selected_command
 
     @pytest.mark.parametrize(
         "incident_id",
@@ -358,6 +416,7 @@ class TestCoordinatorExecutionAndVerificationTruth:
             elif role == "diagnosis":
                 return diagnosis
             elif role == "remediation":
+                await self.approve_selected_command(input_data)
                 return remediation
             elif role == "comms":
                 return comms
@@ -520,6 +579,7 @@ class TestCoordinatorExecutionAndVerificationTruth:
             elif role == "diagnosis":
                 return diagnosis
             elif role == "remediation":
+                await self.approve_selected_command(input_data)
                 return remediation
             elif role == "comms":
                 nonlocal comms_received_input
@@ -539,6 +599,9 @@ class TestCoordinatorExecutionAndVerificationTruth:
         monkeypatch.setattr(coord, "call_agent", fake_call_agent)
         import agents.verifier as verifier_mod
         monkeypatch.setattr(verifier_mod, "verify_environment", fake_verify_environment)
+        monkeypatch.setattr(coord, "settle_environment", AsyncMock(return_value={
+            "settled": False, "observations": [],
+        }))
 
         alert = {"scenario_id": "single_fault/sf-001", "commonLabels": {"alertname": "TestAlert"}}
         result = asyncio.run(coord.handle_incident(alert))

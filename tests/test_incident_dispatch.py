@@ -794,7 +794,7 @@ async def test_webhook_fresh_route_replay_returns_original_incident_id(
         assert first.status_code == 200
         if route == "root":
             assert first.json()["dispatch_state"] == "started"
-            await handler_finished.wait()
+            await asyncio.wait_for(handler_finished.wait(), timeout=5)
         first_incident_id = first.json()["incident_id"]
 
         install_runtime()
@@ -1365,6 +1365,8 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     monkeypatch,
     tmp_path,
 ):
+    from unittest.mock import AsyncMock, MagicMock
+
     from agents import coordinator, verifier
     from agents.tools import comms
 
@@ -1392,6 +1394,7 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     }
     call_order: list[str] = []
     agent_roles: list[str] = []
+    real_call_agent = coordinator.call_agent
 
     async def fake_call_agent(role, _input_data):
         agent_roles.append(role)
@@ -1400,9 +1403,11 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
             return triage
         if role == "diagnosis":
             return diagnosis
+        if role == "remediation":
+            return await real_call_agent(role, _input_data)
         raise AssertionError(f"unexpected agent invocation: {role}")
 
-    async def reject_approval(_incident_id):
+    async def reject_approval(_incident_id, *, request_token):
         call_order.append("approval_decision")
         pending = next(
             request
@@ -1414,9 +1419,10 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
             decision="rejected",
             approved_by="synthetic-reviewer",
             reason="synthetic safety rejection",
+            action_digest=pending["action_digest"],
         )
         assert decision["ok"] is True
-        return await real_wait_for_decision(_incident_id)
+        return await real_wait_for_decision(_incident_id, request_token=request_token)
 
     async def settle_synthetic_environment(**kwargs):
         call_order.append("settle")
@@ -1443,16 +1449,31 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
             evidence=["synthetic environment remained unresolved"],
         )
 
-    real_request = coordinator.approval_gate.request
-    real_wait_for_decision = coordinator.approval_gate.wait_for_decision
+    real_request = coordinator.approval_gate.request_action
+    real_wait_for_decision = coordinator.approval_gate.wait_for_action_decision
 
     def track_approval_request(*args, **kwargs):
         call_order.append("approval_request")
         return real_request(*args, **kwargs)
 
-    monkeypatch.setattr(coordinator.approval_gate, "request", track_approval_request)
+    model_response = MagicMock()
+    model_response.json.return_value = {"choices": [{
+        "finish_reason": "tool_calls",
+        "message": {"content": "", "tool_calls": [{
+            "id": "selected-scale", "type": "function",
+            "function": {
+                "name": "kubectl_scale",
+                "arguments": json.dumps({"deployment": "frontend", "replicas": 2}),
+            },
+        }]},
+    }]}
+    model = AsyncMock(return_value=model_response)
+    mutation = MagicMock(side_effect=AssertionError("Rejected action must not execute"))
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_scale", mutation)
+    monkeypatch.setattr(coordinator, "post_with_retry", model)
+    monkeypatch.setattr(coordinator.approval_gate, "request_action", track_approval_request)
     monkeypatch.setattr(coordinator, "call_agent", fake_call_agent)
-    monkeypatch.setattr(coordinator.approval_gate, "wait_for_decision", reject_approval)
+    monkeypatch.setattr(coordinator.approval_gate, "wait_for_action_decision", reject_approval)
     monkeypatch.setattr(coordinator, "settle_environment", settle_synthetic_environment)
     monkeypatch.setattr(verifier, "verify_environment", verify_synthetic_environment)
     monkeypatch.setitem(
@@ -1486,15 +1507,17 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     )
     result = await submission.wait()
 
-    assert agent_roles == ["triage", "diagnosis"]
+    assert agent_roles == ["triage", "diagnosis", "remediation"]
     assert call_order == [
         "triage",
         "diagnosis",
+        "remediation",
         "approval_request",
         "approval_decision",
-        "settle",
         "verify",
     ]
+    mutation.assert_not_called()
+    assert model.await_count == 1
     assert result["remediation"]["final"]["status"] == "approval_rejected"
     assert result["remediation"]["final"]["executed_actions"] == []
     assert result["comms"]["final"]["status"] == "approval_rejected"
@@ -1509,7 +1532,9 @@ async def test_dispatch_runs_real_incident_handler_with_blocked_approval_trace(
     assert persisted == result
     assert persisted["alert"] == payload
     assert persisted["verification"]["verification_status"] == "failed"
-    assert persisted["settling"] == {"status": "synthetic_settled", "observations": []}
+    assert persisted["settling"] == {
+        "settled": False, "observations": [], "skipped_reason": "no_authorized_remediation",
+    }
 
 
 @pytest.mark.asyncio

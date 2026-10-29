@@ -294,6 +294,34 @@ def test_secret_generator_rejects_symlink_resolved_repository_local_output(
     assert not (source_root / "linked secret material").exists()
 
 
+@pytest.mark.parametrize("checkout_layout", ["parent", "neighbor"])
+def test_secret_generator_rejects_another_checkout_before_writes(
+    tmp_path: Path,
+    checkout_layout: str,
+) -> None:
+    checkout = tmp_path / "existing checkout"
+    checkout.mkdir()
+    (checkout / ".git").write_text("fixture Git marker", encoding="utf-8")
+    source_root = (
+        checkout / "nested AtlasOps checkout"
+        if checkout_layout == "parent"
+        else tmp_path / "AtlasOps source"
+    )
+    _stage_source_tree(source_root)
+    output_dir = checkout / "secret material"
+
+    result = _run_generator(
+        source_root,
+        str(output_dir),
+        argocd_pass_file=tmp_path / "missing credential input",
+    )
+
+    assert result.returncode != 0
+    assert "absolute output directory outside the checkout" in result.stderr
+    assert "Specified Argo password file not found" not in result.stderr
+    assert not output_dir.exists()
+
+
 def test_secret_generator_accepts_an_absolute_external_output_directory(
     tmp_path: Path,
 ) -> None:

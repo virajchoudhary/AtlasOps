@@ -58,6 +58,8 @@ def _resolve_output_directory(value: str) -> Path:
     repo_root = Path(__file__).resolve().parents[1]
     if resolved == repo_root or repo_root in resolved.parents:
         raise ValueError(error)
+    if any((directory / ".git").exists() for directory in (resolved, *resolved.parents)):
+        raise ValueError(error)
     return resolved
 
 

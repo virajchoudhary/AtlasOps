@@ -130,3 +130,46 @@ test("reset clears the current result but preserves history before the next inci
   await page.getByRole("button", { name: "Reject", exact: true }).click();
   await expect(page.locator("#incident .who")).toHaveText("Escalated to you");
 });
+
+test("reset during approval retains cancelled evidence without replaying the receipt", async ({ page, request }) => {
+  const priceBug = page.locator("#catalog .bug")
+    .filter({ has: page.getByText("Prices show NaN", { exact: true }) });
+  await priceBug.getByRole("button", { name: "Inject", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  const previous = await request.get("/lab/api/state").then(response => response.json());
+  const health = await request.get("/health");
+  expect(health.status()).toBe(200);
+  expect((await health.json()).status).toBe("ready");
+  expect(previous.site.changed_files).toContain("products.json");
+
+  await page.getByRole("button", { name: "Reset the store" }).click();
+  await expect(page.locator("#incident")).toContainText("No incident yet.");
+  await expect(page.locator("#history")).toContainText(previous.incident.id);
+  await expect(page.locator("#history")).toContainText("cancelled");
+  const exported = await request.get("/lab/api/evidence").then(response => response.text());
+  const cancelled = JSON.parse(exported.trim().split("\n").at(-1) ?? "");
+  expect(cancelled.id).toBe(previous.incident.id);
+  expect(cancelled.workspace_id).toBe(previous.workspace_id);
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.verification).toBeNull();
+  expect(cancelled.resolved_by).toBeNull();
+  expect(cancelled.interrupted_state.approval.digest).toBe(previous.incident.approval.digest);
+  expect(cancelled.evidence_classification).toBe("LOCAL_DEMONSTRATION_NOT_SCIENTIFIC");
+
+  await priceBug.getByRole("button", { name: "Inject", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  const current = await request.get("/lab/api/state").then(response => response.json());
+  expect(current.incident_sequence).toBe(previous.incident_sequence + 1);
+  const replay = await request.post("/lab/api/approval", {
+    headers: { "X-Bug-Lab": "1" },
+    data: {
+      incident_id: previous.incident.id,
+      digest: previous.incident.approval.digest,
+      decision: "approve",
+    },
+  });
+  expect(replay.status()).toBe(409);
+  expect(await request.get("/lab/api/evidence").then(response => response.text())).toBe(exported);
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(page.locator("#incident .who")).toHaveText("Escalated to you");
+});

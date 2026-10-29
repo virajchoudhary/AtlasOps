@@ -1,0 +1,4 @@
+# Minimal, model-free runtime for the standalone AtlasOps Bug Lab.
+fastapi==0.141.1
+httpx==0.28.1
+uvicorn==0.52.1

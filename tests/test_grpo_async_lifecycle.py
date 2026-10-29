@@ -289,9 +289,11 @@ def test_caller_interruption_waits_for_callback_before_trainer_finish(monkeypatc
             return self.future.cancelled()
 
     def interrupt_execute_once(coroutine, loop):
-        future = original_submit(coroutine, loop)
-        if lifecycle.interrupt_next_submission.is_set():
+        interrupt = lifecycle.interrupt_next_submission.is_set()
+        if interrupt:
             lifecycle.interrupt_next_submission.clear()
+        future = original_submit(coroutine, loop)
+        if interrupt:
             return _InterruptOnce(future)
         return future
 

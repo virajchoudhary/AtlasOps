@@ -23,6 +23,30 @@ from scripts.run_stage4_golden_incident import evaluate_causal_g4_predicate
 class TestChaosRemediationToolContract:
     """Security and contract tests for chaos_stop_experiment."""
 
+    @pytest.fixture
+    def chaos_api(self, monkeypatch):
+        api = MagicMock()
+        api.get_namespaced_custom_object.side_effect = lambda **kwargs: {
+            "metadata": {
+                "name": kwargs["name"],
+                "namespace": kwargs["namespace"],
+                "uid": "observed-uid",
+                "resourceVersion": "observed-version",
+            },
+            "status": {
+                "conditions": [
+                    {"type": "Paused", "status": "False"},
+                    {"type": "AllRecovered", "status": "False"},
+                ],
+                "experiment": {"containerRecords": [{"phase": "Injected"}]},
+            },
+        }
+        monkeypatch.setattr(
+            "agents.tools.chaos._new_chaos_api_client",
+            lambda _context: (api, MagicMock()),
+        )
+        return api
+
     def test_chaos_tool_registered_in_registry(self) -> None:
         assert "chaos_stop_experiment" in TOOL_REGISTRY
         assert callable(TOOL_REGISTRY["chaos_stop_experiment"])
@@ -71,15 +95,16 @@ class TestChaosRemediationToolContract:
             assert res["success"] is False
             assert "Unauthorized chaos namespace" in res["error"]
 
-    def test_chaos_mesh_namespace_is_accepted_for_allowlisted_kind(self) -> None:
+    def test_chaos_mesh_namespace_is_accepted_for_allowlisted_kind(self, chaos_api) -> None:
         with patch("agents.tools.chaos._run", return_value={"success": True, "stdout": "deleted", "returncode": 0}) as mock_run:
             res = chaos_stop_experiment("StressChaos", "any-valid-experiment", namespace="chaos-mesh")
         assert res["success"] is True
         assert res["namespace"] == "chaos-mesh"
-        mock_run.assert_called_once()
+        chaos_api.delete_namespaced_custom_object.assert_called_once()
+        mock_run.assert_not_called()
 
     @patch("agents.tools.chaos._run")
-    def test_chaos_tool_executes_exact_deletion_for_allowed_kind_and_namespace(self, mock_run: MagicMock) -> None:
+    def test_chaos_tool_executes_exact_deletion_for_allowed_kind_and_namespace(self, mock_run: MagicMock, chaos_api) -> None:
         mock_run.return_value = {
             "success": True,
             "stdout": 'stresschaos.chaos-mesh.org "sf-002-paymentservice-cpu" deleted',
@@ -90,10 +115,18 @@ class TestChaosRemediationToolContract:
         assert res["kind"] == "StressChaos"
         assert res["name"] == "sf-002-paymentservice-cpu"
         assert res["namespace"] == "chaos-mesh"
-        mock_run.assert_called_once_with(
-            ["kubectl", "delete", "stresschaos", "sf-002-paymentservice-cpu", "-n", "chaos-mesh", "--ignore-not-found=false"],
-            timeout=30,
+        chaos_api.delete_namespaced_custom_object.assert_called_once_with(
+            group="chaos-mesh.org", version="v1alpha1", namespace="chaos-mesh",
+            plural="stresschaos", name="sf-002-paymentservice-cpu",
+            body={
+                "apiVersion": "v1", "kind": "DeleteOptions",
+                "preconditions": {
+                    "uid": "observed-uid", "resourceVersion": "observed-version",
+                },
+            },
+            _request_timeout=30,
         )
+        mock_run.assert_not_called()
 
 
 class TestStage4CausalPredicate:

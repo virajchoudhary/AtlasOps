@@ -223,6 +223,10 @@ jobs:
         working-directory: frontend
         run: npm run test:lab
 
+      - name: Run Operations through real authenticated handlers with disposable non-live state
+        working-directory: frontend
+        run: npm run test:operations
+
       - name: Preserve Playwright screenshots and traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

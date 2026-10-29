@@ -45,6 +45,7 @@ const POLL_INTERVAL_MS = 5_000;
 const MAX_VISIBLE_EVENTS = 200;
 
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
+type ConnectionAttempt = { key: string; generation: number };
 type EvidenceRevisionKey = string;
 type EvidenceReview = "available" | "not_found" | "integrity_invalid";
 
@@ -340,7 +341,7 @@ function downloadEvidence(bundle: OperationsEvidenceBundle): void {
 
 export function OperationsPage() {
   const [apiKey, setApiKey] = useState("");
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [activeConnection, setActiveConnection] = useState<ConnectionAttempt | null>(null);
   const activeKeyRef = useRef<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("disconnected");
   const [apiError, setApiError] = useState<OperationsApiError | null>(null);
@@ -408,11 +409,10 @@ export function OperationsPage() {
   }, []);
 
   useEffect(() => {
-    if (activeKey === null) return;
+    if (activeConnection === null) return;
 
     let disposed = false;
-    const key = activeKey;
-    const connectionVersion = connectionVersionRef.current;
+    const { key, generation: connectionVersion } = activeConnection;
 
     async function poll(): Promise<void> {
       if (
@@ -486,14 +486,14 @@ export function OperationsPage() {
       if (pollControllerRef.current) pollControllerRef.current.abort();
       refreshRef.current = () => {};
     };
-  }, [activeKey]);
+  }, [activeConnection]);
 
   function disconnect(clearInput: boolean): void {
     connectionVersionRef.current += 1;
     selectionVersionRef.current += 1;
     activeKeyRef.current = null;
     abortOwnedRequests();
-    setActiveKey(null);
+    setActiveConnection(null);
     setConnection("disconnected");
     setApiError(null);
     setSnapshot(null);
@@ -524,7 +524,7 @@ export function OperationsPage() {
     selectionVersionRef.current += 1;
     abortOwnedRequests();
     activeKeyRef.current = apiKey;
-    setActiveKey(apiKey);
+    setActiveConnection({ key: apiKey, generation: connectionVersionRef.current });
     setConnection("connecting");
     setApiError(null);
     setSnapshot(null);
@@ -813,7 +813,7 @@ export function OperationsPage() {
             variant="quiet"
             size="icon"
             onClick={() => refreshRef.current()}
-            disabled={!activeKey || connection === "connecting" || statusRequestPending}
+            disabled={activeConnection === null || connection === "connecting" || statusRequestPending}
             aria-label="Refresh operations"
             title="Refresh operations"
           >

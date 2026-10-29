@@ -709,6 +709,168 @@ describe("Operations page", () => {
     expect(screen.queryByRole("button", { name: "Approve exact action for incident-current" })).not.toBeInTheDocument();
   });
 
+  it("restarts polling for the same key and ignores a late status response from the prior connection", async () => {
+    vi.useFakeTimers();
+    const lateStatus = deferred<ReturnType<typeof response>>();
+    const reconnectStatus = deferred<ReturnType<typeof response>>();
+    let statusReads = 0;
+    const fetchMock = vi.fn().mockImplementation(() => {
+      statusReads += 1;
+      if (statusReads === 2) return lateStatus.promise;
+      if (statusReads === 3) return reconnectStatus.promise;
+      return Promise.resolve(response(statusFixture({
+        executions: [execution({ incidentId: `incident-read-${statusReads}` })],
+      })));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OperationsPage />);
+
+    fireEvent.change(screen.getByLabelText("Operator API key"), { target: { value: TEST_KEY } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("incident-read-1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve exact action for incident-current" })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh operations" }));
+    });
+    expect(statusReads).toBe(2);
+    expect(screen.getByRole("button", { name: "Refresh operations" })).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(statusReads).toBe(3);
+    expect(screen.getByText("Connecting")).toBeInTheDocument();
+    expect(screen.queryByText("incident-read-1")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve exact action for incident-current" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      reconnectStatus.resolve(response(statusFixture({
+        executions: [execution({ incidentId: "incident-after-reconnect" })],
+      })));
+    });
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("incident-after-reconnect")).toBeInTheDocument();
+
+    await act(async () => {
+      lateStatus.resolve(response({ detail: "Old connection failed" }, 503));
+    });
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("incident-after-reconnect")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh operations" }));
+    });
+    expect(statusReads).toBe(4);
+    expect(screen.getByText("incident-read-4")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(statusReads).toBe(5);
+    expect(screen.getByText("incident-read-5")).toBeInTheDocument();
+  });
+
+  it("retries a failed same-key connection without editing the key", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(statusFixture()))
+      .mockResolvedValueOnce(response({ detail: "Disposable operations outage" }, 503))
+      .mockResolvedValueOnce(response(statusFixture({
+        executions: [execution({ incidentId: "incident-after-retry" })],
+      })));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    const keyField = screen.getByLabelText("Operator API key");
+    await user.type(keyField, TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByRole("button", { name: "Approve exact action for incident-current" });
+
+    await user.click(screen.getByRole("button", { name: "Refresh operations" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/operations evidence is unavailable/i);
+    expect(screen.queryByRole("button", { name: "Approve exact action for incident-current" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    expect(keyField).toHaveValue(TEST_KEY);
+    expect(await screen.findByText("incident-after-retry")).toBeInTheDocument();
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignores late evidence from a prior same-key connection", async () => {
+    const oldEvidence = deferred<ReturnType<typeof response>>();
+    const oldExecution = execution({
+      incidentId: "incident-old-generation",
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    const newExecution = execution({
+      executionId: SECOND_EXECUTION_ID,
+      incidentId: "incident-new-generation",
+      state: "completed",
+      phase: "finished",
+      record: {
+        resolved: true,
+        env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    let statusReads = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/api/operations/${EXECUTION_ID}/evidence`)) return oldEvidence.promise;
+      if (url.endsWith(`/api/operations/${SECOND_EXECUTION_ID}/evidence`)) {
+        return Promise.resolve(response(evidenceForExecution(newExecution)));
+      }
+      statusReads += 1;
+      return Promise.resolve(response(statusFixture({
+        executions: [statusReads === 1 ? oldExecution : newExecution],
+        pending: [],
+      })));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+
+    const keyField = screen.getByLabelText("Operator API key");
+    await user.type(keyField, TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-old-generation/ }));
+    const oldDetail = await screen.findByRole("region", { name: "incident-old-generation" });
+    await user.click(within(oldDetail).getByRole("button", { name: /Load full event history/ }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith(`/api/operations/${EXECUTION_ID}/evidence`),
+      )).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-new-generation/ }));
+    const newDetail = await screen.findByRole("region", { name: "incident-new-generation" });
+    await user.click(within(newDetail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(newDetail).findByText("verification_completed")).toBeInTheDocument();
+    expect(within(newDetail).getByText("Resolved and verified")).toBeInTheDocument();
+
+    await act(async () => {
+      oldEvidence.resolve(response({ detail: "Old evidence request failed" }, 503));
+    });
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(within(newDetail).getByText("verification_completed")).toBeInTheDocument();
+    expect(within(newDetail).getByText("Resolved and verified")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("does not let a late response for an old key restore live controls", async () => {
     const firstResponse = deferred<ReturnType<typeof response>>();
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {

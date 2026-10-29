@@ -1,15 +1,18 @@
 # AtlasOps Mac runtime acceptance v1
 
 **Verdict: PARTIAL.** The monitoring-to-coordinator pipeline is demonstrated
-end to end on a real cluster fault for the first time, and the agents reached
-remediation and mutated the live cluster. No incident completed objective
-verification, three documented components are absent or empty, and four Online
-Boutique services do not stay up. Nothing here is gate evidence, and G4 and G9
-remain NOT_PASSED and frozen.
+end to end on a real cluster fault for the first time, the approval gate is
+shown to engage once the alert is labelled critical, Grafana now serves real
+data, and the bug lab passes T1 and T3–T9 on the merged image. Against that: no
+incident has completed objective verification or rollback on Kubernetes, Jaeger
+still reports zero services, four Online Boutique services do not stay up, and
+in model mode the 7B authored 1 of 8 patches — the rule engine carries
+resolution. Nothing here is gate evidence, and G4 and G9 remain NOT_PASSED and
+frozen.
 
 | Field | Value |
 |---|---|
-| Date | 29 October 2026 |
+| Date | 29–30 October 2026 |
 | Branch | `verify/atlasops-mac-runtime-20261029` |
 | Base | `fafe1eb` (origin/main, merge of PR #240) |
 | Host | Apple M4, 10 cores, 16 GB, macOS 24.6.0, arm64 |
@@ -32,11 +35,11 @@ remain NOT_PASSED and frozen.
 | Remediation agent mutates the live cluster | **PASS, with a flag** | two `kubectl_scale` calls succeeded; `approved_by` empty |
 | Approval gate engages under `severity: critical` | **PASS** | `requires_approval`, two pending P1s, zero mutations |
 | Objective verification / rollback on K8s | **NOT REACHED** | no verifier or rollback record, no incident closed |
-| Grafana dashboards | **BLOCKED** | Grafana is not installed in this cluster |
+| Grafana dashboards | **PASS after enabling it** | was disabled on purpose in the local profile; 19 dashboards serving real data |
 | Jaeger traces | **FAIL** | 0 services reporting |
 | Cluster stability | **PARTIAL** | 4 of 11 boutique services crashloop |
 | Kaggle / ngrok model route | **BLOCKED** | no credential, terms not established |
-| Bug lab T2–T9 on merged image | **PARTIAL** | T2 verified; T3–T9 not re-run on the new image |
+| Bug lab T2–T9 on merged image | **PASS** | T3–T9 re-run on `v4-resume`; T7 resolves 8/8 but the model wrote 1 of 8 patches |
 
 ## What was proven, with evidence
 
@@ -166,12 +169,23 @@ still gathering evidence. On this hardware the agent pipeline is slower than the
 incident it is responding to. That is a real result about the 7B model on an
 8-core CPU, not a code defect, and it means no remediation claim can be made.
 
-### Three documented components are absent or empty
+### Two documented components are still absent or empty
 
-- **Grafana is not installed.** The `monitoring` namespace has the Prometheus
-  operator, Prometheus, Alertmanager and kube-state-metrics, and no Grafana
-  deployment or service. The brief asks for populated Grafana panels; there is
-  no Grafana to populate. Recorded as BLOCKED rather than worked around.
+- **Grafana was not installed, and that was deliberate.** The original finding
+  here said only that no Grafana deployment existed. The reason matters:
+  `infra/local/values/prometheus-local.yaml` sets `grafana.enabled: false` for
+  the "low-resource Kind profile", noting Grafana is "not required for Stage 3/4
+  gate", while the canonical `infra/values/kube-prometheus-stack.yaml` enables
+  it. BLOCKED was the right verdict for the wrong reason.
+
+  It has since been enabled as a runtime-only `helm upgrade` (revision 3 → 4),
+  with no repository values file edited. Prometheus and Alertmanager were not
+  restarted. 19 dashboards are provisioned, the datasource health check returns
+  "Successfully queried the Prometheus API", and real panel expressions return
+  real values through Grafana's own proxy — 0.116 CPU cores and ~963 MiB for the
+  `default` namespace, 11 pods, 13 deployment series. The Node dashboards are
+  genuinely empty because node-exporter is absent from this profile, confirmed
+  by query rather than assumed. Evidence: `GRAFANA_ENABLED.txt`.
 - **Jaeger reports zero services.** `GET /api/services` returns
   `{"data":[],"total":0}`. Jaeger runs, nothing sends it spans, so there are no
   traces to verify.
@@ -215,11 +229,34 @@ runtime change to this Mac's cluster only:
 | `kube-state-metrics` pod deleted once | recovered cleanly with CPU available |
 | `atlasops-coordinator` 0 → 1 replica | it was scaled to zero, so webhooks had no listener |
 | alert rule `severity` warning → critical | the only thing that engages the approval gate |
+| Grafana enabled, helm revision 3 → 4 | the local profile disabled it for a 4-CPU VM; this one has 8 |
 
 The bug lab on `127.0.0.1:8790` and the model proxy on `127.0.0.1:8000` stayed
 loopback-only throughout.
 
-## One finding for the owner of the shared application code
+## Bug lab T3–T9 on the merged image
+
+Re-run on `atlasops-buglab:v4-resume`, closing the PARTIAL above. T3, T4, T5, T6,
+T8 and T9 all pass; full tables in `V4_T3_T9_SUMMARY.md`.
+
+T7 deserves its own line, because the headline number flatters it. All eight bugs
+resolved and verified in model mode and the diagnosis matched the injected fault
+every time — but the **model authored only 1 of the 8 final patches**. The lab's
+log says why without inference: `no safe usable patch` six times, so the model's
+patch failed the safety check, plus one `model attempts were not verified` at the
+diagnosis stage. The v1 run recorded 2 of 8; this is 1 of 8. Resolution is
+carried by the rule engine, and T7 should not be cited as a model result.
+
+T7's timings were taken while GRPO training was running on this machine's CPU
+(host load 11–15), so they are honest measurements of a contended machine and
+nothing more.
+
+One correction to this report: the live demo lab on `8790` runs
+`atlasops-buglab:v3-fafe1eb`, **not** the v4 image. The restart-persistence fix
+was verified on a separate v4 container, so the container currently serving the
+demo would still fail `docker restart`.
+
+## Findings for the owner of the shared application code
 
 `tests/test_bug_lab_runtime_lock.py::test_pip_require_hashes_rejects_an_unhashed_local_wheel`
 shells out to `python -m pip` without checking that pip is importable. On an
@@ -227,6 +264,23 @@ interpreter without pip it fails confusingly, and its first assertion passes for
 an unrelated reason, so it cannot distinguish "pip refused an unhashed wheel"
 from "pip is missing". Suggest a skip guard. Not a product defect; the behaviour
 it checks is correct here. Details in `T1_UNIT_TESTS.txt`.
+
+Three defects in the acceptance drivers under `artifacts/evidence/buglab-mac-v*`,
+each of which would damage a live runtime if run as written:
+
+1. `driver_t9.py` does `docker rm -f buglab` and rewrites
+   `~/atlasops-local/buglab.env` in place. On a machine where `buglab` is the
+   demo container, running T9 destroys it and edits the operator's config file.
+2. `driver_t8.py` hardcodes the container names `buglab-llm-proxy` and `buglab`,
+   so it stops the live model proxy and reads the wrong container's log.
+3. `driver_t8.py` also hardcodes `http://127.0.0.1:8000/v1/models` for its
+   "confirm the endpoint really is gone" probe, so against any other proxy port
+   that check silently passes against the wrong service. This bit here: the
+   recorded `endpoint_after_cut` measured the live proxy, not the one stopped.
+
+Suggest taking container names and ports from the environment. T8 and T9 were
+re-run here against a dedicated proxy and lab instead; the live lab was never
+touched and the env file's MD5 is unchanged.
 
 ## What this is not
 

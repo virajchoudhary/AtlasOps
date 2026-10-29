@@ -1,0 +1,124 @@
+name: Disposable platform integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  platform-integration:
+    if: >-
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == 'main' &&
+        github.event.pull_request.state == 'open'
+      )
+    name: Source-bound disposable platform check
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      KIND_VERSION: "0.33.0"
+      KIND_SHA256: "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d"
+      KUBECTL_VERSION: "1.35.8"
+      KUBECTL_SHA256: "874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf"
+      HELM_VERSION: "3.17.3"
+      HELM_SHA256: "ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd"
+
+    steps:
+      - name: Reserve external evidence paths
+        shell: bash
+        run: |
+          evidence_dir="$RUNNER_TEMP/platform-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$evidence_dir"
+          printf '%s\n' \
+            '{"classification":"NON_EMPIRICAL_SOFTWARE_FIXTURE","certification_status":"NOT_CERTIFIED","status":"workflow_started"}' \
+            > "$RUNNER_TEMP/platform-ci-bootstrap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+
+      - name: Check out exact same-repository PR head or main commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.11"
+
+      - name: Install the pinned manifest parser
+        run: python -m pip install --disable-pip-version-check "PyYAML==6.0.3"
+
+      - name: Install pinned Kind, kubectl, and Helm binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools_dir="$RUNNER_TEMP/platform-tools"
+          downloads_dir="$RUNNER_TEMP/platform-downloads"
+          mkdir -p "$tools_dir" "$downloads_dir"
+
+          curl --fail --silent --show-error --location \
+            "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64" \
+            --output "$downloads_dir/kind"
+          curl --fail --silent --show-error --location \
+            "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64.sha256sum" \
+            --output "$downloads_dir/kind.sha256sum"
+          test "$(awk '{print $1}' "$downloads_dir/kind.sha256sum")" = "$KIND_SHA256"
+          printf '%s  %s\n' "$KIND_SHA256" "$downloads_dir/kind" | sha256sum --check
+          install -m 0755 "$downloads_dir/kind" "$tools_dir/kind"
+
+          curl --fail --silent --show-error --location \
+            "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+            --output "$downloads_dir/kubectl"
+          curl --fail --silent --show-error --location \
+            "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" \
+            --output "$downloads_dir/kubectl.sha256"
+          test "$(tr -d '\r\n' < "$downloads_dir/kubectl.sha256")" = "$KUBECTL_SHA256"
+          printf '%s  %s\n' "$KUBECTL_SHA256" "$downloads_dir/kubectl" | sha256sum --check
+          install -m 0755 "$downloads_dir/kubectl" "$tools_dir/kubectl"
+
+          helm_archive="helm-v${HELM_VERSION}-linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://get.helm.sh/${helm_archive}" \
+            --output "$downloads_dir/$helm_archive"
+          curl --fail --silent --show-error --location \
+            "https://get.helm.sh/${helm_archive}.sha256sum" \
+            --output "$downloads_dir/${helm_archive}.sha256sum"
+          test "$(awk '{print $1}' "$downloads_dir/${helm_archive}.sha256sum")" = "$HELM_SHA256"
+          printf '%s  %s\n' "$HELM_SHA256" "$downloads_dir/$helm_archive" | sha256sum --check
+          tar -xzf "$downloads_dir/$helm_archive" -C "$downloads_dir"
+          install -m 0755 "$downloads_dir/linux-amd64/helm" "$tools_dir/helm"
+          printf '%s\n' "$tools_dir" >> "$GITHUB_PATH"
+
+          "$tools_dir/kind" version
+          "$tools_dir/kubectl" version --client --output=yaml
+          "$tools_dir/helm" version --short
+
+      - name: Run the guarded disposable platform check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.platform_ci run \
+            --evidence-dir "$RUNNER_TEMP/platform-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Upload sanitized evidence even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/platform-ci-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ runner.temp }}/platform-ci-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 14

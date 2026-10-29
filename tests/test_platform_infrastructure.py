@@ -998,22 +998,27 @@ def test_check_admission_policy_cli_reads_json_from_stdin() -> None:
     assert "observedGeneration" in rejected.stderr
 
 
-def test_platform_kind_workflow_is_disposable_private_and_non_empirical() -> None:
-    workflow_path = ROOT / ".github" / "workflows" / "platform-kind.yml"
-    if not workflow_path.is_file():
-        pytest.skip("Combined disposable Kind CI is owned by the parent lane.")
+def test_platform_integration_workflow_is_disposable_private_and_non_empirical() -> None:
+    workflow_path = ROOT / ".github" / "workflows" / "platform-integration.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["platform-kind"]
+    job = workflow["jobs"]["platform-integration"]
     steps = job["steps"]
     commands = "\n".join(step.get("run", "") for step in steps)
+    runner = (ROOT / "scripts" / "platform_ci.py").read_text(encoding="utf-8")
+    live_verifier = (ROOT / "scripts" / "verify_platform_infrastructure.py").read_text(
+        encoding="utf-8"
+    )
     assert job["timeout-minutes"] >= 45
     assert workflow["permissions"] == {"contents": "read"}
-    assert "atlasops-platform-ci" in commands
-    assert "kind delete cluster --name atlasops-platform-ci" in commands
-    assert "ATLASOPS_NON_EMPIRICAL" in commands
-    assert "/api/operations" in commands
-    assert "atlasops_boutique_calls_total" in commands
-    assert "/api/traces" in commands
+    assert "python -m scripts.platform_ci run" in commands
+    assert '--evidence-dir "$RUNNER_TEMP/platform-ci-' in commands
+    assert "NON_EMPIRICAL_SOFTWARE_FIXTURE" in commands
+    assert 'status="verified_deleted"' in runner
+    assert "/api/operations" in runner
+    assert "scripts/verify_platform_infrastructure.py" in runner
+    assert '"verify-live"' in runner
+    assert "atlasops_boutique_calls_total" in live_verifier
+    assert "/api/traces" in runner
     assert "HF_TOKEN" not in workflow.get("env", {})
     assert steps[-1]["if"] == "always()"
 

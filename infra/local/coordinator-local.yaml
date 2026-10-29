@@ -1,6 +1,5 @@
-# AtlasOps Coordinator — Local Kind Deployment
-# Pipeline v1.1 Free-First
-# Image: atlasops-coordinator:g3-local (Kind-loaded, no registry)
+# AtlasOps integrated runtime — local Kind deployment
+# Render the source SHA and explicit operator/model settings before applying.
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -23,9 +22,6 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
-  - apiGroups: ["chaos-mesh.org"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -43,18 +39,61 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: atlasops-coordinator-chaos
+  namespace: chaos-mesh
+rules:
+  - apiGroups: ["chaos-mesh.org"]
+    resources:
+      - podchaos
+      - stresschaos
+      - networkchaos
+      - dnschaos
+      - iochaos
+      - timechaos
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atlasops-coordinator-chaos
+  namespace: chaos-mesh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atlasops-coordinator-chaos
+subjects:
+  - kind: ServiceAccount
+    name: atlasops-coordinator
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
   name: atlasops-coordinator-remediation
-  namespace: default
+  namespace: atlasops-boutique
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/scale"]
-    verbs: ["get", "list", "watch", "patch", "update"]
+    resourceNames:
+      - adservice
+      - cartservice
+      - checkoutservice
+      - currencyservice
+      - emailservice
+      - frontend
+      - loadgenerator
+      - paymentservice
+      - productcatalogservice
+      - recommendationservice
+      - redis-cart
+      - shippingservice
+    verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: atlasops-coordinator-remediation
-  namespace: default
+  namespace: atlasops-boutique
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -71,9 +110,18 @@ metadata:
   namespace: default
 data:
   BACKEND: "vllm"
-  VLLM_BASE: "http://host.docker.internal:11434/v1"
-  AGENT_MODEL: "qwen2.5:1.5b"
-  GCP_PROJECT: "local-kind"
+  VLLM_BASE: "__ATLASOPS_VLLM_BASE__"
+  AGENT_MODEL: "__ATLASOPS_AGENT_MODEL__"
+  ATLASOPS_AUTO_HF_INFERENCE: "0"
+  ATLASOPS_USE_HF_INFERENCE: "0"
+  ATLASOPS_OPERATIONAL_MODE: "1"
+  ATLASOPS_OPERATOR_ID: "__ATLASOPS_OPERATOR_ID__"
+  ATLASOPS_WORKLOAD_NAMESPACE: "atlasops-boutique"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://atlasops-otel-collector.monitoring.svc.cluster.local:4318"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+  OTEL_SERVICE_NAME: "atlasops-coordinator"
+  ATLASOPS_ARGOCD_APP: "atlasops-boutique"
+  ATLASOPS_ARGOCD_NAMESPACE: "argocd"
   PROMETHEUS_URL: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
   ALERTMANAGER_URL: "http://prometheus-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093"
   JAEGER_URL: "http://jaeger.jaeger.svc.cluster.local:16686"
@@ -84,6 +132,22 @@ data:
   POSTMORTEM_DIR: "/var/lib/atlasops/postmortems"
   TRAJECTORIES_DIR: "/var/lib/atlasops/trajectories"
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: atlasops-runtime-data
+  namespace: default
+  labels:
+    app.kubernetes.io/name: atlasops-coordinator
+    app.kubernetes.io/part-of: atlasops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -92,8 +156,11 @@ metadata:
   labels:
     app.kubernetes.io/name: atlasops-coordinator
     app.kubernetes.io/part-of: atlasops
+    app.kubernetes.io/version: "__ATLASOPS_SOURCE_SHA__"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: atlasops-coordinator
@@ -102,6 +169,7 @@ spec:
       labels:
         app.kubernetes.io/name: atlasops-coordinator
         app.kubernetes.io/part-of: atlasops
+        app.kubernetes.io/version: "__ATLASOPS_SOURCE_SHA__"
     spec:
       serviceAccountName: atlasops-coordinator
       securityContext:
@@ -113,11 +181,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: coordinator
-          image: atlasops-coordinator:g3-local
+          image: atlasops:__ATLASOPS_SOURCE_SHA__
           imagePullPolicy: Never
           ports:
             - name: http
-              containerPort: 9099
+              containerPort: 7860
               protocol: TCP
           envFrom:
             - configMapRef:
@@ -154,28 +222,35 @@ spec:
                 secretKeyRef:
                   name: atlasops-coordinator-secrets
                   key: argocd-pass
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 3
-            periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /healthz
+              path: /health
               port: http
             initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
             periodSeconds: 20
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: "1"
+              cpu: 500m
               memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
@@ -190,7 +265,8 @@ spec:
               mountPath: /tmp
       volumes:
         - name: runtime-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: atlasops-runtime-data
         - name: tmp
           emptyDir: {}
 ---

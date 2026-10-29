@@ -26,7 +26,16 @@ spec:
             })
           for: 2m
           labels:
-            severity: warning
+            # critical, not warning, because this label is the only thing that
+            # engages the approval gate. agents/coordinator.py
+            # _severity_for_approval() forces P1 only for a critical alert; under
+            # warning a model triage of P2 or P3 maps to APPROVAL_POLICY "auto",
+            # and the remediation agent mutates the cluster with no approver. A
+            # controlled fault run with warning executed two unapproved
+            # kubectl_scale calls; the same fault with critical produced
+            # requires_approval and no mutation. Evidence:
+            # artifacts/evidence/atlasops-mac-runtime-v1/CRITICAL_SEVERITY_APPROVAL_GATE.md
+            severity: critical
             atlasops_route: coordinator
           annotations:
             summary: Online Boutique deployment has unavailable replicas

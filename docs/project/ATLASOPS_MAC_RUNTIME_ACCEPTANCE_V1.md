@@ -30,6 +30,7 @@ remain NOT_PASSED and frozen.
 | Coordinator receives and opens incidents | **PASS** | 4 incidents, HMAC-chained audit |
 | Triage agent acts on the live cluster | **PASS** | 4 real tools, `policy_check: allowed` on all records |
 | Remediation agent mutates the live cluster | **PASS, with a flag** | two `kubectl_scale` calls succeeded; `approved_by` empty |
+| Approval gate engages under `severity: critical` | **PASS** | `requires_approval`, two pending P1s, zero mutations |
 | Objective verification / rollback on K8s | **NOT REACHED** | no verifier or rollback record, no incident closed |
 | Grafana dashboards | **BLOCKED** | Grafana is not installed in this cluster |
 | Jaeger traces | **FAIL** | 0 services reporting |
@@ -146,6 +147,19 @@ This is raised as a question for the owner, not asserted as a defect. To settle
 it, the triage severity for `inc-1793255445-22b4fb` and `inc-1793255446-4b8d4f`
 has to be read from a completed trajectory, which this run never produced.
 
+**Settled, and the rule was changed.** A second controlled fault with the one
+label raised to `severity: critical` produced `policy_check: requires_approval`,
+two pending P1 approval requests with tokens, and **no mutating tool call at
+all** — against `policy_check: allowed` and two executed `kubectl_scale` calls
+for the same fault under `warning`. The severity-to-approval matrix, taken from
+the code in the running pod, shows why: under `warning` a model triage of P2 or
+P3 maps to `auto`, and under `critical` every severity a model can emit maps to
+`approve` or stricter. `infra/kubernetes/atlasops-prometheus-rules.yaml` now
+carries `severity: critical`, which touches shared Kubernetes infrastructure and
+is offered for the owner's review rather than treated as settled. Neither
+approval was granted, so there is no approved-path evidence.
+Evidence: `CRITICAL_SEVERITY_APPROVAL_GATE.md`.
+
 **The fault self-resolved first.** At 06:38 Alertmanager delivered
 `0 firing alerts`: the deployments recovered on their own while the agents were
 still gathering evidence. On this hardware the agent pipeline is slower than the
@@ -185,8 +199,10 @@ claimed. Evidence: `KAGGLE_NGROK_BLOCKER.md`.
 
 ## Runtime changes made (live cluster only)
 
-No shared Kubernetes manifest in the repository was edited; that code belongs to
-the Windows agent. These are runtime changes to this Mac's cluster:
+One shared Kubernetes manifest was edited: the alert rule's `severity` label, on
+explicit instruction, and it is offered in a PR for the owner of that code to
+accept or reject rather than landed as settled. Everything else below is a
+runtime change to this Mac's cluster only:
 
 | Change | Reason |
 |---|---|
@@ -198,6 +214,7 @@ the Windows agent. These are runtime changes to this Mac's cluster:
 | `chaos-dashboard` → 0 replicas | UI the agents do not drive |
 | `kube-state-metrics` pod deleted once | recovered cleanly with CPU available |
 | `atlasops-coordinator` 0 → 1 replica | it was scaled to zero, so webhooks had no listener |
+| alert rule `severity` warning → critical | the only thing that engages the approval gate |
 
 The bug lab on `127.0.0.1:8790` and the model proxy on `127.0.0.1:8000` stayed
 loopback-only throughout.

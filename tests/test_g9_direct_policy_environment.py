@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from datetime import UTC, datetime
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -716,6 +718,38 @@ async def test_live_environment_scopes_context_to_chaos_and_verifier_calls(monke
 
     commands = []
     subprocess_environments = []
+    chaos_resource = {
+        "apiVersion": "chaos-mesh.org/v1alpha1",
+        "kind": "StressChaos",
+        "metadata": {
+            "name": "experiment-1",
+            "namespace": "chaos-mesh",
+            "uid": "live-context-fault-uid",
+            "resourceVersion": "live-context-version",
+        },
+        "status": {
+            "experiment": {"containerRecords": [{"phase": "Injected"}]},
+            "conditions": [
+                {"type": "Paused", "status": "False"},
+                {"type": "AllRecovered", "status": "False"},
+            ],
+        },
+    }
+    chaos_api = Mock()
+    chaos_api.get_namespaced_custom_object.return_value = chaos_resource
+    chaos_api.delete_namespaced_custom_object.return_value = {"status": "Success"}
+    api_client = SimpleNamespace(close=Mock())
+    config = SimpleNamespace(
+        new_client_from_config=Mock(return_value=api_client),
+        load_incluster_config=Mock(
+            side_effect=AssertionError("live G9 must not use ambient in-cluster auth")
+        ),
+    )
+    client = SimpleNamespace(CustomObjectsApi=Mock(return_value=chaos_api))
+    kubernetes = ModuleType("kubernetes")
+    kubernetes.config = config
+    kubernetes.client = client
+    monkeypatch.setitem(sys.modules, "kubernetes", kubernetes)
 
     def fake_run(command, **kwargs):
         assert grpo.os.environ["KUBECONFIG_CONTEXT"] == "ambient-context"
@@ -725,29 +759,10 @@ async def test_live_environment_scopes_context_to_chaos_and_verifier_calls(monke
         if command[3] == "get" and "chaos" in command[4]:
             return SimpleNamespace(
                 returncode=0,
-                stdout=json.dumps({
-                    "items": [{
-                        "kind": "StressChaos",
-                        "metadata": {
-                            "name": "experiment-1",
-                            "namespace": "chaos-mesh",
-                        },
-                        "status": {
-                            "conditions": [
-                                {"type": "Paused", "status": "False"},
-                                {"type": "AllRecovered", "status": "False"},
-                            ],
-                            "experiment": {
-                                "containerRecords": [{"phase": "Injected"}],
-                            },
-                        },
-                    }]
-                }),
+                stdout=json.dumps({"items": [chaos_resource]}),
                 stderr="",
             )
-        if command[3] == "get":
-            return SimpleNamespace(returncode=0, stdout='{"items":[]}', stderr="")
-        return SimpleNamespace(returncode=0, stdout="deleted", stderr="")
+        return SimpleNamespace(returncode=0, stdout='{"items":[]}', stderr="")
 
     async def settle():
         observed["settle_context"] = grpo.os.environ.get("KUBECONFIG_CONTEXT")
@@ -782,7 +797,7 @@ async def test_live_environment_scopes_context_to_chaos_and_verifier_calls(monke
     )
 
     assert result["status"] == "ok"
-    assert [command[3] for command in commands] == ["get", "delete", "get"]
+    assert [command[3] for command in commands] == ["get", "get"]
     assert all(
         env["USE_GKE_GCLOUD_AUTH_PLUGIN"] == "True"
         and "KUBECONFIG_CONTEXT" not in env
@@ -800,6 +815,36 @@ async def test_live_environment_scopes_context_to_chaos_and_verifier_calls(monke
     }
     assert grpo.os.environ["KUBECONFIG_CONTEXT"] == "ambient-context"
     assert grpo.os.environ["USE_GKE_GCLOUD_AUTH_PLUGIN"] == "False"
+    config.new_client_from_config.assert_called_once_with(
+        context=LIVE_EXECUTION["kube_context"]
+    )
+    config.load_incluster_config.assert_not_called()
+    client.CustomObjectsApi.assert_called_once_with(api_client=api_client)
+    chaos_api.get_namespaced_custom_object.assert_called_once_with(
+        group="chaos-mesh.org",
+        version="v1alpha1",
+        namespace="chaos-mesh",
+        plural="stresschaos",
+        name="experiment-1",
+        _request_timeout=30,
+    )
+    chaos_api.delete_namespaced_custom_object.assert_called_once_with(
+        group="chaos-mesh.org",
+        version="v1alpha1",
+        namespace="chaos-mesh",
+        plural="stresschaos",
+        name="experiment-1",
+        body={
+            "apiVersion": "v1",
+            "kind": "DeleteOptions",
+            "preconditions": {
+                "uid": "live-context-fault-uid",
+                "resourceVersion": "live-context-version",
+            },
+        },
+        _request_timeout=30,
+    )
+    api_client.close.assert_called_once()
 
 
 def test_live_contextvars_isolate_concurrent_and_unrelated_kubectl_calls(monkeypatch):

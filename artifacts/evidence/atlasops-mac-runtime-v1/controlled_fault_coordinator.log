@@ -1,0 +1,49 @@
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9099 (Press CTRL+C to quit)
+2026-10-29 07:15:45,782 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:49828 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:15:48,865 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:49828 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     10.244.0.26:49828 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:15:52,347 [INFO] received alertmanager webhook: 0 firing alerts
+2026-10-29 07:15:55,745 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:49828 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:18:44,006 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 07:18:44,274 [INFO] [inc-1793258324-e5319d] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 07:19:01,285 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:19:14,255 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:54272 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:19:45,415 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 07:19:46,693 [INFO] [inc-1793258385-71b350] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 07:19:51,565 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:20:13,108 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:20:24,308 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:59136 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:21:44,838 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:22:25,699 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:22:54,079 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:23:19,699 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:54758 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:23:55,241 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:44470 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 07:24:20,973 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:25:44,129 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:26:11,392 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:44590 - "GET /approval/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44602 - "GET /incidents/history?limit=10 HTTP/1.1" 404 Not Found
+2026-10-29 07:26:45,029 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:52890 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53918 - "GET /thoughts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60494 - "GET /approval/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60506 - "GET /thoughts HTTP/1.1" 200 OK
+2026-10-29 07:28:01,306 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:28:20,601 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 07:28:40,447 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:55284 - "GET /approval/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55292 - "GET /thoughts HTTP/1.1" 200 OK
+2026-10-29 07:29:00,858 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54296 - "GET /approval/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54298 - "GET /thoughts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54310 - "GET /thoughts HTTP/1.1" 200 OK

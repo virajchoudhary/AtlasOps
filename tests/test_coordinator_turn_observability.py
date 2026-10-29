@@ -196,6 +196,26 @@ class TestRetryTurnPersistence:
                   {"kind": "StressChaos", "name": "any-exp", "namespace": "chaos-mesh"}, "c2")
         ], finish_reason="tool_calls")
         t2 = _response(json.dumps({"outcome": "resolved"}))
+        chaos_api = MagicMock()
+        chaos_api.get_namespaced_custom_object.return_value = {
+            "apiVersion": "chaos-mesh.org/v1alpha1",
+            "kind": "StressChaos",
+            "metadata": {
+                "name": "any-exp",
+                "namespace": "chaos-mesh",
+                "uid": "turn-test-uid",
+                "resourceVersion": "turn-test-version",
+            },
+            "status": {
+                "experiment": {"containerRecords": [{"phase": "Injected"}]},
+                "conditions": [
+                    {"type": "Paused", "status": "False"},
+                    {"type": "AllRecovered", "status": "False"},
+                ],
+            },
+        }
+        chaos_api.delete_namespaced_custom_object.return_value = {"status": "Success"}
+        chaos_api_client = MagicMock()
         with patch("agents.coordinator.post_with_retry", side_effect=[t0, t1, t2]), \
              patch("agents.coordinator._ACTIVE_MUTATION_OBSERVER", ContextVar(
                  "turn_test_observer", default=AsyncMock(return_value={
@@ -204,10 +224,38 @@ class TestRetryTurnPersistence:
              )), \
              patch.dict("agents.tools.TOOL_REGISTRY",
                         {"promql_query": lambda **kw: {"success": True, "result": []}}), \
+             patch("agents.tools.chaos._new_chaos_api_client",
+                   return_value=(chaos_api, chaos_api_client)), \
              patch("agents.tools.chaos._run",
-                   return_value={"success": True, "stdout": "deleted", "returncode": 0}):
+                   side_effect=AssertionError("Chaos stop must not use kubectl")):
             with patch("agents.coordinator.require_audit_log"):
                 result = asyncio.run(call_agent("remediation", {"incident_id": "inc-obs-5"}))
+
+        chaos_api.get_namespaced_custom_object.assert_called_once_with(
+            group="chaos-mesh.org",
+            version="v1alpha1",
+            namespace="chaos-mesh",
+            plural="stresschaos",
+            name="any-exp",
+            _request_timeout=30,
+        )
+        chaos_api.delete_namespaced_custom_object.assert_called_once_with(
+            group="chaos-mesh.org",
+            version="v1alpha1",
+            namespace="chaos-mesh",
+            plural="stresschaos",
+            name="any-exp",
+            body={
+                "apiVersion": "v1",
+                "kind": "DeleteOptions",
+                "preconditions": {
+                    "uid": "turn-test-uid",
+                    "resourceVersion": "turn-test-version",
+                },
+            },
+            _request_timeout=30,
+        )
+        chaos_api_client.close.assert_called_once()
 
         records = [e for e in result["trajectory"] if e.get("kind") == "model_turn"]
         assert [record["turn"] for record in records] == [0, 1, 2]

@@ -606,6 +606,27 @@ class TestCoordinatorRemediationContract:
         }
         mock_response_turn2.raise_for_status = MagicMock()
 
+        chaos_api = MagicMock()
+        chaos_api.get_namespaced_custom_object.return_value = {
+            "apiVersion": "chaos-mesh.org/v1alpha1",
+            "kind": "StressChaos",
+            "metadata": {
+                "name": "sf-002-paymentservice-cpu",
+                "namespace": "chaos-mesh",
+                "uid": "retry-test-uid",
+                "resourceVersion": "retry-test-version",
+            },
+            "status": {
+                "experiment": {"containerRecords": [{"phase": "Injected"}]},
+                "conditions": [
+                    {"type": "Paused", "status": "False"},
+                    {"type": "AllRecovered", "status": "False"},
+                ],
+            },
+        }
+        chaos_api.delete_namespaced_custom_object.return_value = {"status": "Success"}
+        chaos_api_client = MagicMock()
+
         with (
             patch(
                 "agents.coordinator.post_with_retry",
@@ -613,11 +634,41 @@ class TestCoordinatorRemediationContract:
             ),
             patch("agents.coordinator.require_audit_log"),
             patch(
+                "agents.tools.chaos._new_chaos_api_client",
+                return_value=(chaos_api, chaos_api_client),
+            ),
+            patch(
                 "agents.tools.chaos._run",
-                return_value={"success": True, "stdout": "deleted", "returncode": 0},
+                side_effect=AssertionError("Chaos stop must not use kubectl"),
             ),
         ):
             result = asyncio.run(call_agent("remediation", {"incident_id": "inc-test-success"}))
+
+        chaos_api.get_namespaced_custom_object.assert_called_once_with(
+            group="chaos-mesh.org",
+            version="v1alpha1",
+            namespace="chaos-mesh",
+            plural="stresschaos",
+            name="sf-002-paymentservice-cpu",
+            _request_timeout=30,
+        )
+        chaos_api.delete_namespaced_custom_object.assert_called_once_with(
+            group="chaos-mesh.org",
+            version="v1alpha1",
+            namespace="chaos-mesh",
+            plural="stresschaos",
+            name="sf-002-paymentservice-cpu",
+            body={
+                "apiVersion": "v1",
+                "kind": "DeleteOptions",
+                "preconditions": {
+                    "uid": "retry-test-uid",
+                    "resourceVersion": "retry-test-version",
+                },
+            },
+            _request_timeout=30,
+        )
+        chaos_api_client.close.assert_called_once()
 
         final = result["final"]
         assert final["outcome"] == "resolved"

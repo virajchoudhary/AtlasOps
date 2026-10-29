@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from agents.tools.kubectl import _run
+from agents.tools.kubectl import _G9_KUBECONFIG_CONTEXT, _run
 
 ALLOWED_CHAOS_KINDS = frozenset({
     "podchaos",
@@ -97,7 +98,12 @@ def _valid_precondition(value: Any) -> bool:
 def _new_chaos_api_client(kube_context: str | None):
     from kubernetes import client, config
 
-    api_client = config.new_client_from_config(context=kube_context)
+    if kube_context is None and os.getenv("KUBERNETES_SERVICE_HOST"):
+        configuration = client.Configuration()
+        config.load_incluster_config(client_configuration=configuration)
+        api_client = client.ApiClient(configuration=configuration)
+    else:
+        api_client = config.new_client_from_config(context=kube_context)
     try:
         return client.CustomObjectsApi(api_client=api_client), api_client
     except Exception:
@@ -660,30 +666,45 @@ def chaos_stop_experiment(
             clean_namespace,
         )
 
-    cmd = [
-        "kubectl",
-        "delete",
-        normalized_kind,
-        clean_name,
-        "-n",
-        clean_namespace,
-        "--ignore-not-found=false",
-    ]
-    res = _run(cmd, timeout=30)
-    if res.get("success"):
-        return {
-            "success": True,
-            "action": "stopped_chaos_experiment",
-            "kind": _CANONICAL_KINDS[normalized_kind],
-            "name": clean_name,
-            "namespace": clean_namespace,
-            "stdout": res.get("stdout", "").strip(),
-        }
-    return {
+    result = {
         "success": False,
         "action": "stopped_chaos_experiment",
         "kind": _CANONICAL_KINDS[normalized_kind],
         "name": clean_name,
         "namespace": clean_namespace,
-        "error": res.get("stderr", res.get("error", "Failed to delete chaos resource")).strip(),
+    }
+    kube_context = _G9_KUBECONFIG_CONTEXT.get()
+    if kube_context is None:
+        kube_context = os.getenv("KUBECONFIG_CONTEXT", "").strip() or None
+    try:
+        with _chaos_api_client(kube_context) as api:
+            resource = api.get_namespaced_custom_object(
+                group=_CHAOS_API_GROUP,
+                version=_CHAOS_API_VERSION,
+                namespace=clean_namespace,
+                plural=_CHAOS_RESOURCE_PLURALS[normalized_kind],
+                name=clean_name,
+                _request_timeout=_KUBERNETES_REQUEST_TIMEOUT,
+            )
+            metadata = resource.get("metadata") if isinstance(resource, dict) else None
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("name") != clean_name
+                or metadata.get("namespace") != clean_namespace
+            ):
+                return {**result, "error": "Chaos API resource identity does not match"}
+            uid = metadata.get("uid")
+            resource_version = metadata.get("resourceVersion")
+            if not _valid_precondition(uid) or not _valid_precondition(resource_version):
+                return {**result, "error": "Chaos resource requires UID and resourceVersion"}
+            if _chaos_activity_for_resource(resource) != "active":
+                return {**result, "error": "Chaos resource is not positively active/injected"}
+            _delete_chaos_resource(
+                api, normalized_kind, clean_name, clean_namespace,
+                uid=uid, resource_version=resource_version,
+            )
+    except Exception as exc:
+        return {**result, "error": _kubernetes_error(exc)}
+    return {
+        **result, "success": True, "uid": uid, "resource_version": resource_version,
     }

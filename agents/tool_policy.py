@@ -75,6 +75,12 @@ CLUSTER_MUTATING_TOOLS = frozenset({
 EXTERNAL_COMMUNICATION_TOOLS = frozenset({"slack_post_update"})
 FILESYSTEM_WRITING_TOOLS = frozenset({"postmortem_draft", "slack_post_update"})
 
+
+def effective_role_tools(role: str, *, operational: bool) -> frozenset[str]:
+    tools = ROLE_ALLOWED_TOOLS.get(role, frozenset())
+    return tools - FILESYSTEM_WRITING_TOOLS if operational else tools
+
+
 SIDE_EFFECTING_TOOLS = frozenset().union(
     CLUSTER_MUTATING_TOOLS,
     EXTERNAL_COMMUNICATION_TOOLS,

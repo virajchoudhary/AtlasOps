@@ -124,7 +124,7 @@ def operations_router(
         by_hash = {row["entry_hash"]: row for row in records}
         require_execution_audit(execution, by_hash)
         payload = {
-            **execution, "source_sha": os.getenv("ATLASOPS_SOURCE_SHA", ""),
+            **execution,
             "certification_status": "NOT_CERTIFIED", "audit_integrity": integrity,
             "audit_scope": "incident_records",
             "audit": [row for row in records if row.get("incident_id") == execution["incident_id"]],

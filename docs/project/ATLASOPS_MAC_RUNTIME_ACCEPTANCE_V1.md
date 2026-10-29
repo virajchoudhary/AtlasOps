@@ -1,10 +1,11 @@
 # AtlasOps Mac runtime acceptance v1
 
 **Verdict: PARTIAL.** The monitoring-to-coordinator pipeline is demonstrated
-end to end on real cluster faults for the first time. The agent chain does not
-complete on this hardware, three documented components are absent or empty, and
-four Online Boutique services do not stay up. Nothing here is gate evidence, and
-G4 and G9 remain NOT_PASSED and frozen.
+end to end on a real cluster fault for the first time, and the agents reached
+remediation and mutated the live cluster. No incident completed objective
+verification, three documented components are absent or empty, and four Online
+Boutique services do not stay up. Nothing here is gate evidence, and G4 and G9
+remain NOT_PASSED and frozen.
 
 | Field | Value |
 |---|---|
@@ -27,9 +28,9 @@ G4 and G9 remain NOT_PASSED and frozen.
 | Alert rule fires on a real fault | **PASS** | 5 alerts pending → firing, from kube-state-metrics data |
 | Alertmanager → coordinator webhook | **PASS** | authenticated webhook delivered, 200 OK |
 | Coordinator receives and opens incidents | **PASS** | 4 incidents, HMAC-chained audit |
-| Triage agent acts on the live cluster | **PASS** | 4 real tools, `policy_check: allowed` ×36 |
-| Full agent chain to remediation | **FAIL (not reached)** | stopped at triage after ~30 min |
-| Approval / remediation / rollback on K8s | **NOT TESTED** | never reached |
+| Triage agent acts on the live cluster | **PASS** | 4 real tools, `policy_check: allowed` on all records |
+| Remediation agent mutates the live cluster | **PASS, with a flag** | two `kubectl_scale` calls succeeded; `approved_by` empty |
+| Objective verification / rollback on K8s | **NOT REACHED** | no verifier or rollback record, no incident closed |
 | Grafana dashboards | **BLOCKED** | Grafana is not installed in this cluster |
 | Jaeger traces | **FAIL** | 0 services reporting |
 | Cluster stability | **PARTIAL** | 4 of 11 boutique services crashloop |
@@ -63,7 +64,7 @@ unavailable, and every step below is from a recorded artifact.
 6. **Real model calls.** `POST http://host.docker.internal:11434/v1/chat/completions
    "HTTP/1.1 200 OK"`, repeatedly. The coordinator reaches the Mac's Ollama from
    inside the cluster; `GET /models` lists `qwen2.5:7b-instruct`.
-7. **Real tool use against the live cluster.** 36 audit records, 4 incidents:
+7. **Real tool use against the live cluster.** 50 audit records, 4 incidents:
 
    | Role | Tool | Calls |
    |---|---|---:|
@@ -72,12 +73,14 @@ unavailable, and every step below is from a recorded artifact.
    | triage | `kubectl_get` | 8 |
    | triage | `kubectl_top_pods` | 8 |
    | triage | `promql_query` | 8 |
+   | remediation | `remediation_retry` | 4 |
+   | remediation | `kubectl_scale` | 6 (3 call + 3 result) |
 
-   `policy_check` is `allowed` on all 36, and the HMAC chain verifies: every
-   record's `prev_hash` equals the previous record's `entry_hash`.
+   `policy_check` is `allowed` on all 50 records, and the HMAC chain verifies:
+   every record's `prev_hash` equals the previous record's `entry_hash`.
    Evidence: `coordinator_audit_log.jsonl`.
 
-Those four tools are exactly the four the triage prompt permits, and the agent
+Those four triage tools are exactly the four the triage prompt permits, and the agent
 stopped at its 4-call budget. The tool ACL is being enforced and recorded, not
 merely configured.
 
@@ -94,13 +97,54 @@ Evidence: `RESTART_PERSISTENCE.md`.
 
 ## What failed or was not reached
 
-### The agent chain stopped at triage
+### The chain reached remediation and mutated the cluster, then stalled
 
-All four incidents were still in triage after roughly 30 minutes. The audit log
-stayed at 36 records while `chat/completions` calls continued every 30–80
-seconds, so the agents were alive and retrying, not hung. Diagnosis,
-remediation, the approval gate, rollback and objective verification were never
-exercised on Kubernetes. No postmortem and no trajectory file was written.
+An earlier draft of this report said the chain stopped at triage. That was
+wrong, and the correction matters. The final audit log has **50 records**:
+
+| Role | Records |
+|---|---:|
+| coordinator | 8 |
+| triage | 32 |
+| remediation | 10 |
+
+Diagnosis appears nowhere in the audit log, because the audit records tool calls
+and the diagnosis agent made none.
+
+Four remediation records are retries with the summary
+`turn 0: no executable tool call; retry remediation_no_tool_call_retry` — the
+7B model failed to emit a usable tool call and the coordinator retried. Then
+**two mutations executed successfully on the live cluster**:
+
+```
+kubectl_scale -> deployment.apps/checkoutservice scaled   returncode 0
+kubectl_scale -> deployment.apps/paymentservice scaled    returncode 0
+```
+
+checkoutservice went from 1 replica to 3 and paymentservice to 3. Both were
+reverted to 1 here, because three replicas of a service that crashloops on a
+1-second probe timeout adds load to an already strained node and does not fix
+the fault. The coordinator was then scaled back to 0 so it would not keep
+mutating the cluster unattended.
+
+Still not reached: objective verification and rollback. No verifier record, no
+rollback record, no incident closed, no postmortem and no trajectory file.
+
+### Flag: two cluster mutations with no recorded approver
+
+Both `kubectl_scale` records carry `approved_by: ""` with
+`policy_check: allowed`. Whether that is correct depends on the severity triage
+assigned, and **this could not be determined from the available records**: the
+audit log stores tool calls, not the triage verdict, and no trajectory file was
+written because no incident closed.
+
+Under `agents/approval.py`, P2 and P3 map to `auto`, so an unapproved mutation
+is by design if triage rated these P2 or P3; P1 maps to `approve` and would
+require a named approver. The alert's own label was `severity: warning`.
+
+This is raised as a question for the owner, not asserted as a defect. To settle
+it, the triage severity for `inc-1793255445-22b4fb` and `inc-1793255446-4b8d4f`
+has to be read from a completed trajectory, which this run never produced.
 
 **The fault self-resolved first.** At 06:38 Alertmanager delivered
 `0 firing alerts`: the deployments recovered on their own while the agents were

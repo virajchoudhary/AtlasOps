@@ -1,0 +1,163 @@
+name: Local GitOps admission
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-admission-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    name: Pinned Argo admission and read-only workload RBAC
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      ATLASOPS_DISPOSABLE_ADMISSION_TEST: "1"
+      ATLASOPS_DISPOSABLE_ADMISSION_CONTEXT: kind-atlasops-gitops-admission-ci
+      CLUSTER_NAME: atlasops-gitops-admission-ci
+      KIND_VERSION: "0.33.0"
+      KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+      KUBECTL_VERSION: "1.35.8"
+      KUBECTL_SHA256: 874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+      HELM_VERSION: "3.17.3"
+      HELM_SHA256: ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd
+    steps:
+      - name: Check out the exact reviewed source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the manifest parser and pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check PyYAML==6.0.3
+          tools="$RUNNER_TEMP/admission-tools"
+          mkdir -p "$tools"
+          curl --fail --silent --show-error --location \
+            "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64" -o "$tools/kind"
+          printf '%s  %s\n' "$KIND_SHA256" "$tools/kind" | sha256sum --check
+          curl --fail --silent --show-error --location \
+            "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o "$tools/kubectl"
+          printf '%s  %s\n' "$KUBECTL_SHA256" "$tools/kubectl" | sha256sum --check
+          curl --fail --silent --show-error --location \
+            "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o "$tools/helm.tar.gz"
+          printf '%s  %s\n' "$HELM_SHA256" "$tools/helm.tar.gz" | sha256sum --check
+          tar -xzf "$tools/helm.tar.gz" -C "$tools"
+          mv "$tools/linux-amd64/helm" "$tools/helm"
+          chmod 0755 "$tools/kind" "$tools/kubectl" "$tools/helm"
+          printf '%s\n' "$tools" >> "$GITHUB_PATH"
+          printf 'KUBECONFIG=%s\n' "$RUNNER_TEMP/admission-ci.kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Create a new disposable CI cluster
+        id: cluster
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if kind get clusters | grep --fixed-strings --line-regexp "$CLUSTER_NAME"
+          then
+            echo "Refusing to reuse a pre-existing CI cluster." >&2
+            exit 1
+          fi
+          kind create cluster --name "$CLUSTER_NAME" \
+            --config infra/local/kind-config.yaml --kubeconfig "$KUBECONFIG" --wait 120s
+          python -B -m scripts.verify_platform_infrastructure inspect-kind-cluster \
+            --cluster-name "$CLUSTER_NAME" --kube-context "$ATLASOPS_DISPOSABLE_ADMISSION_CONTEXT"
+
+      - name: Install the pinned CRD and fail-closed admission policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="$ATLASOPS_DISPOSABLE_ADMISSION_CONTEXT"
+          kubectl --context="$context" create namespace argocd
+          kubectl --context="$context" create namespace atlasops-boutique
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update argo
+          helm --kube-context="$context" install argocd argo/argo-cd \
+            --namespace argocd --version 10.3.2 \
+            --set controller.replicas=0 --set repoServer.replicas=0 \
+            --set server.replicas=0 --set applicationSet.replicas=0 \
+            --set notifications.enabled=false --set dex.enabled=false --set redis.enabled=false
+          kubectl --context="$context" wait --for=condition=Established \
+            customresourcedefinition/applications.argoproj.io --timeout=120s
+          kubectl --context="$context" apply -f infra/local/operational-admission.yaml \
+            --selector=atlasops.local/admission-stage=policy
+          policy_generation="$(kubectl --context="$context" get validatingadmissionpolicy \
+            atlasops-coordinator-rollback-only --output=jsonpath='{.metadata.generation}')"
+          [[ "$policy_generation" =~ ^[1-9][0-9]*$ ]]
+          kubectl --context="$context" wait \
+            --for=jsonpath='{.status.observedGeneration}'="$policy_generation" \
+            validatingadmissionpolicy/atlasops-coordinator-rollback-only --timeout=120s
+          kubectl --context="$context" get validatingadmissionpolicy \
+            atlasops-coordinator-rollback-only --output=json \
+            | python -B -m scripts.verify_platform_infrastructure check-admission-policy
+          kubectl --context="$context" apply -f infra/local/operational-admission.yaml \
+            --selector=atlasops.local/admission-stage=binding
+          python - <<'PY' > "$RUNNER_TEMP/admission-rbac.yaml"
+          from pathlib import Path
+          import yaml
+
+          identities = {
+              ("ServiceAccount", "atlasops-coordinator"),
+              ("Role", "atlasops-coordinator-readonly-boutique"),
+              ("RoleBinding", "atlasops-coordinator-readonly-boutique"),
+          }
+          documents = list(yaml.safe_load_all(Path("infra/local/coordinator-local.yaml").read_text()))
+          selected = [
+              item for item in documents if item and
+              (item.get("kind"), item.get("metadata", {}).get("name")) in identities
+          ]
+          if len(selected) != len(identities):
+              raise RuntimeError("The reviewed coordinator read-only RBAC is incomplete")
+          print(yaml.safe_dump_all(selected, sort_keys=False))
+          PY
+          kubectl --context="$context" apply -f "$RUNNER_TEMP/admission-rbac.yaml"
+          kubectl --context="$context" apply -f infra/local/argocd-platform.yaml
+
+      - name: Exercise actual server-side admission and RBAC
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Classification: NON_EMPIRICAL_SOFTWARE_FIXTURE. No model or research gate is exercised."
+          python -B -m scripts.verify_platform_admission \
+            --context "$ATLASOPS_DISPOSABLE_ADMISSION_CONTEXT" \
+            --service-account system:serviceaccount:default:atlasops-coordinator \
+            2>&1 | tee "$RUNNER_TEMP/platform-admission.log"
+
+      - name: Remove the owned CI cluster
+        if: always() && steps.cluster.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B -m scripts.verify_platform_infrastructure inspect-kind-cluster \
+            --cluster-name "$CLUSTER_NAME" --kube-context "$ATLASOPS_DISPOSABLE_ADMISSION_CONTEXT"
+          kind delete cluster --name "$CLUSTER_NAME" --kubeconfig "$KUBECONFIG"
+
+      - name: Preserve non-empirical admission output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/platform-admission.log
+          if-no-files-found: warn
+          retention-days: 14

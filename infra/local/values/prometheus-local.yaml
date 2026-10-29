@@ -1,8 +1,6 @@
 # AtlasOps Local Prometheus Stack — low-resource Kind profile
 # Pipeline v1.1 Free-First
 #
-# Prometheus and Grafana expose ClusterIP Services only.
-# Span-derived Boutique metrics are the application request signal.
 
 grafana:
   enabled: true
@@ -42,8 +40,8 @@ prometheus:
         memory: 512Mi
     storageSpec: {}
     replicas: 1
-    serviceMonitorSelectorNilUsesHelmValue: false
-    podMonitorSelectorNilUsesHelmValue: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
 
 alertmanager:
   service:

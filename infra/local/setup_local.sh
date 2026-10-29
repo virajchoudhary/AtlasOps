@@ -3,14 +3,6 @@
 # AtlasOps Local Kind Environment Setup
 # Pipeline v1.1 Free-First — zero external-service cost
 #
-# Creates a reproducible local Kubernetes environment using Kind with:
-#   - Online Boutique (v0.10.0 at frozen commit), owned by one Argo CD Application
-#   - Prometheus + Alertmanager + kube-state-metrics
-#   - Grafana, an OpenTelemetry Collector and Jaeger v2 (bounded in-memory traces)
-#   - Argo CD (dedicated atlasops account)
-#   - Chaos Mesh (controllers + CRDs only)
-#   - AtlasOps integrated app with persistent local runtime data
-#
 # Requirements: docker, kind, kubectl, helm, python3/python
 # Zero gcloud dependency. Zero billing requirement.
 #
@@ -32,6 +24,7 @@ readonly COORDINATOR_IMAGE="atlasops:${SOURCE_SHA}"
 readonly COORDINATOR_TEMPLATE="${SCRIPT_DIR}/coordinator-local.yaml"
 readonly APPLICATION_TEMPLATE="${SCRIPT_DIR}/argocd-application.yaml"
 readonly PLATFORM_MANIFEST="${SCRIPT_DIR}/argocd-platform.yaml"
+readonly ADMISSION_MANIFEST="${SCRIPT_DIR}/operational-admission.yaml"
 readonly PLATFORM_RENDERER="${REPO_ROOT}/scripts/verify_platform_infrastructure.py"
 readonly BOUTIQUE_APPLICATION="atlasops-boutique"
 readonly BOUTIQUE_NAMESPACE="atlasops-boutique"
@@ -100,8 +93,9 @@ Modes:
   --apply  Create Kind cluster and deploy all required services.
 
 Environment:
-  ATLASOPS_SECRET_DIR=secrets  directory containing local secret material
-                               (default: secrets/ in repo root)
+  ATLASOPS_SECRET_DIR        existing local secret directory; prepare new material
+                             in an absolute owner-private path outside the checkout
+                             (legacy default: secrets/ in repo root)
   ATLASOPS_KIND_CLUSTER_NAME  Kind cluster name (default: atlasops-local)
   ATLASOPS_VLLM_BASE          explicit OpenAI-compatible inference URL
   ATLASOPS_AGENT_MODEL        exact model identifier served at VLLM_BASE
@@ -153,6 +147,7 @@ validate_prerequisites() {
   [[ -f "$COORDINATOR_TEMPLATE" ]] || fail "Coordinator manifest missing: $COORDINATOR_TEMPLATE"
   [[ -f "$APPLICATION_TEMPLATE" ]] || fail "Argo CD Application manifest missing: $APPLICATION_TEMPLATE"
   [[ -f "$PLATFORM_MANIFEST" ]] || fail "Argo CD platform manifest missing: $PLATFORM_MANIFEST"
+  [[ -f "$ADMISSION_MANIFEST" ]] || fail "Operational admission manifest missing: $ADMISSION_MANIFEST"
   [[ -f "$PLATFORM_RENDERER" ]] || fail "Platform renderer missing: $PLATFORM_RENDERER"
   [[ -f "${SCRIPT_DIR}/otel-collector.yaml" ]] || fail "OpenTelemetry Collector manifest missing."
   [[ -f "${SCRIPT_DIR}/grafana-dashboard.yaml" ]] || fail "Grafana dashboard manifest missing."
@@ -165,7 +160,7 @@ validate_prerequisites() {
 
 validate_local_secrets() {
   local secret_dir="$ATLASOPS_SECRET_DIR"
-  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Run: $PYTHON_BIN scripts/generate_runtime_secrets.py"
+  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Set an absolute owner-private ATLASOPS_SECRET_DIR outside the checkout, then run: \"$PYTHON_BIN\" -B -m scripts.generate_runtime_secrets --output-dir \"\$ATLASOPS_SECRET_DIR\""
 
   local -a req_files=(
     "atlasops-audit-secret.secret"
@@ -218,17 +213,28 @@ render_platform_manifests() {
 # Kind cluster management
 # ==============================================================================
 ensure_kind_cluster() {
-  if kind get clusters 2>/dev/null | grep -Fxq "$KIND_CLUSTER_NAME"; then
-    echo "KIND: cluster '$KIND_CLUSTER_NAME' already exists. Reusing."
-    # Verify kubectl can reach the cluster
-    kubectl_local cluster-info >/dev/null 2>&1 || fail "Kind cluster exists but is unreachable."
-  else
+  local inspect_status=0 inspect_output
+  inspect_output="$("$PYTHON_BIN" "$PLATFORM_RENDERER" inspect-kind-cluster \
+    --cluster-name "$KIND_CLUSTER_NAME" \
+    --kube-context "$KUBE_CONTEXT" 2>&1)" || inspect_status=$?
+
+  if [[ "$inspect_status" -eq 3 ]]; then
     echo "KIND: creating cluster '$KIND_CLUSTER_NAME' from $KIND_CONFIG..."
     kind create cluster --name "$KIND_CLUSTER_NAME" --config "$KIND_CONFIG" --wait 120s
     echo "KIND: cluster '$KIND_CLUSTER_NAME' created successfully."
+    inspect_status=0
+    inspect_output="$("$PYTHON_BIN" "$PLATFORM_RENDERER" inspect-kind-cluster \
+      --cluster-name "$KIND_CLUSTER_NAME" \
+      --kube-context "$KUBE_CONTEXT" 2>&1)" || inspect_status=$?
+    [[ "$inspect_status" -eq 0 ]] || fail "New Kind cluster failed ownership, mapping, or namespace verification: $inspect_output"
+  elif [[ "$inspect_status" -eq 0 ]]; then
+    echo "KIND: cluster '$KIND_CLUSTER_NAME' already exists. Reusing after read-only ownership checks."
+  else
+    fail "Could not safely reuse Kind cluster '$KIND_CLUSTER_NAME': $inspect_output"
   fi
+  echo "$inspect_output"
+  kubectl_local cluster-info >/dev/null 2>&1 || fail "Kind cluster exists but is unreachable."
   echo "KIND: context is '$KUBE_CONTEXT'."
-  kubectl_local cluster-info
 }
 
 # ==============================================================================
@@ -241,6 +247,13 @@ ensure_namespaces() {
     kubectl_local create namespace "$ns" --dry-run=client -o yaml | kubectl_local apply -f -
   done
   echo "NAMESPACES: required namespaces verified."
+}
+
+retire_legacy_direct_deployment_mutation_rbac() {
+  kubectl_local delete rolebinding atlasops-coordinator-remediation \
+    --namespace "$BOUTIQUE_NAMESPACE" --ignore-not-found=true
+  kubectl_local delete role atlasops-coordinator-remediation \
+    --namespace "$BOUTIQUE_NAMESPACE" --ignore-not-found=true
 }
 
 # ==============================================================================
@@ -285,9 +298,6 @@ apply_runtime_secrets() {
   echo "SECRETS: applied runtime secrets from local material to context '$KUBE_CONTEXT'."
 }
 
-# ==============================================================================
-# Persistent runtime storage
-# ==============================================================================
 install_local_path_provisioner() {
   echo "STORAGE: installing local-path-provisioner $LOCAL_PATH_PROVISIONER_VERSION..."
   kubectl_local apply -f "$LOCAL_PATH_PROVISIONER_MANIFEST"
@@ -337,6 +347,28 @@ deploy_otel_collector() {
   echo "OTEL: collector is ready. Span-derived metrics remain cluster-private."
 }
 
+install_operational_admission_policy() {
+  echo "ARGO CD: installing the coordinator rollback admission policy..."
+  kubectl_local apply -f "$ADMISSION_MANIFEST" --selector=atlasops.local/admission-stage=policy
+  local policy_generation
+  policy_generation="$(kubectl_local get validatingadmissionpolicy atlasops-coordinator-rollback-only \
+    --output=jsonpath='{.metadata.generation}')"
+  [[ "$policy_generation" =~ ^[1-9][0-9]*$ ]] || fail "Admission policy generation is unavailable."
+  kubectl_local wait --for=jsonpath='{.status.observedGeneration}'="$policy_generation" \
+    validatingadmissionpolicy/atlasops-coordinator-rollback-only \
+    --timeout=120s
+
+  local policy_status
+  policy_status="$(kubectl_local get validatingadmissionpolicy atlasops-coordinator-rollback-only -o json)" \
+    || fail "Could not verify the coordinator admission policy status."
+  printf '%s\n' "$policy_status" | "$PYTHON_BIN" "$PLATFORM_RENDERER" check-admission-policy \
+    || fail "Coordinator admission policy has stale or invalid type-check status."
+  echo "typeChecking.expressionWarnings is empty for the current policy generation."
+
+  kubectl_local apply -f "$ADMISSION_MANIFEST" --selector=atlasops.local/admission-stage=binding
+  echo "ARGO CD: fail-closed coordinator admission policy is type checked and bound."
+}
+
 deploy_argocd() {
   echo "ARGO CD: adding Helm repo and deploying..."
   helm repo add argo https://argoproj.github.io/argo-helm --force-update
@@ -368,6 +400,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
     --wait --timeout=10m
 
   rm -f -- "$argo_overlay"
+  install_operational_admission_policy
   kubectl_local apply -f "$PLATFORM_MANIFEST"
   echo "ARGO CD: deployed with dedicated atlasops account and bcrypt password verifier."
 }
@@ -386,9 +419,6 @@ deploy_chaos_mesh() {
   echo "CHAOS MESH: controllers and CRDs deployed. No experiments injected."
 }
 
-# ==============================================================================
-# Single-owner Boutique GitOps deployment
-# ==============================================================================
 deploy_boutique_application() {
   local existing_application
   existing_application="$(kubectl_local get application "$BOUTIQUE_APPLICATION" \
@@ -480,6 +510,7 @@ main() {
   validate_local_secrets
   ensure_kind_cluster
   ensure_namespaces
+  retire_legacy_direct_deployment_mutation_rbac
   apply_runtime_secrets
 
   install_local_path_provisioner

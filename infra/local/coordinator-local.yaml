@@ -1,5 +1,3 @@
-# AtlasOps integrated runtime — local Kind deployment
-# Render the source SHA and explicit operator/model settings before applying.
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -9,28 +7,60 @@ metadata:
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: atlasops-coordinator-readonly
+  name: atlasops-coordinator-readonly-default
+  namespace: default
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "endpoints", "events", "nodes"]
+    resources: ["pods", "pods/log", "services", "endpoints", "events"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods", "nodes"]
+    resources: ["pods"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: atlasops-coordinator-readonly
+  name: atlasops-coordinator-readonly-default
+  namespace: default
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: atlasops-coordinator-readonly
+  kind: Role
+  name: atlasops-coordinator-readonly-default
+subjects:
+  - kind: ServiceAccount
+    name: atlasops-coordinator
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atlasops-coordinator-readonly-boutique
+  namespace: atlasops-boutique
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atlasops-coordinator-readonly-boutique
+  namespace: atlasops-boutique
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atlasops-coordinator-readonly-boutique
 subjects:
   - kind: ServiceAccount
     name: atlasops-coordinator
@@ -61,43 +91,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: atlasops-coordinator-chaos
-subjects:
-  - kind: ServiceAccount
-    name: atlasops-coordinator
-    namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: atlasops-coordinator-remediation
-  namespace: atlasops-boutique
-rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments", "deployments/scale"]
-    resourceNames:
-      - adservice
-      - cartservice
-      - checkoutservice
-      - currencyservice
-      - emailservice
-      - frontend
-      - loadgenerator
-      - paymentservice
-      - productcatalogservice
-      - recommendationservice
-      - redis-cart
-      - shippingservice
-    verbs: ["get", "patch", "update"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: atlasops-coordinator-remediation
-  namespace: atlasops-boutique
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: atlasops-coordinator-remediation
 subjects:
   - kind: ServiceAccount
     name: atlasops-coordinator

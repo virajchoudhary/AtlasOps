@@ -1,0 +1,120 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: atlasops-coordinator-rollback-only
+  labels:
+    atlasops.local/admission-stage: policy
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["argoproj.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["applications"]
+        scope: Namespaced
+  matchConditions:
+    - name: atlasops-coordinator
+      expression: request.userInfo.username == 'system:serviceaccount:default:atlasops-coordinator'
+  validations:
+    - expression: >-
+        object.metadata.name == 'atlasops-boutique' &&
+        object.metadata.namespace == 'argocd' &&
+        object.metadata.uid == oldObject.metadata.uid &&
+        object.metadata.creationTimestamp == oldObject.metadata.creationTimestamp &&
+        object.metadata.resourceVersion == oldObject.metadata.resourceVersion &&
+        has(object.metadata.labels) == has(oldObject.metadata.labels) &&
+        (!has(oldObject.metadata.labels) || object.metadata.labels == oldObject.metadata.labels) &&
+        has(object.metadata.annotations) == has(oldObject.metadata.annotations) &&
+        (!has(oldObject.metadata.annotations) || object.metadata.annotations == oldObject.metadata.annotations) &&
+        has(object.metadata.ownerReferences) == has(oldObject.metadata.ownerReferences) &&
+        (!has(oldObject.metadata.ownerReferences) || object.metadata.ownerReferences == oldObject.metadata.ownerReferences) &&
+        has(object.metadata.finalizers) == has(oldObject.metadata.finalizers) &&
+        (!has(oldObject.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers) &&
+        has(object.metadata.deletionTimestamp) == has(oldObject.metadata.deletionTimestamp) &&
+        (!has(oldObject.metadata.deletionTimestamp) || object.metadata.deletionTimestamp == oldObject.metadata.deletionTimestamp) &&
+        has(object.metadata.deletionGracePeriodSeconds) == has(oldObject.metadata.deletionGracePeriodSeconds) &&
+        (!has(oldObject.metadata.deletionGracePeriodSeconds) || object.metadata.deletionGracePeriodSeconds == oldObject.metadata.deletionGracePeriodSeconds) &&
+        object.status == oldObject.status &&
+        has(object.spec.source) &&
+        has(oldObject.spec.source) &&
+        object.spec.project == 'atlasops-boutique' &&
+        object.spec.project == oldObject.spec.project &&
+        object.spec.destination.server == 'https://kubernetes.default.svc' &&
+        object.spec.destination.namespace == 'atlasops-boutique' &&
+        object.spec.destination == oldObject.spec.destination &&
+        has(object.spec.sources) == has(oldObject.spec.sources) &&
+        (!has(object.spec.sources) || object.spec.sources.size() == 0) &&
+        (!has(oldObject.spec.sources) || oldObject.spec.sources.size() == 0) &&
+        object.spec.syncPolicy == oldObject.spec.syncPolicy &&
+        has(object.spec.ignoreDifferences) == has(oldObject.spec.ignoreDifferences) &&
+        (!has(oldObject.spec.ignoreDifferences) || object.spec.ignoreDifferences == oldObject.spec.ignoreDifferences) &&
+        has(object.spec.info) == has(oldObject.spec.info) &&
+        (!has(oldObject.spec.info) || object.spec.info == oldObject.spec.info) &&
+        has(object.spec.revisionHistoryLimit) == has(oldObject.spec.revisionHistoryLimit) &&
+        (!has(oldObject.spec.revisionHistoryLimit) || object.spec.revisionHistoryLimit == oldObject.spec.revisionHistoryLimit) &&
+        has(object.spec.sourceHydrator) == has(oldObject.spec.sourceHydrator) &&
+        (!has(oldObject.spec.sourceHydrator) || object.spec.sourceHydrator == oldObject.spec.sourceHydrator) &&
+        object.spec.source.repoURL == 'https://github.com/virajchoudhary/AtlasOps.git' &&
+        object.spec.source.repoURL == oldObject.spec.source.repoURL &&
+        object.spec.source.path == 'infra/local/boutique' &&
+        object.spec.source.path == oldObject.spec.source.path &&
+        has(object.spec.source.targetRevision) &&
+        object.spec.source.targetRevision.matches('^[0-9a-f]{40}$') &&
+        has(object.spec.source.chart) == has(oldObject.spec.source.chart) &&
+        (!has(oldObject.spec.source.chart) || object.spec.source.chart == oldObject.spec.source.chart) &&
+        has(object.spec.source.directory) == has(oldObject.spec.source.directory) &&
+        (!has(oldObject.spec.source.directory) || object.spec.source.directory == oldObject.spec.source.directory) &&
+        has(object.spec.source.helm) == has(oldObject.spec.source.helm) &&
+        (!has(oldObject.spec.source.helm) || object.spec.source.helm == oldObject.spec.source.helm) &&
+        has(object.spec.source.kustomize) == has(oldObject.spec.source.kustomize) &&
+        (!has(oldObject.spec.source.kustomize) || object.spec.source.kustomize == oldObject.spec.source.kustomize) &&
+        has(object.spec.source.name) == has(oldObject.spec.source.name) &&
+        (!has(oldObject.spec.source.name) || object.spec.source.name == oldObject.spec.source.name) &&
+        has(object.spec.source.plugin) == has(oldObject.spec.source.plugin) &&
+        (!has(oldObject.spec.source.plugin) || object.spec.source.plugin == oldObject.spec.source.plugin) &&
+        has(object.spec.source.ref) == has(oldObject.spec.source.ref) &&
+        (!has(oldObject.spec.source.ref) || object.spec.source.ref == oldObject.spec.source.ref) &&
+        has(object.spec.source.tagPrefix) == has(oldObject.spec.source.tagPrefix) &&
+        (!has(oldObject.spec.source.tagPrefix) || object.spec.source.tagPrefix == oldObject.spec.source.tagPrefix) &&
+        has(oldObject.status.history) &&
+        oldObject.status.history.exists(h,
+          has(h.source) &&
+          h.revision == object.spec.source.targetRevision &&
+          h.source.repoURL == oldObject.spec.source.repoURL &&
+          h.source.path == oldObject.spec.source.path &&
+          (!has(h.sources) || h.sources.size() == 0)
+        ) &&
+        !has(oldObject.operation) &&
+        has(object.operation) &&
+        !has(object.operation.info) &&
+        !has(object.operation.retry) &&
+        has(object.operation.initiatedBy) &&
+        object.operation.initiatedBy.username == 'atlasops' &&
+        !has(object.operation.initiatedBy.automated) &&
+        has(object.operation.sync) &&
+        has(object.operation.sync.revision) &&
+        object.operation.sync.revision == object.spec.source.targetRevision &&
+        has(object.operation.sync.prune) &&
+        object.operation.sync.prune == false &&
+        !has(object.operation.sync.autoHealAttemptsCount) &&
+        !has(object.operation.sync.dryRun) &&
+        !has(object.operation.sync.manifests) &&
+        !has(object.operation.sync.resources) &&
+        !has(object.operation.sync.revisions) &&
+        !has(object.operation.sync.source) &&
+        !has(object.operation.sync.sources) &&
+        !has(object.operation.sync.syncOptions) &&
+        !has(object.operation.sync.syncStrategy)
+      message: "AtlasOps coordinator may only request an exact non-pruning rollback to a recorded same-source revision."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: atlasops-coordinator-rollback-only
+  labels:
+    atlasops.local/admission-stage: binding
+spec:
+  policyName: atlasops-coordinator-rollback-only
+  validationActions:
+    - Deny

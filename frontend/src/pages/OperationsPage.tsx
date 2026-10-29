@@ -134,13 +134,12 @@ function formatRemaining(seconds: number): string {
 
 function evidenceRevisionKey(
   execution: OperationsExecution,
-  sourceSha: string,
   connectionVersion: number,
 ): EvidenceRevisionKey {
   return JSON.stringify([
     connectionVersion,
     execution.execution_id,
-    sourceSha,
+    execution.source_sha,
     execution.integrity.events,
     execution.integrity.last_hash,
   ]);
@@ -261,6 +260,13 @@ function verificationStatus(
         label: "Evidence integrity invalid; verification unconfirmed",
         tone: "rose",
         detail: "Full evidence did not match the selected source and journal revision or its integrity checks failed. No recovery claim is supported.",
+      };
+    }
+    if (execution.source_sha === null) {
+      return {
+        label: "Source identity unavailable; verification unconfirmed",
+        tone: "amber",
+        detail: "The preserved execution has no source SHA. The running server cannot supply its historical identity.",
       };
     }
     return {
@@ -405,21 +411,19 @@ export function OperationsPage() {
     if (activeKey === null) return;
 
     let disposed = false;
-    let busy = false;
     const key = activeKey;
     const connectionVersion = connectionVersionRef.current;
 
     async function poll(): Promise<void> {
       if (
         disposed ||
-        busy ||
+        pollControllerRef.current !== null ||
         activeKeyRef.current !== key ||
         connectionVersionRef.current !== connectionVersion
       ) {
         return;
       }
 
-      busy = true;
       setStatusRequestPending(true);
       const selectionVersion = selectionVersionRef.current;
       const controller = addController();
@@ -459,13 +463,19 @@ export function OperationsPage() {
         }
         clearStatusState(errorFor(error));
       } finally {
-        busy = false;
-        if (!disposed) setStatusRequestPending(false);
+        if (!disposed && pollControllerRef.current === controller) {
+          setStatusRequestPending(false);
+        }
         releaseController(controller);
       }
     }
 
     refreshRef.current = () => {
+      const pending = pollControllerRef.current;
+      if (pending) {
+        pending.abort();
+        releaseController(pending);
+      }
       void poll();
     };
     void poll();
@@ -546,7 +556,6 @@ export function OperationsPage() {
     const selectionVersion = selectionVersionRef.current;
     const revisionKey = evidenceRevisionKey(
       execution,
-      currentSnapshot.source_sha,
       connectionVersion,
     );
     const controller = addController();
@@ -568,7 +577,7 @@ export function OperationsPage() {
         return;
       }
       const evidenceMatchesRevision =
-        bundle.evidence.source_sha === currentSnapshot.source_sha &&
+        bundle.evidence.source_sha === execution.source_sha &&
         bundle.evidence.integrity.events === execution.integrity.events &&
         bundle.evidence.integrity.last_hash === execution.integrity.last_hash;
       if (!evidenceMatchesRevision) {
@@ -742,7 +751,6 @@ export function OperationsPage() {
   const selectedExecutionRevisionKey = selectedExecution && snapshot
     ? evidenceRevisionKey(
       selectedExecution,
-      snapshot.source_sha,
       connectionVersionRef.current,
     )
     : null;
@@ -844,7 +852,7 @@ export function OperationsPage() {
         <>
           <section className="operations-status-strip" aria-label="Operations status">
             <div className="operations-status-item">
-              <span>Source SHA</span>
+              <span>Server source SHA</span>
               <code>{snapshot.source_sha || "Unavailable"}</code>
             </div>
             <div className="operations-status-item">
@@ -924,7 +932,6 @@ export function OperationsPage() {
                   subtitle="Running executions"
                   executions={activeExecutions}
                   selectedId={selectedExecutionId}
-                  sourceSha={snapshot.source_sha}
                   connectionVersion={connectionVersionRef.current}
                   evidenceReviews={evidenceReviews}
                   onSelect={selectExecution}
@@ -934,7 +941,6 @@ export function OperationsPage() {
                   subtitle="Completed, failed, cancelled, interrupted, or uncertain"
                   executions={terminalExecutions}
                   selectedId={selectedExecutionId}
-                  sourceSha={snapshot.source_sha}
                   connectionVersion={connectionVersionRef.current}
                   evidenceReviews={evidenceReviews}
                   onSelect={selectExecution}
@@ -1124,7 +1130,6 @@ function ExecutionList({
   subtitle,
   executions,
   selectedId,
-  sourceSha,
   connectionVersion,
   evidenceReviews,
   onSelect,
@@ -1133,7 +1138,6 @@ function ExecutionList({
   subtitle: string;
   executions: OperationsExecution[];
   selectedId: ExecutionId | null;
-  sourceSha: string;
   connectionVersion: number;
   evidenceReviews: ReadonlyMap<EvidenceRevisionKey, EvidenceReview>;
   onSelect: (executionId: ExecutionId) => void;
@@ -1152,7 +1156,7 @@ function ExecutionList({
       ) : (
         <ul className="operations-execution-list">
           {executions.map((execution) => {
-            const revisionKey = evidenceRevisionKey(execution, sourceSha, connectionVersion);
+            const revisionKey = evidenceRevisionKey(execution, connectionVersion);
             const resolution = verificationStatus(
               execution,
               evidenceReviews.get(revisionKey) ?? "available",
@@ -1250,6 +1254,7 @@ function ExecutionDetails({
       </header>
       <dl className="operations-detail-facts">
         <div><dt>Execution ID</dt><dd><code>{execution.execution_id}</code></dd></div>
+        <div><dt>Execution source SHA</dt><dd><code className="operations-break-all">{execution.source_sha ?? "Unavailable"}</code></dd></div>
         <div><dt>Phase</dt><dd>{execution.phase}</dd></div>
         <div><dt>Last updated</dt><dd>{formatTimestamp(execution.updated_at)}</dd></div>
         <div><dt>Evidence integrity</dt><dd>{execution.integrity.ok ? "Valid" : "Invalid"} · {execution.integrity.events} events</dd></div>

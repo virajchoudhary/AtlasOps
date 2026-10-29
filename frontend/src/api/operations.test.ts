@@ -38,6 +38,7 @@ function operationExecution(
   return {
     incident_id: "incident-checkout",
     execution_id: EXECUTION_ID,
+    source_sha: SOURCE_SHA,
     phase: "remediation",
     state: "running",
     updated_at: 1_800_000_000,
@@ -147,6 +148,25 @@ afterEach(() => {
 });
 
 describe("live operations API", () => {
+  it.each([SOURCE_SHA, null])("preserves an execution's own source identity %s", async (sourceSha) => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response(operationsStatus({
+        source_sha: "2".repeat(40),
+        executions: [operationExecution({ source_sha: sourceSha })],
+      })))
+      .mockResolvedValueOnce(response({ ...operationEvidence(), source_sha: sourceSha })));
+
+    const status = await fetchOperationsStatus(TEST_KEY);
+    expect(status.source_sha).toBe("2".repeat(40));
+    expect(status.executions[0]).toHaveProperty("source_sha", sourceSha);
+    const execution = status.executions[0];
+    if (!execution) throw new Error("Fixture must contain an execution.");
+    const bundle = await fetchOperationsEvidence({
+      apiKey: TEST_KEY, executionId: execution.execution_id,
+    });
+    expect(bundle.evidence.source_sha).toBe(sourceSha);
+  });
+
   it("accepts the actual backend audit-entry receipt without inventing an event hash", async () => {
     const payload = {
       ...operationEvidence(),

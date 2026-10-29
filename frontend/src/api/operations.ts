@@ -73,6 +73,7 @@ export interface OperationsAuditIntegrity {
 export interface OperationsExecution {
   incident_id: string;
   execution_id: ExecutionId;
+  source_sha: GitSha | null;
   phase: OperationPhase;
   state: OperationState;
   updated_at: number | string;
@@ -130,7 +131,6 @@ export interface OperationsEvent {
 }
 
 export interface OperationsEvidence extends OperationsExecution {
-  source_sha: GitSha;
   certification_status: "NOT_CERTIFIED";
   events: OperationsEvent[];
   audit_integrity: OperationsAuditIntegrity;
@@ -356,6 +356,9 @@ function parseExecution(value: unknown): OperationsExecution {
   return {
     incident_id: requiredNonEmptyString(value.incident_id),
     execution_id: parseExecutionId(value.execution_id),
+    source_sha: value.source_sha === null || value.source_sha === undefined
+      ? null
+      : parseGitSha(value.source_sha),
     phase: parsePhase(value.phase),
     state: parseState(value.state),
     updated_at: parseTimestamp(value.updated_at),
@@ -468,7 +471,6 @@ function parseOperationsEvidence(
   const auditIntegrity = parseAuditIntegrity(value.audit_integrity);
   return {
     ...execution,
-    source_sha: parseGitSha(value.source_sha),
     certification_status: "NOT_CERTIFIED",
     events: value.events.map((event) => parseExecutionEvent(event, expectedId)),
     audit_integrity: auditIntegrity,

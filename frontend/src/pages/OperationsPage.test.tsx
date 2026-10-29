@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OperationsPage } from "./OperationsPage";
@@ -27,17 +27,20 @@ function execution({
   incidentId = "incident-current",
   state = "running",
   phase = "remediation",
+  sourceSha = SOURCE_SHA,
   record = {},
 }: {
   executionId?: string;
   incidentId?: string;
   state?: string;
   phase?: string;
+  sourceSha?: string | null;
   record?: Record<string, unknown>;
 } = {}) {
   return {
     incident_id: incidentId,
     execution_id: executionId,
+    source_sha: sourceSha,
     phase,
     state,
     updated_at: 1_800_000_000,
@@ -158,7 +161,6 @@ function evidenceForExecution(
 ) {
   return {
     ...executionRecord,
-    source_sha: SOURCE_SHA,
     certification_status: "NOT_CERTIFIED",
     events: [
       {
@@ -193,6 +195,7 @@ function deferred<T>() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Operations page", () => {
@@ -464,6 +467,47 @@ describe("Operations page", () => {
     expect(JSON.parse(String(options?.body)).action_digest).toBe(ACTION_DIGEST);
   });
 
+  it("keeps pause confirmation when a pre-pause status read finishes late", async () => {
+    vi.useFakeTimers();
+    const staleRead = deferred<ReturnType<typeof response>>();
+    const pausedRead = deferred<ReturnType<typeof response>>();
+    let statusReads = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      if (String(input) === "/api/operations/pause") {
+        return Promise.resolve(response(statusFixture({ tripped: true }).circuit_breaker));
+      }
+      statusReads += 1;
+      if (statusReads === 1) return Promise.resolve(response(statusFixture()));
+      if (statusReads === 2) return staleRead.promise;
+      return pausedRead.promise;
+    }));
+    render(<OperationsPage />);
+    fireEvent.change(screen.getByLabelText("Operator API key"), { target: { value: TEST_KEY } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    });
+    expect(screen.getByText("CLOSED")).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pause future tool execution" }));
+    });
+    expect(screen.getByText("PAUSED")).toBeInTheDocument();
+
+    await act(async () => {
+      staleRead.resolve(response(statusFixture({ tripped: false })));
+    });
+    expect(screen.getByText("PAUSED")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh operations" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Pause future tool execution" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      pausedRead.resolve(response(statusFixture({ tripped: true })));
+    });
+    expect(screen.getByRole("button", { name: "Refresh operations" })).toBeEnabled();
+    expect(screen.getByText("Future tool execution is paused.")).toBeInTheDocument();
+  });
+
   it("clears a verified claim when the operations snapshot becomes unavailable", async () => {
     const verified = execution({
       state: "completed",
@@ -565,6 +609,71 @@ describe("Operations page", () => {
     await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
     expect(await within(detail).findByText("verification_completed")).toBeInTheDocument();
     expect(within(detail).getByText("Resolved and verified")).toBeInTheDocument();
+  });
+
+  it.each([
+    { label: "historical", sourceSha: "1".repeat(40) },
+    { label: "unknown", sourceSha: null },
+  ])("shows the $label execution source separately when full evidence is missing", async ({ sourceSha }) => {
+    const preserved = execution({ sourceSha, state: "completed", phase: "finished" });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response(statusFixture({ executions: [preserved], pending: [] })))
+      .mockResolvedValueOnce(response({ detail: "Evidence record not found" }, 404)));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-current/ }));
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(detail).findByRole("alert")).toBeInTheDocument();
+
+    const serverSource = screen.getByText("Server source SHA").parentElement;
+    const executionSource = within(detail).getByText("Execution source SHA").parentElement;
+    expect(serverSource).toHaveTextContent(SOURCE_SHA);
+    expect(executionSource).toHaveTextContent(sourceSha ?? "Unavailable");
+    expect(executionSource).not.toHaveTextContent(SOURCE_SHA);
+  });
+
+  it("loads an older execution's evidence without assigning the running server's source", async () => {
+    const oldExecution = execution({ sourceSha: "1".repeat(40), state: "completed", phase: "finished" });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response({
+        ...statusFixture({ executions: [oldExecution], pending: [] }),
+        source_sha: "2".repeat(40),
+      }))
+      .mockResolvedValueOnce(response(evidenceForExecution(oldExecution))));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-current/ }));
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+    await user.click(within(detail).getByRole("button", { name: /Load full event history/ }));
+    expect(await within(detail).findByText("verification_completed")).toBeInTheDocument();
+    expect(within(detail).getByText(/Source SHA: 1111111111111111111111111111111111111111/)).toBeInTheDocument();
+    expect(within(detail).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not present an unknown-source record as verified recovery", async () => {
+    const unknown = execution({
+      sourceSha: null, state: "completed", phase: "finished",
+      record: {
+        resolved: true, env_resolved: true,
+        verification: { verification_status: "passed", env_resolved: true },
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(statusFixture({
+      executions: [unknown], pending: [],
+    }))));
+    const user = userEvent.setup();
+    render(<OperationsPage />);
+    await user.type(screen.getByLabelText("Operator API key"), TEST_KEY);
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(await screen.findByRole("button", { name: /incident-current/ }));
+    const detail = await screen.findByRole("region", { name: "incident-current" });
+    expect(await within(detail).findByText("Source identity unavailable; verification unconfirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Resolved and verified")).not.toBeInTheDocument();
   });
 
   it("disables expired approval decisions", async () => {

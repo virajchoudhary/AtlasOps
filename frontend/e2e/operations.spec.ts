@@ -21,6 +21,7 @@ function execution({
   return {
     incident_id: incidentId,
     execution_id: executionId,
+    source_sha: SOURCE_SHA,
     phase,
     state,
     updated_at: 1_800_000_000,

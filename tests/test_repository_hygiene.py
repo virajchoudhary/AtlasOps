@@ -241,7 +241,7 @@ def test_ui_container_uses_project_runtime_dependencies_and_pinned_kubectl():
     from scripts import verify_platform_infrastructure as platform_verify
 
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert 'COPY . .\nRUN pip install --no-cache-dir . "uvicorn[standard]"' in dockerfile
+    assert "COPY . .\nRUN pip install --no-cache-dir --no-deps --no-build-isolation ." in dockerfile
     assert "aiofiles" not in dockerfile
     assert "gnupg" not in dockerfile
     assert "curl git" not in dockerfile

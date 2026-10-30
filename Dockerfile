@@ -10,18 +10,34 @@ RUN npm run build
 
 FROM python:3.11-slim
 
-ARG KUBECTL_VERSION=v1.31.10
-ARG KUBECTL_SHA256=f7e806b676bea3b4995e9c236445a5f24ae61ed3d5245c39d7b816d209b06a78
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.35.8
+ARG KUBECTL_SHA256=874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+ARG KUBECTL_SHA256_ARM64=cc749967b62f4422260bc9c0aa7a7c55f45175ae38cb8d95767b5d2b7e04c1fd
+ARG ATLASOPS_SOURCE_SHA=unknown
+
+ENV ATLASOPS_SOURCE_SHA=${ATLASOPS_SOURCE_SHA} \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates && \
-    # Install kubectl
-    curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-        -o /usr/local/bin/kubectl && \
-    echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - && \
-    chmod +x /usr/local/bin/kubectl && \
+LABEL org.opencontainers.image.source="https://github.com/virajchoudhary/AtlasOps" \
+      org.opencontainers.image.revision="${ATLASOPS_SOURCE_SHA}"
+
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    case "${TARGETARCH}" in \
+      amd64) kubectl_sha256="${KUBECTL_SHA256}" ;; \
+      arm64) kubectl_sha256="${KUBECTL_SHA256_ARM64}" ;; \
+      *) echo "Unsupported kubectl architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
+        -o /usr/local/bin/kubectl; \
+    echo "${kubectl_sha256}  /usr/local/bin/kubectl" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/kubectl; \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements/platform-runtime.lock ./requirements/platform-runtime.lock
@@ -33,8 +49,11 @@ RUN pip install --no-cache-dir --no-deps --no-build-isolation . \
     && pip check
 COPY --from=frontend-build /build/frontend/dist ./frontend/dist
 
-# HF Spaces runs as user 1000 — ensure data dirs are writable
-RUN mkdir -p data docs/postmortems && chmod -R 777 data docs
+RUN addgroup --system --gid 10001 atlasops \
+    && adduser --system --uid 10001 --ingroup atlasops --home /home/atlasops atlasops \
+    && mkdir -p /var/lib/atlasops/audit /var/lib/atlasops/comms \
+        /var/lib/atlasops/postmortems /var/lib/atlasops/trajectories \
+    && chown -R atlasops:atlasops /var/lib/atlasops /home/atlasops
 
 # HF Spaces port
 EXPOSE 7860
@@ -55,4 +74,6 @@ EXPOSE 7860
 #   ATLASOPS_API_KEY, ALERTMANAGER_WEBHOOK_SECRET
 # Web fault injection/reset are retired; flags cannot enable them.
 
-CMD ["python", "app.py"]
+USER 10001:10001
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]

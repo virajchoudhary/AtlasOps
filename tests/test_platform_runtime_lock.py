@@ -23,9 +23,9 @@ def test_every_platform_runtime_dependency_has_a_version_and_distribution_hash()
         locked[canonicalize_name(requirement.name)] = pins[0].version
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    extra_inputs = (ROOT / "requirements" / "platform-runtime.in").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    extra_inputs = (
+        (ROOT / "requirements" / "platform-runtime.in").read_text(encoding="utf-8").splitlines()
+    )
     inputs = project["project"]["dependencies"] + [
         item for item in extra_inputs if item and not item.startswith("#")
     ]
@@ -36,12 +36,16 @@ def test_every_platform_runtime_dependency_has_a_version_and_distribution_hash()
         assert requirement.specifier.contains(locked[name], prereleases=True)
 
     assert {"httptools", "uvloop", "watchfiles", "websockets"} <= locked.keys()
-    assert not (locked.keys() & (MODEL_PACKAGES | {"gradio", "pytest", "ruff"}))
+    assert not (
+        locked.keys() & (MODEL_PACKAGES | {"bcrypt", "gradio", "pytest", "pytest-asyncio", "ruff"})
+    )
 
 
 def test_integrated_image_installs_the_hash_locked_runtime_and_local_project() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY requirements/platform-runtime.lock ./requirements/platform-runtime.lock" in dockerfile
+    assert (
+        "COPY requirements/platform-runtime.lock ./requirements/platform-runtime.lock" in dockerfile
+    )
     assert "pip install --no-cache-dir --require-hashes --only-binary=:all:" in dockerfile
     assert "-r requirements/platform-runtime.lock" in dockerfile
     assert "pip install --no-cache-dir --no-deps --no-build-isolation ." in dockerfile

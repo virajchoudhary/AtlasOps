@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """AtlasOps Local Runtime Secret Preparation Helper.
 
-Generates local gitignored secret material required for AtlasOps coordinator,
-Alertmanager, and Argo CD before running infra/setup.sh --apply.
+Generates local secret material outside the source checkout for AtlasOps coordinator,
+Alertmanager, and Argo CD before running infra/local/setup_local.sh --apply.
 
 Primary responsibility: LOCAL MATERIAL PREPARATION.
-The canonical infra/setup.sh --apply directly provisions Kubernetes Secrets
-from these local files into the isolated cluster context.
+The local infra/local/setup_local.sh --apply provisions Kubernetes Secrets
+from these local files after inspecting the selected Kind cluster identity.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import secrets
+import shlex
 import stat
 import string
+from pathlib import Path
 
 
 def generate_token(length: int = 32) -> str:
@@ -33,22 +34,44 @@ def generate_secure_password(length: int = 24) -> str:
 def set_restricted_permissions(file_path: Path) -> None:
     """Set file permissions to 0600 (owner read/write only) on POSIX systems.
 
-    On Windows, the secrets/ directory is .gitignored and protected by standard
-    NTFS user-profile ACL inheritance.
+    On Windows, the selected directory inherits standard NTFS user-profile ACLs.
     """
     if os.name == "posix":
         file_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
+def _resolve_output_directory(value: str) -> Path:
+    error = (
+        "--output-dir must be a non-empty absolute output directory outside "
+        "the checkout"
+    )
+    if not value:
+        raise ValueError(error)
+    output_dir = Path(value)
+    if not output_dir.is_absolute():
+        raise ValueError(error)
+    try:
+        resolved = output_dir.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(error) from exc
+
+    repo_root = Path(__file__).resolve().parents[1]
+    if resolved == repo_root or repo_root in resolved.parents:
+        raise ValueError(error)
+    if any((directory / ".git").exists() for directory in (resolved, *resolved.parents)):
+        raise ValueError(error)
+    return resolved
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Prepare local AtlasOps runtime secret files for infra/setup.sh"
+        description="Prepare local AtlasOps runtime secret files for infra/local/setup_local.sh"
     )
     parser.add_argument(
         "--output-dir",
-        type=Path,
-        default=Path("secrets"),
-        help="Local directory to write secret files to (default: secrets/)",
+        type=str,
+        required=True,
+        help="Absolute directory outside the source checkout for local secret files",
     )
     parser.add_argument(
         "--argocd-user",
@@ -75,7 +98,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    out_dir: Path = args.output_dir
+    out_dir = _resolve_output_directory(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Generic Coordinator & Alertmanager Secrets
@@ -84,6 +107,8 @@ def main() -> None:
     api_key_file = out_dir / "atlasops-api-key.secret"
     user_file = out_dir / "argocd-user.secret"
     pass_file = out_dir / "argocd-pass.secret"
+    grafana_user_file = out_dir / "grafana-admin-user.secret"
+    grafana_pass_file = out_dir / "grafana-admin-password.secret"
     llm_file = out_dir / "llm-api-key.secret"
 
     if not audit_file.is_file() or args.force:
@@ -113,6 +138,15 @@ def main() -> None:
         pass_file.write_text(generated_pwd, encoding="utf-8")
         set_restricted_permissions(pass_file)
 
+    if not grafana_user_file.is_file() or args.force:
+        grafana_user_file.write_text("admin", encoding="utf-8")
+        set_restricted_permissions(grafana_user_file)
+
+    if not grafana_pass_file.is_file() or args.force:
+        grafana_password = generate_secure_password(32)
+        grafana_pass_file.write_text(grafana_password, encoding="utf-8")
+        set_restricted_permissions(grafana_pass_file)
+
     # 3. Optional LLM API Key
     if args.llm_api_key_file:
         if not args.llm_api_key_file.is_file():
@@ -122,10 +156,15 @@ def main() -> None:
         set_restricted_permissions(llm_file)
 
     # 4. Generate Manual/Emergency Recovery Script (Requires Explicit --context)
+    platform_renderer = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "verify_platform_infrastructure.py"
+    )
     recovery_script_content = """#!/usr/bin/env bash
 # ==============================================================================
 # AtlasOps Runtime Secrets - Manual / Emergency Recovery Apply Script
-# NOTE: The canonical infra/setup.sh --apply automatically provisions Kubernetes Secrets
+# NOTE: infra/local/setup_local.sh --apply automatically provisions Kubernetes Secrets
 # directly from local secret files. This script is for manual recovery only.
 #
 # USAGE: bash secrets/apply_secrets.sh --context <KUBE_CONTEXT>
@@ -134,6 +173,7 @@ def main() -> None:
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PLATFORM_RENDERER=__PLATFORM_RENDERER_PATH__
 TARGET_CONTEXT=""
 
 while [[ $# -gt 0 ]]; do
@@ -156,14 +196,58 @@ if [[ -z "$TARGET_CONTEXT" ]]; then
   exit 1
 fi
 
-echo "RECOVERY: Applying secrets to target context '$TARGET_CONTEXT' from '$SCRIPT_DIR'..."
+readonly KIND_CLUSTER_NAME="${ATLASOPS_KIND_CLUSTER_NAME:-atlasops-local}"
+readonly EXPECTED_CONTEXT="kind-${KIND_CLUSTER_NAME}"
+if [[ "$TARGET_CONTEXT" != "$EXPECTED_CONTEXT" ]]; then
+  echo "ERROR: Recovery context must be '$EXPECTED_CONTEXT' for selected Kind cluster '$KIND_CLUSTER_NAME'." >&2
+  exit 1
+fi
 
-for req in atlasops-audit-secret.secret alertmanager-webhook-secret.secret atlasops-api-key.secret argocd-user.secret argocd-pass.secret; do
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  readonly PYTHON_BIN
+elif command -v python3 >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python"
+else
+  readonly PYTHON_BIN="python3"
+fi
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "ERROR: Python command '$PYTHON_BIN' is not available for Kind ownership verification." >&2
+  exit 1
+fi
+if [[ ! -f "$PLATFORM_RENDERER" ]]; then
+  echo "ERROR: Kind ownership verifier not found: $PLATFORM_RENDERER" >&2
+  exit 1
+fi
+
+inspection_status=0
+"$PYTHON_BIN" "$PLATFORM_RENDERER" inspect-kind-cluster \\
+  --cluster-name "$KIND_CLUSTER_NAME" \\
+  --kube-context "$TARGET_CONTEXT" || inspection_status=$?
+if [[ "$inspection_status" -ne 0 ]]; then
+  echo "ERROR: Could not safely verify selected Kind cluster '$KIND_CLUSTER_NAME'; refusing to apply secrets." >&2
+  exit 1
+fi
+
+for req in atlasops-audit-secret.secret alertmanager-webhook-secret.secret atlasops-api-key.secret argocd-user.secret argocd-pass.secret grafana-admin-user.secret grafana-admin-password.secret; do
   if [[ ! -s "$SCRIPT_DIR/$req" ]]; then
     echo "ERROR: Missing or empty required secret file: $SCRIPT_DIR/$req" >&2
     exit 1
   fi
 done
+
+model_key_args=()
+if [[ -e "$SCRIPT_DIR/llm-api-key.secret" ]]; then
+  if [[ ! -f "$SCRIPT_DIR/llm-api-key.secret" || ! -s "$SCRIPT_DIR/llm-api-key.secret" ]]; then
+    echo "ERROR: Missing or empty optional model key: $SCRIPT_DIR/llm-api-key.secret" >&2
+    exit 1
+  fi
+  model_key_args+=("--from-file=llm-api-key=$SCRIPT_DIR/llm-api-key.secret")
+fi
+
+echo "RECOVERY: Applying secrets to target context '$TARGET_CONTEXT' from '$SCRIPT_DIR'..."
 
 kubectl --context="$TARGET_CONTEXT" create namespace default --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
 kubectl --context="$TARGET_CONTEXT" create namespace monitoring --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
@@ -175,6 +259,7 @@ kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-coordinator-s
   --from-file=atlasops-api-key="$SCRIPT_DIR/atlasops-api-key.secret" \\
   --from-file=argocd-user="$SCRIPT_DIR/argocd-user.secret" \\
   --from-file=argocd-pass="$SCRIPT_DIR/argocd-pass.secret" \\
+  "${model_key_args[@]}" \\
   --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
 
 kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-alertmanager-webhook \\
@@ -182,8 +267,17 @@ kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-alertmanager-
   --from-file=alertmanager-webhook-secret="$SCRIPT_DIR/alertmanager-webhook-secret.secret" \\
   --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
 
+kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-grafana-admin \\
+  --namespace=monitoring \\
+  --from-file=admin-user="$SCRIPT_DIR/grafana-admin-user.secret" \\
+  --from-file=admin-password="$SCRIPT_DIR/grafana-admin-password.secret" \\
+  --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
+
 echo "RECOVERY: Successfully applied secrets to context '$TARGET_CONTEXT'."
 """
+    recovery_script_content = recovery_script_content.replace(
+        "__PLATFORM_RENDERER_PATH__", shlex.quote(str(platform_renderer.resolve()))
+    )
 
     recovery_script = out_dir / "apply_secrets.sh"
     recovery_script.write_text(recovery_script_content, encoding="utf-8")
@@ -193,9 +287,10 @@ echo "RECOVERY: Successfully applied secrets to context '$TARGET_CONTEXT'."
     print(f"[OK] Prepared local runtime secret material in '{out_dir}/'")
     print(f"[OK] - Coordinator secrets: audit, webhook, api-key, argocd-user ({args.argocd_user}), argocd-pass")
     print("[OK] - Alertmanager secret: webhook token")
+    print("[OK] - Grafana admin secret files prepared")
     if (out_dir / "llm-api-key.secret").is_file():
         print("[OK] - LLM API key provisioned")
-    print("[OK] Local secret material is complete. Ready for infra/setup.sh --apply.")
+    print("[OK] Local secret material is complete. Ready for infra/local/setup_local.sh --apply.")
 
 
 if __name__ == "__main__":

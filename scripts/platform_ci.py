@@ -2845,11 +2845,45 @@ class Runner:
     def _setup_platform(self) -> None:
         self._stage("platform_setup", "running")
         self._verify_owner_unchanged()
-        self._command(
-            ["bash", "infra/local/setup_local.sh", "--apply"],
-            timeout=3600,
-            label="run existing local platform setup",
-        )
+        try:
+            self._command(
+                ["bash", "infra/local/setup_local.sh", "--apply"],
+                timeout=3600,
+                label="run existing local platform setup",
+            )
+        except PlatformCIError:
+            try:
+                self._verify_owner_unchanged()
+            except PlatformCIError as exc:
+                self._record("setup_diagnostics", {"status": "ownership_refused", "message": str(exc)})
+            else:
+                for resources, columns in (
+                    (
+                        "pods",
+                        "NAMESPACE:.metadata.namespace,NAME:.metadata.name,PHASE:.status.phase,"
+                        "WAITING:.status.containerStatuses[*].state.waiting.reason,"
+                        "RESTARTS:.status.containerStatuses[*].restartCount",
+                    ),
+                    (
+                        "deployments,statefulsets,jobs",
+                        "NAMESPACE:.metadata.namespace,NAME:.metadata.name,DESIRED:.spec.replicas,"
+                        "READY:.status.readyReplicas,AVAILABLE:.status.availableReplicas,"
+                        "ACTIVE:.status.active,FAILED:.status.failed",
+                    ),
+                    (
+                        "events",
+                        "NAMESPACE:.metadata.namespace,REASON:.reason,OBJECT:.involvedObject.name,"
+                        "MESSAGE:.message",
+                    ),
+                ):
+                    try:
+                        self._kubectl(
+                            "get", resources, "--all-namespaces", "-o", f"custom-columns={columns}",
+                            timeout=20, check=False, label=f"setup failure status for {resources}",
+                        )
+                    except PlatformCIError:
+                        continue
+            raise
         self._git_clean()
         self._stage("platform_setup", "completed", reused_existing_setup_script=True)
 

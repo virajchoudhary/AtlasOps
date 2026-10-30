@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -1217,6 +1218,54 @@ def test_completed_workflow_with_verified_cleanup_still_succeeds(completed_runne
     assert evidence["status"] == "passed"
     assert evidence["cleanup"]["status"] == "verified_deleted"
     assert evidence["cleanup"]["verified_absent"] is True
+    assert deletes == [("delete", "cluster", "--name", runner.cluster_name)]
+
+
+@pytest.mark.parametrize("diagnostic_timeout", [False, True])
+def test_setup_failure_retains_sanitized_resource_status_before_cleanup(
+    completed_runner, monkeypatch, diagnostic_timeout: bool
+) -> None:
+    runner, owner_receipt, deletes = completed_runner
+    runner._execute = runner._setup_platform
+    runner.owner = owner_receipt
+    runner.creation_attempted = True
+    runner.cluster_created_by_runner = True
+    runner.secret_values.append("fixture-private-credential")
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "bash":
+            return subprocess.CompletedProcess(command, 1, "", "context deadline exceeded")
+        assert command[0] == "kubectl"
+        assert not deletes
+        if diagnostic_timeout and "pods" in command:
+            raise subprocess.TimeoutExpired(command, 20)
+        return subprocess.CompletedProcess(
+            command, 0, "Pending fixture-private-credential\n", ""
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(platform_ci.PlatformCIError, match="local platform setup failed"):
+        runner.run()
+
+    diagnostics = [command for command in commands if command[0] == "kubectl"]
+    assert len(diagnostics) == 3
+    assert all("get" in command for command in diagnostics)
+    assert all("--all-namespaces" in command for command in diagnostics)
+    assert all(any(arg.startswith("custom-columns=") for arg in command) for command in diagnostics)
+    assert all("secrets" not in command and "logs" not in command for command in diagnostics)
+    assert {command[command.index("get") + 1] for command in diagnostics} == {
+        "pods", "deployments,statefulsets,jobs", "events"
+    }
+    evidence = json.loads((runner.evidence_dir / "evidence.json").read_text())
+    assert evidence["status"] == "failed"
+    assert evidence["failure"]["stage"] == "platform_setup"
+    assert evidence["cleanup"]["status"] == "verified_deleted"
+    log = (runner.evidence_dir / "logs" / "commands.jsonl").read_text()
+    assert "fixture-private-credential" not in log
+    assert "Pending" in log
     assert deletes == [("delete", "cluster", "--name", runner.cluster_name)]
 
 

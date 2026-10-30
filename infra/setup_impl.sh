@@ -84,7 +84,7 @@ Required for check/apply:
   ATLASOPS_AGENT_MODEL=<explicit model identifier>
 
 Optional:
-  ATLASOPS_SECRET_DIR=secrets              directory containing local secret material
+  ATLASOPS_SECRET_DIR=<absolute path>      existing local secret material outside checkout
   ATLASOPS_GKE_ZONE=<zone in REGION>       default: <REGION>-a
   ATLASOPS_ENABLE_CLOUD_SQL=false          deferred; true fails closed
   ATLASOPS_ENABLE_PUBSUB=false             reviewed opt-in lifecycle
@@ -139,7 +139,7 @@ validate_ipv4_cidrs() {
 
 validate_local_secret_prerequisites() {
   local secret_dir="$ATLASOPS_SECRET_DIR"
-  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Run 'python scripts/generate_runtime_secrets.py' to prepare local secret files before --apply."
+  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Set an absolute owner-private ATLASOPS_SECRET_DIR outside the checkout, then run 'python3 -B -m scripts.generate_runtime_secrets --output-dir \"\$ATLASOPS_SECRET_DIR\"' before --apply."
 
   local -a req_files=("atlasops-audit-secret.secret" "alertmanager-webhook-secret.secret" "atlasops-api-key.secret")
   if [[ "$ATLASOPS_BACKEND" != vllm ]]; then

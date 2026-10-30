@@ -1,0 +1,2 @@
+uvicorn[standard]
+hatchling==1.32.0

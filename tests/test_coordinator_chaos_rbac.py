@@ -5,7 +5,6 @@ import yaml
 
 from agents.tools.chaos import ALLOWED_CHAOS_KINDS, ALLOWED_CHAOS_NAMESPACES
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -26,22 +25,33 @@ def documents(request):
     ]
 
 
-def test_chaos_inspection_matches_the_six_supported_kinds(documents):
-    read_role = next(
-        document
-        for document in documents
-        if document["kind"] == "ClusterRole"
-        and document["metadata"]["name"] == "atlasops-coordinator-readonly"
-    )
+def test_chaos_inspection_matches_the_six_supported_kinds(documents, request):
+    if request.node.callspec.id == "kind":
+        chaos_role = next(
+            document
+            for document in documents
+            if document["kind"] == "Role"
+            and document["metadata"]["name"] == "atlasops-coordinator-chaos"
+        )
+        assert chaos_role["metadata"]["namespace"] == "chaos-mesh"
+        expected_verbs = {"get", "list", "delete"}
+    else:
+        chaos_role = next(
+            document
+            for document in documents
+            if document["kind"] == "ClusterRole"
+            and document["metadata"]["name"] == "atlasops-coordinator-readonly"
+        )
+        expected_verbs = {"get", "list", "watch"}
     chaos_rules = [
         rule
-        for rule in read_role["rules"]
+        for rule in chaos_role["rules"]
         if rule["apiGroups"] == ["chaos-mesh.org"]
     ]
 
     assert len(chaos_rules) == 1
     assert set(chaos_rules[0]["resources"]) == ALLOWED_CHAOS_KINDS
-    assert set(chaos_rules[0]["verbs"]) == {"get", "list", "watch"}
+    assert set(chaos_rules[0]["verbs"]) == expected_verbs
 
 
 def test_chaos_cleanup_is_namespace_scoped_without_fault_creation(documents):
@@ -49,6 +59,7 @@ def test_chaos_cleanup_is_namespace_scoped_without_fault_creation(documents):
         document
         for document in documents
         if document["kind"] == "Role"
+        and document["metadata"]["name"] == "atlasops-coordinator-chaos-cleanup"
         and any(
             rule["apiGroups"] == ["chaos-mesh.org"]
             for rule in document["rules"]

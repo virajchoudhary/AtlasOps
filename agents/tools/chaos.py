@@ -432,12 +432,13 @@ def _invalid_chaos_observation(
 
 def chaos_list_experiments() -> dict[str, Any]:
     """Observe active supported Chaos Mesh resources without mutating state."""
+    namespace_scope = "chaos-mesh" if os.getenv("ATLASOPS_OPERATIONAL_MODE") == "1" else None
     result = _run(
         [
             "kubectl",
             "get",
             ",".join(_CHAOS_RESOURCE_TYPES),
-            "-A",
+            *(["--namespace", namespace_scope] if namespace_scope else ["-A"]),
             "-o",
             "json",
         ],
@@ -488,6 +489,11 @@ def chaos_list_experiments() -> dict[str, Any]:
         ):
             return _invalid_chaos_observation(
                 f"chaos observation item {index} requires a name and namespace",
+                inventory,
+            )
+        if namespace_scope is not None and namespace.strip() != namespace_scope:
+            return _invalid_chaos_observation(
+                f"chaos observation item {index} is outside the selected namespace",
                 inventory,
             )
 
@@ -607,7 +613,7 @@ def chaos_list_experiments() -> dict[str, Any]:
         observation_status = "observed"
         evidence_status = "no_active_experiments"
 
-    return {
+    observation = {
         "success": True,
         "observation_status": observation_status,
         "evidence_status": evidence_status,
@@ -617,6 +623,9 @@ def chaos_list_experiments() -> dict[str, Any]:
         "inventory_complete": True,
         "count": len(active_experiments),
     }
+    if namespace_scope is not None:
+        observation["namespace_scope"] = namespace_scope
+    return observation
 
 
 def chaos_stop_experiment(

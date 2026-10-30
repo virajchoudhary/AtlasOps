@@ -1,16 +1,36 @@
 # AtlasOps Local Prometheus Stack — low-resource Kind profile
 # Pipeline v1.1 Free-First
 #
-# Preserves: Prometheus, Alertmanager, kube-state-metrics
-# Disables: Grafana (not required for Stage 3/4 gate), admissionWebhooks (avoids webhook patch timeout)
-# Reduces: resource requests for Kind single-node
 
 grafana:
-  enabled: false
+  enabled: true
+  admin:
+    existingSecret: atlasops-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: monitoring
 
 prometheus:
   prometheusSpec:
     retention: 6h
+    scrapeInterval: 15s
+    evaluationInterval: 30s
     resources:
       requests:
         cpu: 100m
@@ -20,8 +40,8 @@ prometheus:
         memory: 512Mi
     storageSpec: {}
     replicas: 1
-    serviceMonitorSelectorNilUsesHelmValue: false
-    podMonitorSelectorNilUsesHelmValue: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
 
 alertmanager:
   service:

@@ -3,14 +3,6 @@
 # AtlasOps Local Kind Environment Setup
 # Pipeline v1.1 Free-First — zero external-service cost
 #
-# Creates a reproducible local Kubernetes environment using Kind with:
-#   - Online Boutique (v0.10.0 at frozen commit)
-#   - Prometheus + Alertmanager + kube-state-metrics
-#   - Jaeger (all-in-one, in-memory)
-#   - Argo CD (dedicated atlasops account)
-#   - Chaos Mesh (controllers + CRDs only)
-#   - AtlasOps Coordinator
-#
 # Requirements: docker, kind, kubectl, helm, python3/python
 # Zero gcloud dependency. Zero billing requirement.
 #
@@ -23,17 +15,23 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-readonly KIND_CLUSTER_NAME="atlasops-local"
+readonly KIND_CLUSTER_NAME="${ATLASOPS_KIND_CLUSTER_NAME:-atlasops-local}"
 readonly KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 readonly KIND_CONFIG="${SCRIPT_DIR}/kind-config.yaml"
 
-readonly COORDINATOR_IMAGE="atlasops-coordinator:g3-local"
-readonly COORDINATOR_MANIFEST="${SCRIPT_DIR}/coordinator-local.yaml"
+readonly SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"
+readonly COORDINATOR_IMAGE="atlasops:${SOURCE_SHA}"
+readonly COORDINATOR_TEMPLATE="${SCRIPT_DIR}/coordinator-local.yaml"
+readonly APPLICATION_TEMPLATE="${SCRIPT_DIR}/argocd-application.yaml"
+readonly PLATFORM_MANIFEST="${SCRIPT_DIR}/argocd-platform.yaml"
+readonly ADMISSION_MANIFEST="${SCRIPT_DIR}/operational-admission.yaml"
+readonly PLATFORM_RENDERER="${REPO_ROOT}/scripts/verify_platform_infrastructure.py"
+readonly BOUTIQUE_APPLICATION="atlasops-boutique"
+readonly BOUTIQUE_NAMESPACE="atlasops-boutique"
 readonly COORDINATOR_ROLLOUT_TIMEOUT="5m"
 
 readonly BOUTIQUE_RELEASE="v0.10.0"
 readonly BOUTIQUE_COMMIT="98e60f5ee0b643cc00bceb71e6efb89617740432"
-readonly BOUTIQUE_MANIFEST="https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/${BOUTIQUE_COMMIT}/release/kubernetes-manifests.yaml"
 readonly BOUTIQUE_ROLLOUT_TIMEOUT="10m"
 readonly BOUTIQUE_DEPLOYMENTS=(
   "currencyservice"
@@ -54,9 +52,12 @@ readonly PROMETHEUS_CHART_VERSION="88.3.0"
 readonly JAEGER_CHART_VERSION="4.12.0"
 readonly ARGOCD_CHART_VERSION="10.3.2"
 readonly CHAOS_MESH_CHART_VERSION="2.8.3"
+readonly LOCAL_PATH_PROVISIONER_VERSION="v0.0.37"
+readonly LOCAL_PATH_PROVISIONER_MANIFEST="https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_PROVISIONER_VERSION}/deploy/local-path-storage.yaml"
 
 readonly ATLASOPS_SECRET_DIR="${ATLASOPS_SECRET_DIR:-${REPO_ROOT}/secrets}"
 readonly ATLASOPS_PROMETHEUS_RULES="${REPO_ROOT}/infra/kubernetes/atlasops-prometheus-rules.yaml"
+RENDERED_MANIFEST_DIR=""
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
   readonly PYTHON_BIN
@@ -92,8 +93,13 @@ Modes:
   --apply  Create Kind cluster and deploy all required services.
 
 Environment:
-  ATLASOPS_SECRET_DIR=secrets  directory containing local secret material
-                               (default: secrets/ in repo root)
+  ATLASOPS_SECRET_DIR        existing local secret directory; prepare new material
+                             in an absolute owner-private path outside the checkout
+                             (legacy default: secrets/ in repo root)
+  ATLASOPS_KIND_CLUSTER_NAME  Kind cluster name (default: atlasops-local)
+  ATLASOPS_VLLM_BASE          explicit OpenAI-compatible inference URL
+  ATLASOPS_AGENT_MODEL        exact model identifier served at VLLM_BASE
+  ATLASOPS_OPERATOR_ID  configured principal allowed to decide actions
 
 Requirements:
   docker, kind, kubectl, helm, python3/python
@@ -138,7 +144,13 @@ validate_prerequisites() {
 
   # Verify required files exist
   [[ -f "$KIND_CONFIG" ]] || fail "Kind config missing: $KIND_CONFIG"
-  [[ -f "$COORDINATOR_MANIFEST" ]] || fail "Coordinator manifest missing: $COORDINATOR_MANIFEST"
+  [[ -f "$COORDINATOR_TEMPLATE" ]] || fail "Coordinator manifest missing: $COORDINATOR_TEMPLATE"
+  [[ -f "$APPLICATION_TEMPLATE" ]] || fail "Argo CD Application manifest missing: $APPLICATION_TEMPLATE"
+  [[ -f "$PLATFORM_MANIFEST" ]] || fail "Argo CD platform manifest missing: $PLATFORM_MANIFEST"
+  [[ -f "$ADMISSION_MANIFEST" ]] || fail "Operational admission manifest missing: $ADMISSION_MANIFEST"
+  [[ -f "$PLATFORM_RENDERER" ]] || fail "Platform renderer missing: $PLATFORM_RENDERER"
+  [[ -f "${SCRIPT_DIR}/otel-collector.yaml" ]] || fail "OpenTelemetry Collector manifest missing."
+  [[ -f "${SCRIPT_DIR}/grafana-dashboard.yaml" ]] || fail "Grafana dashboard manifest missing."
   [[ -f "$ATLASOPS_PROMETHEUS_RULES" ]] || fail "Prometheus rules missing: $ATLASOPS_PROMETHEUS_RULES"
 
   echo "PREFLIGHT: all required commands and files verified."
@@ -148,9 +160,17 @@ validate_prerequisites() {
 
 validate_local_secrets() {
   local secret_dir="$ATLASOPS_SECRET_DIR"
-  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Run: $PYTHON_BIN scripts/generate_runtime_secrets.py"
+  [[ -d "$secret_dir" ]] || fail "Local secret directory '$secret_dir' not found. Set an absolute owner-private ATLASOPS_SECRET_DIR outside the checkout, then run: \"$PYTHON_BIN\" -B -m scripts.generate_runtime_secrets --output-dir \"\$ATLASOPS_SECRET_DIR\""
 
-  local -a req_files=("atlasops-audit-secret.secret" "alertmanager-webhook-secret.secret" "atlasops-api-key.secret" "argocd-user.secret" "argocd-pass.secret")
+  local -a req_files=(
+    "atlasops-audit-secret.secret"
+    "alertmanager-webhook-secret.secret"
+    "atlasops-api-key.secret"
+    "argocd-user.secret"
+    "argocd-pass.secret"
+    "grafana-admin-user.secret"
+    "grafana-admin-password.secret"
+  )
   local f full_path content
   for f in "${req_files[@]}"; do
     full_path="$secret_dir/$f"
@@ -169,21 +189,52 @@ validate_local_secrets() {
   echo "LOCAL SECRETS: verified required local secret files in '$secret_dir'."
 }
 
+validate_platform_configuration() {
+  [[ -n "${ATLASOPS_VLLM_BASE:-}" ]] || fail "ATLASOPS_VLLM_BASE must be set explicitly for --apply."
+  [[ -n "${ATLASOPS_AGENT_MODEL:-}" ]] || fail "ATLASOPS_AGENT_MODEL must be set explicitly for --apply."
+  [[ -n "${ATLASOPS_OPERATOR_ID:-}" ]] || fail "ATLASOPS_OPERATOR_ID must be set explicitly for --apply."
+
+  local status
+  status="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
+  [[ -z "$status" ]] || fail "Commit the current source tree before --apply so image and Argo revisions match."
+}
+
+render_platform_manifests() {
+  RENDERED_MANIFEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/atlasops-platform.XXXXXX")"
+  "$PYTHON_BIN" "$PLATFORM_RENDERER" render \
+    --source-sha "$SOURCE_SHA" \
+    --vllm-base "$ATLASOPS_VLLM_BASE" \
+    --agent-model "$ATLASOPS_AGENT_MODEL" \
+    --operator-identity "$ATLASOPS_OPERATOR_ID" \
+    --output-dir "$RENDERED_MANIFEST_DIR"
+}
+
 # ==============================================================================
 # Kind cluster management
 # ==============================================================================
 ensure_kind_cluster() {
-  if kind get clusters 2>/dev/null | grep -Fxq "$KIND_CLUSTER_NAME"; then
-    echo "KIND: cluster '$KIND_CLUSTER_NAME' already exists. Reusing."
-    # Verify kubectl can reach the cluster
-    kubectl_local cluster-info >/dev/null 2>&1 || fail "Kind cluster exists but is unreachable."
-  else
+  local inspect_status=0 inspect_output
+  inspect_output="$("$PYTHON_BIN" "$PLATFORM_RENDERER" inspect-kind-cluster \
+    --cluster-name "$KIND_CLUSTER_NAME" \
+    --kube-context "$KUBE_CONTEXT" 2>&1)" || inspect_status=$?
+
+  if [[ "$inspect_status" -eq 3 ]]; then
     echo "KIND: creating cluster '$KIND_CLUSTER_NAME' from $KIND_CONFIG..."
     kind create cluster --name "$KIND_CLUSTER_NAME" --config "$KIND_CONFIG" --wait 120s
     echo "KIND: cluster '$KIND_CLUSTER_NAME' created successfully."
+    inspect_status=0
+    inspect_output="$("$PYTHON_BIN" "$PLATFORM_RENDERER" inspect-kind-cluster \
+      --cluster-name "$KIND_CLUSTER_NAME" \
+      --kube-context "$KUBE_CONTEXT" 2>&1)" || inspect_status=$?
+    [[ "$inspect_status" -eq 0 ]] || fail "New Kind cluster failed ownership, mapping, or namespace verification: $inspect_output"
+  elif [[ "$inspect_status" -eq 0 ]]; then
+    echo "KIND: cluster '$KIND_CLUSTER_NAME' already exists. Reusing after read-only ownership checks."
+  else
+    fail "Could not safely reuse Kind cluster '$KIND_CLUSTER_NAME': $inspect_output"
   fi
+  echo "$inspect_output"
+  kubectl_local cluster-info >/dev/null 2>&1 || fail "Kind cluster exists but is unreachable."
   echo "KIND: context is '$KUBE_CONTEXT'."
-  kubectl_local cluster-info
 }
 
 # ==============================================================================
@@ -191,11 +242,18 @@ ensure_kind_cluster() {
 # ==============================================================================
 ensure_namespaces() {
   local ns
-  local -a namespaces=("default" "monitoring" "jaeger" "argocd" "chaos-mesh")
+  local -a namespaces=("default" "monitoring" "jaeger" "argocd" "chaos-mesh" "$BOUTIQUE_NAMESPACE")
   for ns in "${namespaces[@]}"; do
     kubectl_local create namespace "$ns" --dry-run=client -o yaml | kubectl_local apply -f -
   done
   echo "NAMESPACES: required namespaces verified."
+}
+
+retire_legacy_direct_deployment_mutation_rbac() {
+  kubectl_local delete rolebinding atlasops-coordinator-remediation \
+    --namespace "$BOUTIQUE_NAMESPACE" --ignore-not-found=true
+  kubectl_local delete role atlasops-coordinator-remediation \
+    --namespace "$BOUTIQUE_NAMESPACE" --ignore-not-found=true
 }
 
 # ==============================================================================
@@ -231,22 +289,21 @@ apply_runtime_secrets() {
     --from-file="alertmanager-webhook-secret=$secret_dir/alertmanager-webhook-secret.secret" \
     --dry-run=client -o yaml | kubectl_local apply -f -
 
+  kubectl_local create secret generic atlasops-grafana-admin \
+    --namespace=monitoring \
+    --from-file="admin-user=$secret_dir/grafana-admin-user.secret" \
+    --from-file="admin-password=$secret_dir/grafana-admin-password.secret" \
+    --dry-run=client -o yaml | kubectl_local apply -f -
+
   echo "SECRETS: applied runtime secrets from local material to context '$KUBE_CONTEXT'."
 }
 
-# ==============================================================================
-# Online Boutique deployment
-# ==============================================================================
-deploy_online_boutique() {
-  echo "ONLINE BOUTIQUE: deploying $BOUTIQUE_RELEASE at commit $BOUTIQUE_COMMIT..."
-  kubectl_local apply -f "$BOUTIQUE_MANIFEST"
-
-  local deployment
-  for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do
-    echo "ONLINE BOUTIQUE: waiting for deployment/$deployment..."
-    kubectl_local rollout status "deployment/$deployment" --namespace=default --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
-  done
-  echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} deployments are Available."
+install_local_path_provisioner() {
+  echo "STORAGE: installing local-path-provisioner $LOCAL_PATH_PROVISIONER_VERSION..."
+  kubectl_local apply -f "$LOCAL_PATH_PROVISIONER_MANIFEST"
+  kubectl_local rollout status deployment/local-path-provisioner \
+    --namespace=local-path-storage --timeout=5m
+  echo "STORAGE: local-path provisioner is ready for the runtime-data PVC."
 }
 
 # ==============================================================================
@@ -263,7 +320,8 @@ deploy_prometheus() {
     --values "${SCRIPT_DIR}/values/prometheus-local.yaml" \
     --wait --timeout=10m
 
-  kubectl_local apply -f "$ATLASOPS_PROMETHEUS_RULES"
+  kubectl_local apply -f "${RENDERED_MANIFEST_DIR}/atlasops-prometheus-rules.yaml"
+  kubectl_local apply -f "${SCRIPT_DIR}/grafana-dashboard.yaml"
   echo "PROMETHEUS: kube-prometheus-stack deployed with local low-resource profile."
 }
 
@@ -279,6 +337,36 @@ deploy_jaeger() {
     --wait --timeout=10m
 
   echo "JAEGER: all-in-one deployed with in-memory storage."
+}
+
+deploy_otel_collector() {
+  echo "OTEL: deploying the pinned trace collector and ServiceMonitor..."
+  kubectl_local apply -f "${SCRIPT_DIR}/otel-collector.yaml"
+  kubectl_local rollout status deployment/atlasops-otel-collector \
+    --namespace monitoring --timeout=5m
+  echo "OTEL: collector is ready. Span-derived metrics remain cluster-private."
+}
+
+install_operational_admission_policy() {
+  echo "ARGO CD: installing the coordinator rollback admission policy..."
+  kubectl_local apply -f "$ADMISSION_MANIFEST" --selector=atlasops.local/admission-stage=policy
+  local policy_generation
+  policy_generation="$(kubectl_local get validatingadmissionpolicy atlasops-coordinator-rollback-only \
+    --output=jsonpath='{.metadata.generation}')"
+  [[ "$policy_generation" =~ ^[1-9][0-9]*$ ]] || fail "Admission policy generation is unavailable."
+  kubectl_local wait --for=jsonpath='{.status.observedGeneration}'="$policy_generation" \
+    validatingadmissionpolicy/atlasops-coordinator-rollback-only \
+    --timeout=120s
+
+  local policy_status
+  policy_status="$(kubectl_local get validatingadmissionpolicy atlasops-coordinator-rollback-only -o json)" \
+    || fail "Could not verify the coordinator admission policy status."
+  printf '%s\n' "$policy_status" | "$PYTHON_BIN" "$PLATFORM_RENDERER" check-admission-policy \
+    || fail "Coordinator admission policy has stale or invalid type-check status."
+  echo "typeChecking.expressionWarnings is empty for the current policy generation."
+
+  kubectl_local apply -f "$ADMISSION_MANIFEST" --selector=atlasops.local/admission-stage=binding
+  echo "ARGO CD: fail-closed coordinator admission policy is type checked and bound."
 }
 
 deploy_argocd() {
@@ -312,6 +400,8 @@ with open(sys.argv[2], "w", encoding="utf-8") as f:
     --wait --timeout=10m
 
   rm -f -- "$argo_overlay"
+  install_operational_admission_policy
+  kubectl_local apply -f "$PLATFORM_MANIFEST"
   echo "ARGO CD: deployed with dedicated atlasops account and bcrypt password verifier."
 }
 
@@ -329,25 +419,52 @@ deploy_chaos_mesh() {
   echo "CHAOS MESH: controllers and CRDs deployed. No experiments injected."
 }
 
+deploy_boutique_application() {
+  local existing_application
+  existing_application="$(kubectl_local get application "$BOUTIQUE_APPLICATION" \
+    --namespace argocd --ignore-not-found -o json)"
+
+  if [[ -z "$existing_application" ]]; then
+    echo "ARGO CD: creating the pinned $BOUTIQUE_APPLICATION Application at $SOURCE_SHA..."
+    kubectl_local apply -f "${RENDERED_MANIFEST_DIR}/argocd-application.yaml"
+  else
+    echo "$existing_application" | "$PYTHON_BIN" "$PLATFORM_RENDERER" \
+      check-application --source-sha "$SOURCE_SHA"
+    echo "ARGO CD: retaining the existing $BOUTIQUE_APPLICATION Application revision."
+  fi
+
+  kubectl_local wait --for=jsonpath='{.status.sync.status}'=Synced \
+    "application/${BOUTIQUE_APPLICATION}" --namespace argocd \
+    --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
+
+  local deployment
+  for deployment in "${BOUTIQUE_DEPLOYMENTS[@]}"; do
+    echo "ONLINE BOUTIQUE: waiting for Argo-owned deployment/$deployment..."
+    kubectl_local rollout status "deployment/$deployment" \
+      --namespace "$BOUTIQUE_NAMESPACE" --timeout="$BOUTIQUE_ROLLOUT_TIMEOUT"
+  done
+  echo "ONLINE BOUTIQUE: all ${#BOUTIQUE_DEPLOYMENTS[@]} Argo-owned deployments are Available."
+}
+
 # ==============================================================================
 # Coordinator deployment
 # ==============================================================================
 load_coordinator_image() {
-  if docker image inspect "$COORDINATOR_IMAGE" >/dev/null 2>&1; then
-    echo "COORDINATOR IMAGE: '$COORDINATOR_IMAGE' found locally."
-  else
-    echo "COORDINATOR IMAGE: building '$COORDINATOR_IMAGE' from Dockerfile.coordinator..."
-    docker build -t "$COORDINATOR_IMAGE" -f "${REPO_ROOT}/Dockerfile.coordinator" "$REPO_ROOT"
-  fi
+  echo "ATLASOPS IMAGE: building '$COORDINATOR_IMAGE' from the current source..."
+  docker build \
+    --build-arg "ATLASOPS_SOURCE_SHA=${SOURCE_SHA}" \
+    --tag "$COORDINATOR_IMAGE" \
+    --file "${REPO_ROOT}/Dockerfile" \
+    "$REPO_ROOT"
 
-  echo "COORDINATOR IMAGE: loading into Kind cluster '$KIND_CLUSTER_NAME'..."
+  echo "ATLASOPS IMAGE: loading into Kind cluster '$KIND_CLUSTER_NAME'..."
   kind load docker-image "$COORDINATOR_IMAGE" --name "$KIND_CLUSTER_NAME"
-  echo "COORDINATOR IMAGE: loaded into Kind. No registry push required."
+  echo "ATLASOPS IMAGE: loaded into Kind. No registry push required."
 }
 
 deploy_coordinator() {
   echo "COORDINATOR: applying local manifest..."
-  kubectl_local apply -f "$COORDINATOR_MANIFEST"
+  kubectl_local apply -f "${RENDERED_MANIFEST_DIR}/coordinator-local.yaml"
   echo "COORDINATOR: waiting for rollout..."
   kubectl_local rollout status deployment/atlasops-coordinator --namespace=default --timeout="$COORDINATOR_ROLLOUT_TIMEOUT"
   echo "COORDINATOR: deployed and available."
@@ -357,6 +474,7 @@ deploy_coordinator() {
 # Main execution
 # ==============================================================================
 main() {
+  trap 'if [[ -n "$RENDERED_MANIFEST_DIR" && -d "$RENDERED_MANIFEST_DIR" ]]; then rm -rf -- "$RENDERED_MANIFEST_DIR"; fi' EXIT
   parse_arguments "$@"
   validate_prerequisites
 
@@ -365,12 +483,13 @@ main() {
     echo "=== AtlasOps Local Preflight Summary ==="
     echo "Kind cluster name:     $KIND_CLUSTER_NAME"
     echo "Kubectl context:       $KUBE_CONTEXT"
-    echo "Coordinator image:     $COORDINATOR_IMAGE"
+    echo "Integrated image:      $COORDINATOR_IMAGE"
     echo "Online Boutique:       $BOUTIQUE_RELEASE (commit $BOUTIQUE_COMMIT)"
     echo "Prometheus chart:      $PROMETHEUS_CHART_VERSION"
     echo "Jaeger chart:          $JAEGER_CHART_VERSION"
     echo "Argo CD chart:         $ARGOCD_CHART_VERSION"
     echo "Chaos Mesh chart:      $CHAOS_MESH_CHART_VERSION"
+    echo "Local-path provisioner:$LOCAL_PATH_PROVISIONER_VERSION"
     echo "Secret directory:      $ATLASOPS_SECRET_DIR"
     echo "GCP dependency:        NONE"
     echo "External cost:         \$0"
@@ -384,37 +503,45 @@ main() {
   fi
 
   # --apply mode
-  echo "APPLY: creating local Kind environment with zero external-service cost."
+  echo "APPLY: deploying the integrated AtlasOps platform to '$KUBE_CONTEXT'."
 
+  validate_platform_configuration
+  render_platform_manifests
   validate_local_secrets
   ensure_kind_cluster
   ensure_namespaces
+  retire_legacy_direct_deployment_mutation_rbac
   apply_runtime_secrets
 
-  deploy_online_boutique
+  install_local_path_provisioner
   deploy_prometheus
   deploy_jaeger
   deploy_argocd
   deploy_chaos_mesh
+  deploy_otel_collector
 
   load_coordinator_image
   deploy_coordinator
+  deploy_boutique_application
 
   cat <<EOF
 
 === ATLASOPS LOCAL ENVIRONMENT READY ===
 Cluster:             $KIND_CLUSTER_NAME
 Context:             $KUBE_CONTEXT
+Source commit:       $SOURCE_SHA
 GCP dependency:      NONE
 External cost:       \$0
 
 Safe local access:
-  kubectl --context=$KUBE_CONTEXT port-forward -n default svc/frontend 8080:80
-  kubectl --context=$KUBE_CONTEXT port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
-  kubectl --context=$KUBE_CONTEXT port-forward -n monitoring svc/prometheus-kube-prometheus-alertmanager 9093:9093
-  kubectl --context=$KUBE_CONTEXT port-forward -n jaeger svc/jaeger-query 16686:16686
-  kubectl --context=$KUBE_CONTEXT port-forward -n argocd svc/argocd-server 8443:80
-  kubectl --context=$KUBE_CONTEXT port-forward -n default svc/atlasops-coordinator-svc 9099:9099
+  http://127.0.0.1:8080 (Online Boutique through loopback-only Kind mapping)
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n monitoring svc/prometheus-grafana 3000:80
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n monitoring svc/prometheus-kube-prometheus-alertmanager 9093:9093
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n jaeger svc/jaeger 16686:16686
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n argocd svc/argocd-server 8443:80
+  kubectl --context=$KUBE_CONTEXT port-forward --address=127.0.0.1 -n default svc/atlasops-coordinator-svc 9099:9099
+Collector OTLP and metrics endpoints stay inside the cluster. Jaeger stores up to 5000 traces in memory and loses them when its Pod is replaced.
 =========================================
 EOF
 }

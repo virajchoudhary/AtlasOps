@@ -1,0 +1,26 @@
+# Controlled, safe, sustained fault for the end-to-end pipeline test.
+#
+# pod-failure (not pod-kill): a single kill recovers in seconds and would never
+# hold `available < spec` for the rule's 2m window. pod-failure keeps the pod
+# unschedulable for `duration`, so the alert fires and stays firing long enough
+# for the agents to respond.
+#
+# emailservice is chosen because nothing in the storefront's render path depends
+# on it, and the 15m duration is an upper bound: if the agents never act, the
+# fault clears itself.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: controlled-emailservice-failure
+  namespace: chaos-mesh
+  labels:
+    scenario: controlled-mac-20261029
+    tier: single_fault
+spec:
+  action: pod-failure
+  mode: all
+  duration: 45m
+  selector:
+    namespaces: [default]
+    labelSelectors:
+      app: emailservice

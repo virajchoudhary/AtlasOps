@@ -66,6 +66,25 @@ invalid records, redirects, and unexplained partial appends fail startup without
 adopting or deleting the data. Preserve the directory for diagnosis.
 Resume requires the existing writer-lock file and never recreates a missing lock.
 
+The container entrypoint selects the final `--workdir`, including explicit
+overrides, before checking its ownership marker. It resumes only that owned
+directory. Marker validation and writer locking remain mandatory.
+A nonempty unmarked directory or invalid marker still fails startup without
+adopting or deleting its contents. Ordinary CLI runs still require explicit
+`--resume`; the container wrapper selects it for an existing owned workdir.
+
+With a separately authorized container build, the rule-only command is:
+
+```bash
+docker run --rm -p 127.0.0.1:8790:8790 atlasops-buglab:local --agents rules
+```
+
+Explicit process commands remain supported. The historical Mac runbooks keep
+their as-run commands. Follow the
+[current Mac reconciliation](../../docs/project/ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md)
+and [local runtime guide](../../docs/project/BUG_LAB_LOCAL_RUNTIME.md)
+for the maintained container command contract.
+
 `GET /health` and `/health/ready` return 200 only after backend selection,
 workspace recovery, and monitor startup. They return 503 before startup, after
 shutdown, or after an evidence-write failure. `/health/live` reports that the

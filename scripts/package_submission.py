@@ -253,6 +253,30 @@ def _is_frontend_source_or_asset(relative_path: str) -> bool:
     return path.suffix.casefold() in allowed_suffixes
 
 
+def _matches_tracked_pattern(relative_path: str, pattern: str) -> bool:
+    """Match path components with ``**`` spanning zero or more components."""
+    path_parts = PurePosixPath(relative_path).parts
+    pattern_parts = PurePosixPath(pattern).parts
+    if "**" not in pattern_parts:
+        return PurePosixPath(relative_path).match(pattern)
+
+    def matches(path_index: int, pattern_index: int) -> bool:
+        if pattern_index == len(pattern_parts):
+            return path_index == len(path_parts)
+        if pattern_parts[pattern_index] == "**":
+            return any(
+                matches(skipped_path_index, pattern_index + 1)
+                for skipped_path_index in range(path_index, len(path_parts) + 1)
+            )
+        return (
+            path_index < len(path_parts)
+            and PurePosixPath(path_parts[path_index]).match(pattern_parts[pattern_index])
+            and matches(path_index + 1, pattern_index + 1)
+        )
+
+    return matches(0, 0)
+
+
 def _matching_tracked_files(
     repo_root: Path,
     patterns: list[str],
@@ -279,7 +303,7 @@ def _matching_tracked_files(
         )
         selected_by_pattern = not selected_by_frontend and any(
             ("/" in pattern or "/" not in relative_path)
-            and PurePosixPath(relative_path).match(pattern)
+            and _matches_tracked_pattern(relative_path, pattern)
             for pattern in patterns
         )
         if not selected_by_frontend and not selected_by_pattern:
@@ -321,7 +345,7 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         ".dockerignore",
         ".gitignore",
         ".gitattributes",
-        ".github/workflows/ci.yml",
+        ".github/workflows/*.yml",
         "BENCHMARKS.md",
         "BLOG.md",
         "Makefile",
@@ -335,7 +359,10 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "JUDGES_START_HERE.md",
         "app.py",
         "Dockerfile",
+        "Dockerfile.buglab",
         "Dockerfile.coordinator",
+        "docker/buglab-entrypoint.sh",
+        "infra/**/*",
         "ui_read_model.py",
         "demo/read_api.py",
         "demo/rehearsal.py",
@@ -386,6 +413,11 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "docs/project/G4_PROTOCOL_V35_CAUSAL_EVIDENCE.md",
         "docs/project/G4_PROTOCOL_V36_SETTLING_DEADLINE.md",
         "docs/project/IMPLEMENTATION_STATUS.md",
+        "docs/project/INFRASTRUCTURE_CONTRACT.md",
+        "docs/project/BUG_LAB_LOCAL_RUNTIME.md",
+        "docs/project/ATLASOPS_MAC_RUNTIME_ACCEPTANCE_V1.md",
+        "docs/project/ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md",
+        "artifacts/evidence/atlasops-mac-runtime-v1/*",
         "docs/project/CODEBASE_CLEANUP_AUDIT_20261001.md",
         "docs/project/DYNAMIC_ADVERSARIAL_PROPOSAL_CONTRACT.md",
         "docs/project/G9_PROTOCOL_STANDALONE_P1_APPROVAL.md",
@@ -564,6 +596,8 @@ def collect_submission_assets() -> dict[str, dict[str, Any]]:
         "scripts/smoke-e2e-local.ps1",
         "scripts/generate_training_plots.py",
         "scripts/package_submission.py",
+        "scripts/platform_ci.py",
+        "scripts/verify_platform_infrastructure.py",
         "scripts/check_submission_links.py",
         "scripts/release_gate.py",
         "scripts/reload_grpo_controlled.py",

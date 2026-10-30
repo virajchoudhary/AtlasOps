@@ -1,0 +1,283 @@
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9099 (Press CTRL+C to quit)
+2026-10-29 06:30:45,570 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,009 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,041 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,063 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:30:46,094 [INFO] [inc-1793255445-22b4fb] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,813 [INFO] [inc-1793255446-4b8d4f] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,912 [INFO] [inc-1793255446-2040f4] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:30:46,968 [INFO] [inc-1793255446-708bc8] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:31:12,479 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:31:26,921 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58638 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,021 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58640 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,027 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58656 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:27,028 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:58654 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:31:33,205 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:31:52,994 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:32:05,604 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:32:46,527 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:33:24,737 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:34:02,582 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:34:44,419 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:36:05,090 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:37:28,058 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:38:47,894 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:34222 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:38:47,937 [INFO] received alertmanager webhook: 0 firing alerts
+INFO:     10.244.0.26:34228 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     10.244.0.26:34246 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     10.244.0.26:34244 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:38:47,944 [INFO] received alertmanager webhook: 0 firing alerts
+2026-10-29 06:38:47,951 [INFO] received alertmanager webhook: 0 firing alerts
+2026-10-29 06:39:14,463 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:41:33,308 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:42:01,339 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:42:31,245 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:43:06,311 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:43:44,302 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:44:47,964 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:45:53,431 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:46:54,804 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:48:00,482 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:48:29,190 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:48:55,919 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:48:55,927 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:49:18,268 [INFO] HTTP Request: POST http://host.docker.internal:11434/v1/chat/completions "HTTP/1.1 200 OK"
+2026-10-29 06:49:18,631 [WARNING] HF transient ConnectTimeout (remediation/turn-2); retry 1/2 after 1.5s
+2026-10-29 06:49:27,964 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:49:28,292 [INFO] [inc-1793256567-239fa3] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:49:28,497 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:49:28,554 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:49:28,574 [INFO] received alertmanager webhook: 1 firing alerts
+2026-10-29 06:49:28,614 [INFO] [inc-1793256568-9795b5] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:49:28,618 [ERROR] incident handler failed for inc-1793256568-9795b5; attempted occurrences will not be replayed
+Traceback (most recent call last):
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+2026-10-29 06:49:29,106 [INFO] [inc-1793256568-e7698b] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:49:29,114 [ERROR] incident handler failed for inc-1793256568-e7698b; attempted occurrences will not be replayed
+Traceback (most recent call last):
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+2026-10-29 06:49:29,142 [INFO] [inc-1793256568-c18d53] handling alert: AtlasOpsOnlineBoutiqueDeploymentUnavailable
+2026-10-29 06:49:29,147 [ERROR] incident handler failed for inc-1793256568-c18d53; attempted occurrences will not be replayed
+Traceback (most recent call last):
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+INFO:     10.244.0.26:35860 - "POST /webhook HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 3139, in webhook
+    result = await submission.wait()
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 41, in wait
+    return await asyncio.shield(self.completion)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+INFO:     10.244.0.26:35842 - "POST /webhook HTTP/1.1" 500 Internal Server Error
+INFO:     10.244.0.26:35844 - "POST /webhook HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 3139, in webhook
+    result = await submission.wait()
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 41, in wait
+    return await asyncio.shield(self.completion)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/protocols/http/h11_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 1281, in handle
+    await super().handle(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 280, in handle
+    await self.app(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/fastapi/routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 3139, in webhook
+    result = await submission.wait()
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 41, in wait
+    return await asyncio.shield(self.completion)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/incident_dispatch.py", line 285, in _drain
+    result = await pending.handler(pending.payload, **handler_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/agents/coordinator.py", line 2282, in handle_incident
+    circuit_breaker.start_incident()
+  File "/app/agents/circuit_breaker.py", line 42, in start_incident
+    raise CircuitBreakerTripped("Concurrent incident limit reached")
+agents.circuit_breaker.CircuitBreakerTripped: Concurrent incident limit reached
+2026-10-29 06:49:30,373 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:35862 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:49:30,393 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:35876 - "POST /webhook HTTP/1.1" 200 OK
+2026-10-29 06:49:30,399 [INFO] received alertmanager webhook: 1 firing alerts
+INFO:     10.244.0.26:35886 - "POST /webhook HTTP/1.1" 200 OK

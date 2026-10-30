@@ -1,0 +1,87 @@
+[15:10:00  T+  33s] alert=pending/critical n=1 [emailservice] | emailservice=0/1 | audit=? traj=0 | pending={"pending":[]}
+[15:10:27  T+  60s] alert=pending/critical n=1 [emailservice] | emailservice=0/1 | audit=? traj=0 | pending={"pending":[]}
+[15:10:53  T+  86s] alert=pending/critical n=2 [currencyservice,emailservice] | emailservice=0/1 | audit=? traj=0 | pending={"pending":[]}
+[15:11:19  T+ 112s] alert=pending/critical n=2 [currencyservice,emailservice] | emailservice=0/1 | audit=? traj=0 | pending={"pending":[]}
+[15:11:45  T+ 138s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=? traj=0 | pending={"pending":[]}
+[15:12:13  T+ 166s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=1 traj=0 | pending={"pending":[]}
+[15:12:40  T+ 193s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:13:12  T+ 225s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:13:41  T+ 254s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:14:09  T+ 282s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:14:36  T+ 309s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:15:07  T+ 340s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:15:34  T+ 367s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:16:02  T+ 395s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:16:31  T+ 424s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:17:04  T+ 457s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:17:32  T+ 485s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:18:14  T+ 527s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:18:45  T+ 558s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:19:16  T+ 589s] alert=firing/critical n=1 [emailservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:19:47  T+ 621s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:20:17  T+ 650s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:20:51  T+ 685s] alert=firing/critical n=3 [emailservice,paymentservice,productcatalogservice] | emailservice=0/1 | audit=9 traj=0 | pending={"pending":[]}
+[15:21:22  T+ 715s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=10 traj=0 | pending={"pending":[]}
+[15:21:52  T+ 745s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=10 traj=0 | pending={"pending":[]}
+[15:22:21  T+ 774s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=10 traj=0 | pending={"pending":[]}
+[15:22:54  T+ 807s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=10 traj=0 | pending={"pending":[]}
+[15:23:23  T+ 836s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=18 traj=0 | pending={"pending":[]}
+[15:23:54  T+ 867s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=18 traj=0 | pending={"pending":[]}
+[15:24:21  T+ 894s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=18 traj=0 | pending={"pending":[]}
+[15:24:49  T+ 922s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:25:16  T+ 949s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:25:43  T+ 976s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:26:10  T+1003s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:26:40  T+1033s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:27:07  T+1060s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:27:33  T+1086s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:28:00  T+1113s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:28:27  T+1140s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:28:53  T+1166s] alert=firing/critical n=3 [currencyservice,emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:29:19  T+1192s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:29:45  T+1218s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:30:11  T+1244s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:30:37  T+1270s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:31:03  T+1296s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:31:29  T+1322s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:31:55  T+1348s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:32:21  T+1374s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:32:47  T+1400s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:33:13  T+1426s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:33:39  T+1452s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=19 traj=0 | pending={"pending":[]}
+[15:34:05  T+1478s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:34:31  T+1504s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:34:58  T+1531s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:35:24  T+1557s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:35:50  T+1583s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:36:16  T+1609s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:36:42  T+1635s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:37:08  T+1661s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:37:34  T+1687s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:38:00  T+1713s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:38:26  T+1739s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:38:53  T+1766s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:39:18  T+1791s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:39:44  T+1817s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=27 traj=0 | pending={"pending":[]}
+[15:40:10  T+1843s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=28 traj=0 | pending={"pending":[{"incident_id":"inc-1793287273-f3f3d7","severity":"P1","summary":"P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: ['Review application logs for errors or warnings.', 'Check resource limits and requests for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288400.5297024,"decision":"pending","approved_by":"","reason":""}]}
+[15:40:10  T+1843s] >>> APPROVAL GATE ENGAGED <<<
+    incident_id : inc-1793287273-f3f3d7
+    severity    : P1
+    mode        : None
+    decision    : pending
+    expires_in  : None
+    action      : null
+[15:40:37  T+1870s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=28 traj=0 | pending={"pending":[{"incident_id":"inc-1793287273-f3f3d7","severity":"P1","summary":"P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: ['Review application logs for errors or warnings.', 'Check resource limits and requests for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288400.5297024,"decision":"pending","approved_by":"","reason":""}]}
+[15:41:02  T+1895s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=29 traj=0 | pending={"pending":[{"incident_id":"inc-1793287273-f3f3d7","severity":"P1","summary":"P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: ['Review application logs for errors or warnings.', 'Check resource limits and requests for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288400.5297024,"decision":"pending","approved_by":"","reason":""},{"incident_id":"inc-1793287482-5eec7b","severity":"P1","summary":"P1 incident; root cause: High restart counts in shippingservice and redis-cart pods suggest potential configuration or resource issues.; proposal: ['Review the resource requests and limits for the shippingservice and redis-cart pods.', 'Check the liveness and readiness probes for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288439.384301,"decision":"pending","approved_by":"","reason":""}]}
+[15:41:28  T+1921s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=29 traj=0 | pending={"pending":[{"incident_id":"inc-1793287273-f3f3d7","severity":"P1","summary":"P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: ['Review application logs for errors or warnings.', 'Check resource limits and requests for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288400.5297024,"decision":"pending","approved_by":"","reason":""},{"incident_id":"inc-1793287482-5eec7b","severity":"P1","summary":"P1 incident; root cause: High restart counts in shippingservice and redis-cart pods suggest potential configuration or resource issues.; proposal: ['Review the resource requests and limits for the shippingservice and redis-cart pods.', 'Check the liveness and readiness probes for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288439.384301,"decision":"pending","approved_by":"","reason":""}]}
+[15:41:53  T+1946s] alert=firing/critical n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=29 traj=0 | pending={"pending":[{"incident_id":"inc-1793287273-f3f3d7","severity":"P1","summary":"P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: ['Review application logs for errors or warnings.', 'Check resource limits and requests for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288400.5297024,"decision":"pending","approved_by":"","reason":""},{"incident_id":"inc-1793287482-5eec7b","severity":"P1","summary":"P1 incident; root cause: High restart counts in shippingservice and redis-cart pods suggest potential configuration or resource issues.; proposal: ['Review the resource requests and limits for the shippingservice and redis-cart pods.', 'Check the liveness and readiness probes for the shippingservice pod.']","token":"apr-REDACTED","created_at":1793288439.384301,"decision":"pending","approved_by":"","reason":""}]}
+
+[15:42:18  T+1971s] === approval-relevant audit records ===
+   records: 29
+   roles: {'coordinator': 3, 'triage': 24, 'remediation': 2}
+     remediation  approval_requested tool=                       approved_by='' policy='requires_approval'
+        P1 incident; root cause: High restart count in shippingservice pod due to potential application issues or resource constraints.; proposal: [
+     remediation  approval_requested tool=                       approved_by='' policy='requires_approval'
+        P1 incident; root cause: High restart counts in shippingservice and redis-cart pods suggest potential configuration or resource issues.; pro
+
+[15:42:18  T+1971s] done

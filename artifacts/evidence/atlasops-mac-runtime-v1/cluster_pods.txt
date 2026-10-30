@@ -1,0 +1,35 @@
+argocd               argocd-application-controller-0                          1/1   Running            7 (44m ago)       59d
+argocd               argocd-applicationset-controller-654bc57887-nlw4s        1/1   Running            7 (44m ago)       59d
+argocd               argocd-redis-6dcc9dc886-8r7mq                            1/1   Running            7 (44m ago)       59d
+argocd               argocd-repo-server-855d5fb89c-r8dbs                      0/1   CrashLoopBackOff   63 (107s ago)     59d
+argocd               argocd-server-5bccbfbf7b-ttt25                           1/1   Running            17 (2m58s ago)    59d
+chaos-mesh           chaos-controller-manager-79b74c8fd8-7vhqz                1/1   Running            19 (88s ago)      59d
+chaos-mesh           chaos-daemon-kjcjs                                       1/1   Running            7 (44m ago)       59d
+default              adservice-744d57df97-wwrbw                               0/1   CrashLoopBackOff   291 (3m34s ago)   45h
+default              atlasops-coordinator-777dbfddb7-qlfsg                    1/1   Running            0                 16m
+default              cartservice-585d7cc659-spr64                             1/1   Running            4 (44m ago)       55m
+default              checkoutservice-599994f489-qjktb                         0/1   CrashLoopBackOff   38 (5m4s ago)     59d
+default              curltest2                                                0/1   Completed          0                 59d
+default              currencyservice-7cf999dc8-7hm2p                          0/1   CrashLoopBackOff   211 (71s ago)     45h
+default              emailservice-57cd98579b-bqtcj                            0/1   CrashLoopBackOff   26 (104s ago)     7d13h
+default              frontend-5554bb65b9-5qtfd                                1/1   Running            12 (2m58s ago)    7d1h
+default              paymentservice-54555d986f-xlcn4                          0/1   CrashLoopBackOff   484 (15s ago)     59d
+default              productcatalogservice-75bf4b5b89-rvmt4                   1/1   Running            35 (2m58s ago)    59d
+default              recommendationservice-665c7b9698-z4h7b                   0/1   Running            28 (8s ago)       7d13h
+default              redis-cart-6fdc7894b7-wxdzw                              1/1   Running            8 (44m ago)       59d
+default              shippingservice-9945c5bbc-pvtxp                          1/1   Running            24 (6m21s ago)    59d
+jaeger               jaeger-56d9fbc6cd-hw2dn                                  1/1   Running            12 (44m ago)      59d
+kube-system          coredns-559f6c778d-rzvpw                                 1/1   Running            7 (44m ago)       59d
+kube-system          coredns-559f6c778d-t7bgq                                 1/1   Running            7 (44m ago)       59d
+kube-system          etcd-atlasops-local-control-plane                        1/1   Running            7 (44m ago)       59d
+kube-system          kindnet-jhk7q                                            1/1   Running            7 (44m ago)       59d
+kube-system          kube-apiserver-atlasops-local-control-plane              1/1   Running            11 (44m ago)      59d
+kube-system          kube-controller-manager-atlasops-local-control-plane     1/1   Running            30 (2m57s ago)    59d
+kube-system          kube-proxy-gl8vw                                         1/1   Running            7 (44m ago)       59d
+kube-system          kube-scheduler-atlasops-local-control-plane              1/1   Running            27 (2m51s ago)    59d
+kube-system          metrics-server-7c544f8996-q8mnn                          1/1   Running            23 (2m58s ago)    59d
+local-path-storage   local-path-provisioner-75f7fc7dc5-ffghn                  1/1   Running            10 (44m ago)      59d
+monitoring           alertmanager-prometheus-kube-prometheus-alertmanager-0   2/2   Running            14 (44m ago)      59d
+monitoring           prometheus-kube-prometheus-operator-6b76d785c7-8hshp     1/1   Running            18 (43m ago)      59d
+monitoring           prometheus-kube-state-metrics-5bf4dc49d8-vddpj           1/1   Running            3 (85s ago)       19m
+monitoring           prometheus-prometheus-kube-prometheus-prometheus-0       1/2   Running            22 (60s ago)      59d

@@ -1,0 +1,8 @@
+deployment.apps/prometheus-kube-prometheus-operator   1/1   1     1     59d
+deployment.apps/prometheus-kube-state-metrics         1/1   1     1     59d
+service/alertmanager-operated                     ClusterIP   None            <none>   9093/TCP,9094/TCP,9094/UDP   59d
+service/prometheus-kube-prometheus-alertmanager   ClusterIP   10.96.76.15     <none>   9093/TCP,8080/TCP            59d
+service/prometheus-kube-prometheus-operator       ClusterIP   10.96.152.215   <none>   8080/TCP                     59d
+service/prometheus-kube-prometheus-prometheus     ClusterIP   10.96.169.235   <none>   9090/TCP,8080/TCP            59d
+service/prometheus-kube-state-metrics             ClusterIP   10.96.24.118    <none>   8080/TCP                     59d
+service/prometheus-operated                       ClusterIP   None            <none>   9090/TCP                     59d

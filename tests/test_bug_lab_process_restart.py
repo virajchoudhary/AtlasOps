@@ -73,11 +73,57 @@ def _server(root, log_path, *, resume=False):
 def _incident(client, predicate):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        incident = client.get("/lab/api/state").json()["incident"]
+        try:
+            incident = client.get("/lab/api/state").json()["incident"]
+        except httpx.ReadTimeout:
+            incident = None
         if incident and predicate(incident):
             return incident
         time.sleep(0.05)
     pytest.fail("The product CLI did not reach the expected incident state")
+
+
+def test_incident_polling_retains_its_wait_after_a_transient_read_timeout(monkeypatch):
+    from types import SimpleNamespace
+
+    expected = {"status": "awaiting_approval"}
+    responses = iter([
+        httpx.ReadTimeout("temporary state read timeout"),
+        httpx.Response(200, json={"incident": expected}),
+    ])
+
+    def get(_path):
+        response = next(responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(time, "sleep", lambda _delay: None)
+    assert _incident(SimpleNamespace(get=get), lambda item: item == expected) == expected
+
+
+def test_incident_polling_read_timeouts_still_fail_at_the_existing_deadline(monkeypatch):
+    from types import SimpleNamespace
+
+    observed_times = iter([0.0, 0.0, 11.0])
+    monkeypatch.setattr(time, "monotonic", lambda: next(observed_times))
+    monkeypatch.setattr(time, "sleep", lambda _delay: None)
+
+    def get(_path):
+        raise httpx.ReadTimeout("state reads remain unavailable")
+
+    with pytest.raises(pytest.fail.Exception, match="did not reach the expected incident state"):
+        _incident(SimpleNamespace(get=get), lambda _item: True)
+
+
+def test_incident_polling_does_not_hide_a_stopped_server():
+    from types import SimpleNamespace
+
+    def get(_path):
+        raise httpx.ConnectError("the owned server stopped")
+
+    with pytest.raises(httpx.ConnectError, match="owned server stopped"):
+        _incident(SimpleNamespace(get=get), lambda _item: True)
 
 
 def test_real_process_crash_preserves_evidence_and_cannot_replay_approval(tmp_path):

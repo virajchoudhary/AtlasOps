@@ -1,0 +1,56 @@
+# T1 (unit tests) against merged main fafe1eb
+# host: Apple M4, macOS 24.6.0, arm64
+# branch: verify/atlasops-mac-runtime-20261029 at fafe1eb
+#         (= origin/main, merge of PR #240 "preserve restart evidence and verify local runtimes")
+
+RESULT: 200 passed, 1 skipped, 0 failed in 67.49s
+
+Files run (the bug lab set, including the five suites PR #240 added):
+  tests/test_bug_lab.py
+  tests/test_bug_lab_persistence.py          (new in #240)
+  tests/test_bug_lab_process_restart.py      (new in #240)
+  tests/test_bug_lab_runtime_lock.py         (new in #240)
+  tests/test_bug_lab_workspace_journal.py    (new in #240)
+  tests/test_bug_lab_standalone.py
+  tests/test_bug_lab_model_client.py
+  tests/test_bug_lab_startup_logging.py
+  tests/test_bug_lab_state_logging.py
+  tests/test_local_llm_proxy.py              (new in #240)
+
+## First run failed; the cause was the interpreter, not the code
+
+The first run used the repository venv at
+/Users/dhruvaambhaikar/Documents/AtlasOps/.venv and reported:
+
+  1 failed, 199 passed, 1 skipped in 84.75s
+  FAILED tests/test_bug_lab_runtime_lock.py::test_pip_require_hashes_rejects_an_unhashed_local_wheel
+
+That venv has no `pip` module. The test shells out to `python -m pip install
+--require-hashes ...` and asserts (1) a nonzero exit and (2) that the output
+mentions the hash requirement. Without pip, the subprocess exits 1 with
+"No module named pip": assertion 1 passes for the wrong reason and assertion 2
+fails at tests/test_bug_lab_runtime_lock.py:195.
+
+Reproduced directly with both interpreters:
+
+  venv without pip : returncode 1, stderr "No module named pip"
+                     assert1=True  assert2=False   -> test fails
+  venv with pip    : returncode 1, stderr "ERROR: Hashes are required in
+                     --require-hashes mode, but they are missing from some
+                     requirements..."
+                     assert1=True  assert2=True    -> test passes
+
+The clean rerun above used a fresh venv with pip and is the recorded result.
+
+## Minor finding for the owner of the shared application code
+
+`test_pip_require_hashes_rejects_an_unhashed_local_wheel` does not check that pip
+is importable before shelling out to it. On an interpreter without pip it fails
+with a confusing message, and its first assertion passes for an unrelated reason,
+so the test cannot distinguish "pip correctly refused an unhashed wheel" from
+"pip is not installed". Suggest skipping when `importlib.util.find_spec("pip")`
+is None, or asserting the hash message first. Not fixed here: shared application
+code belongs to the Windows agent per the split of ownership.
+
+This is a test-robustness observation. It is NOT a product defect and the
+supply-chain behaviour it checks is correct on this machine.

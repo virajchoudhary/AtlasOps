@@ -49,6 +49,22 @@ or promote any scientific gate.
 
 ## Application acceptance
 
+### October 30 platform and Mac reconciliation
+
+Protected main `ea797b002c8133d0ab67671c328101e16ebef7d1` includes PRs 242-246.
+PR [247](https://github.com/virajchoudhary/AtlasOps/pull/247) provides
+source-bound disposable platform acceptance. A passing deterministic fixture
+is NON_EMPIRICAL_SOFTWARE_FIXTURE, not a scientific result or Mac acceptance.
+The final exact-main CI, independent verdicts, and release archive are identified
+by the external final receipt, not predicted by this source document.
+
+The [Mac reconciliation](ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md) preserves
+all 35 raw PR #241 Mac records and the original report. PR #248 provides the
+maintained restart fix; the reconciliation adds the critical-severity regression.
+Audit-count and interpretation corrections remain separate from the as-run records.
+Superseded PRs are closed only after their accepted replacement is documented;
+branches and history remain. No historical experiment or formal gate status changes.
+
 The table combines evidence from separate software checkpoints. PR 207's suite
 totals are historical; PRs 209 through 214 have scoped acceptance evidence.
 

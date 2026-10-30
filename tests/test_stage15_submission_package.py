@@ -127,6 +127,30 @@ def _run_submission_package_cli(*arguments: str, cwd: Path = REPO_ROOT):
     )
 
 
+def _assert_historical_asset_matches(
+    revision: str,
+    path: str,
+    expected_sha256: str,
+    expected_size_bytes: int,
+    *,
+    cwd: Path = REPO_ROOT,
+) -> bytes:
+    snapshot_bytes = subprocess.check_output(
+        [
+            "git",
+            f"--attr-source={revision}",
+            "cat-file",
+            "--filters",
+            f"{revision}:{path}",
+        ],
+        cwd=cwd,
+    )
+    actual_sha = hashlib.sha256(snapshot_bytes).hexdigest()
+    assert actual_sha == expected_sha256, f"Checksum mismatch for {path}!"
+    assert len(snapshot_bytes) == expected_size_bytes, f"Size mismatch for {path}!"
+    return snapshot_bytes
+
+
 def test_submission_package_cli_requires_explicit_output_dir(tmp_path):
     result = _run_submission_package_cli(cwd=tmp_path)
 
@@ -826,6 +850,37 @@ class TestStage15SubmissionPackage:
         selected = _matching_tracked_files(repo_root, ["tests/test_*.py"])
         assert set(selected) == {"tests/test_tracked_asset.py"}
 
+    def test_infra_inventory_includes_immediate_and_deeply_nested_files(
+        self,
+        tmp_path,
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        expected = {
+            "infra/cluster.yaml",
+            "infra/providers/aws/cluster.yaml",
+        }
+        for relative_path in expected:
+            path = repo_root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"tracked infrastructure fixture\n")
+        subprocess.run(
+            ["git", "add", "--", *sorted(expected)],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+
+        selected = _matching_tracked_files(repo_root, ["infra/**/*"])
+
+        assert set(selected) == expected
+
     def test_recursive_frontend_assets_are_tracked_and_exclude_generated_paths(
         self,
         tmp_path,
@@ -1028,15 +1083,84 @@ class TestStage15SubmissionPackage:
     def test_stage13_raw_membership_parser_is_in_submission_inventory(self):
         assert "bench/episode_membership.py" in collect_submission_assets()
 
+    def test_historical_snapshot_assets_use_the_revision_attributes(self, tmp_path):
+        repo_root = tmp_path / "attribute-source-repo"
+        repo_root.mkdir()
+        subprocess.run(
+            ["git", "init", "--quiet"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        attributes = repo_root / ".gitattributes"
+        asset = repo_root / "snapshot.txt"
+        attributes.write_text("snapshot.txt text eol=crlf\n", encoding="utf-8")
+        asset.write_bytes(b"frozen bytes\n")
+
+        def commit(message: str) -> None:
+            subprocess.run(
+                ["git", "add", "--", ".gitattributes", "snapshot.txt"],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=AtlasOps test",
+                    "-c",
+                    "user.email=atlasops-test@example.invalid",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    message,
+                ],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+            )
+
+        commit("historical attributes")
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+        ).strip()
+        attributes.write_text("snapshot.txt text eol=lf\n", encoding="utf-8")
+        commit("new checkout attributes")
+
+        snapshot_bytes = subprocess.check_output(
+            ["git", "cat-file", "--filters", f"{revision}:snapshot.txt"],
+            cwd=repo_root,
+        )
+
+        assert snapshot_bytes == b"frozen bytes\n"
+        expected_bytes = b"frozen bytes\r\n"
+        assert _assert_historical_asset_matches(
+            revision,
+            "snapshot.txt",
+            hashlib.sha256(expected_bytes).hexdigest(),
+            len(expected_bytes),
+            cwd=repo_root,
+        ) == expected_bytes
+
+        corrupted_expected_bytes = b"corrupted bytes\r\n"
+        with pytest.raises(AssertionError, match="Checksum mismatch"):
+            _assert_historical_asset_matches(
+                revision,
+                "snapshot.txt",
+                hashlib.sha256(corrupted_expected_bytes).hexdigest(),
+                len(corrupted_expected_bytes),
+                cwd=repo_root,
+            )
+
     def test_checked_in_submission_manifest_integrity_and_asset_keys(self):
         # Keep the original package immutable; verify its own checkout revision.
         revision = "d0e6f4c063e6cc89b8929ce7232c9f9d8b68ccd4"
         manifest_path = Path("artifacts/SUBMISSION_MANIFEST.json")
         assert manifest_path.read_bytes() == subprocess.check_output(
             ["git", "show", f"{revision}:artifacts/SUBMISSION_MANIFEST.json"]
-        )
-        assert Path(".gitattributes").read_bytes() == subprocess.check_output(
-            ["git", "show", f"{revision}:.gitattributes"]
         )
         data = json.loads(
             manifest_path.read_text(encoding="utf-8")
@@ -1047,12 +1171,12 @@ class TestStage15SubmissionPackage:
         for path_str, meta in assets.items():
             p = Path(path_str)
             assert p.exists(), f"Tracked asset {path_str} does not exist!"
-            snapshot_bytes = subprocess.check_output(
-                ["git", "cat-file", "--filters", f"{revision}:{path_str}"]
+            _assert_historical_asset_matches(
+                revision,
+                path_str,
+                meta["sha256"],
+                meta["size_bytes"],
             )
-            actual_sha = hashlib.sha256(snapshot_bytes).hexdigest()
-            assert actual_sha == meta["sha256"], f"Checksum mismatch for {path_str}!"
-            assert len(snapshot_bytes) == meta["size_bytes"]
 
         current_assets = collect_submission_assets()
         assert assets.keys() <= current_assets.keys()

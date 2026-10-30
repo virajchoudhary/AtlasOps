@@ -1,0 +1,23 @@
+# Runtime-only override for this Mac's Kind cluster: turn Grafana on.
+# infra/local/values/prometheus-local.yaml disables it for a 4-CPU profile;
+# this VM now has 8 CPU / 12 GiB, so the stack can carry it. ClusterIP only —
+# reached by kubectl port-forward, never published to the LAN.
+grafana:
+  enabled: true
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/"
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false

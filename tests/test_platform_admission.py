@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from scripts import verify_platform_admission as admission
 from scripts import verify_platform_infrastructure as platform_verify
+
+
+def test_disposable_application_history_has_required_deployment_timestamp() -> None:
+    history = admission.application_seed()["status"]["history"]
+    assert history
+    for deployment in history:
+        timestamp = datetime.fromisoformat(deployment["deployedAt"].replace("Z", "+00:00"))
+        assert timestamp.tzinfo is not None
 
 
 def local_admission_documents():

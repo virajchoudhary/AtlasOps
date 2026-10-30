@@ -238,6 +238,57 @@ def test_owner_checked_recovery_uses_selected_python_and_local_secret_scopes(
         "secret material with spaces/atlasops-api-key.secret]"
         in coordinator
     )
+    assert "--from-file=llm-api-key=" not in coordinator
+
+
+def test_recovery_restores_optional_model_key_without_exposing_its_value(
+    tmp_path: Path,
+) -> None:
+    helper, verifier = _generate_recovery_script(tmp_path)
+    model_key = tmp_path / "supplied model credential.secret"
+    credential = "fixture-model-key-not-a-real-credential"
+    model_key.write_text(credential, encoding="utf-8")
+    generated = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(verifier.parent / "generate_runtime_secrets.py"),
+            "--output-dir",
+            str(helper.parent),
+            "--llm-api-key-file",
+            str(model_key),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    result = _run_recovery(helper, ["--context", "kind-atlasops-local"])
+
+    assert result.returncode == 0, result.stderr
+    coordinator = next(
+        line
+        for line in result.stderr.splitlines()
+        if "[atlasops-coordinator-secrets]" in line
+    )
+    assert "--from-file=llm-api-key=" in coordinator
+    assert "secret material with spaces/llm-api-key.secret]" in coordinator
+    assert credential not in generated.stdout + generated.stderr + result.stdout + result.stderr
+
+
+def test_recovery_rejects_an_empty_optional_model_key_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    helper, _verifier = _generate_recovery_script(tmp_path)
+    (helper.parent / "llm-api-key.secret").write_text("", encoding="utf-8")
+
+    result = _run_recovery(helper, ["--context", "kind-atlasops-local"])
+
+    assert result.returncode != 0
+    assert "Missing or empty optional model key" in result.stderr
+    assert "kubectl [" not in result.stderr
 
 
 @pytest.mark.parametrize("invalid_target", ["empty", "relative", "repository-local"])

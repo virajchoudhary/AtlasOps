@@ -56,6 +56,7 @@ jobs:
             tests/test_bug_lab_model_client.py \
             tests/test_bug_lab_runtime_lock.py \
             tests/test_bug_lab_standalone.py \
+            tests/test_bug_lab_entrypoint.py \
             tests/test_bug_lab_state_logging.py \
             tests/test_bug_lab_startup_logging.py \
             tests/test_bug_lab_persistence.py \
@@ -80,7 +81,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Build the unchanged Bug Lab image
+      - name: Build the Bug Lab image
         run: docker build --platform "${{ matrix.platform }}" --file Dockerfile.buglab --tag atlasops-buglab-runtime-ci .
 
       - name: Run rules-mode smoke with container networking disabled
@@ -117,14 +118,147 @@ jobs:
           print("Bug Lab rules-mode health and page/API smoke passed")
           PY
 
+      - name: Verify default entrypoint resumes a named volume
+        run: |
+          docker volume create atlasops-buglab-runtime-restart-data
+          docker run --detach --network none --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            --mount type=volume,source=atlasops-buglab-runtime-restart-data,target=/work \
+            --name atlasops-buglab-runtime-restart-ci \
+            atlasops-buglab-runtime-ci --agents rules --step-delay 0
+
+          docker exec --interactive atlasops-buglab-runtime-restart-ci python - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:8790"
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=1) as response:
+                      assert response.status == 200
+                      response.read()
+                  break
+              except urllib.error.URLError:
+                  time.sleep(0.2)
+          else:
+              raise RuntimeError("Default Bug Lab entrypoint readiness timed out")
+
+          for route in ("/", "/shop/", "/lab/api/state"):
+              with urllib.request.urlopen(base + route, timeout=3) as response:
+                  assert response.status == 200 and response.read(), route
+
+          request = urllib.request.Request(
+              base + "/lab/api/inject",
+              data=json.dumps({"bug": "truncated-data"}).encode(),
+              headers={"Content-Type": "application/json", "X-Bug-Lab": "1"},
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=3) as response:
+              assert response.status == 202
+              response.read()
+
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              with urllib.request.urlopen(base + "/lab/api/state", timeout=3) as response:
+                  incident = json.load(response)["incident"]
+              if incident and incident["status"] == "awaiting_approval":
+                  break
+              time.sleep(0.2)
+          else:
+              raise RuntimeError("Rules-mode incident did not reach approval")
+          print("Default entrypoint served the Bug Lab and persisted a pending incident")
+          PY
+
+          docker restart --time 10 atlasops-buglab-runtime-restart-ci
+
+          docker exec --interactive atlasops-buglab-runtime-restart-ci python - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:8790"
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(base + "/health", timeout=1) as response:
+                      assert response.status == 200
+                      response.read()
+                  break
+              except urllib.error.URLError:
+                  time.sleep(0.2)
+          else:
+              raise RuntimeError("Restarted Bug Lab entrypoint readiness timed out")
+
+          with urllib.request.urlopen(base + "/lab/api/evidence", timeout=3) as response:
+              records = [
+                  json.loads(line)
+                  for line in response.read().decode().splitlines()
+              ]
+          assert len(records) == 1, records
+          previous = records[0]
+          assert previous["status"] == "cancelled"
+          assert previous["verification"] is None
+          assert previous["resolved_by"] is None
+          assert previous["approval"]["digest"]
+
+          deadline = time.monotonic() + 30
+          while time.monotonic() < deadline:
+              with urllib.request.urlopen(base + "/lab/api/state", timeout=3) as response:
+                  current = json.load(response)["incident"]
+              if current and current["sequence"] == previous["sequence"] + 1:
+                  break
+              time.sleep(0.2)
+          else:
+              raise RuntimeError("Restart replayed or lost the prior incident sequence")
+
+          request = urllib.request.Request(
+              base + "/lab/api/approval",
+              data=json.dumps({
+                  "incident_id": previous["id"],
+                  "digest": previous["approval"]["digest"],
+                  "decision": "approve",
+              }).encode(),
+              headers={"Content-Type": "application/json", "X-Bug-Lab": "1"},
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as error:
+              assert error.code == 409
+          else:
+              raise AssertionError("Restarted Bug Lab accepted a stale approval")
+
+          print("Default entrypoint resumed the named volume with history intact")
+          PY
+
       - name: Show container logs on failure
         if: failure()
-        run: docker logs atlasops-buglab-runtime-ci
+        run: |
+          if docker container inspect atlasops-buglab-runtime-ci > /dev/null 2>&1
+          then
+            docker logs atlasops-buglab-runtime-ci
+          fi
+          if docker container inspect atlasops-buglab-runtime-restart-ci > /dev/null 2>&1
+          then
+            docker logs atlasops-buglab-runtime-restart-ci
+          fi
 
-      - name: Remove smoke container
+      - name: Remove smoke containers and data volume
         if: always()
         run: |
           if docker container inspect atlasops-buglab-runtime-ci > /dev/null 2>&1
           then
             docker container rm --force atlasops-buglab-runtime-ci
+          fi
+          if docker container inspect atlasops-buglab-runtime-restart-ci > /dev/null 2>&1
+          then
+            docker container rm --force atlasops-buglab-runtime-restart-ci
+          fi
+          if docker volume inspect atlasops-buglab-runtime-restart-data > /dev/null 2>&1
+          then
+            docker volume rm atlasops-buglab-runtime-restart-data
           fi

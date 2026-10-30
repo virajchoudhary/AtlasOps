@@ -33,6 +33,13 @@ establish GKE portability or final-device acceptance.
 See [the current implementation classification](IMPLEMENTATION_STATUS.md)
 and [the Mac reconciliation](ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md).
 
+The local Argo Redis image uses `docker.io/library/redis:8.6.4-alpine` at
+multi-platform index digest
+`sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763`.
+It is the same image index as the pinned chart's default mirror. The explicit
+registry replaces the mirror that returned HTTP 429 in preserved PR #247 CI.
+The Redis version, private access, and Helm readiness deadline do not change.
+
 ## Development GKE topology
 
 The reviewed academic/development baseline is a GKE **Standard**, **zonal**

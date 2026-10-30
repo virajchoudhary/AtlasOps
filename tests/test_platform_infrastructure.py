@@ -813,6 +813,17 @@ def test_jaeger_chart_values_match_the_pinned_v2_chart_and_keep_service_private(
     assert "svc/jaeger-query" not in setup
 
 
+def test_argocd_redis_uses_the_verified_official_multiarch_image() -> None:
+    values = yaml.safe_load((INFRA_LOCAL / "values" / "argocd-local.yaml").read_text())
+    image = values["redis"].get("image", {})
+
+    assert image.get("repository") == "docker.io/library/redis"
+    assert image.get("tag") == (
+        "8.6.4-alpine@sha256:"
+        "2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
+    )
+
+
 def test_grafana_secret_generation_preserves_existing_new_secret_files(tmp_path: Path) -> None:
     output_dir = tmp_path / "secrets"
     command = [

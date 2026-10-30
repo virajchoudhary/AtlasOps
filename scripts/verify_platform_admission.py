@@ -372,6 +372,7 @@ def application_seed() -> dict[str, Any]:
         "status": {
             "history": [
                 {
+                    "deployedAt": "2026-01-01T00:00:00Z",
                     "id": 1,
                     "revision": ROLLBACK_REVISION,
                     "source": {

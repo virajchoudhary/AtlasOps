@@ -238,6 +238,15 @@ for req in atlasops-audit-secret.secret alertmanager-webhook-secret.secret atlas
   fi
 done
 
+model_key_args=()
+if [[ -e "$SCRIPT_DIR/llm-api-key.secret" ]]; then
+  if [[ ! -f "$SCRIPT_DIR/llm-api-key.secret" || ! -s "$SCRIPT_DIR/llm-api-key.secret" ]]; then
+    echo "ERROR: Missing or empty optional model key: $SCRIPT_DIR/llm-api-key.secret" >&2
+    exit 1
+  fi
+  model_key_args+=("--from-file=llm-api-key=$SCRIPT_DIR/llm-api-key.secret")
+fi
+
 echo "RECOVERY: Applying secrets to target context '$TARGET_CONTEXT' from '$SCRIPT_DIR'..."
 
 kubectl --context="$TARGET_CONTEXT" create namespace default --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
@@ -250,6 +259,7 @@ kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-coordinator-s
   --from-file=atlasops-api-key="$SCRIPT_DIR/atlasops-api-key.secret" \\
   --from-file=argocd-user="$SCRIPT_DIR/argocd-user.secret" \\
   --from-file=argocd-pass="$SCRIPT_DIR/argocd-pass.secret" \\
+  "${model_key_args[@]}" \\
   --dry-run=client -o yaml | kubectl --context="$TARGET_CONTEXT" apply -f -
 
 kubectl --context="$TARGET_CONTEXT" create secret generic atlasops-alertmanager-webhook \\

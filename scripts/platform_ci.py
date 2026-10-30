@@ -3201,6 +3201,7 @@ class Runner:
             headers=self._operations_headers(),
             timeout=15,
             label="authenticated GET /api/operations",
+            max_bytes=MAX_EXECUTION_EXPORT_BYTES,
         )
         if status != 200 or not isinstance(payload, dict):
             raise PlatformCIError(f"authenticated operations route returned HTTP {status}")

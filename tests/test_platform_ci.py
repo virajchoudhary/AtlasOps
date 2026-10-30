@@ -3976,3 +3976,98 @@ def test_prometheus_rule_filters_the_http_inventory_before_its_size_limit(
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+def test_operations_inventory_preserves_large_authenticated_pending_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    import agents.coordinator as coordinator
+    from agents.approval import ApprovalGate
+    from agents.circuit_breaker import CircuitBreaker
+    from agents.execution_journal import get_execution_journal
+    from agents.operations_api import operations_router
+
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "1")
+    monkeypatch.setenv("ATLASOPS_OPERATOR_ID", OPERATOR_ID)
+    monkeypatch.setenv("ATLASOPS_SOURCE_SHA", SOURCE_SHA)
+    monkeypatch.setenv("ATLASOPS_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("ATLASOPS_AUDIT_SECRET", AUDIT_SECRET)
+    monkeypatch.setenv("ATLASOPS_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setattr(coordinator, "_RUNTIME_API_KEY", API_KEY)
+
+    gate = ApprovalGate(timeout_seconds=60)
+    breaker = CircuitBreaker()
+    prepared = _prepared_action()
+    pending = gate.request_action(
+        incident_id=INCIDENT_ID, severity="P1", action=prepared,
+    )
+    journal = get_execution_journal()
+    journal.begin(
+        INCIDENT_ID, EXECUTION_ID,
+        alert={"raw_observation": {
+            "kind": "List",
+            "items": [
+                {"kind": "Pod", "metadata": {
+                    "name": f"pod-{index}",
+                    "annotations": {"workload-details": "x" * 8_000},
+                }}
+                for index in range(13)
+            ],
+        }},
+        anchors=None,
+    )
+    journal.note(
+        EXECUTION_ID, phase="approval", event="approval_requested",
+        patch={"prepared_action": prepared, "action_digest": pending.action_digest},
+    )
+    app = FastAPI()
+    app.include_router(
+        operations_router(
+            gate=lambda: gate, breaker=lambda: breaker,
+            require_key=coordinator._require_runtime_api_key,
+        ),
+        prefix="/api",
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/operations", headers={"X-AtlasOps-Key": API_KEY})
+        assert response.status_code == 200
+        raw = response.content
+        expected = response.json()
+    assert platform_ci.MAX_EVIDENCE_TEXT < len(raw) < platform_ci.MAX_EXECUTION_EXPORT_BYTES
+
+    class InventoryHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.path == "/api/operations"
+            assert self.headers.get("X-AtlasOps-Key") == API_KEY
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), InventoryHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "inventory", env={})
+    runner._api_root = lambda: f"http://127.0.0.1:{server.server_port}"
+    runner._operations_headers = lambda: {"X-AtlasOps-Key": API_KEY}
+    try:
+        with pytest.raises(platform_ci.PlatformCIError, match="bounded evidence size"):
+            platform_ci.http_json(
+                runner._api_root() + "/api/operations",
+                headers={"X-AtlasOps-Key": API_KEY},
+            )
+        observed = runner._operations()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    assert observed == expected
+    assert observed["pending"][0]["action_digest"] == pending.action_digest
+    assert observed["pending"][0]["action"] == prepared
+    assert all(event["event"] != "mutation_started" for event in journal.read(EXECUTION_ID)["events"])

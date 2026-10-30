@@ -18,6 +18,7 @@ from agents.tools.chaos import (
     _chaos_activity_for_resource,
     _close_chaos_api_client,
     _new_chaos_api_client,
+    _request_kubernetes_object as _request,
 )
 from agents.tools.kubectl import _G9_KUBECONFIG_CONTEXT
 from agents.verifier import ONLINE_BOUTIQUE_SERVICES, OPERATIONAL_AVAILABILITY_ALERT
@@ -109,24 +110,6 @@ def _client(context: str | None):
         yield client
     finally:
         _close_chaos_api_client(client)
-
-
-def _request(client: Any, path: str, method: str = "GET", *, body: Any = None) -> Any:
-    headers = {"Accept": "application/json"}
-    if method == "PATCH":
-        headers["Content-Type"] = "application/json-patch+json"
-    elif method == "DELETE":
-        headers["Content-Type"] = "application/json"
-    response_options = (
-        {"response_types_map": {200: "object", 201: "object", 202: "object"}}
-        if "response_types_map" in inspect.signature(client.call_api).parameters
-        else {"response_type": "object"}
-    )
-    return client.call_api(
-        path, method, header_params=headers, body=body,
-        auth_settings=["BearerToken"], **response_options,
-        _return_http_data_only=True, _request_timeout=30,
-    )
 
 
 def _identity(

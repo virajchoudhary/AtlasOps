@@ -439,7 +439,6 @@ def test_bound_verifier_decodes_real_sdk_response_without_network(monkeypatch):
     from unittest.mock import Mock
 
     from kubernetes import client as kubernetes_client
-    from kubernetes.client.rest import RESTResponse
     from urllib3.response import HTTPResponse
 
     from agents.tools import chaos
@@ -450,13 +449,13 @@ def test_bound_verifier_decodes_real_sdk_response_without_network(monkeypatch):
         host="https://kubernetes.example.invalid",
     )
     configuration.api_key["authorization"] = "Bearer non-secret-unit-key"
-    response = RESTResponse(HTTPResponse(
+    response = HTTPResponse(
         body=json.dumps(backends.deployment).encode(), status=200,
         headers={"Content-Type": "application/json"},
-    ))
+    )
     transport = Mock(return_value=response)
     with kubernetes_client.ApiClient(configuration) as client:
-        monkeypatch.setattr(client, "request", transport)
+        monkeypatch.setattr(client.rest_client.pool_manager, "request", transport)
         factory = Mock(return_value=(Mock(), client))
         monkeypatch.setattr(chaos, "_new_chaos_api_client", factory)
         verifier = EnvironmentVerifier(
@@ -476,7 +475,7 @@ def test_bound_verifier_decodes_real_sdk_response_without_network(monkeypatch):
         "GET", configuration.host + "/apis/apps/v1/namespaces/default/deployments/frontend",
     )
     sent = transport.call_args.kwargs
-    assert sent["_request_timeout"] == 30
+    assert sent["timeout"].total == 30
     assert sent["headers"]["Accept"] == "application/json"
     assert sent["headers"]["authorization"] == "Bearer non-secret-unit-key"
     assert backends.kubectl_calls == []

@@ -10,7 +10,6 @@ determines whether the environment has actually recovered.
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import math
@@ -429,7 +428,11 @@ class _OperationalTarget:
 
 
 def _query_bound_deployment(target: _OperationalTarget) -> dict[str, Any]:
-    from agents.tools.chaos import _close_chaos_api_client, _new_chaos_api_client
+    from agents.tools.chaos import (
+        _close_chaos_api_client,
+        _new_chaos_api_client,
+        _request_kubernetes_object,
+    )
 
     context = None if target.context == "in-cluster" else target.context
     if context is None and not os.getenv("KUBERNETES_SERVICE_HOST"):
@@ -440,17 +443,10 @@ def _query_bound_deployment(target: _OperationalTarget) -> dict[str, Any]:
         server = client.configuration.host.rstrip("/")
         if server != target.server:
             return {"success": False, "error": "Kubernetes server differs from the prepared target"}
-        response_options = (
-            {"response_types_map": {200: "object"}}
-            if "response_types_map" in inspect.signature(client.call_api).parameters
-            else {"response_type": "object"}
-        )
-        resource = client.call_api(
+        resource = _request_kubernetes_object(
+            client,
             f"/apis/apps/v1/namespaces/{quote(target.namespace, safe='')}"
             f"/deployments/{quote(target.deployment, safe='')}",
-            "GET", header_params={"Accept": "application/json"},
-            auth_settings=["BearerToken"], **response_options,
-            _return_http_data_only=True, _request_timeout=30,
         )
         return {
             "success": True, "parsed": resource,

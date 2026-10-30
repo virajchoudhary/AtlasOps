@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 from kubernetes import client as kubernetes_client
-from kubernetes.client.rest import RESTResponse
+from kubernetes.client.exceptions import ApiException
 from urllib3.response import HTTPResponse
 
 from agents import action_execution as actions
@@ -14,6 +14,7 @@ from agents import action_execution as actions
 @pytest.mark.parametrize("method,status,content_type", [
     ("GET", 200, None),
     ("PATCH", 200, "application/json-patch+json"),
+    ("PATCH", 201, "application/json-patch+json"),
     ("DELETE", 200, "application/json"),
     ("DELETE", 202, "application/json"),
 ])
@@ -21,28 +22,57 @@ def test_atomic_request_uses_real_sdk_without_network(
     monkeypatch, method, status, content_type,
 ):
     resource = {"apiVersion": "v1", "kind": "Status", "status": "Success"}
-    response = RESTResponse(HTTPResponse(
+    response = HTTPResponse(
         body=json.dumps(resource).encode(), status=status,
         headers={"Content-Type": "application/json"},
-    ))
+    )
     transport = Mock(return_value=response)
     configuration = kubernetes_client.Configuration(
         host="https://fixture-kubernetes.invalid",
     )
     configuration.api_key["authorization"] = "Bearer non-secret-unit-key"
-    body = None if method == "GET" else {"preconditions": {"uid": "owned-uid"}}
+    if method == "GET":
+        body = None
+    elif method == "PATCH":
+        body = [{"op": "test", "path": "/metadata/uid", "value": "owned-uid"}]
+    else:
+        body = {"preconditions": {"uid": "owned-uid"}}
     path = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/atlasops-boutique"
     with kubernetes_client.ApiClient(configuration) as client:
-        monkeypatch.setattr(client, "request", transport)
+        monkeypatch.setattr(client.rest_client.pool_manager, "request", transport)
         assert actions._request(client, path, method, body=body) == resource
 
     assert transport.call_args.args == (method, configuration.host + path)
     sent = transport.call_args.kwargs
-    assert sent["body"] == body
-    assert sent["_request_timeout"] == 30
+    assert (json.loads(sent["body"]) if sent.get("body") else None) == body
+    assert sent["timeout"].total == 30
     assert sent["headers"]["Accept"] == "application/json"
     assert sent["headers"]["authorization"] == "Bearer non-secret-unit-key"
-    assert sent["headers"].get("Content-Type") == content_type
+    if content_type is None:
+        assert sent["headers"].get("Content-Type") in {None, "application/json"}
+    else:
+        assert sent["headers"].get("Content-Type") == content_type
+
+
+def test_atomic_request_real_sdk_conflict_is_terminal_without_retry(monkeypatch):
+    response = HTTPResponse(
+        body=b'{"apiVersion":"v1","kind":"Status","status":"Failure"}', status=409,
+        headers={"Content-Type": "application/json"},
+    )
+    transport = Mock(return_value=response)
+    configuration = kubernetes_client.Configuration(
+        host="https://fixture-kubernetes.invalid",
+    )
+    configuration.retries = 0
+    with kubernetes_client.ApiClient(configuration) as client:
+        monkeypatch.setattr(client.rest_client.pool_manager, "request", transport)
+        with pytest.raises(ApiException) as error:
+            actions._request(
+                client, "/api/v1/namespaces/default/pods/owned", "PATCH",
+                body=[{"op": "test", "path": "/metadata/uid", "value": "owned-uid"}],
+            )
+    assert error.value.status == 409
+    assert transport.call_count == 1
 
 
 def test_atomic_request_preserves_legacy_sdk_response_contract():

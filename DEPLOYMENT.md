@@ -19,6 +19,12 @@ The [Mac reconciliation](docs/project/ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md)
 records the current Bug Lab container argument contract without editing
 historical run commands or the owner's runtime configuration.
 
+The local Argo profile pins official Redis `8.6.4-alpine` on Docker Hub at
+`sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763`.
+This is the same multi-architecture manifest as the pinned chart's ECR image.
+The explicit registry avoids the ECR data-limit failure observed during CI
+startup. Helm readiness checks, credentials, and resource limits are unchanged.
+
 > The use case and timings below preserve the historical upstream proposal.
 > They are not measured continuation outcomes or a production-readiness claim.
 

@@ -188,6 +188,16 @@ def test_kind_api_and_host_mapping_bind_to_loopback() -> None:
     assert all("--address=127.0.0.1" in line for line in port_forward_commands)
 
 
+def test_local_argocd_redis_uses_verified_official_multiarch_image() -> None:
+    values = yaml.safe_load(read("infra/local/values/argocd-local.yaml"))
+    image = values["redis"].get("image", {})
+    reference = f"{image.get('repository', '')}:{image.get('tag', '')}"
+    assert reference == (
+        "docker.io/library/redis:8.6.4-alpine@sha256:"
+        "2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
+    )
+
+
 def test_integrated_coordinator_uses_current_sha_image_and_persistent_single_writer_volume() -> None:
     items = documents(INFRA_LOCAL / "coordinator-local.yaml")
     deployment = find_document(items, "Deployment", "atlasops-coordinator")

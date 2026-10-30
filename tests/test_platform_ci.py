@@ -387,6 +387,43 @@ def _synced_argo_application(started_at: str) -> dict[str, object]:
     }
 
 
+def _receipt_bound_sync() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    action = _prepared_action()
+    operation = action["patch"][-1]["value"]
+    operation["info"] = [{"name": "atlasops-action-id", "value": "d" * 64}]
+    digest = platform_ci._prepared_action_digest(action)
+    target = action["target"]
+    before = _synced_argo_application("1970-01-01T00:01:30Z")
+    before["metadata"] = {
+        "name": platform_ci.APP_NAME, "namespace": platform_ci.APP_NAMESPACE,
+        "uid": target["uid"], "resourceVersion": target["resource_version"],
+    }
+    before["spec"]["source"] = copy.deepcopy(action["patch"][-2]["value"])
+    application = copy.deepcopy(before)
+    application["metadata"]["resourceVersion"] = "19"
+    application["status"]["operationState"]["startedAt"] = "1970-01-01T00:01:40Z"
+    application["status"]["operationState"]["operation"] = copy.deepcopy(operation)
+    dispatch = {
+        "approval_timestamp": 100.25,
+        "mutation_started_timestamp": 100.75,
+        "mutation_returned_timestamp": 100.80,
+        "action": action,
+        "action_digest": digest,
+        "action_result": {
+            "success": True,
+            "atomic_preconditions": True,
+            "target": copy.deepcopy(target),
+            "action_digest": digest,
+            "mutation_receipt": {
+                "target": {**target, "resource_version": "18"},
+                "source": copy.deepcopy(action["patch"][-2]["value"]),
+                "operation": copy.deepcopy(operation),
+            },
+        },
+    }
+    return dispatch, before, application
+
+
 def test_current_same_repository_pr_head_is_accepted(tmp_path: Path) -> None:
     event_path = tmp_path / "event.json"
     event_path.write_text(json.dumps(_pull_request_event()), encoding="utf-8")
@@ -767,29 +804,29 @@ def test_forward_cleanup_attempts_every_process_after_kill_wait_timeout(
     assert runner.forwards == {}
 
 
-def test_argo_second_resolution_cannot_precede_durable_mutation_dispatch(
+def test_argo_timestamp_precision_does_not_replace_operation_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = platform_ci.Runner(_run_identity(), tmp_path / "argo-order-evidence", env={})
-    application = _synced_argo_application("1970-01-01T00:01:40Z")
+    dispatch, before, application = _receipt_bound_sync()
+    application["status"]["operationState"]["operation"].pop("info")
     runner._application = lambda: application
     runner._append_jsonl = lambda *_args, **_kwargs: None
-    dispatch = {
-        "approval_timestamp": 100.25,
-        "mutation_started_timestamp": 100.75,
-    }
     ticks = iter((0.0, 1.0, 301.0))
     monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
 
     with pytest.raises(platform_ci.PlatformCIError, match="Argo did not complete"):
-        runner._wait_for_application_sync(SOURCE_SHA, dispatch)
+        runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before)
 
     application["status"]["operationState"]["startedAt"] = "1970-01-01T00:01:40.800Z"
+    application["status"]["operationState"]["operation"] = copy.deepcopy(
+        dispatch["action_result"]["mutation_receipt"]["operation"]
+    )
     ticks = iter((0.0, 1.0))
     monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
-    assert runner._wait_for_application_sync(SOURCE_SHA, dispatch) is application
+    assert runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before) is application
 
 
 def test_argo_same_second_sync_requires_a_new_operation_on_the_approved_application(
@@ -797,12 +834,8 @@ def test_argo_same_second_sync_requires_a_new_operation_on_the_approved_applicat
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = platform_ci.Runner(_run_identity(), tmp_path / "argo-same-second", env={})
-    before = _synced_argo_application("1970-01-01T00:01:30Z")
-    before["metadata"] = {"uid": "owned-application", "resourceVersion": "10"}
-    application = _synced_argo_application("1970-01-01T00:01:40Z")
-    application["metadata"] = {"uid": "owned-application", "resourceVersion": "12"}
+    dispatch, before, application = _receipt_bound_sync()
     runner._application = lambda: application
-    dispatch = {"approval_timestamp": 100.25, "mutation_started_timestamp": 100.75}
     ticks = iter((0.0, 1.0))
     monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
@@ -810,6 +843,8 @@ def test_argo_same_second_sync_requires_a_new_operation_on_the_approved_applicat
     assert runner._wait_for_application_sync(
         SOURCE_SHA, dispatch, before=before
     ) is application
+    assert runner.data["argo_sync_correlation"]["operation_id"] == "d" * 64
+    assert runner.data["argo_sync_correlation"]["receipt_resource_version"] == "18"
 
 
 @pytest.mark.parametrize(
@@ -822,13 +857,13 @@ def test_argo_same_second_sync_rejects_stale_pending_or_replaced_application(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = platform_ci.Runner(_run_identity(), tmp_path / invalid_before, env={})
-    before = _synced_argo_application("1970-01-01T00:01:30Z")
-    before["metadata"] = {"uid": "owned-application", "resourceVersion": "10"}
-    application = _synced_argo_application("1970-01-01T00:01:40Z")
-    application["metadata"] = {"uid": "owned-application", "resourceVersion": "12"}
+    dispatch, before, application = _receipt_bound_sync()
     if invalid_before == "same-operation":
         before["status"]["operationState"]["startedAt"] = (
             application["status"]["operationState"]["startedAt"]
+        )
+        before["status"]["operationState"]["operation"] = copy.deepcopy(
+            application["status"]["operationState"]["operation"]
         )
     elif invalid_before == "pending-operation":
         before["operation"] = {"sync": {"revision": SOURCE_SHA}}
@@ -839,12 +874,11 @@ def test_argo_same_second_sync_rejects_stale_pending_or_replaced_application(
         elif invalid_before == "replaced-fractional":
             application["status"]["operationState"]["startedAt"] = "1970-01-01T00:01:40.800Z"
     runner._application = lambda: application
-    dispatch = {"approval_timestamp": 100.25, "mutation_started_timestamp": 100.75}
     ticks = iter((0.0, 1.0, 301.0))
     monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(platform_ci.PlatformCIError, match="Argo did not complete"):
+    with pytest.raises(platform_ci.PlatformCIError):
         runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before)
 
 
@@ -1944,6 +1978,7 @@ def _actual_operations_export(
     mutation_return_success: bool = True,
     mutation_return_action_matches: bool = True,
     mutation_return_approval_matches: bool = True,
+    initial_alert: dict[str, object] | None = None,
 ) -> dict[str, object]:
     import importlib
 
@@ -1981,7 +2016,7 @@ def _actual_operations_export(
 
     with TestClient(app) as client:
         journal = get_execution_journal()
-        journal.begin(INCIDENT_ID, EXECUTION_ID, alert={}, anchors=None)
+        journal.begin(INCIDENT_ID, EXECUTION_ID, alert=initial_alert or {}, anchors=None)
         audit = require_audit_log()
         prepared = _prepared_action()
         for role, tools in {
@@ -3170,17 +3205,22 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
         )
 
 
+@pytest.mark.parametrize("envelope", ["PodList", "List"])
 def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
+    envelope: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from unittest.mock import MagicMock
 
     from agents import coordinator
+    import agents.tools.argocd as argocd_tools
     import agents.tools.kubectl as kubectl_tools
 
     fault_image = "atlasops-ci-unavailable:run-318-2"
     broken_pod = {
+        "apiVersion": "v1",
+        "kind": "Pod",
         "metadata": {
             "name": "frontend-abc",
             "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
@@ -3205,6 +3245,8 @@ def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
     }
     pods = [
         {
+            "apiVersion": "v1",
+            "kind": "Pod",
             "metadata": {
                 "name": f"healthy-{index}",
                 "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
@@ -3218,7 +3260,7 @@ def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
         }
         for index in range(8)
     ] + [broken_pod]
-    raw_document = {"apiVersion": "v1", "kind": "PodList", "items": pods}
+    raw_document = {"apiVersion": "v1", "kind": envelope, "items": pods}
     raw_stdout = json.dumps(raw_document)
     assert len(raw_stdout) > coordinator.TOOL_OUTPUT_MAX_CHARS
 
@@ -3239,11 +3281,15 @@ def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
     monkeypatch.setattr(kubectl_tools, "_run", kubectl_read)
     monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_get", kubectl_tools.kubectl_get)
     monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_describe", kubectl_tools.kubectl_describe)
-    monkeypatch.setitem(
-        coordinator.TOOL_REGISTRY,
-        "argocd_app_history",
-        lambda **_kwargs: {"success": True, "history": [{"id": 218, "revision": SOURCE_SHA}]},
-    )
+    application = _pre_fault_state()[0]
+    application["metadata"]["managedFields"] = [{"fieldsV1": {"padding": "x" * 5000}}]
+
+    def argo_read(method: str, path: str, **_kwargs: object) -> dict[str, object]:
+        assert (method, path) == ("GET", f"/applications/{platform_ci.APP_NAME}")
+        return {"success": True, "data": copy.deepcopy(application)}
+
+    monkeypatch.setattr(argocd_tools, "_api", argo_read)
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "argocd_app_history", argocd_tools.argocd_app_history)
     for name in ("require_audit_log", "audit_log", "thought_emit", "circuit_breaker"):
         monkeypatch.setattr(coordinator, name, MagicMock())
     monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
@@ -3284,6 +3330,11 @@ def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
     pod_observation = next(row for row in result["trajectory"] if row.get("tool") == "kubectl_get")
     assert pod_observation["output"]["stdout"] == raw_stdout
     assert pod_observation["output"]["parsed"] == raw_document
+    history_observation = next(
+        row for row in result["trajectory"] if row.get("tool") == "argocd_app_history"
+    )
+    assert history_observation["output"]["data"] == application
+    assert history_observation["output"]["history"][0]["id"] == 218
     assert "ErrImageNeverPull" in "".join(model_messages)
     assert "frontend-pod-uid" in "".join(model_messages)
     assert "test-placeholder-pod-secret" not in "".join(model_messages)
@@ -3438,7 +3489,7 @@ def test_fixture_emits_credential_safe_jsonl_consumed_by_runner_logs(
                         {
                             "incident_id": INCIDENT_ID,
                             "prompt": body_marker,
-                            "observations": [history_observation],
+                                "diagnosis_observations": [history_observation],
                         }
                     ),
                 },
@@ -3513,7 +3564,7 @@ def test_remediation_fixture_uses_only_observed_argo_history_id() -> None:
             {
                 "role": "user",
                 "content": json.dumps(
-                    {"incident_id": "inc-platform-ci", "observations": [history_observation]}
+                    {"incident_id": "inc-platform-ci", "diagnosis_observations": [history_observation]}
                 ),
             },
         ],
@@ -3536,6 +3587,18 @@ def test_remediation_fixture_uses_only_observed_argo_history_id() -> None:
             completions(_FixtureRequest(no_history, authorization=f"Bearer {key}"))
         )
     assert rejected.value.status_code == 400
+    fabricated_history = dict(
+        request,
+        messages=[
+            request["messages"][0],
+            {"role": "user", "content": json.dumps({"observations": [history_observation]})},
+        ],
+    )
+    with pytest.raises(HTTPException) as rejected_fabrication:
+        _complete_immediate_request(
+            completions(_FixtureRequest(fabricated_history, authorization=f"Bearer {key}"))
+        )
+    assert rejected_fabrication.value.status_code == 400
 
     application, deployment, rule = _pre_fault_state()
     with pytest.raises(platform_ci.PlatformCIError, match="availability rule is not loaded"):
@@ -3546,3 +3609,284 @@ def test_remediation_fixture_uses_only_observed_argo_history_id() -> None:
             [],
             source_sha=SOURCE_SHA,
         )
+
+
+@pytest.mark.parametrize(
+    ("role", "tool"),
+    [
+        ("triage", "alertmanager_list_alerts"),
+        ("diagnosis", "argocd_app_history"),
+        ("remediation", "argocd_rollback"),
+    ],
+)
+def test_fixture_identifies_role_from_complete_production_prompt(role: str, tool: str) -> None:
+    from agents.coordinator import load_prompt
+
+    payload = {
+        "messages": [{"role": "system", "content": load_prompt(role)}],
+        "tools": [_chat_tool(tool)],
+    }
+    assert platform_ci.derive_fixture_role(payload) == role
+    payload["tools"] = [_chat_tool("argocd_rollback" if role != "remediation" else "argocd_app_history")]
+    with pytest.raises(platform_ci.PlatformCIError, match="consistent role"):
+        platform_ci.derive_fixture_role(payload)
+
+
+def test_boutique_traffic_preserves_cookie_through_product_cart_and_checkout() -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    requests: list[tuple[str, str | None]] = []
+
+    class BoutiqueHandler(BaseHTTPRequestHandler):
+        def _respond(self) -> None:
+            requests.append((self.path, self.headers.get("Cookie")))
+            if self.command == "POST":
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            if self.path == "/":
+                self.send_header("Set-Cookie", "shop_session-id=fixture-session; Path=/")
+                body = '<a href="/product/fixture-product">Product</a>'
+            elif self.path == "/product/fixture-product":
+                body = '<form action="/cart" method="POST"><input name="quantity" value="1"></form>'
+            elif self.path == "/cart":
+                body = '<form action="/cart/checkout" method="POST"><input name="email" value=""></form>'
+            else:
+                body = "Order confirmed"
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        do_GET = _respond
+        do_POST = _respond
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), BoutiqueHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = platform_ci.exercise_boutique(f"http://127.0.0.1:{server.server_port}")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    assert result["checkout_status"] == "completed"
+    assert result["synthetic_checkout"] is True
+    assert result["request_paths"] == ["/", "/product/fixture-product", "/cart", "/cart", "/cart/checkout"]
+    assert requests[0] == ("/", None)
+    assert all(cookie == "shop_session-id=fixture-session" for _path, cookie in requests[1:])
+
+
+def test_pending_admission_does_not_require_a_completed_webhook_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timezone
+    from unittest.mock import Mock
+
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "pending-admission", env={})
+    before = {"metadata": {"uid": "frontend-uid"}}
+    pending = {"incident_id": INCIDENT_ID}
+    evidence = {"execution_id": EXECUTION_ID, "events": [{"event": "approval_requested"}]}
+    prepared = {"tool": "argocd_rollback", "arguments": {}, "target": {}, "verification_target": {}, "action_digest": "d" * 64}
+    runner.data["pre_fault_eligibility"] = {}
+    runner._fault_deployment = lambda: (before, "fixture-image", datetime.now(timezone.utc))
+    runner._wait_for_broken_pod = lambda *_args: None
+    runner._wait_for_pending_incident = lambda *_args: (pending, evidence)
+    runner._pending_action = lambda *_args: prepared
+    runner._alert_rule_firing = lambda: {"firing": True}
+    runner._alertmanager_alerts = lambda: []
+    runner._active_frontend_alert = lambda _alerts: {"active": True}
+    completed_response = Mock(side_effect=AssertionError("webhook is still waiting for approval"))
+    monkeypatch.setattr(runner, "_verify_webhook_admission_log", completed_response)
+
+    assert runner._fault_and_wait_for_admission() == (pending, evidence, prepared, before)
+    assert completed_response.call_count == 0
+    webhook = runner.data["alert_admission"]["webhook"]
+    assert webhook["authenticated_admission"] is True
+    assert webhook["http_status"] is None
+    assert webhook["execution_id"] == EXECUTION_ID
+
+
+def test_large_execution_export_is_preserved_and_verified_through_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    exported = _actual_operations_export(
+        tmp_path, monkeypatch,
+        initial_alert={"raw_observation": {"metadata": {"annotations": {"fixture_padding": "x" * 20_000}}}},
+    )
+    raw = json.dumps(exported["evidence"]).encode()
+    assert len(raw) > platform_ci.MAX_EVIDENCE_TEXT
+
+    class EvidenceHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.headers.get("X-AtlasOps-Key") == API_KEY
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), EvidenceHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "large-export", env={})
+    runner._api_root = lambda: f"http://127.0.0.1:{server.server_port}"
+    runner._operations_headers = lambda: {"X-AtlasOps-Key": API_KEY}
+    try:
+        with pytest.raises(platform_ci.PlatformCIError, match="bounded evidence size"):
+            platform_ci.http_json(
+                f"{runner._api_root()}/api/operations/{EXECUTION_ID}/evidence",
+                headers={"X-AtlasOps-Key": API_KEY},
+            )
+        result = runner._operations_by_id(EXECUTION_ID)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    assert result == exported["evidence"]
+    proof = _validate_actual_completion({**exported, "evidence": result})
+    assert proof["execution_id"] == EXECUTION_ID
+    assert proof["execution_integrity"]["events"] == len(result["events"])
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ["none", "missing-marker", "other-operation", "bad-receipt", "bad-digest", "failed-result", "old-version"],
+)
+def test_same_second_sync_is_bound_to_the_successful_exact_patch_receipt(
+    mismatch: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dispatch, before, application = _receipt_bound_sync()
+    if mismatch == "missing-marker":
+        application["status"]["operationState"]["operation"].pop("info")
+    elif mismatch == "other-operation":
+        application["status"]["operationState"]["operation"]["info"][0]["value"] = "e" * 64
+    elif mismatch == "bad-receipt":
+        dispatch["action_result"]["mutation_receipt"]["operation"]["info"][0]["value"] = "e" * 64
+    elif mismatch == "bad-digest":
+        dispatch["action_digest"] = "0" * 64
+    elif mismatch == "failed-result":
+        dispatch["action_result"]["success"] = False
+    elif mismatch == "old-version":
+        application["metadata"]["resourceVersion"] = before["metadata"]["resourceVersion"]
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "sync-receipt", env={})
+    runner._application = lambda: application
+    ticks = iter((0.0, 1.0, 301.0))
+    monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
+    if mismatch == "none":
+        assert runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before) is application
+    else:
+        with pytest.raises(platform_ci.PlatformCIError):
+            runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before)
+
+
+def test_downstream_observations_are_bounded_without_changing_raw_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from agents import coordinator
+
+    raw_history = {
+        "success": True,
+        "data": {"metadata": {"name": platform_ci.APP_NAME, "padding": "x" * 5000}},
+        "history": [{"id": 218, "revision": SOURCE_SHA}],
+    }
+    user_input = {
+        "incident_id": INCIDENT_ID,
+        "diagnosis_observations": [{
+            "tool": "argocd_app_history", "args": {"app": platform_ci.APP_NAME},
+            "output": raw_history,
+        }],
+    }
+    original = copy.deepcopy(user_input)
+    for name in ("require_audit_log", "audit_log", "thought_emit", "circuit_breaker"):
+        monkeypatch.setattr(coordinator, name, MagicMock())
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "1")
+    monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
+    monkeypatch.setattr(coordinator, "MODEL_NAME", platform_ci.FIXTURE_MODEL)
+    monkeypatch.setattr(coordinator, "VLLM_BASE", "http://fixture.invalid/v1")
+    key = "test-placeholder-downstream-fixture-key"
+    monkeypatch.setattr(coordinator, "API_KEY", key)
+    app = platform_ci.create_fixture_app(key, SOURCE_SHA)
+    with TestClient(app) as client:
+        async def complete(native_client, _url, payload, **_kwargs):
+            observed = platform_ci._user_input(payload["messages"])["diagnosis_observations"][0]
+            assert observed["tool"] == "argocd_app_history"
+            assert observed["args"] == {"app": platform_ci.APP_NAME}
+            assert observed["output"]["history"] == [{"id": 218, "revision": SOURCE_SHA}]
+            assert len(json.dumps(observed["output"])) <= coordinator.TOOL_OUTPUT_MAX_CHARS
+            response = client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": native_client.headers["Authorization"]},
+                json=payload,
+            )
+            response.raise_for_status()
+            return response
+
+        monkeypatch.setattr(coordinator, "post_with_retry", complete)
+        result = asyncio.run(coordinator.call_agent("comms", user_input, max_turns=1))
+    assert result["final"]["incident_id"] == INCIDENT_ID
+    assert user_input == original
+
+
+def test_generic_kubectl_list_projection_excludes_non_pod_objects() -> None:
+    from agents import coordinator
+
+    document = {
+        "apiVersion": "v1", "kind": "List",
+        "items": [
+            {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {
+                "name": "not-a-pod", "padding": "x" * 5000,
+            }},
+            {"apiVersion": "v1", "kind": "Pod", "metadata": {
+                "name": "frontend-pod", "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+            }, "spec": {"containers": []}, "status": {}},
+        ],
+    }
+    result = json.loads(coordinator._model_tool_message(
+        "kubectl_get", {"success": True, "parsed": document},
+    ))
+    assert [pod["metadata"]["name"] for pod in result["parsed"]["items"]] == ["frontend-pod"]
+    assert result["omitted_items"] == 1
+
+
+@pytest.mark.parametrize("size", [127, 128, 129])
+def test_http_reader_rejects_cap_plus_one_without_truncating_json(size: int) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    raw = json.dumps("x" * (size - 2)).encode()
+
+    class BoundedHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), BoundedHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/evidence"
+        if size > 128:
+            with pytest.raises(platform_ci.PlatformCIError, match="bounded evidence size"):
+                platform_ci.http_json(url, max_bytes=128)
+        else:
+            assert platform_ci.http_json(url, max_bytes=128) == (200, "x" * (size - 2))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

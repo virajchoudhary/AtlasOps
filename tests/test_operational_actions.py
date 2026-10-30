@@ -104,7 +104,8 @@ def test_deployment_rollback_uses_only_a_prior_owned_replicaset_template(runtime
     assert "pod-template-hash" not in patch[-1]["value"]["metadata"]["labels"]
 
 
-def test_argo_rollback_is_an_atomic_application_patch(runtime, monkeypatch):
+@pytest.fixture
+def argo_action(runtime, monkeypatch):
     workload, client = runtime
     monkeypatch.setenv("ATLASOPS_ARGOCD_APP", "atlasops-boutique")
     source = {"repoURL": "https://github.com/virajchoudhary/AtlasOps.git", "path": "infra/local/boutique", "targetRevision": "b" * 40}
@@ -117,7 +118,7 @@ def test_argo_rollback_is_an_atomic_application_patch(runtime, monkeypatch):
         },
         "status": {"history": [{"id": 3, "revision": "a" * 40, "source": source}]},
     }
-    client.call_api.side_effect = [application, workload, {}]
+    client.call_api.side_effect = [application, workload]
     alert = {
         "commonLabels": {
             "alertname": "AtlasOpsOnlineBoutiqueDeploymentUnavailable",
@@ -131,6 +132,17 @@ def test_argo_rollback_is_an_atomic_application_patch(runtime, monkeypatch):
     action = actions.prepare_action(
         "argocd_rollback", {"app": "atlasops-boutique", "revision": "3"}, alert=alert,
     )
+    acknowledged = deepcopy(application)
+    acknowledged["metadata"]["resourceVersion"] = "20"
+    acknowledged["spec"]["source"] = action.approval_action["patch"][-2]["value"]
+    acknowledged["operation"] = action.approval_action["patch"][-1]["value"]
+    client.call_api.side_effect = None
+    client.call_api.return_value = acknowledged
+    return action, acknowledged, client
+
+
+def test_argo_rollback_is_an_atomic_application_patch(argo_action):
+    action, acknowledged, client = argo_action
     result = actions.execute_prepared_action(action)
     assert result["success"] is True
     assert client.call_api.call_args.args == ("/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/atlasops-boutique", "PATCH")
@@ -139,6 +151,33 @@ def test_argo_rollback_is_an_atomic_application_patch(runtime, monkeypatch):
     assert body[1]["value"] == "19"
     assert body[-2]["value"]["targetRevision"] == "a" * 40
     assert body[-1]["value"]["sync"]["revision"] == "a" * 40
+    assert body[-1]["value"]["info"][0]["name"] == "atlasops-action-id"
+    assert len(body[-1]["value"]["info"][0]["value"]) == 64
+    assert result["mutation_receipt"]["target"]["uid"] == "app-uid"
+    assert result["mutation_receipt"]["target"]["resource_version"] == "20"
+    assert result["mutation_receipt"]["operation"] == acknowledged["operation"]
+    assert result["action_digest"] == action.digest
+
+
+@pytest.mark.parametrize("mismatch", ["uid", "resource_version", "revision", "operation"])
+def test_argo_patch_acknowledgement_must_match_the_exact_prepared_target(argo_action, mismatch):
+    action, acknowledged, client = argo_action
+    if mismatch == "uid":
+        acknowledged["metadata"]["uid"] = "other-application"
+    elif mismatch == "resource_version":
+        acknowledged["metadata"]["resourceVersion"] = action.target.resource_version
+    elif mismatch == "revision":
+        acknowledged["spec"]["source"] = {
+            **acknowledged["spec"]["source"], "targetRevision": "e" * 40,
+        }
+    else:
+        acknowledged["operation"] = {"sync": {"revision": "e" * 40}}
+    calls_before = client.call_api.call_count
+    result = actions.execute_prepared_action(action)
+    assert result["success"] is False
+    assert result["error_class"] == "mutation_uncertain"
+    assert "mutation_receipt" not in result
+    assert client.call_api.call_count == calls_before + 1
 
 
 @pytest.mark.parametrize("arguments", [

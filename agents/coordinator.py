@@ -447,17 +447,52 @@ def _model_tool_message(tool: str, output: dict[str, Any]) -> str:
     if len(encoded) <= TOOL_OUTPUT_MAX_CHARS:
         return encoded
 
+    if (
+        tool == "argocd_app_history"
+        and safe.get("success") is True
+        and isinstance(safe.get("history"), list)
+    ):
+        data = safe.get("data") or {}
+        metadata = data.get("metadata") or {}
+        summary = {
+            "success": True,
+            "data": {"metadata": {
+                key: metadata[key]
+                for key in ("name", "namespace", "uid", "resourceVersion")
+                if key in metadata
+            }},
+            "history": [],
+            "truncated": True,
+            "omitted_history_entries": len(safe["history"]),
+        }
+        for entry in reversed(safe["history"]):
+            if not isinstance(entry, dict):
+                continue
+            summary["history"].insert(0, {
+                key: entry[key] for key in ("id", "revision", "deployedAt") if key in entry
+            })
+            summary["omitted_history_entries"] -= 1
+            if len(json.dumps(summary)) > TOOL_OUTPUT_MAX_CHARS:
+                summary["history"].pop(0)
+                summary["omitted_history_entries"] += 1
+        if len(json.dumps(summary)) <= TOOL_OUTPUT_MAX_CHARS:
+            return json.dumps(summary)
+
     parsed = safe.get("parsed")
     if (
         tool == "kubectl_get"
         and safe.get("success") is True
         and isinstance(parsed, dict)
-        and parsed.get("kind") == "PodList"
+        and parsed.get("kind") in {"PodList", "List"}
         and isinstance(parsed.get("items"), list)
     ):
         pods = []
         for pod in parsed["items"]:
             if not isinstance(pod, dict):
+                continue
+            if parsed["kind"] == "List" and (
+                pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1"
+            ):
                 continue
             metadata = pod.get("metadata") or {}
             containers = (pod.get("spec") or {}).get("containers") or []
@@ -1348,7 +1383,22 @@ async def call_agent(
         for key, value in user_input.items()
         if key != _REMEDIATION_CONTROL_KEY
     }
-    model_input = _strip_model_forbidden_context(model_input)
+    runtime_input = _strip_model_forbidden_context(model_input)
+    model_input = dict(runtime_input)
+    for key in ("triage_observations", "diagnosis_observations"):
+        observations = model_input.get(key)
+        if isinstance(observations, list):
+            model_input[key] = [
+                {
+                    **item,
+                    "output": json.loads(_model_tool_message(
+                        str(item.get("tool", "")), item["output"],
+                    )),
+                }
+                if isinstance(item, dict) and isinstance(item.get("output"), dict)
+                else item
+                for item in observations
+            ]
     incident_id = str(model_input.get("incident_id", "unknown"))
     messages = [
         {"role": "system", "content": system_prompt},
@@ -1364,7 +1414,7 @@ async def call_agent(
     _mutation_in_response = False
     _verifier_resolved = False
     _runtime_context: dict[str, Any] = {
-        **model_input,
+        **runtime_input,
         "observations": [],
         _REMEDIATION_CONTROL_KEY: control,
     }

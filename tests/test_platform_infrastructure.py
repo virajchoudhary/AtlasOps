@@ -397,6 +397,26 @@ def test_boutique_overlay_uses_exact_upstream_commit_and_source_supported_tracin
     )
 
 
+def test_frontend_recovery_fields_are_declared_in_git_owned_overlay() -> None:
+    overlay = yaml.safe_load(
+        (INFRA_LOCAL / "boutique" / "kustomization.yaml").read_text(encoding="utf-8")
+    )
+    frontend = next(
+        yaml.safe_load(patch["patch"])
+        for patch in overlay["patches"]
+        if patch["target"]["kind"] == "Deployment" and patch["target"]["name"] == "frontend"
+    )
+    assert frontend["spec"]["strategy"] == {
+        "type": "RollingUpdate",
+        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+    }
+    server = next(
+        container for container in frontend["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "server"
+    )
+    assert server["imagePullPolicy"] == "IfNotPresent"
+
+
 def test_argocd_project_application_and_coordinator_role_are_exactly_scoped() -> None:
     platform_items = documents(INFRA_LOCAL / "argocd-platform.yaml")
     app_items = documents(INFRA_LOCAL / "argocd-application.yaml")

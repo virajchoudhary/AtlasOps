@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +58,7 @@ DEFAULT_TIMEOUT = 30
 POLL_INTERVAL = 5
 COORDINATOR_METRICS_TIMEOUT_SECONDS = 90
 MAX_EVIDENCE_TEXT = 100_000
+MAX_EXECUTION_EXPORT_BYTES = 8 * 1024 * 1024
 
 
 class PlatformCIError(RuntimeError):
@@ -378,7 +379,13 @@ def derive_fixture_role(payload: dict[str, Any]) -> str:
         "remediation": "Remediation Agent",
         "comms": "Comms Agent",
     }
-    prompt_roles = [role for role, marker in prompt_markers.items() if marker in system_text]
+    prompt_roles = [
+        role for role, marker in prompt_markers.items()
+        if re.search(
+            rf"(?im)^(?:#+\s*|You are the (?:\*\*)?){re.escape(marker)}\b",
+            system_text,
+        )
+    ]
     names = _fixture_tool_names(payload)
     if len(prompt_roles) != 1:
         raise PlatformCIError("fixture could not derive one role from the system prompt")
@@ -431,11 +438,8 @@ def history_id_from_messages(
     source_sha: str,
 ) -> str:
     candidates: set[str] = set()
-    observations = [
-        _message_json(message.get("content"))
-        for message in messages
-        if isinstance(message, dict)
-    ]
+    handoff = _user_input(messages).get("diagnosis_observations")
+    observations = list(handoff) if isinstance(handoff, list) else []
     observations.extend(
         {
             "tool": function["name"],
@@ -445,34 +449,33 @@ def history_id_from_messages(
         for function, output in _tool_results(messages).values()
         if function.get("name") == "argocd_app_history"
     )
-    for parsed in observations:
-        for item in _walk(parsed):
-            if not isinstance(item, dict):
+    for item in observations:
+        if not isinstance(item, dict):
+            continue
+        if item.get("tool") != "argocd_app_history":
+            continue
+        args = item.get("args")
+        output = item.get("output")
+        if (
+            not isinstance(args, dict)
+            or args.get("app") != app
+            or not isinstance(output, dict)
+            or output.get("success") is not True
+            or not isinstance(output.get("history"), list)
+        ):
+            continue
+        for entry in output["history"]:
+            if not isinstance(entry, dict) or entry.get("revision") != source_sha:
                 continue
-            if item.get("tool") != "argocd_app_history":
-                continue
-            args = item.get("args")
-            output = item.get("output")
-            if (
-                not isinstance(args, dict)
-                or args.get("app") != app
-                or not isinstance(output, dict)
-                or output.get("success") is not True
-                or not isinstance(output.get("history"), list)
+            entry_id = entry.get("id")
+            if type(entry_id) is int and entry_id >= 0:
+                candidates.add(str(entry_id))
+            elif (
+                isinstance(entry_id, str)
+                and entry_id.isascii()
+                and entry_id.isdigit()
             ):
-                continue
-            for entry in output["history"]:
-                if not isinstance(entry, dict) or entry.get("revision") != source_sha:
-                    continue
-                entry_id = entry.get("id")
-                if type(entry_id) is int and entry_id >= 0:
-                    candidates.add(str(entry_id))
-                elif (
-                    isinstance(entry_id, str)
-                    and entry_id.isascii()
-                    and entry_id.isdigit()
-                ):
-                    candidates.add(entry_id)
+                candidates.add(entry_id)
     if len(candidates) != 1:
         raise PlatformCIError("fixture requires one numeric Argo history ID observed for the build SHA")
     return candidates.pop()
@@ -1502,6 +1505,45 @@ def _validate_approved_mutation_start(
     }
 
 
+def _validate_approved_mutation_return(
+    verified: dict[str, Any], dispatch: dict[str, Any],
+) -> dict[str, Any]:
+    events = verified["events"]
+    returned = [
+        (index, event) for index, event in enumerate(events)
+        if event.get("event") == "mutation_returned"
+    ]
+    if (
+        len(returned) != 1
+        or returned[0][0] <= dispatch["mutation_started_index"]
+        or any(event.get("event") == "mutation_uncertain" for event in events)
+    ):
+        raise PlatformCIError("execution journal must contain one successful post-approval mutation return")
+    returned_event = returned[0][1]
+    returned_record = returned_event.get("record")
+    started_record = dispatch["mutation_started_event"].get("record")
+    action_result = returned_record.get("action_result") if isinstance(returned_record, dict) else None
+    if (
+        not isinstance(returned_record, dict)
+        or not isinstance(started_record, dict)
+        or returned_event.get("phase") != "verification"
+        or returned_event.get("state") != "running"
+        or returned_record.get("prepared_action") != dispatch["action"]
+        or returned_record.get("approval") != started_record.get("approval")
+        or not isinstance(action_result, dict)
+        or action_result.get("success") is not True
+        or action_result.get("atomic_preconditions") is not True
+        or action_result.get("action_digest") != dispatch["action_digest"]
+        or action_result.get("target") != dispatch["action"].get("target")
+    ):
+        raise PlatformCIError("durable mutation return does not prove the prepared action succeeded")
+    return {
+        **dispatch,
+        "action_result": action_result,
+        "mutation_returned_timestamp": returned_event.get("ts"),
+    }
+
+
 def validate_completion_evidence(
     api_evidence: dict[str, Any],
     *,
@@ -1548,35 +1590,7 @@ def validate_completion_evidence(
         history_id=history_id,
         expected_operator=expected_operator,
     )
-    events = verified["events"]
-    mutation_returned = [
-        (index, event)
-        for index, event in enumerate(events)
-        if event.get("event") == "mutation_returned"
-    ]
-    if (
-        len(mutation_returned) != 1
-        or mutation_returned[0][0] <= dispatch["mutation_started_index"]
-        or any(event.get("event") == "mutation_uncertain" for event in events)
-    ):
-        raise PlatformCIError("execution journal must contain one successful post-approval mutation return")
-    returned_event = mutation_returned[0][1]
-    returned_record = returned_event.get("record")
-    started_record = dispatch["mutation_started_event"].get("record")
-    action_result = returned_record.get("action_result") if isinstance(returned_record, dict) else None
-    if (
-        not isinstance(returned_record, dict)
-        or not isinstance(started_record, dict)
-        or returned_event.get("phase") != "verification"
-        or returned_event.get("state") != "running"
-        or returned_record.get("prepared_action") != dispatch["action"]
-        or returned_record.get("approval") != started_record.get("approval")
-        or not isinstance(action_result, dict)
-        or action_result.get("success") is not True
-        or action_result.get("action_digest") != dispatch["action_digest"]
-        or action_result.get("target") != dispatch["action"].get("target")
-    ):
-        raise PlatformCIError("durable mutation return does not prove the prepared action succeeded")
+    dispatch = _validate_approved_mutation_return(verified, dispatch)
 
     verification = record.get("verification")
     remediation_final = record["remediation"]["final"]
@@ -1713,7 +1727,7 @@ def validate_completion_evidence(
         "roles": ["triage", "diagnosis", "remediation", "comms"],
         "agent_mutations": mutations,
         "approved_mutation": dispatch,
-        "mutation_returned_timestamp": returned_event.get("ts"),
+        "mutation_returned_timestamp": dispatch["mutation_returned_timestamp"],
         "comms_local_log": slack_rows[0]["output"],
         "postmortem": postmortem_rows[0]["output"],
     }
@@ -2074,9 +2088,7 @@ def _checkout_value(name: str, options: list[str]) -> str:
 
 
 def exercise_boutique(base_url: str, *, timeout: float = 10) -> dict[str, Any]:
-    import http.cookiejar
-
-    opener = build_opener(ProxyHandler({}), http.cookiejar.HTTPCookieProcessor())
+    opener = build_opener(ProxyHandler({}), HTTPCookieProcessor())
     paths: list[str] = []
 
     def request(path: str, data: dict[str, str] | None = None) -> str:
@@ -2163,7 +2175,10 @@ def http_json(
     payload: dict[str, Any] | None = None,
     timeout: float = 10,
     expect_json: bool = True,
+    max_bytes: int = MAX_EVIDENCE_TEXT,
 ) -> tuple[int, Any]:
+    if type(max_bytes) is not int or not 0 < max_bytes <= MAX_EXECUTION_EXPORT_BYTES:
+        raise PlatformCIError("HTTP response limit must be positive and bounded")
     body = json.dumps(payload, separators=(",", ":")).encode() if payload is not None else None
     request_headers = {"Accept": "application/json" if expect_json else "*/*"}
     if payload is not None:
@@ -2175,16 +2190,16 @@ def http_json(
     try:
         with opener.open(request, timeout=timeout) as response:
             status = response.status
-            raw = response.read(MAX_EVIDENCE_TEXT + 1)
+            raw = response.read(max_bytes + 1)
     except HTTPError as exc:
         status = exc.code
         try:
-            raw = exc.read(MAX_EVIDENCE_TEXT + 1)
+            raw = exc.read(max_bytes + 1)
         finally:
             exc.close()
     except (URLError, TimeoutError, OSError) as exc:
         raise PlatformCIError(f"HTTP request failed for {urlsplit(url).path}: {type(exc).__name__}") from exc
-    if len(raw) > MAX_EVIDENCE_TEXT:
+    if len(raw) > max_bytes:
         raise PlatformCIError("HTTP response exceeded the bounded evidence size")
     try:
         text = raw.decode("utf-8")
@@ -2389,6 +2404,7 @@ class Runner:
         timeout: float = 10,
         label: str,
         expect_json: bool = True,
+        max_bytes: int = MAX_EVIDENCE_TEXT,
     ) -> tuple[int, Any]:
         status, body = http_json(
             url,
@@ -2397,6 +2413,7 @@ class Runner:
             payload=payload,
             timeout=timeout,
             expect_json=expect_json,
+            max_bytes=max_bytes,
         )
         self._append_jsonl(
             "logs/http-events.jsonl",
@@ -3594,6 +3611,7 @@ class Runner:
             headers=self._operations_headers(),
             timeout=15,
             label="authenticated GET operational evidence",
+            max_bytes=MAX_EXECUTION_EXPORT_BYTES,
         )
         if status != 200 or not isinstance(payload, dict):
             raise PlatformCIError(f"operational evidence route returned HTTP {status}")
@@ -3623,7 +3641,7 @@ class Runner:
             raise PlatformCIError("generated audit signing key is empty")
         return secret
 
-    def _wait_for_approved_mutation_started(self, pending: dict[str, Any]) -> dict[str, Any]:
+    def _wait_for_approved_mutation_returned(self, pending: dict[str, Any]) -> dict[str, Any]:
         incident_id = pending.get("incident_id")
         if not isinstance(incident_id, str) or not incident_id:
             raise PlatformCIError("approved action has no incident identity")
@@ -3647,7 +3665,11 @@ class Runner:
                 for event in verified["events"]
                 if event.get("event") == "mutation_started"
             ]
-            if started:
+            returned = [
+                event for event in verified["events"]
+                if event.get("event") == "mutation_returned"
+            ]
+            if started and returned:
                 dispatch = _validate_approved_mutation_start(
                     verified,
                     source_sha=self.identity.source_sha,
@@ -3659,11 +3681,11 @@ class Runner:
                     or dispatch["action_digest"] != expected_digest
                 ):
                     raise PlatformCIError("durable mutation start does not match the approved pending action")
-                return dispatch
+                return _validate_approved_mutation_return(verified, dispatch)
             if evidence.get("state") != "running":
-                raise PlatformCIError("operational execution ended before its approved mutation started")
+                raise PlatformCIError("operational execution ended before its approved mutation returned")
             time.sleep(POLL_INTERVAL)
-        raise PlatformCIError("timed out waiting for the durable post-approval mutation start")
+        raise PlatformCIError("timed out waiting for the durable post-approval mutation return")
 
     @staticmethod
     def _mutation_events(evidence: dict[str, Any]) -> set[str]:
@@ -3844,6 +3866,7 @@ class Runner:
     ) -> dict[str, Any]:
         approval_timestamp = dispatch.get("approval_timestamp")
         mutation_started_timestamp = dispatch.get("mutation_started_timestamp")
+        mutation_returned_timestamp = dispatch.get("mutation_returned_timestamp")
         if (
             isinstance(approval_timestamp, bool)
             or not isinstance(approval_timestamp, (int, float))
@@ -3852,16 +3875,68 @@ class Runner:
             or not isinstance(mutation_started_timestamp, (int, float))
             or not 0 <= mutation_started_timestamp < float("inf")
             or approval_timestamp > mutation_started_timestamp
+            or isinstance(mutation_returned_timestamp, bool)
+            or not isinstance(mutation_returned_timestamp, (int, float))
+            or not mutation_started_timestamp <= mutation_returned_timestamp < float("inf")
         ):
             raise PlatformCIError("durable approval and mutation-start timestamps are missing or out of order")
+        action = dispatch.get("action")
+        target = action.get("target") if isinstance(action, dict) else None
+        result = dispatch.get("action_result")
+        receipt = result.get("mutation_receipt") if isinstance(result, dict) else None
+        acknowledged = receipt.get("target") if isinstance(receipt, dict) else None
         previous_metadata = (before or {}).get("metadata") or {}
         previous_operation = ((before or {}).get("status") or {}).get("operationState") or {}
-        try:
-            previous_started = datetime.fromisoformat(
-                str(previous_operation.get("startedAt"))
-            )
-        except ValueError:
-            previous_started = None
+        if (
+            not isinstance(target, dict)
+            or not isinstance(result, dict)
+            or result.get("success") is not True
+            or result.get("atomic_preconditions") is not True
+            or result.get("target") != target
+            or result.get("action_digest") != dispatch.get("action_digest")
+            or dispatch.get("action_digest") != _prepared_action_digest(action)
+            or not isinstance(acknowledged, dict)
+            or not isinstance(acknowledged.get("resource_version"), str)
+            or not acknowledged["resource_version"]
+            or {key: value for key, value in acknowledged.items() if key != "resource_version"}
+            != {key: value for key, value in target.items() if key != "resource_version"}
+            or acknowledged["resource_version"] == target.get("resource_version")
+            or previous_metadata.get("uid") != target.get("uid")
+            or previous_metadata.get("resourceVersion") != target.get("resource_version")
+            or previous_metadata.get("name") != APP_NAME
+            or previous_metadata.get("namespace") != APP_NAMESPACE
+            or (before or {}).get("operation")
+            or previous_operation.get("phase") in {"Running", "Pending", "Terminating"}
+        ):
+            raise PlatformCIError("Argo sync requires the prepared-target snapshot and atomic PATCH receipt")
+        source = receipt.get("source")
+        receipt_operation = receipt.get("operation")
+        replacement = [
+            item.get("value") for item in action.get("patch", [])
+            if isinstance(item, dict) and item.get("op") == "replace" and item.get("path") == "/spec/source"
+        ]
+        operations = [
+            item.get("value") for item in action.get("patch", [])
+            if isinstance(item, dict) and item.get("op") == "add" and item.get("path") == "/operation"
+        ]
+        markers = receipt_operation.get("info") if isinstance(receipt_operation, dict) else None
+        if (
+            replacement != [source]
+            or operations != [receipt_operation]
+            or not isinstance(source, dict)
+            or source.get("targetRevision") != selected_revision
+            or not isinstance(receipt_operation, dict)
+            or receipt_operation.get("initiatedBy") != {"username": "atlasops"}
+            or receipt_operation.get("sync") != {"revision": selected_revision, "prune": False}
+            or not isinstance(markers, list)
+            or len(markers) != 1
+            or not isinstance(markers[0], dict)
+            or markers[0].get("name") != "atlasops-action-id"
+            or not isinstance(markers[0].get("value"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", markers[0]["value"]) is None
+            or previous_operation.get("operation", {}).get("info") == markers
+        ):
+            raise PlatformCIError("Argo PATCH receipt changed the exact approved source or operation")
         deadline = time.monotonic() + 300
         last = {}
         while time.monotonic() < deadline:
@@ -3881,6 +3956,7 @@ class Runner:
                 "started_at": operation_state.get("startedAt"),
                 "initiated_by": initiated_by.get("username"),
                 "operation_revision": requested_sync.get("revision"),
+                "operation_marker_matches": operation.get("info") == markers,
             }
             started_at = operation_state.get("startedAt")
             try:
@@ -3893,50 +3969,34 @@ class Runner:
                 if started.microsecond:
                     started_after_dispatch = started_epoch >= mutation_started_timestamp
                 else:
-                    metadata = app.get("metadata") or {}
-                    new_operation_same_second = (
-                        before is not None
-                        and not before.get("operation")
-                        and previous_operation.get("phase") in {"Succeeded", "Failed", "Error"}
-                        and previous_started is not None
-                        and previous_started.tzinfo is not None
-                        and previous_started.timestamp() != started_epoch
-                        and isinstance(previous_metadata.get("uid"), str)
-                        and bool(previous_metadata["uid"])
-                        and metadata.get("uid") == previous_metadata["uid"]
-                        and isinstance(previous_metadata.get("resourceVersion"), str)
-                        and bool(previous_metadata["resourceVersion"])
-                        and isinstance(metadata.get("resourceVersion"), str)
-                        and bool(metadata["resourceVersion"])
-                        and metadata["resourceVersion"] != previous_metadata["resourceVersion"]
-                    )
-                    started_after_dispatch = (
-                        int(started_epoch) > math.floor(mutation_started_timestamp)
-                        or (
-                            int(started_epoch) == math.floor(mutation_started_timestamp)
-                            and new_operation_same_second
-                        )
-                    )
+                    started_after_dispatch = started_epoch >= math.floor(mutation_started_timestamp)
+            metadata = app.get("metadata") or {}
             if (
                 operation_state.get("phase") == "Succeeded"
                 and sync.get("status") == "Synced"
                 and sync.get("revision") == selected_revision
-                and spec.get("source", {}).get("targetRevision") == selected_revision
+                and spec.get("source") == source
                 and initiated_by.get("username") == "atlasops"
                 and requested_sync.get("revision") == selected_revision
+                and requested_sync.get("prune", False) is False
+                and operation.get("info") == markers
                 and started_after_dispatch
-                and (
-                    before is None
-                    or (
-                        isinstance(previous_metadata.get("uid"), str)
-                        and bool(previous_metadata["uid"])
-                        and app.get("metadata", {}).get("uid") == previous_metadata["uid"]
-                    )
-                )
+                and metadata.get("uid") == target.get("uid")
+                and isinstance(metadata.get("resourceVersion"), str)
+                and bool(metadata["resourceVersion"])
+                and metadata["resourceVersion"] != target.get("resource_version")
             ):
                 self._append_jsonl("api-evidence/argo-application-after-sync.jsonl", app)
+                self._record("argo_sync_correlation", {
+                    "action_digest": dispatch["action_digest"],
+                    "application_uid": target["uid"],
+                    "operation_id": markers[0]["value"],
+                    "receipt_resource_version": acknowledged["resource_version"],
+                    "observed_resource_version": metadata["resourceVersion"],
+                    "resource_versions_compared_as_opaque_identity": True,
+                })
                 return app
-            if operation_state.get("phase") in {"Error", "Failed"}:
+            if operation.get("info") == markers and operation_state.get("phase") in {"Error", "Failed"}:
                 raise PlatformCIError("Argo Application sync ended in a failed phase")
             time.sleep(POLL_INTERVAL)
         raise PlatformCIError(f"Argo did not complete the selected revision sync: {last}")
@@ -3981,17 +4041,18 @@ class Runner:
         destination.write_text(text, encoding="utf-8")
         return text
 
-    def _verify_webhook_admission_log(self, fault_started_at: datetime) -> str:
-        logs = self._read_pod_logs(
-            "deployment/atlasops-coordinator",
-            "default",
-            "coordinator-after-alert.log",
-        )
-        if not re.search(r'"POST /webhook HTTP/1\.[01]" 200', logs):
-            raise PlatformCIError("coordinator access log lacks an admitted Alertmanager webhook response")
-        if "401" not in logs and "POST /webhook" not in logs:
-            raise PlatformCIError("coordinator webhook admission was not observed")
-        return logs
+    def _verify_webhook_admission_log(self) -> str:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            logs = self._read_pod_logs(
+                "deployment/atlasops-coordinator",
+                "default",
+                "coordinator-after-alert.log",
+            )
+            if re.search(r'"POST /webhook HTTP/1\.[01]" 200', logs):
+                return logs
+            time.sleep(POLL_INTERVAL)
+        raise PlatformCIError("coordinator access log lacks a completed Alertmanager webhook response")
 
     def _fault_deployment(self) -> tuple[dict[str, Any], str, datetime]:
         self._stage("fault_injection", "running")
@@ -4263,7 +4324,6 @@ class Runner:
         pending, pre_approval_evidence = self._wait_for_pending_incident(started.isoformat())
         selected = self.data["pre_fault_eligibility"]
         action = self._pending_action(pending, selected)
-        self._verify_webhook_admission_log(started)
         self._record(
             "alert_admission",
             {
@@ -4271,7 +4331,9 @@ class Runner:
                 "alertmanager": self._active_frontend_alert(self._alertmanager_alerts()),
                 "webhook": {
                     "route": "/webhook",
-                    "http_status": 200,
+                    "http_status": None,
+                    "response_status": "awaiting_execution_completion",
+                    "execution_id": pre_approval_evidence.get("execution_id"),
                     "authenticated_admission": True,
                     "direct_coordinator_injection": False,
                 },
@@ -4562,7 +4624,7 @@ class Runner:
             "api-evidence/argo-application-before-approval.jsonl", before_approval
         )
         self._approve_exact_action(pending)
-        dispatch = self._wait_for_approved_mutation_started(pending)
+        dispatch = self._wait_for_approved_mutation_returned(pending)
         self._stage(
             "approval_and_recovery",
             "running",
@@ -4587,6 +4649,13 @@ class Runner:
             verification,
             expected_uid=prepared_action["verification_target"]["uid"],
         )
+        self._verify_webhook_admission_log()
+        self._record("webhook_response", {
+            "route": "/webhook",
+            "http_status": 200,
+            "execution_id": completion.get("execution_id"),
+            "observed_after_execution_completion": True,
+        })
         self._record("completion_proof", proof)
         self._stage("approval_and_recovery", "completed")
 

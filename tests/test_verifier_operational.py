@@ -456,7 +456,7 @@ def test_bound_verifier_decodes_real_sdk_response_without_network(monkeypatch):
     ))
     transport = Mock(return_value=response)
     with kubernetes_client.ApiClient(configuration) as client:
-        monkeypatch.setattr(client, "request", transport)
+        monkeypatch.setattr(client.rest_client, "request", transport)
         factory = Mock(return_value=(Mock(), client))
         monkeypatch.setattr(chaos, "_new_chaos_api_client", factory)
         verifier = EnvironmentVerifier(

@@ -15,21 +15,21 @@ GENERATOR = ROOT / "scripts" / "generate_runtime_secrets.py"
 WRAPPER = r"""
 exec 3>&2
 python() {
-  printf 'python' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'python%s\n' "$arguments" >&3
   return "$MOCK_INSPECTION_STATUS"
 }
 python3() {
-  printf 'python3' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'python3%s\n' "$arguments" >&3
   return "$MOCK_INSPECTION_STATUS"
 }
 kubectl() {
-  printf 'kubectl' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'kubectl%s\n' "$arguments" >&3
   if [[ " $* " == *" apply -f - "* ]]; then
     cat >/dev/null
   fi
@@ -158,6 +158,29 @@ def test_kubectl_apply_double_drains_large_stdin(tmp_path: Path) -> None:
     assert result.stderr.splitlines() == [
         "kubectl [--context=kind-atlasops-local] [apply] [-f] [-]"
     ]
+
+
+def test_parallel_command_doubles_keep_each_trace_record_intact(tmp_path: Path) -> None:
+    helper = tmp_path / "parallel command traces.sh"
+    helper.write_text(
+        "set -euo pipefail\n"
+        "printf() { builtin printf \"$@\"; sleep 0.002; }\n"
+        "for _ in {1..8}; do\n"
+        "  kubectl --context=kind-atlasops-local create secret generic fixture-secret "
+        "--namespace=default --dry-run=client -o yaml | "
+        "kubectl --context=kind-atlasops-local apply -f -\n"
+        "done\n",
+        encoding="utf-8",
+    )
+
+    result = _run_recovery(helper, [])
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(result.stderr.splitlines()) == sorted([
+        "kubectl [--context=kind-atlasops-local] [create] [secret] [generic] "
+        "[fixture-secret] [--namespace=default] [--dry-run=client] [-o] [yaml]",
+        "kubectl [--context=kind-atlasops-local] [apply] [-f] [-]",
+    ] * 8)
 
 
 def test_recovery_requires_an_explicit_context_before_any_command(tmp_path: Path) -> None:

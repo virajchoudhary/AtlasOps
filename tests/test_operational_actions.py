@@ -14,6 +14,7 @@ from agents import action_execution as actions
 @pytest.mark.parametrize("method,status,content_type", [
     ("GET", 200, None),
     ("PATCH", 200, "application/json-patch+json"),
+    ("PATCH", 201, "application/json-patch+json"),
     ("DELETE", 200, "application/json"),
     ("DELETE", 202, "application/json"),
 ])
@@ -33,12 +34,12 @@ def test_atomic_request_uses_real_sdk_without_network(
     body = None if method == "GET" else {"preconditions": {"uid": "owned-uid"}}
     path = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/atlasops-boutique"
     with kubernetes_client.ApiClient(configuration) as client:
-        monkeypatch.setattr(client, "request", transport)
+        monkeypatch.setattr(client.rest_client, "request", transport)
         assert actions._request(client, path, method, body=body) == resource
 
     assert transport.call_args.args == (method, configuration.host + path)
     sent = transport.call_args.kwargs
-    assert sent["body"] == body
+    assert sent.get("body") == body
     assert sent["_request_timeout"] == 30
     assert sent["headers"]["Accept"] == "application/json"
     assert sent["headers"]["authorization"] == "Bearer non-secret-unit-key"
@@ -60,6 +61,27 @@ def test_atomic_request_preserves_legacy_sdk_response_contract():
         return resource
 
     client = SimpleNamespace(call_api=legacy_call_api)
+    assert actions._request(client, "/api/v1/pods") == resource
+    assert calls == [(
+        "/api/v1/pods", "GET", {"Accept": "application/json"}, None, ["BearerToken"],
+    )]
+
+
+def test_atomic_request_preserves_sdk36_response_contract():
+    resource = {"apiVersion": "v1", "kind": "Status", "status": "Success"}
+    calls = []
+
+    def call_api(
+        path, method, *, header_params, body, auth_settings, response_types_map,
+        _return_http_data_only, _request_timeout,
+    ):
+        calls.append((path, method, header_params, body, auth_settings))
+        assert response_types_map == {200: "object", 201: "object", 202: "object"}
+        assert _return_http_data_only is True
+        assert _request_timeout == 30
+        return resource
+
+    client = SimpleNamespace(call_api=call_api)
     assert actions._request(client, "/api/v1/pods") == resource
     assert calls == [(
         "/api/v1/pods", "GET", {"Accept": "application/json"}, None, ["BearerToken"],

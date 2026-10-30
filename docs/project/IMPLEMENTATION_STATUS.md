@@ -24,9 +24,29 @@ optional historical work and marks G10/G11 `OUT_OF_SCOPE` for final completion.
 | Integrated evaluation and ablation | SOFTWARE COMPLETE / EMPIRICAL WORK DEFERRED | G12 lacks an accepted policy checkpoint/environment run. G13 remains REOPENED as withdrawal of its unsupported historical PASS: the final three-arm matrix depends on an absent SFT+GRPO checkpoint and unfrozen measurement decisions. Non-claimable raw replay and artifact validators exist. Historical predetermined profiles remain unchanged. |
 | Operator UI and submission | PRESENTATION / REVIEW PACKAGE COMPLETE / NOT_CERTIFIED | The read-only local console, current report/slides, reviewer guide, evidence index and asset-hashed Stage 15 inventory form the non-experimental deliverable. G14 peer-host/operator acceptance, scientific certification and actual external submission remain unestablished. |
 
-Current basis: freshly fetched main
-`7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, 5 October 2026.
+The scientific inventory above retains the 5 October 2026 evidence basis at
+`7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`. It is not a current software SHA.
 G4 is frozen: 015 terminal INCONCLUSIVE/unscored, 016 pre-fault abort/non-result,
 017 completed negative. No attempt 018, model execution, Test/Leaderboard outcome
 access, paid compute or live mutation belongs to this completion lane.
 See [the deferred handoff](DEFERRED_RESEARCH_HANDOFF.md).
+
+## October 30 local platform continuation
+
+Protected main `ea797b002c8133d0ab67671c328101e16ebef7d1` includes the identity,
+governed runtime, Operations UI, local infrastructure, and runtime-lock changes
+from PRs 242-246. The local profile has private observability services, a
+single-owner Argo CD Application, OpenTelemetry configuration, authenticated
+alert delivery, exact-action operational approvals, and objective verification
+contracts. These are implemented software contracts, not physical-host acceptance.
+
+[PR #247](https://github.com/virajchoudhary/AtlasOps/pull/247) adds a guarded,
+source-bound disposable integration check. Its deterministic model and operator
+fixtures are NON_EMPIRICAL_SOFTWARE_FIXTURE even when Kubernetes executes a real
+fault and remediation. The exact accepted source, current CI, and independently
+checked archive belong in the final external receipt.
+
+The [Mac reconciliation](ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md) preserves
+the original PR #241 observations and records the restart and severity changes.
+Older Mac evidence does not qualify the newer platform source. No scientific
+row above is promoted by this continuation.

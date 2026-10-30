@@ -1,0 +1,53 @@
+# T3/T4 on atlasops-buglab:v4-resume (fafe1eb + entrypoint fix)
+# 2026-10-29T19:06:10Z  host: Apple M4, macOS 24.6.0, arm64
+# llm container 127.0.0.1:8791, rules container 127.0.0.1:8792
+# the live demo lab on 8790 (v3) was left running and untouched
+
+## T3 - state API returns 200 and valid JSON
+  :8791 GET /lab/api/state -> HTTP 200
+    valid JSON, keys: ['active', 'backend', 'catalog', 'checks', 'history', 'incident', 'incident_sequence', 'incident_state', 'injected', 'settings', 'site', 'stages', 'workspace_id']
+    backend.mode: llm | label: qwen2.5:7b-instruct via http://host.docker.internal:8000/v1
+    incident_sequence: 0 | history entries: 0
+  :8792 GET /lab/api/state -> HTTP 200
+    valid JSON, keys: ['active', 'backend', 'catalog', 'checks', 'history', 'incident', 'incident_sequence', 'incident_state', 'injected', 'settings', 'site', 'stages', 'workspace_id']
+    backend.mode: rules | label: Rule engine (no model)
+    incident_sequence: 0 | history entries: 0
+
+## T3b - health endpoints
+  :8791 /health        -> HTTP 200
+  :8791 /health/ready  -> HTTP 200
+  :8791 /health/live   -> HTTP 200
+  :8792 /health        -> HTTP 200
+  :8792 /health/ready  -> HTTP 200
+  :8792 /health/live   -> HTTP 200
+
+## T4 - write guard (require_lab_header) on every write route
+   expect 403 without the header; with it, 400 on an empty/invalid body
+  --- :8791 ---
+    /lab/api/inject        no-header=403  with-header=400
+    /lab/api/reset         no-header=403  with-header=200
+    /lab/api/approval      no-header=403  with-header=409
+    /lab/api/settings      no-header=403  with-header=200
+    /lab/api/telemetry     no-header=403  with-header=400
+  --- :8792 ---
+    /lab/api/inject        no-header=403  with-header=400
+    /lab/api/reset         no-header=403  with-header=200
+    /lab/api/approval      no-header=403  with-header=409
+    /lab/api/settings      no-header=403  with-header=200
+    /lab/api/telemetry     no-header=403  with-header=400
+
+## T4b - foreign Origin is refused even with the header
+    :8791 Origin: http://evil.example -> HTTP 403
+
+## container user (must not be root)
+  buglab-acc-llm     uid=10001(lab) gid=999(lab) groups=999(lab)
+  buglab-acc-rules   uid=10001(lab) gid=999(lab) groups=999(lab)
+
+## port publication
+  buglab-acc-llm     8790/tcp -> 127.0.0.1:8791 
+  buglab-acc-rules   8790/tcp -> 127.0.0.1:8792 
+
+## loopback only
+  host LAN ip: 192.168.1.105
+  :8791 from LAN ip -> curl exit 7 (7 = refused)
+  :8792 from LAN ip -> curl exit 7 (7 = refused)

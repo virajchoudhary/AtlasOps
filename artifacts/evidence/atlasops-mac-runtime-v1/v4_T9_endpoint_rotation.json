@@ -1,0 +1,35 @@
+{
+  "generated_at": 1793302374.468108,
+  "old_port": 8001,
+  "new_port": 8002,
+  "isolated_from_live_stack": true,
+  "backend_before": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8001/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8001/v1",
+    "note": ""
+  },
+  "old_endpoint_before": "HTTP 401 (401 = proxy up, key enforced)",
+  "new_endpoint_before": "URLError (nothing listening)",
+  "proxy_run": "9bbe127208c374d97c2c2268a3e778596800678cf6009580ce06a9f9ae47b59f",
+  "old_endpoint_after_move": "URLError (nothing listening)",
+  "new_endpoint_after_move": "HTTP 401 (401 = proxy up, key enforced)",
+  "backend_still_reported_by_running_container": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8001/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8001/v1",
+    "note": ""
+  },
+  "container_id_after_restart": "231f8660ff3d",
+  "backend_after_restart": {
+    "mode": "llm",
+    "label": "qwen2.5:7b-instruct via http://host.docker.internal:8002/v1",
+    "model": "qwen2.5:7b-instruct",
+    "base_url": "http://host.docker.internal:8002/v1",
+    "note": ""
+  },
+  "lab_log_after_restart": "bug lab: starting a new working copy at /work\nAtlasOps bug lab\n  Control room: http://0.0.0.0:8790/\n  Store:        http://0.0.0.0:8790/shop/\n  Working copy: /work\n  Backend: qwen2.5:7b-instruct via http://host.docker.internal:8002/v1",
+  "live_lab_8790_still_up": "200"
+}

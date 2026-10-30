@@ -12,8 +12,26 @@ adds a reviewable coordinator workload, authenticated Alertmanager route, and a
 minimum kube-state-metrics alert. Neither stage proves that a real GKE deployment
 or end-to-end incident flow works.
 
-> **Stage 1D-B is STATICALLY WIRED / LIVE UNVERIFIED. Review its unmerged PR
-> before any controlled live GKE reproduction.**
+> **The historical Stage 1D-B GKE contract is STATICALLY WIRED / LIVE UNVERIFIED.**
+> Accepted software merges do not authorize a controlled live GKE reproduction.
+
+## Current local platform
+
+The canonical free-first environment is the guarded Kind profile in
+[`infra/local/setup_local.sh`](../../infra/local/setup_local.sh).
+Protected main `ea797b002c8133d0ab67671c328101e16ebef7d1` includes the
+reviewed local infrastructure and governed operational runtime from PRs 242-246.
+The renderer and
+[`verify_platform_infrastructure.py`](../../scripts/verify_platform_infrastructure.py)
+define private Services, source-pinned workloads, observability, Argo ownership,
+admission policy, and read-only executor RBAC.
+
+The GKE-specific topology, optional components, and Stage 1D records below retain
+their historical scope. Their deferred components do not describe the newer local
+Kind configuration. Local source or disposable CI acceptance does not
+establish GKE portability or final-device acceptance.
+See [the current implementation classification](IMPLEMENTATION_STATUS.md)
+and [the Mac reconciliation](ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md).
 
 ## Development GKE topology
 

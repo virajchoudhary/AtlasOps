@@ -194,6 +194,7 @@ def test_prometheus_rule_uses_only_kube_state_metrics_availability() -> None:
     assert "kube_deployment_status_replicas_available" in alert["expr"]
     assert "kube_deployment_spec_replicas" in alert["expr"]
     assert alert["labels"]["atlasops_route"] == "coordinator"
+    assert alert["labels"]["severity"] == "critical"
     forbidden = ("http_request", "5xx", "latency", "histogram_quantile")
     assert not any(value in alert["expr"].lower() for value in forbidden)
     assert "additionalScrapeConfigs" not in PROM_VALUES

@@ -1,0 +1,13 @@
+APPROVAL_POLICY: {'P0': 'manual', 'P1': 'approve', 'P2': 'auto', 'P3': 'auto'}
+
+  model triage | alert label | effective | approval mode
+  P0           | warning     | P0        | manual
+  P0           | critical    | P0        | manual
+  P1           | warning     | P1        | approve
+  P1           | critical    | P1        | approve
+  P2           | warning     | P2        | auto
+  P2           | critical    | P1        | approve
+  P3           | warning     | P3        | auto
+  P3           | critical    | P1        | approve
+  UNKNOWN      | warning     | UNKNOWN   | approve
+  UNKNOWN      | critical    | P1        | approve

@@ -1,0 +1,17 @@
+[07:16:58  T+  62s] alert=pending n=1 [emailservice] | emailservice=0/1 | audit=? traj=0 postmortem=0
+[07:17:31  T+  95s] alert=pending n=1 [emailservice] | emailservice=0/1 | audit=? traj=0 postmortem=0
+[07:18:03  T+ 127s] alert=pending n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=? traj=0 postmortem=0
+[07:18:36  T+ 160s] alert=pending n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=? traj=0 postmortem=0
+[07:19:12  T+ 196s] alert=firing n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=6 traj=0 postmortem=0
+[07:19:56  T+ 240s] alert=firing n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=10 traj=0 postmortem=0
+[07:20:50  T+ 294s] alert=firing n=2 [emailservice,paymentservice] | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:21:39  T+ 343s] alert=query-failed | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:22:41  T+ 405s] alert=query-failed | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:23:18  T+ 442s] alert=query-failed | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:24:54  T+ 538s] alert=query-failed | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:25:38  T+ 582s] alert=query-failed | emailservice=0/1 | audit=18 traj=0 postmortem=0
+[07:26:13  T+ 617s] alert=query-failed | emailservice=0/1 | audit=19 traj=0 postmortem=0
+[07:27:01  T+ 665s] alert=query-failed | emailservice=0/1 | audit=19 traj=0 postmortem=0
+[07:28:02  T+ 726s] alert=query-failed | emailservice=0/1 | audit=19 traj=0 postmortem=0
+[07:28:37  T+ 761s] alert=query-failed | emailservice=0/1 | audit=20 traj=0 postmortem=0
+[07:29:09  T+ 793s] alert=unknown n=0 [-] | emailservice=0/1 | audit=23 traj=0 postmortem=0

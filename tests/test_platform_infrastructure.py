@@ -743,6 +743,36 @@ def test_grafana_uses_new_secret_and_trace_derived_dashboard_queries() -> None:
     assert "kube_" not in joined
 
 
+def test_local_prometheus_operator_does_not_require_a_disabled_webhook_certificate() -> None:
+    values = yaml.safe_load((INFRA_LOCAL / "values" / "prometheus-local.yaml").read_text())
+    operator = values["prometheusOperator"]
+
+    assert operator["admissionWebhooks"]["enabled"] is False
+    assert operator.get("tls", {}).get("enabled", True) is False
+
+
+@pytest.mark.parametrize("tls", [None, {"enabled": True}])
+def test_static_validation_rejects_the_missing_admission_certificate_profile(
+    monkeypatch, tls
+) -> None:
+    values = yaml.safe_load((INFRA_LOCAL / "values" / "prometheus-local.yaml").read_text())
+    operator = values["prometheusOperator"]
+    operator.pop("tls", None)
+    if tls is not None:
+        operator["tls"] = tls
+    original_loader = platform_verify.load_documents
+
+    def load(path):
+        if path == platform_verify.INFRA_LOCAL / "values" / "prometheus-local.yaml":
+            return [values]
+        return original_loader(path)
+
+    monkeypatch.setattr(platform_verify, "load_documents", load)
+
+    with pytest.raises(ValueError, match="disabled Prometheus admission webhooks"):
+        platform_verify.validate_static()
+
+
 def test_jaeger_chart_values_match_the_pinned_v2_chart_and_keep_service_private() -> None:
     values = yaml.safe_load((INFRA_LOCAL / "values" / "jaeger-local.yaml").read_text())
     assert values["jaeger"]["service"]["type"] == "ClusterIP"

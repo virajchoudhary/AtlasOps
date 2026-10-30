@@ -5,10 +5,10 @@ training packages, cloud account, or container engine. Its native dependency gra
 in `requirements/buglab-runtime.lock`; it installs only the FastAPI application
 runtime and its transitive dependencies.
 
-The lock applies to native source installs and CI. `Dockerfile.buglab` is intentionally
-unchanged and still pins only FastAPI, Uvicorn, and httpx directly. The Docker commands
-below override the image command to select rules mode; they do not make its transitive
-image dependencies hash-locked.
+The lock applies to native source installs and CI. The Docker image still pins only
+FastAPI, Uvicorn, and httpx directly; its transitive image dependencies are not
+hash-locked. The image defaults to `--agents llm`, while its entrypoint selects
+first-start or resume from the final effective work directory's ownership marker.
 
 ## Windows
 
@@ -108,7 +108,8 @@ body or credential is included in those responses.
 ## Optional Docker Smoke
 
 Prerequisites: a Docker Engine that is already running, and an unused local port
-`8790`. No model is needed. The host-side port is bound to loopback only.
+`8790`. No model is needed for rules mode. The host-side port is bound to loopback
+only.
 
 ```sh
 docker build --file Dockerfile.buglab --tag atlasops-buglab:local .
@@ -116,14 +117,16 @@ docker volume create atlasops-buglab-data
 docker run --detach --name atlasops-buglab \
   --publish 127.0.0.1:8790:8790 \
   --mount type=volume,source=atlasops-buglab-data,target=/work \
-  --entrypoint python atlasops-buglab:local \
-  -m demo.bug_lab --host 0.0.0.0 --allow-remote \
-  --workdir /work --agents rules
+  atlasops-buglab:local --agents rules
 curl --fail --show-error http://127.0.0.1:8790/health
 ```
 
-To stop and later resume the named-volume workspace, remove only the container and
-keep the volume:
+The image entrypoint passes `--resume` when the final effective work directory
+(`--workdir`, `BUG_LAB_WORKDIR`, or the default `/work`) contains
+`.bug-lab-workspace.json`. The CLI validates the marker and still refuses to adopt a
+nonempty unmarked directory or a corrupt workspace.
+
+To restart the named-volume workspace, remove only the container and keep the volume:
 
 ```sh
 docker stop atlasops-buglab
@@ -131,10 +134,11 @@ docker rm atlasops-buglab
 docker run --detach --name atlasops-buglab \
   --publish 127.0.0.1:8790:8790 \
   --mount type=volume,source=atlasops-buglab-data,target=/work \
-  --entrypoint python atlasops-buglab:local \
-  -m demo.bug_lab --host 0.0.0.0 --allow-remote \
-  --workdir /work --agents rules --resume
+  atlasops-buglab:local --agents rules
 ```
+
+Passing a full command such as `python -m demo.bug_lab ...` executes it directly;
+include `--resume` yourself when reopening an owned workspace.
 
 This guide documents reproducible commands; it is not evidence of a physical Mac
 execution or hardware qualification. The historical Mac runbook and its recorded

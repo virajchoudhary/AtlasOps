@@ -39,6 +39,7 @@ COPY training/sft_provenance.py ./training/sft_provenance.py
 COPY config ./config
 
 COPY demo ./demo
+COPY docker/buglab-entrypoint.sh /usr/local/bin/buglab-entrypoint.sh
 
 # The lab writes its editable copy of the store under /work. The root filesystem
 # can stay read-only; /work and /tmp are the only paths that need to be writable.
@@ -57,5 +58,5 @@ EXPOSE 8790
 # --agents llm refuses to start when no model answers, so a broken endpoint
 # fails loudly instead of silently falling back. Override with --agents rules
 # for the no-model baseline, or --agents auto when a demo must keep running.
-CMD ["python", "-m", "demo.bug_lab", "--host", "0.0.0.0", "--allow-remote", \
-     "--workdir", "/work", "--agents", "llm"]
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/buglab-entrypoint.sh"]
+CMD ["--agents", "llm"]

@@ -3921,3 +3921,58 @@ def test_http_reader_rejects_cap_plus_one_without_truncating_json(size: int) -> 
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+def test_prometheus_rule_filters_the_http_inventory_before_its_size_limit(
+    tmp_path: Path,
+) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from urllib.parse import parse_qs, urlsplit
+
+    rule = _pre_fault_state()[2]
+    unrelated = {
+        "name": "UnrelatedAlert",
+        "annotations": {"description": "x" * platform_ci.MAX_EVIDENCE_TEXT},
+    }
+    requests = []
+
+    class RulesHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            query = parse_qs(urlsplit(self.path).query)
+            requests.append(query)
+            rules = [rule, unrelated]
+            names = query.get("rule_name[]")
+            if names:
+                rules = [item for item in rules if item["name"] in names]
+            body = json.dumps({
+                "status": "success",
+                "data": {"groups": [{"name": "fixture", "rules": rules}]},
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RulesHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        runner = platform_ci.Runner(_run_identity(), tmp_path / "evidence", env={})
+        runner.ports = {"prometheus": server.server_port}
+        observed = runner._prometheus_rule()
+
+        assert observed["name"] == rule["name"]
+        assert observed["query"] == rule["query"]
+        assert requests == [{
+            "type": ["alert"],
+            "rule_name[]": [platform_ci.ALERT_NAME],
+        }]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

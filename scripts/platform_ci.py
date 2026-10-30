@@ -3243,8 +3243,9 @@ class Runner:
         return result
 
     def _prometheus_rule(self) -> dict[str, Any]:
+        query = urlencode({"type": "alert", "rule_name[]": ALERT_NAME})
         status, body = self._http(
-            f"http://127.0.0.1:{self.ports['prometheus']}/api/v1/rules?type=alert",
+            f"http://127.0.0.1:{self.ports['prometheus']}/api/v1/rules?{query}",
             timeout=15,
             label="read actual Prometheus alert rules",
         )

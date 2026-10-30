@@ -3632,24 +3632,51 @@ def test_fixture_identifies_role_from_complete_production_prompt(role: str, tool
         platform_ci.derive_fixture_role(payload)
 
 
-def test_boutique_traffic_preserves_cookie_through_product_cart_and_checkout() -> None:
+@pytest.mark.parametrize(
+    "quantity_control",
+    [
+        '<input name="quantity" value="1">',
+        '<select name="quantity" id="quantity"><option>1</option><option>2</option></select>',
+    ],
+    ids=["input", "boutique-default-select"],
+)
+def test_boutique_traffic_preserves_cookie_through_product_cart_and_checkout(
+    quantity_control: str,
+) -> None:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
+    from urllib.parse import parse_qs
 
     requests: list[tuple[str, str | None]] = []
+    submissions: list[tuple[str, dict[str, list[str]]]] = []
 
     class BoutiqueHandler(BaseHTTPRequestHandler):
         def _respond(self) -> None:
             requests.append((self.path, self.headers.get("Cookie")))
             if self.command == "POST":
-                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                fields = parse_qs(
+                    self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode(),
+                    keep_blank_values=True,
+                )
+                submissions.append((self.path, fields))
+                if self.path == "/cart" and (
+                    fields.get("product_id") != ["fixture-product"]
+                    or fields.get("quantity") != ["1"]
+                ):
+                    self.send_response(400)
+                    self.end_headers()
+                    return
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             if self.path == "/":
                 self.send_header("Set-Cookie", "shop_session-id=fixture-session; Path=/")
                 body = '<a href="/product/fixture-product">Product</a>'
             elif self.path == "/product/fixture-product":
-                body = '<form action="/cart" method="POST"><input name="quantity" value="1"></form>'
+                body = (
+                    '<form action="/cart" method="POST">'
+                    '<input type="hidden" name="product_id" value="fixture-product">'
+                    f"{quantity_control}</form>"
+                )
             elif self.path == "/cart":
                 body = '<form action="/cart/checkout" method="POST"><input name="email" value=""></form>'
             else:
@@ -3677,6 +3704,10 @@ def test_boutique_traffic_preserves_cookie_through_product_cart_and_checkout() -
     assert result["request_paths"] == ["/", "/product/fixture-product", "/cart", "/cart", "/cart/checkout"]
     assert requests[0] == ("/", None)
     assert all(cookie == "shop_session-id=fixture-session" for _path, cookie in requests[1:])
+    assert submissions == [
+        ("/cart", {"product_id": ["fixture-product"], "quantity": ["1"]}),
+        ("/cart/checkout", {"email": ["platform-ci@example.invalid"]}),
+    ]
 
 
 def test_pending_admission_does_not_require_a_completed_webhook_response(

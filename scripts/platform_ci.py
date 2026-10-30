@@ -2131,7 +2131,7 @@ def exercise_boutique(base_url: str, *, timeout: float = 10) -> dict[str, Any]:
         raise PlatformCIError("frontend product page did not expose its cart form")
     cart_fields = dict(cart_form["fields"])
     cart_fields.setdefault("product_id", product_path.rstrip("/").split("/")[-1])
-    cart_fields.setdefault("quantity", "1")
+    cart_fields["quantity"] = cart_fields.get("quantity") or "1"
     request(cart_form["action"], cart_fields)
 
     cart_page = request("/cart")

@@ -1,5 +1,34 @@
 # AtlasOps implementation status
 
+## October 30 software continuation
+
+Core PR [243](https://github.com/virajchoudhary/AtlasOps/pull/243) and Operations
+PR [244](https://github.com/virajchoudhary/AtlasOps/pull/244) are merged.
+The accepted software baseline is main
+`ea797b002c8133d0ab67671c328101e16ebef7d1`, including infrastructure PR
+[245](https://github.com/virajchoudhary/AtlasOps/pull/245) and runtime-lock PR
+[246](https://github.com/virajchoudhary/AtlasOps/pull/246).
+All 18 checks passed on PR 246's reviewed head
+`6800308ff5dc84452de2997abb8f9d08fed83a79`, including its
+[application CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/40981467809).
+The current core binds exact-action decisions, workload reads, objective
+verification, communication, and durable execution-source attribution.
+Operations includes the authenticated real-handler browser workflow and
+same-key reconnect repair.
+
+The [platform requirement matrix](PLATFORM_REQUIREMENT_MATRIX.md) separates
+source implementation, test evidence, hosted disposable integration, and actual
+host/model/operator acceptance. The [local platform runbook](LOCAL_PLATFORM_RUNTIME.md)
+defines the private Kind profile. The disposable-CI candidate in PR
+[247](https://github.com/virajchoudhary/AtlasOps/pull/247) has independent source
+acceptance, but its [first hosted integration job](https://github.com/virajchoudhary/AtlasOps/actions/runs/40982696778)
+failed. The full platform remains PARTIAL until that failure is diagnosed,
+current checks pass, and final combined main receives its own acceptance.
+No successful integrated recovery or cleanup is claimed for that failed job.
+
+The scientific classifications below are unchanged. A working application or
+hosted deterministic fixture does not establish research success.
+
 **Current continuation status: NOT_CERTIFIED.** This is a concise software and
 evidence classification, not an independent live-readiness verdict. The
 [Master Pipeline inventory](MASTER_PIPELINE_STATUS.md) controls the formal
@@ -24,7 +53,7 @@ optional historical work and marks G10/G11 `OUT_OF_SCOPE` for final completion.
 | Integrated evaluation and ablation | SOFTWARE COMPLETE / EMPIRICAL WORK DEFERRED | G12 lacks an accepted policy checkpoint/environment run. G13 remains REOPENED as withdrawal of its unsupported historical PASS: the final three-arm matrix depends on an absent SFT+GRPO checkpoint and unfrozen measurement decisions. Non-claimable raw replay and artifact validators exist. Historical predetermined profiles remain unchanged. |
 | Operator UI and submission | PRESENTATION / REVIEW PACKAGE COMPLETE / NOT_CERTIFIED | The read-only local console, current report/slides, reviewer guide, evidence index and asset-hashed Stage 15 inventory form the non-experimental deliverable. G14 peer-host/operator acceptance, scientific certification and actual external submission remain unestablished. |
 
-Current basis: freshly fetched main
+Historical status basis: freshly fetched main
 `7ac0cfb5c5fbd77d82500a72fd06b802c2b826b7`, 5 October 2026.
 G4 is frozen: 015 terminal INCONCLUSIVE/unscored, 016 pre-fault abort/non-result,
 017 completed negative. No attempt 018, model execution, Test/Leaderboard outcome

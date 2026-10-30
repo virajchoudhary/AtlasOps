@@ -5,6 +5,40 @@ The [Master Pipeline](MASTER_PIPELINE_STATUS.md) controls scientific gate status
 the [evidence index](../EVIDENCE_INDEX.md) locates immutable results.
 Neither this checklist nor software tests can promote an empirical gate.
 
+## October 30 platform delivery
+
+The full-platform continuation retains the working Bug Lab and the original
+four-agent coordinator. Core PR
+[243](https://github.com/virajchoudhary/AtlasOps/pull/243) and Operations PR
+[244](https://github.com/virajchoudhary/AtlasOps/pull/244) are merged.
+Infrastructure PR [245](https://github.com/virajchoudhary/AtlasOps/pull/245)
+and runtime-lock PR [246](https://github.com/virajchoudhary/AtlasOps/pull/246)
+are also merged. The accepted software baseline is main
+`ea797b002c8133d0ab67671c328101e16ebef7d1`.
+PR 246's exact-head
+[application CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/40981467809),
+[runtime CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/40981467814),
+and [admission CI](https://github.com/virajchoudhary/AtlasOps/actions/runs/40981467896)
+passed. Each full Python suite passed 4,114 tests with 40 skips; browser workflows
+passed 58, 14, and one case. These results describe reviewed head
+`6800308ff5dc84452de2997abb8f9d08fed83a79`, not a later combined-main acceptance.
+
+The [local platform runbook](LOCAL_PLATFORM_RUNTIME.md) defines the private
+startup, readiness, evidence, and teardown paths. Disposable integration PR
+[247](https://github.com/virajchoudhary/AtlasOps/pull/247) is source-reviewed but
+unmerged. Its [first hosted job](https://github.com/virajchoudhary/AtlasOps/actions/runs/40982696778)
+failed; the failing step, recovery, and cleanup have not been accepted.
+That job needs diagnosis and a passing rerun. Final combined main and its
+exact-source archive then require their own acceptance receipt.
+Physical host and real-model/operator acceptance remain unverified until measured.
+
+All scientific rows below retain their prior statuses. In particular, G4 and G9
+remain `NOT_PASSED/FROZEN`; exploratory CPU/GPU results retain their original
+scope and are not formal G9 evidence. Credential rotation, GCP billing,
+scientific adjudication, and actual submission remain external actions.
+
+## Historical software baseline
+
 Software baseline: merged PR [225](https://github.com/virajchoudhary/AtlasOps/pull/225),
 main commit `663b1959b885418b27af8463c0c7e88cb6fb87d8`, tree
 `523f849f1f0befd31aac73aa417ad08fd4f9e2b2`.
@@ -113,10 +147,10 @@ execution profile or old approval.
 The current G4 candidate's seven mismatched pins remain a NO-GO observation;
 refreshing documentation or CI cannot qualify that profile.
 
-### G7 source discrepancy
+### Historical G7 source discrepancy
 
-The session-supplied operating-contract snapshot says successful SFT training
-and checkpoint provenance are unverified. Current tracked `AGENTS.md`, the
+An earlier session-supplied operating-contract snapshot said successful SFT training
+and checkpoint provenance were unverified. Current tracked `AGENTS.md`, the
 Master Pipeline, `free-t4-v17/RESULT.json` and its separate reload receipt
 record the later bounded artifact/reload acceptance. The operating contract
 itself gives preserved evidence precedence over prose status claims.

@@ -1,18 +1,26 @@
-# AtlasOps Stage 3 / Gate G3 Operator Guide & Preflight Package
+# Historical AtlasOps Stage 3 GKE operator guide
 
 **Document Version:** 1.1  
 **Specification Reference:** Master Implementation Pipeline v1.0 (Stage 3 / Gate G3)  
-**Status:** READY FOR OPERATOR ACTIVATION (Cloud Mutation Blocked Pending Operator Authorization)
+**Status:** HISTORICAL / OPTIONAL GKE PORTABILITY. Not current activation authority.
 
 ---
 
 ## 1. Overview & Purpose
 
-This document provides the exact contract, input parameters, secret architecture, and end-to-end execution sequence required to execute **Stage 3 (Controlled SRE Environment)** on Google Kubernetes Engine (GKE) and formally validate **Gate G3**.
+This document retains the earlier optional Google Kubernetes Engine procedure.
+The canonical Stage 3 environment is local Kind. Use the
+[local platform runbook](LOCAL_PLATFORM_RUNTIME.md) for the current private
+runtime and the [Master Pipeline](MASTER_PIPELINE_STATUS.md) for gate status.
+This historical guide does not establish current G3 or host readiness.
+Its cloud commands require separate owner authorization and current review.
 
 > [!IMPORTANT]
-> **Zero-Cost & No-Cloud Safety Rule**:
-> No cloud resources will be provisioned, no GCP APIs enabled, and no gcloud logins performed until the operator explicitly runs the Stage 3 sequence. All previous stages (Stage 0, Stage 1, Stage 2, Runtime Truth, Stage 3 Static Readiness) are 100% validated offline with $0.00 cloud billing.
+> **Cloud safety boundary**:
+> This guide authorizes no cloud operation, login, billing change, or deployment.
+> Historical offline checks do not prove current resource health or zero billing.
+> Retain dated owner receipts for the
+> [outstanding external actions](EXTERNAL_CLOSURE_ACTIONS_20261027.md).
 
 ---
 
@@ -44,10 +52,12 @@ Before executing `infra/setup.sh --apply`, the operator must supply the followin
 
 > [!NOTE]
 > **Distinction Between Local Files and Cluster Objects**:
-> - **Local Secret Files** (`secrets/*.secret` on your workstation): Prepared locally before cloud mutation using `scripts/generate_runtime_secrets.py`. These files are `.gitignored` and strictly protected.
+> - **Local Secret Files** (`*.secret` in an owner-private directory outside the checkout): Prepared locally before cloud mutation using `scripts/generate_runtime_secrets.py --output-dir`. Select an absolute path and protect its owner permissions.
 > - **Kubernetes Secret Objects** (`atlasops-coordinator-secrets`, `atlasops-alertmanager-webhook` on GKE): Automatically provisioned into the cluster by `infra/setup.sh --apply` during the single-pass bootstrap.
 
-#### Required Local Files in `ATLASOPS_SECRET_DIR` (default: `secrets/`):
+#### Required Local Files in `ATLASOPS_SECRET_DIR`
+For new material, set an absolute owner-private directory outside the checkout.
+The setup's legacy `secrets/` default is not a valid generator destination.
 - `atlasops-audit-secret.secret`: HMAC key for signing audit log entries.
 - `alertmanager-webhook-secret.secret`: Bearer token for authenticating Alertmanager webhook posts.
 - `atlasops-api-key.secret`: Header secret (`X-AtlasOps-Key`) for operator approval endpoints.
@@ -59,7 +69,7 @@ Before executing `infra/setup.sh --apply`, the operator must supply the followin
 > **Secret Hygiene Rules**:
 > 1. Never paste real secret values into documentation, Git commits, or pull requests.
 > 2. Never echo or print secret values in shell history or CI logs.
-> 3. Use `scripts/generate_runtime_secrets.py` to generate cryptographically strong local secret files.
+> 3. Set `ATLASOPS_SECRET_DIR` to an absolute owner-private directory outside the checkout before generating new material.
 
 ---
 
@@ -171,7 +181,9 @@ export ATLASOPS_COST_ACK="I_UNDERSTAND_GCP_COSTS"
 
 2. Generate local runtime secret material:
 ```bash
-python scripts/generate_runtime_secrets.py --output-dir secrets --argocd-user atlasops
+"${PYTHON_BIN:-python}" -B -m scripts.generate_runtime_secrets \
+  --output-dir "${ATLASOPS_SECRET_DIR:?Set an absolute owner-private directory outside the checkout}" \
+  --argocd-user atlasops
 ```
 
 ### Gate 3H: Apply Infrastructure Foundation (`--apply`) — Single Pass
@@ -181,7 +193,7 @@ bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 ```
 
 **Single-Pass Bootstrap Execution Flow:**
-1. **Local Secret Preflight**: Validates that all required local secret files in `secrets/` exist and are non-empty before ANY cloud mutation.
+1. **Local Secret Preflight**: Validates that all required local secret files in the selected `ATLASOPS_SECRET_DIR` exist and are non-empty before ANY cloud mutation.
 2. **API Enablement**: Enables required GCP APIs (`compute`, `container`, `monitoring`, `logging`).
 3. **Cluster Creation / Reuse**: Creates or verifies the Standard zonal GKE cluster (`ensure_cluster`).
 4. **Cluster Access**: Initializes isolated temporary kubeconfig credentials (`initialize_cluster_access`).
@@ -191,7 +203,7 @@ bash infra/setup.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 8. **Observability & Backends Deployment**:
    - Prometheus / Alertmanager in `monitoring` (`kube-prometheus-stack:88.3.0`) + Prometheus rules
    - Jaeger in `jaeger` (`jaeger:4.12.0`)
-   - Argo CD in `argocd` (`argo-cd:10.3.2`) with dedicated least-privilege `atlasops` account and declarative bcrypt password verifier derived from `secrets/argocd-pass.secret`
+   - Argo CD in `argocd` (`argo-cd:10.3.2`) with dedicated least-privilege `atlasops` account and declarative bcrypt password verifier derived from `$ATLASOPS_SECRET_DIR/argocd-pass.secret`
    - Chaos Mesh in `chaos-mesh` (`chaos-mesh:2.8.3`)
 9. **Fail-Closed Secret Contract Validation**: Validates all required Secret keys are present in cluster objects before workload rollout.
 10. **Coordinator Workload Rollout**: Renders and deploys coordinator Deployment and private ClusterIP Service in `default`.
@@ -205,12 +217,14 @@ Follow the formal procedures in [`docs/project/G3_ACCEPTANCE_PLAN.md`](G3_ACCEPT
 5. **Argo CD**: `argocd_list_apps()` authenticates via in-cluster ClusterIP and returns `[]`.
 6. **Chaos Mesh**: All 28 frozen manifests in `bench/chaos_manifests/` pass `kubectl apply --dry-run=server`.
 
-### Gate 3J: Record Gate G3 PASS Evidence
-Update [`docs/project/MASTER_PIPELINE_STATUS.md`](MASTER_PIPELINE_STATUS.md) with:
+### Gate 3J: Historical G3 acceptance evidence
+The earlier procedure proposed recording the following evidence:
 - GKE Cluster name, zone, and node topology.
 - Immutable coordinator image digest.
 - Timestamps and raw response outputs from each acceptance check.
-- Mark Stage 3 / Gate G3 as **PASS**.
+
+Submit new evidence for independent review. Do not change current gate status
+from this historical procedure or from a successful software check.
 
 ### Gate 3K: Teardown & Cost Guardrails
 When testing is complete, destroy all GKE cluster resources to stop ongoing compute charges:
@@ -221,4 +235,5 @@ bash infra/teardown.sh "$PROJECT_ID" "$REGION" "$CLUSTER_NAME" --apply
 - Verify 0 remaining GKE clusters: `gcloud container clusters list`
 - If you wish to delete the container image repository to avoid storage charges:
   `gcloud artifacts repositories delete atlasops --location="$REGION" --project="$PROJECT_ID" --quiet`
-- Confirm $0 ongoing compute billing.
+- Confirm actual remaining billable resources with dated provider evidence.
+  Cluster deletion alone does not establish zero ongoing billing.

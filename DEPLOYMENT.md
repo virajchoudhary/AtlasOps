@@ -1,5 +1,18 @@
 # AtlasOps — Real-World Deployment Guide
 
+> **Local platform continuation, 30 October 2026.**
+> Use [the local platform runbook](docs/project/LOCAL_PLATFORM_RUNTIME.md) for
+> the controlled Kind runtime and [the Bug Lab runbook](docs/project/BUG_LAB_LOCAL_RUNTIME.md)
+> for the standalone Control Room and synthetic Store. The local infrastructure
+> was accepted through PRs [245](https://github.com/virajchoudhary/AtlasOps/pull/245)
+> and [246](https://github.com/virajchoudhary/AtlasOps/pull/246). The disposable-CI
+> candidate in [247](https://github.com/virajchoudhary/AtlasOps/pull/247) remains
+> unmerged after its first hosted job failed. The
+> [requirement matrix](docs/project/PLATFORM_REQUIREMENT_MATRIX.md) separates
+> that pending integration from accepted source and physical-host verification.
+> The GKE and hardware proposal below remains historical. It does not establish
+> current host readiness, paid-cloud permission, or a scientific gate.
+
 > **Current project status:** this document records intended/historical runtime
 > architecture; it is not a reproduced production procedure. Stage 1D-B adds a
 > statically validated coordinator and minimum observability contract, but real
@@ -53,7 +66,7 @@ Live observations remain disabled by default, and incident-monitor/operator
 status remain unavailable unless explicitly configured. Existing operator API
 key and Alertmanager webhook authentication remain in force.
 
-## Guarded development infrastructure entry point
+## Historical guarded GKE entry point
 
 The infrastructure scripts no longer provision or delete resources on ordinary
 invocation. Use `--check` for read-only preflight. `--apply` remains prohibited
@@ -64,7 +77,7 @@ the coordinator use ClusterIP. Jaeger and Argo CD Applications remain deferred.
 
 ---
 
-## Reviewed coordinator and observability contract
+## Historical GKE coordinator and observability contract
 
 The coordinator image is built deliberately from `Dockerfile.coordinator` and
 starts `agents.coordinator` on port `9099`. The repository does not build or push

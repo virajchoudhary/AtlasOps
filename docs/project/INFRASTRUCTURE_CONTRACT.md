@@ -1,6 +1,32 @@
 # AtlasOps infrastructure contract
 
-## Status and safety boundary
+## Current local platform
+
+The canonical continuation uses the controlled local Kind runtime described in
+[LOCAL_PLATFORM_RUNTIME.md](LOCAL_PLATFORM_RUNTIME.md). The accepted source
+integrates the existing application, Argo-owned Online Boutique, authenticated
+Alertmanager delivery, Prometheus, Grafana, and Jaeger through OpenTelemetry.
+The infrastructure and locked-runtime source entered main through PRs
+[245](https://github.com/virajchoudhary/AtlasOps/pull/245) and
+[246](https://github.com/virajchoudhary/AtlasOps/pull/246).
+The disposable integration in [247](https://github.com/virajchoudhary/AtlasOps/pull/247)
+remains unmerged and unaccepted after its first hosted job failed.
+The exact-source delivery receipt must record final combined-main acceptance.
+Local hardware, actual model/operator behavior, and scientific outcomes remain
+separate acceptance requirements.
+
+The coordinator's local workload RBAC is read-only. Rollback requests use an
+atomic Kubernetes JSON PATCH on the owned Argo Application, with an exact
+prepared action and a rollback-only admission policy. They do not use the legacy
+Argo REST rollback wrapper. Chaos Mesh installation does not execute a fault.
+All local admin Services are private and operator forwards bind to loopback.
+
+The sections below preserve the earlier GKE contract. Deferred components in
+that historical portability profile must not be confused with the new local
+profile. GKE provisioning, billing, and production hardening remain unverified
+and are not authorized by local software acceptance.
+
+## Historical GKE status and safety boundary
 
 Stage 1C found that the inherited infrastructure scripts were **not safe to run**:
 they could provision on ordinary invocation, misreported regional node topology,
@@ -12,8 +38,9 @@ adds a reviewable coordinator workload, authenticated Alertmanager route, and a
 minimum kube-state-metrics alert. Neither stage proves that a real GKE deployment
 or end-to-end incident flow works.
 
-> **Stage 1D-B is STATICALLY WIRED / LIVE UNVERIFIED. Review its unmerged PR
-> before any controlled live GKE reproduction.**
+> **Stage 1D-B is STATICALLY WIRED / LIVE UNVERIFIED.**
+> Its historical source status is not current deployment authority. Review the
+> accepted source and obtain a new permit before controlled GKE reproduction.
 
 ## Development GKE topology
 

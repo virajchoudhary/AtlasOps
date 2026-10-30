@@ -1,5 +1,12 @@
 # Original README to current continuation: evidence matrix
 
+> **30 October platform mapping.**
+> The [platform requirement matrix](PLATFORM_REQUIREMENT_MATRIX.md) maps the
+> current application and local infrastructure delivery. Its exact-source receipt
+> records accepted PRs, CI, and independent review.
+> The September snapshot below remains historical and unchanged. It must not
+> be used as the current software or scientific inventory.
+
 > **HISTORICAL / SUPERSEDED STATUS SNAPSHOT, 29 September 2026.**
 > The source-bounded audit below retains its original findings and wording.
 > It is not the current SFT/G9/evaluation inventory. See the

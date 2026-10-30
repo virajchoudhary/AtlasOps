@@ -428,7 +428,11 @@ class _OperationalTarget:
 
 
 def _query_bound_deployment(target: _OperationalTarget) -> dict[str, Any]:
-    from agents.tools.chaos import _close_chaos_api_client, _new_chaos_api_client
+    from agents.tools.chaos import (
+        _close_chaos_api_client,
+        _kubernetes_object_response_kwargs,
+        _new_chaos_api_client,
+    )
 
     context = None if target.context == "in-cluster" else target.context
     if context is None and not os.getenv("KUBERNETES_SERVICE_HOST"):
@@ -443,7 +447,7 @@ def _query_bound_deployment(target: _OperationalTarget) -> dict[str, Any]:
             f"/apis/apps/v1/namespaces/{quote(target.namespace, safe='')}"
             f"/deployments/{quote(target.deployment, safe='')}",
             "GET", header_params={"Accept": "application/json"},
-            auth_settings=["BearerToken"], response_type="object",
+            auth_settings=["BearerToken"], **_kubernetes_object_response_kwargs(client),
             _return_http_data_only=True, _request_timeout=30,
         )
         return {

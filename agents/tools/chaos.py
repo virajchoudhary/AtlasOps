@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -118,6 +119,12 @@ def _close_chaos_api_client(api_client: Any) -> None:
             close()
         except Exception:
             pass
+
+
+def _kubernetes_object_response_kwargs(api_client: Any) -> dict[str, Any]:
+    if "response_types_map" in inspect.signature(api_client.call_api).parameters:
+        return {"response_types_map": {200: "object", 201: "object", 202: "object"}}
+    return {"response_type": "object"}
 
 
 @contextmanager

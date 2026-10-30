@@ -17,6 +17,7 @@ from agents.tools.chaos import (
     _CHAOS_RESOURCE_PLURALS,
     _chaos_activity_for_resource,
     _close_chaos_api_client,
+    _kubernetes_object_response_kwargs,
     _new_chaos_api_client,
 )
 from agents.tools.kubectl import _G9_KUBECONFIG_CONTEXT
@@ -119,7 +120,7 @@ def _request(client: Any, path: str, method: str = "GET", *, body: Any = None) -
         headers["Content-Type"] = "application/json"
     return client.call_api(
         path, method, header_params=headers, body=body,
-        auth_settings=["BearerToken"], response_type="object",
+        auth_settings=["BearerToken"], **_kubernetes_object_response_kwargs(client),
         _return_http_data_only=True, _request_timeout=30,
     )
 

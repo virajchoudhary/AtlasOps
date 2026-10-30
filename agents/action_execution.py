@@ -117,9 +117,14 @@ def _request(client: Any, path: str, method: str = "GET", *, body: Any = None) -
         headers["Content-Type"] = "application/json-patch+json"
     elif method == "DELETE":
         headers["Content-Type"] = "application/json"
+    response_options = (
+        {"response_types_map": {200: "object", 201: "object", 202: "object"}}
+        if "response_types_map" in inspect.signature(client.call_api).parameters
+        else {"response_type": "object"}
+    )
     return client.call_api(
         path, method, header_params=headers, body=body,
-        auth_settings=["BearerToken"], response_type="object",
+        auth_settings=["BearerToken"], **response_options,
         _return_http_data_only=True, _request_timeout=30,
     )
 

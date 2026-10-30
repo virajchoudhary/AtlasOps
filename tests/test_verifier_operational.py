@@ -428,9 +428,58 @@ def test_bound_verifier_selects_the_approved_context_and_reads_its_deployment(mo
     assert client.call_api.call_args.args == (
         "/apis/apps/v1/namespaces/default/deployments/frontend", "GET",
     )
+    assert client.call_api.call_args.kwargs["response_type"] == "object"
     assert client.configuration.retries == 0
     assert backends.kubectl_calls == []
     client.close.assert_called_once()
+
+
+def test_bound_verifier_decodes_real_sdk_response_without_network(monkeypatch):
+    import json
+    from unittest.mock import Mock
+
+    from kubernetes import client as kubernetes_client
+    from kubernetes.client.rest import RESTResponse
+    from urllib3.response import HTTPResponse
+
+    from agents.tools import chaos
+
+    monkeypatch.setenv("KUBECONFIG_CONTEXT", "unrelated-current-context")
+    backends = FakeBackends()
+    configuration = kubernetes_client.Configuration(
+        host="https://kubernetes.example.invalid",
+    )
+    configuration.api_key["authorization"] = "Bearer non-secret-unit-key"
+    response = RESTResponse(HTTPResponse(
+        body=json.dumps(backends.deployment).encode(), status=200,
+        headers={"Content-Type": "application/json"},
+    ))
+    transport = Mock(return_value=response)
+    with kubernetes_client.ApiClient(configuration) as client:
+        monkeypatch.setattr(client, "request", transport)
+        factory = Mock(return_value=(Mock(), client))
+        monkeypatch.setattr(chaos, "_new_chaos_api_client", factory)
+        verifier = EnvironmentVerifier(
+            kubectl_getter=backends.kubectl,
+            alert_lister=backends.alertmanager,
+            promql_querier=backends.prometheus,
+        )
+        result = verifier.verify(
+            scenario_id="", agent_claimed_resolved=True,
+            alert=_valid_payload(), incident_context=_operational_context(),
+        )
+        assert result.env_resolved is True
+        assert client.configuration.retries == 0
+
+    factory.assert_called_once_with("kind-atlasops-local")
+    assert transport.call_args.args == (
+        "GET", configuration.host + "/apis/apps/v1/namespaces/default/deployments/frontend",
+    )
+    sent = transport.call_args.kwargs
+    assert sent["_request_timeout"] == 30
+    assert sent["headers"]["Accept"] == "application/json"
+    assert sent["headers"]["authorization"] == "Bearer non-secret-unit-key"
+    assert backends.kubectl_calls == []
 
 
 @pytest.mark.parametrize("tool", ["chaos_stop_experiment", "argocd_rollback"])

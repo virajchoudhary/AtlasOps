@@ -1,10 +1,69 @@
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from kubernetes import client as kubernetes_client
+from kubernetes.client.rest import RESTResponse
+from urllib3.response import HTTPResponse
 
 from agents import action_execution as actions
+
+
+@pytest.mark.parametrize("method,status,content_type", [
+    ("GET", 200, None),
+    ("PATCH", 200, "application/json-patch+json"),
+    ("DELETE", 200, "application/json"),
+    ("DELETE", 202, "application/json"),
+])
+def test_atomic_request_uses_real_sdk_without_network(
+    monkeypatch, method, status, content_type,
+):
+    resource = {"apiVersion": "v1", "kind": "Status", "status": "Success"}
+    response = RESTResponse(HTTPResponse(
+        body=json.dumps(resource).encode(), status=status,
+        headers={"Content-Type": "application/json"},
+    ))
+    transport = Mock(return_value=response)
+    configuration = kubernetes_client.Configuration(
+        host="https://fixture-kubernetes.invalid",
+    )
+    configuration.api_key["authorization"] = "Bearer non-secret-unit-key"
+    body = None if method == "GET" else {"preconditions": {"uid": "owned-uid"}}
+    path = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/atlasops-boutique"
+    with kubernetes_client.ApiClient(configuration) as client:
+        monkeypatch.setattr(client, "request", transport)
+        assert actions._request(client, path, method, body=body) == resource
+
+    assert transport.call_args.args == (method, configuration.host + path)
+    sent = transport.call_args.kwargs
+    assert sent["body"] == body
+    assert sent["_request_timeout"] == 30
+    assert sent["headers"]["Accept"] == "application/json"
+    assert sent["headers"]["authorization"] == "Bearer non-secret-unit-key"
+    assert sent["headers"].get("Content-Type") == content_type
+
+
+def test_atomic_request_preserves_legacy_sdk_response_contract():
+    resource = {"apiVersion": "v1", "kind": "Status", "status": "Success"}
+    calls = []
+
+    def legacy_call_api(
+        path, method, *, header_params, body, auth_settings, response_type,
+        _return_http_data_only, _request_timeout,
+    ):
+        calls.append((path, method, header_params, body, auth_settings))
+        assert response_type == "object"
+        assert _return_http_data_only is True
+        assert _request_timeout == 30
+        return resource
+
+    client = SimpleNamespace(call_api=legacy_call_api)
+    assert actions._request(client, "/api/v1/pods") == resource
+    assert calls == [(
+        "/api/v1/pods", "GET", {"Accept": "application/json"}, None, ["BearerToken"],
+    )]
 
 
 @pytest.fixture

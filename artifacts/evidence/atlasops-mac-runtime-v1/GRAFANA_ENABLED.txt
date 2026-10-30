@@ -1,0 +1,122 @@
+# Grafana: enabled on this Mac's cluster, and what it actually serves
+# 2026-10-29T19:16:41Z
+
+## Why it was absent
+Not an oversight. infra/local/values/prometheus-local.yaml says:
+    # AtlasOps Local Prometheus Stack — low-resource Kind profile
+    # Pipeline v1.1 Free-First
+    #
+    # Preserves: Prometheus, Alertmanager, kube-state-metrics
+    # Disables: Grafana (not required for Stage 3/4 gate), admissionWebhooks (avoids webhook patch timeout)
+    # Reduces: resource requests for Kind single-node
+
+The canonical infra/values/kube-prometheus-stack.yaml has grafana.enabled: true;
+the low-resource Kind profile overrides it to false. The earlier acceptance
+report recorded this as BLOCKED, which was the right verdict for the wrong
+reason: Grafana was switched off deliberately for a 4-CPU VM, not missing.
+
+## What changed
+This VM now has 8 CPU / 12 GiB, so the stack can carry it. Enabled as a
+runtime-only helm upgrade with the recorded values plus a Grafana override;
+no repository values file was edited.
+  helm revision: 4 (was 3)
+  chart        : kube-prometheus-stack-88.3.0, app docker.io/grafana/grafana:13.1.3
+
+Prometheus and Alertmanager were NOT restarted by the upgrade:
+    alertmanager-prometheus-kube-prometheus-alertmanager-0   2/2 (13h
+    prometheus-grafana-69b7c7b584-26ct5                      3/3 8m47s
+    prometheus-kube-prometheus-operator-6b76d785c7-8hshp     1/1 (7h48m
+    prometheus-kube-state-metrics-5bf4dc49d8-vddpj           1/1 (5h3m
+    prometheus-prometheus-kube-prometheus-prometheus-0       2/2 (7h47m
+
+## Service is ClusterIP; nothing published
+    prometheus-grafana   ClusterIP   10.96.254.170   <none>   80/TCP   8m47s
+    reached only by kubectl port-forward to 127.0.0.1:13000
+
+## Grafana health
+    {
+      "database": "ok",
+      "version": "13.1.3",
+      "commit": "45a27d64b64a82d666b06aa5c5bb3521587edb0d"
+    }
+## Datasources (provisioned by the chart)
+    Alertmanager   alertmanager  http://prometheus-kube-prometheus-alertmanager.monitoring:9093/
+    Prometheus     prometheus    http://prometheus-kube-prometheus-prometheus.monitoring:9090/
+
+## Datasource health check — Grafana really reaches Prometheus
+    status : OK
+    message: Successfully queried the Prometheus API.
+    details: {"application": "Prometheus", "features": {"rulerApiEnabled": false}}
+
+## Dashboards provisioned
+    count: 19
+     - Alertmanager / Overview
+     - Grafana Overview
+     - Kubernetes / API server
+     - Kubernetes / Compute Resources /  Multi-Cluster
+     - Kubernetes / Compute Resources / Cluster
+     - Kubernetes / Compute Resources / Namespace (Pods)
+     - Kubernetes / Compute Resources / Namespace (Workloads)
+     - Kubernetes / Compute Resources / Node (Pods)
+     - Kubernetes / Compute Resources / Nodes Overview
+     - Kubernetes / Compute Resources / Pod
+     - Kubernetes / Compute Resources / Workload
+     - Kubernetes / Kubelet
+     - Kubernetes / Networking / Cluster
+     - Kubernetes / Networking / Namespace (Pods)
+     - Kubernetes / Networking / Namespace (Workload)
+     - Kubernetes / Networking / Pod
+     - Kubernetes / Networking / Workload
+     - Kubernetes / Persistent Volumes
+     - Prometheus / Overview
+
+## The part that matters: real data THROUGH Grafana, not just a reachable UI
+Every query below went to Grafana's datasource proxy, so Grafana itself
+fetched and returned the values. The first two are the actual panel
+expressions from 'Kubernetes / Compute Resources / Namespace (Pods)'
+(dashboard uid 85a562078cdf77779eaa1add43ccec1e), with $cluster dropped
+because this single-node Kind cluster carries no cluster label.
+
+  query: sum(max by (cluster, namespace, pod, container)(node_namespace_pod_container:container_cpu_usage_seconds_total
+    status=success series=1
+      (scalar)                 0.11568652171961694
+
+  query: sum(max by (cluster, namespace, pod, container)(container_memory_working_set_bytes{job="kubelet", metrics_path
+    status=success series=1
+      (scalar)                 1010077696
+
+  query: count(kube_pod_info{namespace="default"})
+    status=success series=1
+      (scalar)                 11
+
+  query: kube_deployment_status_replicas_available{namespace="default"}
+    status=success series=13
+      adservice                0
+      atlasops-coordinator     0
+      cartservice              1
+      checkoutservice          1
+      currencyservice          1
+      emailservice             1
+      frontend                 1
+      loadgenerator            0
+      paymentservice           1
+      productcatalogservice    1
+      recommendationservice    1
+      redis-cart               1
+      shippingservice          1
+
+## Panels that are genuinely empty, and why
+node-exporter is not installed in this profile, so every node-level panel
+has no source. Confirmed rather than assumed:
+    node_cpu_seconds_total             series=0
+    node_memory_MemAvailable_bytes     series=0
+    node_filesystem_avail_bytes        series=0
+
+So of the 19 provisioned dashboards, the Kubernetes compute/workload and
+Alertmanager ones have real data; the Node ones are empty. Reporting both.
+
+## What this is not
+No screenshot of the rendered UI was captured: that would mean typing the
+generated admin password into a browser, and the panel queries above are
+stronger evidence than a picture of them. Grafana is not part of any gate
+and nothing here changes a gate status.

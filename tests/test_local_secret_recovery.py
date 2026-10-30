@@ -30,6 +30,9 @@ kubectl() {
   local arguments
   printf -v arguments ' [%s]' "$@"
   printf 'kubectl%s\n' "$arguments" >&3
+  if [[ " $* " == *" apply -f - "* ]]; then
+    cat >/dev/null
+  fi
   if [[ "$*" == *" create namespace "* ]]; then
     printf 'apiVersion: v1\nkind: Namespace\n'
   elif [[ "$*" == *" create secret generic "* ]]; then
@@ -138,6 +141,23 @@ def _run_recovery(
         timeout=15,
         check=False,
     )
+
+
+def test_kubectl_apply_double_drains_large_stdin(tmp_path: Path) -> None:
+    helper = tmp_path / "large apply producer.sh"
+    helper.write_text(
+        "set -euo pipefail\n"
+        "printf '%*s' 131072 '' | "
+        "kubectl --context=kind-atlasops-local apply -f -\n",
+        encoding="utf-8",
+    )
+
+    result = _run_recovery(helper, [])
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        "kubectl [--context=kind-atlasops-local] [apply] [-f] [-]"
+    ]
 
 
 def test_recovery_requires_an_explicit_context_before_any_command(tmp_path: Path) -> None:

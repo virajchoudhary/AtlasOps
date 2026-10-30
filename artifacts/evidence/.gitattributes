@@ -28,3 +28,4 @@ stage8/base-sft-validation-v1/** -text -whitespace
 rl-cpu-rightsizing-v1/** -text -whitespace
 # Preserve the right-sizing GPU 7B experiment's evidence bytes; SHA256SUMS covers them.
 rl-gpu-7b-v1/** -text -whitespace
+atlasops-mac-runtime-v1/** -text !eol -whitespace

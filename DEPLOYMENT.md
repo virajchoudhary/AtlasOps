@@ -9,6 +9,16 @@
 > requirements before any live apply.
 > See [`docs/project/INFRASTRUCTURE_CONTRACT.md`](docs/project/INFRASTRUCTURE_CONTRACT.md).
 
+The GKE and upstream deployment sections below are historical contracts.
+The current local platform source is the guarded Kind configuration in
+[`infra/local/setup_local.sh`](infra/local/setup_local.sh), integrated by
+PRs 242-246 at `ea797b002c8133d0ab67671c328101e16ebef7d1`.
+It includes private observability, Argo ownership, operational approvals,
+and objective verification contracts. Code does not establish device readiness.
+The [Mac reconciliation](docs/project/ATLASOPS_MAC_RUNTIME_RECONCILIATION_V1.md)
+records the current Bug Lab container argument contract without editing
+historical run commands or the owner's runtime configuration.
+
 > The use case and timings below preserve the historical upstream proposal.
 > They are not measured continuation outcomes or a production-readiness claim.
 

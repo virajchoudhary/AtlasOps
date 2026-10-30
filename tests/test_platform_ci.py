@@ -490,9 +490,23 @@ def test_http_json_does_not_forward_operator_key_across_redirect() -> None:
     assert redirected_headers == []
 
 
+@pytest.mark.parametrize(
+    ("service_port", "pod_port", "reported_pod_port"),
+    [
+        (9099, 7860, 7860),
+        (9090, 9090, 9090),
+        (9093, 9093, 9093),
+        (16686, 16686, 16686),
+        pytest.param(9099, 7860, 9099, id="reject-service-port-as-pod-port"),
+        pytest.param(9099, 7860, 9999, id="reject-wrong-pod-port"),
+    ],
+)
 def test_port_forward_uses_the_local_port_reported_by_kubectl(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    service_port: int,
+    pod_port: int,
+    reported_pod_port: int,
 ) -> None:
     runner = platform_ci.Runner(_run_identity(), tmp_path / "port-forward-evidence", env={})
     runner.kubeconfig = tmp_path / "ci.kubeconfig"
@@ -524,7 +538,7 @@ def test_port_forward_uses_the_local_port_reported_by_kubectl(
     def start_process(command: list[str], **kwargs: object) -> PortForwardProcess:
         commands.append(command)
         stream = kwargs["stdout"]
-        stream.write(f"Forwarding from 127.0.0.1:{selected_port} -> 9099\n")
+        stream.write(f"Forwarding from 127.0.0.1:{selected_port} -> {reported_pod_port}\n")
         stream.flush()
         return process
 
@@ -535,17 +549,57 @@ def test_port_forward_uses_the_local_port_reported_by_kubectl(
         lambda address, timeout: connections.append(address) or nullcontext(),
     )
 
-    port = runner._start_forward(
-        "coordinator",
-        "default",
-        "atlasops-coordinator-svc",
-        9099,
-    )
-    assert port == selected_port
-    assert commands[0][-1] == "0:9099"
-    assert connections == [("127.0.0.1", selected_port)]
-    assert runner.forwards["coordinator"].port == selected_port
-    runner._stop_forwards()
+    try:
+        if reported_pod_port != pod_port:
+            with pytest.raises(platform_ci.PlatformCIError, match="invalid bound port"):
+                runner._start_forward(
+                    "coordinator",
+                    "default",
+                    "atlasops-coordinator-svc",
+                    service_port,
+                    pod_port=pod_port,
+                )
+            assert connections == []
+            return
+        port = runner._start_forward(
+            "coordinator",
+            "default",
+            "atlasops-coordinator-svc",
+            service_port,
+            pod_port=pod_port,
+        )
+        assert port == selected_port
+        assert commands[0][-1] == f"0:{service_port}"
+        assert connections == [("127.0.0.1", selected_port)]
+        assert runner.forwards["coordinator"].port == selected_port
+    finally:
+        runner._stop_forwards()
+
+
+def test_admin_forwards_bind_the_service_ports_and_validate_the_pod_ports(
+    tmp_path: Path,
+) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "admin-forwards", env={})
+    calls = []
+
+    def start_forward(name, namespace, service, service_port, *, pod_port):
+        calls.append((name, namespace, service, service_port, pod_port))
+        return 43127 + len(calls)
+
+    runner._start_forward = start_forward
+    runner._start_forwards()
+
+    assert calls == [
+        ("coordinator", "default", "atlasops-coordinator-svc", 9099, 7860),
+        ("prometheus", "monitoring", "prometheus-kube-prometheus-prometheus", 9090, 9090),
+        ("alertmanager", "monitoring", "prometheus-kube-prometheus-alertmanager", 9093, 9093),
+        ("jaeger", "jaeger", "jaeger", 16686, 16686),
+    ]
+    assert runner.data["admin_forwards"] == {
+        name: {"bind": "127.0.0.1", "port": 43128 + index}
+        for index, (name, *_args) in enumerate(calls)
+    }
+    assert runner.data["stages"]["admin_forwards"]["status"] == "completed"
 
 
 def test_live_verifier_receives_only_source_and_owned_cluster_inputs(

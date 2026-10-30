@@ -3057,7 +3057,9 @@ class Runner:
         )
         self._stage("fixture_install", "completed")
 
-    def _start_forward(self, name: str, namespace: str, service: str, remote_port: int) -> int:
+    def _start_forward(
+        self, name: str, namespace: str, service: str, service_port: int, *, pod_port: int
+    ) -> int:
         port = 0
         log_path = self.evidence_dir / "logs" / f"port-forward-{name}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3071,7 +3073,7 @@ class Runner:
             "-n",
             namespace,
             f"service/{service}",
-            f"{port}:{remote_port}",
+            f"{port}:{service_port}",
         ]
         try:
             process = subprocess.Popen(
@@ -3095,6 +3097,8 @@ class Runner:
                 "label": f"loopback-only {name} port-forward",
                 "command": command,
                 "bound_address": "127.0.0.1",
+                "service_port": service_port,
+                "pod_port": pod_port,
             },
         )
         deadline = time.monotonic() + 60
@@ -3111,7 +3115,7 @@ class Runner:
             )
             if bound:
                 port = int(bound.group(1))
-                if not 1 <= port <= 65535 or int(bound.group(2)) != remote_port:
+                if not 1 <= port <= 65535 or int(bound.group(2)) != pod_port:
                     raise PlatformCIError(f"{name} port-forward reported an invalid bound port")
                 forward.port = port
             if port:
@@ -3126,14 +3130,14 @@ class Runner:
     def _start_forwards(self) -> None:
         self._stage("admin_forwards", "running")
         mapping = {
-            "coordinator": ("default", "atlasops-coordinator-svc", 9099),
-            "prometheus": ("monitoring", "prometheus-kube-prometheus-prometheus", 9090),
-            "alertmanager": ("monitoring", "prometheus-kube-prometheus-alertmanager", 9093),
-            "jaeger": ("jaeger", "jaeger", 16686),
+            "coordinator": ("default", "atlasops-coordinator-svc", 9099, 7860),
+            "prometheus": ("monitoring", "prometheus-kube-prometheus-prometheus", 9090, 9090),
+            "alertmanager": ("monitoring", "prometheus-kube-prometheus-alertmanager", 9093, 9093),
+            "jaeger": ("jaeger", "jaeger", 16686, 16686),
         }
         ports = {
-            name: self._start_forward(name, namespace, service, remote)
-            for name, (namespace, service, remote) in mapping.items()
+            name: self._start_forward(name, namespace, service, service_port, pod_port=pod_port)
+            for name, (namespace, service, service_port, pod_port) in mapping.items()
         }
         self.data["admin_forwards"] = {
             name: {"bind": "127.0.0.1", "port": port}

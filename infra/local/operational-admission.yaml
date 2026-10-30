@@ -87,7 +87,10 @@ spec:
         ) &&
         !has(oldObject.operation) &&
         has(object.operation) &&
-        !has(object.operation.info) &&
+        has(object.operation.info) &&
+        object.operation.info.size() == 1 &&
+        object.operation.info[0].name == 'atlasops-action-id' &&
+        object.operation.info[0].value.matches('^[0-9a-f]{64}$') &&
         !has(object.operation.retry) &&
         has(object.operation.initiatedBy) &&
         object.operation.initiatedBy.username == 'atlasops' &&

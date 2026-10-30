@@ -1794,6 +1794,10 @@ def validate_local_admission_contract() -> None:
         "object.status == oldObject.status",
         "object.operation.initiatedBy.username == 'atlasops'",
         "object.operation.sync.prune == false",
+        "has(object.operation.info)",
+        "object.operation.info.size() == 1",
+        "object.operation.info[0].name == 'atlasops-action-id'",
+        "object.operation.info[0].value.matches('^[0-9a-f]{64}$')",
     )
     if (
         not isinstance(validations, list)
@@ -1905,6 +1909,7 @@ def validate_static() -> int:
         INFRA_LOCAL / "operational-admission.yaml",
         INFRA_LOCAL / "otel-collector.yaml",
         INFRA_LOCAL / "grafana-dashboard.yaml",
+        INFRA_LOCAL / "values" / "prometheus-local.yaml",
         INFRA_LOCAL / "boutique" / "kustomization.yaml",
         REPO_ROOT / "infra" / "kubernetes" / "atlasops-prometheus-rules.yaml",
     ]
@@ -1915,6 +1920,16 @@ def validate_static() -> int:
         if path.suffix in {".yaml", ".yml"} and path.name != "kustomization.yaml":
             load_documents(path)
     yaml.safe_load((INFRA_LOCAL / "boutique" / "kustomization.yaml").read_text(encoding="utf-8"))
+    prometheus_values = load_documents(INFRA_LOCAL / "values" / "prometheus-local.yaml")[0]
+    operator = prometheus_values["prometheusOperator"]
+    if (
+        operator.get("admissionWebhooks", {}).get("enabled", True) is False
+        and operator.get("tls", {}).get("enabled", True) is not False
+    ):
+        raise ValueError(
+            "disabled Prometheus admission webhooks require prometheusOperator.tls.enabled=false "
+            "because the chart does not generate an admission certificate"
+        )
     validate_local_runtime_pins()
     validate_local_admission_contract()
     print(

@@ -188,6 +188,16 @@ def test_kind_api_and_host_mapping_bind_to_loopback() -> None:
     assert all("--address=127.0.0.1" in line for line in port_forward_commands)
 
 
+def test_local_argocd_redis_uses_verified_official_multiarch_image() -> None:
+    values = yaml.safe_load(read("infra/local/values/argocd-local.yaml"))
+    image = values["redis"].get("image", {})
+    reference = f"{image.get('repository', '')}:{image.get('tag', '')}"
+    assert reference == (
+        "docker.io/library/redis:8.6.4-alpine@sha256:"
+        "2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
+    )
+
+
 def test_integrated_coordinator_uses_current_sha_image_and_persistent_single_writer_volume() -> None:
     items = documents(INFRA_LOCAL / "coordinator-local.yaml")
     deployment = find_document(items, "Deployment", "atlasops-coordinator")
@@ -395,6 +405,26 @@ def test_boutique_overlay_uses_exact_upstream_commit_and_source_supported_tracin
     assert all(
         patch["patch"].count("replicas: 1") == 1 for patch in deployment_patches
     )
+
+
+def test_frontend_recovery_fields_are_declared_in_git_owned_overlay() -> None:
+    overlay = yaml.safe_load(
+        (INFRA_LOCAL / "boutique" / "kustomization.yaml").read_text(encoding="utf-8")
+    )
+    frontend = next(
+        yaml.safe_load(patch["patch"])
+        for patch in overlay["patches"]
+        if patch["target"]["kind"] == "Deployment" and patch["target"]["name"] == "frontend"
+    )
+    assert frontend["spec"]["strategy"] == {
+        "type": "RollingUpdate",
+        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+    }
+    server = next(
+        container for container in frontend["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "server"
+    )
+    assert server["imagePullPolicy"] == "IfNotPresent"
 
 
 def test_argocd_project_application_and_coordinator_role_are_exactly_scoped() -> None:
@@ -743,6 +773,36 @@ def test_grafana_uses_new_secret_and_trace_derived_dashboard_queries() -> None:
     assert "kube_" not in joined
 
 
+def test_local_prometheus_operator_does_not_require_a_disabled_webhook_certificate() -> None:
+    values = yaml.safe_load((INFRA_LOCAL / "values" / "prometheus-local.yaml").read_text())
+    operator = values["prometheusOperator"]
+
+    assert operator["admissionWebhooks"]["enabled"] is False
+    assert operator.get("tls", {}).get("enabled", True) is False
+
+
+@pytest.mark.parametrize("tls", [None, {"enabled": True}])
+def test_static_validation_rejects_the_missing_admission_certificate_profile(
+    monkeypatch, tls
+) -> None:
+    values = yaml.safe_load((INFRA_LOCAL / "values" / "prometheus-local.yaml").read_text())
+    operator = values["prometheusOperator"]
+    operator.pop("tls", None)
+    if tls is not None:
+        operator["tls"] = tls
+    original_loader = platform_verify.load_documents
+
+    def load(path):
+        if path == platform_verify.INFRA_LOCAL / "values" / "prometheus-local.yaml":
+            return [values]
+        return original_loader(path)
+
+    monkeypatch.setattr(platform_verify, "load_documents", load)
+
+    with pytest.raises(ValueError, match="disabled Prometheus admission webhooks"):
+        platform_verify.validate_static()
+
+
 def test_jaeger_chart_values_match_the_pinned_v2_chart_and_keep_service_private() -> None:
     values = yaml.safe_load((INFRA_LOCAL / "values" / "jaeger-local.yaml").read_text())
     assert values["jaeger"]["service"]["type"] == "ClusterIP"
@@ -998,22 +1058,27 @@ def test_check_admission_policy_cli_reads_json_from_stdin() -> None:
     assert "observedGeneration" in rejected.stderr
 
 
-def test_platform_kind_workflow_is_disposable_private_and_non_empirical() -> None:
-    workflow_path = ROOT / ".github" / "workflows" / "platform-kind.yml"
-    if not workflow_path.is_file():
-        pytest.skip("Combined disposable Kind CI is owned by the parent lane.")
+def test_platform_integration_workflow_is_disposable_private_and_non_empirical() -> None:
+    workflow_path = ROOT / ".github" / "workflows" / "platform-integration.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["platform-kind"]
+    job = workflow["jobs"]["platform-integration"]
     steps = job["steps"]
     commands = "\n".join(step.get("run", "") for step in steps)
+    runner = (ROOT / "scripts" / "platform_ci.py").read_text(encoding="utf-8")
+    live_verifier = (ROOT / "scripts" / "verify_platform_infrastructure.py").read_text(
+        encoding="utf-8"
+    )
     assert job["timeout-minutes"] >= 45
     assert workflow["permissions"] == {"contents": "read"}
-    assert "atlasops-platform-ci" in commands
-    assert "kind delete cluster --name atlasops-platform-ci" in commands
-    assert "ATLASOPS_NON_EMPIRICAL" in commands
-    assert "/api/operations" in commands
-    assert "atlasops_boutique_calls_total" in commands
-    assert "/api/traces" in commands
+    assert "python -m scripts.platform_ci run" in commands
+    assert '--evidence-dir "$RUNNER_TEMP/platform-ci-' in commands
+    assert "NON_EMPIRICAL_SOFTWARE_FIXTURE" in commands
+    assert 'status="verified_deleted"' in runner
+    assert "/api/operations" in runner
+    assert "scripts/verify_platform_infrastructure.py" in runner
+    assert '"verify-live"' in runner
+    assert "atlasops_boutique_calls_total" in live_verifier
+    assert "/api/traces" in runner
     assert "HF_TOKEN" not in workflow.get("env", {})
     assert steps[-1]["if"] == "always()"
 

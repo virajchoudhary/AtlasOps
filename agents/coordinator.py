@@ -441,6 +441,149 @@ def _model_safe_tool_output(output: dict[str, Any]) -> dict[str, Any]:
     return safe if isinstance(safe, dict) else {"value": safe}
 
 
+def _model_tool_message(tool: str, output: dict[str, Any]) -> str:
+    safe = _model_safe_tool_output(output)
+    encoded = json.dumps(safe)
+    if len(encoded) <= TOOL_OUTPUT_MAX_CHARS:
+        return encoded
+
+    if (
+        tool == "argocd_app_history"
+        and safe.get("success") is True
+        and isinstance(safe.get("history"), list)
+    ):
+        data = safe.get("data") or {}
+        metadata = data.get("metadata") or {}
+        summary = {
+            "success": True,
+            "data": {"metadata": {
+                key: metadata[key]
+                for key in ("name", "namespace", "uid", "resourceVersion")
+                if key in metadata
+            }},
+            "history": [],
+            "truncated": True,
+            "omitted_history_entries": len(safe["history"]),
+        }
+        for entry in reversed(safe["history"]):
+            if not isinstance(entry, dict):
+                continue
+            summary["history"].insert(0, {
+                key: entry[key] for key in ("id", "revision", "deployedAt") if key in entry
+            })
+            summary["omitted_history_entries"] -= 1
+            if len(json.dumps(summary)) > TOOL_OUTPUT_MAX_CHARS:
+                summary["history"].pop(0)
+                summary["omitted_history_entries"] += 1
+        if len(json.dumps(summary)) <= TOOL_OUTPUT_MAX_CHARS:
+            return json.dumps(summary)
+
+    parsed = safe.get("parsed")
+    if (
+        tool == "kubectl_get"
+        and safe.get("success") is True
+        and isinstance(parsed, dict)
+        and parsed.get("kind") in {"PodList", "List"}
+        and isinstance(parsed.get("items"), list)
+    ):
+        pods = []
+        for pod in parsed["items"]:
+            if not isinstance(pod, dict):
+                continue
+            if parsed["kind"] == "List" and (
+                pod.get("kind") != "Pod" or pod.get("apiVersion") != "v1"
+            ):
+                continue
+            metadata = pod.get("metadata") or {}
+            containers = (pod.get("spec") or {}).get("containers") or []
+            status = pod.get("status") or {}
+            statuses = status.get("containerStatuses") or []
+            pods.append({
+                "metadata": {
+                    key: metadata[key]
+                    for key in ("name", "namespace", "uid", "labels")
+                    if key in metadata
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            key: container[key]
+                            for key in ("name", "image", "imagePullPolicy")
+                            if key in container
+                        }
+                        for container in containers if isinstance(container, dict)
+                    ],
+                },
+                "status": {
+                    "phase": status.get("phase"),
+                    "containerStatuses": [
+                        {
+                            **{
+                                key: container[key]
+                                for key in ("name", "image", "ready", "restartCount")
+                                if key in container
+                            },
+                            "state": {
+                                state: {
+                                    key: details[key]
+                                    for key in ("reason", "exitCode", "startedAt", "finishedAt")
+                                    if key in details
+                                }
+                                for state, details in (container.get("state") or {}).items()
+                                if isinstance(details, dict)
+                            },
+                        }
+                        for container in statuses if isinstance(container, dict)
+                    ],
+                },
+            })
+        pods.sort(key=lambda pod: (
+            pod["status"]["phase"] == "Running"
+            and bool(pod["status"]["containerStatuses"])
+            and all(
+                container.get("ready") is True
+                for container in pod["status"]["containerStatuses"]
+            )
+        ))
+        summary = {
+            "success": True,
+            "truncated": True,
+            "omitted_items": len(parsed["items"]),
+            "parsed": {"kind": "PodList", "items": []},
+        }
+        for pod in pods:
+            summary["parsed"]["items"].append(pod)
+            summary["omitted_items"] -= 1
+            if len(json.dumps(summary)) > TOOL_OUTPUT_MAX_CHARS:
+                summary["parsed"]["items"].pop()
+                summary["omitted_items"] += 1
+        return json.dumps(summary)
+
+    field = "error" if "error" in safe else "stdout"
+    text = str(safe.get(field, encoded))
+    summary = {
+        key: safe[key] for key in ("success", "returncode", "error_class") if key in safe
+    }
+    observation = safe.get("verifier_observation")
+    if isinstance(observation, dict):
+        summary["verifier_observation"] = {
+            key: observation[key]
+            for key in ("env_resolved", "verification_status", "observation_type")
+            if key in observation
+        }
+    summary["truncated"] = True
+    low, high = 0, min(len(text), TOOL_OUTPUT_MAX_CHARS)
+    while low < high:
+        middle = (low + high + 1) // 2
+        summary[field] = text[:middle]
+        if len(json.dumps(summary)) <= TOOL_OUTPUT_MAX_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    summary[field] = text[:low]
+    return json.dumps(summary)
+
+
 def model_visible_alert(alert: dict[str, Any] | None) -> dict[str, Any]:
     """Return an operational alert view without benchmark/evaluation metadata."""
     visible = _strip_model_forbidden_context(alert or {})
@@ -1240,7 +1383,22 @@ async def call_agent(
         for key, value in user_input.items()
         if key != _REMEDIATION_CONTROL_KEY
     }
-    model_input = _strip_model_forbidden_context(model_input)
+    runtime_input = _strip_model_forbidden_context(model_input)
+    model_input = dict(runtime_input)
+    for key in ("triage_observations", "diagnosis_observations"):
+        observations = model_input.get(key)
+        if isinstance(observations, list):
+            model_input[key] = [
+                {
+                    **item,
+                    "output": json.loads(_model_tool_message(
+                        str(item.get("tool", "")), item["output"],
+                    )),
+                }
+                if isinstance(item, dict) and isinstance(item.get("output"), dict)
+                else item
+                for item in observations
+            ]
     incident_id = str(model_input.get("incident_id", "unknown"))
     messages = [
         {"role": "system", "content": system_prompt},
@@ -1256,7 +1414,7 @@ async def call_agent(
     _mutation_in_response = False
     _verifier_resolved = False
     _runtime_context: dict[str, Any] = {
-        **model_input,
+        **runtime_input,
         "observations": [],
         _REMEDIATION_CONTROL_KEY: control,
     }
@@ -1317,7 +1475,7 @@ async def call_agent(
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],
-            "content": json.dumps(_model_safe_tool_output(tool_output)),
+            "content": _model_tool_message(fn_name, tool_output),
         })
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
@@ -1981,7 +2139,7 @@ async def call_agent(
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(tool_message)[:TOOL_OUTPUT_MAX_CHARS],
+                    "content": _model_tool_message(fn_name, tool_message),
                 })
 
                 if _verifier_resolved or observation_unknown:

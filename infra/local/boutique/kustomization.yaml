@@ -42,10 +42,16 @@ patches:
         name: frontend
       spec:
         replicas: 1
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 25%
+            maxUnavailable: 25%
         template:
           spec:
             containers:
               - name: server
+                imagePullPolicy: IfNotPresent
                 env:
                   - name: ENABLE_TRACING
                     value: "1"

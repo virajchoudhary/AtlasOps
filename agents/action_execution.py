@@ -17,6 +17,7 @@ from agents.tools.chaos import (
     _CHAOS_RESOURCE_PLURALS,
     _chaos_activity_for_resource,
     _close_chaos_api_client,
+    _kubernetes_object_response_kwargs,
     _new_chaos_api_client,
 )
 from agents.tools.kubectl import _G9_KUBECONFIG_CONTEXT
@@ -119,7 +120,7 @@ def _request(client: Any, path: str, method: str = "GET", *, body: Any = None) -
         headers["Content-Type"] = "application/json"
     return client.call_api(
         path, method, header_params=headers, body=body,
-        auth_settings=["BearerToken"], response_type="object",
+        auth_settings=["BearerToken"], **_kubernetes_object_response_kwargs(client),
         _return_http_data_only=True, _request_timeout=30,
     )
 
@@ -262,7 +263,11 @@ def _argo_patch(resource: dict[str, Any], arguments: dict[str, Any]) -> list[dic
         raise ActionPreparationError("Argo rollback requires an observed numeric history ID")
     spec = resource.get("spec") or {}
     source = spec.get("source")
-    if not isinstance(source, dict) or spec.get("sources") or resource.get("operation"):
+    operation_state = (resource.get("status") or {}).get("operationState") or {}
+    if (
+        not isinstance(source, dict) or spec.get("sources") or resource.get("operation")
+        or operation_state.get("phase") in {"Running", "Pending", "Terminating"}
+    ):
         raise ActionPreparationError("Argo requires one idle, single-source Application")
     history = (resource.get("status") or {}).get("history") or []
     matches = [entry for entry in history if str(entry.get("id")) == revision]
@@ -366,6 +371,13 @@ def prepare_action(
             ):
                 raise ActionPreparationError("Argo target is not the owned Application and workload")
             patch = _tests(identity) + _argo_patch(resource, arguments)
+            operation_id = ApprovalGate.action_digest({
+                "tool": tool, "arguments": arguments,
+                "target": asdict(identity), "patch": patch,
+            })
+            patch[-1]["value"]["info"] = [{
+                "name": "atlasops-action-id", "value": operation_id,
+            }]
         else:
             raise ActionPreparationError("No atomic operational adapter exists for this mutation")
         if identity.kind != "Deployment":
@@ -382,12 +394,38 @@ def prepare_action(
 
 def execute_prepared_action(action: PreparedAction) -> dict[str, Any]:
     context = None if action.target.context == "in-cluster" else action.target.context
+    receipt = None
     try:
         with _client(context) as client:
             if client.configuration.host.rstrip("/") != action.target.server:
                 return {"success": False, "error_class": "target_mismatch", "error": "Kubernetes server changed after preparation"}
             method = "DELETE" if action.tool == "chaos_stop_experiment" else "PATCH"
-            _request(client, action.target.path, method, body=json.loads(action.patch_json))
+            patch = json.loads(action.patch_json)
+            acknowledged = _request(client, action.target.path, method, body=patch)
+            if action.tool == "argocd_rollback":
+                identity = _identity(
+                    client, context, acknowledged, kind=action.target.kind,
+                    namespace=action.target.namespace, name=action.target.name,
+                    api_version=action.target.api_version,
+                )
+                source = next(
+                    item["value"] for item in patch
+                    if item["op"] == "replace" and item["path"] == "/spec/source"
+                )
+                operation = next(
+                    item["value"] for item in patch
+                    if item["op"] == "add" and item["path"] == "/operation"
+                )
+                if (
+                    identity.uid != action.target.uid
+                    or identity.resource_version == action.target.resource_version
+                    or acknowledged.get("spec", {}).get("source") != source
+                    or acknowledged.get("operation") != operation
+                ):
+                    raise ActionPreparationError("Argo acknowledgement does not match the prepared action")
+                receipt = {
+                    "target": asdict(identity), "source": source, "operation": operation,
+                }
     except Exception as error:
         status = getattr(error, "status", None)
         return {
@@ -396,7 +434,10 @@ def execute_prepared_action(action: PreparedAction) -> dict[str, Any]:
             "status_code": status,
             "error": f"Atomic Kubernetes action failed ({status or type(error).__name__})",
         }
-    return {
+    result = {
         "success": True, "action_digest": action.digest,
         "target": asdict(action.target), "atomic_preconditions": True,
     }
+    if receipt is not None:
+        result["mutation_receipt"] = receipt
+    return result

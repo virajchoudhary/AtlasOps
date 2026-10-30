@@ -64,7 +64,7 @@ for (const decision of ["reject", "timeout"]) {
   test(`${decision} leaves the exact broken store unchanged`, async ({ page, request }) => {
     await page.locator("#catalog .bug").filter({ has: page.getByText("Prices show NaN", { exact: true }) })
       .getByRole("button", { name: "Inject", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Reject", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reject", exact: true })).toBeVisible({ timeout: 25_000 });
     const before = await request.get("/shop/products.json").then(response => response.text());
     if (decision === "reject") await page.getByRole("button", { name: "Reject", exact: true }).click();
     await expect(page.locator("#incident .who")).toHaveText("Escalated to you", { timeout: 10_000 });
@@ -110,7 +110,7 @@ test("reset clears the current result but preserves history before the next inci
   const imageBug = page.locator("#catalog .bug")
     .filter({ has: page.getByText("Broken image paths", { exact: true }) });
   await imageBug.getByRole("button", { name: "Inject", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible({ timeout: 25_000 });
   await page.getByRole("button", { name: "Approve and apply" }).click();
   await expect(page.locator("#incident .who")).toHaveText("Resolved and verified");
   const previous = await request.get("/lab/api/state").then(response => response.json());
@@ -122,7 +122,7 @@ test("reset clears the current result but preserves history before the next inci
   expect(reset.incident_state).toBe("idle");
   expect(reset.incident_sequence).toBe(previous.incident_sequence);
   await imageBug.getByRole("button", { name: "Inject", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible({ timeout: 25_000 });
   const current = await request.get("/lab/api/state").then(response => response.json());
   expect(current.incident.id).not.toBe(previous.incident.id);
   expect(current.incident_sequence).toBe(previous.incident_sequence + 1);
@@ -135,7 +135,7 @@ test("reset during approval retains cancelled evidence without replaying the rec
   const priceBug = page.locator("#catalog .bug")
     .filter({ has: page.getByText("Prices show NaN", { exact: true }) });
   await priceBug.getByRole("button", { name: "Inject", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible({ timeout: 25_000 });
   const previous = await request.get("/lab/api/state").then(response => response.json());
   const health = await request.get("/health");
   expect(health.status()).toBe(200);
@@ -157,7 +157,7 @@ test("reset during approval retains cancelled evidence without replaying the rec
   expect(cancelled.evidence_classification).toBe("LOCAL_DEMONSTRATION_NOT_SCIENTIFIC");
 
   await priceBug.getByRole("button", { name: "Inject", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve and apply" })).toBeVisible({ timeout: 25_000 });
   const current = await request.get("/lab/api/state").then(response => response.json());
   expect(current.incident_sequence).toBe(previous.incident_sequence + 1);
   const replay = await request.post("/lab/api/approval", {

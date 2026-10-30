@@ -317,6 +317,75 @@ def test_rollback_dry_run_uses_the_existing_exact_json_patch_shape() -> None:
     }
 
 
+def test_rollback_policy_requires_one_bounded_action_correlation_marker() -> None:
+    policy = next(
+        item
+        for item in local_admission_documents()
+        if item["kind"] == "ValidatingAdmissionPolicy"
+    )
+    expression = policy["spec"]["validations"][0]["expression"]
+
+    assert "!has(object.operation.info)" not in expression
+    for required in (
+        "has(object.operation.info)",
+        "object.operation.info.size() == 1",
+        "object.operation.info[0].name == 'atlasops-action-id'",
+        "object.operation.info[0].value.matches('^[0-9a-f]{64}$')",
+    ):
+        assert required in expression
+
+
+def test_admission_fixture_includes_the_bounded_action_marker() -> None:
+    operation = admission.rollback_operation(admission.ROLLBACK_REVISION)
+
+    assert operation.get("info") == [
+        {"name": "atlasops-action-id", "value": "d" * 64}
+    ]
+
+
+@pytest.mark.parametrize("missing", [None, "name", "value"])
+def test_admission_runner_requires_the_installed_operation_marker_schema(
+    monkeypatch, missing,
+) -> None:
+    marker_properties = {"name": {"type": "string"}, "value": {"type": "string"}}
+    if missing is not None:
+        marker_properties.pop(missing)
+    properties = {
+        "spec": {"properties": {
+            field: {}
+            for field in ("destination", "project", "source", "sources", "syncPolicy")
+        }},
+        "operation": {"properties": {
+            "initiatedBy": {},
+            "sync": {"properties": {"prune": {}, "revision": {}}},
+            "info": {"items": {"properties": marker_properties}},
+        }},
+        "status": {"properties": {"history": {"items": {"properties": {
+            field: {} for field in ("revision", "source", "sources")
+        }}}}},
+    }
+    crd = {"spec": {"versions": [{
+        "name": "v1alpha1",
+        "schema": {"openAPIV3Schema": {"properties": properties}},
+    }]}}
+    monkeypatch.setattr(admission, "kubectl_json", lambda *_args: crd)
+
+    if missing is None:
+        admission.verify_application_crd(admission.CI_CONTEXT)
+    else:
+        with pytest.raises(RuntimeError, match="operation marker schema"):
+            admission.verify_application_crd(admission.CI_CONTEXT)
+
+
+@pytest.mark.parametrize("case", ["pruning", "initiator"])
+def test_admission_denials_keep_the_valid_marker_for_other_guards(case) -> None:
+    cases = dict(admission.rejected_update_cases(admission.application_seed()))
+
+    assert cases[case]["operation"].get("info") == [
+        {"name": "atlasops-action-id", "value": "d" * 64}
+    ]
+
+
 def test_admission_dry_run_matrix_covers_approved_denial_boundaries() -> None:
     application = admission.application_seed()
     application["metadata"].update({"uid": "fixture-uid", "resourceVersion": "17"})
@@ -333,6 +402,9 @@ def test_admission_dry_run_matrix_covers_approved_denial_boundaries() -> None:
         "unrecorded revision",
         "extra operation fields",
         "status mutation",
+        "missing action marker",
+        "duplicate action markers",
+        "malformed action marker",
     }
 
     cases = dict(admission.rejected_update_cases(application))

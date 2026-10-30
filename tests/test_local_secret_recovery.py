@@ -15,21 +15,21 @@ GENERATOR = ROOT / "scripts" / "generate_runtime_secrets.py"
 WRAPPER = r"""
 exec 3>&2
 python() {
-  printf 'python' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'python%s\n' "$arguments" >&3
   return "$MOCK_INSPECTION_STATUS"
 }
 python3() {
-  printf 'python3' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'python3%s\n' "$arguments" >&3
   return "$MOCK_INSPECTION_STATUS"
 }
 kubectl() {
-  printf 'kubectl' >&3
-  printf ' [%s]' "$@" >&3
-  printf '\n' >&3
+  local arguments
+  printf -v arguments ' [%s]' "$@"
+  printf 'kubectl%s\n' "$arguments" >&3
   if [[ " $* " == *" apply -f - "* ]]; then
     cat >/dev/null
   fi
@@ -259,6 +259,40 @@ def test_owner_checked_recovery_uses_selected_python_and_local_secret_scopes(
         in coordinator
     )
     assert "--from-file=llm-api-key=" not in coordinator
+
+
+def test_recovery_command_trace_keeps_pipeline_arguments_together(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper, _verifier = _generate_recovery_script(tmp_path)
+    delayed_prefix = r"""
+printf() {
+  builtin printf "$@"
+  if [[ "$1" == "kubectl" ]]; then
+    sleep 0.03
+  fi
+}
+"""
+    monkeypatch.setitem(globals(), "WRAPPER", delayed_prefix + WRAPPER)
+
+    result = _run_recovery(helper, ["--context", "kind-atlasops-local"])
+
+    assert result.returncode == 0, result.stderr
+    commands = [
+        line for line in result.stderr.splitlines() if line.startswith("kubectl ")
+    ]
+    for name in (
+        "atlasops-coordinator-secrets",
+        "atlasops-alertmanager-webhook",
+        "atlasops-grafana-admin",
+    ):
+        matches = [line for line in commands if f"[{name}]" in line]
+        assert len(matches) == 1, result.stderr
+        assert matches[0].startswith(
+            f"kubectl [--context=kind-atlasops-local] [create] [secret] [generic] [{name}]"
+        )
+        assert matches[0].count("kubectl") == 1
 
 
 def test_recovery_restores_optional_model_key_without_exposing_its_value(

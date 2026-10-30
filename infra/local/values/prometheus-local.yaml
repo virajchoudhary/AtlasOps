@@ -93,8 +93,12 @@ kube-state-metrics:
       memory: 128Mi
 
 prometheusOperator:
+  tls:
+    enabled: true
   admissionWebhooks:
-    enabled: false
+    enabled: true
+    patch:
+      enabled: true
   resources:
     requests:
       cpu: 50m

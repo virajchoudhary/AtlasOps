@@ -2200,7 +2200,9 @@ def http_json(
     except (URLError, TimeoutError, OSError) as exc:
         raise PlatformCIError(f"HTTP request failed for {urlsplit(url).path}: {type(exc).__name__}") from exc
     if len(raw) > max_bytes:
-        raise PlatformCIError("HTTP response exceeded the bounded evidence size")
+        raise PlatformCIError(
+            f"HTTP response exceeded the bounded evidence size: {urlsplit(url).path}"
+        )
     try:
         text = raw.decode("utf-8")
         parsed = json.loads(text) if expect_json else text
@@ -3200,6 +3202,7 @@ class Runner:
             self._api_root() + "/api/operations",
             headers=self._operations_headers(),
             timeout=15,
+            max_bytes=MAX_EXECUTION_EXPORT_BYTES,
             label="authenticated GET /api/operations",
         )
         if status != 200 or not isinstance(payload, dict):

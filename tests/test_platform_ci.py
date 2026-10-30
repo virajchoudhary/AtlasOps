@@ -2071,6 +2071,9 @@ def _actual_operations_export(
             result_summary=str(request.action_summary),
             policy_check="requires_approval",
         )
+        pending_response = client.get("/operations", headers={"X-AtlasOps-Key": API_KEY})
+        assert pending_response.status_code == 200
+        pending_status = pending_response.json()
         decision = client.post(
             "/operations/decision",
             headers={"X-AtlasOps-Key": API_KEY},
@@ -2231,6 +2234,7 @@ def _actual_operations_export(
             "evidence": response.json(),
             "audit_secret": AUDIT_SECRET,
             "prepared_action": prepared,
+            "pending_status": pending_status,
         }
 
 
@@ -3911,10 +3915,12 @@ def test_http_reader_rejects_cap_plus_one_without_truncating_json(size: int) -> 
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        url = f"http://127.0.0.1:{server.server_port}/evidence"
+        url = f"http://127.0.0.1:{server.server_port}/evidence?token=private-test-query"
         if size > 128:
-            with pytest.raises(platform_ci.PlatformCIError, match="bounded evidence size"):
+            with pytest.raises(platform_ci.PlatformCIError, match="bounded evidence size") as rejected:
                 platform_ci.http_json(url, max_bytes=128)
+            assert "/evidence" in str(rejected.value)
+            assert "private-test-query" not in str(rejected.value)
         else:
             assert platform_ci.http_json(url, max_bytes=128) == (200, "x" * (size - 2))
     finally:
@@ -3976,3 +3982,49 @@ def test_prometheus_rule_filters_the_http_inventory_before_its_size_limit(
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+def test_large_pending_operations_state_preserves_the_exact_approval_through_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    exported = _actual_operations_export(
+        tmp_path, monkeypatch,
+        initial_alert={"raw_observation": {"fixture_padding": "x" * platform_ci.MAX_EVIDENCE_TEXT}},
+    )
+    pending_status = exported["pending_status"]
+    raw = json.dumps(pending_status).encode()
+    assert platform_ci.MAX_EVIDENCE_TEXT < len(raw) < platform_ci.MAX_EXECUTION_EXPORT_BYTES
+    assert len(pending_status["pending"]) == 1
+    expected_approval = pending_status["pending"][0]
+    assert expected_approval["action_digest"] == exported["prepared_action"]["action_digest"]
+    assert pending_status["executions"][0]["phase"] == "approval"
+
+    class OperationsHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.path == "/api/operations"
+            assert self.headers.get("X-AtlasOps-Key") == API_KEY
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), OperationsHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "large-pending-state", env={})
+    runner._api_root = lambda: f"http://127.0.0.1:{server.server_port}"
+    runner._operations_headers = lambda: {"X-AtlasOps-Key": API_KEY}
+    try:
+        observed = runner._operations()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    assert observed == pending_status
+    assert observed["pending"][0] == expected_approval

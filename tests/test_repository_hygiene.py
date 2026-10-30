@@ -240,7 +240,7 @@ def test_container_build_context_excludes_local_secrets_and_worktrees():
 def test_ui_container_uses_project_runtime_dependencies_and_pinned_kubectl():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     coordinator = (ROOT / "Dockerfile.coordinator").read_text(encoding="utf-8")
-    assert 'COPY . .\nRUN pip install --no-cache-dir . "uvicorn[standard]"' in dockerfile
+    assert "COPY . .\nRUN pip install --no-cache-dir --no-deps --no-build-isolation ." in dockerfile
     assert "aiofiles" not in dockerfile
     assert "gnupg" not in dockerfile
     assert "curl git" not in dockerfile

@@ -24,8 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chmod +x /usr/local/bin/kubectl && \
     rm -rf /var/lib/apt/lists/*
 
+COPY requirements/platform-runtime.lock ./requirements/platform-runtime.lock
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: \
+    -r requirements/platform-runtime.lock
+
 COPY . .
-RUN pip install --no-cache-dir . "uvicorn[standard]"
+RUN pip install --no-cache-dir --no-deps --no-build-isolation . \
+    && pip check
 COPY --from=frontend-build /build/frontend/dist ./frontend/dist
 
 # HF Spaces runs as user 1000 — ensure data dirs are writable

@@ -56,6 +56,7 @@ APPROVAL_TOKEN_RE = re.compile(r"\bapr-[A-Za-z0-9_-]{6,}\b")
 BEARER_RE = re.compile(r"(?i)\bBearer\s+[^,\s\"']+")
 DEFAULT_TIMEOUT = 30
 POLL_INTERVAL = 5
+COORDINATOR_METRICS_TIMEOUT_SECONDS = 90
 MAX_EVIDENCE_TEXT = 100_000
 
 
@@ -616,7 +617,6 @@ def _fixture_response(
                     stdout,
                 )
                 or deployment_image is None
-                or not re.search(r"(?m)^\s*Image Pull Policy:\s+Never\s*$", stdout)
             ):
                 raise PlatformCIError("diagnosis fixture did not observe the unavailable frontend Deployment")
 
@@ -655,6 +655,7 @@ def _fixture_response(
                     if isinstance(item, dict)
                     and item.get("name") == WORKLOAD_CONTAINER
                     and item.get("image") == deployment_image.group(1)
+                    and item.get("imagePullPolicy") == "Never"
                 ]
                 statuses = (pod.get("status") or {}).get("containerStatuses") or []
                 for status in statuses:
@@ -677,7 +678,8 @@ def _fixture_response(
                     break
             if pull_failure is None:
                 raise PlatformCIError(
-                    "diagnosis fixture did not observe a frontend server Pod image-pull failure"
+                    "diagnosis fixture did not observe a frontend server Pod with imagePullPolicy "
+                    "Never and an image-pull failure"
                 )
             incident_id = user.get("incident_id", "")
             message = {
@@ -686,8 +688,8 @@ def _fixture_response(
                         "incident_id": incident_id,
                         "root_cause": (
                             f"The frontend server Pod is waiting with {pull_failure} for the observed "
-                            f"image {deployment_image.group(1)}; the running Argo history observation "
-                            "identifies the build revision."
+                            f"image {deployment_image.group(1)} under imagePullPolicy Never; the running "
+                            "Argo history observation identifies the build revision."
                         ),
                         "category": "deploy",
                         "confidence": 1.0,
@@ -698,15 +700,13 @@ def _fixture_response(
                             },
                             {
                                 "tool": "kubectl_describe",
-                                "finding": (
-                                    f"Observed the frontend Deployment image "
-                                    f"{deployment_image.group(1)} with image pull policy Never."
-                                ),
+                                "finding": f"Observed the frontend Deployment image {deployment_image.group(1)}.",
                             },
                             {
                                 "tool": "kubectl_get",
                                 "finding": (
-                                    f"Observed the frontend server Pod waiting with {pull_failure}."
+                                    "Observed the matching frontend server Pod with imagePullPolicy Never "
+                                    f"waiting with {pull_failure}."
                                 ),
                             },
                         ],
@@ -1001,22 +1001,28 @@ def validate_pre_fault(
         )
 
     deployment_metadata = deployment.get("metadata") if isinstance(deployment, dict) else None
+    deployment_api_version = deployment.get("apiVersion") if isinstance(deployment, dict) else None
+    deployment_kind = deployment.get("kind") if isinstance(deployment, dict) else None
+    deployment_annotations = (
+        deployment_metadata.get("annotations")
+        if isinstance(deployment_metadata, dict)
+        else None
+    )
     deployment_spec = deployment.get("spec") if isinstance(deployment, dict) else None
     template = deployment_spec.get("template") if isinstance(deployment_spec, dict) else None
-    template_metadata = template.get("metadata") if isinstance(template, dict) else None
     template_spec = template.get("spec") if isinstance(template, dict) else None
     containers = template_spec.get("containers") if isinstance(template_spec, dict) else None
     if (
-        not isinstance(deployment_metadata, dict)
+        deployment_api_version != "apps/v1"
+        or deployment_kind != "Deployment"
+        or not isinstance(deployment_metadata, dict)
         or deployment_metadata.get("name") != WORKLOAD_NAME
         or deployment_metadata.get("namespace") != APP_WORKLOAD_NAMESPACE
         or not isinstance(deployment_spec, dict)
         or deployment_spec.get("replicas") != 1
-        or not isinstance(deployment_metadata.get("labels"), dict)
-        or deployment_metadata["labels"].get("argocd.argoproj.io/instance") != APP_NAME
-        or not isinstance(template_metadata, dict)
-        or not isinstance(template_metadata.get("labels"), dict)
-        or template_metadata["labels"].get("argocd.argoproj.io/instance") != APP_NAME
+        or not isinstance(deployment_annotations, dict)
+        or deployment_annotations.get("argocd.argoproj.io/tracking-id")
+        != f"{APP_NAME}:apps/Deployment:{APP_WORKLOAD_NAMESPACE}/{WORKLOAD_NAME}"
         or not isinstance(containers, list)
         or len([item for item in containers if isinstance(item, dict) and item.get("name") == WORKLOAD_CONTAINER]) != 1
     ):
@@ -1783,11 +1789,12 @@ def validate_coordinator_telemetry(
         ):
             timestamp = _float_sample(point[0])
             value = _float_sample(point[1])
-            if abs(now - timestamp) <= 300 and value > 0:
-                incident_matches.append({"labels": labels, "timestamp": timestamp, "increase": value})
+            if abs(now - timestamp) <= 300 and value == 1:
+                incident_matches.append({"labels": labels, "timestamp": timestamp, "counter": value})
     if len(http_matches) != 1 or len(incident_matches) != 1:
         raise PlatformCIError(
-            "observed coordinator HTTP and resolved-incident metric series with the build service.version are required"
+            "an observed coordinator HTTP increase and one resolved-incident counter sample "
+            "with the build service.version are required"
         )
     return {
         "http_metric": "atlasops_http_requests_total",
@@ -2654,6 +2661,7 @@ class Runner:
             "ps",
             "--all",
             "--quiet",
+            "--no-trunc",
             f"--filter=label={KIND_CLUSTER_LABEL}={self.cluster_name}",
             timeout=30,
             label="read Kind owner container",
@@ -2752,6 +2760,7 @@ class Runner:
                 "ps",
                 "--all",
                 "--quiet",
+                "--no-trunc",
                 f"--filter=label={KIND_CLUSTER_LABEL}={self.cluster_name}",
                 timeout=30,
                 label="record Kind owner container",
@@ -3653,7 +3662,10 @@ class Runner:
             and item.get("path") == "/operation"
             and isinstance(item.get("value"), dict)
         ]
-        if replacement != [selected["revision"]] or operation != [selected["revision"]]:
+        if (
+            replacement != [selected["history_revision"]]
+            or operation != [selected["history_revision"]]
+        ):
             raise PlatformCIError("prepared Argo action does not reconcile the selected committed revision")
         self._pending_token = pending.get("token")
         self._pending_digest = pending.get("action_digest")
@@ -4178,19 +4190,34 @@ class Runner:
         completion: dict[str, Any],
         proof: dict[str, Any],
     ) -> dict[str, Any]:
-        http_series = self._prometheus_query(
-            "increase(atlasops_http_requests_total[5m])"
-        )
-        incident_series = self._prometheus_query(
-            "increase(atlasops_incidents_total[5m])"
-        )
-        target_info = self._prometheus_query("target_info")
-        metrics = validate_coordinator_telemetry(
-            http_series,
-            incident_series,
-            target_info,
-            source_sha=self.identity.source_sha,
-        )
+        deadline = time.monotonic() + COORDINATOR_METRICS_TIMEOUT_SECONDS
+        metrics = None
+        last_validation_error = None
+        while time.monotonic() < deadline:
+            http_series = self._prometheus_query(
+                "increase(atlasops_http_requests_total[5m])"
+            )
+            incident_series = self._prometheus_query("atlasops_incidents_total")
+            target_info = self._prometheus_query("target_info")
+            try:
+                metrics = validate_coordinator_telemetry(
+                    http_series,
+                    incident_series,
+                    target_info,
+                    source_sha=self.identity.source_sha,
+                )
+            except PlatformCIError as exc:
+                last_validation_error = exc
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(min(POLL_INTERVAL, remaining))
+            else:
+                break
+        if metrics is None:
+            raise PlatformCIError(
+                "fresh coordinator HTTP and resolved-incident metrics were not observed "
+                f"within {COORDINATOR_METRICS_TIMEOUT_SECONDS} seconds"
+            ) from last_validation_error
         status, traces = self._http(
             f"http://127.0.0.1:{self.ports['jaeger']}/api/traces?"
             + urlencode({"service": "atlasops-coordinator", "limit": "20"}),
@@ -4558,6 +4585,7 @@ class Runner:
                 "ps",
                 "--all",
                 "--quiet",
+                "--no-trunc",
                 f"--filter=label={KIND_CLUSTER_LABEL}={self.cluster_name}",
                 check=False,
                 timeout=30,

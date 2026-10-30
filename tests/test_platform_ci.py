@@ -179,19 +179,25 @@ def _pre_fault_state() -> tuple[dict[str, object], dict[str, object], dict[str, 
         },
     }
     deployment: dict[str, object] = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
         "metadata": {
             "name": "frontend",
             "namespace": "atlasops-boutique",
             "uid": "deployment-uid",
             "generation": 7,
-            "labels": {"argocd.argoproj.io/instance": platform_ci.APP_NAME},
+            "labels": {"app": "frontend"},
+            "annotations": {
+                "argocd.argoproj.io/tracking-id": (
+                    f"{platform_ci.APP_NAME}:apps/Deployment:"
+                    f"{platform_ci.APP_WORKLOAD_NAMESPACE}/{platform_ci.WORKLOAD_NAME}"
+                )
+            },
         },
         "spec": {
             "replicas": 1,
             "template": {
-                "metadata": {
-                    "labels": {"argocd.argoproj.io/instance": platform_ci.APP_NAME}
-                },
+                "metadata": {"labels": {"app": "frontend"}},
                 "spec": {"containers": [{"name": "server", "image": "frontend:source"}]},
             },
         },
@@ -204,6 +210,27 @@ def _pre_fault_state() -> tuple[dict[str, object], dict[str, object], dict[str, 
         ),
         "labels": {"atlasops_route": "coordinator"},
     }
+    return application, deployment, rule
+
+
+def _legacy_labeled_pre_fault_state() -> tuple[
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+]:
+    application, deployment, rule = _pre_fault_state()
+    metadata = deployment["metadata"]
+    assert isinstance(metadata, dict)
+    metadata_labels = metadata["labels"]
+    assert isinstance(metadata_labels, dict)
+    metadata_labels["argocd.argoproj.io/instance"] = platform_ci.APP_NAME
+    template = deployment["spec"]["template"]
+    assert isinstance(template, dict)
+    template_metadata = template["metadata"]
+    assert isinstance(template_metadata, dict)
+    template_labels = template_metadata["labels"]
+    assert isinstance(template_labels, dict)
+    template_labels["argocd.argoproj.io/instance"] = platform_ci.APP_NAME
     return application, deployment, rule
 
 
@@ -231,6 +258,113 @@ def _owner(runner: platform_ci.Runner) -> platform_ci.ClusterOwnership:
         api_host_port="45123",
         kube_system_uid="kube-system-uid",
     )
+
+
+def _owner_docker_double(
+    runner: platform_ci.Runner,
+    calls: list[tuple[object, ...]],
+) -> platform_ci.ClusterOwnership:
+    owner = _owner(runner)
+    port_bindings = {
+        "6443/tcp": [{"HostIp": "127.0.0.1", "HostPort": owner.api_host_port}],
+        "30080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8080"}],
+    }
+    inspected = {
+        "Id": owner.control_plane_id,
+        "Name": f"/{runner.cluster_name}-control-plane",
+        "State": {"Running": True},
+        "Config": {
+            "Labels": {
+                platform_ci.KIND_CLUSTER_LABEL: runner.cluster_name,
+                platform_ci.KIND_NODE_ROLE_LABEL: "control-plane",
+            }
+        },
+        "HostConfig": {"PortBindings": port_bindings},
+        "NetworkSettings": {"Ports": port_bindings},
+    }
+
+    def docker(*args: object, **_kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        if args[0] == "ps":
+            container_id = owner.control_plane_id
+            if "--no-trunc" not in args:
+                container_id = container_id[:12]
+            return SimpleNamespace(stdout=f"{container_id}\n", returncode=0)
+        if args[0] == "inspect":
+            if args[1] != owner.control_plane_id:
+                raise platform_ci.PlatformCIError("Docker inspect received a truncated owner ID")
+            return SimpleNamespace(stdout=json.dumps([inspected]), returncode=0)
+        raise AssertionError(f"unexpected Docker owner command: {args}")
+
+    runner._cluster_list = lambda: {runner.cluster_name}
+    runner._docker = docker
+    runner._load_kubeconfig_server = lambda: owner.api_server
+    runner._kubectl_json = lambda *args, **_kwargs: {
+        "kind": "Namespace",
+        "metadata": {"name": "kube-system", "uid": owner.kube_system_uid},
+    }
+    return owner
+
+
+def test_read_owner_requests_full_untruncated_container_ids(tmp_path: Path) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "read-owner-evidence", env={})
+    calls: list[tuple[object, ...]] = []
+    expected = _owner_docker_double(runner, calls)
+
+    observed = runner._read_owner()
+
+    assert observed == expected
+    ps_calls = [args for args in calls if args[0] == "ps"]
+    assert len(ps_calls) == 1
+    assert "--no-trunc" in ps_calls[0]
+    assert observed.kube_system_uid == "kube-system-uid"
+
+
+def test_capture_owner_requests_full_untruncated_container_ids(tmp_path: Path) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "capture-owner-evidence", env={})
+    calls: list[tuple[object, ...]] = []
+    expected = _owner_docker_double(runner, calls)
+    runner._record = lambda *_args, **_kwargs: None
+    runner._flush = lambda: None
+
+    observed = runner._capture_owner()
+
+    assert observed == expected
+    ps_calls = [args for args in calls if args[0] == "ps"]
+    assert len(ps_calls) == 2
+    assert all("--no-trunc" in args for args in ps_calls)
+    assert runner.data["cluster"]["ownership"]["control_plane_id"] == expected.control_plane_id
+
+
+def test_cluster_cleanup_absence_probe_requests_full_container_ids(tmp_path: Path) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "cleanup-owner-evidence", env={})
+    calls: list[tuple[object, ...]] = []
+    expected = _owner_docker_double(runner, calls)
+    original_docker = runner._docker
+    deleted = {"value": False}
+    runner._cluster_list = lambda: set() if deleted["value"] else {runner.cluster_name}
+
+    def docker(*args: object, **kwargs: object) -> SimpleNamespace:
+        if args[0] == "ps" and deleted["value"]:
+            calls.append(args)
+            return SimpleNamespace(stdout="", returncode=0)
+        return original_docker(*args, **kwargs)
+
+    runner._docker = docker
+    runner._kind = lambda *_args, **_kwargs: (
+        deleted.update(value=True) or SimpleNamespace(stdout="", returncode=0)
+    )
+    runner._flush = lambda: None
+    runner.owner = expected
+    runner.creation_attempted = True
+    runner.cluster_created_by_runner = True
+
+    runner._cleanup_cluster()
+
+    ps_calls = [args for args in calls if args[0] == "ps"]
+    assert len(ps_calls) == 2
+    assert all("--no-trunc" in args for args in ps_calls)
+    assert runner.data["cleanup"]["status"] == "verified_deleted"
 
 
 def _synced_argo_application(started_at: str) -> dict[str, object]:
@@ -690,8 +824,18 @@ def test_docker_context_rejects_ambient_remote_endpoint_without_contact(tmp_path
     assert commands == []
 
 
-def test_fault_requires_synced_source_and_one_eligible_argo_history_entry() -> None:
+def test_pre_fault_accepts_default_argocd_tracking_annotation() -> None:
     application, deployment, rule = _pre_fault_state()
+    metadata = deployment["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["labels"] == {"app": "frontend"}
+    assert "argocd.argoproj.io/instance" not in metadata["labels"]
+    template = deployment["spec"]["template"]
+    assert isinstance(template, dict)
+    template_metadata = template["metadata"]
+    assert isinstance(template_metadata, dict)
+    assert template_metadata["labels"] == {"app": "frontend"}
+    assert "argocd.argoproj.io/instance" not in template_metadata["labels"]
 
     eligible = platform_ci.validate_pre_fault(
         application,
@@ -705,6 +849,152 @@ def test_fault_requires_synced_source_and_one_eligible_argo_history_entry() -> N
     assert eligible["history_revision"] == SOURCE_SHA
     assert eligible["application_revision"] == SOURCE_SHA
     assert eligible["desired_replicas"] == 1
+
+
+@pytest.mark.parametrize(
+    "tracking_id",
+    [
+        pytest.param(
+            "other-app:apps/Deployment:atlasops-boutique/frontend",
+            id="wrong-app",
+        ),
+        pytest.param(
+            "atlasops-boutique:extensions/Deployment:atlasops-boutique/frontend",
+            id="wrong-api-group",
+        ),
+        pytest.param(
+            "atlasops-boutique:apps/StatefulSet:atlasops-boutique/frontend",
+            id="wrong-kind",
+        ),
+        pytest.param(
+            "atlasops-boutique:apps/Deployment:other/frontend",
+            id="wrong-namespace",
+        ),
+        pytest.param(
+            "atlasops-boutique:apps/Deployment:atlasops-boutique/frontend-decoy",
+            id="wrong-name",
+        ),
+    ],
+)
+def test_pre_fault_rejects_nonexact_argocd_tracking_id(tracking_id: str) -> None:
+    application, deployment, rule = _pre_fault_state()
+    metadata = deployment["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["labels"] = {"argocd.argoproj.io/instance": platform_ci.APP_NAME}
+    annotations = metadata["annotations"]
+    assert isinstance(annotations, dict)
+    annotations["argocd.argoproj.io/tracking-id"] = tracking_id
+    template = deployment["spec"]["template"]
+    assert isinstance(template, dict)
+    template_metadata = template["metadata"]
+    assert isinstance(template_metadata, dict)
+    template_metadata["labels"] = {"argocd.argoproj.io/instance": platform_ci.APP_NAME}
+
+    with pytest.raises(platform_ci.PlatformCIError, match="Argo-owned single replica"):
+        platform_ci.validate_pre_fault(
+            application,
+            deployment,
+            rule,
+            [],
+            source_sha=SOURCE_SHA,
+        )
+
+
+def _pending_argo_rollback(selected: dict[str, object]) -> dict[str, object]:
+    revision = selected["history_revision"]
+    return {
+        "token": "apr-test-token",
+        "action_digest": "f" * 64,
+        "action": {
+            "tool": "argocd_rollback",
+            "arguments": {"app": platform_ci.APP_NAME, "revision": selected["history_id"]},
+            "target": {
+                "kind": "Application",
+                "namespace": platform_ci.APP_NAMESPACE,
+                "name": platform_ci.APP_NAME,
+                "uid": "application-uid",
+            },
+            "verification_target": {
+                "kind": "Deployment",
+                "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+                "name": platform_ci.WORKLOAD_NAME,
+                "uid": "deployment-uid",
+            },
+            "patch": [
+                {
+                    "op": "replace",
+                    "path": "/spec/source",
+                    "value": {"targetRevision": revision},
+                },
+                {
+                    "op": "add",
+                    "path": "/operation",
+                    "value": {"sync": {"revision": revision}},
+                },
+            ],
+        },
+    }
+
+
+def test_pending_action_uses_pre_fault_history_revision(tmp_path: Path) -> None:
+    application, deployment, rule = _legacy_labeled_pre_fault_state()
+    selected = platform_ci.validate_pre_fault(
+        application,
+        deployment,
+        rule,
+        [],
+        source_sha=SOURCE_SHA,
+    )
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "pending-action-evidence", env={})
+    runner._application = lambda: {"metadata": {"uid": "application-uid"}}
+    runner.data["pre_fault_eligibility"] = selected
+
+    action = runner._pending_action(
+        _pending_argo_rollback(runner.data["pre_fault_eligibility"]),
+        runner.data["pre_fault_eligibility"],
+    )
+
+    assert action["arguments"] == {"app": platform_ci.APP_NAME, "revision": "218"}
+    assert runner.data["pre_fault_eligibility"]["history_revision"] == SOURCE_SHA
+    assert "revision" not in runner.data["pre_fault_eligibility"]
+
+
+@pytest.mark.parametrize(
+    ("patch_index", "revision_path"),
+    [
+        pytest.param(0, "targetRevision", id="wrong-source-targetRevision"),
+        pytest.param(1, "operation-revision", id="wrong-operation-revision"),
+    ],
+)
+def test_pending_action_rejects_each_wrong_patch_revision(
+    patch_index: int,
+    revision_path: str,
+    tmp_path: Path,
+) -> None:
+    application, deployment, rule = _legacy_labeled_pre_fault_state()
+    selected = platform_ci.validate_pre_fault(
+        application,
+        deployment,
+        rule,
+        [],
+        source_sha=SOURCE_SHA,
+    )
+    pending = _pending_argo_rollback(selected)
+    action = pending["action"]
+    assert isinstance(action, dict)
+    patch = action["patch"]
+    assert isinstance(patch, list)
+    value = copy.deepcopy(patch[patch_index]["value"])
+    if revision_path == "targetRevision":
+        value["targetRevision"] = BASE_SHA
+    else:
+        value["sync"]["revision"] = BASE_SHA
+    patch[patch_index]["value"] = value
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "pending-action-wrong-evidence", env={})
+    runner._application = lambda: {"metadata": {"uid": "application-uid"}}
+
+    with pytest.raises(platform_ci.PlatformCIError, match="selected committed revision"):
+        runner._pending_action(pending, selected)
 
 
 def test_fault_is_blocked_without_rule_with_duplicate_history_or_existing_alert() -> None:
@@ -1768,6 +2058,223 @@ def _validate_actual_completion(completion_api_export: dict[str, object]) -> dic
     )
 
 
+def _coordinator_telemetry_series(
+    now: float,
+    *,
+    incident_labels: dict[str, str] | None = None,
+    incident_timestamp: float | None = None,
+    incident_value: str = "1",
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    http_series = [
+        {
+            "metric": {
+                "method": "POST",
+                "route": "/webhook",
+                "status": "200",
+                "instance": "coordinator",
+            },
+            "value": [str(now), "2"],
+        }
+    ]
+    incident_series = [
+        {
+            "metric": incident_labels
+            or {"outcome": "resolved", "instance": "coordinator"},
+            "value": [str(now if incident_timestamp is None else incident_timestamp), incident_value],
+        }
+    ]
+    target_info = [
+        {
+            "metric": {
+                "service_name": "atlasops-coordinator",
+                "service_version": SOURCE_SHA,
+                "instance": "coordinator",
+            },
+            "value": [str(now), "1"],
+        }
+    ]
+    return http_series, incident_series, target_info
+
+
+def test_coordinator_telemetry_reports_resolved_incident_counter_value() -> None:
+    now = 1000.0
+    http_series, incident_series, target_info = _coordinator_telemetry_series(now)
+
+    metrics = platform_ci.validate_coordinator_telemetry(
+        http_series,
+        incident_series,
+        target_info,
+        source_sha=SOURCE_SHA,
+        now=now,
+    )
+
+    assert metrics["http_sample"]["increase"] == 2.0
+    assert metrics["incident_sample"]["counter"] == 1.0
+    assert "increase" not in metrics["incident_sample"]
+
+
+@pytest.mark.parametrize(
+    ("incident_labels", "incident_timestamp", "incident_value"),
+    [
+        pytest.param(
+            {"outcome": "unresolved", "instance": "coordinator"},
+            1000.0,
+            "1",
+            id="wrong-outcome",
+        ),
+        pytest.param(
+            {"outcome": "resolved", "instance": "coordinator"},
+            699.0,
+            "1",
+            id="stale-counter",
+        ),
+        pytest.param(
+            {"outcome": "resolved", "instance": "coordinator"},
+            1000.0,
+            "2",
+            id="not-one-incident",
+        ),
+        pytest.param(
+            {"outcome": "resolved", "instance": "other"},
+            1000.0,
+            "1",
+            id="wrong-source-binding",
+        ),
+        pytest.param(
+            {"outcome": "resolved", "instance": "coordinator"},
+            1000.0,
+            "malformed",
+            id="malformed-counter",
+        ),
+    ],
+)
+def test_coordinator_telemetry_rejects_invalid_incident_counter(
+    incident_labels: dict[str, str],
+    incident_timestamp: float,
+    incident_value: str,
+) -> None:
+    now = 1000.0
+    http_series, incident_series, target_info = _coordinator_telemetry_series(
+        now,
+        incident_labels=incident_labels,
+        incident_timestamp=incident_timestamp,
+        incident_value=incident_value,
+    )
+
+    with pytest.raises(platform_ci.PlatformCIError):
+        platform_ci.validate_coordinator_telemetry(
+            http_series,
+            incident_series,
+            target_info,
+            source_sha=SOURCE_SHA,
+            now=now,
+        )
+
+
+def test_runner_polls_until_fresh_coordinator_metrics_bind_to_one_incident(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    actual_completion_export: dict[str, object],
+) -> None:
+    now = platform_ci.time.time()
+    http_series, incident_series, target_info = _coordinator_telemetry_series(now)
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "telemetry-evidence", env={})
+    runner.ports = {"jaeger": 16686}
+    calls: list[str] = []
+    completed_polls = 0
+    clock = {"now": 0.0}
+    trace_response = _jaeger_response(
+        incident_id=INCIDENT_ID,
+        execution_id=EXECUTION_ID,
+        now_microseconds=int(now * 1_000_000),
+    )
+    records: list[tuple[str, dict[str, object]]] = []
+
+    def query(query_text: str) -> list[dict[str, object]]:
+        nonlocal completed_polls
+        calls.append(query_text)
+        if query_text == "increase(atlasops_http_requests_total[5m])":
+            value = "0" if completed_polls < 2 else "1"
+            return [{"metric": http_series[0]["metric"], "value": [str(now), value]}]
+        if query_text == "atlasops_incidents_total":
+            return [] if completed_polls == 0 else incident_series
+        if query_text == "increase(atlasops_incidents_total[5m])":
+            return [
+                {
+                    "metric": incident_series[0]["metric"],
+                    "value": [str(now), "0"],
+                }
+            ]
+        if query_text == "target_info":
+            completed_polls += 1
+            return target_info
+        raise AssertionError(f"unexpected Prometheus query: {query_text}")
+
+    monkeypatch.setattr(platform_ci.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        platform_ci.time,
+        "sleep",
+        lambda seconds: clock.update(now=clock["now"] + seconds),
+    )
+    runner._prometheus_query = query
+    runner._http = lambda *_args, **_kwargs: (200, trace_response)
+    runner._record = lambda key, value: records.append((key, value))
+
+    result = runner._collect_coordinator_telemetry(
+        {"incident_id": INCIDENT_ID, "execution_id": EXECUTION_ID},
+        _validate_actual_completion(actual_completion_export),
+    )
+
+    assert completed_polls == 3
+    assert clock["now"] == 10
+    assert calls.count("increase(atlasops_http_requests_total[5m])") == 3
+    assert calls.count("atlasops_incidents_total") == 3
+    assert calls.count("target_info") == 3
+    assert result["metrics"]["http_metric"] == "atlasops_http_requests_total"
+    assert result["metrics"]["http_sample"]["increase"] == 1.0
+    assert result["metrics"]["incident_metric"] == "atlasops_incidents_total"
+    assert result["metrics"]["incident_sample"]["counter"] == 1.0
+    assert result["trace"]["incident_span"]["execution_id"] == EXECUTION_ID
+    assert records == [("coordinator_telemetry", result)]
+
+
+def test_runner_coordinator_telemetry_poll_has_a_bounded_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = platform_ci.time.time()
+    http_series, incident_series, target_info = _coordinator_telemetry_series(now)
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "telemetry-timeout-evidence", env={})
+    calls: list[str] = []
+    clock = {"now": 0.0}
+
+    def query(query_text: str) -> list[dict[str, object]]:
+        calls.append(query_text)
+        if query_text == "increase(atlasops_http_requests_total[5m])":
+            return [{"metric": http_series[0]["metric"], "value": [str(now), "0"]}]
+        if query_text == "atlasops_incidents_total":
+            return incident_series
+        if query_text == "increase(atlasops_incidents_total[5m])":
+            return [{"metric": incident_series[0]["metric"], "value": [str(now), "0"]}]
+        if query_text == "target_info":
+            return target_info
+        raise AssertionError(f"unexpected Prometheus query: {query_text}")
+
+    monkeypatch.setattr(platform_ci.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        platform_ci.time,
+        "sleep",
+        lambda seconds: clock.update(now=clock["now"] + seconds),
+    )
+    runner._prometheus_query = query
+
+    with pytest.raises(platform_ci.PlatformCIError):
+        runner._collect_coordinator_telemetry({}, {})
+
+    assert clock["now"] == 90
+    assert calls.count("atlasops_incidents_total") > 1
+
+
 def test_completed_evidence_accepts_current_authenticated_operations_export(
     actual_completion_export: dict[str, object],
 ) -> None:
@@ -2192,16 +2699,58 @@ def test_fixture_requests_history_and_keeps_operational_comms_inference_only() -
 
 
 @pytest.mark.parametrize(
-    ("target_labels", "target_reason", "decoy_reason", "expected_status"),
+    (
+        "target_labels",
+        "target_reason",
+        "target_pull_policy",
+        "other_container_policy",
+        "decoy_reason",
+        "expected_status",
+    ),
     [
-        ({"app": "frontend"}, "ErrImageNeverPull", "CrashLoopBackOff", 200),
-        ({"app": "frontend"}, "CrashLoopBackOff", "ErrImageNeverPull", 400),
-        ({"app": "payments"}, "ErrImageNeverPull", None, 400),
+        pytest.param(
+            {"app": "frontend"},
+            "ErrImageNeverPull",
+            "Never",
+            None,
+            "CrashLoopBackOff",
+            200,
+            id="matching-pod-never-policy",
+        ),
+        pytest.param(
+            {"app": "frontend"},
+            "ErrImageNeverPull",
+            "Always",
+            "Never",
+            None,
+            400,
+            id="matching-pod-wrong-policy",
+        ),
+        pytest.param(
+            {"app": "frontend"},
+            "CrashLoopBackOff",
+            "Never",
+            None,
+            "ErrImageNeverPull",
+            400,
+            id="matching-pod-wrong-waiting-reason",
+        ),
+        pytest.param(
+            {"app": "payments"},
+            "ErrImageNeverPull",
+            "Never",
+            None,
+            None,
+            400,
+            id="wrong-workload-pod",
+        ),
     ],
 )
 def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
     target_labels: dict[str, str],
     target_reason: str,
+    target_pull_policy: str,
+    other_container_policy: str | None,
     decoy_reason: str | None,
     expected_status: int,
 ) -> None:
@@ -2221,7 +2770,6 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
             "Containers:",
             "  server:",
             f"    Image:              {fault_image}",
-            "    Image Pull Policy:  Never",
             "Events:",
             "  Type    Reason    Age   From                   Message",
             "  ----    ------    ---   ----                   -------",
@@ -2235,14 +2783,35 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
         "returncode": 0,
     }
 
-    def pod(name: str, labels: dict[str, str], reason: str) -> dict[str, object]:
+    def pod(
+        name: str,
+        labels: dict[str, str],
+        reason: str,
+        pull_policy: str,
+        other_policy: str | None = None,
+    ) -> dict[str, object]:
+        containers = [
+            {
+                "name": "server",
+                "image": fault_image,
+                "imagePullPolicy": pull_policy,
+            }
+        ]
+        if other_policy is not None:
+            containers.append(
+                {
+                    "name": "sidecar",
+                    "image": "sidecar:source",
+                    "imagePullPolicy": other_policy,
+                }
+            )
         return {
             "metadata": {
                 "name": name,
                 "namespace": "atlasops-boutique",
                 "labels": labels,
             },
-            "spec": {"containers": [{"name": "server", "image": fault_image}]},
+            "spec": {"containers": containers},
             "status": {
                 "containerStatuses": [
                     {
@@ -2255,10 +2824,16 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
         }
 
     pod_items: list[dict[str, object]] = [
-        pod("frontend-abc", target_labels, target_reason)
+        pod(
+            "frontend-abc",
+            target_labels,
+            target_reason,
+            target_pull_policy,
+            other_container_policy,
+        )
     ]
     if decoy_reason is not None:
-        pod_items.append(pod("payments-xyz", {"app": "payments"}, decoy_reason))
+        pod_items.append(pod("payments-xyz", {"app": "payments"}, decoy_reason, "Never"))
     pods_output = {
         "success": True,
         "stdout": json.dumps({"items": pod_items}),
@@ -2360,6 +2935,15 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
         assert target_reason in final["root_cause"]
         assert fault_image in final["root_cause"]
         assert any(item["tool"] == "kubectl_get" for item in final["evidence"])
+        assert any(
+            item["tool"] == "kubectl_get" and "imagePullPolicy Never" in item["finding"]
+            for item in final["evidence"]
+        )
+        assert all(
+            "pull policy" not in item["finding"].lower()
+            for item in final["evidence"]
+            if item["tool"] == "kubectl_describe"
+        )
 
 
 def test_fixture_emits_credential_safe_jsonl_consumed_by_runner_logs(

@@ -431,8 +431,21 @@ def history_id_from_messages(
     source_sha: str,
 ) -> str:
     candidates: set[str] = set()
-    for message in messages:
-        parsed = _message_json(message.get("content")) if isinstance(message, dict) else None
+    observations = [
+        _message_json(message.get("content"))
+        for message in messages
+        if isinstance(message, dict)
+    ]
+    observations.extend(
+        {
+            "tool": function["name"],
+            "args": _message_json(function.get("arguments")),
+            "output": output,
+        }
+        for function, output in _tool_results(messages).values()
+        if function.get("name") == "argocd_app_history"
+    )
+    for parsed in observations:
         for item in _walk(parsed):
             if not isinstance(item, dict):
                 continue
@@ -630,10 +643,12 @@ def _fixture_response(
                 or pods_arguments.get("output") != "json"
             ):
                 raise PlatformCIError("diagnosis fixture Pod read is not scoped to the frontend namespace")
-            try:
-                pod_document = json.loads(str(pods[1].get("stdout") or ""))
-            except json.JSONDecodeError as exc:
-                raise PlatformCIError("diagnosis fixture Pod read is not valid JSON") from exc
+            pod_document = pods[1].get("parsed")
+            if not isinstance(pod_document, dict):
+                try:
+                    pod_document = json.loads(str(pods[1].get("stdout") or ""))
+                except json.JSONDecodeError as exc:
+                    raise PlatformCIError("diagnosis fixture Pod read is not valid JSON") from exc
             pod_items = pod_document.get("items") if isinstance(pod_document, dict) else None
             if not isinstance(pod_items, list):
                 raise PlatformCIError("diagnosis fixture Pod read has no observed Pod items")
@@ -827,6 +842,7 @@ def _fixture_response(
             )
         }
 
+    message["role"] = "assistant"
     return {
         "id": f"fixture-{role}-{prior_tool_calls}",
         "object": "chat.completion",
@@ -2146,9 +2162,10 @@ def http_json(
     headers: dict[str, str] | None = None,
     payload: dict[str, Any] | None = None,
     timeout: float = 10,
+    expect_json: bool = True,
 ) -> tuple[int, Any]:
     body = json.dumps(payload, separators=(",", ":")).encode() if payload is not None else None
-    request_headers = {"Accept": "application/json"}
+    request_headers = {"Accept": "application/json" if expect_json else "*/*"}
     if payload is not None:
         request_headers["Content-Type"] = "application/json"
     if headers:
@@ -2170,7 +2187,8 @@ def http_json(
     if len(raw) > MAX_EVIDENCE_TEXT:
         raise PlatformCIError("HTTP response exceeded the bounded evidence size")
     try:
-        parsed = json.loads(raw.decode("utf-8"))
+        text = raw.decode("utf-8")
+        parsed = json.loads(text) if expect_json else text
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PlatformCIError(f"HTTP response was not bounded UTF-8 JSON: {urlsplit(url).path}") from exc
     return status, parsed
@@ -2370,6 +2388,7 @@ class Runner:
         payload: dict[str, Any] | None = None,
         timeout: float = 10,
         label: str,
+        expect_json: bool = True,
     ) -> tuple[int, Any]:
         status, body = http_json(
             url,
@@ -2377,6 +2396,7 @@ class Runner:
             headers=headers,
             payload=payload,
             timeout=timeout,
+            expect_json=expect_json,
         )
         self._append_jsonl(
             "logs/http-events.jsonl",
@@ -3262,15 +3282,25 @@ class Runner:
     def _wait_tcp_service(self, name: str, url: str, timeout: float) -> None:
         deadline = time.monotonic() + timeout
         last_status = 0
+        last_error = None
         while time.monotonic() < deadline:
             try:
-                last_status, body = self._http(url, timeout=3, label=f"wait for {name}")
+                last_status, _body = self._http(
+                    url, timeout=3, label=f"wait for {name}", expect_json=False
+                )
                 if last_status == 200:
                     return
-            except PlatformCIError:
-                pass
+            except PlatformCIError as exc:
+                last_error = sanitize_text(str(exc), self.secret_values)
+                self._append_jsonl(
+                    "logs/http-events.jsonl",
+                    {"stage": self.stage, "label": f"wait for {name}", "error": last_error},
+                )
             time.sleep(1)
-        raise PlatformCIError(f"{name} did not become ready; last HTTP status was {last_status}")
+        raise PlatformCIError(
+            f"{name} did not become ready; last HTTP status was {last_status}; "
+            f"last error was {last_error or 'none'}"
+        )
 
     def _verify_image_identity(self) -> dict[str, Any]:
         self._stage("image_identity", "running")
@@ -3809,6 +3839,8 @@ class Runner:
         self,
         selected_revision: str,
         dispatch: dict[str, Any],
+        *,
+        before: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         approval_timestamp = dispatch.get("approval_timestamp")
         mutation_started_timestamp = dispatch.get("mutation_started_timestamp")
@@ -3822,6 +3854,14 @@ class Runner:
             or approval_timestamp > mutation_started_timestamp
         ):
             raise PlatformCIError("durable approval and mutation-start timestamps are missing or out of order")
+        previous_metadata = (before or {}).get("metadata") or {}
+        previous_operation = ((before or {}).get("status") or {}).get("operationState") or {}
+        try:
+            previous_started = datetime.fromisoformat(
+                str(previous_operation.get("startedAt"))
+            )
+        except ValueError:
+            previous_started = None
         deadline = time.monotonic() + 300
         last = {}
         while time.monotonic() < deadline:
@@ -3853,10 +3893,29 @@ class Runner:
                 if started.microsecond:
                     started_after_dispatch = started_epoch >= mutation_started_timestamp
                 else:
-                    # Argo commonly reports startedAt to whole-second precision. Do
-                    # not accept the dispatch second, which could predate approval.
+                    metadata = app.get("metadata") or {}
+                    new_operation_same_second = (
+                        before is not None
+                        and not before.get("operation")
+                        and previous_operation.get("phase") in {"Succeeded", "Failed", "Error"}
+                        and previous_started is not None
+                        and previous_started.tzinfo is not None
+                        and previous_started.timestamp() != started_epoch
+                        and isinstance(previous_metadata.get("uid"), str)
+                        and bool(previous_metadata["uid"])
+                        and metadata.get("uid") == previous_metadata["uid"]
+                        and isinstance(previous_metadata.get("resourceVersion"), str)
+                        and bool(previous_metadata["resourceVersion"])
+                        and isinstance(metadata.get("resourceVersion"), str)
+                        and bool(metadata["resourceVersion"])
+                        and metadata["resourceVersion"] != previous_metadata["resourceVersion"]
+                    )
                     started_after_dispatch = (
                         int(started_epoch) > math.floor(mutation_started_timestamp)
+                        or (
+                            int(started_epoch) == math.floor(mutation_started_timestamp)
+                            and new_operation_same_second
+                        )
                     )
             if (
                 operation_state.get("phase") == "Succeeded"
@@ -3866,6 +3925,14 @@ class Runner:
                 and initiated_by.get("username") == "atlasops"
                 and requested_sync.get("revision") == selected_revision
                 and started_after_dispatch
+                and (
+                    before is None
+                    or (
+                        isinstance(previous_metadata.get("uid"), str)
+                        and bool(previous_metadata["uid"])
+                        and app.get("metadata", {}).get("uid") == previous_metadata["uid"]
+                    )
+                )
             ):
                 self._append_jsonl("api-evidence/argo-application-after-sync.jsonl", app)
                 return app
@@ -4490,6 +4557,10 @@ class Runner:
         self._pending_digest = prepared_action["action_digest"]
         self._pending_token = prepared_action["token"]
         self._prove_rejection_before_approval(pending, pre_approval_evidence)
+        before_approval = self._application()
+        self._append_jsonl(
+            "api-evidence/argo-application-before-approval.jsonl", before_approval
+        )
         self._approve_exact_action(pending)
         dispatch = self._wait_for_approved_mutation_started(pending)
         self._stage(
@@ -4499,7 +4570,9 @@ class Runner:
             approval_timestamp=dispatch["approval_timestamp"],
             mutation_started_timestamp=dispatch["mutation_started_timestamp"],
         )
-        self._wait_for_application_sync(eligibility["history_revision"], dispatch)
+        self._wait_for_application_sync(
+            eligibility["history_revision"], dispatch, before=before_approval
+        )
         self._verify_frontend_source_restored(pre_fault_deployment)
         completion = self._wait_for_execution(pending["incident_id"])
         proof = validate_completion_evidence(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import subprocess
@@ -13,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from scripts import platform_ci
+
 
 def _is_current_core_path(path: str | Path) -> bool:
     return Path(path).resolve().is_relative_to(platform_ci.REPO_ROOT.resolve())
@@ -490,6 +492,72 @@ def test_http_json_does_not_forward_operator_key_across_redirect() -> None:
     assert redirected_headers == []
 
 
+@pytest.mark.parametrize("body", [b"Prometheus Server is Ready.\n", b"OK"])
+def test_service_readiness_accepts_plain_text_without_weakening_json_api_reads(
+    body: bytes,
+    tmp_path: Path,
+) -> None:
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    class ReadyHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ReadyHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "plain-readiness", env={})
+    url = f"http://127.0.0.1:{server.server_port}/-/ready"
+    try:
+        runner._wait_tcp_service("test-service", url, 2)
+        with pytest.raises(platform_ci.PlatformCIError, match="UTF-8 JSON"):
+            platform_ci.http_json(url)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    records = [
+        json.loads(line)
+        for line in (runner.evidence_dir / "logs" / "http-events.jsonl").read_text().splitlines()
+    ]
+    assert records[-1]["status"] == 200
+    assert records[-1]["path"] == "/-/ready"
+
+
+def test_history_id_comes_from_correlated_native_tool_messages() -> None:
+    messages = [
+        {"role": "user", "content": json.dumps({"incident_id": INCIDENT_ID})},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                platform_ci._tool_call(
+                    "argocd_app_history", {"app": platform_ci.APP_NAME}, "history-native"
+                )
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "history-native",
+            "content": json.dumps(
+                {"success": True, "history": [{"id": 218, "revision": SOURCE_SHA}]}
+            ),
+        },
+    ]
+    assert platform_ci.history_id_from_messages(messages, source_sha=SOURCE_SHA) == "218"
+
+    messages[-1]["tool_call_id"] = "uncorrelated"
+    with pytest.raises(platform_ci.PlatformCIError, match="one numeric Argo history"):
+        platform_ci.history_id_from_messages(messages, source_sha=SOURCE_SHA)
+
+
 @pytest.mark.parametrize(
     ("service_port", "pod_port", "reported_pod_port"),
     [
@@ -722,6 +790,62 @@ def test_argo_second_resolution_cannot_precede_durable_mutation_dispatch(
     ticks = iter((0.0, 1.0))
     monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
     assert runner._wait_for_application_sync(SOURCE_SHA, dispatch) is application
+
+
+def test_argo_same_second_sync_requires_a_new_operation_on_the_approved_application(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / "argo-same-second", env={})
+    before = _synced_argo_application("1970-01-01T00:01:30Z")
+    before["metadata"] = {"uid": "owned-application", "resourceVersion": "10"}
+    application = _synced_argo_application("1970-01-01T00:01:40Z")
+    application["metadata"] = {"uid": "owned-application", "resourceVersion": "12"}
+    runner._application = lambda: application
+    dispatch = {"approval_timestamp": 100.25, "mutation_started_timestamp": 100.75}
+    ticks = iter((0.0, 1.0))
+    monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
+
+    assert runner._wait_for_application_sync(
+        SOURCE_SHA, dispatch, before=before
+    ) is application
+
+
+@pytest.mark.parametrize(
+    "invalid_before",
+    ["same-operation", "pending-operation", "different-uid", "replaced-later", "replaced-fractional"],
+)
+def test_argo_same_second_sync_rejects_stale_pending_or_replaced_application(
+    invalid_before: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = platform_ci.Runner(_run_identity(), tmp_path / invalid_before, env={})
+    before = _synced_argo_application("1970-01-01T00:01:30Z")
+    before["metadata"] = {"uid": "owned-application", "resourceVersion": "10"}
+    application = _synced_argo_application("1970-01-01T00:01:40Z")
+    application["metadata"] = {"uid": "owned-application", "resourceVersion": "12"}
+    if invalid_before == "same-operation":
+        before["status"]["operationState"]["startedAt"] = (
+            application["status"]["operationState"]["startedAt"]
+        )
+    elif invalid_before == "pending-operation":
+        before["operation"] = {"sync": {"revision": SOURCE_SHA}}
+    else:
+        before["metadata"]["uid"] = "other-application"
+        if invalid_before == "replaced-later":
+            application["status"]["operationState"]["startedAt"] = "1970-01-01T00:01:41Z"
+        elif invalid_before == "replaced-fractional":
+            application["status"]["operationState"]["startedAt"] = "1970-01-01T00:01:40.800Z"
+    runner._application = lambda: application
+    dispatch = {"approval_timestamp": 100.25, "mutation_started_timestamp": 100.75}
+    ticks = iter((0.0, 1.0, 301.0))
+    monkeypatch.setattr(platform_ci.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(platform_ci.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(platform_ci.PlatformCIError, match="Argo did not complete"):
+        runner._wait_for_application_sync(SOURCE_SHA, dispatch, before=before)
 
 
 def test_main_push_uses_the_exact_event_commit(tmp_path: Path) -> None:
@@ -2770,6 +2894,8 @@ def test_fixture_requests_history_and_keeps_operational_comms_inference_only() -
         call["function"]["name"]
         for call in diagnosis_response["choices"][0]["message"]["tool_calls"]
     ]
+    assert diagnosis_response["choices"][0]["message"].get("role") == "assistant"
+    assert comms_response["choices"][0]["message"].get("role") == "assistant"
     comms_message = comms_response["choices"][0]["message"]
     comms_result = json.loads(comms_message["content"])
     assert diagnosis_tools == ["argocd_app_history", "kubectl_describe", "kubectl_get"]
@@ -2980,11 +3106,6 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
             ),
         },
     }
-    history_observation = {
-        "tool": "argocd_app_history",
-        "args": {"app": platform_ci.APP_NAME},
-        "output": history_output,
-    }
     request = {
         "model": platform_ci.FIXTURE_MODEL,
         "messages": [
@@ -2994,7 +3115,7 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
                 "content": json.dumps(
                     {
                         "incident_id": INCIDENT_ID,
-                        "observations": [history_observation],
+                        "observations": [],
                     }
                 ),
             },
@@ -3047,6 +3168,211 @@ def test_diagnosis_fixture_uses_observed_workload_scoped_pod_state(
             for item in final["evidence"]
             if item["tool"] == "kubectl_describe"
         )
+
+
+def test_native_diagnosis_preserves_bounded_json_and_full_raw_pod_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from agents import coordinator
+    import agents.tools.kubectl as kubectl_tools
+
+    fault_image = "atlasops-ci-unavailable:run-318-2"
+    broken_pod = {
+        "metadata": {
+            "name": "frontend-abc",
+            "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+            "uid": "frontend-pod-uid",
+            "labels": {"app": "frontend", "password": "test-placeholder-pod-secret"},
+            "managedFields": [{"fieldsV1": {"padding": "x" * 5000}}],
+        },
+        "spec": {
+            "containers": [
+                {"name": "server", "image": fault_image, "imagePullPolicy": "Never"}
+            ]
+        },
+        "status": {
+            "containerStatuses": [
+                {
+                    "name": "server",
+                    "image": fault_image,
+                    "state": {"waiting": {"reason": "ErrImageNeverPull"}},
+                }
+            ]
+        },
+    }
+    pods = [
+        {
+            "metadata": {
+                "name": f"healthy-{index}",
+                "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+                "labels": {"app": f"healthy-{index}"},
+            },
+            "spec": {"containers": [{"name": "server", "image": "healthy:source"}]},
+            "status": {
+                "phase": "Running",
+                "containerStatuses": [{"name": "server", "ready": True}],
+            },
+        }
+        for index in range(8)
+    ] + [broken_pod]
+    raw_document = {"apiVersion": "v1", "kind": "PodList", "items": pods}
+    raw_stdout = json.dumps(raw_document)
+    assert len(raw_stdout) > coordinator.TOOL_OUTPUT_MAX_CHARS
+
+    def kubectl_read(command: list[str], **_kwargs: object) -> dict[str, object]:
+        if command[1:3] == ["get", "pods"]:
+            return {"success": True, "stdout": raw_stdout, "stderr": "", "returncode": 0}
+        assert command[1:4] == ["describe", "deployment", "frontend"]
+        return {
+            "success": True,
+            "stdout": f"Name: frontend\nNamespace: atlasops-boutique\nContainers:\n  server:\n    Image: {fault_image}\n",
+            "stderr": "",
+            "returncode": 0,
+        }
+
+    monkeypatch.setenv("ATLASOPS_OPERATIONAL_MODE", "1")
+    monkeypatch.setenv("ATLASOPS_WORKLOAD_NAMESPACE", platform_ci.APP_WORKLOAD_NAMESPACE)
+    monkeypatch.setenv("ATLASOPS_ARGOCD_APP", platform_ci.APP_NAME)
+    monkeypatch.setattr(kubectl_tools, "_run", kubectl_read)
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_get", kubectl_tools.kubectl_get)
+    monkeypatch.setitem(coordinator.TOOL_REGISTRY, "kubectl_describe", kubectl_tools.kubectl_describe)
+    monkeypatch.setitem(
+        coordinator.TOOL_REGISTRY,
+        "argocd_app_history",
+        lambda **_kwargs: {"success": True, "history": [{"id": 218, "revision": SOURCE_SHA}]},
+    )
+    for name in ("require_audit_log", "audit_log", "thought_emit", "circuit_breaker"):
+        monkeypatch.setattr(coordinator, name, MagicMock())
+    monkeypatch.setattr(coordinator, "TRAJECTORIES_DIR", tmp_path / "trajectories")
+    monkeypatch.setattr(coordinator, "MODEL_NAME", platform_ci.FIXTURE_MODEL)
+    monkeypatch.setattr(coordinator, "VLLM_BASE", "http://fixture.invalid/v1")
+    api_key = "test-placeholder-native-fixture-key"
+    monkeypatch.setattr(coordinator, "API_KEY", api_key)
+    model_messages: list[str] = []
+    app = platform_ci.create_fixture_app(api_key, SOURCE_SHA)
+
+    with TestClient(app) as client:
+        async def complete(native_client, _url, payload, **_kwargs):
+            for message in payload["messages"]:
+                if message.get("role") != "tool":
+                    continue
+                json.loads(message["content"])
+                assert len(message["content"]) <= coordinator.TOOL_OUTPUT_MAX_CHARS
+                model_messages.append(message["content"])
+            response = client.post(
+                "/v1/chat/completions",
+                headers={"Authorization": native_client.headers["Authorization"]},
+                json=payload,
+            )
+            response.raise_for_status()
+            return response
+
+        monkeypatch.setattr(coordinator, "post_with_retry", complete)
+        result = asyncio.run(
+            coordinator.call_agent(
+                "diagnosis",
+                {"incident_id": INCIDENT_ID, "observations": []},
+                max_turns=2,
+            )
+        )
+
+    assert "ErrImageNeverPull" in result["final"]["root_cause"]
+    assert fault_image in result["final"]["root_cause"]
+    pod_observation = next(row for row in result["trajectory"] if row.get("tool") == "kubectl_get")
+    assert pod_observation["output"]["stdout"] == raw_stdout
+    assert pod_observation["output"]["parsed"] == raw_document
+    assert "ErrImageNeverPull" in "".join(model_messages)
+    assert "frontend-pod-uid" in "".join(model_messages)
+    assert "test-placeholder-pod-secret" not in "".join(model_messages)
+    projected_message = next(
+        json.loads(message)
+        for message in model_messages
+        if isinstance(json.loads(message).get("parsed"), dict)
+    )
+    assert projected_message["truncated"] is True
+    assert projected_message["omitted_items"] > 0
+    projected_pod = projected_message["parsed"]["items"][0]
+    assert projected_pod["spec"]["containers"][0]["imagePullPolicy"] == "Never"
+    assert projected_pod["status"]["containerStatuses"][0]["state"]["waiting"]["reason"] == "ErrImageNeverPull"
+
+
+def test_bounded_pod_evidence_prioritizes_pending_pods_without_container_statuses() -> None:
+    from agents import coordinator
+
+    healthy_pods = [
+        {
+            "metadata": {
+                "name": f"healthy-{index}",
+                "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+                "labels": {"app": f"healthy-{index}"},
+            },
+            "spec": {"containers": [{"name": "server", "image": "healthy:source"}]},
+            "status": {
+                "phase": "Running",
+                "containerStatuses": [{"name": "server", "ready": True}],
+            },
+        }
+        for index in range(8)
+    ]
+    pending_pod = {
+        "metadata": {
+            "name": "frontend-pending",
+            "namespace": platform_ci.APP_WORKLOAD_NAMESPACE,
+            "uid": "frontend-pending-pod-uid",
+            "labels": {"app": "frontend"},
+        },
+        "spec": {
+            "containers": [
+                {
+                    "name": "server",
+                    "image": "atlasops-ci-unavailable:run-318-2",
+                    "imagePullPolicy": "Never",
+                }
+            ]
+        },
+        "status": {"phase": "Pending", "containerStatuses": []},
+    }
+    document = {"kind": "PodList", "items": healthy_pods + [pending_pod]}
+    output = {"success": True, "stdout": json.dumps(document), "parsed": document}
+    original = copy.deepcopy(output)
+
+    message = coordinator._model_tool_message("kubectl_get", output)
+    visible = json.loads(message)
+
+    assert len(message) <= coordinator.TOOL_OUTPUT_MAX_CHARS
+    assert visible["omitted_items"] > 0
+    assert visible["parsed"]["items"][0] == pending_pod
+    assert output == original
+
+
+@pytest.mark.parametrize("success", [False, True])
+def test_oversized_tool_text_remains_valid_json_with_accurate_verifier_attribution(
+    success: bool,
+) -> None:
+    from agents import coordinator
+
+    output = {
+        "success": success,
+        "stdout": 'Observed text with escapes "\\\n' * 1000,
+        "api_key": "test-placeholder-text-secret",
+        "verifier_observation": {
+            "env_resolved": False,
+            "verification_status": "failed",
+            "observation_type": "authoritative_environment_verifier",
+        },
+    }
+    original = copy.deepcopy(output)
+    message = coordinator._model_tool_message("kubectl_logs", output)
+    visible = json.loads(message)
+    assert len(message) <= coordinator.TOOL_OUTPUT_MAX_CHARS
+    assert "test-placeholder-text-secret" not in message
+    assert visible["success"] is success
+    assert visible["truncated"] is True
+    assert visible["verifier_observation"] == output["verifier_observation"]
+    assert output == original
 
 
 def test_fixture_emits_credential_safe_jsonl_consumed_by_runner_logs(

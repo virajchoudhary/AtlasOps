@@ -441,6 +441,114 @@ def _model_safe_tool_output(output: dict[str, Any]) -> dict[str, Any]:
     return safe if isinstance(safe, dict) else {"value": safe}
 
 
+def _model_tool_message(tool: str, output: dict[str, Any]) -> str:
+    safe = _model_safe_tool_output(output)
+    encoded = json.dumps(safe)
+    if len(encoded) <= TOOL_OUTPUT_MAX_CHARS:
+        return encoded
+
+    parsed = safe.get("parsed")
+    if (
+        tool == "kubectl_get"
+        and safe.get("success") is True
+        and isinstance(parsed, dict)
+        and parsed.get("kind") == "PodList"
+        and isinstance(parsed.get("items"), list)
+    ):
+        pods = []
+        for pod in parsed["items"]:
+            if not isinstance(pod, dict):
+                continue
+            metadata = pod.get("metadata") or {}
+            containers = (pod.get("spec") or {}).get("containers") or []
+            status = pod.get("status") or {}
+            statuses = status.get("containerStatuses") or []
+            pods.append({
+                "metadata": {
+                    key: metadata[key]
+                    for key in ("name", "namespace", "uid", "labels")
+                    if key in metadata
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            key: container[key]
+                            for key in ("name", "image", "imagePullPolicy")
+                            if key in container
+                        }
+                        for container in containers if isinstance(container, dict)
+                    ],
+                },
+                "status": {
+                    "phase": status.get("phase"),
+                    "containerStatuses": [
+                        {
+                            **{
+                                key: container[key]
+                                for key in ("name", "image", "ready", "restartCount")
+                                if key in container
+                            },
+                            "state": {
+                                state: {
+                                    key: details[key]
+                                    for key in ("reason", "exitCode", "startedAt", "finishedAt")
+                                    if key in details
+                                }
+                                for state, details in (container.get("state") or {}).items()
+                                if isinstance(details, dict)
+                            },
+                        }
+                        for container in statuses if isinstance(container, dict)
+                    ],
+                },
+            })
+        pods.sort(key=lambda pod: (
+            pod["status"]["phase"] == "Running"
+            and bool(pod["status"]["containerStatuses"])
+            and all(
+                container.get("ready") is True
+                for container in pod["status"]["containerStatuses"]
+            )
+        ))
+        summary = {
+            "success": True,
+            "truncated": True,
+            "omitted_items": len(parsed["items"]),
+            "parsed": {"kind": "PodList", "items": []},
+        }
+        for pod in pods:
+            summary["parsed"]["items"].append(pod)
+            summary["omitted_items"] -= 1
+            if len(json.dumps(summary)) > TOOL_OUTPUT_MAX_CHARS:
+                summary["parsed"]["items"].pop()
+                summary["omitted_items"] += 1
+        return json.dumps(summary)
+
+    field = "error" if "error" in safe else "stdout"
+    text = str(safe.get(field, encoded))
+    summary = {
+        key: safe[key] for key in ("success", "returncode", "error_class") if key in safe
+    }
+    observation = safe.get("verifier_observation")
+    if isinstance(observation, dict):
+        summary["verifier_observation"] = {
+            key: observation[key]
+            for key in ("env_resolved", "verification_status", "observation_type")
+            if key in observation
+        }
+    summary["truncated"] = True
+    low, high = 0, min(len(text), TOOL_OUTPUT_MAX_CHARS)
+    while low < high:
+        middle = (low + high + 1) // 2
+        summary[field] = text[:middle]
+        if len(json.dumps(summary)) <= TOOL_OUTPUT_MAX_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    summary[field] = text[:low]
+    return json.dumps(summary)
+
+
 def model_visible_alert(alert: dict[str, Any] | None) -> dict[str, Any]:
     """Return an operational alert view without benchmark/evaluation metadata."""
     visible = _strip_model_forbidden_context(alert or {})
@@ -1317,7 +1425,7 @@ async def call_agent(
         messages.append({
             "role": "tool",
             "tool_call_id": tc["id"],
-            "content": json.dumps(_model_safe_tool_output(tool_output)),
+            "content": _model_tool_message(fn_name, tool_output),
         })
 
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
@@ -1981,7 +2089,7 @@ async def call_agent(
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(tool_message)[:TOOL_OUTPUT_MAX_CHARS],
+                    "content": _model_tool_message(fn_name, tool_message),
                 })
 
                 if _verifier_resolved or observation_unknown:

@@ -175,6 +175,9 @@ def verify_application_crd(context: str) -> None:
     operation_sync_properties = operation_properties.get("sync", {}).get(
         "properties", {}
     )
+    operation_info_properties = (
+        operation_properties.get("info", {}).get("items", {}).get("properties", {})
+    )
     status_properties = properties.get("status", {}).get("properties", {})
     history_properties = (
         status_properties.get("history", {}).get("items", {}).get("properties", {})
@@ -187,8 +190,10 @@ def verify_application_crd(context: str) -> None:
         "syncPolicy",
     } <= set(spec_properties):
         raise RuntimeError("installed Argo Application CRD spec schema is incomplete")
-    if not {"initiatedBy", "sync"} <= set(operation_properties):
+    if not {"info", "initiatedBy", "sync"} <= set(operation_properties):
         raise RuntimeError("installed Argo Application CRD operation schema is incomplete")
+    if not {"name", "value"} <= set(operation_info_properties):
+        raise RuntimeError("installed Argo Application CRD operation marker schema is incomplete")
     if not {"prune", "revision"} <= set(operation_sync_properties):
         raise RuntimeError("installed Argo Application CRD sync schema is incomplete")
     if not {"history"} <= set(status_properties) or not {
@@ -435,6 +440,7 @@ def rollback_operation(revision: str) -> dict[str, Any]:
     return {
         "initiatedBy": {"username": "atlasops"},
         "sync": {"revision": revision, "prune": False},
+        "info": [{"name": "atlasops-action-id", "value": "d" * 64}],
     }
 
 
@@ -595,6 +601,7 @@ def rejected_update_cases(
             "pruning",
             {
                 "operation": {
+                    **rollback_operation(ROLLBACK_REVISION),
                     "initiatedBy": {"username": "atlasops"},
                     "sync": {
                         "revision": ROLLBACK_REVISION,
@@ -607,6 +614,7 @@ def rejected_update_cases(
             "initiator",
             {
                 "operation": {
+                    **rollback_operation(ROLLBACK_REVISION),
                     "initiatedBy": {"username": "another-user"},
                     "sync": {
                         "revision": ROLLBACK_REVISION,
@@ -625,6 +633,37 @@ def rejected_update_cases(
                 "operation": {
                     **rollback_operation(ROLLBACK_REVISION),
                     "info": [{"name": "unexpected", "value": "field"}],
+                }
+            },
+        ),
+        (
+            "missing action marker",
+            {
+                "operation": {
+                    key: value
+                    for key, value in rollback_operation(ROLLBACK_REVISION).items()
+                    if key != "info"
+                }
+            },
+        ),
+        (
+            "duplicate action markers",
+            {
+                "operation": {
+                    **rollback_operation(ROLLBACK_REVISION),
+                    "info": [
+                        {"name": "atlasops-action-id", "value": "d" * 64},
+                        {"name": "atlasops-action-id", "value": "e" * 64},
+                    ],
+                }
+            },
+        ),
+        (
+            "malformed action marker",
+            {
+                "operation": {
+                    **rollback_operation(ROLLBACK_REVISION),
+                    "info": [{"name": "atlasops-action-id", "value": "not-a-digest"}],
                 }
             },
         ),

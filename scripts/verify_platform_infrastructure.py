@@ -1794,6 +1794,10 @@ def validate_local_admission_contract() -> None:
         "object.status == oldObject.status",
         "object.operation.initiatedBy.username == 'atlasops'",
         "object.operation.sync.prune == false",
+        "has(object.operation.info)",
+        "object.operation.info.size() == 1",
+        "object.operation.info[0].name == 'atlasops-action-id'",
+        "object.operation.info[0].value.matches('^[0-9a-f]{64}$')",
     )
     if (
         not isinstance(validations, list)

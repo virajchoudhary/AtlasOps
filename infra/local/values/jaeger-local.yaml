@@ -1,34 +1,64 @@
-# AtlasOps Local Jaeger — minimal Kind profile
-# Pipeline v1.1 Free-First
-#
-# Uses all-in-one strategy with in-memory storage
-# Lightest defensible configuration for Stage 3 gate
-
-provisionDataStore:
-  cassandra: false
-  elasticsearch: false
-
-allInOne:
+# Jaeger chart 4.x runs the Jaeger v2 distribution.
+# Its in-memory trace store is bounded and is lost when the Pod is replaced.
+jaeger:
   enabled: true
+  replicas: 1
+  service:
+    type: ClusterIP
   resources:
     requests:
       cpu: 50m
-      memory: 64Mi
+      memory: 128Mi
     limits:
-      cpu: 200m
-      memory: 256Mi
-  extraEnv:
-    - name: MEMORY_MAX_TRACES
-      value: "5000"
+      cpu: 250m
+      memory: 384Mi
+  podSecurityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
 
+userconfig:
+  extensions:
+    healthcheckv2:
+      use_v2: true
+      http:
+        endpoint: 0.0.0.0:13133
+    jaeger_query:
+      storage:
+        traces: primary
+        traces_archive: primary
+    jaeger_storage:
+      backends:
+        primary:
+          memory:
+            max_traces: 5000
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+  processors:
+    batch: {}
+  exporters:
+    jaeger_storage_exporter:
+      trace_storage: primary
+  service:
+    extensions:
+      - healthcheckv2
+      - jaeger_query
+      - jaeger_storage
+    pipelines:
+      traces:
+        receivers:
+          - otlp
+        processors:
+          - batch
+        exporters:
+          - jaeger_storage_exporter
+
+# The chart's storage.type applies only to its disabled Elasticsearch/Cassandra
+# maintenance components. Jaeger v2 storage is defined in userconfig above.
 storage:
-  type: memory
-
-agent:
-  enabled: false
-
-collector:
-  enabled: false
-
-query:
-  enabled: false
+  type: elasticsearch
+  cassandra:
+    usePassword: false

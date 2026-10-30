@@ -238,20 +238,22 @@ def test_container_build_context_excludes_local_secrets_and_worktrees():
 
 
 def test_ui_container_uses_project_runtime_dependencies_and_pinned_kubectl():
+    from scripts import verify_platform_infrastructure as platform_verify
+
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    coordinator = (ROOT / "Dockerfile.coordinator").read_text(encoding="utf-8")
     assert 'COPY . .\nRUN pip install --no-cache-dir . "uvicorn[standard]"' in dockerfile
     assert "aiofiles" not in dockerfile
     assert "gnupg" not in dockerfile
     assert "curl git" not in dockerfile
     assert ".[dev]" not in dockerfile and ".[train]" not in dockerfile
     assert "stable.txt" not in dockerfile
-    for argument in ("KUBECTL_VERSION", "KUBECTL_SHA256"):
-        value = re.search(rf"^ARG {argument}=(.+)$", coordinator, re.MULTILINE)
-        assert value is not None
-        assert f"ARG {argument}={value.group(1)}" in dockerfile
+    for argument in ("KUBECTL_VERSION", "KUBECTL_SHA256", "KUBECTL_SHA256_ARM64"):
+        assert f"ARG {argument}={getattr(platform_verify, argument)}" in dockerfile
+    assert "ARG TARGETARCH" in dockerfile
+    assert "linux/${TARGETARCH}/kubectl" in dockerfile
     assert "sha256sum -c -" in dockerfile
-    assert 'CMD ["python", "app.py"]' in dockerfile
+    assert 'CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]' in dockerfile
+    assert "USER 10001:10001" in dockerfile
     assert "EXPOSE 7860" in dockerfile
 
 

@@ -83,7 +83,8 @@ class TestLocalCoordinatorKindLoadable:
 
     def test_coordinator_manifest_uses_local_image(self) -> None:
         content = (INFRA_LOCAL / "coordinator-local.yaml").read_text(encoding="utf-8")
-        assert "atlasops-coordinator:g3-local" in content
+        assert "atlasops:__ATLASOPS_SOURCE_SHA__" in content
+        assert "g3-local" not in content
 
     def test_coordinator_manifest_image_pull_never(self) -> None:
         content = (INFRA_LOCAL / "coordinator-local.yaml").read_text(encoding="utf-8")
@@ -128,7 +129,7 @@ class TestExplicitContextTargeting:
     def test_setup_defines_kube_context(self) -> None:
         content = (INFRA_LOCAL / "setup_local.sh").read_text(encoding="utf-8")
         assert f'KUBE_CONTEXT="kind-{KIND_CLUSTER_NAME}"' in content or \
-               f"KUBE_CONTEXT=\"kind-${{KIND_CLUSTER_NAME}}\"" in content
+               "KUBE_CONTEXT=\"kind-${KIND_CLUSTER_NAME}\"" in content
 
     def test_setup_uses_context_in_kubectl(self) -> None:
         content = (INFRA_LOCAL / "setup_local.sh").read_text(encoding="utf-8")
@@ -146,7 +147,7 @@ class TestTeardownTargetsExactCluster:
     def test_teardown_deletes_exact_cluster(self) -> None:
         content = (INFRA_LOCAL / "teardown_local.sh").read_text(encoding="utf-8")
         assert f'kind delete cluster --name "{KIND_CLUSTER_NAME}"' in content or \
-               f"kind delete cluster --name \"$KIND_CLUSTER_NAME\"" in content
+               "kind delete cluster --name \"$KIND_CLUSTER_NAME\"" in content
 
     def test_teardown_no_gke_commands(self) -> None:
         content = (INFRA_LOCAL / "teardown_local.sh").read_text(encoding="utf-8")
@@ -262,4 +263,6 @@ class TestCoordinatorManifestSecurity:
 
     def test_port_9099(self) -> None:
         content = (INFRA_LOCAL / "coordinator-local.yaml").read_text(encoding="utf-8")
-        assert "containerPort: 9099" in content
+        assert "containerPort: 7860" in content
+        assert "port: 9099" in content
+        assert "targetPort: http" in content

@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: atlasops-boutique
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: atlasops
+spec:
+  project: atlasops-boutique
+  source:
+    repoURL: https://github.com/virajchoudhary/AtlasOps.git
+    targetRevision: __ATLASOPS_SOURCE_SHA__
+    path: infra/local/boutique
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: atlasops-boutique
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: false
+      allowEmpty: false

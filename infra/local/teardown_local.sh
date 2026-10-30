@@ -12,8 +12,21 @@
 # ==============================================================================
 set -euo pipefail
 
-readonly KIND_CLUSTER_NAME="atlasops-local"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+readonly KIND_CLUSTER_NAME="${ATLASOPS_KIND_CLUSTER_NAME:-atlasops-local}"
+readonly KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 readonly DELETE_ACK_VALUE="DELETE_ATLASOPS_LOCAL"
+
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  readonly PYTHON_BIN
+elif command -v python3 >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  readonly PYTHON_BIN="python"
+else
+  readonly PYTHON_BIN="python3"
+fi
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -25,9 +38,12 @@ Usage:
 
 Modes:
   --check  Show what would be deleted without deleting anything.
-  --apply  Delete the exact Kind cluster 'atlasops-local'.
+  --apply  Delete the selected Kind cluster after its ownership inspection.
 
-Apply-only acknowledgement (optional safety):
+Target:
+  ATLASOPS_KIND_CLUSTER_NAME (default: atlasops-local)
+
+Required apply-only acknowledgement:
   ATLASOPS_TEARDOWN_ACK=DELETE_ATLASOPS_LOCAL
 EOF
 }
@@ -52,12 +68,23 @@ parse_arguments() {
 main() {
   parse_arguments "$@"
 
+  if [[ "$MODE" == "--apply" ]]; then
+    [[ "${ATLASOPS_TEARDOWN_ACK:-}" == "$DELETE_ACK_VALUE" ]] \
+      || fail "ATLASOPS_TEARDOWN_ACK must equal $DELETE_ACK_VALUE before deletion."
+  fi
   command -v kind >/dev/null 2>&1 || fail "Required command 'kind' is not available."
+  command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Required command '$PYTHON_BIN' is not available."
 
   local cluster_exists=false
-  if kind get clusters 2>/dev/null | grep -Fxq "$KIND_CLUSTER_NAME"; then
-    cluster_exists=true
-  fi
+  local inspection_output inspection_status=0
+  inspection_output="$("$PYTHON_BIN" -B "${REPO_ROOT}/scripts/verify_platform_infrastructure.py" \
+    inspect-kind-cluster --cluster-name "$KIND_CLUSTER_NAME" \
+    --kube-context "$KUBE_CONTEXT" 2>&1)" || inspection_status=$?
+  case "$inspection_status" in
+    0) cluster_exists=true ;;
+    3) cluster_exists=false ;;
+    *) fail "Could not safely inspect Kind cluster '$KIND_CLUSTER_NAME': $inspection_output" ;;
+  esac
 
   echo "=== AtlasOps Local Teardown ==="
   echo "Target cluster:  $KIND_CLUSTER_NAME"
@@ -75,7 +102,6 @@ main() {
     return
   fi
 
-  # --apply mode
   if [[ "$cluster_exists" == false ]]; then
     echo "TEARDOWN: cluster '$KIND_CLUSTER_NAME' does not exist. Nothing to delete."
     return

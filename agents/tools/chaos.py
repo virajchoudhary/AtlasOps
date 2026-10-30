@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -98,17 +99,55 @@ def _valid_precondition(value: Any) -> bool:
 def _new_chaos_api_client(kube_context: str | None):
     from kubernetes import client, config
 
+    configuration = client.Configuration()
+    configuration.retries = 0
     if kube_context is None and os.getenv("KUBERNETES_SERVICE_HOST"):
-        configuration = client.Configuration()
         config.load_incluster_config(client_configuration=configuration)
         api_client = client.ApiClient(configuration=configuration)
     else:
-        api_client = config.new_client_from_config(context=kube_context)
+        api_client = config.new_client_from_config(
+            context=kube_context, client_configuration=configuration,
+        )
     try:
         return client.CustomObjectsApi(api_client=api_client), api_client
     except Exception:
         _close_chaos_api_client(api_client)
         raise
+
+
+def _request_kubernetes_object(
+    client: Any, path: str, method: str = "GET", *, body: Any = None,
+) -> Any:
+    headers = {"Accept": "application/json"}
+    if method == "PATCH":
+        headers["Content-Type"] = "application/json-patch+json"
+    elif method == "DELETE":
+        headers["Content-Type"] = "application/json"
+    response_types = {200: "object", 201: "object", 202: "object"}
+    serialize = getattr(client, "param_serialize", None)
+    if callable(serialize):
+        parameters = serialize(
+            method, path, header_params=headers, body=body,
+            auth_settings=["BearerToken"],
+        )
+        response = client.call_api(
+            *parameters, _request_timeout=_KUBERNETES_REQUEST_TIMEOUT,
+        )
+        response.read()
+        return client.response_deserialize(
+            response_data=response,
+            response_types_map={str(status): kind for status, kind in response_types.items()},
+        ).data
+    response_options = (
+        {"response_types_map": response_types}
+        if "response_types_map" in inspect.signature(client.call_api).parameters
+        else {"response_type": "object"}
+    )
+    return client.call_api(
+        path, method, header_params=headers, body=body,
+        auth_settings=["BearerToken"], **response_options,
+        _return_http_data_only=True, _request_timeout=_KUBERNETES_REQUEST_TIMEOUT,
+    )
 
 
 def _close_chaos_api_client(api_client: Any) -> None:
